@@ -292,32 +292,201 @@ export interface FreeRevolverProviderSource {
   models: FreeRevolverProviderModel[];
 }
 
-function isAcceptedProviderControl(value: unknown): value is FreeRevolverProviderSource {
-  if (!value || typeof value !== 'object') return false;
-  const provider = value as Partial<FreeRevolverProviderSource>;
+const OMNIROUTE_API_BASE = 'http://omniroute:20128/v1';
+const OMNIROUTE_ROUTE_ID = 'sovereign-omniroute-auto';
+const OMNIROUTE_MODEL_ID = 'sovereign-omniroute:auto';
+const RETIRED_FREELLMPOOL_API_BASE = 'http://freellmpool:8080/v1';
+
+const providerAuthModes = ['bearer', 'x-api-key', 'none', 'managed-bearer'] as const;
+const providerStatuses = [
+  'awaiting_owner_input', 'probing', 'healthy', 'degraded', 'blocked', 'disabled',
+] as const;
+const providerModelStatuses = ['discovered', 'ready', 'blocked', 'disabled'] as const;
+const providerCostStates = ['zero', 'unreported', 'nonzero'] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function isNullableFiniteNumber(value: unknown): value is number | null {
+  return value === null || (typeof value === 'number' && Number.isFinite(value));
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isOneOf<T extends readonly string[]>(value: unknown, choices: T): value is T[number] {
+  return typeof value === 'string' && choices.some(choice => choice === value);
+}
+
+function isAcceptedProviderModel(value: unknown): value is FreeRevolverProviderModel {
+  if (!isRecord(value)) return false;
   return (
-    (provider.providerSurfaceKind === 'free-revolver'
-      && provider.lifecycle === 'active'
-      && provider.canonicalAction === 'revolver-discover')
-    || (provider.providerSurfaceKind === 'omniroute-auto'
-      && provider.lifecycle === 'active'
-      && provider.canonicalAction === 'omniroute-refresh')
-    || (provider.providerSurfaceKind === 'retired-reference'
-      && provider.lifecycle === 'historical'
-      && provider.canonicalAction === 'none')
+    isNonEmptyString(value.id)
+    && isNonEmptyString(value.modelId)
+    && isNonEmptyString(value.displayName)
+    && isNullableString(value.routeAlias)
+    && isNullableString(value.routeId)
+    && isRecord(value.runtimeIdentity)
+    && isRecord(value.canaryReceipt)
+    && isRecord(value.quotaEvidence)
+    && isRecord(value.retryEvidence)
+    && isRecord(value.cooldownEvidence)
+    && Array.isArray(value.capabilities)
+    && value.capabilities.every(isNonEmptyString)
+    && typeof value.freeEligible === 'boolean'
+    && isNonEmptyString(value.eligibilitySource)
+    && isNullableString(value.eligibilityVerifiedAt)
+    && isOneOf(value.status, providerModelStatuses)
+    && isNullableString(value.lastCanaryRequestId)
+    && isNullableString(value.lastCanaryAt)
+    && isOneOf(value.providerCostState, providerCostStates)
+    && isNullableFiniteNumber(value.lastProviderCostUsdMicros)
+    && isNullableString(value.lastErrorCode)
+    && typeof value.enabled === 'boolean'
+    && (value.generalChatBlocker === undefined || isNullableString(value.generalChatBlocker))
+    && (value.generalChatBlockVerified === undefined || typeof value.generalChatBlockVerified === 'boolean')
   );
 }
 
-export function isAcceptedLlmProviderSurfaceReadModel(
-  value: LlmProviderSurfaceReadModel,
-): boolean {
+function isAcceptedProviderControl(value: unknown): value is FreeRevolverProviderSource {
+  if (!isRecord(value)) return false;
+  if (
+    !isNonEmptyString(value.id)
+    || !isNonEmptyString(value.sourceType)
+    || !isNonEmptyString(value.label)
+    || !isNonEmptyString(value.apiBase)
+    || !isNullableString(value.modelsUrl)
+    || !isOneOf(value.authMode, providerAuthModes)
+    || !isNullableString(value.keyHint)
+    || !isOneOf(value.status, providerStatuses)
+    || !isNullableFiniteNumber(value.lastHttpStatus)
+    || !isNullableString(value.lastErrorCode)
+    || !isNullableString(value.lastDiscoveredAt)
+    || !isNullableString(value.lastCheckedAt)
+    || typeof value.enabled !== 'boolean'
+    || !isNullableString(value.ownerRequestId)
+    || !Array.isArray(value.models)
+    || !value.models.every(isAcceptedProviderModel)
+  ) {
+    return false;
+  }
+
+  const apiBase = value.apiBase.replace(/\/$/, '').toLowerCase();
+  if (
+    value.providerSurfaceKind === 'free-revolver'
+    && value.lifecycle === 'active'
+    && value.canonicalAction === 'revolver-discover'
+  ) {
+    return apiBase !== OMNIROUTE_API_BASE && apiBase !== RETIRED_FREELLMPOOL_API_BASE;
+  }
+  if (
+    value.providerSurfaceKind === 'omniroute-auto'
+    && value.lifecycle === 'active'
+    && value.canonicalAction === 'omniroute-refresh'
+  ) {
+    return apiBase === OMNIROUTE_API_BASE && value.authMode === 'none';
+  }
   return (
-    Array.isArray(value.providers)
-    && value.providers.every(isAcceptedProviderControl)
-    && value.omniRoute?.routeSource === 'omniroute'
-    && value.openRouterPaid?.transport === 'openrouter'
-    && value.openRouterFree?.routingPolicy?.paidFallbackAllowed === false
+    value.providerSurfaceKind === 'retired-reference'
+    && value.lifecycle === 'historical'
+    && value.canonicalAction === 'none'
+    && apiBase === RETIRED_FREELLMPOOL_API_BASE
+    && value.enabled === false
   );
+}
+
+function isAcceptedOmniRouteStatus(value: unknown): value is OmniRouteRuntimeStatus {
+  if (!isRecord(value)) return false;
+  const catalogModelCount = value.catalogModelCount;
+  if (
+    typeof value.ok !== 'boolean'
+    || value.routeSource !== 'omniroute'
+    || value.routeId !== OMNIROUTE_ROUTE_ID
+    || value.modelId !== OMNIROUTE_MODEL_ID
+    || value.apiBase !== OMNIROUTE_API_BASE
+    || typeof value.disabled !== 'boolean'
+    || !isNonEmptyString(value.activationState)
+    || !isNullableString(value.blocker)
+    || !isNonNegativeInteger(value.confirmationCount)
+    || (catalogModelCount !== undefined && !isNonNegativeInteger(catalogModelCount))
+    || !isNullableString(value.receiptSha256)
+    || !isNullableString(value.sourceRevision)
+    || !isNullableString(value.imageDigest)
+    || value.freeLlmApiChanged !== false
+    || value.rawProviderResponsesReturned !== false
+  ) {
+    return false;
+  }
+  return !value.ok || (
+    value.disabled === false
+    && value.activationState === 'ready'
+    && value.confirmationCount >= 2
+  );
+}
+
+function isAcceptedOpenRouterPaidStatus(value: unknown): value is OpenRouterPaidRuntimeStatus {
+  return isRecord(value)
+    && isNonEmptyString(value.status)
+    && isNonEmptyString(value.deploymentStatus)
+    && isNonEmptyString(value.routeId)
+    && value.transport === 'openrouter'
+    && typeof value.keyStored === 'boolean'
+    && isNullableString(value.keyHint)
+    && isNonNegativeInteger(value.selectableModels)
+    && isNullableString(value.lastCanaryRequestId)
+    && isNullableString(value.lastCanaryAt)
+    && isNullableString(value.lastErrorCode)
+    && value.secretValuesReturned === false;
+}
+
+function isAcceptedOpenRouterFreeStatus(value: unknown): value is OpenRouterFreeRuntimeStatus {
+  if (!isRecord(value) || !isRecord(value.routingPolicy)) return false;
+  const policy = value.routingPolicy;
+  return value.ok === true
+    && value.status === 'OPENROUTER_FREE_RUNTIME_STATUS'
+    && isRecord(value.freeExecutionKey)
+    && isRecord(value.managementKey)
+    && isRecord(value.route)
+    && typeof value.managementTableAvailable === 'boolean'
+    && isNullableString(value.managementTableBlocker)
+    && isNonNegativeInteger(policy.priority)
+    && policy.providerModel === 'openrouter/free'
+    && policy.fallbackAfterQuota === 'freellm'
+    && policy.paidFallbackAllowed === false
+    && policy.accountWideQuotaScope === 'openrouter-free'
+    && isRecord(value.runtimeIdentity)
+    && value.secretValuesReturned === false;
+}
+
+function isAcceptedFreeRevolverProviderReadback(value: unknown): boolean {
+  return isRecord(value)
+    && value.ok === true
+    && value.truthOwner === 'backend'
+    && value.keyStorage === 'owner-managed'
+    && value.activationRule === 'canonical'
+    && Array.isArray(value.providers)
+    && value.providers.every(isAcceptedProviderControl);
+}
+
+export function isAcceptedLlmProviderSurfaceReadModel(
+  value: unknown,
+): value is LlmProviderSurfaceReadModel {
+  return isRecord(value)
+    && Array.isArray(value.providers)
+    && value.providers.every(isAcceptedProviderControl)
+    && isAcceptedOmniRouteStatus(value.omniRoute)
+    && isAcceptedOpenRouterPaidStatus(value.openRouterPaid)
+    && isAcceptedOpenRouterFreeStatus(value.openRouterFree);
 }
 
 export type LlmRouteUpdate = Partial<Pick<
@@ -810,7 +979,10 @@ export const adminApiClient = {
       this.getOpenRouterPaidStatus(),
       this.getOpenRouterFreeStatus(),
     ]);
-    const readModel = {
+    if (!isAcceptedFreeRevolverProviderReadback(providers)) {
+      throw new Error('Free-Provider-Readback verletzt die kanonische typisierte Aktionsgrenze.');
+    }
+    const readModel: unknown = {
       providers: providers.providers,
       omniRoute,
       openRouterPaid,

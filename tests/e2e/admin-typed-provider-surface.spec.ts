@@ -17,6 +17,17 @@ function json(route: Route, payload: unknown, status = 200): Promise<void> {
   });
 }
 
+async function installAdminAssetRewrite(page: Page): Promise<void> {
+  // The production backend serves the relative Vite asset namespace at
+  // /admin/assets/*. Vite preview only exposes /assets/*, so emulate that
+  // narrow delivery boundary without changing the production artifact base.
+  await page.route('**/admin/assets/**', async route => {
+    const url = new URL(route.request().url());
+    url.pathname = url.pathname.replace(/^\/admin\/assets\//, '/assets/');
+    await route.continue({ url: url.toString() });
+  });
+}
+
 function provider(
   id: string,
   overrides: Record<string, unknown> = {},
@@ -211,9 +222,11 @@ async function installAdminMock(page: Page, calls: Call[]): Promise<void> {
 
 test('renders every typed provider surface and invokes only the canonical OmniRoute action', async ({ page }) => {
   const calls: Call[] = [];
+  await installAdminAssetRewrite(page);
   await installAdminMock(page, calls);
 
   await page.goto('/admin/');
+  await expect(page.getByPlaceholder('Admin-Key eingeben')).toBeVisible();
   await page.getByPlaceholder('Admin-Key eingeben').fill('e2e-admin-key');
   await page.getByRole('button', { name: 'Verbinden & speichern' }).click();
 

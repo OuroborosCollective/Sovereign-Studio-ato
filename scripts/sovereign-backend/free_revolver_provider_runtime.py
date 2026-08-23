@@ -1583,16 +1583,28 @@ def register_free_revolver_provider_runtime(
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         source = query(
-            "SELECT id::text, label FROM llm_revolver_provider_sources WHERE id=%s::uuid LIMIT 1",
+            """SELECT id::text, label, api_base, last_error_code, auth_mode
+               FROM llm_revolver_provider_sources
+               WHERE id=%s::uuid LIMIT 1""",
             (source_id,), one=True,
         )
         if not source:
             return jsonify({"error": "Free-Provider nicht gefunden"}), 404
-        auth = query(
-            "SELECT auth_mode FROM llm_revolver_provider_sources WHERE id=%s::uuid LIMIT 1",
-            (source_id,), one=True,
-        ) or {}
-        if str(auth.get("auth_mode") or "") in {"none", _MANAGED_AUTH_MODE}:
+        control = classify_provider_surface(
+            api_base=source.get("api_base"),
+            last_error_code=source.get("last_error_code"),
+        )
+        if (
+            control["canonicalAction"] != "revolver-discover"
+            or control["providerSurfaceKind"] != "free-revolver"
+        ):
+            return jsonify({
+                "error": "Dieser Provider kann nur über seine kanonische typisierte Aktion verändert werden.",
+                "blocker": "canonical_provider_action_required",
+                "providerSurfaceKind": control["providerSurfaceKind"],
+                "canonicalAction": control["canonicalAction"],
+            }), 409
+        if str(source.get("auth_mode") or "") in {"none", _MANAGED_AUTH_MODE}:
             return jsonify({"error": "Dieser Provider verwendet keinen erneuerbaren Owner-Input-Key"}), 409
         try:
             request_id = _request_owner_input(

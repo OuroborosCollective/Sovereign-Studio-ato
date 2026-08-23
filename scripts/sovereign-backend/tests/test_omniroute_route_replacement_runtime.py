@@ -49,6 +49,16 @@ def _route(base_url: str, model: str = "auto") -> dict:
     }
 
 
+def _canonical_omniroute_route() -> dict:
+    return {
+        "id": runtime._ROUTE_ID,
+        "model_id": runtime._MODEL_ALIAS,
+        "base_url": OMNIROUTE_BASE_URL,
+        "disabled": True,
+        "config": {},
+    }
+
+
 def test_transport_keeps_freellmapi_retires_pool_and_adds_omniroute() -> None:
     assert FREELLM_BASE_URL in FREELLM_EXECUTION_BASE_URLS
     assert OMNIROUTE_BASE_URL in FREELLM_EXECUTION_BASE_URLS
@@ -130,6 +140,8 @@ def test_runtime_double_canary_promotes_only_omniroute(
 
     def query(sql: str, params=None, *, one=False, write=False):
         writes.append((sql, tuple(params or ())))
+        if "FROM llm_routes WHERE id=%s" in sql:
+            return _canonical_omniroute_route()
         return None
 
     monkeypatch.setattr(runtime, "_runtime_identity", lambda: {
@@ -190,6 +202,8 @@ def test_runtime_failure_disables_only_omniroute_and_never_freellmapi(
 
     def query(sql: str, params=None, *, one=False, write=False):
         writes.append((sql, tuple(params or ())))
+        if "FROM llm_routes WHERE id=%s" in sql:
+            return _canonical_omniroute_route()
         return None
 
     monkeypatch.setattr(runtime, "_runtime_identity", lambda: {
@@ -236,6 +250,8 @@ def test_omniroute_401_canary_degrades_only_its_dedicated_route(
 
     def query(sql: str, params=None, *, one=False, write=False):
         writes.append((sql, tuple(params or ())))
+        if "FROM llm_routes WHERE id=%s" in sql:
+            return _canonical_omniroute_route()
         return None
 
     monkeypatch.setattr(runtime, "_runtime_identity", lambda: {
@@ -277,6 +293,103 @@ def test_omniroute_401_canary_degrades_only_its_dedicated_route(
     assert "freellmapi:3001" not in all_material
     assert "freellmpool:8080" not in all_material
     assert "sovereign-omniroute-auto" in all_material
+
+
+def test_invalid_canonical_route_identity_fails_before_canary_or_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = _Connection()
+    calls: list[tuple[str, bool]] = []
+
+    def query(sql: str, _params=None, *, one=False, write=False):
+        calls.append((sql, write))
+        if "FROM llm_routes WHERE id=%s" in sql:
+            return {
+                "id": runtime._ROUTE_ID,
+                "model_id": "wrong-model-id",
+                "base_url": OMNIROUTE_BASE_URL,
+                "disabled": True,
+                "config": {},
+            }
+        return None
+
+    monkeypatch.setattr(
+        runtime, "_models_readback",
+        lambda: pytest.fail("invalid route identity must block before upstream canaries"),
+    )
+    service = runtime.OmniRouteExecutionRuntime(
+        query=query,
+        get_connection=lambda: connection,
+        audit=lambda *_args, **_kwargs: None,
+    )
+
+    result = service.scan_once()
+
+    assert result == {
+        "ok": False,
+        "status": "blocked",
+        "routeSource": "omniroute",
+        "blocker": "omniroute_route_identity_invalid",
+        "freeLlmApiChanged": False,
+    }
+    assert connection.commits == 0
+    assert connection.rollbacks == 1
+    assert not any(write for _sql, write in calls)
+    assert service.status()["blocker"] == "omniroute_route_identity_invalid"
+
+
+def test_connection_failure_never_strands_the_local_omniroute_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = _Connection()
+    attempts: list[object] = [RuntimeError("temporary postgres outage"), connection]
+
+    def get_connection():
+        attempt = attempts.pop(0)
+        if isinstance(attempt, Exception):
+            raise attempt
+        return attempt
+
+    def query(sql: str, _params=None, *, one=False, write=False):
+        if "FROM llm_routes WHERE id=%s" in sql:
+            return {
+                "id": runtime._ROUTE_ID,
+                "model_id": "wrong-model-id",
+                "base_url": OMNIROUTE_BASE_URL,
+                "disabled": True,
+                "config": {},
+            }
+        return None
+
+    service = runtime.OmniRouteExecutionRuntime(
+        query=query,
+        get_connection=get_connection,
+        audit=lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(service, "_mark_failed", lambda _family: None)
+
+    first = service.scan_once()
+
+    assert first == {
+        "ok": False,
+        "status": "degraded",
+        "routeSource": "omniroute",
+        "blocker": "omniroute_activation_internal_failure",
+        "freeLlmApiChanged": False,
+    }
+    assert service._local_lock.locked() is False
+
+    second = service.scan_once()
+
+    assert second == {
+        "ok": False,
+        "status": "blocked",
+        "routeSource": "omniroute",
+        "blocker": "omniroute_route_identity_invalid",
+        "freeLlmApiChanged": False,
+    }
+    assert connection.closed == 1
+    assert service._local_lock.locked() is False
 
 
 class _RouteApp:

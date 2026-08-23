@@ -159,4 +159,62 @@ describe('adminApiClient typed provider surface read model', () => {
       },
     } as never)).toBe(false);
   });
+
+  it('rejects truncated, wrong-identity, secret-bearing, and paid-fallback readbacks', () => {
+    const valid = {
+      providers: [],
+      omniRoute,
+      openRouterPaid: {
+        status: 'ready',
+        deploymentStatus: 'ready',
+        routeId: 'openrouter-root',
+        transport: 'openrouter',
+        keyStored: true,
+        keyHint: '…paid',
+        selectableModels: 291,
+        lastCanaryRequestId: null,
+        lastCanaryAt: null,
+        lastErrorCode: null,
+        secretValuesReturned: false,
+      },
+      openRouterFree: {
+        ok: true,
+        status: 'OPENROUTER_FREE_RUNTIME_STATUS',
+        freeExecutionKey: {},
+        managementKey: {},
+        route: {},
+        managementTableAvailable: true,
+        managementTableBlocker: null,
+        routingPolicy: {
+          priority: 5,
+          providerModel: 'openrouter/free',
+          fallbackAfterQuota: 'freellm',
+          paidFallbackAllowed: false,
+          accountWideQuotaScope: 'openrouter-free',
+        },
+        runtimeIdentity: {},
+        secretValuesReturned: false,
+      },
+    };
+
+    expect(isAcceptedLlmProviderSurfaceReadModel(valid)).toBe(true);
+    expect(isAcceptedLlmProviderSurfaceReadModel({
+      providers: [],
+      omniRoute: { routeSource: 'omniroute' },
+      openRouterPaid: { transport: 'openrouter' },
+      openRouterFree: { routingPolicy: { paidFallbackAllowed: false } },
+    })).toBe(false);
+
+    const wrongOmniRoute = structuredClone(valid);
+    wrongOmniRoute.omniRoute.routeId = 'wrong-route';
+    expect(isAcceptedLlmProviderSurfaceReadModel(wrongOmniRoute)).toBe(false);
+
+    const secretBearingPaid = structuredClone(valid);
+    secretBearingPaid.openRouterPaid.secretValuesReturned = true;
+    expect(isAcceptedLlmProviderSurfaceReadModel(secretBearingPaid)).toBe(false);
+
+    const paidFallback = structuredClone(valid);
+    paidFallback.openRouterFree.routingPolicy.paidFallbackAllowed = true;
+    expect(isAcceptedLlmProviderSurfaceReadModel(paidFallback)).toBe(false);
+  });
 });

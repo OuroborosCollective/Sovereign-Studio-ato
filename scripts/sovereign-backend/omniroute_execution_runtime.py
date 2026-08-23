@@ -242,6 +242,24 @@ class OmniRouteExecutionRuntime:
             86_400,
         )
 
+    def _canonical_route(self) -> dict[str, Any] | None:
+        route = self._query(
+            """SELECT id::text, model_id, base_url, disabled, config, updated_at
+               FROM llm_routes WHERE id=%s LIMIT 1""",
+            (_ROUTE_ID,),
+            one=True,
+        )
+        if not isinstance(route, dict):
+            return None
+        if (
+            str(route.get("id") or "") != _ROUTE_ID
+            or str(route.get("model_id") or "") != _MODEL_ALIAS
+            or str(route.get("base_url") or "").rstrip("/").lower()
+            != OMNIROUTE_BASE_URL.rstrip("/").lower()
+        ):
+            return None
+        return route
+
     def _mark_failed(self, family: str) -> None:
         self._query(
             """UPDATE llm_routes
@@ -256,8 +274,10 @@ class OmniRouteExecutionRuntime:
                        'activationBlocker', %s
                    ),
                    updated_at=NOW()
-               WHERE id=%s""",
-            (family, _ROUTE_ID),
+               WHERE id=%s
+                 AND model_id=%s
+                 AND lower(COALESCE(base_url,''))=lower(%s)""",
+            (family, _ROUTE_ID, _MODEL_ALIAS, OMNIROUTE_BASE_URL),
             write=True,
         )
         self._query(
@@ -280,8 +300,9 @@ class OmniRouteExecutionRuntime:
     def scan_once(self) -> dict[str, Any]:
         if not self._local_lock.acquire(blocking=False):
             return {"ok": False, "status": "busy", "routeSource": "omniroute"}
-        lock_connection = self._get_connection()
+        lock_connection: Any | None = None
         try:
+            lock_connection = self._get_connection()
             with lock_connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT pg_try_advisory_xact_lock(%s,%s) AS acquired",
@@ -291,6 +312,16 @@ class OmniRouteExecutionRuntime:
                 if not bool(row.get("acquired")):
                     lock_connection.rollback()
                     return {"ok": False, "status": "busy", "routeSource": "omniroute"}
+
+                if self._canonical_route() is None:
+                    lock_connection.rollback()
+                    return {
+                        "ok": False,
+                        "status": "blocked",
+                        "routeSource": "omniroute",
+                        "blocker": "omniroute_route_identity_invalid",
+                        "freeLlmApiChanged": False,
+                    }
 
                 identity = _runtime_identity()
                 if not (
@@ -363,8 +394,15 @@ class OmniRouteExecutionRuntime:
                        SET disabled=false,
                            config=COALESCE(config,'{}'::jsonb) || %s::jsonb,
                            updated_at=NOW()
-                       WHERE id=%s""",
-                    (json.dumps(runtime_config, separators=(",", ":")), _ROUTE_ID),
+                       WHERE id=%s
+                         AND model_id=%s
+                         AND lower(COALESCE(base_url,''))=lower(%s)""",
+                    (
+                        json.dumps(runtime_config, separators=(",", ":")),
+                        _ROUTE_ID,
+                        _MODEL_ALIAS,
+                        OMNIROUTE_BASE_URL,
+                    ),
                     write=True,
                 )
                 self._query(
@@ -413,8 +451,15 @@ class OmniRouteExecutionRuntime:
                     "freeLlmApiChanged": False,
                 }
         except OmniRouteActivationError as exc:
-            lock_connection.rollback()
-            self._mark_failed(exc.family)
+            if lock_connection is not None:
+                try:
+                    lock_connection.rollback()
+                except Exception:
+                    pass
+            try:
+                self._mark_failed(exc.family)
+            except Exception:
+                pass
             return {
                 "ok": False,
                 "status": "degraded",
@@ -423,8 +468,15 @@ class OmniRouteExecutionRuntime:
                 "freeLlmApiChanged": False,
             }
         except Exception:
-            lock_connection.rollback()
-            self._mark_failed("omniroute_activation_internal_failure")
+            if lock_connection is not None:
+                try:
+                    lock_connection.rollback()
+                except Exception:
+                    pass
+            try:
+                self._mark_failed("omniroute_activation_internal_failure")
+            except Exception:
+                pass
             return {
                 "ok": False,
                 "status": "degraded",
@@ -433,16 +485,32 @@ class OmniRouteExecutionRuntime:
                 "freeLlmApiChanged": False,
             }
         finally:
-            lock_connection.close()
+            if lock_connection is not None:
+                try:
+                    lock_connection.close()
+                except Exception:
+                    pass
             self._local_lock.release()
 
     def status(self) -> dict[str, Any]:
-        route = self._query(
-            """SELECT id::text, model_id, base_url, disabled, config, updated_at
-               FROM llm_routes WHERE id=%s LIMIT 1""",
-            (_ROUTE_ID,),
-            one=True,
-        ) or {}
+        route = self._canonical_route()
+        if route is None:
+            return {
+                "ok": False,
+                "routeSource": "omniroute",
+                "routeId": _ROUTE_ID,
+                "modelId": _MODEL_ALIAS,
+                "apiBase": OMNIROUTE_BASE_URL,
+                "disabled": True,
+                "activationState": "blocked",
+                "blocker": "omniroute_route_identity_invalid",
+                "confirmationCount": 0,
+                "receiptSha256": None,
+                "sourceRevision": None,
+                "imageDigest": None,
+                "freeLlmApiChanged": False,
+                "rawProviderResponsesReturned": False,
+            }
         config = route.get("config") if isinstance(route.get("config"), dict) else {}
         receipt = config.get("canaryReceipt") if isinstance(config.get("canaryReceipt"), dict) else {}
         identity = config.get("runtimeIdentity") if isinstance(config.get("runtimeIdentity"), dict) else {}

@@ -35,7 +35,11 @@ def test_canonical_free_provider_runtime_contract_is_present_without_optional_fl
     assert "canonical_provider_action_required" in source
 
 
-def _build_app(monkeypatch, query_calls: list[tuple[str, bool]]) -> Flask:
+def _build_app(
+    monkeypatch,
+    query_calls: list[tuple[str, bool]],
+    source_overrides: dict[str, Any] | None = None,
+) -> Flask:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "owner-bridge-key")
     monkeypatch.setattr(runtime._FreeLlmEvidenceMaintainer, "start", lambda _self: None)
     app = Flask(__name__)
@@ -53,6 +57,9 @@ def _build_app(monkeypatch, query_calls: list[tuple[str, bool]]) -> Flask:
         "last_discovered_at": "2026-08-23T00:00:00Z",
         "catalog_fresh": True,
     }
+
+    if source_overrides:
+        retired_source.update(source_overrides)
 
     def query(sql: str, params=(), one: bool = False, write: bool = False):
         del params, one
@@ -97,6 +104,43 @@ def test_internal_retired_pool_mutations_fail_before_any_write(monkeypatch, path
         "providerSurfaceKind": "retired-reference",
         "canonicalAction": "none",
         "protectedValuesReturned": False,
+    }
+    assert query_calls
+    assert not any(write for _sql, write in query_calls)
+
+
+@pytest.mark.skipif(Flask is None, reason="Flask is validated in the full backend CI image")
+@pytest.mark.parametrize(("api_base", "surface_kind", "canonical_action"), [
+    ("http://freellmpool:8080/v1", "retired-reference", "none"),
+    ("http://omniroute:20128/v1", "omniroute-auto", "omniroute-refresh"),
+])
+def test_non_generic_provider_owner_input_cannot_mutate_source(
+    monkeypatch,
+    api_base: str,
+    surface_kind: str,
+    canonical_action: str,
+) -> None:
+    query_calls: list[tuple[str, bool]] = []
+    app = _build_app(monkeypatch, query_calls, {
+        "api_base": api_base,
+        # A legacy/drifted auth mode must not turn a canonical non-generic
+        # provider back into a generic owner-input mutation target.
+        "auth_mode": "bearer",
+        "last_error_code": None,
+    })
+
+    response = app.test_client().post(
+        "/api/admin/llm/revolver-v3/providers/c79ff468-ee08-5686-97df-756fa58b74f0/owner-input",
+        json={},
+    )
+    payload: dict[str, Any] = response.get_json()
+
+    assert response.status_code == 409
+    assert payload == {
+        "error": "Dieser Provider kann nur über seine kanonische typisierte Aktion verändert werden.",
+        "blocker": "canonical_provider_action_required",
+        "providerSurfaceKind": surface_kind,
+        "canonicalAction": canonical_action,
     }
     assert query_calls
     assert not any(write for _sql, write in query_calls)
