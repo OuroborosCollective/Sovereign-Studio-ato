@@ -93,6 +93,10 @@ export function FreeRevolverControlCenter({
 
   const totals = useMemo(() => {
     const models = genericProviders.flatMap(provider => provider.models);
+    const omniRouteReady = api.omniRoute?.ok === true
+      && api.omniRoute.disabled === false
+      && api.omniRoute.activationState === 'ready';
+    const omniRouteBlocked = Boolean(api.omniRoute) && !omniRouteReady;
     return {
       providers: genericProviders.length + (api.omniRoute ? 1 : 0),
       ready: models.filter(model => (
@@ -100,13 +104,13 @@ export function FreeRevolverControlCenter({
         && model.enabled
         && hasRevisionBoundReceipt(model)
         && isEligibilityEvidenceFresh(model.eligibilityVerifiedAt, eligibilityEvidenceTtlHours)
-      )).length,
+      )).length + Number(omniRouteReady),
       deferred: models.filter(model => model.status === 'discovered').length,
-      blocked: models.filter(model => model.status === 'blocked').length,
+      blocked: models.filter(model => model.status === 'blocked').length + Number(omniRouteBlocked),
       verified: models.filter(model => (
         model.freeEligible
         && isEligibilityEvidenceFresh(model.eligibilityVerifiedAt, eligibilityEvidenceTtlHours)
-      )).length,
+      )).length + Number(omniRouteReady),
     };
   }, [api.omniRoute, genericProviders, eligibilityEvidenceTtlHours]);
 
@@ -178,10 +182,10 @@ export function FreeRevolverControlCenter({
 
       <div className="llm-stat-grid">
         <div><Server /><span>Provider</span><strong>{totals.providers}</strong></div>
-        <div><ShieldCheck /><span>Aktive Free-Routen</span><strong>{totals.ready}</strong></div>
-        <div><Search /><span>Free-Quota bestätigt</span><strong>{totals.verified}</strong></div>
+        <div data-testid="free-revolver-total-ready"><ShieldCheck /><span>Aktive Free-Routen</span><strong>{totals.ready}</strong></div>
+        <div data-testid="free-revolver-total-verified"><Search /><span>Free-Quota bestätigt</span><strong>{totals.verified}</strong></div>
         <div><RefreshCw /><span>Wartet auf Upstream</span><strong>{totals.deferred}</strong></div>
-        <div><Lock /><span>Hart blockiert</span><strong>{totals.blocked}</strong></div>
+        <div data-testid="free-revolver-total-blocked"><Lock /><span>Hart blockiert</span><strong>{totals.blocked}</strong></div>
       </div>
 
       <section className="llm-catalog free-revolver-admin__onboarding">

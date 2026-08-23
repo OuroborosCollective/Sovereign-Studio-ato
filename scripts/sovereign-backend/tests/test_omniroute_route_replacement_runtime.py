@@ -292,6 +292,22 @@ def test_runtime_failure_disables_only_omniroute_and_never_freellmapi(
     assert "freellmpool:8080" not in all_material
     assert "sovereign-omniroute-auto" in all_material
     assert connection.commits == 1
+    assert connection.rollbacks == 0
+    advisory_locks = [
+        sql
+        for sql, _params in connection.cursor_instance.executed
+        if "pg_try_advisory_xact_lock" in sql
+    ]
+    assert len(advisory_locks) == 1
+    assert next(
+        index
+        for index, (sql, _params) in enumerate(connection.cursor_instance.executed)
+        if "pg_try_advisory_xact_lock" in sql
+    ) < next(
+        index
+        for index, (sql, _params) in enumerate(connection.cursor_instance.executed)
+        if "SET disabled=true" in sql
+    )
 
 
 def test_omniroute_401_canary_degrades_only_its_dedicated_route(
@@ -396,13 +412,47 @@ def test_activation_projection_rowcount_conflict_rolls_back_without_ready_state(
     assert result["blocker"] == "omniroute_canonical_state_rows_missing"
     assert query_writes == []
     assert connection.commits == 0
-    assert connection.rollbacks >= 2
+    assert connection.rollbacks == 1
     all_sql = "\n".join(
         sql for sql, _params in connection.cursor_instance.executed
     )
     assert "UPDATE llm_revolver_provider_sources" in all_sql
     assert "UPDATE llm_revolver_provider_models" in all_sql
     assert "SET disabled=false" in all_sql
+    assert "SET disabled=true" in all_sql
+
+
+def test_internal_failure_rolls_back_without_stale_failure_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = _Connection()
+    monkeypatch.setattr(runtime, "_runtime_identity", lambda: {
+        "sourceRevision": "a" * 40,
+        "sourceRevisionVerified": True,
+        "imageDigest": "sha256:" + "b" * 64,
+        "imageDigestVerified": True,
+    })
+    monkeypatch.setattr(
+        runtime,
+        "_models_readback",
+        lambda: (_ for _ in ()).throw(RuntimeError("unexpected decoder failure")),
+    )
+    service = runtime.OmniRouteExecutionRuntime(
+        query=lambda *_args, **_kwargs: None,
+        get_connection=lambda: connection,
+        audit=lambda *_args, **_kwargs: None,
+    )
+
+    result = service.scan_once()
+
+    assert result["ok"] is False
+    assert result["blocker"] == "omniroute_activation_internal_failure"
+    assert connection.commits == 0
+    assert connection.rollbacks == 1
+    all_sql = "\n".join(
+        sql for sql, _params in connection.cursor_instance.executed
+    )
+    assert "SET disabled=true" not in all_sql
 
 
 def test_audit_failure_after_committed_activation_does_not_project_rejection(
@@ -511,6 +561,28 @@ def test_status_is_ready_only_for_a_real_execution_verified_route(
     assert status["disabled"] is False
     assert status["activationState"] == "ready"
     assert status["blocker"] is None
+
+
+def test_status_query_requires_executable_source_and_model_supporting_state() -> None:
+    queries: list[str] = []
+
+    def query(sql: str, _params=None, **_kwargs):
+        queries.append(sql)
+        return _canonical_omniroute_route()
+
+    service = runtime.OmniRouteExecutionRuntime(
+        query=query,
+        get_connection=lambda: _Connection(),
+        audit=lambda *_args, **_kwargs: None,
+    )
+
+    assert service._canonical_route() is not None
+    contract_sql = " ".join(queries[-1].split())
+    assert "auth_mode='none' AND enabled=true AND status='healthy'" in contract_sql
+    assert (
+        "litellm_alias=%s AND enabled=true AND status='ready' "
+        "AND free_verified=true AND free_eligible=true"
+    ) in contract_sql
 
 
 @pytest.mark.parametrize("missing_field", ["source_present", "model_present"])

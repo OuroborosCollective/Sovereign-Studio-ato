@@ -152,6 +152,41 @@ describe('FreeRevolverControlCenter typed provider action boundary', () => {
     expect(api.discover).not.toHaveBeenCalled();
   });
 
+  it('counts accepted OmniRoute runtime truth in ready, verified, and blocked totals', () => {
+    const blockedApi = apiFixture();
+    const { rerender } = render(
+      <FreeRevolverControlCenter
+        api={blockedApi}
+        eligibilityEvidenceTtlHours={24}
+      />,
+    );
+
+    expect(within(screen.getByTestId('free-revolver-total-ready')).getByText('0')).toBeVisible();
+    expect(within(screen.getByTestId('free-revolver-total-verified')).getByText('0')).toBeVisible();
+    expect(within(screen.getByTestId('free-revolver-total-blocked')).getByText('1')).toBeVisible();
+
+    const readyApi = apiFixture();
+    readyApi.omniRoute = {
+      ...readyApi.omniRoute!,
+      ok: true,
+      disabled: false,
+      activationState: 'ready',
+      blocker: null,
+      confirmationCount: 2,
+      receiptSha256: 'c'.repeat(64),
+    };
+    rerender(
+      <FreeRevolverControlCenter
+        api={readyApi}
+        eligibilityEvidenceTtlHours={24}
+      />,
+    );
+
+    expect(within(screen.getByTestId('free-revolver-total-ready')).getByText('1')).toBeVisible();
+    expect(within(screen.getByTestId('free-revolver-total-verified')).getByText('1')).toBeVisible();
+    expect(within(screen.getByTestId('free-revolver-total-blocked')).getByText('0')).toBeVisible();
+  });
+
   it('retains the migrated FreeLLMPool entry only as non-executable history', () => {
     render(
       <FreeRevolverControlCenter
