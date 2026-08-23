@@ -248,6 +248,21 @@ describe('ChatSidebar', () => {
     });
   });
 
+  describe('Session Restore Handling', () => {
+    it('renders the restore indicator icon for restored session messages', () => {
+      const restoredMessage: ChatMessage = {
+        id: 'system:restore-age',
+        role: 'system',
+        content: 'Session wiederhergestellt (Alter: 2m)',
+        timestamp: BASE_TIME,
+      };
+
+      render(<ChatSidebar {...defaultProps} chatMessages={[restoredMessage]} />);
+
+      expect(screen.getByText('↻ Session wiederhergestellt (Alter: 2m)')).toBeDefined();
+    });
+  });
+
   describe('Error Handling', () => {
     it('handles empty suggestions array gracefully', () => {
       render(<ChatSidebar {...defaultProps} suggestions={[]} />);
