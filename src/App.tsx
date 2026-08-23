@@ -57,6 +57,7 @@ function SovereignChatApp() {
   const canonicalAgentJob = engineState.canonicalJob;
   const agentJob = selectSovereignEngineJobProjection(engineState);
   const liveProjections = engineState.projections;
+  const liveEvidenceAnchors = engineState.evidenceAnchors;
   const [janitorPreview, setJanitorPreview] = useState('');
   const [patternLearningEvidence, setPatternLearningEvidence] = useState<
     SovereignPatternLearningEvidence | undefined
@@ -163,16 +164,21 @@ function SovereignChatApp() {
     const refresh = async () => {
       if (polling || cancelled) return;
       polling = true;
-      const command = createSovereignEngineCommand(
+      const projectionCommand = createSovereignEngineCommand(
         engineState.sessionId,
         'READ_PROJECTIONS',
         { jobId },
       );
+      const evidenceCommand = createSovereignEngineCommand(
+        engineState.sessionId,
+        'READ_EVIDENCE_ANCHORS',
+        { jobId },
+      );
       try {
-        await runEngineCommand(command);
-      } catch {
-        // Projection is optional observation. A readback failure must neither
-        // mutate canonical job state nor invent a replacement projection.
+        await Promise.allSettled([
+          runEngineCommand(projectionCommand),
+          runEngineCommand(evidenceCommand),
+        ]);
       } finally {
         polling = false;
       }
@@ -454,6 +460,7 @@ function SovereignChatApp() {
           agentConfig={agentConfig}
           agentJob={agentJob}
           agentProjections={liveProjections}
+          agentEvidenceAnchors={liveEvidenceAnchors}
           patternLearningEvidence={patternLearningEvidence}
           agentJobStatus={agentIsRunning
             ? 'Sovereign Agent Auftrag läuft'

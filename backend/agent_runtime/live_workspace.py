@@ -9,6 +9,7 @@ attempt, worktree, Git and runtime readbacks for every bind or reconciliation.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from hashlib import sha256
 import json
 import re
@@ -67,6 +68,15 @@ CONTROL_STATES = frozenset({
     "SESSION_TERMINAL",
 })
 EVIDENCE_VERDICTS = frozenset({"OBSERVED", "UNVERIFIED", "VERIFIED", "BLOCKED", "CONTRADICTED", "STALE"})
+EVIDENCE_SOURCE_KINDS = frozenset({
+    "AGENT_RUN_RECEIPT",
+    "GITHUB_READBACK",
+    "PATCHMON_READBACK",
+    "DATABASE_READBACK",
+    "TARGET_READBACK",
+    "FRAME_OBSERVATION",
+})
+_FORBIDDEN_EVIDENCE_CLAIMS = frozenset({"EVERYTHING_WORKS", "READY", "DONE", "GREEN", "ALL_GREEN"})
 CHAT_BUBBLE_KINDS = frozenset({
     "MISSION_INPUT",
     "REQUIRED_QUESTION",
@@ -600,74 +610,439 @@ class VisualProjectionEventV1:
 
 @dataclass(frozen=True)
 class WorkspaceEvidenceAnchorV1:
-    claim_type: str
+    anchor_id: str
+    claim_kind: str
     verdict: str
     session_binding_hash: str
+    run_id: str
+    task_id: str
     attempt_id: str
-    source_revision: str
-    source_receipt_hashes: tuple[str, ...]
-    observation_event_id: str | None
+    action_id: str
+    scope: str
+    source_kind: str
+    source_refs: tuple[str, ...]
+    repository_revision: str
+    target_revision: str | None
+    image_digest: str | None
+    runtime_identity_hash: str | None
+    frame_observation_id: str | None
+    observed_at: str
     requires_patchmon: bool
-    anchor_hash: str
+    evidence_hash: str
+
+    @property
+    def claim_type(self) -> str:
+        return self.claim_kind
+
+    @property
+    def source_revision(self) -> str:
+        return self.repository_revision
+
+    @property
+    def source_receipt_hashes(self) -> tuple[str, ...]:
+        return self.source_refs
+
+    @property
+    def observation_event_id(self) -> str | None:
+        return self.frame_observation_id
+
+    @property
+    def anchor_hash(self) -> str:
+        return self.evidence_hash
+
+    @staticmethod
+    def _observed_at(value: object) -> str:
+        raw = _text(value, "observed_at", 64)
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise FleetContractError("observed_at must be an ISO-8601 timestamp") from exc
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise FleetContractError("observed_at must include a timezone")
+        return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    @staticmethod
+    def _image_digest(value: object | None) -> str | None:
+        if value in (None, ""):
+            return None
+        normalized = _text(value, "image_digest", 80).lower()
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", normalized):
+            raise FleetContractError("image_digest must be immutable")
+        return normalized
 
     @classmethod
     def create(
         cls,
         *,
         session: LiveWorkspaceSessionV1,
-        claim_type: str,
+        claim_kind: str | None = None,
+        claim_type: str | None = None,
         verdict: str,
-        source_receipt_hashes: Sequence[str],
-        source_revision: str,
+        scope: str,
+        source_kind: str,
+        source_refs: Sequence[str] | None = None,
+        source_receipt_hashes: Sequence[str] | None = None,
+        repository_revision: str | None = None,
+        source_revision: str | None = None,
+        action_id: str | None = None,
+        observed_at: str,
         observation_event: VisualProjectionEventV1 | None = None,
+        target_revision: str | None = None,
+        image_digest: str | None = None,
+        runtime_identity_hash: str | None = None,
         requires_patchmon: bool = False,
     ) -> "WorkspaceEvidenceAnchorV1":
         normalized_verdict = _text(verdict, "verdict", 32).upper()
         if normalized_verdict not in EVIDENCE_VERDICTS:
             raise FleetContractError("evidence verdict is invalid")
-        receipts = _bounded_hashes(source_receipt_hashes, "source_receipt_hashes")
-        if not receipts:
-            raise FleetContractError("canonical evidence receipts are required")
+        normalized_source_kind = _text(source_kind, "source_kind", 80).upper()
+        if normalized_source_kind not in EVIDENCE_SOURCE_KINDS:
+            raise FleetContractError("evidence source kind is not canonical")
+        refs = _bounded_hashes(
+            source_refs if source_refs is not None else source_receipt_hashes or (),
+            "source_refs",
+        )
         if observation_event and observation_event.session_binding_hash != session.session_binding_hash:
             raise FleetContractError("observation event is bound to another session")
-        normalized_claim = _text(claim_type, "claim_type", 120).upper()
-        if normalized_verdict == "VERIFIED" and observation_event and not receipts:
+        if observation_event and observation_event.attempt_id != session.attempt_id:
+            raise FleetContractError("observation event is bound to another attempt")
+        normalized_claim = _text(claim_kind or claim_type, "claim_kind", 120).upper()
+        if normalized_claim in _FORBIDDEN_EVIDENCE_CLAIMS or normalized_claim.startswith(("EVERYTHING_", "ALL_")):
+            raise FleetContractError("evidence claim must be granular")
+        normalized_scope = _text(scope, "scope", 500)
+        if not refs:
+            raise FleetContractError("canonical evidence references are required")
+        if normalized_verdict == "VERIFIED" and normalized_source_kind == "FRAME_OBSERVATION":
             raise FleetContractError("screen observation cannot verify a claim")
+        repository_head = _revision(
+            repository_revision or source_revision,
+            "repository_revision",
+        )
+        target_head = _revision(target_revision, "target_revision") if target_revision else None
+        runtime_hash = _hash(runtime_identity_hash, "runtime_identity_hash") if runtime_identity_hash else None
+        digest = cls._image_digest(image_digest)
+        if requires_patchmon and normalized_verdict == "VERIFIED":
+            if normalized_source_kind != "PATCHMON_READBACK" or not target_head or not digest or not runtime_hash:
+                raise FleetContractError("verified runtime claim requires PatchMon revision, digest and runtime identity")
+        selected_action_id = _text(
+            action_id or (observation_event.action_id if observation_event else None),
+            "action_id",
+            160,
+        )
+        observed = cls._observed_at(observed_at)
         payload = {
             "schemaVersion": EVIDENCE_ANCHOR_SCHEMA_VERSION,
-            "claimType": normalized_claim,
+            "claimKind": normalized_claim,
             "verdict": normalized_verdict,
             "sessionBindingHash": session.session_binding_hash,
+            "runId": session.run_id,
+            "taskId": session.task_id,
             "attemptId": session.attempt_id,
-            "sourceRevision": _revision(source_revision, "source_revision"),
-            "sourceReceiptHashes": list(receipts),
-            "observationEventId": observation_event.event_id if observation_event else None,
+            "actionId": selected_action_id,
+            "scope": normalized_scope,
+            "sourceKind": normalized_source_kind,
+            "sourceRefs": list(refs),
+            "repositoryRevision": repository_head,
+            "targetRevision": target_head,
+            "imageDigest": digest,
+            "runtimeIdentityHash": runtime_hash,
+            "frameObservationId": observation_event.event_id if observation_event else None,
+            "observedAt": observed,
             "requiresPatchMon": bool(requires_patchmon),
         }
+        evidence_hash = stable_hash(payload)
         return cls(
-            claim_type=payload["claimType"],
+            anchor_id=f"evidence-{evidence_hash[:24]}",
+            claim_kind=payload["claimKind"],
             verdict=payload["verdict"],
             session_binding_hash=session.session_binding_hash,
+            run_id=session.run_id,
+            task_id=session.task_id,
             attempt_id=session.attempt_id,
-            source_revision=payload["sourceRevision"],
-            source_receipt_hashes=receipts,
-            observation_event_id=payload["observationEventId"],
+            action_id=payload["actionId"],
+            scope=payload["scope"],
+            source_kind=payload["sourceKind"],
+            source_refs=refs,
+            repository_revision=payload["repositoryRevision"],
+            target_revision=payload["targetRevision"],
+            image_digest=payload["imageDigest"],
+            runtime_identity_hash=payload["runtimeIdentityHash"],
+            frame_observation_id=payload["frameObservationId"],
+            observed_at=payload["observedAt"],
             requires_patchmon=payload["requiresPatchMon"],
-            anchor_hash=stable_hash(payload),
+            evidence_hash=evidence_hash,
         )
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "WorkspaceEvidenceAnchorV1":
+        raw = _mapping(value, "workspace_evidence_anchor")
+        if raw.get("schemaVersion") != EVIDENCE_ANCHOR_SCHEMA_VERSION:
+            raise FleetContractError("evidence anchor schema is invalid")
+        canonical = {
+            "schemaVersion": EVIDENCE_ANCHOR_SCHEMA_VERSION,
+            "claimKind": _text(raw.get("claimKind"), "claim_kind", 120).upper(),
+            "verdict": _text(raw.get("verdict"), "verdict", 32).upper(),
+            "sessionBindingHash": _hash(raw.get("sessionBindingHash"), "session_binding_hash"),
+            "runId": _text(raw.get("runId"), "run_id", 160),
+            "taskId": _text(raw.get("taskId"), "task_id", 160),
+            "attemptId": _text(raw.get("attemptId"), "attempt_id", 160),
+            "actionId": _text(raw.get("actionId"), "action_id", 160),
+            "scope": _text(raw.get("scope"), "scope", 500),
+            "sourceKind": _text(raw.get("sourceKind"), "source_kind", 80).upper(),
+            "sourceRefs": list(_bounded_hashes(raw.get("sourceRefs"), "source_refs")),
+            "repositoryRevision": _revision(raw.get("repositoryRevision"), "repository_revision"),
+            "targetRevision": _revision(raw.get("targetRevision"), "target_revision") if raw.get("targetRevision") else None,
+            "imageDigest": cls._image_digest(raw.get("imageDigest")),
+            "runtimeIdentityHash": _hash(raw.get("runtimeIdentityHash"), "runtime_identity_hash") if raw.get("runtimeIdentityHash") else None,
+            "frameObservationId": _text(raw.get("frameObservationId"), "frame_observation_id", 160) if raw.get("frameObservationId") else None,
+            "observedAt": cls._observed_at(raw.get("observedAt")),
+            "requiresPatchMon": raw.get("requiresPatchMon") is True,
+        }
+        if canonical["claimKind"] in _FORBIDDEN_EVIDENCE_CLAIMS:
+            raise FleetContractError("evidence claim must be granular")
+        if canonical["verdict"] not in EVIDENCE_VERDICTS or canonical["sourceKind"] not in EVIDENCE_SOURCE_KINDS:
+            raise FleetContractError("evidence anchor verdict or source is invalid")
+        if canonical["verdict"] == "VERIFIED" and canonical["sourceKind"] == "FRAME_OBSERVATION":
+            raise FleetContractError("screen observation cannot verify a claim")
+        if canonical["requiresPatchMon"] and canonical["verdict"] == "VERIFIED" and (
+            canonical["sourceKind"] != "PATCHMON_READBACK"
+            or not canonical["targetRevision"]
+            or not canonical["imageDigest"]
+            or not canonical["runtimeIdentityHash"]
+        ):
+            raise FleetContractError("verified runtime claim requires PatchMon revision, digest and runtime identity")
+        evidence_hash = stable_hash(canonical)
+        if raw.get("evidenceHash") != evidence_hash or raw.get("anchorId") != f"evidence-{evidence_hash[:24]}":
+            raise FleetContractError("evidence anchor hash is invalid")
+        return cls(
+            anchor_id=str(raw["anchorId"]),
+            claim_kind=str(canonical["claimKind"]),
+            verdict=str(canonical["verdict"]),
+            session_binding_hash=str(canonical["sessionBindingHash"]),
+            run_id=str(canonical["runId"]),
+            task_id=str(canonical["taskId"]),
+            attempt_id=str(canonical["attemptId"]),
+            action_id=str(canonical["actionId"]),
+            scope=str(canonical["scope"]),
+            source_kind=str(canonical["sourceKind"]),
+            source_refs=tuple(canonical["sourceRefs"]),
+            repository_revision=str(canonical["repositoryRevision"]),
+            target_revision=canonical["targetRevision"],
+            image_digest=canonical["imageDigest"],
+            runtime_identity_hash=canonical["runtimeIdentityHash"],
+            frame_observation_id=canonical["frameObservationId"],
+            observed_at=str(canonical["observedAt"]),
+            requires_patchmon=bool(canonical["requiresPatchMon"]),
+            evidence_hash=evidence_hash,
+        )
+
+    @classmethod
+    def from_agent_run_receipt(
+        cls,
+        *,
+        session: LiveWorkspaceSessionV1,
+        receipt: Mapping[str, Any],
+        observation_event: VisualProjectionEventV1 | None,
+        observed_at: str,
+    ) -> "WorkspaceEvidenceAnchorV1":
+        """Reference one already-persisted canonical Agent Run receipt.
+
+        The receipt remains the truth owner. The anchor only binds a claim-sized
+        monitor projection to its hash and exact Attempt/revision identity.
+        """
+
+        from .agent_run_receipts import canonical_sha256
+
+        raw = _mapping(receipt, "agent_run_receipt")
+        header = _mapping(raw.get("header"), "agent_run_receipt.header")
+        body = dict(_mapping(raw.get("body"), "agent_run_receipt.body"))
+        stored_hash = _hash(header.get("hash"), "agent_run_receipt.hash")
+        body_hash = _hash(body.pop("receipt_sha256", None), "agent_run_receipt.body_hash")
+        if stored_hash != body_hash or canonical_sha256(body) != stored_hash:
+            raise FleetContractError("agent run receipt hash is invalid")
+        if body.get("schema_version") != "sovereign.agent-run-receipt.v1":
+            raise FleetContractError("agent run receipt schema is invalid")
+        if _text(body.get("agent_run_id"), "agent_run_id", 160) != session.run_id:
+            raise FleetContractError("agent run receipt belongs to another run")
+        operation = _text(body.get("operation_identity"), "operation_identity", 500)
+        if (
+            f":attempt:{session.attempt_id}:" not in operation
+            or f":assignment:{session.assignment_hash}:" not in operation
+        ):
+            raise FleetContractError("agent run receipt belongs to another attempt")
+        action_id = _text(body.get("call_id"), "call_id", 160)
+        if observation_event and observation_event.action_id != action_id:
+            raise FleetContractError("observation event does not match the canonical action receipt")
+        gate = _text(body.get("evidence_gate_result"), "evidence_gate_result", 32).upper()
+        test_kind = _text(body.get("test_execution_kind"), "test_execution_kind", 40).lower()
+        tool_name = _text(body.get("tool_name"), "tool_name", 160).lower()
+        if gate == "PASS" and test_kind != "nonqualifying-test":
+            verdict = "VERIFIED"
+        elif gate == "FAIL":
+            verdict = "CONTRADICTED"
+        elif gate == "BLOCKED":
+            verdict = "BLOCKED"
+        else:
+            verdict = "UNVERIFIED"
+        claim_kind = (
+            "TEST_EXECUTION_RECEIPT_MATCH"
+            if test_kind == "qualifying-test"
+            else "WORKTREE_READBACK_RECEIPT_MATCH"
+        )
+        refs = [
+            stored_hash,
+            _hash(body.get("authoritative_readback_sha256"), "authoritative_readback_sha256"),
+        ]
+        if test_kind == "qualifying-test":
+            refs.append(_hash(body.get("test_evidence_sha256"), "test_evidence_sha256"))
+        return cls.create(
+            session=session,
+            claim_kind=claim_kind,
+            verdict=verdict,
+            scope=(
+                f"tool={tool_name};input={_hash(body.get('input_sha256'), 'input_sha256')};"
+                f"effect={_text(body.get('observed_effect'), 'observed_effect', 40).lower()}"
+            ),
+            source_kind="AGENT_RUN_RECEIPT",
+            source_refs=refs,
+            repository_revision=_revision(body.get("base_commit_sha"), "base_commit_sha"),
+            action_id=action_id,
+            observed_at=observed_at,
+            observation_event=observation_event,
+        )
+
+    @classmethod
+    def from_github_draft_pr_readback(
+        cls,
+        *,
+        binding_anchor: "WorkspaceEvidenceAnchorV1",
+        readback: Mapping[str, Any],
+        source_ref: str,
+        observed_at: str,
+    ) -> "WorkspaceEvidenceAnchorV1":
+        """Bind a verified Draft-PR claim to the exact GitHub readback source."""
+
+        raw = _mapping(readback, "github_draft_pr_readback")
+        pr_number = raw.get("prNumber")
+        pr_url = _text(raw.get("prUrl"), "pr_url", 500)
+        head = _revision(raw.get("headSha"), "head_sha")
+        if (
+            isinstance(pr_number, bool)
+            or not isinstance(pr_number, int)
+            or pr_number < 1
+            or not re.fullmatch(r"https://github\.com/[^/]+/[^/]+/pull/[1-9][0-9]*", pr_url)
+            or _revision(raw.get("publishedHeadSha"), "published_head_sha") != head
+            or _revision(raw.get("readbackHeadSha"), "readback_head_sha") != head
+            or raw.get("draftVerified") is not True
+            or raw.get("prStateVerified") != "open"
+            or raw.get("readbackVerified") is not True
+            or raw.get("checksReadbackVerified") is not True
+        ):
+            raise FleetContractError("GitHub Draft PR readback is incomplete or contradictory")
+        observed = cls._observed_at(observed_at)
+        canonical = {
+            "schemaVersion": EVIDENCE_ANCHOR_SCHEMA_VERSION,
+            "claimKind": "DRAFT_PR_EXISTS_AT_EXACT_HEAD",
+            "verdict": "VERIFIED",
+            "sessionBindingHash": binding_anchor.session_binding_hash,
+            "runId": binding_anchor.run_id,
+            "taskId": binding_anchor.task_id,
+            "attemptId": binding_anchor.attempt_id,
+            "actionId": f"github-draft-pr-readback-{pr_number}",
+            "scope": f"pr={pr_number};draft=true;state=open;head={head}",
+            "sourceKind": "GITHUB_READBACK",
+            "sourceRefs": list(_bounded_hashes([source_ref], "source_refs")),
+            "repositoryRevision": head,
+            "targetRevision": None,
+            "imageDigest": None,
+            "runtimeIdentityHash": None,
+            "frameObservationId": None,
+            "observedAt": observed,
+            "requiresPatchMon": False,
+        }
+        evidence_hash = stable_hash(canonical)
+        return cls(
+            anchor_id=f"evidence-{evidence_hash[:24]}",
+            claim_kind="DRAFT_PR_EXISTS_AT_EXACT_HEAD",
+            verdict="VERIFIED",
+            session_binding_hash=binding_anchor.session_binding_hash,
+            run_id=binding_anchor.run_id,
+            task_id=binding_anchor.task_id,
+            attempt_id=binding_anchor.attempt_id,
+            action_id=f"github-draft-pr-readback-{pr_number}",
+            scope=str(canonical["scope"]),
+            source_kind="GITHUB_READBACK",
+            source_refs=tuple(canonical["sourceRefs"]),
+            repository_revision=head,
+            target_revision=None,
+            image_digest=None,
+            runtime_identity_hash=None,
+            frame_observation_id=None,
+            observed_at=observed,
+            requires_patchmon=False,
+            evidence_hash=evidence_hash,
+        )
+
+    def current_verdict(
+        self,
+        *,
+        session: LiveWorkspaceSessionV1,
+        repository_revision: str,
+        target_revision: str | None = None,
+        image_digest: str | None = None,
+        runtime_identity_hash: str | None = None,
+    ) -> tuple[str, tuple[str, ...]]:
+        """Project freshness without changing the immutable source anchor."""
+
+        if self.session_binding_hash != session.session_binding_hash or self.attempt_id != session.attempt_id:
+            raise FleetContractError("evidence anchor belongs to another attempt")
+        reasons: list[str] = []
+        if _revision(repository_revision, "repository_revision") != self.repository_revision:
+            reasons.append("REPOSITORY_REVISION_CHANGED")
+        if self.target_revision and target_revision and _revision(target_revision, "target_revision") != self.target_revision:
+            reasons.append("TARGET_REVISION_CONTRADICTED")
+        if self.image_digest and image_digest and self._image_digest(image_digest) != self.image_digest:
+            reasons.append("IMAGE_DIGEST_CONTRADICTED")
+        if self.runtime_identity_hash and runtime_identity_hash and _hash(runtime_identity_hash, "runtime_identity_hash") != self.runtime_identity_hash:
+            reasons.append("RUNTIME_IDENTITY_CONTRADICTED")
+        if any(reason.endswith("CONTRADICTED") for reason in reasons):
+            return "CONTRADICTED", tuple(reasons)
+        if reasons:
+            return "STALE", tuple(reasons)
+        if self.requires_patchmon and (not target_revision or not image_digest or not runtime_identity_hash):
+            return "UNVERIFIED", ("PATCHMON_READBACK_UNAVAILABLE",)
+        return self.verdict, ()
+
+    def to_read_model(self, *, verdict: str | None = None, freshness_reasons: Sequence[str] = ()) -> dict[str, Any]:
+        payload = self.to_dict()
+        payload["sourceVerdict"] = self.verdict
+        payload["verdict"] = verdict or self.verdict
+        payload["freshnessReasons"] = list(freshness_reasons)
+        payload["authoritative"] = False
+        return payload
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "schemaVersion": EVIDENCE_ANCHOR_SCHEMA_VERSION,
-            "claimType": self.claim_type,
+            "anchorId": self.anchor_id,
+            "claimKind": self.claim_kind,
             "verdict": self.verdict,
             "sessionBindingHash": self.session_binding_hash,
+            "runId": self.run_id,
+            "taskId": self.task_id,
             "attemptId": self.attempt_id,
-            "sourceRevision": self.source_revision,
-            "sourceReceiptHashes": list(self.source_receipt_hashes),
-            "observationEventId": self.observation_event_id,
+            "actionId": self.action_id,
+            "scope": self.scope,
+            "sourceKind": self.source_kind,
+            "sourceRefs": list(self.source_refs),
+            "repositoryRevision": self.repository_revision,
+            "targetRevision": self.target_revision,
+            "imageDigest": self.image_digest,
+            "runtimeIdentityHash": self.runtime_identity_hash,
+            "frameObservationId": self.frame_observation_id,
+            "observedAt": self.observed_at,
             "requiresPatchMon": self.requires_patchmon,
-            "anchorHash": self.anchor_hash,
+            "evidenceHash": self.evidence_hash,
             "authoritative": False,
         }
 

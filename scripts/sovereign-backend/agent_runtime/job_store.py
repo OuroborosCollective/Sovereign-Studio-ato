@@ -220,6 +220,137 @@ def append_agent_projection(conn: Any, *, job_id: str, projection: Mapping[str, 
     conn.commit()
 
 
+def append_agent_evidence_anchor(
+    conn: Any,
+    *,
+    job_id: str,
+    anchor: Mapping[str, Any],
+    commit: bool = True,
+) -> None:
+    """Persist one hash-validated evidence projection in the existing event store."""
+
+    from .live_workspace import WorkspaceEvidenceAnchorV1
+
+    canonical = WorkspaceEvidenceAnchorV1.from_dict(anchor).to_dict()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO sovereign_agent_events (job_id, stage, level, message, payload)
+            VALUES (%s, 'live_workspace_evidence_anchor', 'info', %s, %s::jsonb)
+            """,
+            (
+                job_id,
+                sanitize_agent_text(
+                    f"Evidence anchor recorded: {canonical['claimKind']} ({canonical['verdict']}).",
+                    300,
+                ),
+                _json(canonical),
+            ),
+        )
+    if commit:
+        conn.commit()
+
+
+def append_agent_github_draft_pr_readback(
+    conn: Any,
+    *,
+    job_id: str,
+    readback: Mapping[str, Any],
+    commit: bool = True,
+) -> str:
+    """Persist the Draft-PR gate's bounded GitHub readback as an anchor source."""
+
+    from .fleet_supervisor import stable_hash
+
+    canonical = {
+        "schemaVersion": "sovereign.github-draft-pr-readback.v1",
+        "prUrl": str(readback.get("prUrl") or ""),
+        "prNumber": readback.get("prNumber"),
+        "headSha": str(readback.get("headSha") or "").lower(),
+        "publishedHeadSha": str(readback.get("publishedHeadSha") or "").lower(),
+        "readbackHeadSha": str(readback.get("readbackHeadSha") or "").lower(),
+        "draftVerified": readback.get("draftVerified") is True,
+        "prStateVerified": str(readback.get("prStateVerified") or ""),
+        "readbackVerified": readback.get("readbackVerified") is True,
+        "checksReadbackVerified": readback.get("checksReadbackVerified") is True,
+        "ciState": str(readback.get("ciState") or "none"),
+        "checkRunCount": int(readback.get("checkRunCount") or 0),
+        "checksPendingCount": int(readback.get("checksPendingCount") or 0),
+        "checksSuccessCount": int(readback.get("checksSuccessCount") or 0),
+        "checksFailureCount": int(readback.get("checksFailureCount") or 0),
+        "statusContextCount": int(readback.get("statusContextCount") or 0),
+    }
+    source_hash = stable_hash(canonical)
+    payload = {**canonical, "sourceHash": source_hash, "authoritative": True}
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO sovereign_agent_events (job_id, stage, level, message, payload)
+            VALUES (%s, 'github_draft_pr_readback', 'success', %s, %s::jsonb)
+            """,
+            (
+                job_id,
+                sanitize_agent_text(
+                    f"GitHub Draft PR #{canonical['prNumber']} read back at exact head {canonical['headSha']}.",
+                    300,
+                ),
+                _json(payload),
+            ),
+        )
+    if commit:
+        conn.commit()
+    return source_hash
+
+
+def list_agent_evidence_anchors(
+    conn: Any,
+    *,
+    user_id: str,
+    job_id: str,
+    limit: int = 100,
+) -> tuple[dict[str, Any], ...]:
+    """Read only validated anchors for the authenticated Agent Job owner."""
+
+    from .fleet_supervisor import FleetContractError
+    from .live_workspace import WorkspaceEvidenceAnchorV1
+
+    safe_limit = max(1, min(int(limit), 200))
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT recent.payload
+            FROM (
+                SELECT event.payload, event.created_at, event.id
+                FROM sovereign_agent_events AS event
+                JOIN sovereign_agent_jobs AS job ON job.job_id = event.job_id
+                WHERE event.job_id = %s
+                  AND job.user_id = %s
+                  AND event.stage = 'live_workspace_evidence_anchor'
+                ORDER BY event.created_at DESC, event.id DESC
+                LIMIT %s
+            ) AS recent
+            ORDER BY recent.created_at ASC, recent.id ASC
+            """,
+            (job_id, user_id, safe_limit),
+        )
+        rows = cur.fetchall()
+    anchors: list[dict[str, Any]] = []
+    for row in rows:
+        raw = row.get("payload") if isinstance(row, Mapping) else None
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+        if not isinstance(raw, Mapping):
+            continue
+        try:
+            anchors.append(WorkspaceEvidenceAnchorV1.from_dict(raw).to_dict())
+        except (FleetContractError, TypeError, ValueError):
+            continue
+    return tuple(anchors)
+
+
 def list_agent_projections(conn: Any, *, user_id: str, job_id: str, limit: int = 100) -> tuple[dict[str, Any], ...]:
     """Return only projection observations belonging to the authenticated job owner."""
     safe_limit = max(1, min(int(limit), 200))

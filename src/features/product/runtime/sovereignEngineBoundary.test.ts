@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   SovereignAgentJobSnapshot,
   SovereignLiveProjection,
+  SovereignWorkspaceEvidenceAnchor,
 } from './sovereignAgentRuntime';
 import {
   createInitialSovereignEngineState,
@@ -54,6 +55,31 @@ function projection(): SovereignLiveProjection {
   };
 }
 
+function evidenceAnchor(
+  overrides: Partial<SovereignWorkspaceEvidenceAnchor> = {},
+): SovereignWorkspaceEvidenceAnchor {
+  return {
+    anchorId: `evidence-${'e'.repeat(24)}`,
+    claimKind: 'TEST_EXECUTION_RECEIPT_MATCH',
+    verdict: 'VERIFIED',
+    sourceVerdict: 'VERIFIED',
+    sessionBindingHash: 'f'.repeat(64),
+    runId: 'run-1',
+    taskId: 'task-1',
+    attemptId: 'attempt-1',
+    actionId: 'action-1',
+    scope: 'tool=test;effect=read',
+    sourceKind: 'AGENT_RUN_RECEIPT',
+    sourceRefs: ['a'.repeat(64)],
+    repositoryRevision: 'b'.repeat(40),
+    observedAt: '2026-08-23T03:30:00Z',
+    freshnessReasons: [],
+    evidenceHash: 'c'.repeat(64),
+    authoritative: false,
+    ...overrides,
+  };
+}
+
 function transport(overrides: Partial<SovereignEngineTransport> = {}): SovereignEngineTransport {
   return {
     listJobs: vi.fn(async () => []),
@@ -62,6 +88,7 @@ function transport(overrides: Partial<SovereignEngineTransport> = {}): Sovereign
     startToolchainJob: vi.fn(async () => job()),
     cancelJob: vi.fn(async () => job({ status: 'blocked', lastError: 'Cancelled by user.' })),
     getProjections: vi.fn(async () => [projection()]),
+    getEvidenceAnchors: vi.fn(async () => [evidenceAnchor()]),
     runJanitor: vi.fn(async () => ({
       ok: true,
       jobId: JOB_ID,
@@ -251,6 +278,48 @@ describe('Sovereign Typed Engine Boundary', () => {
     expect(next.projections).toHaveLength(1);
     expect(next.canonicalJob.status).toBe('failed');
     expect(next.projections[0]).toMatchObject({ authoritative: false, claim: 'OBSERVED' });
+  });
+
+  it('admits evidence anchors only through a matching accepted typed command and canonical backend event', async () => {
+    const initial = createInitialSovereignEngineState({ sessionId: SESSION, job: job() });
+    const command = createSovereignEngineCommand(
+      SESSION,
+      'READ_EVIDENCE_ANCHORS',
+      { jobId: JOB_ID },
+      { commandId: 'command-evidence-1', correlationId: 'correlation-evidence-1', issuedAt: 10 },
+    );
+    const event = await executeSovereignEngineCommand(command, transport(), () => 12);
+
+    expect(sovereignEngineReducer(initial, event)).toBe(initial);
+
+    const started = sovereignEngineReducer(
+      initial,
+      createSovereignEngineCommandAcceptedEvent(command, () => 11),
+    );
+    const foreign = { ...event, eventId: 'event-evidence-foreign', jobId: 'job-other' };
+    expect(sovereignEngineReducer(started, foreign)).toBe(started);
+
+    const accepted = sovereignEngineReducer(started, event);
+    expect(accepted.evidenceAnchors).toEqual([evidenceAnchor()]);
+    expect(accepted.canonicalJob).toMatchObject({ jobId: JOB_ID, status: 'running' });
+    expect(accepted.pendingCommands).toEqual({});
+  });
+
+  it('rejects invalid evidence anchors before they can enter an accepted engine event', async () => {
+    const command = createSovereignEngineCommand(
+      SESSION,
+      'READ_EVIDENCE_ANCHORS',
+      { jobId: JOB_ID },
+      { commandId: 'command-evidence-invalid', correlationId: 'correlation-evidence-invalid', issuedAt: 10 },
+    );
+
+    await expect(executeSovereignEngineCommand(
+      command,
+      transport({
+        getEvidenceAnchors: vi.fn(async () => [evidenceAnchor({ sourceKind: 'FRAME_OBSERVATION', verdict: 'VERIFIED' })]),
+      }),
+      () => 12,
+    )).rejects.toThrow('invalid evidence anchor contract');
   });
 
   it('keeps local blockers outside canonical runtime truth', () => {

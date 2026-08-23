@@ -72,6 +72,33 @@ export interface SovereignLiveProjection {
   claim: 'OBSERVED';
 }
 
+export type SovereignEvidenceVerdict = 'OBSERVED' | 'UNVERIFIED' | 'VERIFIED' | 'BLOCKED' | 'CONTRADICTED' | 'STALE';
+export type SovereignEvidenceSourceKind = 'AGENT_RUN_RECEIPT' | 'GITHUB_READBACK' | 'PATCHMON_READBACK' | 'DATABASE_READBACK' | 'TARGET_READBACK' | 'FRAME_OBSERVATION';
+
+export interface SovereignWorkspaceEvidenceAnchor {
+  anchorId: string;
+  claimKind: string;
+  verdict: SovereignEvidenceVerdict;
+  sourceVerdict: SovereignEvidenceVerdict;
+  sessionBindingHash: string;
+  runId: string;
+  taskId: string;
+  attemptId: string;
+  actionId: string;
+  scope: string;
+  sourceKind: SovereignEvidenceSourceKind;
+  sourceRefs: readonly string[];
+  repositoryRevision: string;
+  targetRevision?: string;
+  imageDigest?: string;
+  runtimeIdentityHash?: string;
+  frameObservationId?: string;
+  observedAt: string;
+  freshnessReasons: readonly string[];
+  evidenceHash: string;
+  authoritative: false;
+}
+
 export interface SovereignAgentJobSnapshot {
   jobId?: string;
   runtimeId?: string;

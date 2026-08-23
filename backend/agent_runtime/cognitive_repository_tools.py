@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 import importlib
 import json
 from pathlib import Path, PurePosixPath
@@ -47,7 +48,10 @@ from .fleet_supervisor import (
     create_worker_assignment,
     stable_hash,
 )
-from .job_store import read_agent_job
+from .job_store import append_agent_evidence_anchor, append_agent_projection, read_agent_job
+from .live_workspace import WorkspaceEvidenceAnchorV1
+from .live_workspace_context import LiveWorkspaceContextResolver
+from .live_workspace_projection import projection_for_tool_result, public_projection_event
 from .tool_events import append_tool_result_to_job
 from .tool_runner import run_agent_job_tool
 from .tools.base import ToolResult
@@ -1177,7 +1181,7 @@ class BoundRepositoryToolset:
                 if result.status == "blocked"
                 else "FAIL"
             )
-            finish_agent_tool_call(
+            canonical_receipt = finish_agent_tool_call(
                 conn,
                 tool_call_id=tool_call_id,
                 status=(
@@ -1236,6 +1240,61 @@ class BoundRepositoryToolset:
                     if result.status == "blocked" else "AGENT_REPOSITORY_TOOL_FAILED"
                 ),
             )
+            if assignment is not None and attempt is not None and attempt_workspace is not None:
+                # Best-effort display side channel only. Failure cannot alter the
+                # canonical tool result, receipt or controller state.
+                try:
+                    context = LiveWorkspaceContextResolver(workspace_root=self.workspace_root)(conn, job)
+                    if context is not None and context.role == role:
+                        receipt_hash = str(canonical_receipt.get("header", {}).get("hash") or "")
+                        projection_result = ToolResult(
+                            tool=merged.tool,
+                            allowed=merged.allowed,
+                            status=merged.status,
+                            stdout=merged.stdout,
+                            stderr=merged.stderr,
+                            output=merged.output,
+                            error=merged.error,
+                            metadata={
+                                **dict(merged.metadata or {}),
+                                "actionId": tool_call_id,
+                                "providerNeutralEvidenceSha256": receipt_hash,
+                            },
+                            changed_files=merged.changed_files,
+                            diff_summary=merged.diff_summary,
+                            test_summary=merged.test_summary,
+                            blocker=merged.blocker,
+                            exit_code=merged.exit_code,
+                            events=merged.events,
+                            predictive_signal=merged.predictive_signal,
+                        )
+                        projection = projection_for_tool_result(
+                            job=job,
+                            attempt_workspace=context.attempt_workspace,
+                            route_action=action,
+                            parameters=parameters,
+                            result=projection_result,
+                            session=context.session,
+                            reconciliation=context.reconciliation,
+                        )
+                        anchor = WorkspaceEvidenceAnchorV1.from_agent_run_receipt(
+                            session=context.session,
+                            receipt=canonical_receipt,
+                            observation_event=projection,
+                            observed_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                        )
+                        append_agent_projection(
+                            conn,
+                            job_id=self.job_id,
+                            projection=public_projection_event(projection),
+                        )
+                        append_agent_evidence_anchor(
+                            conn,
+                            job_id=self.job_id,
+                            anchor=anchor.to_dict(),
+                        )
+                except Exception:
+                    pass
         except Exception as exc:
             self._record_call(role, mutation=False, failed=True)
             if tool_call_id and job is not None and before_git is not None and mcp_identity is not None and repository_path is not None:

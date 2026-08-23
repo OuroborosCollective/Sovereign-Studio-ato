@@ -25,14 +25,18 @@ describe('DevChat Draft PR execution contract', () => {
     expect(app).toContain("'START_REPOSITORY_EXECUTION'");
     expect(app).toContain("'RESTORE_LATEST_JOB'");
     expect(app).toContain("'CREATE_DRAFT_PR'");
+    expect(app).toContain("'READ_EVIDENCE_ANCHORS'");
     expect(app).toContain('executeSovereignEngineCommand(command, agentClient)');
     expect(app).toContain('expectedHeadSha: input.expectedHeadSha');
     expect(app).not.toContain('agentClient.startRepositoryExecution(');
     expect(app).not.toContain('agentClient.listJobs(');
     expect(app).not.toContain('agentClient.createDraftPr(');
+    expect(app).not.toContain('agentClient.getEvidenceAnchors(');
     expect(boundary).toContain('await transport.startRepositoryExecution(command.payload.input)');
     expect(boundary).toContain('await transport.createDraftPr(command.payload.jobId, command.payload.githubAccessToken)');
+    expect(boundary).toContain('await transport.getEvidenceAnchors(command.payload.jobId)');
     expect(boundary).toContain("'CANONICAL_JOB_SNAPSHOT_ACCEPTED'");
+    expect(boundary).toContain("'CANONICAL_EVIDENCE_ANCHORS_ACCEPTED'");
     expect(client).toContain("'/api/user/agent/swarm/run'");
     expect(client).toContain('expectedHeadSha: input.expectedHeadSha.trim()');
     expect(client).toContain('async listJobs(): Promise<SovereignAgentJobSnapshot[]>');

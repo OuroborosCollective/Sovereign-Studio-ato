@@ -18,6 +18,9 @@ import {
   type LlmRevolverV3Status,
   type FreeRevolverProviderSource,
   type FreeRevolverProviderAuthMode,
+  type OmniRouteRuntimeStatus,
+  type OpenRouterPaidRuntimeStatus,
+  type OpenRouterFreeRuntimeStatus,
   type AuditEntry,
   type PaymentMethod,
 } from '../api/adminApiClient';
@@ -245,8 +248,24 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
 
 // ── useAdminFreeRevolverProviders ────────────────────────────────────────────
 
+export async function refreshOmniRouteAndReload(
+  refresh: () => Promise<unknown>,
+  reload: () => void,
+): Promise<void> {
+  try {
+    await refresh();
+  } finally {
+    // A failed double-canary is still a canonical runtime event. Always obtain
+    // the subsequent typed readback instead of leaving product state stale.
+    reload();
+  }
+}
+
 export interface UseAdminFreeRevolverProvidersResult {
   providers: FreeRevolverProviderSource[];
+  omniRoute: OmniRouteRuntimeStatus | null;
+  openRouterPaid: OpenRouterPaidRuntimeStatus | null;
+  openRouterFree: OpenRouterFreeRuntimeStatus | null;
   loading: boolean;
   error: string | null;
   reload: () => void;
@@ -261,10 +280,14 @@ export interface UseAdminFreeRevolverProvidersResult {
   discover: (sourceId: string) => Promise<void>;
   recheck: (sourceId: string) => Promise<void>;
   toggle: (sourceId: string, enabled: boolean) => Promise<void>;
+  refreshOmniRoute: () => Promise<void>;
 }
 
 export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersResult {
   const [providers, setProviders] = useState<FreeRevolverProviderSource[]>([]);
+  const [omniRoute, setOmniRoute] = useState<OmniRouteRuntimeStatus | null>(null);
+  const [openRouterPaid, setOpenRouterPaid] = useState<OpenRouterPaidRuntimeStatus | null>(null);
+  const [openRouterFree, setOpenRouterFree] = useState<OpenRouterFreeRuntimeStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -274,8 +297,14 @@ export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersRe
     let cancelled = false;
     setLoading(true);
     setError(null);
-    adminApiClient.getFreeRevolverProviders()
-      .then(result => { if (!cancelled) setProviders(result.providers); })
+    adminApiClient.getLlmProviderSurfaceReadModel()
+      .then(result => {
+        if (cancelled) return;
+        setProviders(result.providers);
+        setOmniRoute(result.omniRoute);
+        setOpenRouterPaid(result.openRouterPaid);
+        setOpenRouterFree(result.openRouterFree);
+      })
       .catch(reason => { if (!cancelled) setError(String(reason)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -338,8 +367,19 @@ export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersRe
     reload();
   }, [reload]);
 
+  const refreshOmniRoute = useCallback(async () => {
+    setError(null);
+    await refreshOmniRouteAndReload(
+      () => adminApiClient.refreshOmniRoute(),
+      reload,
+    );
+  }, [reload]);
+
   return {
     providers,
+    omniRoute,
+    openRouterPaid,
+    openRouterFree,
     loading,
     error,
     reload,
@@ -349,6 +389,7 @@ export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersRe
     discover,
     recheck,
     toggle,
+    refreshOmniRoute,
   };
 }
 

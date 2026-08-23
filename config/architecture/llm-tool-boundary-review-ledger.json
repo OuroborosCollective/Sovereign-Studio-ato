@@ -1,9 +1,9 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "126c3092762163a38bce86e74a89c34a126e90ac",
-  "rawCandidateCount": 97,
-  "canonicalCandidateCount": 77,
+  "sourceRevision": "4da0da44889f37417fccbfc4eed42a30c380fed5",
+  "rawCandidateCount": 99,
+  "canonicalCandidateCount": 78,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cognitive_llm_transport.py",
@@ -26,12 +26,12 @@
         "backend/agent_runtime/cognitive_repository_tools.py"
       ],
       "symbol": "_path_in_role_scope",
-      "line": 162,
+      "line": 166,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "584abeb21d3afc5f1298165509046386f6107aeb9559dc0439b0805e5c03bc05",
+      "fileSha256": "9485a14c25322477a23efaed4e41717e63fc459882e95f009be7e2428b167a5c",
       "anchorSha256": "a4e304e4c2d637d4606048e157d73a60212a3589ded714d6d3539e5f9d0c1d83",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:8595a646e64a4b36ccd93919",
+      "candidateId": "llm-boundary:bed0cf62d9083ca42e547ff9",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_path_in_role_scope evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -139,6 +139,21 @@
       "candidateId": "llm-boundary:f2f9e19a6dbc146874576101",
       "classification": "STRUCTURED_POLICY",
       "rationale": "collect_provider compares explicit route-health booleans, a revision and a SHA-256 truth-boundary identifier to build read-only provider evidence; it does not interpret free language or select or authorize a provider effect."
+    },
+    {
+      "canonicalPath": "scripts/sovereign-backend/agent_runtime/live_workspace.py",
+      "mirrorPaths": [
+        "backend/agent_runtime/live_workspace.py"
+      ],
+      "symbol": "WorkspaceEvidenceAnchorV1._image_digest",
+      "line": 668,
+      "patternFamily": "javascript_keyword_intent",
+      "fileSha256": "4664f2d4a50d7ec9c48db52c8ac866aca0e34f5af65e5c3eed5f0b948ba352af",
+      "anchorSha256": "e7e8b303c044889a0a2268314d033057923a86cddcf8271ed24b308739706353",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:17ab29f34803d5c9bccb8b48",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "WorkspaceEvidenceAnchorV1._image_digest validates one explicit immutable sha256 image digest with a fixed regular expression and fails closed; it does not interpret free language, select a workflow route, call a model or tool, or authorize an effect."
     },
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/live_workspace_chat_store.py",
@@ -1047,5 +1062,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "4b8d1380b6b4ca4711df48fde46f3dc0fa73aa11272b361830e4aaec9158dcac"
+  "ledgerSha256": "bc12f33a9deed58e588a66be0efffd9a702018b7d2f501260fa5e41ce93de5e2"
 }

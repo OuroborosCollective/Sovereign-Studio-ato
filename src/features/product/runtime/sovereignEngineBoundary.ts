@@ -11,6 +11,7 @@ import {
   maskSovereignAgentSensitiveText,
   type SovereignAgentJobSnapshot,
   type SovereignLiveProjection,
+  type SovereignWorkspaceEvidenceAnchor,
 } from './sovereignAgentRuntime';
 
 /**
@@ -34,6 +35,7 @@ export interface SovereignEngineCommandPayloads {
   START_TOOLCHAIN_JOB: { input: SovereignToolchainStartJobInput };
   CANCEL_JOB: { jobId: string };
   READ_PROJECTIONS: { jobId: string };
+  READ_EVIDENCE_ANCHORS: { jobId: string };
   RUN_JANITOR: { jobId: string; input: SovereignJanitorInput };
   PREPARE_DRAFT_PR: { jobId: string; headBranch?: string };
   CREATE_DRAFT_PR: { jobId: string; githubAccessToken?: string };
@@ -118,6 +120,15 @@ export type SovereignEngineEventV1 =
       { commandId: string; commandType: 'READ_PROJECTIONS'; projections: SovereignLiveProjection[] }
     >
   | EngineEventBase<
+      'CANONICAL_EVIDENCE_ANCHORS_ACCEPTED',
+      'SOVEREIGN_BACKEND',
+      {
+        commandId: string;
+        commandType: 'READ_EVIDENCE_ANCHORS';
+        evidenceAnchors: SovereignWorkspaceEvidenceAnchor[];
+      }
+    >
+  | EngineEventBase<
       'ENGINE_OPERATION_RESULT_ACCEPTED',
       'SOVEREIGN_BACKEND',
       {
@@ -161,12 +172,14 @@ export interface SovereignEngineState {
   sessionId: string;
   canonicalJob: SovereignAgentJobSnapshot;
   projections: SovereignLiveProjection[];
+  evidenceAnchors: SovereignWorkspaceEvidenceAnchor[];
   pendingCommands: Readonly<Record<string, SovereignEnginePendingCommand>>;
   clientNotice?: SovereignEngineClientNotice;
   acceptedEventIds: readonly string[];
   nextCommandSequence: number;
   canonicalJobSequence: number;
   projectionSequence: number;
+  evidenceAnchorSequence: number;
 }
 
 export interface SovereignEngineTransport {
@@ -176,6 +189,7 @@ export interface SovereignEngineTransport {
   startToolchainJob(input: SovereignToolchainStartJobInput): Promise<SovereignAgentJobSnapshot>;
   cancelJob(jobId: string): Promise<SovereignAgentJobSnapshot>;
   getProjections(jobId: string): Promise<SovereignLiveProjection[]>;
+  getEvidenceAnchors(jobId: string): Promise<SovereignWorkspaceEvidenceAnchor[]>;
   runJanitor(jobId: string, input?: SovereignJanitorInput): Promise<SovereignJanitorToolResponse>;
   prepareDraftPr(jobId: string, headBranch?: string): Promise<SovereignDraftPrPreparationResponse>;
   createDraftPr(jobId: string, githubAccessToken?: string): Promise<SovereignDraftPrCreateResponse>;
@@ -188,6 +202,7 @@ const COMMAND_TYPES = new Set<SovereignEngineCommandType>([
   'START_TOOLCHAIN_JOB',
   'CANCEL_JOB',
   'READ_PROJECTIONS',
+  'READ_EVIDENCE_ANCHORS',
   'RUN_JANITOR',
   'PREPARE_DRAFT_PR',
   'CREATE_DRAFT_PR',
@@ -207,6 +222,12 @@ const JOB_STATUSES = new Set([
 ]);
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/;
+const SHA256 = /^[a-f0-9]{64}$/;
+const REVISION = /^[a-f0-9]{40}$/;
+const IMAGE_DIGEST = /^sha256:[a-f0-9]{64}$/;
+const EVIDENCE_VERDICTS = new Set(['OBSERVED', 'UNVERIFIED', 'VERIFIED', 'BLOCKED', 'CONTRADICTED', 'STALE']);
+const EVIDENCE_SOURCE_KINDS = new Set(['AGENT_RUN_RECEIPT', 'GITHUB_READBACK', 'PATCHMON_READBACK', 'DATABASE_READBACK', 'TARGET_READBACK', 'FRAME_OBSERVATION']);
+const FORBIDDEN_EVIDENCE_TEXT = ['chain-of-thought', 'reasoning:', 'system prompt', 'tool schema', 'provider_request_id', 'runtime_flags'];
 const CANONICAL_JOB_COMMAND_TYPES = new Set<SovereignEngineCommandType>([
   'RESTORE_LATEST_JOB',
   'READ_JOB',
@@ -266,6 +287,7 @@ function expectedJobId(command: SovereignEngineCommandV1): string | undefined {
     case 'READ_JOB':
     case 'CANCEL_JOB':
     case 'READ_PROJECTIONS':
+    case 'READ_EVIDENCE_ANCHORS':
     case 'RUN_JANITOR':
     case 'PREPARE_DRAFT_PR':
     case 'CREATE_DRAFT_PR':
@@ -326,6 +348,7 @@ function assertCommand(command: SovereignEngineCommandV1): void {
       return;
     case 'CANCEL_JOB':
     case 'READ_PROJECTIONS':
+    case 'READ_EVIDENCE_ANCHORS':
       assertExactKeys(command.payload, ['jobId'], command.commandType);
       if (!isSafeId(command.payload.jobId)) throw new Error(`${command.commandType} requires a valid jobId.`);
       return;
@@ -384,6 +407,54 @@ function isCanonicalProjection(value: unknown): value is SovereignLiveProjection
     && isNonEmptyString(value.sourceIdentityHash)
     && isNonEmptyString(value.projectionHash)
     && isObject(value.payload);
+}
+
+function isCanonicalEvidenceAnchor(value: unknown): value is SovereignWorkspaceEvidenceAnchor {
+  if (!isObject(value)) return false;
+  const anchorId = value.anchorId;
+  const claimKind = value.claimKind;
+  const verdict = value.verdict;
+  const sourceVerdict = value.sourceVerdict;
+  const sessionBindingHash = value.sessionBindingHash;
+  const runId = value.runId;
+  const taskId = value.taskId;
+  const attemptId = value.attemptId;
+  const actionId = value.actionId;
+  const scope = value.scope;
+  const sourceKind = value.sourceKind;
+  const sourceRefs = value.sourceRefs;
+  const repositoryRevision = value.repositoryRevision;
+  const targetRevision = value.targetRevision;
+  const imageDigest = value.imageDigest;
+  const runtimeIdentityHash = value.runtimeIdentityHash;
+  const observedAt = value.observedAt;
+  const freshnessReasons = value.freshnessReasons;
+  const evidenceHash = value.evidenceHash;
+  const foldedText = `${String(claimKind || '')} ${String(scope || '')}`.toLowerCase();
+  return value.authoritative === false
+    && typeof anchorId === 'string' && /^evidence-[a-f0-9]{24}$/.test(anchorId)
+    && typeof claimKind === 'string' && claimKind.trim().length > 0
+    && !['EVERYTHING_WORKS', 'READY', 'DONE', 'GREEN', 'ALL_GREEN'].includes(claimKind.toUpperCase())
+    && typeof verdict === 'string' && EVIDENCE_VERDICTS.has(verdict)
+    && typeof sourceVerdict === 'string' && EVIDENCE_VERDICTS.has(sourceVerdict)
+    && typeof sessionBindingHash === 'string' && SHA256.test(sessionBindingHash.toLowerCase())
+    && typeof runId === 'string' && runId.trim().length > 0
+    && typeof taskId === 'string' && taskId.trim().length > 0
+    && typeof attemptId === 'string' && attemptId.trim().length > 0
+    && typeof actionId === 'string' && actionId.trim().length > 0
+    && typeof scope === 'string' && scope.trim().length > 0
+    && !FORBIDDEN_EVIDENCE_TEXT.some((marker) => foldedText.includes(marker))
+    && typeof sourceKind === 'string' && EVIDENCE_SOURCE_KINDS.has(sourceKind)
+    && Array.isArray(sourceRefs) && sourceRefs.length > 0 && sourceRefs.length <= 32
+    && sourceRefs.every((ref) => typeof ref === 'string' && SHA256.test(ref.toLowerCase()))
+    && typeof repositoryRevision === 'string' && REVISION.test(repositoryRevision.toLowerCase())
+    && (targetRevision === undefined || (typeof targetRevision === 'string' && REVISION.test(targetRevision.toLowerCase())))
+    && (imageDigest === undefined || (typeof imageDigest === 'string' && IMAGE_DIGEST.test(imageDigest.toLowerCase())))
+    && (runtimeIdentityHash === undefined || (typeof runtimeIdentityHash === 'string' && SHA256.test(runtimeIdentityHash.toLowerCase())))
+    && typeof observedAt === 'string' && Number.isFinite(Date.parse(observedAt))
+    && Array.isArray(freshnessReasons) && freshnessReasons.every((reason) => typeof reason === 'string')
+    && typeof evidenceHash === 'string' && SHA256.test(evidenceHash.toLowerCase())
+    && !(sourceKind === 'FRAME_OBSERVATION' && verdict === 'VERIFIED');
 }
 
 function isCommandEnvelope(
@@ -456,7 +527,7 @@ export function createSovereignEngineCommandAcceptedEvent(
 
 function commandFailureIsUserVisible(command: SovereignEngineCommandV1): boolean {
   if (command.commandType === 'READ_JOB' && command.payload.adopt === true) return true;
-  return !['RESTORE_LATEST_JOB', 'READ_JOB', 'READ_PROJECTIONS'].includes(command.commandType);
+  return !['RESTORE_LATEST_JOB', 'READ_JOB', 'READ_PROJECTIONS', 'READ_EVIDENCE_ANCHORS'].includes(command.commandType);
 }
 
 export function createSovereignEngineCommandFailedEvent(
@@ -553,6 +624,24 @@ export async function executeSovereignEngineCommand(
         },
       };
     }
+    case 'READ_EVIDENCE_ANCHORS': {
+      const evidenceAnchors = await transport.getEvidenceAnchors(command.payload.jobId);
+      if (!Array.isArray(evidenceAnchors) || !evidenceAnchors.every(isCanonicalEvidenceAnchor)) {
+        throw new Error('Sovereign backend returned an invalid evidence anchor contract.');
+      }
+      return {
+        ...baseEvent(command, 'CANONICAL_EVIDENCE_ANCHORS_ACCEPTED', 'SOVEREIGN_BACKEND', now),
+        eventType: 'CANONICAL_EVIDENCE_ANCHORS_ACCEPTED',
+        source: 'SOVEREIGN_BACKEND',
+        jobId: command.payload.jobId,
+        attemptId: uniqueEvidenceAnchorAttempt(evidenceAnchors),
+        payload: {
+          commandId: command.commandId,
+          commandType: command.commandType,
+          evidenceAnchors,
+        },
+      };
+    }
     case 'RUN_JANITOR':
       return operationResultEvent(
         command,
@@ -631,6 +720,11 @@ function uniqueProjectionAttempt(projections: readonly SovereignLiveProjection[]
   return attempts.size === 1 ? [...attempts][0] : undefined;
 }
 
+function uniqueEvidenceAnchorAttempt(anchors: readonly SovereignWorkspaceEvidenceAnchor[]): string | undefined {
+  const attempts = new Set(anchors.map((anchor) => anchor.attemptId).filter(Boolean));
+  return attempts.size === 1 ? [...attempts][0] : undefined;
+}
+
 export function createInitialSovereignEngineState(
   options: { sessionId?: string; job?: SovereignAgentJobSnapshot } = {},
 ): SovereignEngineState {
@@ -638,11 +732,13 @@ export function createInitialSovereignEngineState(
     sessionId: options.sessionId || eventId('engine-session'),
     canonicalJob: options.job || createSovereignAgentIdleSnapshot(),
     projections: [],
+    evidenceAnchors: [],
     pendingCommands: {},
     acceptedEventIds: [],
     nextCommandSequence: 1,
     canonicalJobSequence: 0,
     projectionSequence: 0,
+    evidenceAnchorSequence: 0,
   };
 }
 
@@ -768,7 +864,7 @@ export function sovereignEngineReducer(
         nextCommandSequence: state.nextCommandSequence + 1,
         clientNotice: event.payload.commandType === 'READ_JOB' && event.payload.adoptJob
           ? undefined
-          : !['RESTORE_LATEST_JOB', 'READ_JOB', 'READ_PROJECTIONS'].includes(event.payload.commandType)
+          : !['RESTORE_LATEST_JOB', 'READ_JOB', 'READ_PROJECTIONS', 'READ_EVIDENCE_ANCHORS'].includes(event.payload.commandType)
             ? undefined
             : state.clientNotice,
         acceptedEventIds: rememberEvent(state, event.eventId),
@@ -791,6 +887,10 @@ export function sovereignEngineReducer(
         projections: state.canonicalJob.jobId === event.payload.job.jobId
           && event.payload.job.status !== 'cleaned'
           ? state.projections
+          : [],
+        evidenceAnchors: state.canonicalJob.jobId === event.payload.job.jobId
+          && event.payload.job.status !== 'cleaned'
+          ? state.evidenceAnchors
           : [],
         pendingCommands: withoutPending(state.pendingCommands, pending.commandId),
         clientNotice: undefined,
@@ -828,6 +928,30 @@ export function sovereignEngineReducer(
         ...state,
         projections: [...event.payload.projections],
         projectionSequence: pending.sequence,
+        pendingCommands: withoutPending(state.pendingCommands, pending.commandId),
+        acceptedEventIds: rememberEvent(state, event.eventId),
+      };
+    }
+
+    case 'CANONICAL_EVIDENCE_ANCHORS_ACCEPTED': {
+      if (event.source !== 'SOVEREIGN_BACKEND'
+        || !isCommandEnvelope(event.payload)
+        || !Array.isArray(event.payload.evidenceAnchors)) return state;
+      const pending = pendingMatches(state, event);
+      if (!pending
+        || pending.commandType !== 'READ_EVIDENCE_ANCHORS'
+        || pending.expectedJobId !== state.canonicalJob.jobId
+        || event.jobId !== state.canonicalJob.jobId
+        || !event.payload.evidenceAnchors.every(isCanonicalEvidenceAnchor)) {
+        return state;
+      }
+      if (pending.sequence < state.evidenceAnchorSequence) {
+        return resolvePendingWithoutProjection(state, pending, event);
+      }
+      return {
+        ...state,
+        evidenceAnchors: [...event.payload.evidenceAnchors],
+        evidenceAnchorSequence: pending.sequence,
         pendingCommands: withoutPending(state.pendingCommands, pending.commandId),
         acceptedEventIds: rememberEvent(state, event.eventId),
       };
