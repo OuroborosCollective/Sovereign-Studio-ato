@@ -26,6 +26,7 @@ SCHEMA_VERSION = "sovereign.frontend-test-gate.v1"
 DEFAULT_TIMEOUT_SECONDS = 900
 _MAX_SAFE_LINE = 420
 _COUNT_LABELS = ("failed", "passed", "skipped")
+_FAILURE_IDENTITY_RE = re.compile(r"^[A-Za-z0-9._/:-]{1,320}$")
 _SECRET_PATTERNS = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
@@ -66,6 +67,18 @@ def _causal_lines(text: str) -> tuple[str, ...]:
         if line.startswith("SOVEREIGN_VITEST_SUMMARY ") or re.fullmatch(r"FAILED\s+[^\s]+", line):
             output.append(line)
     return tuple(output[:8])
+
+
+def _emit_failure(identity: str) -> None:
+    token = _redact(identity)
+    if not _FAILURE_IDENTITY_RE.fullmatch(token):
+        token = "frontend-test-gate::invalid-failure-identity"
+    print(f"FAILED {token}")
+    print(
+        '<testsuite tests="1" failures="1" errors="0" skipped="0">'
+        f'<testcase name="{token}"><failure message="bounded-stage-failure"/></testcase>'
+        '</testsuite>'
+    )
 
 
 def _python_stage_command(python: str, *args: str) -> tuple[str, ...]:
@@ -182,14 +195,14 @@ def run_stage(stage: GateStage, *, root: Path, timeout_seconds: int) -> int:
             f"SOVEREIGN_FRONTEND_GATE_STAGE schema={SCHEMA_VERSION} "
             f"stage={stage.name} status=failed exitCode=127"
         )
-        print(f"FAILED {stage.failure_identity}")
+        _emit_failure(stage.failure_identity)
         return 127
     except subprocess.TimeoutExpired:
         print(
             f"SOVEREIGN_FRONTEND_GATE_STAGE schema={SCHEMA_VERSION} "
             f"stage={stage.name} status=failed exitCode=124"
         )
-        print(f"FAILED {stage.failure_identity}")
+        _emit_failure(stage.failure_identity)
         return 124
 
     combined = f"{completed.stdout or ''}\n{completed.stderr or ''}"
@@ -202,10 +215,15 @@ def run_stage(stage: GateStage, *, root: Path, timeout_seconds: int) -> int:
     )
 
     forwarded = _causal_lines(completed.stdout) if stage.forward_causal_output else ()
+    failure_emitted = False
     for line in forwarded:
-        print(line)
-    if exit_code != 0 and not any(line.startswith("FAILED ") for line in forwarded):
-        print(f"FAILED {stage.failure_identity}")
+        if line.startswith("FAILED "):
+            _emit_failure(line.split(None, 1)[1])
+            failure_emitted = True
+        else:
+            print(line)
+    if exit_code != 0 and not failure_emitted:
+        _emit_failure(stage.failure_identity)
     return exit_code
 
 

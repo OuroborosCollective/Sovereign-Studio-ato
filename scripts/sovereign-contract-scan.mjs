@@ -189,6 +189,8 @@ function run() {
   requireText('scripts/frontend_test_gate.py', /frontend-endpoint-clients::vitest_runner/, 'frontend-endpoints:client-stage-fallback', 'The targeted client stage emits a bounded fallback identity if its runner aborts.');
   requireText('scripts/frontend_test_gate.py', /frontend-smoke::vitest_runner/, 'frontend-endpoints:smoke-stage-fallback', 'The broad smoke stage emits a bounded fallback identity if its runner aborts.');
   requireText('scripts/frontend_test_gate.py', /stdout=subprocess\.PIPE[\s\S]*stderr=subprocess\.PIPE/, 'frontend-endpoints:bounded-stage-capture', 'The frontend test gate captures stage output instead of replaying raw logs.');
+  requireText('scripts/frontend_test_gate.py', /<testsuite tests=\"1\" failures=\"1\"/, 'frontend-endpoints:junit-failure-fallback', 'Every failed frontend gate stage emits a bounded single-test JUnit fallback.');
+  requireText('scripts/frontend_test_gate.py', /<testcase name=\"\{token\}\"><failure message=\"bounded-stage-failure\"\/>/, 'frontend-endpoints:junit-causal-identity', 'The JUnit fallback binds only the redacted causal or stage identity.');
   forbidText('scripts/frontend_test_gate.py', /shell\s*=\s*True/, 'frontend-endpoints:no-shell-gate', 'The frontend test gate must never execute through a shell.');
   requireText('scripts/vitest_causal_runner.py', /print\(f"FAILED \{causal\}"\)/, 'frontend-endpoints:causal-failure-identity', 'The causal runner emits a Pytest-compatible file and test identity.');
   requireText('scripts/vitest_causal_runner.py', /stdout=subprocess\.DEVNULL[\s\S]*stderr=subprocess\.DEVNULL/, 'frontend-endpoints:no-raw-vitest-output', 'The causal runner does not project raw Vitest stdout or stderr.');

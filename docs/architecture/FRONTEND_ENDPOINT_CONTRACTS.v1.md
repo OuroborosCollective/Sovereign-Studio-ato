@@ -172,7 +172,7 @@ scripts/frontend_test_gate.py
 
 The package scripts contain no nested shell test chain. `--mode endpoint` executes the compiler, all Python regressions and the six targeted client suites. `--mode smoke` executes the same stages and then the broad frontend Vitest smoke with the repository's existing exclusions. Every subprocess is a fixed argument vector with `shell=False`; raw stage stdout/stderr is captured but never replayed.
 
-The orchestrator stops at the first non-zero stage, preserves that exit code and emits either the redacted `FAILED file::test` produced by the causal runner or a fixed stage identity such as `FAILED frontend-smoke::vitest_runner`. This makes the release artifact independently diagnosable without relying on npm-shell control-flow behavior.
+The orchestrator stops at the first non-zero stage, preserves that exit code and emits either the redacted `FAILED file::test` produced by the causal runner or a fixed stage identity such as `FAILED frontend-smoke::vitest_runner`. Every failure identity is also represented as one bounded single-test JUnit fragment (`<testcase name="…"><failure message="bounded-stage-failure"/>`). The existing revision-bound extractor can therefore resolve the cause through either its Pytest-token or JUnit grammar, without relying on npm-shell control-flow or raw logs.
 
 ### Causal Vitest runner
 
@@ -184,7 +184,7 @@ Both the targeted endpoint-client suites and the subsequent broad frontend smoke
 
 Raw Vitest stdout, stderr, JSON and failure messages are not persisted or projected through this lane. The command is executed as an argument vector without a shell. This improves diagnosis only: the original Vitest exit code and every assertion remain release-blocking.
 
-If the compiler, Python regression family or Vitest wrapper exits before a precise test identity can be parsed, the frontend test gate emits a bounded stage identity such as `FAILED frontend-smoke::vitest_runner` while preserving the original non-zero exit code. The revision-bound failure extractor therefore never needs raw logs and must not return a nameless red step.
+If the compiler, Python regression family or Vitest wrapper exits before a precise test identity can be parsed, the frontend test gate emits a bounded stage identity such as `FAILED frontend-smoke::vitest_runner` plus the equivalent bounded JUnit testcase while preserving the original non-zero exit code. The revision-bound failure extractor therefore never needs raw logs and must not return a nameless red step.
 
 ### Package gate
 

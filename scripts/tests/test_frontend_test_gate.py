@@ -103,7 +103,9 @@ def test_failed_non_causal_stage_preserves_exit_and_emits_fixed_identity(
     output = capsys.readouterr().out
     assert exit_code == 7
     assert "status=failed exitCode=7" in output
-    assert output.rstrip().endswith("FAILED compiler.py::repository_contract")
+    assert "FAILED compiler.py::repository_contract" in output
+    assert '<testcase name="compiler.py::repository_contract">' in output
+    assert '<failure message="bounded-stage-failure"/>' in output
     assert "compiler rejected contract" not in output
 
 
@@ -138,7 +140,9 @@ def test_causal_stage_forwards_only_safe_summary_and_failed_identity(
     assert exit_code == 1
     assert "SOVEREIGN_VITEST_SUMMARY" in output
     assert "FAILED src/client.test.ts::blocks-unbound-write" in output
+    assert '<testcase name="src/client.test.ts::blocks-unbound-write">' in output
     assert "FAILED clients::vitest_runner" not in output
+    assert '<testcase name="clients::vitest_runner">' not in output
     assert "raw assertion body" not in output
     assert "stack trace" not in output
 
@@ -172,3 +176,5 @@ def test_gate_source_never_executes_through_a_shell() -> None:
     assert "stdout=subprocess.PIPE" in source
     assert "stderr=subprocess.PIPE" in source
     assert "stdin=subprocess.DEVNULL" in source
+    assert '<testsuite tests="1" failures="1"' in source
+    assert 'bounded-stage-failure' in source
