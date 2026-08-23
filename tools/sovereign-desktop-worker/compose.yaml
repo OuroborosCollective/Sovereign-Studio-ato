@@ -1,0 +1,120 @@
+# Operator template. The worker image must be a repository@sha256 reference.
+# Stage 1: start only desktop-worker and collect its independent runtime readback.
+# Stage 2: bind the resulting admission at the controller, then start profile view-gateway.
+services:
+  desktop-worker:
+    image: ${DESKTOP_WORKER_IMAGE:?set-an-immutable-repository-at-sha256-reference}
+    user: "10001:10001"
+    init: true
+    restart: "no"
+    privileged: false
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+    environment:
+      DESKTOP_SESSION_ID: "${DESKTOP_SESSION_ID:?required}"
+      DESKTOP_SESSION_BINDING_HASH: "${DESKTOP_SESSION_BINDING_HASH:?required}"
+      DESKTOP_RUNTIME_IDENTITY_HASH: "${DESKTOP_RUNTIME_IDENTITY_HASH:?required}"
+      DESKTOP_CONTAINER_IDENTITY_HASH: "${DESKTOP_CONTAINER_IDENTITY_HASH:?required}"
+      DESKTOP_INPUT_SCOPE_HASH: "${DESKTOP_INPUT_SCOPE_HASH:?required}"
+      DESKTOP_VIEW_SCOPE_HASH: "${DESKTOP_VIEW_SCOPE_HASH:?required}"
+      DESKTOP_ATTEMPT_ID: "${DESKTOP_ATTEMPT_ID:?required}"
+      DESKTOP_ATTEMPT_HASH: "${DESKTOP_ATTEMPT_HASH:?required}"
+      DESKTOP_WORKTREE_IDENTITY_HASH: "${DESKTOP_WORKTREE_IDENTITY_HASH:?required}"
+      DESKTOP_HEAD_REVISION: "${DESKTOP_HEAD_REVISION:?required}"
+      DESKTOP_IMAGE_DIGEST: "${DESKTOP_IMAGE_DIGEST:?required}"
+      DESKTOP_ADMISSION_ID: "${DESKTOP_ADMISSION_ID:-}"
+      DESKTOP_CONTROL_CLIENT_UID: "10002"
+      DESKTOP_MAX_LIFETIME_SECONDS: "${DESKTOP_MAX_LIFETIME_SECONDS:-3600}"
+      DESKTOP_MAX_IDLE_SECONDS: "${DESKTOP_MAX_IDLE_SECONDS:-900}"
+    volumes:
+      - type: bind
+        source: ${ATTEMPT_WORKTREE:?required}
+        target: /workspace
+        read_only: false
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m,uid=10001,gid=10001,mode=0700
+      - /run:rw,nosuid,nodev,noexec,size=32m,uid=10001,gid=10001,mode=0700
+      - /home/desktop:rw,nosuid,nodev,noexec,size=128m,uid=10001,gid=10001,mode=0700
+    healthcheck:
+      test: ["CMD-SHELL", "test -S /run/desktop-control/worker.sock && pgrep -f 'websockify' >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    networks:
+      desktop-worker-backplane:
+        aliases:
+          - desktop-worker
+
+  desktop-view-gateway:
+    profiles: ["view-gateway"]
+    image: ${DESKTOP_WORKER_IMAGE:?set-an-immutable-repository-at-sha256-reference}
+    user: "10002:10002"
+    init: true
+    restart: "no"
+    entrypoint: ["python3", "/usr/local/lib/desktop-view-gateway.py"]
+    privileged: false
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.5
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      DESKTOP_VIEW_GATEWAY_BIND_HOST: "0.0.0.0"
+      DESKTOP_VIEW_GATEWAY_PORT: "8080"
+      DESKTOP_VIEW_UPSTREAM_HOST: "desktop-worker"
+      DESKTOP_VIEW_UPSTREAM_PORT: "6080"
+      DESKTOP_VIEW_GATEWAY_KEY_FILE: "/run/desktop-view-gateway/hmac"
+      DESKTOP_SESSION_ID: "${DESKTOP_SESSION_ID:?required}"
+      DESKTOP_SESSION_BINDING_HASH: "${DESKTOP_SESSION_BINDING_HASH:?required}"
+      DESKTOP_RUNTIME_IDENTITY_HASH: "${DESKTOP_RUNTIME_IDENTITY_HASH:?required}"
+      DESKTOP_CONTAINER_IDENTITY_HASH: "${DESKTOP_CONTAINER_IDENTITY_HASH:?required}"
+      DESKTOP_VIEW_GATEWAY_RUNTIME_IDENTITY_HASH: "${DESKTOP_VIEW_GATEWAY_RUNTIME_IDENTITY_HASH:?required}"
+      DESKTOP_VIEW_GATEWAY_CONTAINER_IDENTITY_HASH: "${DESKTOP_VIEW_GATEWAY_CONTAINER_IDENTITY_HASH:?required}"
+      DESKTOP_VIEW_SCOPE_HASH: "${DESKTOP_VIEW_SCOPE_HASH:?required}"
+      DESKTOP_ADMISSION_ID: "${DESKTOP_GATEWAY_ADMISSION_ID:-}"
+      DESKTOP_GATEWAY_IMAGE_DIGEST: "${DESKTOP_GATEWAY_IMAGE_DIGEST:-}"
+      DESKTOP_WORKER_BACKPLANE_NETWORK_IDENTITY_HASH: "${DESKTOP_WORKER_BACKPLANE_NETWORK_IDENTITY_HASH:?required}"
+      DESKTOP_VIEW_CLIENT_NETWORK_IDENTITY_HASH: "${DESKTOP_VIEW_CLIENT_NETWORK_IDENTITY_HASH:?required}"
+      DESKTOP_ATTEMPT_ID: "${DESKTOP_ATTEMPT_ID:?required}"
+      DESKTOP_ATTEMPT_HASH: "${DESKTOP_ATTEMPT_HASH:?required}"
+      DESKTOP_WORKTREE_IDENTITY_HASH: "${DESKTOP_WORKTREE_IDENTITY_HASH:?required}"
+      DESKTOP_HEAD_REVISION: "${DESKTOP_HEAD_REVISION:?required}"
+    volumes:
+      - type: bind
+        source: ${DESKTOP_VIEW_GATEWAY_KEY_FILE:-/dev/null}
+        target: /run/desktop-view-gateway/hmac
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=32m,uid=10002,gid=10002,mode=0700
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8080/healthz\", timeout=2)'"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      desktop-worker-backplane: {}
+      desktop-view-client:
+        aliases:
+          - desktop-view-gateway
+
+networks:
+  desktop-worker-backplane:
+    internal: true
+  desktop-view-client:
+    internal: true
