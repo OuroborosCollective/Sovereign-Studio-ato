@@ -946,6 +946,20 @@ def build_report(repo: Path) -> dict[str, object]:
     mismatches = [item for item in active_requests if item.status == "METHOD_MISMATCH"]
     unknown_methods = [item for item in active_requests if item.status == "PATH_BOUND_METHOD_UNKNOWN"]
     bound = [item for item in active_requests if item.status == "BOUND"]
+    active_mutations = [
+        item for item in bound
+        if item.call.method in {"POST", "PUT", "PATCH", "DELETE"}
+    ]
+    active_reads = [
+        item for item in bound
+        if item.call.method in {"GET", "HEAD", "OPTIONS"}
+    ]
+
+    def has_test_reference(item: Binding) -> bool:
+        return bool(item.unit_test_refs or item.backend_test_refs or item.e2e_test_refs)
+
+    untested_mutations = [item for item in active_mutations if not has_test_reference(item)]
+    untested_reads = [item for item in active_reads if not has_test_reference(item)]
     active_external_calls = [item for item in external_calls if item.active_surface]
     external_unknown_methods = [item for item in active_external_calls if item.method == "UNKNOWN"]
     legacy_import_violations = [
@@ -989,6 +1003,16 @@ def build_report(repo: Path) -> dict[str, object]:
     )
     errors.extend(
         {
+            "family": "FRONTEND_MUTATION_TEST_EVIDENCE_MISSING",
+            "method": item.call.method,
+            "path": item.call.path,
+            "file": item.call.file,
+            "line": item.call.line,
+        }
+        for item in untested_mutations
+    )
+    errors.extend(
+        {
             "family": "EXTERNAL_ENDPOINT_METHOD_UNKNOWN",
             "url": item.url,
             "host": item.host,
@@ -1000,6 +1024,15 @@ def build_report(repo: Path) -> dict[str, object]:
     )
 
     warnings = [
+        {
+            "family": "FRONTEND_READ_TEST_EVIDENCE_MISSING",
+            "method": item.call.method,
+            "path": item.call.path,
+            "file": item.call.file,
+            "line": item.call.line,
+        }
+        for item in untested_reads
+    ] + [
         {
             "family": "FRONTEND_ENDPOINT_METHOD_UNKNOWN",
             "path": item.call.path,
@@ -1025,6 +1058,10 @@ def build_report(repo: Path) -> dict[str, object]:
             "unmatchedActiveRequestCount": len(unmatched),
             "methodMismatchCount": len(mismatches),
             "methodUnknownCount": len(unknown_methods),
+            "activeMutationRequestCount": len(active_mutations),
+            "activeMutationWithoutTestEvidenceCount": len(untested_mutations),
+            "activeReadRequestCount": len(active_reads),
+            "activeReadWithoutTestEvidenceCount": len(untested_reads),
             "backendRouteCount": len(routes),
             "externalRequestCount": len(external_calls),
             "activeExternalRequestCount": len(active_external_calls),

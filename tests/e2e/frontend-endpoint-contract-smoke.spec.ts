@@ -23,6 +23,10 @@ interface EndpointContractReport {
     unmatchedActiveRequestCount: number;
     methodMismatchCount: number;
     methodUnknownCount: number;
+    activeMutationRequestCount: number;
+    activeMutationWithoutTestEvidenceCount: number;
+    activeReadRequestCount: number;
+    activeReadWithoutTestEvidenceCount: number;
     backendRouteCount: number;
     externalRequestCount: number;
     activeExternalRequestCount: number;
@@ -38,6 +42,11 @@ interface EndpointContractReport {
     };
     status: string;
     backendRoutes: Array<{ path: string; methods: string[]; file: string }>;
+    testReferences: {
+      unit: string[];
+      backend: string[];
+      e2e: string[];
+    };
   }>;
   errors: unknown[];
   truthBoundary: {
@@ -106,6 +115,10 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     expect(report.summary.unmatchedActiveRequestCount).toBe(0);
     expect(report.summary.methodMismatchCount).toBe(0);
     expect(report.summary.methodUnknownCount).toBe(0);
+    expect(report.summary.activeMutationRequestCount).toBeGreaterThanOrEqual(1);
+    expect(report.summary.activeMutationWithoutTestEvidenceCount).toBe(0);
+    expect(report.summary.activeReadRequestCount).toBeGreaterThanOrEqual(1);
+    expect(report.summary.activeReadWithoutTestEvidenceCount).toBe(0);
     expect(report.summary.backendRouteCount).toBeGreaterThanOrEqual(100);
     expect(report.summary.externalRequestCount).toBeGreaterThanOrEqual(1);
     expect(report.summary.externalMethodUnknownCount).toBe(0);
@@ -124,6 +137,14 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
         binding.backendRoutes.some(route => route.methods.includes(binding.call.method)),
         `${binding.call.method} ${binding.call.path}`,
       ).toBe(true);
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(binding.call.method)) {
+        expect(
+          binding.testReferences.unit.length
+            + binding.testReferences.backend.length
+            + binding.testReferences.e2e.length,
+          `mutation test evidence for ${binding.call.method} ${binding.call.path}`,
+        ).toBeGreaterThan(0);
+      }
     }
 
     expect(report.truthBoundary).toEqual({
@@ -138,6 +159,8 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
 
   test('the built app executes critical GET wiring without an unconsented billing write', async ({ page }) => {
     const observed: Array<{ method: string; path: string }> = [];
+    const unexpectedApiRequests: Array<{ method: string; path: string }> = [];
+    const pageErrors: string[] = [];
     const currentUser = {
       id: '00000000-0000-4000-8000-000000000001',
       email: 'endpoint-smoke@example.test',
@@ -156,11 +179,27 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
       }));
     }, currentUser);
 
+    page.on('pageerror', error => pageErrors.push(error.message));
     page.on('request', request => {
       const url = new URL(request.url());
       if (url.pathname.startsWith('/api/')) {
         observed.push({ method: request.method(), path: url.pathname });
       }
+    });
+
+    // Register the catch-all first. Playwright evaluates later matching routes
+    // first, so the allowlisted handlers below win while every other /api call
+    // is contained inside this smoke test instead of reaching production.
+    await page.route('**/api/**', async route => {
+      const request = route.request();
+      const url = new URL(request.url());
+      unexpectedApiRequests.push({ method: request.method(), path: url.pathname });
+      await route.fulfill({
+        status: 501,
+        contentType: 'application/json',
+        headers: { 'Cache-Control': 'no-store' },
+        body: JSON.stringify({ error: 'unexpected_frontend_endpoint_smoke_request' }),
+      });
     });
 
     await page.route('**/api/user/agent/jobs?limit=20', route => fulfillJson(
@@ -215,5 +254,7 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     expect(billingWrites).toEqual([]);
     expect(observed.some(item => item.path === '/api/billing/cancel')).toBe(false);
     expect(observed.some(item => item.path === '/api/billing/restore')).toBe(false);
+    expect(unexpectedApiRequests).toEqual([]);
+    expect(pageErrors).toEqual([]);
   });
 });

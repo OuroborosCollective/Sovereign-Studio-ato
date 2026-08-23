@@ -154,6 +154,12 @@ function run() {
   requireFile('scripts/frontend_endpoint_contracts.py', 'Frontend endpoint contract compiler is required.');
   requireFile('scripts/tests/test_frontend_endpoint_contracts.py', 'Frontend endpoint compiler regressions are required.');
   requireFile('tests/e2e/frontend-endpoint-contract-smoke.spec.ts', 'Built-browser endpoint smoke is required.');
+  requireFile('src/features/admin/api/adminApiClient.ownerInput.test.ts', 'Protected owner-input endpoint regression is required.');
+  requireFile('src/features/billing/billingSlice.test.ts', 'Billing endpoint regression is required.');
+  requireFile('src/features/knowledge/knowledgeApi.test.ts', 'Knowledge endpoint regression is required.');
+  requireFile('src/features/rescue/rescueClient.test.ts', 'Rescue endpoint regression is required.');
+  requireFile('src/features/toolchain/toolchainApi.test.ts', 'Toolchain endpoint regression is required.');
+  requireFile('src/features/toolchain/skillsApi.test.ts', 'Skill endpoint regression is required.');
   requireFile('docs/architecture/FRONTEND_ENDPOINT_CONTRACTS.v1.md', 'Frontend endpoint truth-boundary documentation is required.');
 
   const scripts = getPackageScripts();
@@ -168,7 +174,13 @@ function run() {
   requireText('.github/workflows/e2e-testing.yml', /pnpm run test:e2e/, 'workflow:frontend-endpoint-e2e', 'Current App E2E workflow executes the endpoint browser smoke through the full Playwright suite.');
   requireText('scripts/frontend_endpoint_contracts.py', /"externalCalls"/, 'frontend-endpoints:external-inventory', 'Endpoint compiler preserves third-party request inventory separately from backend routes.');
   requireText('scripts/frontend_endpoint_contracts.py', /legacyImportViolationCount/, 'frontend-endpoints:legacy-import-gate', 'Endpoint compiler rejects active reactivation of legacy endpoint surfaces.');
+  requireText('scripts/frontend_endpoint_contracts.py', /FRONTEND_MUTATION_TEST_EVIDENCE_MISSING/, 'frontend-endpoints:mutation-test-gate', 'Endpoint compiler rejects active mutation requests without test evidence.');
+  requireText('scripts/frontend_endpoint_contracts.py', /activeMutationWithoutTestEvidenceCount/, 'frontend-endpoints:mutation-test-count', 'Endpoint report exposes the mutation test-evidence count.');
+  requireText('package.json', /adminApiClient\.ownerInput\.test\.ts[\s\S]*billingSlice\.test\.ts[\s\S]*knowledgeApi\.test\.ts[\s\S]*rescueClient\.test\.ts[\s\S]*toolchainApi\.test\.ts[\s\S]*skillsApi\.test\.ts/, 'frontend-endpoints:targeted-client-tests', 'Frontend endpoint package gate executes all targeted client regression suites.');
   requireText('tests/e2e/frontend-endpoint-contract-smoke.spec.ts', /legacyImportViolationCount\)\.toBe\(0\)/, 'frontend-endpoints:e2e-import-readback', 'Browser smoke reads the import-boundary verdict from the exact report.');
+  requireText('tests/e2e/frontend-endpoint-contract-smoke.spec.ts', /activeMutationWithoutTestEvidenceCount\)\.toBe\(0\)/, 'frontend-endpoints:e2e-mutation-test-readback', 'Browser smoke reads the mutation test-evidence verdict from the exact report.');
+  requireText('tests/e2e/frontend-endpoint-contract-smoke.spec.ts', /unexpectedApiRequests\)\.toEqual\(\[\]\)/, 'frontend-endpoints:e2e-unexpected-api-denial', 'Browser smoke fails when the tested journey emits an unexpected first-party API request.');
+  requireText('tests/e2e/frontend-endpoint-contract-smoke.spec.ts', /pageErrors\)\.toEqual\(\[\]\)/, 'frontend-endpoints:e2e-pageerror-denial', 'Browser smoke fails on uncaught page errors.');
   requireText('tests/e2e/frontend-endpoint-contract-smoke.spec.ts', /externalTargetReachabilityProven:\s*false/, 'frontend-endpoints:e2e-truth-boundary', 'Browser smoke does not promote adapter observations to external runtime truth.');
   requireText('src/features/ai/providerManager.ts', /sovereign-endpoint-surface:\s*legacy-unreferenced/, 'providers:legacy-direct-manager-classified', 'Historical direct provider manager is explicitly outside the current production graph.');
   requireText('src/features/product/llm/sovereignLlmAdapters.ts', /createPrimaryBridgeAdapter/, 'providers:backend-bridge-active', 'Current product LLM adapters retain the backend-owned online bridge.');

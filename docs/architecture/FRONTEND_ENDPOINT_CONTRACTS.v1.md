@@ -80,6 +80,9 @@ The compiler:
 - treats `/generated/**` as static artifact retrieval rather than backend runtime;
 - inventories explicit non-active surfaces without promoting them to live paths;
 - records unit, backend and E2E test references;
+- separates active reads from `POST`/`PUT`/`PATCH`/`DELETE` request surfaces;
+- rejects an active mutating request unless at least one real unit, backend or E2E test references that route family;
+- reports untested active reads as visible warnings without falsely upgrading them to runtime coverage;
 - builds a static relative-import graph and rejects active value/dynamic imports into `legacy-unreferenced`, `retired` or `quarantined` endpoint surfaces;
 - inventories absolute third-party requests separately as `externalCalls` with host, normalized path, method, source file and active/non-active classification;
 - writes a deterministic source-tree hash and report hash;
@@ -90,6 +93,7 @@ The gate fails closed for:
 - an active first-party frontend request with no backend route;
 - a path whose backend route exists only under a different HTTP method;
 - an active request whose HTTP method cannot be determined;
+- an active `POST`, `PUT`, `PATCH` or `DELETE` request with no discoverable test evidence;
 - malformed report output or an invalid repository revision identity.
 
 ## Explicit non-active surfaces
@@ -116,7 +120,9 @@ An active external request with an unknown HTTP method fails the compiler. Autho
 
 ## Consent and mutating requests
 
-The endpoint compiler does not grant authority. A mutating call still requires its canonical server-side session, CSRF, step-up, owner-consent, permission, CAS/staleness and target-readback contracts.
+The endpoint compiler does not grant authority. A mutating call still requires its canonical server-side session, CSRF, step-up, owner-consent, permission, CAS/staleness and target-readback contracts. A test reference proves only that the client contract is exercised; it never proves that consent was granted or that an external effect occurred.
+
+The targeted client regressions bind protected owner input, Billing capture, Knowledge read/import/upload/delete, Rescue entitlement, Toolchain read/operation calls and Skill lifecycle calls. They assert exact method, route, bounded payload and negative/fail-closed behavior where applicable.
 
 The browser smoke intentionally opens the Billing surface without selecting or confirming a purchase. It must observe only:
 
@@ -145,6 +151,7 @@ Coverage includes:
 - Blueprint prefixes;
 - query normalization;
 - method mismatch and missing-route denial;
+- mutation-without-test-evidence denial and recovery after a real test reference is added;
 - external absolute URL separation;
 - helper-transformer false-positive denial;
 - static artifacts;
@@ -157,7 +164,7 @@ Coverage includes:
 pnpm run test:frontend-endpoints
 ```
 
-This compiles the report with `--check` and runs the Python regressions.
+This compiles the report with `--check`, runs the Python compiler regressions and executes the targeted Vitest client suites for Admin owner input, Billing, Knowledge, Rescue, Toolchain and Skills.
 
 ### Browser E2E smoke
 
@@ -171,6 +178,9 @@ pnpm run test:e2e:frontend-endpoints
 - verifies every active first-party request has a matching backend path and method;
 - starts the built frontend through the canonical Playwright configuration;
 - observes critical runtime request wiring;
+- contains every non-allowlisted `/api/**` request inside the test and fails on any unexpected first-party endpoint;
+- fails on uncaught browser/page errors;
+- verifies every active first-party read and mutation binding carries test references;
 - rejects unconsented Billing writes;
 - preserves the declaration that network adapters are not production runtime evidence.
 

@@ -3,6 +3,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import reducer, {
   BillingState,
   Subscription,
+  capturePayPalOrder,
   fetchBillingData,
   fetchEnabledPaymentMethods,
   fetchUserCredits,
@@ -134,6 +135,51 @@ describe('billingSlice reducer', () => {
     expect(calls.some(url => url.endsWith('/api/billing/cancel'))).toBe(false);
     expect(calls.some(url => url.endsWith('/api/billing/restore'))).toBe(false);
     expect(store.getState().billing.credits).toBe(17);
+  });
+
+  it('captures a confirmed PayPal order through the exact endpoint and trusts only the returned balance', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      orderId: 'order-1',
+      creditsAdded: 25,
+      newBalance: 41,
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const store = configureStore({ reducer: { billing: reducer } });
+
+    const result = await store.dispatch(capturePayPalOrder('order-1'));
+
+    expect(result.type).toBe(capturePayPalOrder.fulfilled.type);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://sovereign-backend.arelorian.de/api/billing/purchase/paypal/capture',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: 'order-1' }),
+      }),
+    );
+    expect(store.getState().billing.credits).toBe(41);
+  });
+
+  it('does not invent a credit balance when PayPal capture is rejected', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      error: 'capture_not_confirmed',
+    }), {
+      status: 409,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const store = configureStore({
+      reducer: { billing: reducer },
+      preloadedState: { billing: { ...initialState, credits: 7 } },
+    });
+
+    const result = await store.dispatch(capturePayPalOrder('order-unconfirmed'));
+
+    expect(result.type).toBe(capturePayPalOrder.rejected.type);
+    expect(store.getState().billing.credits).toBe(7);
   });
 
   it('should handle null subscription', () => {

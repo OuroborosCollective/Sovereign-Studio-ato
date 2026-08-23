@@ -127,6 +127,11 @@ def test_custom_fetch_defaults_to_get_and_transformer_is_not_an_http_call(tmp_pa
             return {'challenge': 'bounded'}
         """,
     )
+    _write(
+        tmp_path,
+        "src/security.test.ts",
+        "expect(fetch).toHaveBeenCalledWith('/api/security/options', expect.objectContaining({ method: 'POST' }));",
+    )
 
     report = MODULE.build_report(tmp_path)
 
@@ -293,6 +298,45 @@ def test_type_only_import_does_not_reactivate_legacy_surface(tmp_path: Path) -> 
     assert report["importEdges"] == []
 
 
+def test_bound_mutation_without_test_evidence_fails_closed(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "src/api.ts",
+        "fetch('/api/items', { method: 'POST' });",
+    )
+    _write(
+        tmp_path,
+        "backend/routes.py",
+        """
+        @app.post('/api/items')
+        def create_item():
+            return {'ok': True}
+        """,
+    )
+
+    missing = MODULE.build_report(tmp_path)
+
+    assert missing["status"] == "fail"
+    assert missing["summary"]["activeMutationRequestCount"] == 1
+    assert missing["summary"]["activeMutationWithoutTestEvidenceCount"] == 1
+    assert missing["errors"] == [{
+        "family": "FRONTEND_MUTATION_TEST_EVIDENCE_MISSING",
+        "method": "POST",
+        "path": "/api/items",
+        "file": "src/api.ts",
+        "line": 1,
+    }]
+
+    _write(
+        tmp_path,
+        "src/api.test.ts",
+        "expect(fetch).toHaveBeenCalledWith('/api/items', expect.objectContaining({ method: 'POST' }));",
+    )
+    covered = MODULE.build_report(tmp_path)
+    assert covered["status"] == "pass", covered["errors"]
+    assert covered["summary"]["activeMutationWithoutTestEvidenceCount"] == 0
+
+
 def test_unmatched_and_method_mismatch_fail_closed(tmp_path: Path) -> None:
     _write(
         tmp_path,
@@ -341,6 +385,11 @@ def test_concatenated_dynamic_route_is_bound_without_partial_prefix(tmp_path: Pa
         def capsule(repair_id):
             return {'repairId': repair_id}
         """,
+    )
+    _write(
+        tmp_path,
+        "src/rescue.test.ts",
+        "expect(fetch).toHaveBeenCalledWith('/api/user/agent/rescue/repairs/repair-1/capsule', expect.objectContaining({ method: 'POST' }));",
     )
 
     report = MODULE.build_report(tmp_path)
@@ -477,6 +526,10 @@ def test_current_repository_has_no_active_frontend_backend_contract_gap() -> Non
     assert report["summary"]["legacyImportViolationCount"] == 0
     assert report["summary"]["activeRequestCount"] >= 20
     assert report["summary"]["boundActiveRequestCount"] == report["summary"]["activeRequestCount"], json.dumps(report["warnings"][:40], indent=2)
+    assert report["summary"]["activeMutationRequestCount"] >= 1
+    assert report["summary"]["activeMutationWithoutTestEvidenceCount"] == 0
+    assert report["summary"]["activeReadRequestCount"] >= 1
+    assert report["summary"]["activeReadWithoutTestEvidenceCount"] == 0, json.dumps(report["warnings"][:80], indent=2)
     assert report["summary"]["backendRouteCount"] >= 100
     assert report["summary"]["externalRequestCount"] >= 1
     assert report["summary"]["externalMethodUnknownCount"] == 0
