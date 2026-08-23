@@ -725,5 +725,8 @@ def test_native_desktop_worker_assets_are_digest_bound_and_non_privileged() -> N
     assert canary.index('sudo chown 10002:10002 "$key_file"') < canary.index('gateway="desktop-view-gateway-canary-$GITHUB_RUN_ID"')
     assert 'sudo rm -rf -- "$attempt_parent"' in canary
     assert "--network none" not in canary
+    assert "--entrypoint curl" not in canary
+    assert "http.client.HTTPConnection" in canary
+    assert "CANARY_VIEW_TOKEN" in canary
     assert "continuity" not in canary.casefold()
     assert "workflow_dispatch:" in canary
