@@ -140,7 +140,7 @@ def valid_request():
     )
 
 
-def create_test_app(conn: FakeConnection, resolve_live_workspace_context=None):
+def create_test_app(conn: FakeConnection, get_live_workspace_context=None):
     app = Flask(__name__)
 
     def require_session(fn):
@@ -158,7 +158,7 @@ def create_test_app(conn: FakeConnection, resolve_live_workspace_context=None):
         app,
         require_session=require_session,
         get_connection=lambda: conn,
-        resolve_live_workspace_context=resolve_live_workspace_context,
+        get_live_workspace_context=get_live_workspace_context,
     )
     return app
 
@@ -422,7 +422,7 @@ def test_get_job_is_user_scoped():
     assert other.status_code == 404
 
 
-def test_optional_projection_failure_never_hides_successful_canonical_tool_result(monkeypatch):
+def test_generic_tool_route_never_invokes_live_workspace_resolver(monkeypatch):
     conn = FakeConnection()
     seed_job(conn, "user-1", "agent-projection", status="running")
     calls = {"tool": 0, "resolver": 0}
@@ -452,13 +452,13 @@ def test_optional_projection_failure_never_hides_successful_canonical_tool_resul
         calls["tool"] += 1
         return result
 
-    def broken_projection_resolver(connection, job):
+    def live_workspace_resolver(connection, job):
         calls["resolver"] += 1
-        raise RuntimeError("optional projection renderer unavailable")
+        raise AssertionError("generic outer-clone tools must not resolve attempt workspaces")
 
     monkeypatch.setattr(routes_module, "run_agent_job_tool", fake_tool)
     monkeypatch.setattr(routes_module, "append_tool_result_to_job", lambda *args, **kwargs: gate)
-    app = create_test_app(conn, resolve_live_workspace_context=broken_projection_resolver)
+    app = create_test_app(conn, get_live_workspace_context=live_workspace_resolver)
 
     response = app.test_client().post(
         "/api/user/agent/jobs/agent-projection/tools/file",
@@ -471,7 +471,93 @@ def test_optional_projection_failure_never_hides_successful_canonical_tool_resul
     assert payload["ok"] is True
     assert payload["tool"]["status"] == "done"
     assert payload["projection"] is None
-    assert calls == {"tool": 1, "resolver": 1}
+    assert calls == {"tool": 1, "resolver": 0}
+
+
+def test_live_workspace_get_is_owner_scoped_before_resolver() -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-live", status="running")
+    calls = {"resolver": 0}
+
+    def resolver(_conn, _job):
+        calls["resolver"] += 1
+        return None
+
+    app = create_test_app(conn, get_live_workspace_context=resolver)
+    response = app.test_client().get(
+        "/api/user/agent/jobs/agent-live/live-workspace",
+        headers={"X-Test-User": "user-2"},
+    )
+
+    assert response.status_code == 404
+    assert calls == {"resolver": 0}
+
+
+def test_live_workspace_get_blocks_absent_context_without_path_leak() -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-live", status="running")
+    app = create_test_app(conn, get_live_workspace_context=lambda _conn, _job: None)
+
+    response = app.test_client().get(
+        "/api/user/agent/jobs/agent-live/live-workspace",
+        headers={"X-Test-User": "user-1"},
+    )
+
+    assert response.status_code == 409
+    payload = response.get_json()
+    assert payload["state"] == "BLOCKED"
+    assert "worktreePath" not in response.get_data(as_text=True)
+
+
+def test_live_workspace_get_returns_only_path_free_context() -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-live", status="running")
+
+    class Context:
+        def to_public_dict(self):
+            return {
+                "projectionState": "LIVE",
+                "attempt": {
+                    "attemptId": "attempt-1234567890abcdef12345678",
+                    "worktreePathSha256": "a" * 64,
+                    "changedPaths": ["src/example.py"],
+                },
+            }
+
+    app = create_test_app(conn, get_live_workspace_context=lambda _conn, _job: Context())
+    response = app.test_client().get(
+        "/api/user/agent/jobs/agent-live/live-workspace",
+        headers={"X-Test-User": "user-1"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["liveWorkspace"]["projectionState"] == "LIVE"
+    raw = response.get_data(as_text=True)
+    assert "worktreePath\"" not in raw
+    assert "/fleet-worktrees/" not in raw
+
+
+def test_live_workspace_get_blocks_windows_and_unc_path_shaped_payloads() -> None:
+    for unsafe_path in ("C:\\fleet-worktrees\\secret.py", "//server/share/secret.py", "\\\\server\\share\\secret.py"):
+        conn = FakeConnection()
+        seed_job(conn, "user-1", "agent-live", status="running")
+
+        class Context:
+            def to_public_dict(self):
+                return {
+                    "projectionState": "LIVE",
+                    "attempt": {"changedPaths": [unsafe_path]},
+                }
+
+        app = create_test_app(conn, get_live_workspace_context=lambda _conn, _job: Context())
+        response = app.test_client().get(
+            "/api/user/agent/jobs/agent-live/live-workspace",
+            headers={"X-Test-User": "user-1"},
+        )
+
+        assert response.status_code == 409
+        assert unsafe_path not in response.get_data(as_text=True)
 
 
 def test_cancel_non_terminal_job_sets_blocked():

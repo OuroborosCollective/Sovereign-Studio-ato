@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 import subprocess
@@ -10,6 +11,7 @@ if str(RUNTIME_ROOT) not in sys.path:
     sys.path.insert(0, str(RUNTIME_ROOT))
 
 from agent_runtime.fleet_attempts import create_worker_attempt
+from agent_runtime.fleet_attempt_worktrees import provision_attempt_worktree
 from agent_runtime.fleet_supervisor import FleetTask, build_fleet_plan, create_worker_assignment
 from agent_runtime.live_workspace import LiveWorkspaceSessionV1, WorkspaceReadbackV1
 from agent_runtime.live_workspace_projection import ProjectionContractError, projection_for_tool_result
@@ -31,11 +33,16 @@ def _workspace(tmp_path: Path):
     (repo / "src" / "app.py").write_text("print('bound')\n", encoding="utf-8")
     _git(["git", "add", "."], repo)
     _git(["git", "commit", "-m", "fixture"], repo)
-    job = SimpleNamespace(job_id="job-projection", workspace_id="job-projection")
+    _git(["git", "remote", "add", "origin", "https://github.com/OuroborosCollective/Sovereign-Studio-ato"], repo)
+    job = SimpleNamespace(
+        job_id="job-projection",
+        workspace_id="job-projection",
+        repo_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+    )
     return root, repo, job
 
 
-def _session(repo: Path, job):
+def _session(root: Path, repo: Path, job):
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, check=True, text=True, capture_output=True
     ).stdout.strip()
@@ -65,11 +72,18 @@ def _session(repo: Path, job):
         capability_manifest_hash="d" * 64,
     )
     attempt = create_worker_attempt(assignment, attempt_sequence=1)
+    attempt_workspace = provision_attempt_worktree(
+        assignment=assignment,
+        attempt=attempt,
+        active_attempt=attempt,
+        repository_url=job.repo_url,
+        root=root,
+    )
     readback = WorkspaceReadbackV1.from_dict({
         "repository": "OuroborosCollective/Sovereign-Studio-ato",
         "workspaceId": job.workspace_id,
-        "worktreeIdentityHash": "e" * 64,
-        "observedHeadRevision": head,
+        "worktreeIdentityHash": attempt_workspace.worktree_readback_sha256,
+        "observedHeadRevision": attempt_workspace.head_revision,
         "fleetPlanHash": assignment.plan_hash,
         "controllerStateRef": "f" * 64,
         "controllerState": "RUNNING",
@@ -83,7 +97,7 @@ def _session(repo: Path, job):
         projection_source_hashes=["a" * 64],
     )
     reconciliation = session.reconcile(active_attempt=attempt, workspace_readback=readback)
-    return session, reconciliation
+    return session, reconciliation, attempt_workspace
 
 
 def _result(*, tool: str = "file", status: str = "done", output: str = "ok", exit_code: int = 0) -> ToolResult:
@@ -99,13 +113,13 @@ def _result(*, tool: str = "file", status: str = "done", output: str = "ok", exi
 
 def _project(*, root: Path, job, route_action: str, parameters: dict, result: ToolResult):
     repo = root / job.workspace_id / "repo"
-    session, reconciliation = _session(repo, job)
+    session, reconciliation, attempt_workspace = _session(root, repo, job)
     return projection_for_tool_result(
         job=job,
+        attempt_workspace=attempt_workspace,
         route_action=route_action,
         parameters=parameters,
         result=result,
-        workspace_root=root,
         session=session,
         reconciliation=reconciliation,
     )
@@ -235,6 +249,23 @@ def test_projection_requires_real_action_identity(tmp_path: Path) -> None:
             route_action="file",
             parameters={"path": "src/app.py", "mode": "read"},
             result=result,
+        )
+
+
+def test_projection_rejects_outer_agent_job_clone_as_attempt_source(tmp_path: Path) -> None:
+    root, repo, job = _workspace(tmp_path)
+    session, reconciliation, attempt_workspace = _session(root, repo, job)
+    outer_clone = replace(attempt_workspace, worktree_path=repo)
+
+    with pytest.raises(ProjectionContractError, match="repository is unavailable"):
+        projection_for_tool_result(
+            job=job,
+            attempt_workspace=outer_clone,
+            route_action="file",
+            parameters={"path": "src/app.py", "mode": "read"},
+            result=_result(),
+            session=session,
+            reconciliation=reconciliation,
         )
 
 

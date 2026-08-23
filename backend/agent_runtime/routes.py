@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import os
 from pathlib import Path
+import re
 from typing import Any, Callable, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -39,7 +40,7 @@ from .github_access import (
     verify_github_access_scope,
 )
 from .job_lifecycle import create_sovereign_agent_job, generate_agent_job_id
-from .job_store import append_agent_event, append_agent_projection, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
+from .job_store import append_agent_event, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
 from .pattern_gateway import (
     evaluate_pattern_learning,
     pattern_input_from_job,
@@ -49,8 +50,6 @@ from .pattern_gateway import (
 from .pattern_vector_memory import persist_pattern_vector, search_pattern_vectors
 from .reusable_memory import search_reusable_memory
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
-from .live_workspace import LiveWorkspaceSessionV1, SessionReconciliationV1
-from .live_workspace_projection import projection_for_tool_result, public_projection_event
 from .tool_runner import run_agent_job_tool
 from .tools.base import ToolResult
 from .repair_capsule import (
@@ -228,12 +227,39 @@ def _workspace_root() -> Path | None:
     return Path(configured) if configured else None
 
 
+_WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"^[A-Za-z]:[\\\\/]")
+
+
+def _contains_live_workspace_path(value: object) -> bool:
+    """Reject accidental raw filesystem data from a reconnect response."""
+
+    forbidden_keys = {
+        "worktreepath", "baserepositorypath", "workspacepath", "repositorypath",
+        "absolutepath", "filesystempath",
+    }
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            normalized_key = str(key or "").replace("_", "").replace("-", "").lower()
+            if normalized_key in forbidden_keys or _contains_live_workspace_path(item):
+                return True
+        return False
+    if isinstance(value, (list, tuple)):
+        return any(_contains_live_workspace_path(item) for item in value)
+    if isinstance(value, str):
+        return (
+            value.startswith(("/", "\\", "//", "\\\\"))
+            or bool(_WINDOWS_ABSOLUTE_PATH_RE.match(value))
+            or "\x00" in value
+        )
+    return False
+
+
 def register_sovereign_agent_routes(
     app,
     *,
     require_session,
     get_connection: ConnectionFactory,
-    resolve_live_workspace_context: Callable[[Any, Any], tuple[LiveWorkspaceSessionV1, SessionReconciliationV1] | None] | None = None,
+    get_live_workspace_context: Callable[[Any, Any], Any | None] | None = None,
 ) -> None:
     """Register neutral user-facing Sovereign Agent job routes.
 
@@ -241,6 +267,7 @@ def register_sovereign_agent_routes(
     - GET  /api/user/agent/jobs
     - POST /api/user/agent/jobs
     - GET  /api/user/agent/jobs/<job_id>
+    - GET  /api/user/agent/jobs/<job_id>/live-workspace
     - POST /api/user/agent/jobs/<job_id>/cancel
     - POST /api/user/agent/jobs/<job_id>/cleanup
     - POST /api/user/agent/jobs/<job_id>/editor/open
@@ -349,32 +376,11 @@ def register_sovereign_agent_routes(
 
             evidence_result = result if action == "janitor" else _merge_job_evidence(job, result)
             gate = append_tool_result_to_job(conn, job_id, evidence_result)
-            projection = None
-            if action in {"file", "diff", "test"} and resolve_live_workspace_context is not None:
-                try:
-                    context = resolve_live_workspace_context(conn, job)
-                    if context is not None:
-                        session, reconciliation = context
-                        projection = projection_for_tool_result(
-                            job=job,
-                            route_action=action,
-                            parameters=body,
-                            result=evidence_result,
-                            workspace_root=_workspace_root(),
-                            session=session,
-                            reconciliation=reconciliation,
-                        )
-                        append_agent_projection(
-                            conn,
-                            job_id=job_id,
-                            projection=public_projection_event(projection),
-                        )
-                except Exception:
-                    # Projection is observation-only. A stale/missing session, workspace
-                    # policy rejection, renderer bug or persistence failure must never
-                    # hide an already persisted canonical tool/evidence result and cause
-                    # a retry of a successful mutation.
-                    projection = None
+            # These generic tools operate against the outer Agent Job clone.  That
+            # clone is provenance only, never a #1524 AttemptWorkspace.  Do not
+            # call the live reconnect resolver or create an attempt-labelled
+            # projection here; only a future exact-AttemptWorkspace executor may
+            # attach such a projection.
             tool_ok = result.status == "done"
             response_ok = tool_ok and (action == "janitor" or getattr(gate, "allowed", gate.passed))
             return jsonify({
@@ -382,7 +388,7 @@ def register_sovereign_agent_routes(
                 "runtime": "sovereign-agent",
                 "jobId": job_id,
                 "tool": _tool_result_to_api(evidence_result, gate),
-                "projection": public_projection_event(projection) if projection else None,
+                "projection": None,
             }), 200 if response_ok else 400
         finally:
             _close(conn)
@@ -1345,6 +1351,49 @@ def register_sovereign_agent_routes(
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
             return jsonify({"runtime": "sovereign-agent", "job": _job_to_api(job)})
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/live-workspace", methods=["GET"])
+    @require_session
+    def user_get_live_workspace(job_id: str):
+        """Reconnect to one server-derived active attempt without exposing paths."""
+
+        user_id = _current_session_user_id()
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            context = None
+            if get_live_workspace_context is not None:
+                try:
+                    context = get_live_workspace_context(conn, job)
+                except Exception:
+                    context = None
+            if context is None or not callable(getattr(context, "to_public_dict", None)):
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "state": "BLOCKED",
+                    "reason": "LIVE_WORKSPACE_CONTEXT_UNAVAILABLE",
+                }), 409
+            payload = context.to_public_dict()
+            if not isinstance(payload, dict) or _contains_live_workspace_path(payload):
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "state": "BLOCKED",
+                    "reason": "LIVE_WORKSPACE_CONTEXT_UNAVAILABLE",
+                }), 409
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "liveWorkspace": payload,
+            })
         finally:
             _close(conn)
 

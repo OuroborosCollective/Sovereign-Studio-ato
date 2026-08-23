@@ -12,6 +12,7 @@ sys.path.insert(0, str(BACKEND))
 
 from agent_runtime.cognitive_repository_tools import (
     BoundRepositoryToolset,
+    FleetAttemptSnapshotEvidence,
     READ_REPOSITORY_TOOL_NAMES,
     ROLE_PATH_PREFIXES,
     ROLE_WORK_PACKAGES,
@@ -26,6 +27,7 @@ from agent_runtime.cognitive_swarm_manifest import WORKER_ROLES
 from agent_runtime.fleet_attempts import create_worker_attempt
 from agent_runtime.fleet_attempt_worktrees import (
     create_attempt_worktree_release,
+    fleet_attempt_worktree_path,
     resolve_active_attempt_worktree,
 )
 from agent_runtime.fleet_supervisor import FleetContractError
@@ -207,7 +209,7 @@ def test_tool_output_redacts_known_secret_shapes() -> None:
     assert output.count("[REDACTED]") == 2
 
 
-def _bound_real_fleet_toolset(monkeypatch, tmp_path: Path):
+def _bound_real_fleet_toolset(monkeypatch, tmp_path: Path, *, install_snapshot_observer: bool = True):
     root = tmp_path / "workspaces"
     workspace_id = "agent-fleet-worktree"
     repo = root / workspace_id / "repo"
@@ -253,6 +255,16 @@ def _bound_real_fleet_toolset(monkeypatch, tmp_path: Path):
     toolset.bind_fleet_execution(bindings)
     monkeypatch.setattr(repository_tools, "read_agent_job", lambda *_args, **_kwargs: job)
     workspaces = toolset.provision_fleet_attempt_workspaces()
+    if install_snapshot_observer:
+        toolset.set_fleet_attempt_workspace_snapshot_observer(
+            lambda snapshot: FleetAttemptSnapshotEvidence(
+                fleet_plan_hash=snapshot.fleet_plan_hash,
+                controller_run_id=snapshot.controller_run_id,
+                snapshot_hash=snapshot.snapshot_hash,
+                evidence_id="evidence-rebind-test",
+                evidence_sha256="a" * 64,
+            )
+        )
     return root, repo, head, bindings, toolset, workspaces
 
 
@@ -357,3 +369,31 @@ def test_fleet_attempt_rebind_requires_a_higher_server_attempt_and_retains_old_w
     toolset.cleanup_released_fleet_attempt_workspace(release)
     assert not original.worktree_path.exists()
     assert original.attempt_id not in toolset.settled_fleet_attempt_receipts()
+
+
+def test_fleet_rebind_observer_failure_does_not_switch_or_orphan_candidate(monkeypatch, tmp_path: Path) -> None:
+    root, _, _head, bindings, toolset, workspaces = _bound_real_fleet_toolset(
+        monkeypatch,
+        tmp_path,
+        install_snapshot_observer=False,
+    )
+    role = WORKER_ROLES[0]
+    assignment = bindings.assignments_by_role[role]
+    retry_attempt = create_worker_attempt(assignment, attempt_sequence=2)
+    toolset.set_fleet_attempt_workspace_snapshot_observer(
+        lambda _snapshot: (_ for _ in ()).throw(RuntimeError("store unavailable"))
+    )
+
+    with pytest.raises(RuntimeError, match="store unavailable"):
+        toolset.rebind_fleet_attempt_workspace(role, retry_attempt)
+
+    candidate = fleet_attempt_worktree_path(assignment.workspace_id, retry_attempt.attempt_id, root)
+    assert not candidate.exists()
+    assert toolset._active_fleet_attempts_by_role[role].attempt_id == workspaces[role].attempt_id
+
+
+def test_fleet_rebind_snapshot_observer_is_immutable_after_install(monkeypatch, tmp_path: Path) -> None:
+    _root, _repo, _head, _bindings, toolset, _workspaces = _bound_real_fleet_toolset(monkeypatch, tmp_path)
+
+    with pytest.raises(FleetContractError, match="immutable"):
+        toolset.set_fleet_attempt_workspace_snapshot_observer(lambda _snapshot: None)

@@ -240,13 +240,24 @@ def test_repository_workers_follow_persisted_serial_fleet_lanes(monkeypatch) -> 
         task_ids_by_agent={role: f"task-{role}" for role in swarm_module.WORKER_ROLES},
     )
     admitted_lanes: list[tuple[str, tuple[str, ...]]] = []
+    lane_transition_journal: list[tuple[str, str]] = []
 
     @contextmanager
     def fleet_lane_guard(lane_id: str, roles: tuple[str, ...]):
         admitted_lanes.append((lane_id, roles))
-        yield
+        lane_transition_journal.append(("guard_entered", lane_id))
+        try:
+            yield
+        finally:
+            lane_transition_journal.append(("guard_exited", lane_id))
 
     events: list[dict[str, object]] = []
+
+    def observe(event: dict[str, object]) -> None:
+        if event["eventType"] in {"fleet_lane_started", "fleet_lane_completed"}:
+            lane_transition_journal.append((str(event["eventType"]), str(event["fleetLaneId"])))
+        events.append(event)
+
     result = asyncio.run(run_cognitive_swarm(
         "Inspect the persisted Fleet lanes.",
         main_route={"id": "paid-main"},
@@ -257,7 +268,7 @@ def test_repository_workers_follow_persisted_serial_fleet_lanes(monkeypatch) -> 
         fleet_assignments_by_role=bindings.assignments_by_role,
         fleet_lane_guard=fleet_lane_guard,
         fleet_head_readback=lambda: "a" * 40,
-        stage_observer=events.append,
+        stage_observer=observe,
     ))
 
     expected_roles = [
@@ -284,6 +295,17 @@ def test_repository_workers_follow_persisted_serial_fleet_lanes(monkeypatch) -> 
     lane_events = [event for event in events if event["eventType"] == "fleet_lane_started"]
     assert len(lane_events) == len(bindings.plan.lanes) * 2
     assert all(event["fleetPlanHash"] == bindings.plan.plan_hash for event in lane_events)
+    assert lane_transition_journal == [
+        transition
+        for _loop in range(2)
+        for lane in bindings.plan.lanes
+        for transition in (
+            ("guard_entered", lane.lane_id),
+            ("fleet_lane_started", lane.lane_id),
+            ("fleet_lane_completed", lane.lane_id),
+            ("guard_exited", lane.lane_id),
+        )
+    ]
 
 
 def test_repository_workers_fail_closed_without_a_persisted_fleet_plan() -> None:

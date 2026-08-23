@@ -82,6 +82,7 @@ from free_revolver_provider_runtime import register_free_revolver_provider_runti
 from llm_route_scanner import register_llm_route_scanner
 
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
+from agent_runtime.live_workspace_context import build_live_workspace_context_resolver
 from agent_runtime.routes import register_sovereign_agent_routes
 from agent_runtime.skills.routes import register_progressive_skill_routes
 from are_inference import register_are_inference_routes
@@ -1654,6 +1655,9 @@ register_sovereign_agent_routes(
     app,
     require_session=require_session,
     get_connection=get_agent_runtime_connection,
+    # Read-only reconnect resolution consumes only persisted stage evidence and an
+    # existing exact AttemptWorkspace; generic /tools routes remain unprojected.
+    get_live_workspace_context=build_live_workspace_context_resolver(),
 )
 register_cognitive_swarm_routes(
     app,
