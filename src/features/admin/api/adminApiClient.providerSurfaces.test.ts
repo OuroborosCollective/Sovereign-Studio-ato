@@ -198,6 +198,29 @@ describe('adminApiClient typed provider surface read model', () => {
     };
 
     expect(isAcceptedLlmProviderSurfaceReadModel(valid)).toBe(true);
+
+    const readyOmniRoute = {
+      ...omniRoute,
+      ok: true,
+      disabled: false,
+      activationState: 'ready',
+      blocker: null,
+      confirmationCount: 2,
+      receiptSha256: 'c'.repeat(64),
+    };
+    expect(isAcceptedLlmProviderSurfaceReadModel({
+      ...valid,
+      omniRoute: readyOmniRoute,
+    })).toBe(true);
+    expect(isAcceptedLlmProviderSurfaceReadModel({
+      ...valid,
+      omniRoute: { ...readyOmniRoute, receiptSha256: null },
+    })).toBe(false);
+    expect(isAcceptedLlmProviderSurfaceReadModel({
+      ...valid,
+      omniRoute: { ...readyOmniRoute, blocker: 'omniroute_canary_http_503' },
+    })).toBe(false);
+
     expect(isAcceptedLlmProviderSurfaceReadModel({
       providers: [],
       omniRoute: { routeSource: 'omniroute' },

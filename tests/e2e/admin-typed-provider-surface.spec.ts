@@ -56,6 +56,7 @@ function provider(
 }
 
 async function installAdminMock(page: Page, calls: Call[]): Promise<void> {
+  let omniRouteReady = false;
   await page.route('**/api/admin/**', async route => {
     const request = route.request();
     const method = request.method();
@@ -137,6 +138,26 @@ async function installAdminMock(page: Page, calls: Call[]): Promise<void> {
     }
 
     if (method === 'GET' && path === '/api/admin/llm/omniroute/status') {
+      if (omniRouteReady) {
+        await json(route, {
+          ok: true,
+          routeSource: 'omniroute',
+          routeId: 'sovereign-omniroute-auto',
+          modelId: 'sovereign-omniroute:auto',
+          apiBase: 'http://omniroute:20128/v1',
+          disabled: false,
+          activationState: 'ready',
+          blocker: null,
+          confirmationCount: 2,
+          catalogModelCount: 42,
+          receiptSha256: 'c'.repeat(64),
+          sourceRevision: 'a'.repeat(40),
+          imageDigest: 'sha256:' + 'b'.repeat(64),
+          freeLlmApiChanged: false,
+          rawProviderResponsesReturned: false,
+        });
+        return;
+      }
       await json(route, {
         ok: false,
         routeSource: 'omniroute',
@@ -157,6 +178,7 @@ async function installAdminMock(page: Page, calls: Call[]): Promise<void> {
     }
 
     if (method === 'POST' && path === '/api/admin/llm/omniroute/refresh') {
+      omniRouteReady = true;
       await json(route, {
         ok: true,
         routeSource: 'omniroute',
@@ -247,6 +269,19 @@ test('renders every typed provider surface and invokes only the canonical OmniRo
     page.getByTestId('provider-action-omniroute-refresh').click(),
   ]);
 
+  const omniSurface = page.getByTestId('provider-surface-omniroute');
+  await expect(omniSurface).toContainText('ready');
+  await expect(omniSurface).toContainText('2/2');
+
+  const refreshCallIndex = calls.findIndex(call => (
+    call.method === 'POST'
+    && call.path === '/api/admin/llm/omniroute/refresh'
+  ));
+  expect(refreshCallIndex).toBeGreaterThanOrEqual(0);
+  expect(calls.slice(refreshCallIndex + 1).some(call => (
+    call.method === 'GET'
+    && call.path === '/api/admin/llm/omniroute/status'
+  ))).toBe(true);
   expect(calls.some(call => (
     call.method === 'POST'
     && call.path.endsWith('/revolver-v3/providers/0609e75c-8c48-59db-80a4-3155b823205b/discover')

@@ -295,8 +295,13 @@ def test_omniroute_401_canary_degrades_only_its_dedicated_route(
     assert "sovereign-omniroute-auto" in all_material
 
 
+@pytest.mark.parametrize("invalid_route", [
+    {"model_id": "wrong-model-id"},
+    {"base_url": f"{OMNIROUTE_BASE_URL}/"},
+])
 def test_invalid_canonical_route_identity_fails_before_canary_or_mutation(
     monkeypatch: pytest.MonkeyPatch,
+    invalid_route: dict[str, str],
 ) -> None:
     connection = _Connection()
     calls: list[tuple[str, bool]] = []
@@ -304,13 +309,9 @@ def test_invalid_canonical_route_identity_fails_before_canary_or_mutation(
     def query(sql: str, _params=None, *, one=False, write=False):
         calls.append((sql, write))
         if "FROM llm_routes WHERE id=%s" in sql:
-            return {
-                "id": runtime._ROUTE_ID,
-                "model_id": "wrong-model-id",
-                "base_url": OMNIROUTE_BASE_URL,
-                "disabled": True,
-                "config": {},
-            }
+            route = _canonical_omniroute_route()
+            route.update(invalid_route)
+            return route
         return None
 
     monkeypatch.setattr(

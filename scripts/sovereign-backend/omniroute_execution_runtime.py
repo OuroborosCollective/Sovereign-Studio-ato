@@ -254,8 +254,8 @@ class OmniRouteExecutionRuntime:
         if (
             str(route.get("id") or "") != _ROUTE_ID
             or str(route.get("model_id") or "") != _MODEL_ALIAS
-            or str(route.get("base_url") or "").rstrip("/").lower()
-            != OMNIROUTE_BASE_URL.rstrip("/").lower()
+            or str(route.get("base_url") or "").lower()
+            != OMNIROUTE_BASE_URL.lower()
         ):
             return None
         return route

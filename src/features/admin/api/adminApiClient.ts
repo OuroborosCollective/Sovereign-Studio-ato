@@ -324,6 +324,18 @@ function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
+function isCanonicalSha256(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+}
+
+function isCanonicalSourceRevision(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+}
+
+function isCanonicalImageDigest(value: unknown): value is string {
+  return typeof value === 'string' && /^sha256:[0-9a-f]{64}$/.test(value);
+}
+
 function isOneOf<T extends readonly string[]>(value: unknown, choices: T): value is T[number] {
   return typeof value === 'string' && choices.some(choice => choice === value);
 }
@@ -430,7 +442,11 @@ function isAcceptedOmniRouteStatus(value: unknown): value is OmniRouteRuntimeSta
   return !value.ok || (
     value.disabled === false
     && value.activationState === 'ready'
+    && value.blocker === null
     && value.confirmationCount >= 2
+    && isCanonicalSha256(value.receiptSha256)
+    && isCanonicalSourceRevision(value.sourceRevision)
+    && isCanonicalImageDigest(value.imageDigest)
   );
 }
 
