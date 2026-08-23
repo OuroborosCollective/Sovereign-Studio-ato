@@ -288,6 +288,8 @@ class OmniRouteExecutionRuntime:
             and config.get("quotaScope") == "freellm:omniroute:auto"
             and quota_evidence.get("scope") == "freellm:omniroute:auto"
             and quota_evidence.get("stateOwner") == "postgresql-revolver-state"
+            and config.get("routingOwner") == "free-revolver-v3"
+            and config.get("resolverMode") == "revolver"
             and config.get("direct") is True
         )
 
@@ -377,6 +379,8 @@ class OmniRouteExecutionRuntime:
                  AND COALESCE(config->>'routeSource','')='omniroute'
                  AND COALESCE(config->>'sourceType','')='omniroute'
                  AND COALESCE(config->>'transport','')='freellm'
+                 AND COALESCE(config->>'routingOwner','')='free-revolver-v3'
+                 AND COALESCE(config->>'resolverMode','')='revolver'
                  AND COALESCE(config->>'direct','')='true'""",
             (family, _ROUTE_ID, _MODEL_ALIAS, OMNIROUTE_BASE_URL),
         )
@@ -524,6 +528,8 @@ class OmniRouteExecutionRuntime:
                          AND COALESCE(config->>'routeSource','')='omniroute'
                          AND COALESCE(config->>'sourceType','')='omniroute'
                          AND COALESCE(config->>'transport','')='freellm'
+                         AND COALESCE(config->>'routingOwner','')='free-revolver-v3'
+                         AND COALESCE(config->>'resolverMode','')='revolver'
                          AND COALESCE(config->>'direct','')='true'""",
                     (
                         json.dumps(runtime_config, separators=(",", ":")),

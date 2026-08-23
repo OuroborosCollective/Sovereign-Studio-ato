@@ -77,6 +77,8 @@ def _canonical_omniroute_route() -> dict:
                 "scope": "freellm:omniroute:auto",
                 "stateOwner": "postgresql-revolver-state",
             },
+            "routingOwner": "free-revolver-v3",
+            "resolverMode": "revolver",
             "direct": True,
         },
     }
@@ -541,6 +543,7 @@ def test_status_blocks_when_the_canonical_source_or_model_readback_is_missing(
 @pytest.mark.parametrize(("field", "value"), [
     ("executionProfile", "paid_swarm_6"),
     ("providerModel", "not-auto"),
+    ("routingOwner", "not-free-revolver-v3"),
     ("markupMultiplier", True),
 ])
 def test_static_execution_identity_drift_blocks_before_canary_or_write(
@@ -749,6 +752,8 @@ def test_refresh_returns_canonical_status_projection_after_success_or_failure(
                 "scope": "freellm:omniroute:auto",
                 "stateOwner": "postgresql-revolver-state",
             },
+            "routingOwner": "free-revolver-v3",
+            "resolverMode": "revolver",
             "direct": True,
             "selectable": False,
             "canaryVerified": False,
