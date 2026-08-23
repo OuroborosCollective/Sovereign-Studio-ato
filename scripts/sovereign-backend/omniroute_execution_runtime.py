@@ -299,12 +299,18 @@ class OmniRouteExecutionRuntime:
                       EXISTS(
                           SELECT 1 FROM llm_revolver_provider_sources
                           WHERE id=%s::uuid AND api_base=%s AND auth_mode='none'
+                            AND enabled=true
+                            AND status='healthy'
                       ) AS source_present,
                       EXISTS(
                           SELECT 1 FROM llm_revolver_provider_models
                           WHERE source_id=%s::uuid
                             AND upstream_model_id='auto'
                             AND litellm_alias=%s
+                            AND enabled=true
+                            AND status='ready'
+                            AND free_verified=true
+                            AND free_eligible=true
                       ) AS model_present
                FROM llm_routes WHERE id=%s LIMIT 1""",
             (_SOURCE_ID, OMNIROUTE_BASE_URL, _SOURCE_ID, _MODEL_ALIAS, _ROUTE_ID),
@@ -403,7 +409,12 @@ class OmniRouteExecutionRuntime:
             (family, _SOURCE_ID, OMNIROUTE_BASE_URL),
         )
 
-    def _project_failure(self, connection: Any, family: str) -> bool:
+    def _project_failure_while_locked(
+        self,
+        connection: Any,
+        family: str,
+    ) -> bool:
+        """Persist a rejected scan while the transaction advisory lock is held."""
         try:
             with connection.cursor() as cursor:
                 if self._locked_canonical_state(cursor) is None:
@@ -588,12 +599,10 @@ class OmniRouteExecutionRuntime:
                 }
         except OmniRouteActivationError as exc:
             if lock_connection is not None:
-                try:
-                    lock_connection.rollback()
-                except Exception:
-                    pass
-            if lock_connection is not None:
-                self._project_failure(lock_connection, exc.family)
+                self._project_failure_while_locked(
+                    lock_connection,
+                    exc.family,
+                )
             return {
                 "ok": False,
                 "status": "degraded",
@@ -607,11 +616,6 @@ class OmniRouteExecutionRuntime:
                     lock_connection.rollback()
                 except Exception:
                     pass
-            if lock_connection is not None:
-                self._project_failure(
-                    lock_connection,
-                    "omniroute_activation_internal_failure",
-                )
             return {
                 "ok": False,
                 "status": "degraded",
