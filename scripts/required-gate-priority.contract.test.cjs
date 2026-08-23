@@ -39,6 +39,7 @@ function extractGithubScript(workflowText) {
 test('only required workflows receive direct pull_request runners', () => {
   assert.deepEqual(directPullRequestWorkflowFiles(), [
     'boundary-ledger-drift.yml',
+    'desktop-worker.yml',
     'integration-plan-lane-gate.yml',
     'release-verification.yml',
     'sovereign-agent-backend.yml',

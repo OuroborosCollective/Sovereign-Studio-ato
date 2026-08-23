@@ -251,7 +251,7 @@ class DesktopWorkerRuntime:
             "--memory", str(activation.memory_bytes),
             "--cpus", f"{activation.cpu_millis / 1000:.3f}",
             "--network", self.network,
-            "--mount", f"type=bind,src={activation.workspace_path},dst=/workspace,rw",
+            "--mount", f"type=bind,src={activation.workspace_path},dst=/workspace",
             "--mount", f"type=bind,src={activation.view_scope_path},dst=/opt/desktop-scopes/view,readonly",
             "--mount", f"type=bind,src={activation.input_scope_path},dst=/opt/desktop-scopes/input,readonly",
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=128m",

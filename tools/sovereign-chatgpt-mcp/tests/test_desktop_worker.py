@@ -93,7 +93,7 @@ def test_run_arguments_enforce_private_network_hardening_and_single_workspace_mo
     assert "--publish" not in argv
     assert "-p" not in argv
     assert "docker.sock" not in rendered
-    assert "dst=/workspace,rw" in rendered
+    assert "dst=/workspace" in rendered
     assert rendered.count("type=bind") == 3
 
 
