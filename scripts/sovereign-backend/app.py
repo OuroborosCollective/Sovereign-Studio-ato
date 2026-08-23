@@ -82,6 +82,9 @@ from free_revolver_provider_runtime import register_free_revolver_provider_runti
 from llm_route_scanner import register_llm_route_scanner
 
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
+from agent_runtime.desktop_activation import DesktopActivationIssuerV1
+from agent_runtime.desktop_control import DesktopControlGatewayV1
+from agent_runtime.desktop_projection import DesktopFrameProxyV1
 from agent_runtime.live_workspace_context import build_live_workspace_context_resolver
 from agent_runtime.routes import register_sovereign_agent_routes
 from agent_runtime.skills.routes import register_progressive_skill_routes
@@ -1370,11 +1373,28 @@ def admin_update_llm_route(rid):
 @require_admin
 def admin_reset_llm_revolver_route(rid):
     route = query(
-        "SELECT id::text, config FROM llm_routes WHERE id::text=%s LIMIT 1",
+        """SELECT id::text, provider, runtime_kind, config
+           FROM llm_routes WHERE id::text=%s LIMIT 1""",
         (rid,), one=True,
     )
     if not route:
         return jsonify({"error": "Route nicht gefunden"}), 404
+    transport = str(
+        route.get("runtime_kind") or route.get("provider") or ""
+    ).strip().lower()
+    config = dict(route.get("config") or {})
+    routing_owner = str(config.get("routingOwner") or "")
+    managed_endpoint = {
+        "free-revolver-v3": "/api/admin/llm/revolver-v3/providers",
+        "openrouter-free-revolver": "/api/admin/llm/openrouter/free/status",
+    }.get(routing_owner)
+    if transport == "freellm" or managed_endpoint:
+        return jsonify({
+            "error": "Diese Free-Revolver-Route wird ausschließlich über ihren getrennten Providervertrag verwaltet.",
+            "blocker": "free_revolver_managed_route",
+            "requiredEndpoint": managed_endpoint
+            or "/api/admin/llm/revolver-v3/providers",
+        }), 409
     try:
         quota_scope = route_quota_scope(dict(route))
     except ValueError as exc:
@@ -1658,6 +1678,28 @@ register_sovereign_agent_routes(
     # Read-only reconnect resolution consumes only persisted stage evidence and an
     # existing exact AttemptWorkspace; generic /tools routes remain unprojected.
     get_live_workspace_context=build_live_workspace_context_resolver(),
+    issue_desktop_activation=lambda context: DesktopActivationIssuerV1.from_env().issue(context=context),
+    get_desktop_frame=lambda context: DesktopFrameProxyV1.from_env().frame(
+        handle=DesktopActivationIssuerV1.from_env().issue(context=context),
+    ),
+    take_desktop_control=lambda context, user_id: DesktopControlGatewayV1.from_env().takeover(
+        context=context,
+        user_id=user_id,
+    ),
+    give_back_desktop_control=lambda context, user_id, activation_id, lease_id: DesktopControlGatewayV1.from_env().give_back(
+        context=context,
+        user_id=user_id,
+        activation_id=activation_id,
+        lease_id=lease_id,
+    ),
+    send_desktop_user_input=lambda context, user_id, activation_id, lease_id, arguments: DesktopControlGatewayV1.from_env().user_input(
+        context=context,
+        user_id=user_id,
+        activation_id=activation_id,
+        lease_id=lease_id,
+        arguments=arguments,
+    ),
+    desktop_frame_allowed=lambda context: DesktopControlGatewayV1.from_env().frame_allowed(context=context),
 )
 register_cognitive_swarm_routes(
     app,

@@ -171,7 +171,7 @@ def test_android_hardening_runtime_and_validation_router_are_installed() -> None
     assert '"inbound_mutation_forbidden":true' in installer
     assert 'host_worker_canary' in installer
     assert '/opt/sovereign-chatgpt-tools/command-queue:/opt/sovereign-chatgpt-tools/command-queue' in compose
-    assert 'command_contract.py command_queue.py broker_client.py' in dockerfile
+    assert 'command_contract.py command_queue.py desktop_worker.py broker_client.py' in dockerfile
 
 
 def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> None:

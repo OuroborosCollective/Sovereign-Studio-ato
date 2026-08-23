@@ -79,24 +79,40 @@ export function FreeRevolverControlCenter({
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const genericProviders = useMemo(
+    () => api.providers.filter(provider => (
+      provider.lifecycle === 'active'
+      && provider.canonicalAction === 'revolver-discover'
+    )),
+    [api.providers],
+  );
+  const retiredProviders = useMemo(
+    () => api.providers.filter(provider => provider.lifecycle === 'historical'),
+    [api.providers],
+  );
+
   const totals = useMemo(() => {
-    const models = api.providers.flatMap(provider => provider.models);
+    const models = genericProviders.flatMap(provider => provider.models);
+    const omniRouteReady = api.omniRoute?.ok === true
+      && api.omniRoute.disabled === false
+      && api.omniRoute.activationState === 'ready';
+    const omniRouteBlocked = Boolean(api.omniRoute) && !omniRouteReady;
     return {
-      providers: api.providers.length,
+      providers: genericProviders.length + (api.omniRoute ? 1 : 0),
       ready: models.filter(model => (
         model.status === 'ready'
         && model.enabled
         && hasRevisionBoundReceipt(model)
         && isEligibilityEvidenceFresh(model.eligibilityVerifiedAt, eligibilityEvidenceTtlHours)
-      )).length,
+      )).length + Number(omniRouteReady),
       deferred: models.filter(model => model.status === 'discovered').length,
-      blocked: models.filter(model => model.status === 'blocked').length,
+      blocked: models.filter(model => model.status === 'blocked').length + Number(omniRouteBlocked),
       verified: models.filter(model => (
         model.freeEligible
         && isEligibilityEvidenceFresh(model.eligibilityVerifiedAt, eligibilityEvidenceTtlHours)
-      )).length,
+      )).length + Number(omniRouteReady),
     };
-  }, [api.providers, eligibilityEvidenceTtlHours]);
+  }, [api.omniRoute, genericProviders, eligibilityEvidenceTtlHours]);
 
   const run = async (id: string, action: () => Promise<void>, success: string) => {
     setBusyId(id);
@@ -166,10 +182,10 @@ export function FreeRevolverControlCenter({
 
       <div className="llm-stat-grid">
         <div><Server /><span>Provider</span><strong>{totals.providers}</strong></div>
-        <div><ShieldCheck /><span>Aktive Free-Routen</span><strong>{totals.ready}</strong></div>
-        <div><Search /><span>Free-Quota bestätigt</span><strong>{totals.verified}</strong></div>
+        <div data-testid="free-revolver-total-ready"><ShieldCheck /><span>Aktive Free-Routen</span><strong>{totals.ready}</strong></div>
+        <div data-testid="free-revolver-total-verified"><Search /><span>Free-Quota bestätigt</span><strong>{totals.verified}</strong></div>
         <div><RefreshCw /><span>Wartet auf Upstream</span><strong>{totals.deferred}</strong></div>
-        <div><Lock /><span>Hart blockiert</span><strong>{totals.blocked}</strong></div>
+        <div data-testid="free-revolver-total-blocked"><Lock /><span>Hart blockiert</span><strong>{totals.blocked}</strong></div>
       </div>
 
       <section className="llm-catalog free-revolver-admin__onboarding">
@@ -221,15 +237,73 @@ export function FreeRevolverControlCenter({
       )}
       {notice && <div className="llm-alert free-revolver-admin__notice">{notice}</div>}
 
+      {api.openRouterFree && (
+        <section className="llm-catalog" data-testid="provider-surface-openrouter-free">
+          <div className="llm-section-title">
+            <div><ShieldCheck size={21} /><div>
+              <h2>OpenRouter Free</h2>
+              <p>Eigenständiger Free-Pfad mit accountweiter Quota und ohne Paid-Fallback.</p>
+            </div></div>
+          </div>
+          <div className="free-revolver-provider__facts">
+            <div><span>Provider-Modell</span><strong>{api.openRouterFree.routingPolicy.providerModel}</strong></div>
+            <div><span>Fallback nach Quota</span><strong>{api.openRouterFree.routingPolicy.fallbackAfterQuota}</strong></div>
+            <div><span>Paid-Fallback</span><strong>{api.openRouterFree.routingPolicy.paidFallbackAllowed ? 'erlaubt' : 'gesperrt'}</strong></div>
+            <div><span>Management-Evidence</span><strong>{api.openRouterFree.managementTableAvailable ? 'verfügbar' : api.openRouterFree.managementTableBlocker ?? 'nicht verfügbar'}</strong></div>
+          </div>
+        </section>
+      )}
+
+      {api.omniRoute && (
+        <section
+          className="llm-catalog"
+          data-testid="provider-surface-omniroute"
+          aria-label="OmniRoute Auto Runtime"
+        >
+          <div className="llm-section-title">
+            <div><Server size={21} /><div>
+              <h2>OmniRoute Auto</h2>
+              <p>Eigene keyless Laufzeit: nur der kanonische Doppel-Canary darf die Auto-Route ändern.</p>
+            </div></div>
+          </div>
+          <div className="free-revolver-provider__facts">
+            <div><span>Aktivierung</span><strong>{api.omniRoute.activationState}</strong></div>
+            <div><span>Bestätigungen</span><strong>{api.omniRoute.confirmationCount}/2</strong></div>
+            <div><span>Route</span><strong>{api.omniRoute.modelId}</strong></div>
+            <div><span>Blocker</span><strong>{api.omniRoute.blocker ?? '—'}</strong></div>
+          </div>
+          <p className="llm-catalog__evidence">
+            Die Kataloggröße ist kein Bereitstellungsversprechen einzelner Modelle: produktiv ist ausschließlich
+            <code> auto </code> auswählbar, und nur nach zwei erfolgreichen Completion-Canaries.
+          </p>
+          <div className="llm-route-card__actions">
+            <button
+              type="button"
+              className="llm-button llm-button--primary"
+              data-testid="provider-action-omniroute-refresh"
+              disabled={busyId !== null}
+              onClick={() => void run(
+                'omniroute-refresh',
+                () => api.refreshOmniRoute(),
+                'OmniRoute-Doppel-Canary wurde angefordert; die Ansicht übernimmt ausschließlich den Runtime-Readback.',
+              )}
+            >
+              <RefreshCw className={busyId === 'omniroute-refresh' ? 'llm-spin' : ''} size={17} />
+              OmniRoute-Doppel-Canary ausführen
+            </button>
+          </div>
+        </section>
+      )}
+
       <section>
         <div className="llm-section-title">
           <div><Server size={21} /><div>
             <h2>Free-Provider und Runtime-Evidence</h2>
-            <p>{api.providers.length} persistierte Providerquellen</p>
+            <p>{genericProviders.length} ausführbare Free-Revolver-Quellen · {retiredProviders.length} historische Referenz{retiredProviders.length === 1 ? '' : 'en'}</p>
           </div></div>
         </div>
         <div className="free-revolver-provider-grid">
-          {api.providers.map(provider => {
+          {genericProviders.map(provider => {
             const readyModels = provider.models.filter(model => (
               model.status === 'ready'
               && model.enabled
@@ -244,7 +318,13 @@ export function FreeRevolverControlCenter({
             ));
             const renewalKey = renewalKeys[provider.id] ?? '';
             return (
-              <article key={provider.id} className={`llm-route-card free-revolver-provider free-revolver-provider--${provider.status}`}>
+              <article
+                key={provider.id}
+                data-testid={provider.sourceType === 'freellmapi-direct'
+                  ? 'provider-surface-freellm-api'
+                  : 'provider-surface-free-revolver'}
+                className={`llm-route-card free-revolver-provider free-revolver-provider--${provider.status}`}
+              >
                 <header className="llm-route-card__header">
                   <div className="llm-route-card__identity">
                     <span className={`llm-route-card__status llm-route-card__status--${provider.status === 'healthy' && provider.enabled ? 'on' : 'off'}`} />
@@ -341,7 +421,7 @@ export function FreeRevolverControlCenter({
                 </div>
 
                 <footer className="llm-route-card__actions">
-                  {(provider.authMode === 'none' || provider.authMode === 'managed-bearer') && (
+                  {provider.canonicalAction === 'revolver-discover' && (
                     <button type="button" className="llm-button llm-button--primary"
                       disabled={busyId !== null || !provider.enabled}
                       onClick={() => void run(
@@ -388,14 +468,53 @@ export function FreeRevolverControlCenter({
               </article>
             );
           })}
-          {api.providers.length === 0 && !api.loading && (
-            <div className="llm-empty">Noch keine FreeLLM-Routen verfügbar. Im Adminbereich oben genügt ein API-Key; Provider und sichere Zuordnung übernimmt das Backend.</div>
+          {genericProviders.length === 0 && !api.omniRoute && !api.loading && (
+            <div className="llm-empty">Noch keine ausführbare Free-Revolver-Quelle verfügbar. Provider und sichere Zuordnung übernimmt das Backend.</div>
           )}
-          {api.loading && api.providers.length === 0 && (
+          {api.loading && genericProviders.length === 0 && !api.omniRoute && (
             <div className="llm-empty"><RefreshCw className="llm-spin" /> Free-Revolver-Evidence wird geladen…</div>
           )}
         </div>
       </section>
+
+      {retiredProviders.length > 0 && (
+        <section className="llm-catalog" aria-label="Historische Provider-Referenzen">
+          <div className="llm-section-title">
+            <div><Lock size={21} /><div>
+              <h2>Historische Referenzen</h2>
+              <p>Diese Einträge bleiben nur als Migrations- und Audit-Evidence sichtbar; sie sind nicht ausführbar.</p>
+            </div></div>
+          </div>
+          <div className="free-revolver-provider-grid">
+            {retiredProviders.map(provider => (
+              <article
+                key={provider.id}
+                className="llm-route-card free-revolver-provider free-revolver-provider--disabled"
+                data-testid={provider.lastErrorCode === 'freellmpool_replaced_by_omniroute'
+                  ? 'provider-surface-retired-freellmpool'
+                  : 'provider-surface-retired-reference'}
+              >
+                <header className="llm-route-card__header">
+                  <div className="llm-route-card__identity">
+                    <span className="llm-route-card__status llm-route-card__status--off" />
+                    <div>
+                      <h3>{provider.label}</h3>
+                      <p>{provider.apiBase}</p>
+                    </div>
+                  </div>
+                </header>
+                <div className="llm-route-card__badges">
+                  <span className="llm-badge llm-badge--warn"><Lock size={14} /> Historische Referenz</span>
+                  <span className="llm-badge">{provider.lastErrorCode ?? 'nicht ausführbar'}</span>
+                </div>
+                <p className="llm-route-card__evidence">
+                  Durch OmniRoute ersetzt. Keine Discovery, kein Healthcheck und keine Aktivierung sind über diese Referenz zulässig.
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
