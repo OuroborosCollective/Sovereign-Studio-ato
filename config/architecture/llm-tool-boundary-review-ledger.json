@@ -1,9 +1,9 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "4da0da44889f37417fccbfc4eed42a30c380fed5",
-  "rawCandidateCount": 99,
-  "canonicalCandidateCount": 78,
+  "sourceRevision": "5284cdede606963930ea5eafb1e4592e498c0384",
+  "rawCandidateCount": 98,
+  "canonicalCandidateCount": 77,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cognitive_llm_transport.py",
@@ -358,19 +358,6 @@
       "candidateId": "llm-boundary:663cfdce605e00768e120fd0",
       "classification": "TEST_OR_ANALYSIS",
       "rationale": "lower scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
-    },
-    {
-      "canonicalPath": "src/features/product/runtime/sovereignCapabilityRouter.ts",
-      "mirrorPaths": [],
-      "symbol": "intent",
-      "line": 297,
-      "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "712398a2b1d82a1b32a6b0be584a41284fcd63f778d0cf4d3d2196069e9b2efd",
-      "anchorSha256": "a490975c1e173933ce9991cec7ccf4b49da41b0b3848b7032819fa73dd9f3b4d",
-      "reopenOnChange": true,
-      "candidateId": "llm-boundary:32c9ab342094d42e06a5d246",
-      "classification": "OFFLINE_FALLBACK",
-      "rationale": "intent is explicitly constrained to an offline, fail-closed keyword fallback that emits only a bounded enum or diagnostic signal."
     },
     {
       "canonicalPath": "src/features/product/runtime/sovereignWorkspaceRuntime.ts",
@@ -1062,5 +1049,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "bc12f33a9deed58e588a66be0efffd9a702018b7d2f501260fa5e41ce93de5e2"
+  "ledgerSha256": "9d6b53e2a70b4dba7eae45db44eece336eba24a7a52154624b01cb57ffb57a77"
 }
