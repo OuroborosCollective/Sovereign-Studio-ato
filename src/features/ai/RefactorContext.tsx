@@ -1,5 +1,6 @@
 /**
  * RefactorContext - React Context for RefactorEngine
+ * sovereign-endpoint-surface: legacy-unreferenced
  * 
  * Provides global access to AI-powered refactoring throughout the app.
  * Must be used at the top level of the application.

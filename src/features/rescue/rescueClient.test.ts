@@ -46,6 +46,17 @@ describe('SovereignRescueClient', () => {
       }, 202));
     const client = new SovereignRescueClient('https://agent.example.test', fetcher);
     await client.entitlement();
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      'https://agent.example.test/api/user/agent/rescue/entitlement',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+        headers: expect.objectContaining({
+          'X-Sovereign-Rescue-Origin': expect.any(String),
+        }),
+      }),
+    );
     const repair = await client.repair({
       repository: 'https://github.com/acme/app',
       baseBranch: 'main',

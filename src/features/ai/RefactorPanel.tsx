@@ -1,5 +1,6 @@
 /**
  * RefactorPanel - Main UI for AI-powered code refactoring
+ * sovereign-endpoint-surface: legacy-unreferenced
  * 
  * This is the main interface for the refactor feature.
  * It's the central hub for all AI operations in the app.

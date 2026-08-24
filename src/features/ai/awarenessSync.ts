@@ -1,3 +1,4 @@
+// sovereign-endpoint-surface: legacy-unreferenced
 import { geminiService } from "./geminiService";
 import { callMlvoCa, callGroq, callHuggingFace, callTogether, type ProviderType } from "./providerManager";
 import { maskSecrets } from "../../shared/utils/crypto";
