@@ -2871,9 +2871,15 @@ export function BuilderContainer({
   useEffect(() => { refreshUser(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!authUser?.id) {
+      setLlmRouteOptions([]);
+      setLlmRouteCatalogError(null);
+      return;
+    }
+
     const controller = new AbortController();
     let active = true;
-    void fetchSovereignLlmRouteCatalog(controller.signal)
+    void fetchSovereignLlmRouteCatalog(controller.signal, 'picker')
       .then((routes) => {
         if (!active) return;
         setLlmRouteOptions(routes);

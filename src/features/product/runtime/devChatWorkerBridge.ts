@@ -70,8 +70,14 @@ interface BackendLlmRoute {
   readonly enabled?: boolean;
 }
 
-export async function fetchSovereignLlmRouteCatalog(signal?: AbortSignal): Promise<readonly SovereignLlmRouteOption[]> {
-  const response = await fetch(BACKEND_CONFIG.routesUrl, {
+export async function fetchSovereignLlmRouteCatalog(
+  signal?: AbortSignal,
+  purpose: 'execution' | 'picker' = 'execution',
+): Promise<readonly SovereignLlmRouteOption[]> {
+  const routesUrl = purpose === 'picker'
+    ? `${BACKEND_CONFIG.routesUrl}?purpose=picker`
+    : BACKEND_CONFIG.routesUrl;
+  const response = await fetch(routesUrl, {
     method: 'GET',
     credentials: 'include',
     headers: { Accept: 'application/json' },

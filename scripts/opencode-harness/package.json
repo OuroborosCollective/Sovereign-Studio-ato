@@ -10,6 +10,7 @@
     "canary": "node ./src/canary.mjs"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "1.18.21"
+    "@opencode-ai/sdk": "1.18.21",
+    "opencode-ai": "1.18.21"
   }
 }

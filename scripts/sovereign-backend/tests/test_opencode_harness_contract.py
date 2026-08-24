@@ -113,6 +113,7 @@ def test_sdk_sidecar_is_pinned_and_keeps_the_openrouter_secret_out_of_source() -
     source = (REPO_ROOT / "scripts/opencode-harness/src/canary.mjs").read_text(encoding="utf-8")
 
     assert package["dependencies"]["@opencode-ai/sdk"] == "1.18.21"
+    assert package["dependencies"]["opencode-ai"] == "1.18.21"
     assert "createOpencode" in source
     assert "{file:${keyFile}}" in source
     assert "client.auth.set" not in source
