@@ -19,7 +19,6 @@ def test_endpoint_mode_has_fixed_shell_free_stage_order() -> None:
 
     assert [stage.name for stage in stages] == [
         "endpoint-contract-compiler",
-        "endpoint-python-regressions",
         "endpoint-client-vitest",
     ]
     assert stages[0].command == (
@@ -27,10 +26,7 @@ def test_endpoint_mode_has_fixed_shell_free_stage_order() -> None:
         "scripts/frontend_endpoint_contracts.py",
         "--check",
     )
-    assert stages[1].command[:4] == ("python3", "-m", "pytest", "scripts/tests/test_frontend_endpoint_contracts.py")
-    assert "scripts/tests/test_frontend_test_gate.py" in stages[1].command
-    assert stages[1].forward_causal_output is True
-    assert stages[2].command[:5] == (
+    assert stages[1].command[:5] == (
         "python3",
         "scripts/vitest_causal_runner.py",
         "--label",
@@ -38,6 +34,20 @@ def test_endpoint_mode_has_fixed_shell_free_stage_order() -> None:
         "--",
     )
     assert all("&&" not in item and ";" not in item for stage in stages for item in stage.command)
+
+
+def test_python_mode_is_explicit_and_kept_out_of_node_only_release_jobs() -> None:
+    stages = MODULE.build_stages("python", python_executable="python3")
+
+    assert [stage.name for stage in stages] == ["endpoint-python-regressions"]
+    assert stages[0].command[:4] == (
+        "python3",
+        "-m",
+        "pytest",
+        "scripts/tests/test_frontend_endpoint_contracts.py",
+    )
+    assert "scripts/tests/test_frontend_test_gate.py" in stages[0].command
+    assert stages[0].forward_causal_output is True
 
 
 def test_smoke_mode_adds_broad_frontend_stage_with_existing_exclusions() -> None:

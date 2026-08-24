@@ -106,6 +106,21 @@ def build_stages(mode: str, *, python_executable: str | None = None) -> tuple[Ga
         "src/features/toolchain/toolchainApi.test.ts",
         "src/features/toolchain/skillsApi.test.ts",
     )
+    python_regression_stage = GateStage(
+        name="endpoint-python-regressions",
+        command=_python_stage_command(
+            python,
+            "-m",
+            "pytest",
+            *endpoint_test_files,
+            "-q",
+        ),
+        failure_identity="scripts/tests::frontend_endpoint_python",
+        forward_causal_output=True,
+    )
+    if mode == "python":
+        return (python_regression_stage,)
+
     stages: list[GateStage] = [
         GateStage(
             name="endpoint-contract-compiler",
@@ -115,18 +130,6 @@ def build_stages(mode: str, *, python_executable: str | None = None) -> tuple[Ga
                 "--check",
             ),
             failure_identity="scripts/frontend_endpoint_contracts.py::repository_contract",
-        ),
-        GateStage(
-            name="endpoint-python-regressions",
-            command=_python_stage_command(
-                python,
-                "-m",
-                "pytest",
-                *endpoint_test_files,
-                "-q",
-            ),
-            failure_identity="scripts/tests::frontend_endpoint_python",
-            forward_causal_output=True,
         ),
         GateStage(
             name="endpoint-client-vitest",
@@ -236,7 +239,7 @@ def run_stage(stage: GateStage, *, root: Path, timeout_seconds: int) -> int:
 
 def _arguments(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("endpoint", "smoke"), required=True)
+    parser.add_argument("--mode", choices=("endpoint", "smoke", "python"), required=True)
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     args = parser.parse_args(list(argv))
     if not 1 <= args.timeout_seconds <= 1800:
