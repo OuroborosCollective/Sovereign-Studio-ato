@@ -88,7 +88,7 @@ describe('knowledgeApi failure evidence', () => {
           method: 'PUT',
           headers: { 'X-Bound-Upload': 'yes' },
         });
-        expect(init?.body).toBeInstanceOf(File);
+        expect(init?.body).toBe(file);
         return new Response('', { status: 200 });
       }
       if (url.endsWith('/api/knowledge/sources/upload-confirm')) {
@@ -103,7 +103,16 @@ describe('knowledgeApi failure evidence', () => {
       return new Response(JSON.stringify({ error: 'unexpected endpoint' }), { status: 500 });
     });
     vi.stubGlobal('fetch', fetchMock);
-    const file = new File(['bounded knowledge'], 'notes.txt', { type: 'text/plain' });
+    const fileBytes = new TextEncoder().encode('bounded knowledge');
+    const file = {
+      name: 'notes.txt',
+      type: 'text/plain',
+      size: fileBytes.byteLength,
+      arrayBuffer: async () => fileBytes.buffer.slice(
+        fileBytes.byteOffset,
+        fileBytes.byteOffset + fileBytes.byteLength,
+      ),
+    } as unknown as File;
 
     const result = await uploadKnowledgeFile(file, status => statuses.push(status));
 
