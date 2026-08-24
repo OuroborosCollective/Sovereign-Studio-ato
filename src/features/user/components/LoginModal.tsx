@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { useUserStore } from '../useUserStore';
 import { initiateGitHubOAuth, isGitHubOAuthConfigured } from '../../github/githubOAuthLogin';
+import { googleOAuthErrorMessage, initiateGoogleOAuth } from '../googleOAuthLogin';
 
 const C = {
   bg:      '#0e1116',
@@ -98,15 +99,14 @@ export function LoginModal({ onClose }: Props) {
 
   async function handleGoogle() {
     setGoogleLoading(true);
+    setGithubStatus('');
     clearError();
     try {
-      const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
-      const googleUser = await GoogleAuth.signIn();
-      const idToken = googleUser.authentication.idToken;
+      const idToken = await initiateGoogleOAuth();
       await loginWithGoogle(idToken);
       if (!useUserStore.getState().error) onClose();
-    } catch {
-      useUserStore.setState({ error: 'Google-Login abgebrochen oder nicht verfügbar' });
+    } catch (reason) {
+      useUserStore.setState({ error: googleOAuthErrorMessage(reason) });
     } finally {
       setGoogleLoading(false);
     }
@@ -164,6 +164,7 @@ export function LoginModal({ onClose }: Props) {
 
   function switchMode() {
     clearError();
+    setGithubStatus('');
     setMode(m => m === 'login' ? 'register' : 'login');
   }
 
@@ -247,7 +248,7 @@ export function LoginModal({ onClose }: Props) {
             disabled={githubLoading || isLoading}
           >
             <GitHubIcon />
-            {githubLoading ? 'Verbinde…' : 'Mit GitHub anmelden'}
+            {githubLoading ? 'Verbinde…' : mode === 'login' ? 'Mit GitHub anmelden' : 'Mit GitHub registrieren'}
           </button>
         )}
 
@@ -258,7 +259,7 @@ export function LoginModal({ onClose }: Props) {
           disabled={googleLoading || isLoading}
         >
           <GoogleIcon />
-          {googleLoading ? 'Verbinde…' : 'Mit Google anmelden'}
+          {googleLoading ? 'Verbinde…' : mode === 'login' ? 'Mit Google anmelden' : 'Mit Google registrieren'}
         </button>
 
         <div style={{ textAlign: 'center', fontSize: 13, color: C.sub, marginTop: 6 }}>

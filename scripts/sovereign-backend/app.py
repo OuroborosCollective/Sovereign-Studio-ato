@@ -79,6 +79,7 @@ from free_revolver_runtime import (
     resolve_free_revolver_plan,
 )
 from free_revolver_provider_runtime import register_free_revolver_provider_runtime
+from google_oauth_contract import google_oauth_configuration, validate_google_identity_claims
 from google_oauth_public_config import PUBLIC_GOOGLE_WEB_CLIENT_ID
 from llm_route_scanner import register_llm_route_scanner
 
@@ -4547,14 +4548,29 @@ def auth_logout():
     return resp
 
 
+@app.route("/api/auth/google/configured", methods=["GET"])
+def auth_google_configured():
+    configuration = google_oauth_configuration(GOOGLE_CLIENT_ID)
+    response = jsonify(configuration)
+    response.status_code = 200 if configuration["configured"] else 503
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.route("/api/auth/google", methods=["POST"])
 def auth_google():
     """Verify Google ID token and create/login user."""
     try:
-        body     = request.get_json(force=True) or {}
-        id_token = body.get("idToken") or body.get("id_token") or ""
+        configuration = google_oauth_configuration(GOOGLE_CLIENT_ID)
+        if not configuration["configured"]:
+            return jsonify({"error": "Google-Login ist serverseitig nicht konfiguriert"}), 503
+
+        body = request.get_json(force=True) or {}
+        id_token = str(body.get("idToken") or body.get("id_token") or "").strip()
         if not id_token:
             return jsonify({"error": "ID-Token fehlt"}), 400
+        if len(id_token) > 16384:
+            return jsonify({"error": "ID-Token ist ungültig"}), 400
 
         # Verify token with Google's JWKS
         try:
@@ -4565,19 +4581,24 @@ def auth_google():
             payload = pyjwt.decode(
                 id_token, signing_key.key,
                 algorithms=["RS256"],
-                audience=GOOGLE_CLIENT_ID if GOOGLE_CLIENT_ID else None,
-                options={"verify_aud": bool(GOOGLE_CLIENT_ID)},
+                audience=GOOGLE_CLIENT_ID,
+                options={
+                    "verify_aud": True,
+                    "require": ["exp", "iat", "iss", "sub"],
+                },
             )
-        except Exception as verify_err:
-            return jsonify({"error": f"Google-Token ungültig: {verify_err}"}), 401
+        except Exception:
+            return jsonify({"error": "Google-Token ungültig"}), 401
 
-        google_id   = payload.get("sub") or ""
-        email       = (payload.get("email") or "").lower()
-        display_name= payload.get("name") or email.split("@")[0]
-        avatar_url  = payload.get("picture")
+        try:
+            identity = validate_google_identity_claims(payload)
+        except ValueError:
+            return jsonify({"error": "Google-Identität ungültig"}), 401
 
-        if not google_id or not email:
-            return jsonify({"error": "Unvollständige Google-Daten"}), 400
+        google_id = identity["googleId"]
+        email = identity["email"]
+        display_name = identity["displayName"]
+        avatar_url = identity["avatarUrl"]
 
         # Find existing user by google_id or email
         row = query(
@@ -4855,16 +4876,10 @@ def auth_github_init():
             requested_opener_origin = f"{parsed_requested_redirect.scheme}://{parsed_requested_redirect.netloc}"
         opener_origin = _normalize_oauth_origin(requested_opener_origin)
 
-        # Traditional OAuth Apps are bound to our explicit browser callback.
-        # GitHub Apps instead use the callback URL registered in GitHub itself;
-        # sending a different redirect_uri makes GitHub reject the request before
-        # authorization. The GitHub-App callback forwards code+state back to the
-        # existing browser/Capacitor callback while PKCE remains client-held.
-        redirect_uri = (
-            ""
-            if oauth_contract["source"] == "github-app"
-            else GITHUB_OAUTH_REDIRECT_URI
-        )
+        # Bind every OAuth family to the explicit canonical callback. GitHub Apps
+        # can have multiple callback URLs; sending redirect_uri makes the selected
+        # return path deterministic and the token exchange reuses the same value.
+        redirect_uri = GITHUB_OAUTH_REDIRECT_URI
         client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
         if "," in client_ip:
             client_ip = client_ip.split(",")[0].strip()
@@ -4910,16 +4925,16 @@ def auth_github_init():
             "opener_origin": opener_origin,
         })
 
-        # GitHub Auth URL bauen. For a GitHub App, omit redirect_uri so GitHub
-        # uses the callback registered for that exact App identity.
+        # GitHub Auth URL is always bound to the canonical callback. If the
+        # external GitHub App registration does not allow it, GitHub must fail
+        # visibly instead of selecting a different callback implicitly.
         auth_params = {
             "client_id": oauth_contract["client_id"],
             "state": state,
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
         }
-        if redirect_uri:
-            auth_params["redirect_uri"] = redirect_uri
+        auth_params["redirect_uri"] = redirect_uri
         if scopes:
             auth_params["scope"] = " ".join(scopes)
         params = urllib.parse.urlencode(auth_params)

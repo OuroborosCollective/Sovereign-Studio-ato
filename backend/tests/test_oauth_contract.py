@@ -436,6 +436,98 @@ class TestOAuthContractWithApp:
         assert "githubAccessToken" not in response.get_json()
 
 
+    def test_google_configured_endpoint_returns_fingerprint_only(self, monkeypatch):
+        app_module = require_app_import()
+        client_id = "client-test.apps.googleusercontent.com"
+        monkeypatch.setattr(app_module, "GOOGLE_CLIENT_ID", client_id)
+
+        client = app_module.app.test_client()
+        response = client.get("/api/auth/google/configured")
+
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload["configured"] is True
+        assert payload["clientIdFingerprint"] == app_module.hashlib.sha256(client_id.encode()).hexdigest()
+        assert payload["audienceVerificationRequired"] is True
+        assert payload["issuerVerificationRequired"] is True
+        assert payload["emailVerificationRequired"] is True
+        assert payload["rawCredentialReturned"] is False
+        assert client_id not in repr(payload)
+        assert response.headers["Cache-Control"] == "no-store"
+
+    def test_google_token_verification_binds_audience_and_rejects_bad_issuer(self, monkeypatch):
+        app_module = require_app_import()
+        client_id = "client-test.apps.googleusercontent.com"
+        monkeypatch.setattr(app_module, "GOOGLE_CLIENT_ID", client_id)
+        captured = {}
+
+        fake_jwt = types.ModuleType("jwt")
+
+        class FakePyJWKClient:
+            def __init__(self, url):
+                captured["jwksUrl"] = url
+
+            def get_signing_key_from_jwt(self, token):
+                captured["token"] = token
+                return types.SimpleNamespace(key="public-key")
+
+        def fake_decode(token, key, **kwargs):
+            captured["decode"] = {"token": token, "key": key, **kwargs}
+            return {
+                "iss": "https://evil.example",
+                "sub": "google-user",
+                "email": "person@example.test",
+                "email_verified": True,
+                "exp": 9999999999,
+                "iat": 1,
+            }
+
+        fake_jwt.PyJWKClient = FakePyJWKClient
+        fake_jwt.decode = fake_decode
+        monkeypatch.setitem(sys.modules, "jwt", fake_jwt)
+
+        client = app_module.app.test_client()
+        response = client.post("/api/auth/google", json={"idToken": "signed-id-token"})
+
+        assert response.status_code == 401
+        assert response.get_json() == {"error": "Google-Identität ungültig"}
+        assert captured["decode"]["audience"] == client_id
+        assert captured["decode"]["algorithms"] == ["RS256"]
+        assert captured["decode"]["options"]["verify_aud"] is True
+        assert captured["decode"]["options"]["require"] == ["exp", "iat", "iss", "sub"]
+
+    def test_github_app_init_explicitly_binds_canonical_callback(self, monkeypatch):
+        app_module = require_app_import()
+        captured_state = {}
+        canonical_callback = "https://chat.arelorian.de/auth/github/callback.html"
+        monkeypatch.setattr(app_module, "GITHUB_OAUTH_REDIRECT_URI", canonical_callback)
+        monkeypatch.setattr(app_module, "_github_oauth_credential_contract", lambda: {
+            "configured": True,
+            "source": "github-app",
+            "client_id": "Iv1_test_client",
+            "client_secret": "test-secret",
+            "client_id_fingerprint": "fingerprint",
+            "app_id_collision": False,
+            "identity_verified": True,
+            "identity_evidence": {"ok": True},
+            "blocker": None,
+        })
+        monkeypatch.setattr(app_module, "_generate_state", lambda: "state_test")
+        monkeypatch.setattr(app_module, "_generate_pkce", lambda: ("verifier_test", "challenge_test"))
+        monkeypatch.setattr(app_module, "_store_oauth_state", lambda state, data: captured_state.update({"state": state, "data": data}))
+
+        client = app_module.app.test_client()
+        response = client.post("/api/auth/github/init", json={"opener_origin": "https://localhost"})
+
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert "https://github.com/login/oauth/authorize?" in payload["authUrl"]
+        assert "redirect_uri=https%3A%2F%2Fchat.arelorian.de%2Fauth%2Fgithub%2Fcallback.html" in payload["authUrl"]
+        assert "scope=" not in payload["authUrl"]
+        assert captured_state["data"]["redirect_uri"] == canonical_callback
+        assert captured_state["data"]["opener_origin"] == "https://localhost"
+
+
 class TestOAuthContractCodeAnalysis:
     """Analysiert den app.py Code auf Contract-Einhaltung."""
 

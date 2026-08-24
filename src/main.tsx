@@ -24,16 +24,6 @@ type IdleDeadlineLike = {
 
 type IdleCallbackLike = (deadline: IdleDeadlineLike) => void;
 
-type GoogleAuthModule = {
-  GoogleAuth?: {
-    initialize?: (options: {
-      clientId: string;
-      scopes: string[];
-      grantOfflineAccess: boolean;
-    }) => void | Promise<void>;
-  };
-};
-
 type MobileWindow = Window &
   typeof globalThis & {
     global?: Window & typeof globalThis;
@@ -310,29 +300,6 @@ function initPostHog(): void {
   }
 }
 
-const PUBLIC_GOOGLE_WEB_CLIENT_ID = '511695074775-s08le2ju1k4nl2vv3i150i6tn084b682.apps.googleusercontent.com';
-
-function initGoogleAuth(): void {
-  const googleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined)?.trim()
-    || PUBLIC_GOOGLE_WEB_CLIENT_ID;
-
-  const googleAuthPackage = '@codetrix-studio/capacitor-google-auth';
-
-  void import(/* @vite-ignore */ googleAuthPackage)
-    .then((module: GoogleAuthModule) => {
-      try {
-        module.GoogleAuth?.initialize?.({
-          clientId: googleClientId,
-          scopes: ['profile', 'email'],
-          grantOfflineAccess: true,
-        });
-      } catch (error) {
-        console.warn('GoogleAuth init failed:', error);
-      }
-    })
-    .catch(() => undefined);
-}
-
 function bootApp(): void {
   const container = document.getElementById('root');
 
@@ -358,5 +325,4 @@ installReleaseGuideCommandRuntime();
 installTabContentScrollRuntime();
 installCodeWorkspacePersistenceRuntime();
 initPostHog();
-initGoogleAuth();
 bootApp();

@@ -36,7 +36,8 @@ const configuredApiBase = (import.meta.env['VITE_ADMIN_API_BASE'] as string | un
 const API_BASE: string = configuredApiBase || 'https://sovereign-backend.arelorian.de';
 
 async function authFetch(path: string, options?: RequestInit) {
-  return fetch(`${API_BASE}${path}`, {
+  const boundFetch = globalThis.fetch.bind(globalThis);
+  return boundFetch(`${API_BASE}${path}`, {
     ...options,
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
@@ -89,6 +90,16 @@ function normalizeCurrentUser(value: unknown): CurrentUser | null {
     githubUsername: pickString(value, 'githubUsername') || undefined,
     // githubAccessToken wird NIEMALS ins Frontend übertragen
   };
+}
+
+async function readVerifiedSessionUser(): Promise<CurrentUser> {
+  const response = await authFetch('/api/auth/me', { method: 'GET', cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`Backend-Session nicht bestätigt (HTTP ${response.status}).`);
+  }
+  const user = normalizeCurrentUser(await response.json());
+  if (!user) throw new Error('Backend-Session lieferte keine gültige User-Evidence.');
+  return user;
 }
 
 export interface GitHubOAuthExchange {
@@ -157,7 +168,7 @@ export const useUserStore = create<UserStore>()(
       },
 
       loginWithGoogle: async (idToken) => {
-        set({ isLoading: true, error: null });
+        set({ isLoading: true, error: null, user: null });
         try {
           const res = await authFetch('/api/auth/google', {
             method: 'POST',
@@ -165,22 +176,22 @@ export const useUserStore = create<UserStore>()(
           });
           if (!res.ok) {
             const d = await res.json().catch(() => ({}));
-            set({ isLoading: false, error: (d as { error?: string }).error ?? 'Google-Login fehlgeschlagen' });
+            set({ isLoading: false, error: (d as { error?: string }).error ?? 'Google-Login fehlgeschlagen', user: null });
             return;
           }
-          const user = normalizeCurrentUser(await res.json());
-          if (!user) {
-            set({ isLoading: false, error: 'Ungültige User-Antwort vom Server' });
-            return;
-          }
+          const user = await readVerifiedSessionUser();
           set({ user, isLoading: false, error: null });
-        } catch {
-          set({ isLoading: false, error: 'Verbindungsfehler' });
+        } catch (reason) {
+          set({
+            user: null,
+            isLoading: false,
+            error: reason instanceof Error ? reason.message : 'Google-Session konnte nicht bestätigt werden.',
+          });
         }
       },
 
       loginWithGitHub: async (exchange) => {
-        set({ isLoading: true, error: null });
+        set({ isLoading: true, error: null, user: null });
         try {
           const res = await authFetch('/api/auth/github', {
             method: 'POST',
@@ -192,17 +203,17 @@ export const useUserStore = create<UserStore>()(
           });
           if (!res.ok) {
             const d = await res.json().catch(() => ({}));
-            set({ isLoading: false, error: (d as { error?: string }).error ?? 'GitHub-Login fehlgeschlagen' });
+            set({ isLoading: false, error: (d as { error?: string }).error ?? 'GitHub-Login fehlgeschlagen', user: null });
             return;
           }
-          const user = normalizeCurrentUser(await res.json());
-          if (!user) {
-            set({ isLoading: false, error: 'Ungültige User-Antwort vom Server' });
-            return;
-          }
+          const user = await readVerifiedSessionUser();
           set({ user, isLoading: false, error: null });
-        } catch {
-          set({ isLoading: false, error: 'Verbindungsfehler' });
+        } catch (reason) {
+          set({
+            user: null,
+            isLoading: false,
+            error: reason instanceof Error ? reason.message : 'GitHub-Session konnte nicht bestätigt werden.',
+          });
         }
       },
 

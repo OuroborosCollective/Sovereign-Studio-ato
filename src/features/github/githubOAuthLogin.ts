@@ -30,10 +30,41 @@ interface GitHubOAuthCallbackMessage {
   error?: string;
 }
 
+function validateGitHubAuthorizeUrl(initialized: GitHubOAuthInitResult): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(initialized.authUrl);
+  } catch {
+    throw new Error('GitHub OAuth Init lieferte keine gültige Authorize-URL.');
+  }
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com' || parsed.pathname !== '/login/oauth/authorize') {
+    throw new Error('GitHub OAuth Init lieferte nicht den GitHub-Authorize-Endpunkt.');
+  }
+  if (!parsed.searchParams.get('client_id')) {
+    throw new Error('GitHub OAuth Init lieferte keine Client-ID-Bindung.');
+  }
+  if (!validateOAuthState(parsed.searchParams.get('state'), initialized.state)) {
+    throw new Error('GitHub OAuth Authorize-URL ist nicht an den gestarteten State gebunden.');
+  }
+  const redirectUri = parsed.searchParams.get('redirect_uri');
+  if (redirectUri) {
+    let redirectOrigin = '';
+    try {
+      redirectOrigin = new URL(redirectUri).origin;
+    } catch {
+      throw new Error('GitHub OAuth Redirect-URI ist ungültig.');
+    }
+    if (redirectOrigin !== initialized.callbackOrigin) {
+      throw new Error('GitHub OAuth Redirect-URI stimmt nicht mit dem bestätigten Callback-Origin überein.');
+    }
+  }
+}
+
 async function initializeGitHubOAuth(
   openerOrigin: string,
 ): Promise<GitHubOAuthInitResult> {
-  const response = await fetch(`${API_BASE}/api/auth/github/init`, {
+  const boundFetch = globalThis.fetch.bind(globalThis);
+  const response = await boundFetch(`${API_BASE}/api/auth/github/init`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -55,7 +86,9 @@ async function initializeGitHubOAuth(
   if (payload.openerOrigin !== openerOrigin) {
     throw new Error('GitHub OAuth Init bestätigte nicht den aktuellen App-Origin.');
   }
-  return payload as GitHubOAuthInitResult;
+  const initialized = payload as GitHubOAuthInitResult;
+  validateGitHubAuthorizeUrl(initialized);
+  return initialized;
 }
 
 export function validateOAuthState(returnedState: string | null, expectedState: string | null): boolean {

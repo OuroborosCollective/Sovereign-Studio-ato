@@ -34,7 +34,7 @@ interface PopupDouble {
 
 function initPayload() {
   return {
-    authUrl: 'https://github.com/login/oauth/authorize?state=state_test',
+    authUrl: 'https://github.com/login/oauth/authorize?client_id=Iv1_test&redirect_uri=https%3A%2F%2Fchat.arelorian.de%2Fauth%2Fgithub%2Fcallback.html&state=state_test',
     state: 'state_test',
     codeVerifier: 'verifier_test',
     callbackOrigin: 'https://chat.arelorian.de',
@@ -125,6 +125,20 @@ describe('GitHub OAuth verified return channel', () => {
     expect(popupSpy).not.toHaveBeenCalled();
     expect(nativeRuntime.remove).toHaveBeenCalledTimes(1);
     expect(nativeRuntime.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a normal GitHub page instead of opening it as an OAuth authorize flow', async () => {
+    nativeRuntime.native = true;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      JSON.stringify({ ...initPayload(), authUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato' }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ));
+
+    const result = await initiateGitHubOAuth(undefined, 2_000);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Authorize-Endpunkt');
+    expect(nativeRuntime.open).not.toHaveBeenCalled();
   });
 
   it('rejects a callback with the wrong one-time state', async () => {
