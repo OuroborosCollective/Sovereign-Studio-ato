@@ -60,4 +60,22 @@ describe('generated file self review', () => {
     expect(report.selfReview.accepted).toBe(true);
     expect(() => assertGeneratedFileReviewSafe(report)).not.toThrow();
   });
+
+  it('correctly calculates line counts for empty, single-line, and multi-line content', () => {
+    expect(reviewGeneratedFile({ path: 'src/empty.ts', content: '', reason: 'test' }).lineCount).toBe(0);
+    expect(reviewGeneratedFile({ path: 'src/single.ts', content: 'hello world', reason: 'test' }).lineCount).toBe(1);
+    expect(reviewGeneratedFile({ path: 'src/multi.ts', content: 'line1\nline2\r\nline3', reason: 'test' }).lineCount).toBe(3);
+  });
+
+  it('correctly calculates consolidated report summaries across multiple files in a single pass', () => {
+    const report = reviewGeneratedFiles([
+      { path: 'src/index.ts', content: 'console.log("hello");\nconsole.log("world");', reason: 'entry' },
+      { path: '.env.local', content: 'SECRET=123', reason: 'env' },
+    ]);
+    expect(report.totalFiles).toBe(2);
+    expect(report.totalLines).toBe(3); // 2 + 1
+    expect(report.totalChars).toBe(53); // 43 + 10
+    expect(report.highRiskCount).toBe(1); // .env.local is high risk
+    expect(report.actionableFileCount).toBe(1); // src/index.ts is actionable
+  });
 });
