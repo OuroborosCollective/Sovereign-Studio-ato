@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "2e70c23d7667c245df45c21209c45270e1f6e9d9",
+  "sourceRevision": "7bca79614b69bd788bc7db2f468ad79896e3356b",
   "rawCandidateCount": 100,
   "canonicalCandidateCount": 79,
   "entries": [
@@ -324,12 +324,12 @@
       "canonicalPath": "src/features/product/runtime/generatedFileReview.ts",
       "mirrorPaths": [],
       "symbol": "isPlanOnlyPath",
-      "line": 56,
+      "line": 62,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "77c508ff4b1cf91a4db65ea79adf3dc7347d0622f7c2a9c711bbdf0e7706792c",
+      "fileSha256": "bb661d8b6e0c5da271558e8177493cebecb5e88c1d76e280d754e2dd39ffbbf4",
       "anchorSha256": "4e5bb75bc7289edbe1ae753016ca154d3ac76fe3d7c3c7e0550a4c563afe091e",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:2bcebad09b0dc9bedd8e5804",
+      "candidateId": "llm-boundary:5f41af6d556172e583fb30af",
       "classification": "STRUCTURED_POLICY",
       "rationale": "isPlanOnlyPath evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -1075,5 +1075,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "e221b1b35465a13dcd245cc5e8c974e267bcea5201ed571ff8df7368c868edb0"
+  "ledgerSha256": "74f264523f2e7ab5e6beae926b4d1149d74dce1c67c3b829e9ea3a471dca607f"
 }
