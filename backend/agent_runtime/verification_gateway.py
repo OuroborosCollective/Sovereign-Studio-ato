@@ -930,6 +930,15 @@ def register_verification_gateway_routes(
 
     def execute_request(body: Mapping[str, Any]):
         try:
+            if not isinstance(body, dict):
+                return jsonify({
+                    "error": {
+                        "code": 400,
+                        "status": "INVALID_ARGUMENT",
+                        "message": "request body must be a JSON object",
+                        "details": [{"reason": "BODY_MUST_BE_OBJECT", "domain": "sovereign.verification"}],
+                    }
+                }), 400
             receipt, replayed = execute_paid_verification(
                 get_connection,
                 user_id=_current_user_id(),
