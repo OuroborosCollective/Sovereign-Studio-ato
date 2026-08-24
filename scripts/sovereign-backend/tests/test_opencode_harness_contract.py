@@ -49,6 +49,10 @@ def _receipt(provider_model: str = "openai/gpt-5.4-mini", *, tool_mutation_verif
         "opencodeModel": f"openrouter/{provider_model}",
         "serverHealthy": True,
         "structuredOutputVerified": True,
+        "ephemeralSandboxVerified": True,
+        "sandboxProjectRemainedEmpty": True,
+        "projectConfigDisabledConfigured": True,
+        "toolPermissionsConfiguredDenyAll": True,
         "toolMutationVerified": tool_mutation_verified,
         "inputSha256": "1" * 64,
         "outputSha256": "2" * 64,
@@ -73,6 +77,17 @@ def test_exact_route_and_canary_model_must_match() -> None:
     assert binding["structuredCanaryVerified"] is False
     assert binding["executorEligible"] is False
     assert "opencode_sdk_canary_provider_model_mismatch" in binding["blockers"]
+
+
+def test_structured_canary_requires_ephemeral_deny_all_sandbox_evidence() -> None:
+    receipt = _receipt()
+    receipt["sandboxProjectRemainedEmpty"] = False
+
+    binding = build_opencode_harness_binding(_route(), receipt)
+
+    assert binding["structuredCanaryVerified"] is False
+    assert binding["executorEligible"] is False
+    assert "opencode_sdk_sandbox_mutation_detected" in binding["blockers"]
 
 
 def test_private_provider_policy_is_required_for_harness_binding() -> None:
@@ -118,5 +133,11 @@ def test_sdk_sidecar_is_pinned_and_keeps_the_openrouter_secret_out_of_source() -
     assert "{file:${keyFile}}" in source
     assert "client.auth.set" not in source
     assert "readFile" not in source
+    assert "SOVEREIGN_OPENCODE_WORKSPACE" not in source
+    assert "mkdtemp" in source
+    assert "OPENCODE_DISABLE_PROJECT_CONFIG = 'true'" in source
+    assert "OPENCODE_PERMISSION = JSON.stringify({ '*': 'deny' })" in source
+    assert "permission: { '*': 'deny' }" in source
+    assert "sandboxProjectEntries.length !== 0" in source
     assert "toolMutationVerified: false" in source
     assert "Do not modify files, run shell commands, or perform external actions." in source

@@ -15,7 +15,7 @@ from typing import Any
 from llm_transport import OPENROUTER_BASE_URL, OPENROUTER_TRANSPORT, route_config, route_transport
 
 OPENCODE_HARNESS = "opencode-sdk"
-OPENCODE_CANARY_RECEIPT_SCHEMA = "sovereign.opencode-sdk-canary-receipt.v1"
+OPENCODE_CANARY_RECEIPT_SCHEMA = "sovereign.opencode-sdk-canary-receipt.v2"
 OX_ALPHA_PROVIDER_MODEL = "stealth/ox-alpha"
 OX_ALPHA_OPENCODE_MODEL = f"openrouter/{OX_ALPHA_PROVIDER_MODEL}"
 
@@ -101,6 +101,14 @@ def build_opencode_harness_binding(
             blockers.append("opencode_sdk_server_health_unverified")
         if receipt.get("structuredOutputVerified") is not True:
             blockers.append("opencode_sdk_structured_output_unverified")
+        if receipt.get("ephemeralSandboxVerified") is not True:
+            blockers.append("opencode_sdk_ephemeral_sandbox_unverified")
+        if receipt.get("sandboxProjectRemainedEmpty") is not True:
+            blockers.append("opencode_sdk_sandbox_mutation_detected")
+        if receipt.get("projectConfigDisabledConfigured") is not True:
+            blockers.append("opencode_sdk_project_config_isolation_unverified")
+        if receipt.get("toolPermissionsConfiguredDenyAll") is not True:
+            blockers.append("opencode_sdk_tool_permission_isolation_unverified")
 
         structured_verified = not any(blocker.startswith("opencode_sdk_") for blocker in blockers)
         tool_mutation_verified = receipt.get("toolMutationVerified") is True

@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
-import { realpath, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, realpath, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createOpencode } from '@opencode-ai/sdk';
 
-const RECEIPT_SCHEMA = 'sovereign.opencode-sdk-canary-receipt.v1';
+const RECEIPT_SCHEMA = 'sovereign.opencode-sdk-canary-receipt.v2';
 const DEFAULT_PORT = 4097;
 
 function requiredEnv(name) {
@@ -36,25 +37,59 @@ async function resolveRequiredFile(value, label) {
   return resolved;
 }
 
-async function resolveWorkspace(value) {
-  if (!path.isAbsolute(value)) throw new Error('SOVEREIGN_OPENCODE_WORKSPACE must be an absolute path');
-  const resolved = await realpath(value);
-  const metadata = await stat(resolved);
-  if (!metadata.isDirectory()) throw new Error('SOVEREIGN_OPENCODE_WORKSPACE must resolve to a directory');
-  return resolved;
+async function createCanarySandbox() {
+  const root = await mkdtemp(path.join(tmpdir(), 'sovereign-opencode-canary-'));
+  const project = path.join(root, 'project');
+  const config = path.join(root, 'config');
+  const data = path.join(root, 'data');
+  const cache = path.join(root, 'cache');
+  await Promise.all([project, config, data, cache].map((directory) => mkdir(directory, { recursive: true })));
+  return { root, project, config, data, cache };
+}
+
+function captureEnv(names) {
+  return Object.fromEntries(names.map((name) => [name, process.env[name]]));
+}
+
+function restoreEnv(snapshot) {
+  for (const [name, value] of Object.entries(snapshot)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
 }
 
 async function main() {
   const providerModel = assertProviderModel(requiredEnv('SOVEREIGN_OPENROUTER_PROVIDER_MODEL'));
   const keyFile = await resolveRequiredFile(requiredEnv('SOVEREIGN_OPENROUTER_KEY_FILE'), 'SOVEREIGN_OPENROUTER_KEY_FILE');
-  const workspace = await resolveWorkspace(requiredEnv('SOVEREIGN_OPENCODE_WORKSPACE'));
   const port = Number(process.env.SOVEREIGN_OPENCODE_PORT || DEFAULT_PORT);
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('SOVEREIGN_OPENCODE_PORT must be a user-space TCP port');
 
-  // OpenCode inherits cwd when it starts its local server. The harness may only
-  // observe an already isolated Sovereign workspace; it never points at the
-  // repository checkout or host root implicitly.
-  process.chdir(workspace);
+  // The structured SDK/model canary must not have access to the Sovereign
+  // checkout at all. A later, separately approved tool-mutation canary owns the
+  // isolated coding workspace. This canary runs from a fresh empty temp project
+  // with isolated OpenCode config/data/cache homes and deny-all tool policy.
+  const sandbox = await createCanarySandbox();
+  const previousCwd = process.cwd();
+  const isolatedEnvNames = [
+    'HOME',
+    'XDG_CONFIG_HOME',
+    'XDG_DATA_HOME',
+    'XDG_CACHE_HOME',
+    'OPENCODE_CONFIG',
+    'OPENCODE_CONFIG_DIR',
+    'OPENCODE_DISABLE_PROJECT_CONFIG',
+    'OPENCODE_PERMISSION',
+  ];
+  const previousEnv = captureEnv(isolatedEnvNames);
+  process.env.HOME = sandbox.root;
+  process.env.XDG_CONFIG_HOME = sandbox.config;
+  process.env.XDG_DATA_HOME = sandbox.data;
+  process.env.XDG_CACHE_HOME = sandbox.cache;
+  delete process.env.OPENCODE_CONFIG;
+  process.env.OPENCODE_CONFIG_DIR = sandbox.config;
+  process.env.OPENCODE_DISABLE_PROJECT_CONFIG = 'true';
+  process.env.OPENCODE_PERMISSION = JSON.stringify({ '*': 'deny' });
+  process.chdir(sandbox.project);
 
   const opencodeModel = `openrouter/${providerModel}`;
   const canaryPrompt = 'Return a structured canary receipt with status="ok" and harness="opencode-sdk". Do not modify files, run shell commands, or perform external actions.';
@@ -67,6 +102,9 @@ async function main() {
       timeout: 10_000,
       config: {
         model: opencodeModel,
+        autoupdate: false,
+        share: 'disabled',
+        permission: { '*': 'deny' },
         provider: {
           openrouter: {
             models: {
@@ -119,6 +157,11 @@ async function main() {
       throw new Error('OpenCode structured canary did not return the required schema-bound receipt');
     }
 
+    const sandboxProjectEntries = await readdir(sandbox.project);
+    if (sandboxProjectEntries.length !== 0) {
+      throw new Error('OpenCode structured canary mutated the empty sandbox project');
+    }
+
     const outputSha256 = sha256(JSON.stringify(structured));
     const receipt = {
       schemaVersion: RECEIPT_SCHEMA,
@@ -128,6 +171,10 @@ async function main() {
       opencodeModel,
       serverHealthy: true,
       structuredOutputVerified: true,
+      ephemeralSandboxVerified: true,
+      sandboxProjectRemainedEmpty: true,
+      projectConfigDisabledConfigured: true,
+      toolPermissionsConfiguredDenyAll: true,
       toolMutationVerified: false,
       inputSha256: sha256(canaryPrompt),
       outputSha256,
@@ -137,6 +184,9 @@ async function main() {
     process.stdout.write(`${JSON.stringify(receipt)}\n`);
   } finally {
     opencode?.server?.close();
+    process.chdir(previousCwd);
+    restoreEnv(previousEnv);
+    await rm(sandbox.root, { recursive: true, force: true });
   }
 }
 
