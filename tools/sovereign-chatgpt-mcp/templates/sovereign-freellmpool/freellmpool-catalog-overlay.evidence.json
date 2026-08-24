@@ -23,7 +23,7 @@
       "workflowRunId": 31877008001
     }
   ],
-  "deployBootstrapRequestTimeoutSecondsUnchanged": 45,
+  "deployBootstrapRequestTimeoutSecondsUnchanged": 120,
   "minimumProductionReadyRoutesUnchanged": 7,
   "overlaySha256": "eb6647f5bb7aec552a2b82bf03f9341ae246f5025a2ced1caa27b7a08bcb6a90",
   "provider": "llm7",
