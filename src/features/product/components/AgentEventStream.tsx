@@ -37,6 +37,8 @@ export interface AgentEventStreamProps {
   readonly onCancel?: () => void;
   readonly onOpenDraftPr?: () => void;
   readonly onOpenFile?: (path: string) => void;
+  /** When true, the runtime monitor is the primary work surface and chat/event rows stay secondary. */
+  readonly primaryMonitor?: boolean;
 }
 
 const EXECUTOR_ACTIVE_STATES: ReadonlySet<AgentWorkState> = new Set([
@@ -229,7 +231,7 @@ function headerColorFor(snapshot: AgentWorkSnapshot): string {
   return C.sky;
 }
 
-export function AgentEventStream({ snapshot, job, projections = [], evidenceAnchors = [], onCancel, onOpenDraftPr, onOpenFile }: AgentEventStreamProps) {
+export function AgentEventStream({ snapshot, job, projections = [], evidenceAnchors = [], onCancel, onOpenDraftPr, onOpenFile, primaryMonitor = false }: AgentEventStreamProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isActive = !isTerminalState(snapshot.state) && (
     isExecutorActive(snapshot.state) || job?.status === 'running' || job?.status === 'queued'
@@ -267,7 +269,23 @@ export function AgentEventStream({ snapshot, job, projections = [], evidenceAnch
         }
       `}</style>
 
-      <div role="region" aria-label="Ausführungs-Ereignisstrom" style={{ margin: '4px 16px', borderRadius: 10, background: C.surface, border: `1px solid ${C.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div
+        role="region"
+        aria-label={primaryMonitor ? "Sovereign Live Desktop Monitor" : "Ausführungs-Ereignisstrom"}
+        data-testid={primaryMonitor ? "agent-event-stream-primary-monitor" : "agent-event-stream"}
+        data-primary-surface={primaryMonitor ? "desktop-monitor" : "event-stream"}
+        style={{
+          margin: primaryMonitor ? 0 : '4px 16px',
+          borderRadius: primaryMonitor ? 0 : 10,
+          background: C.surface,
+          border: `1px solid ${C.border}`,
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          flex: primaryMonitor ? 1 : undefined,
+          minHeight: primaryMonitor ? 0 : undefined,
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderBottom: `1px solid ${C.border}`, background: '#0e1116cc' }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: headerColor, flexShrink: 0, ...(isActive && { animation: 'aes-pulse 1s ease-in-out infinite', boxShadow: `0 0 6px ${headerColor}` }) }} />
           <span style={{ fontSize: 12.5, fontWeight: 600, color: headerColor, flex: 1 }}>{headerLabel}</span>
@@ -279,11 +297,15 @@ export function AgentEventStream({ snapshot, job, projections = [], evidenceAnch
           )}
         </div>
 
-        <div ref={scrollRef} style={{ padding: '8px 12px', maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0 }}>
-          {stream.map((event) => <EventRow key={event.id} event={event} />)}
-        </div>
+        {!primaryMonitor && (
+          <div ref={scrollRef} style={{ padding: '8px 12px', maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {stream.map((event) => <EventRow key={event.id} event={event} />)}
+          </div>
+        )}
 
-        <LiveWorkspaceMonitor projections={projections} job={job} />
+        <div style={{ flex: primaryMonitor ? 1 : undefined, minHeight: primaryMonitor ? 0 : undefined, overflowY: primaryMonitor ? 'auto' : undefined }}>
+          <LiveWorkspaceMonitor projections={projections} job={job} />
+        </div>
         <WorkspaceEvidenceRail anchors={evidenceAnchors} />
 
         {changedFiles.length > 0 && (

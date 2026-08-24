@@ -8,6 +8,7 @@ import type { AreInferenceResult } from "../../inference/areInferenceApi";
 import { useToolchainStore } from "../../toolchain/useToolchainStore";
 import { useUserStore } from "../../user/useUserStore";
 import { useSovereignToolInspectionStore } from "../runtime/sovereignToolInspectionRuntime";
+import type { SovereignLiveProjection, SovereignLiveProjectionState } from "../runtime/sovereignAgentRuntime";
 import { store } from "../../../store";
 
 // Mock useBilling to avoid Redux context errors from PaywallModal
@@ -412,6 +413,33 @@ function repoScopedJob(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function repoScopedProjection(
+  projectionState: SovereignLiveProjectionState = 'VISIBLE',
+): SovereignLiveProjection {
+  return {
+    projectionId: `projection-${projectionState.toLowerCase()}`,
+    eventId: `event-${projectionState.toLowerCase()}`,
+    sessionId: TEST_CHAT_SESSION_ID,
+    sessionBindingHash: '1'.repeat(64),
+    attemptId: 'attempt-monitor-0123456789abcdef',
+    runId: 'run-monitor',
+    taskId: 'task-monitor',
+    jobId: 'job_scoped',
+    workspaceId: 'job_scoped',
+    actionId: 'action-monitor',
+    sourceKind: 'PROCESS',
+    projectionKind: 'TERMINAL',
+    projectionState,
+    repositoryHead: '2'.repeat(40),
+    sourceReceiptRef: '3'.repeat(64),
+    sourceIdentityHash: '4'.repeat(64),
+    payload: { chunk: 'monitor runtime output', processState: 'RUNNING' },
+    projectionHash: '5'.repeat(64),
+    authoritative: false,
+    claim: 'OBSERVED',
+  };
+}
+
 async function loadRepoUrlFromChat(repoUrl: string): Promise<void> {
   fireEvent.change(chatField(), { target: { value: repoUrl } });
   fireEvent.click(sendButton());
@@ -477,6 +505,111 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByTestId("sovereign-chat-body-window")).toBeDefined();
     expect(chatField()).toBeDefined();
     expect(screen.getByLabelText("Menü")).toBeDefined();
+  });
+
+  it("promotes a fresh workspace-bound projection to the desktop monitor instead of chat", async () => {
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        agentReady
+        agentJob={repoScopedJob()}
+        agentProjections={[repoScopedProjection('VISIBLE')]}
+      />,
+    );
+
+    fireEvent.change(chatField(), { target: { value: TEST_REPO_URL } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined());
+    expect(screen.getByTestId('builder-container')).toHaveAttribute('data-layout', 'live-desktop-monitor-primary');
+    expect(screen.getByTestId('primary-surface-tab')).toHaveAttribute('data-primary-surface', 'desktop-monitor');
+    expect(screen.getByRole('button', { name: 'Live Monitor' })).toHaveTextContent('MONITOR');
+    expect(screen.getByText('monitor runtime output')).toBeDefined();
+    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.queryByLabelText(/Sovereign Chat Eingabe/i)).toBeNull();
+  });
+
+  it("keeps questions and answers visible in the non-overlay monitor dock without reopening chat", async () => {
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ choices: [{ message: { content: 'Der Agent arbeitet weiterhin im gebundenen Workspace.' } }] }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        agentReady
+        agentJob={repoScopedJob()}
+        agentProjections={[repoScopedProjection('VISIBLE')]}
+      />,
+    );
+
+    fireEvent.change(chatField(), { target: { value: TEST_REPO_URL } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getByTestId('monitor-communication-dock')).toBeDefined());
+
+    const monitorQuestion = screen.getByLabelText('Frage an Sovereign während Live Monitor');
+    fireEvent.change(monitorQuestion, { target: { value: 'arbeitet der Agent gerade?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Monitor Frage senden' }));
+
+    await waitFor(() => expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3));
+    await waitFor(() => expect(screen.getByText('arbeitet der Agent gerade?')).toBeDefined());
+    expect(screen.getAllByText('COMMUNICATE').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined();
+    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-overlay', 'false');
+  });
+
+  it("keeps chat primary when the only workspace projection is stale", async () => {
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        agentReady
+        agentJob={repoScopedJob()}
+        agentProjections={[repoScopedProjection('STALE')]}
+      />,
+    );
+
+    await loadRepoFromChat();
+
+    expect(screen.queryByTestId('sovereign-live-monitor-primary')).toBeNull();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
+    expect(chatField()).toBeDefined();
+    expect(screen.getByTestId('primary-surface-tab')).toHaveAttribute('data-primary-surface', 'chat');
+  });
+
+  it("returns to chat when the runtime is waiting for user input even with a fresh projection", async () => {
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        agentReady
+        agentJob={repoScopedJob({ status: 'waiting-for-user' })}
+        agentProjections={[repoScopedProjection('VISIBLE')]}
+      />,
+    );
+
+    await loadRepoFromChat();
+
+    expect(screen.queryByTestId('sovereign-live-monitor-primary')).toBeNull();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
+    expect(chatField()).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Chat' })).toHaveTextContent('CHAT');
   });
 
   it("shows the Workbench status vocabulary (Actions/Files/Logs/Errors/Draft PR) as primary nav, not technical module abbreviations", () => {
