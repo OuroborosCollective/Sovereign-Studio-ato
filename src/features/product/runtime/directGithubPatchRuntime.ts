@@ -73,6 +73,8 @@ const DIRECT_PATCH_INTENT_TOKENS = [
   'änder', 'aender', 'aktualisier', 'update', 'passe an', 'fix',
 ] as const;
 
+
+
 const COMPLEX_TASK_TOKENS = [
   'implementier', 'baue', 'bauen', 'code', 'komponent', 'function', 'funktio',
   'test', 'teste', 'refaktor', 'api', 'server', 'backend', 'frontend',
@@ -80,7 +82,22 @@ const COMPLEX_TASK_TOKENS = [
   'docker', 'kubernetes', 'deployment',
 ] as const;
 
+
+
 const TITLE_TARGET_TOKENS = ['titel', 'title', 'überschrift', 'ueberschrift', 'heading'] as const;
+
+// ⚡ Bolt: Helper to pre-compile regex for faster matching
+function createIntentPattern(tokens: readonly string[]): RegExp {
+  return new RegExp(tokens.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'));
+}
+
+const DIRECT_PATCH_INTENT_TOKENS_PATTERN = createIntentPattern(DIRECT_PATCH_INTENT_TOKENS);
+const COMPLEX_TASK_TOKENS_PATTERN = createIntentPattern(COMPLEX_TASK_TOKENS);
+const TITLE_TARGET_TOKENS_PATTERN = createIntentPattern(TITLE_TARGET_TOKENS);
+
+
+
+
 
 const TITLE_MARKER_PATTERNS = [
   /(?:füge|fuege|add)\s+(.+?)\s+(?:in|to)\s+(?:den|die|das)?\s*(?:(?:readme|dokument|document)\s+)?(?:titel|title|überschrift|ueberschrift|heading)/i,
@@ -90,8 +107,8 @@ const TITLE_MARKER_PATTERNS = [
 
 export function isDirectPatchIntent(text: string): boolean {
   const lower = text.toLowerCase();
-  const hasDirectPatchKeyword = DIRECT_PATCH_INTENT_TOKENS.some((token) => lower.includes(token));
-  const hasComplexTaskKeyword = COMPLEX_TASK_TOKENS.some((token) => lower.includes(token));
+  const hasDirectPatchKeyword = DIRECT_PATCH_INTENT_TOKENS_PATTERN.test(lower);
+  const hasComplexTaskKeyword = COMPLEX_TASK_TOKENS_PATTERN.test(lower);
   return hasDirectPatchKeyword && !hasComplexTaskKeyword;
 }
 
@@ -106,7 +123,7 @@ function findDocsPath(repoFilePaths: readonly string[]): string | null {
 }
 
 function shouldUseReadmeForTitleInstruction(lowerInstruction: string): boolean {
-  return TITLE_TARGET_TOKENS.some((token) => lowerInstruction.includes(token));
+  return TITLE_TARGET_TOKENS_PATTERN.test(lowerInstruction);
 }
 
 export function detectDirectPatchTarget(instruction: string, repoFilePaths: readonly string[], explicitTargetPath?: string): string | null {

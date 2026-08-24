@@ -63,3 +63,7 @@
 ## 2026-08-16 - [Consolidating Multi-Pass Reductions and Slice Allocations in Mathematical Analysis]
 **Learning:** Calculating mathematical statistics (such as Pearson correlation) over array buffers using multiple `.slice()` subarray calls and sequential `.reduce()` passes creates significant garbage collection overhead and repeated array traversal costs. Consolidating all summations into a single indexed `for` loop pass drops loop overhead to a single $O(N)$ traversal with $O(1)$ memory allocations.
 **Action:** Always replace chained `.slice()` and multi-pass `.reduce()` calls in mathematical analysis routines with a single `for` loop that accumulates all required summations concurrently.
+
+## 2024-08-24 - [Regex Hoisting for Array String Matching]
+**Learning:** Replacing `.some(token => text.includes(token))` with a pre-compiled joined `RegExp` pattern using `.test(text)` avoids O(N) loop overhead and improves V8 execution speed significantly for high-frequency routing/intent checks.
+**Action:** Consistently replace simple string-array inclusion searches over texts with pre-compiled regex objects in hot paths. Ensure proper initialization timing to avoid Temporal Dead Zone (TDZ) and retain valid TSDoc positioning.
