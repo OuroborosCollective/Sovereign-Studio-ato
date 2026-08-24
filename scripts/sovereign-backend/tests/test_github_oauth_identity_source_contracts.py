@@ -55,16 +55,15 @@ def test_init_and_exchange_share_the_same_resolved_oauth_identity() -> None:
     assert '"rawCredentialReturned": False' in source
 
 
-def test_github_app_authorize_uses_registered_callback_instead_of_foreign_redirect_uri() -> None:
+def test_github_app_authorize_explicitly_binds_canonical_login_callback() -> None:
     source = APP_SOURCE.read_text(encoding="utf-8")
     start = source.index("def auth_github_init():")
     end = source.index("# ═════════════════════════════════════════════════════════════════════════════\n# SOVEREIGN APP TOOLCHAIN", start)
     route = source[start:end]
 
-    assert 'if oauth_contract["source"] == "github-app"' in route
-    assert 'else GITHUB_OAUTH_REDIRECT_URI' in route
-    assert 'if redirect_uri:' in route
+    assert 'redirect_uri = GITHUB_OAUTH_REDIRECT_URI' in route
     assert 'auth_params["redirect_uri"] = redirect_uri' in route
+    assert 'redirect_uri = (\n            ""\n            if oauth_contract["source"] == "github-app"' not in route
     assert '"redirect_uri": redirect_uri' not in route.split("auth_params = {", 1)[1].split("}", 1)[0]
 
 
