@@ -230,6 +230,7 @@ export interface OpenRouterFreeRuntimeStatus {
 
 export interface LlmProviderSurfaceReadModel {
   providers: FreeRevolverProviderSource[];
+  freeRevolverMinimumReadyRoutes: number;
   omniRoute: OmniRouteRuntimeStatus;
   openRouterPaid: OpenRouterPaidRuntimeStatus;
   openRouterFree: OpenRouterFreeRuntimeStatus;
@@ -495,6 +496,8 @@ function isAcceptedFreeRevolverProviderReadback(value: unknown): boolean {
   return isRecord(value)
     && value.ok === true
     && value.truthOwner === FREE_REVOLVER_TRUTH_OWNER
+    && isNonNegativeInteger(value.minimumReadyRoutes)
+    && value.minimumReadyRoutes > 0
     && value.keyStorage === FREE_REVOLVER_KEY_STORAGE
     && value.activationRule === FREE_REVOLVER_ACTIVATION_RULE
     && Array.isArray(value.providers)
@@ -507,6 +510,8 @@ export function isAcceptedLlmProviderSurfaceReadModel(
   return isRecord(value)
     && Array.isArray(value.providers)
     && value.providers.every(isAcceptedProviderControl)
+    && isNonNegativeInteger(value.freeRevolverMinimumReadyRoutes)
+    && value.freeRevolverMinimumReadyRoutes > 0
     && isAcceptedOmniRouteStatus(value.omniRoute)
     && isAcceptedOpenRouterPaidStatus(value.openRouterPaid)
     && isAcceptedOpenRouterFreeStatus(value.openRouterFree);
@@ -972,6 +977,7 @@ export const adminApiClient = {
       truthOwner: string;
       keyStorage: string;
       activationRule: string;
+      minimumReadyRoutes: number;
       providers: FreeRevolverProviderSource[];
     }>('/api/admin/llm/revolver-v3/providers');
   },
@@ -1007,6 +1013,7 @@ export const adminApiClient = {
     }
     const readModel: unknown = {
       providers: providers.providers,
+      freeRevolverMinimumReadyRoutes: providers.minimumReadyRoutes,
       omniRoute,
       openRouterPaid,
       openRouterFree,

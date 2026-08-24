@@ -37,7 +37,9 @@ def test_backend_deploy_bootstraps_revision_bound_v3_chat_receipts_before_readin
     assert '"/api/internal/llm/freellm/providers"' in deploy
     assert 'f"/api/internal/llm/freellm/providers/{encoded_source_id}/reconcile"' in deploy
     assert 'f"/api/internal/llm/freellm/providers/{encoded_source_id}/discover"' in deploy
-    assert "minimum_ready_routes = 7" in deploy
+    assert 'minimum_ready_routes = int(provider_status.get("minimumReadyRoutes") or 0)' in deploy
+    assert "minimum_ready_routes = 7" not in deploy
+    assert 'raise RuntimeError("FreeLLM provider status did not expose its canonical minimum-ready contract")' in deploy
     assert "if len(verified_receipts) < minimum_ready_routes:" in deploy
     assert '"minimumReadyRoutes": minimum_ready_routes' in deploy
     assert '"minimumReadySatisfied": len(verified_receipts) >= minimum_ready_routes' in deploy

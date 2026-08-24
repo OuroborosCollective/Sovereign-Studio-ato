@@ -460,7 +460,9 @@ provider_status_code, provider_status, provider_status_evidence = internal_json_
     "/api/internal/llm/freellm/providers"
 )
 verified_receipts = revision_bound_v3_chat_receipts(provider_status)
-minimum_ready_routes = 7
+minimum_ready_routes = int(provider_status.get("minimumReadyRoutes") or 0)
+if minimum_ready_routes < 1:
+    raise RuntimeError("FreeLLM provider status did not expose its canonical minimum-ready contract")
 if len(verified_receipts) < minimum_ready_routes:
     for provider in providers:
         source_id = str(provider.get("sourceId") or "")

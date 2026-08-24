@@ -263,6 +263,7 @@ export async function refreshOmniRouteAndReload(
 
 export interface UseAdminFreeRevolverProvidersResult {
   providers: FreeRevolverProviderSource[];
+  minimumReadyRoutes: number;
   omniRoute: OmniRouteRuntimeStatus | null;
   openRouterPaid: OpenRouterPaidRuntimeStatus | null;
   openRouterFree: OpenRouterFreeRuntimeStatus | null;
@@ -285,6 +286,7 @@ export interface UseAdminFreeRevolverProvidersResult {
 
 export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersResult {
   const [providers, setProviders] = useState<FreeRevolverProviderSource[]>([]);
+  const [minimumReadyRoutes, setMinimumReadyRoutes] = useState(0);
   const [omniRoute, setOmniRoute] = useState<OmniRouteRuntimeStatus | null>(null);
   const [openRouterPaid, setOpenRouterPaid] = useState<OpenRouterPaidRuntimeStatus | null>(null);
   const [openRouterFree, setOpenRouterFree] = useState<OpenRouterFreeRuntimeStatus | null>(null);
@@ -301,6 +303,7 @@ export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersRe
       .then(result => {
         if (cancelled) return;
         setProviders(result.providers);
+        setMinimumReadyRoutes(result.freeRevolverMinimumReadyRoutes);
         setOmniRoute(result.omniRoute);
         setOpenRouterPaid(result.openRouterPaid);
         setOpenRouterFree(result.openRouterFree);
@@ -377,6 +380,7 @@ export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersRe
 
   return {
     providers,
+    minimumReadyRoutes,
     omniRoute,
     openRouterPaid,
     openRouterFree,
