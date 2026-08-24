@@ -17,14 +17,11 @@ import subprocess
 from typing import Any, Mapping
 
 from .contracts import sanitize_agent_text
+from .fleet_attempt_worktrees import AttemptWorkspace
 from .fleet_supervisor import FleetContractError
 from .live_workspace import LiveWorkspaceSessionV1, SessionReconciliationV1, VisualProjectionEventV1
 from .tools.base import ToolResult
-from .workspace_policy import (
-    WorkspacePolicyError,
-    repo_dir_for_workspace,
-    validate_workspace_relative_path,
-)
+from .workspace_policy import WorkspacePolicyError, validate_workspace_relative_path
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
@@ -61,15 +58,32 @@ def _head(repo: Path) -> str:
     return head
 
 
-def _repo_for_job(job: Any, workspace_root: Path | None) -> Path:
+def _repo_for_attempt_workspace(
+    *,
+    job: Any,
+    attempt_workspace: AttemptWorkspace,
+    session: LiveWorkspaceSessionV1,
+) -> Path:
+    """Return only a current #1524 worktree, never the outer job clone."""
+
     workspace_id = str(getattr(job, "workspace_id", "") or "").strip()
-    if not workspace_id:
+    if (
+        not workspace_id
+        or attempt_workspace.workspace_id != workspace_id
+        or attempt_workspace.run_id != session.run_id
+        or attempt_workspace.task_id != session.task_id
+        or attempt_workspace.assignment_hash != session.assignment_hash
+        or attempt_workspace.attempt_id != session.attempt_id
+        or attempt_workspace.attempt_sequence != session.attempt_sequence
+        or attempt_workspace.attempt_hash != session.attempt_hash
+        or attempt_workspace.worktree_readback_sha256 != session.worktree_identity_hash
+        or attempt_workspace.head_revision != session.observed_head_revision
+    ):
         raise ProjectionContractError("job workspace identity is unavailable")
-    try:
-        repo = repo_dir_for_workspace(workspace_id, workspace_root).resolve()
-    except WorkspacePolicyError as exc:
-        raise ProjectionContractError("job workspace identity is invalid") from exc
-    if not repo.is_dir() or not (repo / ".git").is_dir():
+    repo = attempt_workspace.worktree_path.resolve()
+    # A Git linked worktree uses a .git *file*.  Requiring it rules out the
+    # outer Agent Job clone, whose .git is a directory, as a projection source.
+    if repo != attempt_workspace.worktree_path or not repo.is_dir() or not (repo / ".git").is_file():
         raise ProjectionContractError("job workspace repository is unavailable")
     return repo
 
@@ -141,19 +155,20 @@ def _build(
 def projection_for_tool_result(
     *,
     job: Any,
+    attempt_workspace: AttemptWorkspace,
     route_action: str,
     parameters: Mapping[str, Any],
     result: ToolResult,
-    workspace_root: Path | None,
     session: LiveWorkspaceSessionV1,
     reconciliation: SessionReconciliationV1,
 ) -> VisualProjectionEventV1:
     """Build one canonical visual event after execution and fresh session reconciliation.
 
-    The bridge cannot create a material projection from a bare Agent Job.  A caller
-    must supply the already-bound LiveWorkspaceSession plus a fresh reconciliation
-    proving that assignment, attempt, worktree, Git head and controller state still
-    match. Projection failure never changes ``result``.
+    The bridge cannot create a material projection from a bare Agent Job or its
+    outer clone.  A caller must supply the exact already-read #1524
+    ``AttemptWorkspace``, an already-bound LiveWorkspaceSession, and a fresh
+    reconciliation proving assignment, attempt, worktree, Git head and controller
+    state still match. Projection failure never changes ``result``.
     """
     action = str(route_action or "").strip()
     if session.workspace_id != str(getattr(job, "workspace_id", "") or "").strip():
@@ -173,7 +188,11 @@ def projection_for_tool_result(
             payload={"reason": "canonical_action_not_executed", "canonicalStatus": result.status},
         )
 
-    repo = _repo_for_job(job, workspace_root)
+    repo = _repo_for_attempt_workspace(
+        job=job,
+        attempt_workspace=attempt_workspace,
+        session=session,
+    )
     head = _head(repo)
     if head != session.observed_head_revision:
         raise ProjectionContractError("workspace Git head drifted from the canonical LiveWorkspaceSession")

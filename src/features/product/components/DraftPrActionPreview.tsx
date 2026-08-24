@@ -70,25 +70,25 @@ export function DraftPrActionPreview({
         <dl style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8, margin: '14px 0' }}>
           <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 10, background: C.bg }}>
             <dt style={{ color: C.textMuted, fontSize: 10 }}>Repository / Branch</dt>
-            <dd style={{ color: C.text, margin: '3px 0 0', overflowWrap: 'anywhere', fontSize: 12 }}>
+            <dd title={`${repoUrl}#${branch}`} style={{ color: C.text, margin: '3px 0 0', overflowWrap: 'anywhere', fontSize: 12 }}>
               {repoUrl}#{branch}
             </dd>
           </div>
           <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 10, background: C.bg }}>
             <dt style={{ color: C.textMuted, fontSize: 10 }}>Erwarteter Head</dt>
-            <dd data-testid="draft-pr-preview-head" style={{ color: C.sky, margin: '3px 0 0', overflowWrap: 'anywhere', fontFamily: 'monospace', fontSize: 11 }}>
+            <dd title={expectedHeadSha || 'Kein Head-SHA verfügbar'} data-testid="draft-pr-preview-head" style={{ color: C.sky, margin: '3px 0 0', overflowWrap: 'anywhere', fontFamily: 'monospace', fontSize: 11 }}>
               {expectedHeadSha || 'nicht verfügbar – der Server blockiert bei fehlender Head-Evidence'}
             </dd>
           </div>
           <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 10, background: C.bg }}>
             <dt style={{ color: C.textMuted, fontSize: 10 }}>Gebundene Evidence</dt>
-            <dd style={{ color: C.text, margin: '3px 0 0', fontSize: 12 }}>
+            <dd title={`${changedFileCount} Datei(en) · ${evidenceLabel}`} style={{ color: C.text, margin: '3px 0 0', fontSize: 12 }}>
               {changedFileCount} Datei(en) · {evidenceLabel}
             </dd>
           </div>
           <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 10, background: C.bg }}>
             <dt style={{ color: C.textMuted, fontSize: 10 }}>Mission</dt>
-            <dd style={{ color: C.text, margin: '3px 0 0', overflowWrap: 'anywhere', fontSize: 12 }}>
+            <dd title={mission || 'Create a reviewed Draft PR.'} style={{ color: C.text, margin: '3px 0 0', overflowWrap: 'anywhere', fontSize: 12 }}>
               {mission || 'Create a reviewed Draft PR.'}
             </dd>
           </div>
@@ -100,6 +100,9 @@ export function DraftPrActionPreview({
             autoFocus
             onClick={onCancel}
             data-testid="cancel-draft-pr-action-preview"
+            className="focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
+            aria-label="Abbrechen"
+            title="Übergabe an Runtime abbrechen"
             style={{
               flex: '1 1 180px',
               minHeight: 46,
@@ -117,6 +120,9 @@ export function DraftPrActionPreview({
             type="button"
             onClick={onConfirm}
             data-testid="confirm-draft-pr-action-preview"
+            className="focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
+            aria-label="Draft PR nach Serverprüfung posten"
+            title="Draft PR nach Serverprüfung posten"
             style={{
               flex: '1 1 220px',
               minHeight: 46,

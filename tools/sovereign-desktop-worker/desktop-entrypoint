@@ -1,0 +1,105 @@
+#!/bin/sh
+set -eu
+
+umask 077
+export DISPLAY="${DISPLAY:-:99}"
+export HOME="${HOME:-/home/desktop}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/desktop}"
+export DESKTOP_CONTROL_SOCKET="${DESKTOP_CONTROL_SOCKET:-/run/desktop-control/worker.sock}"
+export DESKTOP_ACTIVITY_PATH="${DESKTOP_ACTIVITY_PATH:-/run/desktop-control/activity}"
+export DESKTOP_STREAM_PORT="${DESKTOP_STREAM_PORT:-6080}"
+export DESKTOP_MAX_LIFETIME_SECONDS="${DESKTOP_MAX_LIFETIME_SECONDS:-3600}"
+export DESKTOP_MAX_IDLE_SECONDS="${DESKTOP_MAX_IDLE_SECONDS:-900}"
+
+valid_duration() {
+  case "$1" in
+    *[!0-9]*|'') return 1 ;;
+  esac
+  [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]
+}
+
+if ! valid_duration "$DESKTOP_MAX_LIFETIME_SECONDS" 60 14400; then
+  exit 64
+fi
+if ! valid_duration "$DESKTOP_MAX_IDLE_SECONDS" 30 3600; then
+  exit 64
+fi
+
+mkdir -p "$XDG_RUNTIME_DIR" "$(dirname "$DESKTOP_CONTROL_SOCKET")" "$HOME"
+chmod 0700 "$XDG_RUNTIME_DIR" "$HOME"
+chmod 0711 "$(dirname "$DESKTOP_CONTROL_SOCKET")"
+
+PIDS=""
+add_pid() {
+  PIDS="$PIDS $1"
+}
+
+cleanup() {
+  for pid in $PIDS; do
+    kill "$pid" 2>/dev/null || true
+  done
+}
+trap cleanup INT TERM EXIT
+
+Xvfb "$DISPLAY" -screen 0 "${DESKTOP_SCREEN_GEOMETRY:-1280x720x24}" -nolisten tcp &
+XVFB_PID=$!
+add_pid "$XVFB_PID"
+
+ready=0
+for _ in $(seq 1 30); do
+  if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  sleep 1
+done
+if [ "$ready" -ne 1 ]; then
+  exit 70
+fi
+
+openbox-session &
+OPENBOX_PID=$!
+add_pid "$OPENBOX_PID"
+xterm -geometry 120x35+20+20 -title "Sovereign Workspace Terminal" -e sh -lc 'cd /workspace && exec sh' &
+TERM_PID=$!
+add_pid "$TERM_PID"
+mousepad /workspace/README.md &
+EDITOR_PID=$!
+add_pid "$EDITOR_PID"
+firefox-esr --no-remote --new-instance about:blank >/dev/null 2>&1 &
+FIREFOX_PID=$!
+add_pid "$FIREFOX_PID"
+
+x11vnc -display "$DISPLAY" -localhost -viewonly -nopw -forever -shared -rfbport 5900 >/dev/null 2>&1 &
+VNC_PID=$!
+add_pid "$VNC_PID"
+websockify --web=/usr/share/novnc "$DESKTOP_STREAM_PORT" localhost:5900 >/dev/null 2>&1 &
+NOVNC_PID=$!
+add_pid "$NOVNC_PID"
+python3 /usr/local/lib/desktop-control.py &
+CONTROL_PID=$!
+add_pid "$CONTROL_PID"
+
+watchdog() {
+  started_at=$(date +%s)
+  while kill -0 "$CONTROL_PID" 2>/dev/null; do
+    now=$(date +%s)
+    if [ $((now - started_at)) -ge "$DESKTOP_MAX_LIFETIME_SECONDS" ]; then
+      kill "$CONTROL_PID" 2>/dev/null || true
+      return
+    fi
+    if [ -e "$DESKTOP_ACTIVITY_PATH" ]; then
+      activity_at=$(stat -c %Y "$DESKTOP_ACTIVITY_PATH" 2>/dev/null || printf 0)
+      if [ $((now - activity_at)) -ge "$DESKTOP_MAX_IDLE_SECONDS" ]; then
+        kill "$CONTROL_PID" 2>/dev/null || true
+        return
+      fi
+    fi
+    sleep 5
+  done
+}
+watchdog &
+WATCHDOG_PID=$!
+add_pid "$WATCHDOG_PID"
+
+wait "$CONTROL_PID"

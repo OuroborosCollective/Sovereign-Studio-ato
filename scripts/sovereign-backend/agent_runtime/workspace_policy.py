@@ -19,6 +19,7 @@ _DEFAULT_WORKSPACE_UID = 10001
 _DEFAULT_WORKSPACE_GID = 10001
 _SAFE_WORKSPACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")
 _SAFE_BRANCH = re.compile(r"^[\w./-]{1,160}$")
+_SAFE_ATTEMPT_ID = re.compile(r"^attempt-[0-9a-f]{24}$")
 _SECRET_URL_TOKENS = ("@", "token=", "password=", "secret=", "api_key=", "apikey=")
 
 
@@ -83,6 +84,50 @@ def safe_workspace_path(workspace_id: str, root: Path | None = None) -> Path:
 
 def repo_dir_for_workspace(workspace_id: str, root: Path | None = None) -> Path:
     return safe_workspace_path(workspace_id, root) / "repo"
+
+
+def assert_safe_attempt_id(attempt_id: str) -> str:
+    """Accept only the deterministic Fleet attempt identifier grammar.
+
+    The identifier is generated from a server-side assignment contract.  It is never
+    a caller-chosen filesystem fragment.
+    """
+
+    clean = str(attempt_id or "").strip().lower()
+    if not _SAFE_ATTEMPT_ID.fullmatch(clean):
+        raise WorkspacePolicyError("attempt id contains unsafe characters")
+    return clean
+
+
+def fleet_worktree_root_for_workspace(workspace_id: str, root: Path | None = None) -> Path:
+    """Return the only parent directory allowed for Fleet attempt worktrees."""
+
+    workspace = safe_workspace_path(workspace_id, root)
+    candidate = workspace / "fleet-worktrees"
+    if candidate.is_symlink():
+        raise WorkspacePolicyError("Fleet worktree root may not be a symlink")
+    resolved = candidate.resolve()
+    if workspace not in resolved.parents:
+        raise WorkspacePolicyError("Fleet worktree root escapes the Agent Job workspace")
+    return resolved
+
+
+def fleet_attempt_worktree_path(
+    workspace_id: str,
+    attempt_id: str,
+    root: Path | None = None,
+) -> Path:
+    """Derive one opaque, deterministic worktree path from server-bound identity."""
+
+    safe_attempt_id = assert_safe_attempt_id(attempt_id)
+    worktree_root = fleet_worktree_root_for_workspace(workspace_id, root)
+    candidate = worktree_root / safe_attempt_id
+    if candidate.is_symlink():
+        raise WorkspacePolicyError("Fleet attempt worktree may not be a symlink")
+    resolved = candidate.resolve()
+    if worktree_root not in resolved.parents:
+        raise WorkspacePolicyError("Fleet attempt worktree path escape blocked")
+    return resolved
 
 
 def validate_workspace_branch(branch: str) -> str:

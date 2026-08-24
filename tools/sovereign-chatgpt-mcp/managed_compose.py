@@ -113,7 +113,7 @@ STACKS: dict[str, ManagedStack] = {
         allowed_services=("sovereign-backend",),
         deploy_root="/opt/sovereign-backend",
         template_name="sovereign-backend",
-        allowed_networks=("sovereign-private", "supabase_default"),
+        allowed_networks=("sovereign-private", "sovereign-desktop", "supabase_default"),
         allowed_bind_roots=(
             "/opt/sovereign-backend",
             "/opt/secure",

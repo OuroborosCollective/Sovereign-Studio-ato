@@ -1,33 +1,172 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { appendMessage, buildShareUrl, deleteSession, exportSessionAsMarkdown, extractSessionIdFromUrl, formatPersistedSessionAge, getOrCreateCurrentSession, listSessions, loadSession, saveSession } from './sessionPersistenceRuntime';
+import { describe, expect, it, vi } from 'vitest';
+import type { SituationalBubbleBinding } from './builderContainerTypes';
+import {
+  appendMissionInput,
+  buildShareUrl,
+  exportSessionAsMarkdown,
+  extractSessionIdFromUrl,
+  formatPersistedSessionAge,
+  generateClientMessageId,
+  getOrCreateCurrentSession,
+  loadSession,
+  sessionMessageToChatLine,
+  type PersistedSession,
+} from './sessionPersistenceRuntime';
 
-class MemoryStorage implements Storage {
-  private readonly values = new Map<string, string>();
-  get length() { return this.values.size; }
-  clear() { this.values.clear(); }
-  getItem(key: string) { return this.values.get(key) ?? null; }
-  key(index: number) { return Array.from(this.values.keys())[index] ?? null; }
-  removeItem(key: string) { this.values.delete(key); }
-  setItem(key: string, value: string) { this.values.set(key, value); }
+const SESSION_ID = 'livechat-' + 'a'.repeat(24);
+const BUBBLE_HASH = 'b'.repeat(64);
+const RECORDED_AT = '2026-08-23T01:00:00+00:00';
+
+const sessionPayload = {
+  schemaVersion: 'sovereign.live-workspace-chat-session.v1',
+  sessionId: SESSION_ID,
+  repositoryIdentity: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+  repositoryBranch: 'main',
+  recordedAt: RECORDED_AT,
+  persistence: 'postgresql',
+  authoritative: false,
+};
+
+const missionBubble = {
+  schemaVersion: 'sovereign.live-workspace-chat-bubble.v1',
+  persistenceSchemaVersion: 'sovereign.live-workspace-chat-persistence.v1',
+  sessionId: SESSION_ID,
+  clientMessageId: 'mission-test',
+  bubbleKind: 'MISSION_INPUT',
+  sourceKind: 'USER_INPUT',
+  text: 'Repariere den Login.',
+  canonicalReferenceHashes: [],
+  sessionBindingHash: null,
+  runId: null,
+  attemptId: null,
+  workflowState: 'RECORDED',
+  boundRevision: null,
+  effectKind: null,
+  targetHash: null,
+  consentBindingHash: null,
+  bubbleHash: BUBBLE_HASH,
+  recordedAt: RECORDED_AT,
+  authoritative: false,
+};
+
+function response(payload: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => payload,
+  } as Response;
 }
 
-describe('sessionPersistenceRuntime', () => {
-  let storage: Storage;
-  beforeEach(() => { storage = new MemoryStorage(); });
-  it('creates a repo-bound session', () => { const session = getOrCreateCurrentSession(storage, 'repo-a', 'main'); expect(session.repoBranch).toBe('main'); expect(session.sessionId).toBeTruthy(); });
-  it('saves and reloads a session', () => { const base = getOrCreateCurrentSession(storage, 'repo', 'main'); const saved = saveSession(storage, { sessionId: base.sessionId, repoUrl: base.repoUrl, repoBranch: base.repoBranch, messages: [], createdAt: base.createdAt }); expect(loadSession(storage, saved.sessionId)?.sessionId).toBe(saved.sessionId); });
-  it('reuses the latest matching repo session', () => { const base = getOrCreateCurrentSession(storage, 'repo', 'main'); saveSession(storage, { sessionId: base.sessionId, repoUrl: 'repo', repoBranch: 'main', messages: [], createdAt: base.createdAt }); expect(getOrCreateCurrentSession(storage, 'repo', 'main').sessionId).toBe(base.sessionId); });
-  it('keeps branches separate', () => { const main = getOrCreateCurrentSession(storage, 'repo', 'main'); saveSession(storage, { sessionId: main.sessionId, repoUrl: 'repo', repoBranch: 'main', messages: [], createdAt: main.createdAt }); expect(getOrCreateCurrentSession(storage, 'repo', 'dev').sessionId).not.toBe(main.sessionId); });
-  it('appends a message', () => { const base = getOrCreateCurrentSession(storage, 'repo', 'main'); const next = appendMessage(base, { role: 'user', content: 'hello' }); expect(next.messages[0].content).toBe('hello'); expect(next.messageCount).toBe(1); });
-  it('lists persisted sessions', () => { saveSession(storage, { sessionId: 'a', repoUrl: 'a', repoBranch: 'main', messages: [], createdAt: 1 }); saveSession(storage, { sessionId: 'b', repoUrl: 'b', repoBranch: 'main', messages: [], createdAt: 2 }); expect(listSessions(storage)).toHaveLength(2); });
-  it('deletes a session and index entry', () => { const saved = saveSession(storage, { sessionId: 'a', repoUrl: 'a', repoBranch: 'main', messages: [], createdAt: 1 }); deleteSession(storage, saved.sessionId); expect(loadSession(storage, saved.sessionId)).toBeNull(); expect(listSessions(storage)).toHaveLength(0); });
-  it('returns null for corrupt session data', () => { storage.setItem('sovereign-studio.chat-session.v1:a', '{'); expect(loadSession(storage, 'a')).toBeNull(); });
-  it('extracts a shared session id', () => expect(extractSessionIdFromUrl('#session=abc-123')).toBe('abc-123'));
-  it('returns null without a session hash', () => expect(extractSessionIdFromUrl('#other=x')).toBeNull());
-  it('builds a share URL containing the session id', () => expect(buildShareUrl('abc')).toContain('session=abc'));
-  it('exports markdown with roles and repository', () => { const session = appendMessage(getOrCreateCurrentSession(storage, 'repo', 'main'), { role: 'assistant', content: 'done' }); const markdown = exportSessionAsMarkdown(session); expect(markdown).toContain('**Sovereign**'); expect(markdown).toContain('repo'); });
-  it('redacts a generated GitHub credential pattern in export', () => { const credential = ['github', 'pat', 'x'.repeat(40)].join('_'); const session = appendMessage(getOrCreateCurrentSession(storage, 'repo', 'main'), { role: 'user', content: credential }); const markdown = exportSessionAsMarkdown(session); expect(markdown).not.toContain(credential); expect(markdown).toContain('[REDACTED]'); });
-  it('redacts a generated bearer credential in export', () => { const credential = ['Bear', 'er ', 'a'.repeat(32)].join(''); const session = appendMessage(getOrCreateCurrentSession(storage, 'repo', 'main'), { role: 'user', content: credential }); expect(exportSessionAsMarkdown(session)).toContain('[REDACTED]'); });
+describe('real PostgreSQL session persistence runtime', () => {
+  it('resolves a repo-bound server session with credentialed fetch', async () => {
+    const fetchImpl = vi.fn(async () => response({ session: sessionPayload })) as unknown as typeof fetch;
+    const session = await getOrCreateCurrentSession(
+      'https://sovereign-backend.example',
+      sessionPayload.repositoryIdentity,
+      'main',
+      fetchImpl,
+    );
+    expect(session.persistence).toBe('postgresql');
+    expect(session.sessionId).toBe(SESSION_ID);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://sovereign-backend.example/api/user/agent/live-workspace/chat-session',
+      expect.objectContaining({ method: 'POST', credentials: 'include' }),
+    );
+  });
+
+  it('loads only committed typed bubbles from the backend', async () => {
+    const fetchImpl = vi.fn(async () => response({
+      session: sessionPayload,
+      bubbles: [missionBubble],
+    })) as unknown as typeof fetch;
+    const session = await loadSession('', SESSION_ID, fetchImpl);
+    expect(session.messages).toHaveLength(1);
+    expect(sessionMessageToChatLine(session.messages[0]).bubble?.bubbleKind).toBe('MISSION_INPUT');
+  });
+
+  it('fails closed when a persisted payload contains internal reasoning', async () => {
+    const fetchImpl = vi.fn(async () => response({
+      session: sessionPayload,
+      bubbles: [{ ...missionBubble, text: "Here's a thinking process." }],
+    })) as unknown as typeof fetch;
+    await expect(loadSession('', SESSION_ID, fetchImpl)).rejects.toThrow('output firewall');
+  });
+
+  it('appends a mission through the server and never local storage', async () => {
+    const session = {
+      version: 3,
+      persistence: 'postgresql',
+      sessionId: SESSION_ID,
+      repoUrl: sessionPayload.repositoryIdentity,
+      repoBranch: 'main',
+      messages: [],
+      createdAt: Date.parse(RECORDED_AT),
+      updatedAt: Date.parse(RECORDED_AT),
+      messageCount: 0,
+    } satisfies PersistedSession;
+    const fetchImpl = vi.fn(async () => response({ bubble: missionBubble }, 201)) as unknown as typeof fetch;
+    const saved = await appendMissionInput('', session, missionBubble.text, fetchImpl, 'mission-test');
+    expect(saved.messages).toHaveLength(1);
+    expect(saved.messages[0].bubble.sourceKind).toBe('USER_INPUT');
+    expect(fetchImpl).toHaveBeenCalledWith(
+      `/api/user/agent/live-workspace/chat-session/${SESSION_ID}/mission`,
+      expect.objectContaining({ method: 'POST', credentials: 'include' }),
+    );
+  });
+
+  it('creates bounded message ids and share links only for canonical session ids', () => {
+    expect(generateClientMessageId()).toMatch(/^mission-/);
+    expect(buildShareUrl(SESSION_ID)).toContain(`session=${SESSION_ID}`);
+    expect(extractSessionIdFromUrl(`#session=${SESSION_ID}`)).toBe(SESSION_ID);
+    expect(extractSessionIdFromUrl('#session=legacy-local-id')).toBeNull();
+  });
+
+  it('exports only typed persisted messages and redacts credentials defensively', () => {
+    const credential = ['github', 'pat', 'x'.repeat(40)].join('_');
+    const bubble = {
+      schemaVersion: 'sovereign.live-workspace-chat-bubble.v1',
+      persistenceSchemaVersion: 'sovereign.live-workspace-chat-persistence.v1',
+      sessionId: SESSION_ID,
+      clientMessageId: 'mission-export',
+      bubbleKind: 'MISSION_INPUT',
+      sourceKind: 'USER_INPUT',
+      text: credential,
+      canonicalReferenceHashes: [],
+      workflowState: 'RECORDED',
+      bubbleHash: BUBBLE_HASH,
+      recordedAt: RECORDED_AT,
+      authoritative: false,
+    } satisfies SituationalBubbleBinding;
+    const message = {
+      id: BUBBLE_HASH,
+      role: 'user' as const,
+      content: credential,
+      timestamp: Date.parse(RECORDED_AT),
+      bubble,
+    };
+    const session: PersistedSession = {
+      version: 3,
+      persistence: 'postgresql',
+      sessionId: SESSION_ID,
+      repoUrl: sessionPayload.repositoryIdentity,
+      repoBranch: 'main',
+      messages: [message],
+      createdAt: Date.parse(RECORDED_AT),
+      updatedAt: Date.parse(RECORDED_AT),
+      messageCount: 1,
+    };
+    const markdown = exportSessionAsMarkdown(session);
+    expect(markdown).toContain('PostgreSQL');
+    expect(markdown).toContain('[REDACTED]');
+    expect(markdown).not.toContain(credential);
+  });
+
+  it('surfaces backend persistence failure instead of fabricating a saved session', async () => {
+    const fetchImpl = vi.fn(async () => response({ error: 'blocked' }, 503)) as unknown as typeof fetch;
+    await expect(getOrCreateCurrentSession('', 'UNBOUND', 'main', fetchImpl)).rejects.toThrow(
+      'PostgreSQL chat persistence is unavailable',
+    );
+  });
 });
 
 describe('formatPersistedSessionAge', () => {
@@ -36,8 +175,9 @@ describe('formatPersistedSessionAge', () => {
   const hour = 60 * minute;
   const day = 24 * hour;
   const makeSession = (updatedAt: number) => ({
-    version: 2 as const,
-    sessionId: 'test',
+    version: 3 as const,
+    persistence: 'postgresql' as const,
+    sessionId: 'livechat-' + 'f'.repeat(24),
     repoUrl: 'r',
     repoBranch: 'b',
     messages: [],

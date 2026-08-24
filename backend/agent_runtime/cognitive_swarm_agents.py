@@ -30,6 +30,7 @@ from .cognitive_llm_transport import (
     build_route_run_config,
 )
 from .cognitive_usage_billing import AgentStageBilling
+from .fleet_supervisor import FleetContractError, FleetPlan
 from .llm_contract import (
     LlmOutputContract,
     build_request_envelope,
@@ -59,6 +60,8 @@ _AGENTS_SDK_ERROR = ""
 
 StageObserver = Callable[[dict[str, object]], None]
 RepositoryToolFactory = Callable[[str], list[Any]]
+FleetLaneGuard = Callable[[str, tuple[str, ...]], Any]
+FleetHeadReadback = Callable[[], str]
 
 
 def _emit_stage(
@@ -70,6 +73,10 @@ def _emit_stage(
     summary: str,
     next_action: str,
     loop: int | None = None,
+    fleet_plan_hash: str | None = None,
+    fleet_lane_id: str | None = None,
+    fleet_task_id: str | None = None,
+    assignment_hash: str | None = None,
 ) -> None:
     if observer is None:
         return
@@ -82,6 +89,14 @@ def _emit_stage(
     }
     if loop is not None:
         payload["loop"] = loop
+    if fleet_plan_hash:
+        payload["fleetPlanHash"] = fleet_plan_hash
+    if fleet_lane_id:
+        payload["fleetLaneId"] = fleet_lane_id
+    if fleet_task_id:
+        payload["fleetTaskId"] = fleet_task_id
+    if assignment_hash:
+        payload["assignmentHash"] = assignment_hash
     observer(payload)
 
 
@@ -1034,13 +1049,29 @@ def _worker_input(
     loop: int,
     role: str,
     prior_verdict: JudgeVerdict | None,
+    fleet_plan_hash: str = "",
+    fleet_lane_id: str = "",
+    fleet_task_id: str = "",
+    assignment_hash: str = "",
 ) -> str:
     previous = prior_verdict.model_dump_json() if prior_verdict else "none"
+    fleet_binding = (
+        "No repository Fleet binding applies to this analysis-only worker."
+        if not fleet_plan_hash
+        else (
+            "Repository Fleet binding (immutable for this pass):\n"
+            f"planHash={fleet_plan_hash}\n"
+            f"laneId={fleet_lane_id}\n"
+            f"taskId={fleet_task_id}\n"
+            f"assignmentHash={assignment_hash}\n"
+        )
+    )
     return (
         f"Mission:\n{mission}\n\n"
         f"Fixed worker role: {role}\n"
         f"Double-loop pass: {loop}\n\n"
         f"Dispatcher plan:\n{plan.model_dump_json()}\n\n"
+        f"{fleet_binding}\n\n"
         f"Supplied runtime evidence:\n{evidence or '[no evidence supplied]'}\n\n"
         f"Prior judge verdict:\n{previous}\n"
     )
@@ -1063,6 +1094,92 @@ def _judge_input(
     )
 
 
+def _resolve_repository_fleet_execution(
+    *,
+    repository_tool_factory: RepositoryToolFactory | None,
+    fleet_plan: FleetPlan | dict[str, Any] | None,
+    fleet_task_ids_by_role: dict[str, str] | None,
+    fleet_assignments_by_role: dict[str, Any] | None,
+    fleet_lane_guard: FleetLaneGuard | None,
+) -> tuple[FleetPlan | None, dict[str, str], dict[str, str], FleetLaneGuard | None]:
+    """Validate the only scheduler authority for repository-backed workers.
+
+    Non-repository analysis keeps its existing read-only worker topology.  Once
+    repository tools are supplied, a hash-valid FleetPlan, exact role/task mapping,
+    exact assignment hashes and a lane admission guard are mandatory before the
+    dispatcher can call a model.
+    """
+
+    if repository_tool_factory is None:
+        return None, {}, {}, None
+    if (
+        fleet_plan is None
+        or fleet_task_ids_by_role is None
+        or fleet_assignments_by_role is None
+        or fleet_lane_guard is None
+    ):
+        raise SwarmExecutionError(
+            stage="fleet-plan",
+            family="FLEET_PLAN_REQUIRED_FOR_REPOSITORY_WORKERS",
+            error_type="FleetPlanRequired",
+            next_action="BUILD_AND_PERSIST_A_HASH_BOUND_FLEET_PLAN",
+            retryable=False,
+        )
+    try:
+        plan = fleet_plan if isinstance(fleet_plan, FleetPlan) else FleetPlan.from_dict(fleet_plan)
+        task_ids_by_role = {
+            role: str(fleet_task_ids_by_role.get(role) or "").strip()
+            for role in WORKER_ROLES
+        }
+        if any(not task_id for task_id in task_ids_by_role.values()):
+            raise FleetContractError("Fleet role/task binding is incomplete")
+        if len(set(task_ids_by_role.values())) != len(task_ids_by_role):
+            raise FleetContractError("Fleet role/task binding contains duplicates")
+        if set(task_ids_by_role.values()) != {task.task_id for task in plan.tasks}:
+            raise FleetContractError("FleetPlan tasks do not match persisted worker tasks")
+        if any(task.expected_base_revision != plan.base_revision for task in plan.tasks):
+            raise FleetContractError("FleetPlan task base revision drifted")
+        lane_tasks = tuple(task_id for lane in plan.lanes for task_id in lane.task_ids)
+        if set(lane_tasks) != set(task_ids_by_role.values()) or len(lane_tasks) != len(set(lane_tasks)):
+            raise FleetContractError("FleetPlan lanes do not cover every worker exactly once")
+        sequences = tuple(lane.sequence for lane in plan.lanes)
+        if sequences != tuple(sorted(sequences)) or len(set(sequences)) != len(sequences):
+            raise FleetContractError("FleetPlan lane ordering is invalid")
+        assignment_hashes: dict[str, str] = {}
+        for role, task_id in task_ids_by_role.items():
+            assignment = fleet_assignments_by_role.get(role)
+            assignment_task_id = str(
+                getattr(assignment, "task_id", "")
+                or (assignment.get("taskId") if isinstance(assignment, dict) else "")
+                or (assignment.get("task_id") if isinstance(assignment, dict) else "")
+                or ""
+            ).strip()
+            assignment_plan_hash = str(
+                getattr(assignment, "plan_hash", "")
+                or (assignment.get("planHash") if isinstance(assignment, dict) else "")
+                or (assignment.get("plan_hash") if isinstance(assignment, dict) else "")
+                or ""
+            ).strip()
+            assignment_hash = str(
+                getattr(assignment, "assignment_hash", "")
+                or (assignment.get("assignmentHash") if isinstance(assignment, dict) else "")
+                or (assignment.get("assignment_hash") if isinstance(assignment, dict) else "")
+                or ""
+            ).strip()
+            if assignment_task_id != task_id or assignment_plan_hash != plan.plan_hash or len(assignment_hash) != 64:
+                raise FleetContractError("Fleet worker assignment does not match the plan")
+            assignment_hashes[role] = assignment_hash
+    except FleetContractError as exc:
+        raise SwarmExecutionError(
+            stage="fleet-plan",
+            family="FLEET_PLAN_BINDING_INVALID",
+            error_type=type(exc).__name__,
+            next_action="REBUILD_FLEET_PLAN_FROM_CURRENT_PERSISTED_WORKER_BINDINGS",
+            retryable=False,
+        ) from exc
+    return plan, task_ids_by_role, assignment_hashes, fleet_lane_guard
+
+
 async def run_cognitive_swarm(
     mission: str,
     *,
@@ -1074,6 +1191,11 @@ async def run_cognitive_swarm(
     worker_routes: dict[str, dict[str, Any]] | None = None,
     stage_observer: StageObserver | None = None,
     repository_tool_factory: RepositoryToolFactory | None = None,
+    fleet_plan: FleetPlan | dict[str, Any] | None = None,
+    fleet_task_ids_by_role: dict[str, str] | None = None,
+    fleet_assignments_by_role: dict[str, Any] | None = None,
+    fleet_lane_guard: FleetLaneGuard | None = None,
+    fleet_head_readback: FleetHeadReadback | None = None,
     stage_billing: AgentStageBilling | None = None,
 ) -> dict[str, Any]:
     normalized_mission = mission.strip()
@@ -1087,6 +1209,21 @@ async def run_cognitive_swarm(
             family="AGENTS_DIRECT_OPENROUTER_ROUTE_REQUIRED",
             error_type="RuntimeConfigurationError",
             next_action="RESOLVE_DATABASE_OPENROUTER_ROUTE",
+            retryable=False,
+        )
+    resolved_fleet_plan, resolved_fleet_task_ids, assignment_hashes, resolved_lane_guard = _resolve_repository_fleet_execution(
+        repository_tool_factory=repository_tool_factory,
+        fleet_plan=fleet_plan,
+        fleet_task_ids_by_role=fleet_task_ids_by_role,
+        fleet_assignments_by_role=fleet_assignments_by_role,
+        fleet_lane_guard=fleet_lane_guard,
+    )
+    if repository_tool_factory is not None and fleet_head_readback is None:
+        raise SwarmExecutionError(
+            stage="fleet-plan",
+            family="FLEET_WORKSPACE_READBACK_REQUIRED",
+            error_type="FleetWorkspaceReadbackRequired",
+            next_action="READ_CURRENT_WORKSPACE_HEAD_BEFORE_EACH_FLEET_PASS",
             retryable=False,
         )
     try:
@@ -1195,17 +1332,57 @@ async def run_cognitive_swarm(
 
     loop_payloads: list[dict[str, Any]] = []
     prior_verdict: JudgeVerdict | None = None
+    workers_by_role = dict(zip(WORKER_ROLES, swarm.workers, strict=True))
+    task_to_role = {
+        task_id: role
+        for role, task_id in resolved_fleet_task_ids.items()
+    }
 
     for loop in (1, 2):
-        async def execute_worker(role: str, worker: Any) -> WorkerReport:
+        if resolved_fleet_plan is not None:
+            try:
+                observed_head = str(fleet_head_readback() if fleet_head_readback else "").strip().lower()
+            except Exception as exc:
+                raise SwarmExecutionError(
+                    stage=f"loop-{loop}:fleet-workspace-readback",
+                    family="FLEET_WORKSPACE_READBACK_FAILED",
+                    error_type=type(exc).__name__,
+                    next_action="READ_CURRENT_WORKSPACE_HEAD_AND_REBUILD_FLEET_PLAN",
+                    retryable=False,
+                ) from exc
+            if observed_head != resolved_fleet_plan.base_revision:
+                raise SwarmExecutionError(
+                    stage=f"loop-{loop}:fleet-workspace-readback",
+                    family="FLEET_PLAN_BASE_REVISION_STALE",
+                    error_type="FleetWorkspaceHeadDrift",
+                    next_action="REBUILD_FLEET_PLAN_FROM_FRESH_WORKSPACE_READBACK",
+                    retryable=False,
+                )
+
+        async def execute_worker(
+            role: str,
+            worker: Any,
+            *,
+            fleet_lane_id: str = "",
+            fleet_task_id: str = "",
+        ) -> WorkerReport:
+            assignment_hash = assignment_hashes.get(role, "")
             _emit_stage(
                 stage_observer,
                 agent_id=role,
                 event_type="agent_started",
                 status="RUNNING",
-                summary=f"{role} started evidence analysis for parallel double-loop pass {loop}.",
+                summary=(
+                    f"{role} started Fleet lane {fleet_lane_id} evidence analysis for double-loop pass {loop}."
+                    if fleet_lane_id
+                    else f"{role} started evidence analysis for double-loop pass {loop}."
+                ),
                 next_action="WAIT_FOR_AGENT_REPORT",
                 loop=loop,
+                fleet_plan_hash=resolved_fleet_plan.plan_hash if resolved_fleet_plan else None,
+                fleet_lane_id=fleet_lane_id or None,
+                fleet_task_id=fleet_task_id or None,
+                assignment_hash=assignment_hash or None,
             )
             result = await _run_billed_stage(
                 runner_class,
@@ -1217,6 +1394,10 @@ async def run_cognitive_swarm(
                     loop=loop,
                     role=role,
                     prior_verdict=prior_verdict,
+                    fleet_plan_hash=resolved_fleet_plan.plan_hash if resolved_fleet_plan else "",
+                    fleet_lane_id=fleet_lane_id,
+                    fleet_task_id=fleet_task_id,
+                    assignment_hash=assignment_hash,
                 ),
                 stage=f"loop-{loop}:worker:{role}",
                 stage_billing=stage_billing,
@@ -1244,19 +1425,79 @@ async def run_cognitive_swarm(
                 event_type="agent_completed",
                 status="BLOCKED" if report.blocked else "COMPLETED",
                 summary=(
-                    f"{role} produced a blocked evidence report for parallel double-loop pass {loop}."
+                    f"{role} produced a blocked Fleet lane evidence report for double-loop pass {loop}."
                     if report.blocked
-                    else f"{role} produced a validated evidence report for parallel double-loop pass {loop}."
+                    else f"{role} produced a validated Fleet lane evidence report for double-loop pass {loop}."
                 ),
-                next_action="WAIT_FOR_PARALLEL_WORKER_PASS",
+                next_action="WAIT_FOR_FLEET_LANE_COMPLETION",
                 loop=loop,
+                fleet_plan_hash=resolved_fleet_plan.plan_hash if resolved_fleet_plan else None,
+                fleet_lane_id=fleet_lane_id or None,
+                fleet_task_id=fleet_task_id or None,
+                assignment_hash=assignment_hash or None,
             )
             return report
 
-        reports = list(await asyncio.gather(*(
-            execute_worker(role, worker)
-            for role, worker in zip(WORKER_ROLES, swarm.workers, strict=True)
-        )))
+        if resolved_fleet_plan is None:
+            reports = list(await asyncio.gather(*(
+                execute_worker(role, worker)
+                for role, worker in workers_by_role.items()
+            )))
+        else:
+            reports_by_role: dict[str, WorkerReport] = {}
+            for lane in sorted(resolved_fleet_plan.lanes, key=lambda item: item.sequence):
+                lane_roles = tuple(task_to_role[task_id] for task_id in lane.task_ids)
+                with resolved_lane_guard(lane.lane_id, lane_roles):
+                    # Persist RUNNING only after the controller admitted this exact
+                    # lane.  A guard failure must not manufacture a reconnectable
+                    # live lane from a pre-admission observability event.
+                    _emit_stage(
+                        stage_observer,
+                        agent_id="dispatcher",
+                        event_type="fleet_lane_started",
+                        status="RUNNING",
+                        summary=f"Fleet lane {lane.lane_id} started for double-loop pass {loop}.",
+                        next_action="WAIT_FOR_FLEET_LANE_COMPLETION",
+                        loop=loop,
+                        fleet_plan_hash=resolved_fleet_plan.plan_hash,
+                        fleet_lane_id=lane.lane_id,
+                    )
+                    if lane.parallel_safe and len(lane_roles) > 1:
+                        lane_reports = list(await asyncio.gather(*(
+                            execute_worker(
+                                role,
+                                workers_by_role[role],
+                                fleet_lane_id=lane.lane_id,
+                                fleet_task_id=resolved_fleet_task_ids[role],
+                            )
+                            for role in lane_roles
+                        )))
+                    else:
+                        lane_reports = []
+                        for role in lane_roles:
+                            lane_reports.append(await execute_worker(
+                                role,
+                                workers_by_role[role],
+                                fleet_lane_id=lane.lane_id,
+                                fleet_task_id=resolved_fleet_task_ids[role],
+                            ))
+                    reports_by_role.update({report.role: report for report in lane_reports})
+                    # Keep the durable terminal event within the controller's lane
+                    # admission.  Releasing the guard first would leave a window
+                    # where persisted evidence still says RUNNING after the worker
+                    # lane has already been released.
+                    _emit_stage(
+                        stage_observer,
+                        agent_id="dispatcher",
+                        event_type="fleet_lane_completed",
+                        status="COMPLETED",
+                        summary=f"Fleet lane {lane.lane_id} reached terminal worker reports for double-loop pass {loop}.",
+                        next_action="START_NEXT_FLEET_LANE",
+                        loop=loop,
+                        fleet_plan_hash=resolved_fleet_plan.plan_hash,
+                        fleet_lane_id=lane.lane_id,
+                    )
+            reports = [reports_by_role[role] for role in WORKER_ROLES]
 
         _emit_stage(
             stage_observer,
@@ -1338,6 +1579,9 @@ async def run_cognitive_swarm(
         "sixAgentModelShared": len(set(selected_worker_models.values())) == 1,
         "swarmTransport": main_runtime.transport,
         "repositoryToolMode": repository_tool_factory is not None,
+        "fleetPlan": resolved_fleet_plan.to_dict() if resolved_fleet_plan else None,
+        "fleetPlanHash": resolved_fleet_plan.plan_hash if resolved_fleet_plan else None,
+        "fleetTaskIdsByRole": resolved_fleet_task_ids if resolved_fleet_plan else {},
         "approvalRequired": final_status == "READY_FOR_DRAFT_PR" and final_verdict.human_approval_required,
         "autoMerge": False,
     }
