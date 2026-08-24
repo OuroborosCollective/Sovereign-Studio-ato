@@ -31,9 +31,16 @@ export interface GeneratedFileDiffReport {
   summary: string;
 }
 
+// Optimizing line counting by scanning string for '\n' directly instead of allocating array via .split(/\r?\n/)
 function countLines(content: string | null | undefined): number {
   if (!content) return 0;
-  return content.split(/\r?\n/).length;
+  let count = 1;
+  for (let i = 0; i < content.length; i++) {
+    if (content.charCodeAt(i) === 10) {
+      count++;
+    }
+  }
+  return count;
 }
 
 function normalizeContent(content: string): string {
@@ -115,18 +122,33 @@ export function buildGeneratedFileDiffItem(
   };
 }
 
+// Single-pass report builder consolidating mapping, filtering, and reduction into O(N) pass without redundant array allocations
 export function buildGeneratedFileDiffReport(
   files: ImplementationFile[],
   sources: SourceFileSnapshot[],
 ): GeneratedFileDiffReport {
   const sourceByPath = new Map(sources.map((source) => [source.path, source]));
-  const items = files.map((file) => buildGeneratedFileDiffItem(file, sourceByPath.get(file.path)));
-  const created = items.filter((item) => item.kind === 'created').length;
-  const modified = items.filter((item) => item.kind === 'modified').length;
-  const unchanged = items.filter((item) => item.kind === 'unchanged').length;
-  const sourceMissing = items.filter((item) => item.kind === 'source-missing').length;
-  const totalAddedLines = items.reduce((sum, item) => sum + item.addedLines, 0);
-  const totalRemovedLines = items.reduce((sum, item) => sum + item.removedLines, 0);
+  const items: GeneratedFileDiffItem[] = new Array(files.length);
+  let created = 0;
+  let modified = 0;
+  let unchanged = 0;
+  let sourceMissing = 0;
+  let totalAddedLines = 0;
+  let totalRemovedLines = 0;
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const item = buildGeneratedFileDiffItem(file, sourceByPath.get(file.path));
+    items[i] = item;
+
+    if (item.kind === 'created') created++;
+    else if (item.kind === 'modified') modified++;
+    else if (item.kind === 'unchanged') unchanged++;
+    else if (item.kind === 'source-missing') sourceMissing++;
+
+    totalAddedLines += item.addedLines;
+    totalRemovedLines += item.removedLines;
+  }
 
   return {
     files: items,
@@ -140,17 +162,41 @@ export function buildGeneratedFileDiffReport(
   };
 }
 
+// Single-pass unified diff report builder consolidating line counts and totals calculation
 export function buildGeneratedFileDiffReportFromUnifiedDiff(diffText: string): GeneratedFileDiffReport {
   const sections = diffText.split(/^diff --git /m).map((section) => section.trim()).filter(Boolean);
-  const files: GeneratedFileDiffItem[] = sections.map((section) => {
+  const files: GeneratedFileDiffItem[] = new Array(sections.length);
+  let created = 0;
+  let modified = 0;
+  let totalAddedLines = 0;
+  let totalRemovedLines = 0;
+
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i];
     const header = section.match(/^a\/(.+?) b\/(.+)$/m);
     const plusPath = section.match(/^\+\+\+ (?:b\/)?(.+)$/m);
     const path = (plusPath?.[1] && plusPath[1] !== '/dev/null' ? plusPath[1] : header?.[2] || header?.[1] || 'unknown').trim();
     const lines = section.split(/\r?\n/);
-    const addedLines = lines.filter((line) => line.startsWith('+') && !line.startsWith('+++')).length;
-    const removedLines = lines.filter((line) => line.startsWith('-') && !line.startsWith('---')).length;
+    let addedLines = 0;
+    let removedLines = 0;
+
+    for (let j = 0; j < lines.length; j++) {
+      const line = lines[j];
+      if (line.startsWith('+')) {
+        if (!line.startsWith('+++')) addedLines++;
+      } else if (line.startsWith('-')) {
+        if (!line.startsWith('---')) removedLines++;
+      }
+    }
+
     const kind: GeneratedFileDiffKind = section.includes('new file mode') ? 'created' : 'modified';
-    return {
+    if (kind === 'created') created++;
+    else modified++;
+
+    totalAddedLines += addedLines;
+    totalRemovedLines += removedLines;
+
+    files[i] = {
       path,
       kind,
       oldLineCount: 0,
@@ -163,11 +209,8 @@ export function buildGeneratedFileDiffReportFromUnifiedDiff(diffText: string): G
         : `${path} changes by +${addedLines}/-${removedLines} line(s) in the real workspace diff.`,
       preview: preview(`diff --git ${section}`),
     };
-  });
-  const created = files.filter((file) => file.kind === 'created').length;
-  const modified = files.filter((file) => file.kind === 'modified').length;
-  const totalAddedLines = files.reduce((sum, file) => sum + file.addedLines, 0);
-  const totalRemovedLines = files.reduce((sum, file) => sum + file.removedLines, 0);
+  }
+
   return {
     files,
     created,
