@@ -205,6 +205,10 @@ import {
 } from "../runtime/agentWorkRuntime";
 import { AgentWorkTimeline } from "../components/AgentWorkTimeline";
 import { AgentEventStream } from "../components/AgentEventStream";
+import {
+  MonitorCommunicationDock,
+  type MonitorCommunicationEntry,
+} from "../components/MonitorCommunicationDock";
 import { AgentResultCard } from "../components/AgentResultCard";
 import { SovereignActionStreamPanel } from "../components/SovereignActionStreamPanel";
 import {
@@ -2552,22 +2556,25 @@ function Composer({
   );
 }
 
-// BottomTabBar — Chat stays the sole primary destination; the Inspector toggle
-// reveals the technical runtime modules (see ModuleLamps) as an internal debug
-// view. Files/Diff/Draft PR/Logs live as understandable Workbench surfaces
-// (WorkbenchStatusChips + drawer), not as bottom-nav module abbreviations.
+// BottomTabBar — the primary destination follows runtime truth. Chat owns the
+// idle/control surface; an active, workspace-bound projection promotes the same
+// destination to MONITOR until the run needs user input or loses fresh projection evidence.
 function BottomTabBar({
   activeTab,
   onChatClick,
   inspectorOpen,
   onToggleInspector,
+  monitorActive,
 }: {
   activeTab: string;
   onChatClick: () => void;
   inspectorOpen: boolean;
   onToggleInspector: () => void;
+  monitorActive: boolean;
 }) {
   const isChat = activeTab === "chat";
+  const primaryIcon = monitorActive ? "▣" : "⬡";
+  const primaryLabel = monitorActive ? "MONITOR" : "CHAT";
   return (
     <nav
       style={{
@@ -2584,6 +2591,9 @@ function BottomTabBar({
         type="button"
         onClick={onChatClick}
         aria-current={isChat ? "page" : undefined}
+        aria-label={monitorActive ? "Live Monitor" : "Chat"}
+        data-testid="primary-surface-tab"
+        data-primary-surface={monitorActive ? "desktop-monitor" : "chat"}
         style={{
           display: "flex",
           flexDirection: "column",
@@ -2598,7 +2608,7 @@ function BottomTabBar({
           minWidth: 0,
         }}
       >
-        <span style={{ fontSize: 15, color: isChat ? C.sky : C.textMuted }}>⬡</span>
+        <span style={{ fontSize: 15, color: isChat ? C.sky : C.textMuted }}>{primaryIcon}</span>
         <span
           style={{
             fontFamily: "monospace",
@@ -2607,7 +2617,7 @@ function BottomTabBar({
             letterSpacing: 0.3,
           }}
         >
-          CHAT
+          {primaryLabel}
         </span>
       </button>
       <button
@@ -2833,6 +2843,47 @@ export function BuilderContainer({
     scopedAgentJob
     && ['queued', 'provisioning', 'running', 'validating'].includes(scopedAgentJob.status),
   );
+  const scopedAgentProjections = useMemo(
+    () => (agentProjections ?? []).filter((projection) => (
+      !scopedAgentJob?.workspaceId || projection.workspaceId === scopedAgentJob.workspaceId
+    )),
+    [agentProjections, scopedAgentJob?.workspaceId],
+  );
+  const liveMonitorLatestProjection = scopedAgentProjections.at(-1) ?? null;
+  const liveMonitorPrimary = Boolean(
+    activeTab === 'chat'
+    && scopedAgentIsRunning
+    && scopedAgentJob?.workspaceId
+    && scopedAgentProjections.some((projection) => projection.projectionState !== 'STALE'),
+  );
+  const liveMonitorBindingKey = liveMonitorLatestProjection
+    ? `${liveMonitorLatestProjection.sessionBindingHash}:${liveMonitorLatestProjection.attemptId}:${liveMonitorLatestProjection.workspaceId}`
+    : 'no-live-monitor-binding';
+  const [monitorCommunication, setMonitorCommunication] = useState<MonitorCommunicationEntry[]>([]);
+  const monitorCommunicationSequenceRef = useRef(0);
+  const appendMonitorCommunication = useCallback((
+    kind: MonitorCommunicationEntry['kind'],
+    text: string,
+    id?: string,
+  ) => {
+    const clean = text.trim();
+    if (!clean) return;
+    monitorCommunicationSequenceRef.current += 1;
+    const entry: MonitorCommunicationEntry = {
+      id: id ?? `monitor-communication-${monitorCommunicationSequenceRef.current}`,
+      kind,
+      text: clean,
+      createdAt: Date.now(),
+    };
+    setMonitorCommunication((previous) => {
+      if (previous.some((existing) => existing.id === entry.id)) return previous;
+      return [...previous.slice(-11), entry];
+    });
+  }, []);
+  useEffect(() => {
+    setMonitorCommunication([]);
+    monitorCommunicationSequenceRef.current = 0;
+  }, [liveMonitorBindingKey]);
 
   // ── Issue #443: GitHub Access State
   const [githubAccessState, setGitHubAccessState] = useState<GitHubAccessSnapshot>(
@@ -3137,12 +3188,23 @@ export function BuilderContainer({
         id: line.id ?? createChatLineId(line.role, chatLineIndexRef.current),
         createdAt,
       };
+      if (liveMonitorPrimary && candidate.role !== 'thought') {
+        appendMonitorCommunication(
+          candidate.role === 'user'
+            ? 'user'
+            : candidate.role === 'system'
+              ? 'runtime'
+              : 'communicate',
+          candidate.text,
+          `monitor:${candidate.id}`,
+        );
+      }
       const committed = projectSituationalChatLine(candidate);
       if (!committed) return;
       setChatHistory((previous) => [...previous, committed]);
       nowRef.current = createdAt;
     },
-    [],
+    [appendMonitorCommunication, liveMonitorPrimary],
   );
 
   const appendRuntimeNotice = useCallback((text: string) => {
@@ -6129,6 +6191,23 @@ Das echte Repo-Setup wurde geöffnet.`,
   const submitDisabled =
     localRepoLoading || chatResponseBusy || isPublishing || !wishText.trim();
   const isChat = activeTab === "chat";
+  const showAgentEventStream = agentWorkSnapshot.state !== 'idle' || scopedAgentIsRunning;
+  const agentEventStream = showAgentEventStream ? (
+    <AgentEventStream
+      snapshot={agentWorkSnapshot}
+      job={scopedAgentJob}
+      projections={scopedAgentProjections}
+      evidenceAnchors={agentEvidenceAnchors ?? []}
+      onCancel={onCancelAgent}
+      onOpenDraftPr={
+        (scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)
+          ? () => window.open((scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)!, '_blank')
+          : undefined
+      }
+      onOpenFile={openRepoExplorerFromFileBadge}
+      primaryMonitor={liveMonitorPrimary}
+    />
+  ) : null;
   const activeMod = MODULES.find((m) => m.id === activeTab) ?? MODULES[0];
 
   // ─────────────────────────────────────────────────────────────
@@ -6143,7 +6222,7 @@ Das echte Repo-Setup wurde geöffnet.`,
       ].filter(Boolean).join(" ")}
       data-role={builderContainerContract.dataRole}
       data-testid={builderContainerContract.testId}
-      data-layout="devchat-appcontrol-integrated"
+      data-layout={liveMonitorPrimary ? "live-desktop-monitor-primary" : "devchat-appcontrol-integrated"}
       aria-label={builderContainerContract.ariaLabel}
       style={{
         width: "100%",
@@ -6300,6 +6379,47 @@ Das echte Repo-Setup wurde geöffnet.`,
           </aside>
         ) : null}
       {isChat ? (
+        liveMonitorPrimary ? (
+          <div
+            role="region"
+            aria-label="Sovereign Live Desktop Monitor"
+            data-testid="sovereign-live-monitor-primary"
+            data-primary-surface="desktop-monitor"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              minHeight: 0,
+              overflow: "hidden",
+              background: C.bg,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            {agentEventStream}
+            <MonitorCommunicationDock
+              value={wishText}
+              onChange={setWishText}
+              onSubmit={() => { void handleSubmit(); }}
+              disabled={submitDisabled}
+              busy={localRepoLoading || chatResponseBusy || isPublishing}
+              runtimeStatus={workStateStatus}
+              entries={monitorCommunication}
+            />
+            {securityCardPending && (
+              <SecurityBlockCard
+                title={securityCardPending.title}
+                text={securityCardPending.text}
+                hint={securityCardPending.hint}
+                buttonLabel={securityCardPending.buttonLabel}
+                onOpenSecureAccess={() => {
+                  setShowGitHubAccessOverride(true);
+                  setSecurityCardPending(null);
+                }}
+                onDismiss={() => setSecurityCardPending(null)}
+              />
+            )}
+          </div>
+        ) : (
         /* ── CHAT VIEW with auto-scroll lock (Issue #425) */
         <div
           ref={scrollRef}
@@ -6608,24 +6728,8 @@ Das echte Repo-Setup wurde geöffnet.`,
                 );
               })()}
 
-              {/* ── Manus/Replit-style live event stream — Sovereign Agent remains one route among several */}
-              {agentWorkSnapshot.state !== 'idle' && (
-                <AgentEventStream
-                  snapshot={agentWorkSnapshot}
-                  job={scopedAgentJob}
-                  projections={(agentProjections ?? []).filter((projection) => (
-                    !scopedAgentJob?.workspaceId || projection.workspaceId === scopedAgentJob.workspaceId
-                  ))}
-                  evidenceAnchors={agentEvidenceAnchors ?? []}
-                  onCancel={onCancelAgent}
-                  onOpenDraftPr={
-                    (scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)
-                      ? () => window.open((scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)!, '_blank')
-                      : undefined
-                  }
-                  onOpenFile={openRepoExplorerFromFileBadge}
-                />
-              )}
+              {/* Runtime event stream stays inline only when the desktop monitor is not the primary surface. */}
+              {agentEventStream}
 
               {/* ── Gap 3: Security Block Card — shown when secret detected in chat input */}
               {securityCardPending && (
@@ -6869,6 +6973,7 @@ Das echte Repo-Setup wurde geöffnet.`,
             </div>
           )}
         </div>
+        )
       ) : (
         /* ── MODULE VIEW */
         <div style={{ flex: 1, overflowY: "auto", background: C.bg }}>
@@ -6899,7 +7004,7 @@ Das echte Repo-Setup wurde geöffnet.`,
       </div>
 
       {/* COMPOSER — only in chat view, v3 verbatim */}
-      {isChat && (
+      {isChat && !liveMonitorPrimary && (
         <>
           {/* ── Issue #453: LauncherTaskbar — offene Tools als Chips */}
           <LauncherTaskbar />
@@ -6971,6 +7076,7 @@ Das echte Repo-Setup wurde geöffnet.`,
         onChatClick={() => switchTab("chat")}
         inspectorOpen={showInspector}
         onToggleInspector={() => setShowInspector((v) => !v)}
+        monitorActive={liveMonitorPrimary}
       />
 
       {/* SOVEREIGN LAUNCHER — App-Grid Overlay + Window Host (Issues #452, #453) */}

@@ -277,7 +277,12 @@ function run() {
   requireText('src/App.tsx', /data-layout="chat-only-live-entry"/, 'app:chat-only-layout-bound', 'App must declare chat-only live entry layout.');
   requireText('src/App.tsx', /aria-label="Sovereign Chat"/, 'app:chat-aria-label-bound', 'App must expose the Sovereign Chat aria label.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /data-testid=\{builderContainerContract\.testId\}|data-testid="builder-container"/, 'builder:root-test-id-bound', 'Builder must expose stable root test-id.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /data-layout="devchat-appcontrol-integrated"/, 'builder:appcontrol-layout-bound', 'Builder must declare AppControl chat workbench layout.');
+  requireText(
+    'src/features/product/containers/BuilderContainer.tsx',
+    /data-layout=\{liveMonitorPrimary\s*\?\s*["']live-desktop-monitor-primary["']\s*:\s*["']devchat-appcontrol-integrated["']\}/,
+    'builder:primary-surface-layout-bound',
+    'Builder must bind its primary layout to fresh live-monitor truth while retaining the chat workbench fallback.',
+  );
   requireText('src/features/product/containers/BuilderContainer.tsx', /SovereignToolLauncher|SovereignActionStreamPanel/, 'builder:runtime-backed-tools', 'Builder must expose runtime-backed tools or action stream.');
 
   requireOneOf(
