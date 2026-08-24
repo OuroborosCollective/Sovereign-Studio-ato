@@ -310,9 +310,11 @@ function initPostHog(): void {
   }
 }
 
+const PUBLIC_GOOGLE_WEB_CLIENT_ID = '511695074775-s08le2ju1k4nl2vv3i150i6tn084b682.apps.googleusercontent.com';
+
 function initGoogleAuth(): void {
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
-  if (!googleClientId) return;
+  const googleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined)?.trim()
+    || PUBLIC_GOOGLE_WEB_CLIENT_ID;
 
   const googleAuthPackage = '@codetrix-studio/capacitor-google-auth';
 
