@@ -437,7 +437,9 @@ def register_owner_input_routes(
     def owner_input_request_create():
         if not _service_authorized():
             return _no_store(jsonify({"error": "Nicht autorisiert"})), 401
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            return _no_store(jsonify({"error": "Malformed payload; dictionary required"})), 400
         targets = _target_map()
         target_id = str(body.get("targetId") or "").strip()
         if target_id not in targets:

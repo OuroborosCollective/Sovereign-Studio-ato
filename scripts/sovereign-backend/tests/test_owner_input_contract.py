@@ -46,6 +46,9 @@ def test_backend_registers_owner_routes_and_supports_separate_owner_managed_keys
     assert "SET status='expired', resolved_at=NOW(), result_code='expired'" in owner_runtime
     assert "ON CONFLICT (target_id) WHERE status IN ('pending','processing') DO NOTHING" in owner_runtime
     assert "content_length > int(target[\"maxBytes\"])" in owner_runtime
+    assert "body = request.get_json(force=True, silent=True)" in owner_runtime
+    assert 'if not isinstance(body, dict):' in owner_runtime
+    assert 'return _no_store(jsonify({"error": "Malformed payload; dictionary required"})), 400' in owner_runtime
     assert "def ensure_openai_runtime_key()" not in swarm_agents
     assert "http://litellm:4000" not in swarm_agents
     assert "build_route_run_config(" in swarm_agents
