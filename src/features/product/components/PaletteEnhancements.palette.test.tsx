@@ -21,6 +21,7 @@ import { CompactRepoSetupSheet } from './CompactRepoSetupSheet';
 import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
+import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1041,6 +1042,58 @@ describe('Palette Accessibility Enhancements', () => {
 
       const closeClickRes = fireEvent.click(closeBtn);
       expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('WorkerBlockerCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders with German aria-labels, native hover tooltips, aria-hidden icon, and focus ring styling', () => {
+      const mockDiagnostic = {
+        route: '/api/v1/chat',
+        model: 'gemini-2.0-flash',
+        messageCount: 1,
+        scope: 'network' as const,
+        canClientFix: true,
+        nextAction: 'retry',
+      };
+      const mockBlocker = {
+        message: 'Worker unavailable',
+        diagnostic: mockDiagnostic,
+        createdAt: Date.now(),
+      };
+
+      const onExplain = vi.fn();
+      const onRetry = vi.fn();
+      const onAgentInstead = vi.fn();
+
+      render(
+        <WorkerBlockerCard
+          blocker={mockBlocker}
+          onRetry={onRetry}
+          onExplain={onExplain}
+          onAgentInstead={onAgentInstead}
+          userMessage="Fix this code"
+          allowAgentAction={true}
+        />
+      );
+
+      const alert = screen.getByRole('alert');
+      expect(alert).toHaveAttribute('aria-live', 'polite');
+
+      const warningIcon = alert.querySelector('span[aria-hidden="true"]');
+      expect(warningIcon).toBeInTheDocument();
+      expect(warningIcon).toHaveTextContent('⚠️');
+
+      const retryBtn = screen.getByRole('button', { name: 'Retry: Anfrage an Worker erneut senden' });
+      expect(retryBtn).toHaveAttribute('title', 'Anfrage an Worker erneut senden');
+      expect(retryBtn).toHaveClass('focus-visible:ring-2');
+
+      const explainBtn = screen.getByRole('button', { name: 'Diagnose erklären' });
+      expect(explainBtn).toHaveAttribute('title', 'Diagnose und Ursache des Worker-Fehlers erklären');
+      expect(explainBtn).toHaveClass('focus-visible:ring-2');
+
+      const agentBtn = screen.getByRole('button', { name: 'Sovereign Agent für Code-Auftrag nutzen' });
+      expect(agentBtn).toHaveAttribute('title', 'Sovereign Agent stattdessen für die Code-Aufgabe beauftragen');
+      expect(agentBtn).toHaveClass('focus-visible:ring-2');
     });
   });
 });

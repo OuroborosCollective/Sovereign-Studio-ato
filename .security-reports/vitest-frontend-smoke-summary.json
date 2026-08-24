@@ -1,0 +1,12 @@
+{
+  "causalTest": null,
+  "exitCode": 0,
+  "failed": 0,
+  "label": "frontend-smoke",
+  "passed": 3560,
+  "rawReportPersisted": false,
+  "schemaVersion": "sovereign.vitest-causal-runner.v1",
+  "skipped": 2,
+  "status": "passed",
+  "total": 3562
+}

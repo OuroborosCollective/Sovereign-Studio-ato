@@ -50,7 +50,7 @@ describe('WorkerBlockerCard', () => {
         onExplain={() => {}}
       />
     );
-    const button = screen.getByRole('button', { name: /Retry unavailable/i });
+    const button = screen.getByRole('button', { name: /Retry nicht verfügbar/i });
     expect(button).toBeDisabled();
     expect(screen.getByText('Retry nicht verfügbar')).toBeTruthy();
   });

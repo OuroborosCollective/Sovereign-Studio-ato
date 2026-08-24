@@ -1,6 +1,6 @@
 {
   "name": "Sovereign UX Contract Scan",
-  "generatedAt": "2026-06-28T16:19:07.346Z",
+  "generatedAt": "2026-08-24T22:47:35.355Z",
   "status": "pass",
   "checks": [
     {
@@ -334,7 +334,7 @@
     {
       "id": "builder:title-visible",
       "ok": true,
-      "message": "Builder title must be visible.",
+      "message": "Builder chat workbench title/input must be visible.",
       "details": {
         "filePath": "src/features/product/containers/BuilderContainer.tsx"
       }
@@ -372,17 +372,17 @@
       }
     },
     {
-      "id": "builder:step-two-guidance",
+      "id": "builder:route-guidance",
       "ok": true,
-      "message": "Builder must guide the user through analysis step.",
+      "message": "Builder must show route/action guidance.",
       "details": {
         "filePath": "src/features/product/containers/BuilderContainer.tsx"
       }
     },
     {
-      "id": "builder:step-three-guidance",
+      "id": "builder:execution-guidance",
       "ok": true,
-      "message": "Builder must provide action to start the agent task.",
+      "message": "Builder must show execution/access guidance.",
       "details": {
         "filePath": "src/features/product/containers/BuilderContainer.tsx"
       }
@@ -892,115 +892,67 @@
       }
     },
     {
-      "id": "app:stable-shell-class-bound",
+      "id": "wrapper:passthrough-only",
       "ok": true,
-      "message": "App shell must bind stable shell class.",
+      "message": "Runtime wrapper must stay a passthrough instead of adding another shell.",
+      "details": {
+        "filePath": "src/SovereignAppWrapper.tsx"
+      }
+    },
+    {
+      "id": "wrapper:no-second-shell",
+      "ok": true,
+      "message": "Runtime wrapper must not add a second visible shell.",
+      "details": {
+        "filePath": "src/SovereignAppWrapper.tsx"
+      }
+    },
+    {
+      "id": "app:chat-only-root-test-id",
+      "ok": true,
+      "message": "App must expose the chat-only live root.",
       "details": {
         "filePath": "src/App.tsx"
       }
     },
     {
-      "id": "app:stable-tabbar-class-bound",
+      "id": "app:chat-only-layout-bound",
       "ok": true,
-      "message": "App tabbar must bind stable tabbar class.",
+      "message": "App must declare chat-only live entry layout.",
       "details": {
         "filePath": "src/App.tsx"
       }
     },
     {
-      "id": "app:shell-data-role-bound",
+      "id": "app:chat-aria-label-bound",
       "ok": true,
-      "message": "App shell must bind sovereign-app-shell data-role.",
+      "message": "App must expose the Sovereign Chat aria label.",
       "details": {
         "filePath": "src/App.tsx"
       }
     },
     {
-      "id": "app:shell-test-id-bound",
+      "id": "builder:root-test-id-bound",
       "ok": true,
-      "message": "App shell must bind app-shell__root test-id.",
+      "message": "Builder must expose stable root test-id.",
       "details": {
-        "filePath": "src/App.tsx"
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
       }
     },
     {
-      "id": "app:tabbar-role-bound",
+      "id": "builder:primary-surface-layout-bound",
       "ok": true,
-      "message": "Tabbar must bind tablist role.",
+      "message": "Builder must bind its primary layout to fresh live-monitor truth while retaining the chat workbench fallback.",
       "details": {
-        "filePath": "src/App.tsx"
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
       }
     },
     {
-      "id": "app:tabbar-aria-label-bound",
+      "id": "builder:runtime-backed-tools",
       "ok": true,
-      "message": "Tabbar must bind Sovereign workspace tabs aria-label.",
+      "message": "Builder must expose runtime-backed tools or action stream.",
       "details": {
-        "filePath": "src/App.tsx"
-      }
-    },
-    {
-      "id": "app:tabbar-test-id-bound",
-      "ok": true,
-      "message": "Tabbar must bind tabbar__root test-id.",
-      "details": {
-        "filePath": "src/App.tsx"
-      }
-    },
-    {
-      "id": "app:tab-role-bound",
-      "ok": true,
-      "message": "Tab buttons must bind tab role.",
-      "details": {
-        "filePath": "src/App.tsx"
-      }
-    },
-    {
-      "id": "app:tab-aria-selected-bound",
-      "ok": true,
-      "message": "Tab buttons must bind aria-selected.",
-      "details": {
-        "filePath": "src/App.tsx"
-      }
-    },
-    {
-      "id": "app:tab-test-id-bound",
-      "ok": true,
-      "message": "Tab buttons must bind test-id from tab contract.",
-      "details": {
-        "filePath": "src/App.tsx"
-      }
-    },
-    {
-      "id": "app:automation-panel-class-bound",
-      "ok": true,
-      "message": "Automation panel must bind sovereign-automation-panel class.",
-      "details": {
-        "filePath": "src/App.tsx"
-      }
-    },
-    {
-      "id": "app:automation-panel-test-id-bound",
-      "ok": true,
-      "message": "Automation panel must bind automation__panel test-id.",
-      "details": {
-        "filePath": "src/App.tsx"
-      }
-    },
-    {
-      "id": "app:automation-select-class-bound",
-      "ok": true,
-      "message": "Automation select must bind sovereign-select class via contract.",
-      "details": {
-        "filePath": "src/App.tsx"
-      }
-    },
-    {
-      "id": "app:automation-select-test-id-bound",
-      "ok": true,
-      "message": "Automation select must bind automation__mode-select test-id.",
-      "details": {
-        "filePath": "src/App.tsx"
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
       }
     },
     {
@@ -1032,7 +984,7 @@
       "message": "Builder should expose multiple clear actions.",
       "details": {
         "filePath": "src/features/product/containers/BuilderContainer.tsx",
-        "count": 50,
+        "count": 93,
         "min": 4
       }
     },

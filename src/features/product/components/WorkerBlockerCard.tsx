@@ -148,7 +148,7 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
     >
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-        <span style={{ fontSize: 18, lineHeight: 1 }}>⚠️</span>
+        <span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1 }}>⚠️</span>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 600, color: C.rose, fontSize: 14 }}>
             {title}
@@ -172,6 +172,8 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
           <button
             type="button"
             onClick={onLogin}
+            title="Bei Sovereign anmelden"
+            className="focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:outline-none"
             style={{
               minHeight: 44,
               padding: '8px 16px',
@@ -193,6 +195,8 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
           onClick={handleRetry}
           disabled={!canRetry}
           aria-disabled={!canRetry}
+          title={canRetry ? 'Anfrage an Worker erneut senden' : 'Retry nicht verfügbar: Keine vorherige Anfrage vorhanden'}
+          className="focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-none"
           style={{
             minHeight: 44,
             padding: '8px 16px',
@@ -205,7 +209,7 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
             cursor: canRetry ? 'pointer' : 'not-allowed',
             opacity: canRetry ? 1 : 0.55,
           }}
-          aria-label={canRetry ? 'Retry Worker request' : 'Retry unavailable: no previous worker request'}
+          aria-label={canRetry ? 'Retry: Anfrage an Worker erneut senden' : 'Retry nicht verfügbar: Keine vorherige Anfrage vorhanden'}
         >
           {canRetry ? 'Retry' : 'Retry nicht verfügbar'}
         </button>
@@ -213,6 +217,8 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
         <button
           type="button"
           onClick={onExplain}
+          title="Diagnose und Ursache des Worker-Fehlers erklären"
+          className="focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-none"
           style={{
             minHeight: 44,
             padding: '8px 16px',
@@ -224,7 +230,7 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
             fontWeight: 500,
             cursor: 'pointer',
           }}
-          aria-label="Explain diagnostic"
+          aria-label="Diagnose erklären"
         >
           Diagnose erklären
         </button>
@@ -233,6 +239,8 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
           <button
             type="button"
             onClick={handleAgent}
+            title="Sovereign Agent stattdessen für die Code-Aufgabe beauftragen"
+            className="focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:outline-none"
             style={{
               minHeight: 44,
               padding: '8px 16px',
@@ -244,7 +252,7 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
               fontWeight: 500,
               cursor: 'pointer',
             }}
-            aria-label="Use Sovereign Agent for code task instead"
+            aria-label="Sovereign Agent für Code-Auftrag nutzen"
           >
             Sovereign Agent für Code-Auftrag
           </button>
