@@ -99,6 +99,12 @@ export function FreeRevolverControlCenter({
     const omniRouteBlocked = Boolean(api.omniRoute) && !omniRouteReady;
     return {
       providers: genericProviders.length + (api.omniRoute ? 1 : 0),
+      revolverReady: models.filter(model => (
+        model.status === 'ready'
+        && model.enabled
+        && hasRevisionBoundReceipt(model)
+        && isEligibilityEvidenceFresh(model.eligibilityVerifiedAt, eligibilityEvidenceTtlHours)
+      )).length,
       ready: models.filter(model => (
         model.status === 'ready'
         && model.enabled
@@ -183,6 +189,7 @@ export function FreeRevolverControlCenter({
       <div className="llm-stat-grid">
         <div><Server /><span>Provider</span><strong>{totals.providers}</strong></div>
         <div data-testid="free-revolver-total-ready"><ShieldCheck /><span>Aktive Free-Routen</span><strong>{totals.ready}</strong></div>
+        <div data-testid="free-revolver-minimum-ready"><ShieldCheck /><span>FreeLLM Mindestpool</span><strong>{totals.revolverReady}/{api.minimumReadyRoutes > 0 ? api.minimumReadyRoutes : '—'}</strong></div>
         <div data-testid="free-revolver-total-verified"><Search /><span>Free-Quota bestätigt</span><strong>{totals.verified}</strong></div>
         <div><RefreshCw /><span>Wartet auf Upstream</span><strong>{totals.deferred}</strong></div>
         <div data-testid="free-revolver-total-blocked"><Lock /><span>Hart blockiert</span><strong>{totals.blocked}</strong></div>

@@ -850,6 +850,9 @@ def test_managed_status_exposes_secret_free_key_pool_and_upstream_assignment() -
     assert "route.config->'actualUpstream' AS actual_upstream" in runtime
     assert '"actualUpstream": item.get("actual_upstream") or {}' in runtime
     assert '"credentialPools": credential_pools' in runtime
+    assert '"minimumReadyRoutes": minimum_ready_routes' in runtime
+    assert '"readyCount": total_ready_routes' in runtime
+    assert '"minimumReadySatisfied": total_ready_routes >= minimum_ready_routes' in runtime
     assert '"ownerManagedCredentialCount": sum(' in runtime
     assert '"keylessMarkerCount": sum(' in runtime
     assert '"keyCount": int(state.get("keyCount") or 0)' in runtime

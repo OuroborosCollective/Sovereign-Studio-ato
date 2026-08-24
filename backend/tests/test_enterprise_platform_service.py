@@ -58,6 +58,7 @@ class QueryDouble:
                 "revolver_state": True,
                 "package_uniqueness": True,
                 "transaction_receipts": True,
+                "latest_migration": 60,
             }
         if "platform:probe:milvus:tables" in statement:
             return {"outbox_table": True, "candidate_table": True}
@@ -87,7 +88,7 @@ class QueryDouble:
                 "provider_cost_usd_24h": 0.25,
                 "evidence_total": 6,
                 "latest_evidence_at": "2026-07-20T12:00:00Z",
-                "latest_migration": 27,
+                "latest_migration": 60,
             }
         if "platform:evidence:insert" in statement:
             assert write is True
@@ -198,6 +199,25 @@ def test_active_legacy_litellm_route_blocks_direct_routing_contract() -> None:
     assert result["status"] == "blocked"
     assert result["blocker"] == "legacy_litellm_route_still_active"
     assert result["evidence"]["legacyProviderProbePerformed"] is False
+
+
+def test_migration_truth_comes_from_bounded_schema_ledger_in_probe_and_statistics() -> None:
+    query = QueryDouble()
+    subject = service(query)
+
+    probe = subject._postgres_probe()
+    stats = subject.statistics()
+
+    assert probe["evidence"]["latestMigration"] == 60
+    assert stats["database"] == {"latestMigration": 60}
+    postgres_sql = next(item for item in query.calls if "platform:probe:postgresql" in item)
+    statistics_sql = next(item for item in query.calls if "platform:statistics" in item)
+    for statement in (postgres_sql, statistics_sql):
+        assert "to_jsonb(sm)->>'version'" in statement
+        assert "to_jsonb(sm)->>'id'" in statement
+        assert "^[0-9]{1,3}$" in statement
+        assert "THEN 27" not in statement
+        assert "THEN 25" not in statement
 
 
 def test_milvus_projection_counts_are_visible_without_claiming_direct_readback() -> None:

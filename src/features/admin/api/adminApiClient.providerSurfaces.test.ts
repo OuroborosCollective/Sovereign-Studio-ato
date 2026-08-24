@@ -45,6 +45,7 @@ describe('adminApiClient typed provider surface read model', () => {
             : 'postgresql-owner-input-direct-freellm',
           keyStorage: 'owner-managed-direct-freellm',
           activationRule: 'managed-free-quota-plus-revision-bound-double-canary-without-positive-cost-contradiction',
+          minimumReadyRoutes: 5,
           providers: [],
         },
         '/api/admin/llm/omniroute/status': omniRoute,
@@ -88,6 +89,7 @@ describe('adminApiClient typed provider surface read model', () => {
 
     const result = await adminApiClient.getLlmProviderSurfaceReadModel();
 
+    expect(result.freeRevolverMinimumReadyRoutes).toBe(5);
     expect(result.omniRoute).toEqual(omniRoute);
     expect(result.openRouterPaid.selectableModels).toBe(291);
     expect(result.openRouterFree.routingPolicy.paidFallbackAllowed).toBe(false);
@@ -170,6 +172,7 @@ describe('adminApiClient typed provider surface read model', () => {
   it('rejects truncated, wrong-identity, secret-bearing, and paid-fallback readbacks', () => {
     const valid = {
       providers: [],
+      freeRevolverMinimumReadyRoutes: 5,
       omniRoute,
       openRouterPaid: {
         status: 'ready',

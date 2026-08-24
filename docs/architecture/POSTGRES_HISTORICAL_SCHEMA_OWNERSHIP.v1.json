@@ -221,6 +221,39 @@
       ],
       "recoveryMode": "fail-closed-manual-recovery",
       "allowAutomaticCreate": false
+    },
+    {
+      "table": "public.migration_file_content_ledger",
+      "ownershipKind": "external-deployment-provenance",
+      "canonicalRuntimeModule": "external:revision-bound-migration-runner",
+      "runtimeModuleStatus": "external-owner-not-present-in-current-repository",
+      "creationSourceStatus": "historical-source-not-present-in-current-repository",
+      "requiredColumns": [
+        {"name": "source_revision", "dataType": "text", "notNull": true, "defaultExpression": null},
+        {"name": "migration_file", "dataType": "text", "notNull": true, "defaultExpression": null},
+        {"name": "migration_version", "dataType": "bigint", "notNull": true, "defaultExpression": null},
+        {"name": "content_sha256", "dataType": "text", "notNull": true, "defaultExpression": null},
+        {"name": "source_manifest_sha256", "dataType": "text", "notNull": true, "defaultExpression": null},
+        {"name": "backfill_justification", "dataType": "text", "notNull": true, "defaultExpression": null},
+        {"name": "runner_version", "dataType": "text", "notNull": true, "defaultExpression": null},
+        {"name": "recorded_at", "dataType": "timestamp with time zone", "notNull": true, "defaultExpression": "now()"}
+      ],
+      "requiredConstraints": [
+        {"name": "migration_file_content_ledger_backfill_justification_check", "type": "CHECK", "definition": "CHECK (length(backfill_justification) >= 16)"},
+        {"name": "migration_file_content_ledger_content_sha256_check", "type": "CHECK", "definition": "CHECK (content_sha256 ~ '^[0-9a-f]{64}$'::text)"},
+        {"name": "migration_file_content_ledger_migration_file_check", "type": "CHECK", "definition": "CHECK (migration_file ~ '^[0-9]+_[A-Za-z0-9][A-Za-z0-9_.-]*\\.sql$'::text)"},
+        {"name": "migration_file_content_ledger_migration_version_check", "type": "CHECK", "definition": "CHECK (migration_version >= 0)"},
+        {"name": "migration_file_content_ledger_pkey", "type": "PRIMARY KEY", "definition": "PRIMARY KEY (source_revision, migration_file)"},
+        {"name": "migration_file_content_ledger_source_manifest_sha256_check", "type": "CHECK", "definition": "CHECK (source_manifest_sha256 ~ '^[0-9a-f]{64}$'::text)"},
+        {"name": "migration_file_content_ledger_source_revision_check", "type": "CHECK", "definition": "CHECK (source_revision ~ '^[0-9a-f]{40}$'::text)"},
+        {"name": "migration_file_content_ledger_source_revision_migration_fil_key", "type": "UNIQUE", "definition": "UNIQUE (source_revision, migration_file, content_sha256)"}
+      ],
+      "requiredIndexes": [
+        {"name": "migration_file_content_ledger_pkey", "isUnique": true, "isPrimary": true, "definition": "CREATE UNIQUE INDEX migration_file_content_ledger_pkey ON public.migration_file_content_ledger USING btree (source_revision, migration_file)"},
+        {"name": "migration_file_content_ledger_source_revision_migration_fil_key", "isUnique": true, "isPrimary": false, "definition": "CREATE UNIQUE INDEX migration_file_content_ledger_source_revision_migration_fil_key ON public.migration_file_content_ledger USING btree (source_revision, migration_file, content_sha256)"}
+      ],
+      "recoveryMode": "external-provenance-read-only-ownership",
+      "allowAutomaticCreate": false
     }
   ]
 }
