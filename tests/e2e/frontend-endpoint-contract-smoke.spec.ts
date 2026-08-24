@@ -207,6 +207,29 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
       { jobs: [], total: 0, limit: 20, runtime: 'sovereign-agent' },
     ));
     await page.route('**/api/auth/me', route => fulfillJson(route, currentUser));
+    await page.route('**/api/llm/routes?purpose=picker', route => fulfillJson(route, { routes: [] }));
+    await page.route('**/api/toolchain/user-tools', route => fulfillJson(route, {
+      tools: [],
+      allowed_repos: [],
+      rules: {},
+    }));
+    await page.route('**/api/toolchain/universal/manifest', route => fulfillJson(route, {
+      name: 'endpoint-smoke-toolchain',
+      version: 'test',
+      runtime: 'embedded',
+      tools: [],
+      policy: {
+        autoLoad: true,
+        pushToMain: false,
+        draftPrOnly: true,
+        confirmRequired: true,
+        arbitraryShell: false,
+        directProductionRunner: false,
+        directGithubToken: false,
+        auditEvidence: true,
+      },
+    }));
+    await page.route('**/api/toolchain/skills/list', route => fulfillJson(route, { skills: [] }));
     await page.route('**/api/billing', route => fulfillJson(route, {
       subscription: null,
       invoices: [],
@@ -245,6 +268,10 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     await expect(page.getByRole('option', { name: 'PayPal' })).toBeAttached();
 
     await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/user/agent/jobs')).toBe(true);
+    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/llm/routes')).toBe(true);
+    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/toolchain/user-tools')).toBe(true);
+    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/toolchain/universal/manifest')).toBe(true);
+    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/toolchain/skills/list')).toBe(true);
     await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/billing')).toBe(true);
     await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/billing/payment-methods')).toBe(true);
 
