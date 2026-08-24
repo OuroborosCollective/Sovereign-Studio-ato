@@ -27,11 +27,12 @@ import type {
 
 export type { CapabilityRouterInput, CapabilityDecision } from './sovereignCapabilityTypes';
 
-const FREE_CHAT_TOKENS = [
-  'was ist', 'wie funktioniert', 'erklär', 'was bedeutet', 'was ist das',
-  'wie geht', 'was machst', 'was kannst', 'wieso', 'weshalb', 'warum',
-  'what is', 'how does', 'explain', 'what does', 'what are', 'how do',
-];
+/**
+ * Pre-compiled Regex patterns for O(1) token matching.
+ * Concatenating tokens into a single pattern eliminates O(N*M) loop overhead.
+ */
+
+const FREE_CHAT_TOKENS_PATTERN = /was ist|wie funktioniert|erklär|was bedeutet|was ist das|wie geht|was machst|was kannst|wieso|weshalb|warum|what is|how does|explain|what does|what are|how do/i;
 
 const GREETING_PATTERN = /^(?:hallo|hi|hello|guten tag|good morning)(?:[!,.]?\s|[!,.]?$)/i;
 
@@ -41,51 +42,19 @@ const READ_ONLY_REQUEST_PATTERN =
 const ENGLISH_MUTATION_PATTERN =
   /\b(?:add|apply|build|change|create|delete|deploy|edit|fix|implement|merge|modify|patch|publish|refactor|remove|repair|replace|update|write)\b/i;
 
-const GERMAN_MUTATION_STEMS = [
-  'füg', 'hinzufüg', 'bau', 'änder', 'aktualisier', 'erstell', 'lösch',
-  'implementier', 'veröffentlich', 'refaktor', 'entfern', 'reparier',
-  'beheb', 'ersetz', 'schreib', 'mach',
-];
+const GERMAN_MUTATION_STEMS_PATTERN = /füg|hinzufüg|bau|änder|aktualisier|erstell|lösch|implementier|veröffentlich|refaktor|entfern|reparier|beheb|ersetz|schreib|mach/i;
 
-const STATUS_QUESTION_TOKENS = [
-  'arbeitet er schon', 'läuft das', 'läuft er', 'was macht er',
-  'sehe nichts', 'status?', 'ist er fertig', 'hat er angefangen',
-  'warum passiert nichts', 'macht er was', 'tut er was', 'ist er gestartet',
-  'passiert etwas', 'passiert gerade', 'fertig?', 'complete?',
-  'was ist der status', 'bist du fertig',
-];
+const STATUS_QUESTION_TOKENS_PATTERN = /arbeitet er schon|läuft das|läuft er|was macht er|sehe nichts|status\?|ist er fertig|hat er angefangen|warum passiert nichts|macht er was|tut er was|ist er gestartet|passiert etwas|passiert gerade|fertig\?|complete\?|was ist der status|bist du fertig/i;
 
-const LOAD_REPO_TOKENS = [
-  'load repo', 'lade repository', 'repo laden', 'github repository öffnen',
-  'welches repository', 'repo auswählen', 'fetch repository', 'open repo',
-  'select repository', 'repo url', 'github link',
-];
+const LOAD_REPO_TOKENS_PATTERN = /load repo|lade repository|repo laden|github repository öffnen|welches repository|repo auswählen|fetch repository|open repo|select repository|repo url|github link/i;
 
-const DIRECT_PATCH_TOKENS = [
-  'readme', 'dokumentation', 'docs', 'changelog', 'history', 'titel',
-  'title', 'überschrift', 'heading', 'inhalt', 'content',
-  'füge hinzu', 'hinzufügen', 'add', 'ergänze', 'änder', 'aktualisier',
-  'changelog', 'zum changelog', 'in changelog', 'history', 'zur history',
-];
+const DIRECT_PATCH_TOKENS_PATTERN = /readme|dokumentation|docs|changelog|history|titel|title|überschrift|heading|inhalt|content|füge hinzu|hinzufügen|add|ergänze|änder|aktualisier|zum changelog|in changelog|zur history/i;
 
-const DRAFT_PR_TOKENS = [
-  'draft pr', 'pull request', 'pr erstellen', 'pull request erstellen',
-  'draft pr erstellen', 'erstelle pull request', 'veröffentliche änderungen',
-  'pr raus', 'mach den pr', 'pr machen', 'draft pull request',
-];
+const DRAFT_PR_TOKENS_PATTERN = /draft pr|pull request|pr erstellen|pull request erstellen|draft pr erstellen|erstelle pull request|veröffentliche änderungen|pr raus|mach den pr|pr machen|draft pull request/i;
 
-const COMPLEX_TASK_TOKENS = [
-  'implementier', 'baue', 'bauen', 'komponent', 'function', 'funktio',
-  'test', 'teste', 'refaktor', 'api', 'server', 'backend', 'frontend',
-  'database', 'datenbank', 'security', 'sicherheit', 'workflow',
-  'docker', 'kubernetes', 'deployment',
-];
+const COMPLEX_TASK_TOKENS_PATTERN = /implementier|baue|bauen|komponent|function|funktio|test|teste|refaktor|api|server|backend|frontend|database|datenbank|security|sicherheit|workflow|docker|kubernetes|deployment/i;
 
-const CODE_GENERATION_TOKENS = [
-  'baue', 'bauen', 'implementiere', 'implementieren', 'fixe', 'repariere',
-  'patch', 'ändere datei', 'datei ändern', 'feature einbauen',
-  'schreibe code', 'code schreiben',
-];
+const CODE_GENERATION_TOKENS_PATTERN = /baue|bauen|implementiere|implementieren|fixe|repariere|patch|ändere datei|datei ändern|feature einbauen|schreibe code|code schreiben/i;
 
 /**
  * Simple-override tokens: when present they signal the user expects a lightweight
@@ -93,32 +62,17 @@ const CODE_GENERATION_TOKENS = [
  * Example: "einfachen Test fürs Backend" → complex tokens present ("test", "backend")
  * but "einfachen" overrides → medium instead of complex.
  */
-const SIMPLE_MODIFIER_TOKENS = [
-  'einfach', 'einfachen', 'einfache', 'einfaches', 'einfacher',
-  'klein', 'kleine', 'kleinen', 'kleines', 'kleiner',
-  'schnell', 'kurz', 'kurze', 'nur', 'just', 'quick', 'simple', 'small', 'minor',
-  'nur ein', 'nur eine', 'only', 'single', 'one',
-];
+const SIMPLE_MODIFIER_TOKENS_PATTERN = /einfach|einfachen|einfache|einfaches|einfacher|klein|kleine|kleinen|kleines|kleiner|schnell|kurz|kurze|nur|just|quick|simple|small|minor|nur ein|nur eine|only|single|one/i;
 
-const SOVEREIGN_AGENT_TOKENS = [
-  'sovereign agent',
-  'sovereign-agent',
-];
+const SOVEREIGN_AGENT_TOKENS_PATTERN = /sovereign agent|sovereign-agent/i;
 
-const WORKFLOW_WATCH_TOKENS = [
-  'watch workflow', 'workflow status', 'ci status', 'github actions',
-  'beobachte workflow', 'workflow überwachen', 'ci status prüfen',
-  'läuft der workflow', 'workflow ergebnis', 'workflow-status',
-];
+const WORKFLOW_WATCH_TOKENS_PATTERN = /watch workflow|workflow status|ci status|github actions|beobachte workflow|workflow überwachen|ci status prüfen|läuft der workflow|workflow ergebnis|workflow-status/i;
 
-const WORKFLOW_REPAIR_TOKENS = [
-  'fix workflow', 'ci fix', 'workflow reparieren', 'behebe workflow',
-  'workflowfehler beheben', 'ci fehler', 'workflowfehler', 'reparatur',
-];
+const WORKFLOW_REPAIR_TOKENS_PATTERN = /fix workflow|ci fix|workflow reparieren|behebe workflow|workflowfehler beheben|ci fehler|workflowfehler|reparatur/i;
 
 function hasExplicitMutationIntent(lower: string): boolean {
   return ENGLISH_MUTATION_PATTERN.test(lower)
-    || GERMAN_MUTATION_STEMS.some((stem) => lower.includes(stem));
+    || GERMAN_MUTATION_STEMS_PATTERN.test(lower);
 }
 
 function isReadOnlyRequest(trimmed: string, lower: string): boolean {
@@ -134,23 +88,23 @@ export function classifyOfflineCapabilityIntent(text: string): IntentClassificat
   if (/^https?:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\/.*)?$/i.test(trimmed)) {
     return 'load_repo';
   }
-  if (STATUS_QUESTION_TOKENS.some((token) => lower.includes(token))) return 'status_question';
+  if (STATUS_QUESTION_TOKENS_PATTERN.test(lower)) return 'status_question';
   if (
     GREETING_PATTERN.test(trimmed)
-    || FREE_CHAT_TOKENS.some((token) => lower.includes(token))
+    || FREE_CHAT_TOKENS_PATTERN.test(lower)
   ) return 'free_chat';
-  if (WORKFLOW_WATCH_TOKENS.some((token) => lower.includes(token))) return 'workflow_watch';
+  if (WORKFLOW_WATCH_TOKENS_PATTERN.test(lower)) return 'workflow_watch';
   if (isReadOnlyRequest(trimmed, lower)) return 'free_chat';
-  if (WORKFLOW_REPAIR_TOKENS.some((token) => lower.includes(token))) return 'repair_workflow';
-  if (DRAFT_PR_TOKENS.some((token) => lower.includes(token))) return 'draft_pr';
+  if (WORKFLOW_REPAIR_TOKENS_PATTERN.test(lower)) return 'repair_workflow';
+  if (DRAFT_PR_TOKENS_PATTERN.test(lower)) return 'draft_pr';
 
-  const hasDirectPatchKeyword = DIRECT_PATCH_TOKENS.some((token) => lower.includes(token));
-  const hasComplexKeyword = COMPLEX_TASK_TOKENS.some((token) => lower.includes(token));
+  const hasDirectPatchKeyword = DIRECT_PATCH_TOKENS_PATTERN.test(lower);
+  const hasComplexKeyword = COMPLEX_TASK_TOKENS_PATTERN.test(lower);
   if (hasDirectPatchKeyword && !hasComplexKeyword) return 'direct_patch';
 
-  if (SOVEREIGN_AGENT_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
-  if (CODE_GENERATION_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
-  if (LOAD_REPO_TOKENS.some((token) => lower.includes(token))) return 'load_repo';
+  if (SOVEREIGN_AGENT_TOKENS_PATTERN.test(lower)) return 'code_generation';
+  if (CODE_GENERATION_TOKENS_PATTERN.test(lower)) return 'code_generation';
+  if (LOAD_REPO_TOKENS_PATTERN.test(lower)) return 'load_repo';
   return 'unknown';
 }
 
@@ -170,11 +124,11 @@ export function determineOfflineTaskComplexity(
     case 'repair_workflow':
       return 'medium';
     case 'code_generation': {
-      const hasComplexKeyword = COMPLEX_TASK_TOKENS.some((token) => lower.includes(token));
+      const hasComplexKeyword = COMPLEX_TASK_TOKENS_PATTERN.test(lower);
       if (!hasComplexKeyword) return 'medium';
       // Mixed-signal resolution: if user signals "simple/quick/small" alongside
       // complex-task keywords, honour the intent modifier and route as medium.
-      const hasSimpleModifier = SIMPLE_MODIFIER_TOKENS.some((token) => lower.includes(token));
+      const hasSimpleModifier = SIMPLE_MODIFIER_TOKENS_PATTERN.test(lower);
       return hasSimpleModifier ? 'medium' : 'complex';
     }
     default:
@@ -294,7 +248,7 @@ export function buildOfflineCapabilityLanguageEvidence(text: string): Capability
   return {
     intent,
     complexity: determineOfflineTaskComplexity(intent, text),
-    explicitAgentRequest: SOVEREIGN_AGENT_TOKENS.some((token) => text.toLowerCase().includes(token)),
+    explicitAgentRequest: SOVEREIGN_AGENT_TOKENS_PATTERN.test(text.toLowerCase()),
     source: 'offline_fallback',
   };
 }
