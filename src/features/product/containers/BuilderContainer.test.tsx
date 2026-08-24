@@ -65,6 +65,11 @@ function requestUrl(input: RequestInfo | URL): string {
   return input.url;
 }
 
+function isRoutePickerBootstrap(input: RequestInfo | URL): boolean {
+  const url = new URL(requestUrl(input), 'https://sovereign.test');
+  return url.pathname.endsWith('/api/llm/routes') && url.searchParams.get('purpose') === 'picker';
+}
+
 function isAuthBootstrapRequest(input: RequestInfo | URL): boolean {
   return requestUrl(input).includes("/api/auth/me");
 }
@@ -218,6 +223,7 @@ function nonAuthFetchCalls(fetchMock: ReturnType<typeof vi.fn>) {
   return fetchMock.mock.calls.filter(([input]) => {
     const request = input as RequestInfo | URL;
     const url = requestUrl(request);
+    if (isRoutePickerBootstrap(request)) return false;
     return (isGitHubApiRequest(request) && !url.includes('/commits/'))
       || url.includes('/api/llm/routes')
       || url.includes('/api/llm/chat');
@@ -505,6 +511,51 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByTestId("sovereign-chat-body-window")).toBeDefined();
     expect(chatField()).toBeDefined();
     expect(screen.getByLabelText("Menü")).toBeDefined();
+  });
+
+  it("loads the authenticated route/model picker from the canonical backend catalog", async () => {
+    const fetchMock = mockFetchSequence();
+    renderWithProviders(<BuilderContainer {...baseProps()} />);
+
+    const select = screen.getByTestId('sovereign-llm-route-select') as HTMLSelectElement;
+    expect(select.value).toBe('');
+    await waitFor(() => expect(screen.getByRole('option', {
+      name: /FREE · freellm · deepseek-r1 · deepseek-r1/i,
+    })).toBeDefined());
+    expect(fetchMock.mock.calls.some(([input]) => (
+      isRoutePickerBootstrap(input as RequestInfo | URL)
+    ))).toBe(true);
+  });
+
+  it("sends a manually pinned backend route without recording it as a PAL decision", async () => {
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ choices: [{ message: { content: 'Manuelle Route antwortet.' } }], model: TEST_LITELLM_MODEL }),
+    );
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" />);
+
+    const select = screen.getByTestId('sovereign-llm-route-select') as HTMLSelectElement;
+    await waitFor(() => expect(screen.getByRole('option', {
+      name: /FREE · freellm · deepseek-r1 · deepseek-r1/i,
+    })).toBeDefined());
+    fireEvent.change(select, { target: { value: 'test-chat-route' } });
+    expect(select.value).toBe('test-chat-route');
+    expect(screen.getByText(/Fixiert auf Backend-Route test-chat-route/i)).toBeDefined();
+
+    fireEvent.change(chatField(), { target: { value: 'Welche Route nutzt du?' } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => (
+      requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')
+    ))).toBe(true));
+    const chatCall = [...fetchMock.mock.calls].reverse().find(([input]) => (
+      requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')
+    ));
+    const body = JSON.parse(String(chatCall?.[1]?.body ?? '{}')) as { model?: string };
+    expect(body.model).toBe('test-chat-route');
+
+    fireEvent.click(screen.getByLabelText('Menü'));
+    const sideMenu = screen.getByRole('dialog', { name: 'Sovereign Seitenmenü' });
+    expect(within(sideMenu).queryByText(/PAL Verlauf/i)).toBeNull();
   });
 
   it("promotes a fresh workspace-bound projection to the desktop monitor instead of chat", async () => {

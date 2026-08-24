@@ -1,10 +1,12 @@
 import { classifyBackendRoute, type ResolvedTransportClass } from './providerRuntimeChecks';
-import type {
-  DevChatWorkerDiagnostic,
-  DevChatWorkerIntentKind,
-  DevChatWorkerInterpretation,
-  DevChatWorkerInterpretationResult,
-  DevChatWorkerMessage,
+import {
+  DEV_CHAT_WORKER_DEFAULT_MODEL,
+  DEV_CHAT_WORKER_FALLBACK_MODEL,
+  type DevChatWorkerDiagnostic,
+  type DevChatWorkerIntentKind,
+  type DevChatWorkerInterpretation,
+  type DevChatWorkerInterpretationResult,
+  type DevChatWorkerMessage,
 } from './devChatWorkerBridge';
 
 const BACKEND_BASE = (
@@ -276,6 +278,11 @@ function createRequestId(): string | null {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+function isAbstractSovereignRouteAlias(value: string | undefined): boolean {
+  const clean = value?.trim();
+  return clean === DEV_CHAT_WORKER_DEFAULT_MODEL || clean === DEV_CHAT_WORKER_FALLBACK_MODEL;
+}
+
 function chooseRoute(
   payload: DirectLlmRouteCatalog,
   preferredModel: string | undefined,
@@ -303,9 +310,20 @@ function chooseRoute(
   });
   if (enabled.length === 0) return null;
   const cleanPreferred = preferredModel?.trim();
+  if (!cleanPreferred || isAbstractSovereignRouteAlias(cleanPreferred)) {
+    // `sovereign-fast` / `sovereign-balanced` are PAL routing aliases, not
+    // persisted route IDs. They intentionally delegate concrete selection to
+    // the current backend catalog. Only an explicit concrete user pin below is
+    // a hard exact-match contract.
+    return enabled[0];
+  }
+
+  // A manual concrete route/model pin is a hard user-visible contract. If it
+  // is no longer present in the backend catalog, intent interpretation must
+  // fail closed instead of silently executing a different route.
   return enabled.find((route) =>
-    cleanPreferred && (route.routeId === cleanPreferred || route.modelId === cleanPreferred)
-  ) ?? enabled[0];
+    route.routeId === cleanPreferred || route.modelId === cleanPreferred
+  ) ?? null;
 }
 
 function buildMessages(args: SovereignDirectLlmIntentRequest): readonly DevChatWorkerMessage[] {
@@ -465,7 +483,7 @@ export async function fetchSovereignDirectLlmInterpretation(
     const interpretation = parseIntentEnvelope(
       content,
       actualModel,
-      selected.modelId !== (args.preferredModel?.trim() || selected.modelId),
+      actualModel !== selected.modelId,
     );
     if (!interpretation) {
       return {

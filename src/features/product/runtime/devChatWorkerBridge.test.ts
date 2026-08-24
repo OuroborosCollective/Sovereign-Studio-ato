@@ -10,6 +10,7 @@ import {
   fetchDevChatWorkerHealth,
   fetchDevChatWorkerInterpretation,
   fetchDevChatWorkerReply,
+  fetchSovereignLlmRouteCatalog,
   normalizeDevChatWorkerModel,
   parseDevChatGithubUrl,
   streamDevChatWorkerReply,
@@ -143,6 +144,64 @@ describe('devChatWorkerBridge', () => {
     expect(REPO_TREE_TIMEOUT_MS).toBe(15_000);
   });
 
+
+  it('normalizes the canonical backend route catalog for the route/model picker', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      routes: [
+        {
+          id: 'paid-route',
+          defaultModelId: 'openai/gpt-paid',
+          label: 'GPT Paid',
+          provider: 'OpenRouter',
+          billingCategory: 'standard',
+          priority: 1,
+          enabled: true,
+        },
+        {
+          id: 'free-route',
+          defaultModelId: 'freellm/free-model',
+          label: 'Free Model',
+          provider: 'FreeLLM',
+          billingCategory: 'free',
+          priority: 9,
+          enabled: true,
+        },
+        {
+          id: 'disabled-route',
+          defaultModelId: 'openai/disabled',
+          provider: 'openrouter',
+          billingCategory: 'standard',
+          priority: 0,
+          enabled: false,
+        },
+      ],
+    })));
+
+    const routes = await fetchSovereignLlmRouteCatalog();
+
+    expect(routes.map((route) => route.id)).toEqual(['free-route', 'paid-route']);
+    expect(routes[0]).toMatchObject({
+      defaultModelId: 'freellm/free-model',
+      label: 'Free Model',
+      provider: 'freellm',
+      billingCategory: 'free',
+    });
+  });
+
+  it('fails closed when an explicitly selected route disappears instead of silently falling back', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(routeCatalogResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await fetchDevChatWorkerReply({
+      model: 'manually-pinned-route-that-no-longer-exists',
+      messages: [{ role: 'user', content: 'Hallo' }],
+    }, { maxRetries: 0 });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostic?.scope).toBe('worker_config');
+    expect(result.error).toContain('nicht aktiv');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 
   it('calls the worker chat route and validates response content', async () => {
     const fetchMock = stubRoutedFetch(
