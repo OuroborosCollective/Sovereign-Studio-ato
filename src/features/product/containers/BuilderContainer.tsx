@@ -42,6 +42,7 @@ import {
   fetchDevChatRepoTree,
   fetchDevChatWorkerHealth,
   fetchDevChatWorkerReply,
+  fetchSovereignLlmRouteCatalog,
   parseDevChatGithubUrl,
   streamDevChatWorkerReply,
   summarizeDevChatRepoSnapshot,
@@ -50,6 +51,7 @@ import {
   type DevChatWorkerHealthResult,
   type DevChatWorkerIntentKind,
   type DevChatWorkerMessage,
+  type SovereignLlmRouteOption,
 } from "../runtime/devChatWorkerBridge";
 import {
   fetchSovereignDirectLlmInterpretation,
@@ -2399,6 +2401,10 @@ function Composer({
   placeholder,
   routeHint,
   slashMenu,
+  routeOptions,
+  selectedRouteId,
+  onRouteChange,
+  routeCatalogError,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -2409,6 +2415,10 @@ function Composer({
   placeholder: string;
   routeHint: string;
   slashMenu?: React.ReactNode;
+  routeOptions: readonly SovereignLlmRouteOption[];
+  selectedRouteId: string;
+  onRouteChange: (routeId: string) => void;
+  routeCatalogError?: string | null;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const resize = useCallback(() => {
@@ -2437,6 +2447,86 @@ function Composer({
       }}
     >
       {slashMenu ? <div style={{ marginBottom: 8 }}>{slashMenu}</div> : null}
+      <div
+        data-testid="sovereign-llm-route-picker"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 8,
+          padding: "0 4px",
+          minWidth: 0,
+        }}
+      >
+        <label
+          htmlFor="sovereign-llm-route-select"
+          style={{
+            fontFamily: "monospace",
+            fontSize: 9,
+            color: C.textMuted,
+            flexShrink: 0,
+          }}
+        >
+          Route / Modell
+        </label>
+        <select
+          id="sovereign-llm-route-select"
+          data-testid="sovereign-llm-route-select"
+          value={selectedRouteId}
+          onChange={(event) => onRouteChange(event.target.value)}
+          aria-label="LLM Route und Modell auswählen"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            height: 36,
+            borderRadius: 9,
+            border: `1px solid ${routeCatalogError ? C.amber : C.border}`,
+            background: C.bg,
+            color: C.text,
+            fontFamily: "monospace",
+            fontSize: 10,
+            padding: "0 8px",
+          }}
+        >
+          <option value="">Auto · PAL / Backend-Routing</option>
+          {selectedRouteId && !routeOptions.some((route) => route.id === selectedRouteId) ? (
+            <option value={selectedRouteId} disabled>
+              Fixierte Route nicht mehr verfügbar · {selectedRouteId}
+            </option>
+          ) : null}
+          {routeOptions.map((route) => (
+            <option key={route.id} value={route.id}>
+              {route.billingCategory === 'free' ? 'FREE' : 'PAID'} · {route.provider} · {route.label} · {route.defaultModelId}
+            </option>
+          ))}
+        </select>
+        {selectedRouteId ? (
+          <button
+            type="button"
+            onClick={() => onRouteChange('')}
+            aria-label="Zur automatischen Modellwahl zurückkehren"
+            title="Auto-Routing wieder aktivieren"
+            style={{
+              minWidth: 44,
+              minHeight: 36,
+              borderRadius: 9,
+              border: `1px solid ${C.border}`,
+              background: C.surface,
+              color: C.textSub,
+              cursor: "pointer",
+              fontFamily: "monospace",
+              fontSize: 9,
+            }}
+          >
+            AUTO
+          </button>
+        ) : null}
+      </div>
+      {routeCatalogError ? (
+        <div role="status" style={{ margin: "-3px 6px 7px", fontFamily: "monospace", fontSize: 8, color: C.amber }}>
+          Routenkatalog: {routeCatalogError}
+        </div>
+      ) : null}
       <div
         style={{
           display: "flex",
@@ -2769,6 +2859,9 @@ export function BuilderContainer({
   const [openWorkbenchSlot, setOpenWorkbenchSlot] = useState<WorkbenchStatusSlotId | null>(null);
   const [palDecisions, setPalDecisions] = useState<PALDecision[]>([]);
   const [budgetLedger, setBudgetLedger] = useState<LlmBudgetLedger>(createBudgetLedger());
+  const [llmRouteOptions, setLlmRouteOptions] = useState<readonly SovereignLlmRouteOption[]>([]);
+  const [selectedLlmRouteId, setSelectedLlmRouteId] = useState("");
+  const [llmRouteCatalogError, setLlmRouteCatalogError] = useState<string | null>(null);
   const { credits } = useCreditGuard();
   // ── Issue #459: User auth state
   const { user: authUser, refreshUser } = useUserStore();
@@ -2776,6 +2869,26 @@ export function BuilderContainer({
   const [showProfile, setShowProfile] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   useEffect(() => { refreshUser(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    void fetchSovereignLlmRouteCatalog(controller.signal)
+      .then((routes) => {
+        if (!active) return;
+        setLlmRouteOptions(routes);
+        setLlmRouteCatalogError(null);
+      })
+      .catch((error) => {
+        if (!active || controller.signal.aborted) return;
+        setLlmRouteOptions([]);
+        setLlmRouteCatalogError(error instanceof Error ? error.message : 'Routenkatalog nicht verfügbar.');
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [authUser?.id]);
 
   // ── Sovereign App Toolchain — auto-load after login
   const { loadTools: loadToolchain, getToolContext, loaded: toolchainLoaded } = useToolchainStore();
@@ -4581,6 +4694,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         chatRepoSnapshot?.fileCount ?? 0,
         palDecisions,
       );
+      const requestedInterpretationModel = selectedLlmRouteId || routeDecision.modelId;
       const interpreterOnline = true;
       let interpretationResult: Awaited<ReturnType<typeof fetchSovereignDirectLlmInterpretation>>;
 
@@ -4596,7 +4710,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         appendActionEvent(buildWorkerRequestEvent(`${routeDecision.modelLabel} · Intent`));
 
         interpretationResult = await fetchSovereignDirectLlmInterpretation({
-          preferredModel: routeDecision.modelId,
+          preferredModel: requestedInterpretationModel,
           text: submittedText,
           repoContext: chatRepoSnapshot
             ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}#${chatRepoSnapshot.branch} · ${chatRepoSnapshot.fileCount} files`
@@ -4627,7 +4741,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           error: onlineHealth?.error || 'Worker ist offline; lokaler Sprach-Fallback wird verwendet.',
           diagnostic: {
             route: SOVEREIGN_WORKER_CHAT,
-            model: routeDecision.modelId,
+            model: requestedInterpretationModel,
             messageCount: 0,
             status: onlineHealth?.status,
             scope: 'network',
@@ -4966,7 +5080,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       }
 
       if (interpretationResult.rawContent && (offlineIntent === 'question' || offlineIntent === 'unknown')) {
-        await quarantineOnlineObservation(interpretationResult.rawContent, routeDecision.modelId);
+        await quarantineOnlineObservation(interpretationResult.rawContent, requestedInterpretationModel);
         appendGuardedWorkerText(interpretationResult.rawContent);
         appendActionEvent({
           kind: 'llm_response_received',
@@ -5617,6 +5731,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       chatRepoSnapshot?.fileCount ?? 0,
       palDecisions,
     );
+    const requestedChatModel = selectedLlmRouteId || d.modelId;
 
     setPalDecisions((prev) => [...prev.slice(-99), d]);
     setBudgetLedger((prev) => recordRouteUsage(prev, d.tier));
@@ -5673,7 +5788,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     try {
       for await (const chunk of streamDevChatWorkerReply(
         {
-          model: d.modelId,
+          model: requestedChatModel,
           messages: workerMessages,
         },
         (metadata) => {
@@ -5718,14 +5833,14 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         addLog("warn", `chatClaimGuard: ${claimCheck.violations.join(", ")}`, "router");
       }
       appendChatLine({ role: "assistant", text: textToAppend });
-      await quarantineOnlineAnswer(fullText, streamFallbackMetadata?.actualModel ?? d.modelId);
+      await quarantineOnlineAnswer(fullText, streamFallbackMetadata?.actualModel ?? requestedChatModel);
       return;
     }
 
     const fallback = streamDiagnostic
       ? null
       : await fetchDevChatWorkerReply({
-          model: d.modelId,
+          model: requestedChatModel,
           messages: workerMessages,
         });
 
@@ -5748,7 +5863,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       }
 
       appendChatLine({ role: "assistant", text: textToAppend });
-      await quarantineOnlineAnswer(fallback.content, fallback.actualModel ?? d.modelId);
+      await quarantineOnlineAnswer(fallback.content, fallback.actualModel ?? requestedChatModel);
       return;
     }
 
@@ -5757,7 +5872,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     const diagnostic = streamDiagnostic ??
       fallback?.diagnostic ?? {
         route: SOVEREIGN_WORKER_CHAT,
-        model: d.modelId,
+        model: requestedChatModel,
         messageCount: workerMessages.length,
         scope: streamError?.status ? "worker_runtime" : "network",
         canClientFix: false,
@@ -7052,11 +7167,24 @@ Das echte Repo-Setup wurde geöffnet.`,
                 ? `Frage zu ${chatRepoSnapshot.name}…`
                 : "GitHub URL oder Auftrag…"
             }
-            routeHint={composerRouteHint({
-              draft: wishText,
-              workerBlocked,
-              agentDisabled,
-            })}
+            routeHint={selectedLlmRouteId
+              ? `Fixiert auf Backend-Route ${selectedLlmRouteId} · kein stiller Modell-Fallback`
+              : composerRouteHint({
+                  draft: wishText,
+                  workerBlocked,
+                  agentDisabled,
+                })}
+            routeOptions={llmRouteOptions}
+            selectedRouteId={selectedLlmRouteId}
+            onRouteChange={(routeId) => {
+              setSelectedLlmRouteId(routeId);
+              addLog(
+                'info',
+                routeId ? `LLM Route manuell fixiert: ${routeId}` : 'LLM Route auf Auto/PAL zurückgesetzt',
+                'router',
+              );
+            }}
+            routeCatalogError={llmRouteCatalogError}
             slashMenu={
               showSlashCommands ? (
                 <SlashCommandMenu
