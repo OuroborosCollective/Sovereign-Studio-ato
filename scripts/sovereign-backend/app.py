@@ -79,6 +79,7 @@ from free_revolver_runtime import (
     resolve_free_revolver_plan,
 )
 from free_revolver_provider_runtime import register_free_revolver_provider_runtime
+from google_oauth_public_config import PUBLIC_GOOGLE_WEB_CLIENT_ID
 from llm_route_scanner import register_llm_route_scanner
 
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
@@ -4222,7 +4223,7 @@ def user_billing_deduct():
 # ═════════════════════════════════════════════════════════════════════════════
 
 JWT_SECRET   = os.getenv("JWT_SECRET", "")
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip() or PUBLIC_GOOGLE_WEB_CLIENT_ID
 _COOKIE          = "sovereign_session"
 _COOKIE_MAX_AGE  = 7 * 24 * 3600  # 7 days
 
