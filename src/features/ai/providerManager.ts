@@ -1,4 +1,8 @@
 /**
+ * sovereign-endpoint-surface: legacy-unreferenced
+ * Historical direct browser-provider surface retained only for unreferenced legacy modules/tests.
+ * Productive online LLM execution is backend-owned; do not reconnect this module to active UI/runtime paths.
+ *
  * Provider Manager - Free LLM API Fallback System
  * Auto-switches between providers when primary fails (auth errors, quota, etc.)
  * 

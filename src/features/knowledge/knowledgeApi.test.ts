@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  deleteKnowledgeSource,
+  getKnowledgeStats,
   importKnowledgeUrl,
   importProgrammingLanguageCatalog,
   KnowledgeApiError,
   PROGRAMMING_LANGUAGE_CATALOG_REVISION,
+  uploadKnowledgeFile,
 } from './knowledgeApi';
 
 afterEach(() => {
@@ -12,6 +15,129 @@ afterEach(() => {
 });
 
 describe('knowledgeApi failure evidence', () => {
+  it('reads knowledge statistics through the canonical authenticated endpoint', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      sources: 2,
+      sourceChunks: 8,
+      sourceBytes: 1024,
+      uniqueBlocks: 6,
+      embeddedBlocks: 5,
+      textBytes: 900,
+      embeddingModel: 'bounded-model',
+      storage: 'postgres-pgvector',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const stats = await getKnowledgeStats();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://sovereign-backend.arelorian.de/api/knowledge/stats',
+      { credentials: 'include' },
+    );
+    expect(stats).toMatchObject({ sources: 2, embeddedBlocks: 5, storage: 'postgres-pgvector' });
+  });
+
+  it('imports one URL through the canonical JSON endpoint', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      duplicate: false,
+      source: { id: 'source-1', title: 'Bound source', status: 'ready' },
+    }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await importKnowledgeUrl('https://example.test/source', 'Bound source');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://sovereign-backend.arelorian.de/api/knowledge/sources/url',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: 'https://example.test/source', title: 'Bound source' }),
+      }),
+    );
+    expect(result.duplicate).toBe(false);
+  });
+
+  it('binds upload ticket, object PUT and confirmation without skipping verification', async () => {
+    const statuses: string[] = [];
+    vi.stubGlobal('crypto', {
+      subtle: {
+        digest: vi.fn(async () => new Uint8Array(32).fill(1).buffer),
+      },
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/knowledge/sources/upload-ticket')) {
+        return new Response(JSON.stringify({
+          objectId: 'object-1',
+          uploadUrl: 'https://upload.example.test/object-1',
+          headers: { 'X-Bound-Upload': 'yes' },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url === 'https://upload.example.test/object-1') {
+        expect(init).toMatchObject({
+          method: 'PUT',
+          headers: { 'X-Bound-Upload': 'yes' },
+        });
+        expect(init?.body).toBeInstanceOf(File);
+        return new Response('', { status: 200 });
+      }
+      if (url.endsWith('/api/knowledge/sources/upload-confirm')) {
+        return new Response(JSON.stringify({
+          duplicate: false,
+          source: { id: 'source-upload', title: 'notes.txt', status: 'processing' },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ error: 'unexpected endpoint' }), { status: 500 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const file = new File(['bounded knowledge'], 'notes.txt', { type: 'text/plain' });
+
+    const result = await uploadKnowledgeFile(file, status => statuses.push(status));
+
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      'https://sovereign-backend.arelorian.de/api/knowledge/sources/upload-ticket',
+      'https://upload.example.test/object-1',
+      'https://sovereign-backend.arelorian.de/api/knowledge/sources/upload-confirm',
+    ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+      filename: 'notes.txt',
+      contentType: 'text/plain',
+      sizeBytes: file.size,
+      sha256: '01'.repeat(32),
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body))).toEqual({ objectId: 'object-1' });
+    expect(statuses).toEqual(['preparing', 'uploading', 'verifying', 'processing', 'completed']);
+    expect(result.source.id).toBe('source-upload');
+  });
+
+  it('deletes only the encoded owned source path and waits for backend confirmation', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await deleteKnowledgeSource('source/with spaces');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://sovereign-backend.arelorian.de/api/knowledge/sources/source%2Fwith%20spaces',
+      expect.objectContaining({ method: 'DELETE', credentials: 'include' }),
+    );
+  });
+
   it('imports the pinned programming-language catalog through its dedicated endpoint', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       ok: true,
