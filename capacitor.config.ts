@@ -6,9 +6,11 @@ function envValue(name: string): string | undefined {
   return value;
 }
 
-const googleClientId = envValue('VITE_GOOGLE_CLIENT_ID');
-const googleAndroidClientId = envValue('VITE_GOOGLE_ANDROID_CLIENT_ID');
-const googleServerClientId = envValue('VITE_GOOGLE_SERVER_CLIENT_ID');
+const PUBLIC_GOOGLE_WEB_CLIENT_ID = '511695074775-s08le2ju1k4nl2vv3i150i6tn084b682.apps.googleusercontent.com';
+const PUBLIC_GOOGLE_ANDROID_CLIENT_ID = '511695074775-tjlbufo0r0co0eg8rsfonma9dnnv72hl.apps.googleusercontent.com';
+const googleClientId = envValue('VITE_GOOGLE_CLIENT_ID') ?? PUBLIC_GOOGLE_WEB_CLIENT_ID;
+const googleAndroidClientId = envValue('VITE_GOOGLE_ANDROID_CLIENT_ID') ?? PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+const googleServerClientId = envValue('VITE_GOOGLE_SERVER_CLIENT_ID') ?? PUBLIC_GOOGLE_WEB_CLIENT_ID;
 
 const config: CapacitorConfig = {
   appId: 'com.arestudio.nocode.aab',
