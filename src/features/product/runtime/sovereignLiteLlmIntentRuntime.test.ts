@@ -83,25 +83,12 @@ describe('sovereignLiteLlmIntentRuntime', () => {
     });
     expect(calls).toEqual([SOVEREIGN_LITELLM_ROUTES, SOVEREIGN_LITELLM_CHAT]);
   });
-  it('resolves an enabled backend route and interprets language through the Sovereign direct LLM runtime', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({
-        routes: [
-          freeRoute('sovereign-chat', 'openai/gpt-5.2-mini'),
-        ],
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        model: 'openai/gpt-5.2-mini',
-        choices: [{ message: { content: JSON.stringify({
-          mode: 'action',
-          intent: 'draft_pr',
-          action_disposition: 'execute',
-          assistant_text: 'Ich habe den Auftrag verstanden. Die Runtime prüft jetzt die Gates.',
-          action_title: 'Routing reparieren und Draft PR erstellen',
-          confidence: 0.96,
-          language: 'de',
-        }) } }],
-      }));
+  it('fails closed when a preferred route is absent instead of interpreting through another model', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
+      routes: [
+        freeRoute('sovereign-chat', 'openai/gpt-5.2-mini'),
+      ],
+    }));
 
     const result = await fetchSovereignLiteLlmInterpretation({
       preferredModel: 'deepseek-r1',
@@ -110,26 +97,14 @@ describe('sovereignLiteLlmIntentRuntime', () => {
       fetchImpl: fetchMock as unknown as typeof fetch,
     });
 
-    expect(result.ok).toBe(true);
-    expect(result.interpretation).toMatchObject({
-      mode: 'action',
-      intent: 'draft_pr',
-      actionDisposition: 'execute',
-      model: 'openai/gpt-5.2-mini',
-      fallbackUsed: true,
-    });
+    expect(result.ok).toBe(false);
+    expect(result.interpretation).toBeUndefined();
+    expect(result.error).toContain('Keine aktivierte OpenRouter- oder FreeLLM-Route');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenNthCalledWith(1, SOVEREIGN_LITELLM_ROUTES, expect.objectContaining({
       method: 'GET',
       credentials: 'include',
     }));
-    expect(fetchMock).toHaveBeenNthCalledWith(2, SOVEREIGN_LITELLM_CHAT, expect.objectContaining({
-      method: 'POST',
-      credentials: 'include',
-    }));
-    const request = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
-    expect(request.model).toBe('sovereign-chat');
-    expect(request.requestId).toBe('00000000-0000-4000-8000-000000000101');
-    expect(request.stream).toBe(false);
   });
 
   it('uses the requested model when the enabled route catalog contains it', async () => {
