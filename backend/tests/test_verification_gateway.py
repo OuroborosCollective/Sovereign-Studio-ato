@@ -478,3 +478,77 @@ def test_a2a_agent_card_advertises_verification_skill():
         source = (root / relative).read_text(encoding="utf-8")
         assert 'id="sovereign-verification"' in source
         assert "model agreement is never a truth rule" in source
+
+
+def test_non_dict_json_payloads_return_400(monkeypatch):
+    """Test that non-dictionary JSON payloads return 400 Bad Request."""
+    monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", "0" * 40)
+    user_id = str(uuid.uuid4())
+    conn = FakeConnection()
+    conn.add_user(user_id, credits=10)
+    app = create_app(conn)
+    client = app.test_client()
+
+    # Test list payload
+    response = client.post(
+        "/api/user/agent/verification/verify",
+        headers={"X-Test-User": user_id},
+        json=["item1", "item2"],
+    )
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data["error"]["code"] == 400
+    assert "BODY_MUST_BE_OBJECT" in str(data)
+
+    # Test string payload
+    response = client.post(
+        "/api/user/agent/verification/verify",
+        headers={"X-Test-User": user_id},
+        json="just a string",
+    )
+    assert response.status_code == 400
+
+    # Test number payload
+    response = client.post(
+        "/api/user/agent/verification/verify",
+        headers={"X-Test-User": user_id},
+        json=42,
+    )
+    assert response.status_code == 400
+
+    # Test boolean payload
+    response = client.post(
+        "/api/user/agent/verification/verify",
+        headers={"X-Test-User": user_id},
+        json=True,
+    )
+    assert response.status_code == 400
+
+    # Test null payload
+    response = client.post(
+        "/api/user/agent/verification/verify",
+        headers={"X-Test-User": user_id},
+        json=None,
+    )
+    assert response.status_code == 400
+
+
+def test_non_dict_json_payloads_return_400_on_a2a(monkeypatch):
+    """Test that non-dictionary JSON payloads return 400 on A2A endpoint."""
+    monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", "0" * 40)
+    user_id = str(uuid.uuid4())
+    conn = FakeConnection()
+    conn.add_user(user_id, credits=10)
+    app = create_app(conn)
+    client = app.test_client()
+
+    # Test list payload on A2A endpoint
+    response = client.post(
+        "/a2a/v1/verification:verify",
+        headers={"X-Test-User": user_id, "A2A-Version": "1.0"},
+        json=["item1", "item2"],
+    )
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data["error"]["code"] == 400
+    assert "BODY_MUST_BE_OBJECT" in str(data)
