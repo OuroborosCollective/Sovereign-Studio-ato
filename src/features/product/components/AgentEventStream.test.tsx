@@ -1,6 +1,6 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { AgentEventStream } from './AgentEventStream';
 import {
   createIdleSnapshot,
@@ -216,5 +216,41 @@ describe('AgentEventStream', () => {
     const { container } = render(<AgentEventStream snapshot={createIdleSnapshot('idle-trace')} />);
 
     expect(container.textContent).toBe('');
+  });
+
+  it('opens valid https draft PR URLs securely with noopener,noreferrer and ignores non-https URLs', () => {
+    const windowOpenSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+    const { rerender } = render(
+      <AgentEventStream
+        snapshot={runningSnapshot()}
+        job={runningJob({ draftPrUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/488' })}
+      />,
+    );
+
+    const openButton = screen.getByRole('button', { name: /Draft PR öffnen/i });
+    fireEvent.click(openButton);
+
+    expect(windowOpenSpy).toHaveBeenCalledWith(
+      'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/488',
+      '_blank',
+      'noopener,noreferrer',
+    );
+
+    windowOpenSpy.mockClear();
+
+    rerender(
+      <AgentEventStream
+        snapshot={runningSnapshot()}
+        job={runningJob({ draftPrUrl: 'javascript:alert(1)' })}
+      />,
+    );
+
+    const openButtonInvalid = screen.getByRole('button', { name: /Draft PR öffnen/i });
+    fireEvent.click(openButtonInvalid);
+
+    expect(windowOpenSpy).not.toHaveBeenCalled();
+
+    windowOpenSpy.mockRestore();
   });
 });

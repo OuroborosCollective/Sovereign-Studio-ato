@@ -82,3 +82,8 @@
 **Vulnerability:** Passkey WebAuthn challenge endpoints fell back to `PASSKEY_ALLOWED_ORIGINS[0]` when the `Origin` header was missing or empty, allowing unauthenticated or non-browser API clients to initiate passkey flows without proving their origin context.
 **Learning:** Fallbacks in origin verification undermine WebAuthn security mechanisms, which rely on strict origin matching to prevent cross-site origin reuse or spoofing.
 **Prevention:** Always require an explicit `Origin` header in WebAuthn/passkey endpoints, and raise an immediate `ValueError` if missing or unlisted.
+
+## 2026-08-06 - Enforce Scheme Validation and noopener,noreferrer in window.open Calls
+**Vulnerability:** Opening external draft PR links via `window.open(draftPrUrl, '_blank')` lacked window feature flags (`noopener,noreferrer`) and protocol scheme validation. This exposed the app to reverse tabnabbing (where target windows access `window.opener.location`) and potential protocol scheme injection (such as `javascript:` execution).
+**Learning:** `window.open()` with `_blank` defaults to granting `window.opener` access unless `noopener,noreferrer` is explicitly set. Furthermore, user-supplied or dynamic URLs must be validated for a safe transport scheme (e.g. `https://`) before passing them to `window.open()`.
+**Prevention:** Always filter external URLs through `safeHttpsUrl` (or equivalent `https://` scheme validator) and always supply `'noopener,noreferrer'` as the features argument in all `window.open()` calls.

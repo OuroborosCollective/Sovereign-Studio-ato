@@ -18,6 +18,7 @@ import type { AgentWorkSnapshot, AgentWorkState } from "../runtime/agentWorkRunt
 import type { SovereignAgentJobSnapshot, SovereignAgentRuntimeEvent, SovereignLiveProjection, SovereignWorkspaceEvidenceAnchor } from "../runtime/sovereignAgentRuntime";
 import { WorkspaceEvidenceRail } from './WorkspaceEvidenceRail';
 import { LiveWorkspaceMonitor } from './LiveWorkspaceMonitor';
+import { safeHttpsUrl } from '../runtime/builderContainerHelpers';
 
 interface StreamEvent {
   readonly id: string;
@@ -325,7 +326,17 @@ export function AgentEventStream({ snapshot, job, projections = [], evidenceAnch
               </button>
             )}
             {draftPrUrl && (
-              <button type="button" onClick={onOpenDraftPr ?? (() => window.open(draftPrUrl, '_blank'))} style={{ padding: '6px 14px', borderRadius: 7, background: C.green, color: '#000', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer' }}>
+              <button
+                type="button"
+                onClick={onOpenDraftPr ?? (() => {
+                  // Security: Validate HTTPS scheme and include noopener,noreferrer to prevent reverse tabnabbing
+                  const safeUrl = safeHttpsUrl(draftPrUrl);
+                  if (safeUrl) {
+                    window.open(safeUrl, '_blank', 'noopener,noreferrer');
+                  }
+                })}
+                style={{ padding: '6px 14px', borderRadius: 7, background: C.green, color: '#000', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer' }}
+              >
                 Draft PR öffnen ↗
               </button>
             )}
