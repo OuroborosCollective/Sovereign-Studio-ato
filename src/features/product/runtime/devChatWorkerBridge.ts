@@ -48,13 +48,69 @@ export function normalizeDevChatWorkerModel(model: string | undefined): string {
   return clean;
 }
 
+export interface SovereignLlmRouteOption {
+  readonly id: string;
+  readonly defaultModelId: string;
+  readonly label: string;
+  readonly description?: string;
+  readonly provider: string;
+  readonly billingCategory?: 'free' | 'standard' | 'premium';
+  readonly priority: number;
+  readonly enabled: boolean;
+}
+
 interface BackendLlmRoute {
   readonly id?: string;
   readonly defaultModelId?: string;
+  readonly label?: string;
+  readonly description?: string;
   readonly provider?: string;
   readonly billingCategory?: 'free' | 'standard' | 'premium';
   readonly priority?: number;
   readonly enabled?: boolean;
+}
+
+export async function fetchSovereignLlmRouteCatalog(
+  signal?: AbortSignal,
+  purpose: 'execution' | 'picker' = 'execution',
+): Promise<readonly SovereignLlmRouteOption[]> {
+  const routesUrl = purpose === 'picker'
+    ? `${BACKEND_CONFIG.routesUrl}?purpose=picker`
+    : BACKEND_CONFIG.routesUrl;
+  const response = await fetch(routesUrl, {
+    method: 'GET',
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+    signal,
+  });
+  const payload = await response.json() as { routes?: BackendLlmRoute[]; error?: unknown };
+  if (!response.ok) {
+    throw new Error(typeof payload.error === 'string' ? payload.error : `Route catalog HTTP ${response.status}`);
+  }
+
+  return (payload.routes ?? [])
+    .filter((route): route is BackendLlmRoute & { id: string; defaultModelId: string } => (
+      route.enabled !== false
+      && typeof route.id === 'string'
+      && Boolean(route.id.trim())
+      && typeof route.defaultModelId === 'string'
+      && Boolean(route.defaultModelId.trim())
+    ))
+    .map((route) => ({
+      id: route.id.trim(),
+      defaultModelId: route.defaultModelId.trim(),
+      label: route.label?.trim() || route.defaultModelId.trim(),
+      description: route.description?.trim() || undefined,
+      provider: route.provider?.trim().toLowerCase() || 'unknown',
+      billingCategory: route.billingCategory,
+      priority: Number.isFinite(route.priority) ? Number(route.priority) : 0,
+      enabled: true,
+    }))
+    .sort((left, right) => (
+      (left.billingCategory === 'free' ? 0 : 1) - (right.billingCategory === 'free' ? 0 : 1)
+      || left.priority - right.priority
+      || left.label.localeCompare(right.label)
+    ));
 }
 
 function concreteRouteModel(route: BackendLlmRoute | undefined): string {
@@ -69,17 +125,7 @@ function routePriority(route: BackendLlmRoute): number {
 }
 
 async function resolveActiveBackendModel(requestedModel: string, signal?: AbortSignal): Promise<string> {
-  const response = await fetch(BACKEND_CONFIG.routesUrl, {
-    method: 'GET',
-    credentials: 'include',
-    headers: { Accept: 'application/json' },
-    signal,
-  });
-  const payload = await response.json() as { routes?: BackendLlmRoute[]; error?: unknown };
-  if (!response.ok) {
-    throw new Error(typeof payload.error === 'string' ? payload.error : `Route catalog HTTP ${response.status}`);
-  }
-  const active = (payload.routes ?? []).filter((route) => route.enabled !== false);
+  const active = await fetchSovereignLlmRouteCatalog(signal);
   const freeRoutes = active
     .filter((route) => route.billingCategory === 'free')
     .sort((left, right) => routePriority(left) - routePriority(right));
@@ -100,9 +146,12 @@ async function resolveActiveBackendModel(requestedModel: string, signal?: AbortS
       ?? paidOpenRouter[0]
       ?? freeRoutes[0];
   } else {
+    // An explicit manual route/model selection is a hard contract. It may never
+    // silently degrade to another route because that would make the UI claim one
+    // model while the backend executes a different provider path.
     selected = active.find((route) => (
       route.defaultModelId === requestedModel || route.id === requestedModel
-    )) ?? freeRoutes[0] ?? paidOpenRouter[0];
+    ));
   }
 
   const model = concreteRouteModel(selected);
