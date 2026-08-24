@@ -61,6 +61,18 @@ mission / LLM claim
   reproducible, non-sensitive `LLM claim -> CAG check -> evidence verdict`
   benchmark cases covering all four CAG components and the result types
   required by #1460.
+- `backend/agent_runtime/wolfram_cag_benchmark_runner.py` (+ mirror): deterministic,
+  secret-free public benchmark runner (#1464/#1465 slice). One bounded call runs
+  the fixtures through the real `verify_cag_claim` path and produces a
+  hash-bound `BenchmarkReport` (schema `sovereign.wolfram-cag-benchmark-report.v1`)
+  plus a publishable markdown projection. No network, filesystem, clock or
+  randomness; the same fixture revision and parameters give a byte-identical
+  report. Each projection shows the deterministic `comparison_verdict` and the
+  honest `evidence_verdict` (fail-closed `UNAVAILABLE` until #1458 supplies
+  real provisioning evidence) side by side; no fixture value is promoted to
+  `SUPPORTED` and nothing self-asserts `VERIFIED`. Covered by
+  `backend/tests/test_wolfram_cag_benchmark_runner.py`, including
+  canonical/mirror byte parity.
 
 ## Receipt contract (`WolframCagReceiptV1`)
 

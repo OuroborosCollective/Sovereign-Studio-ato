@@ -59,6 +59,7 @@ jobs:
             backend/tests/test_wolfram_cag_receipts.py \
             backend/tests/test_wolfram_cag_partner_ledger.py \
             backend/tests/test_wolfram_cag_runtime.py \
+            backend/tests/test_wolfram_cag_benchmark_runner.py \
             backend/tests/test_durable_workflow.py \
             backend/tests/test_agent_github_access.py \
             backend/tests/test_github_access_scope_authority_contract.py \
