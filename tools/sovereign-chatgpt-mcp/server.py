@@ -1823,8 +1823,29 @@ def _patchmon_revision_binding(
             and all(item == expected for item in revisions)
         )
         return observed, bound, "workflow_runs"
-    observed = _patchmon_revision_from_payload(pr_evidence)
-    return observed, bool(expected and observed == expected), "pull_request"
+
+    pull = pr_evidence if isinstance(pr_evidence, dict) else {}
+    state = str(pull.get("state") or "").strip().lower()
+    merged = bool(pull.get("merged")) or bool(pull.get("merged_at"))
+    merge_revision = str(
+        pull.get("merge_commit_sha")
+        or pull.get("mergeCommitSha")
+        or pull.get("mergedChangeSha")
+        or ""
+    ).strip().lower()
+    head_revision = str(
+        pull.get("head_sha")
+        or pull.get("headSha")
+        or pull.get("prHeadSha")
+        or ""
+    ).strip().lower()
+
+    if merged or (state == "closed" and re.fullmatch(r"[0-9a-f]{40}", merge_revision)):
+        observed = merge_revision if re.fullmatch(r"[0-9a-f]{40}", merge_revision) else ""
+        return observed, bool(expected and observed == expected), "pull_request_merge_commit"
+
+    observed = head_revision if re.fullmatch(r"[0-9a-f]{40}", head_revision) else ""
+    return observed, bool(expected and observed == expected), "pull_request_head"
 
 
 @mcp.tool(annotations=NETWORK_READ)

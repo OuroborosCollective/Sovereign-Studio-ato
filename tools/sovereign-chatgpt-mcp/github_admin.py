@@ -576,6 +576,9 @@ class GitHubAdminRuntime:
             "head_sha": head_sha,
             "head_ref": str(head.get("ref") or ""),
             "base_ref": str((pull.get("base") or {}).get("ref") or ""),
+            "merged": bool(pull.get("merged")),
+            "merged_at": str(pull.get("merged_at") or "") or None,
+            "merge_commit_sha": str(pull.get("merge_commit_sha") or "").strip().lower() or None,
             "checks": checks,
             "url": str(pull.get("html_url") or ""),
         }
