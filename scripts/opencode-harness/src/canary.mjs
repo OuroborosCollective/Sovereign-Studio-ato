@@ -78,7 +78,7 @@ async function main() {
     'OPENCODE_CONFIG',
     'OPENCODE_CONFIG_DIR',
     'OPENCODE_DISABLE_PROJECT_CONFIG',
-    'OPENCODE_PERMISSION',
+    'OPENCODE_CONFIG_CONTENT',
   ];
   const previousEnv = captureEnv(isolatedEnvNames);
   process.env.HOME = sandbox.root;
@@ -87,8 +87,13 @@ async function main() {
   process.env.XDG_CACHE_HOME = sandbox.cache;
   delete process.env.OPENCODE_CONFIG;
   process.env.OPENCODE_CONFIG_DIR = sandbox.config;
-  process.env.OPENCODE_DISABLE_PROJECT_CONFIG = 'true';
-  process.env.OPENCODE_PERMISSION = JSON.stringify({ '*': 'deny' });
+  process.env.OPENCODE_DISABLE_PROJECT_CONFIG = '1';
+  process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+    autoupdate: false,
+    share: 'disabled',
+    permission: { '*': 'deny' },
+    tools: { '*': false },
+  });
   process.chdir(sandbox.project);
 
   const opencodeModel = `openrouter/${providerModel}`;
@@ -105,6 +110,7 @@ async function main() {
         autoupdate: false,
         share: 'disabled',
         permission: { '*': 'deny' },
+        tools: { '*': false },
         provider: {
           openrouter: {
             models: {
@@ -174,7 +180,9 @@ async function main() {
       ephemeralSandboxVerified: true,
       sandboxProjectRemainedEmpty: true,
       projectConfigDisabledConfigured: true,
+      runtimeConfigOverrideConfigured: true,
       toolPermissionsConfiguredDenyAll: true,
+      toolAvailabilityConfiguredDenyAll: true,
       toolMutationVerified: false,
       inputSha256: sha256(canaryPrompt),
       outputSha256,

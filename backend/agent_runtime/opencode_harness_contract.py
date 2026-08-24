@@ -107,8 +107,12 @@ def build_opencode_harness_binding(
             blockers.append("opencode_sdk_sandbox_mutation_detected")
         if receipt.get("projectConfigDisabledConfigured") is not True:
             blockers.append("opencode_sdk_project_config_isolation_unverified")
+        if receipt.get("runtimeConfigOverrideConfigured") is not True:
+            blockers.append("opencode_sdk_runtime_config_override_unverified")
         if receipt.get("toolPermissionsConfiguredDenyAll") is not True:
             blockers.append("opencode_sdk_tool_permission_isolation_unverified")
+        if receipt.get("toolAvailabilityConfiguredDenyAll") is not True:
+            blockers.append("opencode_sdk_tool_availability_isolation_unverified")
 
         structured_verified = not any(blocker.startswith("opencode_sdk_") for blocker in blockers)
         tool_mutation_verified = receipt.get("toolMutationVerified") is True

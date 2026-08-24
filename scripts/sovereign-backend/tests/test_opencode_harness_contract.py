@@ -52,7 +52,9 @@ def _receipt(provider_model: str = "openai/gpt-5.4-mini", *, tool_mutation_verif
         "ephemeralSandboxVerified": True,
         "sandboxProjectRemainedEmpty": True,
         "projectConfigDisabledConfigured": True,
+        "runtimeConfigOverrideConfigured": True,
         "toolPermissionsConfiguredDenyAll": True,
+        "toolAvailabilityConfiguredDenyAll": True,
         "toolMutationVerified": tool_mutation_verified,
         "inputSha256": "1" * 64,
         "outputSha256": "2" * 64,
@@ -135,9 +137,11 @@ def test_sdk_sidecar_is_pinned_and_keeps_the_openrouter_secret_out_of_source() -
     assert "readFile" not in source
     assert "SOVEREIGN_OPENCODE_WORKSPACE" not in source
     assert "mkdtemp" in source
-    assert "OPENCODE_DISABLE_PROJECT_CONFIG = 'true'" in source
-    assert "OPENCODE_PERMISSION = JSON.stringify({ '*': 'deny' })" in source
+    assert "OPENCODE_DISABLE_PROJECT_CONFIG = '1'" in source
+    assert "OPENCODE_PERMISSION" not in source
+    assert "OPENCODE_CONFIG_CONTENT = JSON.stringify" in source
     assert "permission: { '*': 'deny' }" in source
+    assert "tools: { '*': false }" in source
     assert "sandboxProjectEntries.length !== 0" in source
     assert "toolMutationVerified: false" in source
     assert "Do not modify files, run shell commands, or perform external actions." in source
