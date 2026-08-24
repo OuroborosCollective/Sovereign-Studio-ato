@@ -31,4 +31,32 @@ describe('DraftPrActionPreview', () => {
     fireEvent.click(screen.getByTestId('confirm-draft-pr-action-preview'));
     expect(onConfirm).toHaveBeenCalledOnce();
   });
+
+  it('provides accessible titles, aria-labels, and focus styles on action buttons and metadata', () => {
+    render(
+      <DraftPrActionPreview
+        repoUrl="https://github.com/OuroborosCollective/Sovereign-Studio-ato"
+        branch="sovereign/chatgpt/example"
+        expectedHeadSha="1234567890abcdef1234567890abcdef12345678"
+        mission="Test mission"
+        changedFileCount={2}
+        evidenceSource="staged"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    const cancelButton = screen.getByTestId('cancel-draft-pr-action-preview');
+    expect(cancelButton).toHaveAttribute('aria-label', 'Abbrechen');
+    expect(cancelButton).toHaveAttribute('title', 'Übergabe an Runtime abbrechen');
+
+    const confirmButton = screen.getByTestId('confirm-draft-pr-action-preview');
+    expect(confirmButton).toHaveAttribute('aria-label', 'Draft PR nach Serverprüfung posten');
+    expect(confirmButton).toHaveAttribute('title', 'Draft PR nach Serverprüfung posten');
+
+    expect(screen.getByText(/OuroborosCollective\/Sovereign-Studio-ato#sovereign\/chatgpt\/example/)).toHaveAttribute(
+      'title',
+      'https://github.com/OuroborosCollective/Sovereign-Studio-ato#sovereign/chatgpt/example',
+    );
+  });
 });

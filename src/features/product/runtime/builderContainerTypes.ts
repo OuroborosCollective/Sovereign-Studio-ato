@@ -8,6 +8,39 @@ import type {
 } from "./devChatWorkerBridge";
 
 export type ChatRole = "system" | "thought" | "user" | "assistant";
+export type SituationalBubbleKind =
+  | "MISSION_INPUT"
+  | "REQUIRED_QUESTION"
+  | "OWNER_CONSENT_REQUEST"
+  | "MATERIAL_BLOCKER"
+  | "FINAL_RESULT";
+export type SituationalBubbleSourceKind =
+  | "USER_INPUT"
+  | "CANONICAL_WORKFLOW"
+  | "CONSENT_CONTRACT"
+  | "EFFECT_READBACK";
+
+export interface SituationalBubbleBinding {
+  readonly schemaVersion: "sovereign.live-workspace-chat-bubble.v1";
+  readonly persistenceSchemaVersion?: string;
+  readonly sessionId: string;
+  readonly clientMessageId: string;
+  readonly bubbleKind: SituationalBubbleKind;
+  readonly sourceKind: SituationalBubbleSourceKind;
+  readonly text: string;
+  readonly canonicalReferenceHashes: readonly string[];
+  readonly sessionBindingHash?: string;
+  readonly runId?: string;
+  readonly attemptId?: string;
+  readonly workflowState: string;
+  readonly boundRevision?: string;
+  readonly effectKind?: string;
+  readonly targetHash?: string;
+  readonly consentBindingHash?: string;
+  readonly bubbleHash: string;
+  readonly recordedAt?: string;
+  readonly authoritative: false;
+}
 export type RuntimeTier = "ready" | "active" | "blocked" | "unknown";
 export type ModuleId =
   | "chat"
@@ -29,6 +62,7 @@ export interface ChatLine {
   readonly file?: string;
   readonly path?: string;
   readonly createdAt?: number;
+  readonly bubble?: SituationalBubbleBinding;
 }
 
 export interface RuntimeSource {

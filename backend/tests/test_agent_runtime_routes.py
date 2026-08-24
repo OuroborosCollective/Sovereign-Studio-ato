@@ -19,7 +19,9 @@ from agent_runtime.contracts import (  # noqa: E402
     SovereignAgentJobRequest,
     SovereignAgentJobResult,
 )
+from agent_runtime.evidence_gate import EvidenceGateResult  # noqa: E402
 from agent_runtime.job_store import create_agent_job_record, update_agent_job_state  # noqa: E402
+from agent_runtime.tools.base import ToolResult  # noqa: E402
 import agent_runtime.routes as routes_module  # noqa: E402
 from agent_runtime.routes import register_sovereign_agent_routes  # noqa: E402
 
@@ -138,7 +140,16 @@ def valid_request():
     )
 
 
-def create_test_app(conn: FakeConnection):
+def create_test_app(
+    conn: FakeConnection,
+    get_live_workspace_context=None,
+    issue_desktop_activation=None,
+    get_desktop_frame=None,
+    take_desktop_control=None,
+    give_back_desktop_control=None,
+    send_desktop_user_input=None,
+    desktop_frame_allowed=None,
+):
     app = Flask(__name__)
 
     def require_session(fn):
@@ -152,7 +163,18 @@ def create_test_app(conn: FakeConnection):
         wrapped.__name__ = fn.__name__
         return wrapped
 
-    register_sovereign_agent_routes(app, require_session=require_session, get_connection=lambda: conn)
+    register_sovereign_agent_routes(
+        app,
+        require_session=require_session,
+        get_connection=lambda: conn,
+        get_live_workspace_context=get_live_workspace_context,
+        issue_desktop_activation=issue_desktop_activation,
+        get_desktop_frame=get_desktop_frame,
+        take_desktop_control=take_desktop_control,
+        give_back_desktop_control=give_back_desktop_control,
+        send_desktop_user_input=send_desktop_user_input,
+        desktop_frame_allowed=desktop_frame_allowed,
+    )
     return app
 
 
@@ -413,6 +435,239 @@ def test_get_job_is_user_scoped():
     assert owned.status_code == 200
     assert owned.get_json()["job"]["jobId"] == "agent-1"
     assert other.status_code == 404
+
+
+def test_generic_tool_route_never_invokes_live_workspace_resolver(monkeypatch):
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-projection", status="running")
+    calls = {"tool": 0, "resolver": 0}
+    result = ToolResult(
+        status="done",
+        tool="file",
+        output="file write completed",
+        stdout="file write completed",
+        metadata={
+            "actionId": "action-write-1",
+            "providerNeutralEvidenceSha256": "a" * 64,
+        },
+        changed_files=("src/log.txt",),
+        diff_summary="src/log.txt changed",
+        test_summary="1 passed",
+        exit_code=0,
+    )
+    gate = EvidenceGateResult(
+        passed=True,
+        reason="Canonical mutation evidence is sufficient.",
+        evidence_count=1,
+        can_prepare_draft_pr=True,
+    )
+    setattr(gate, "allowed", True)
+
+    def fake_tool(*args, **kwargs):
+        calls["tool"] += 1
+        return result
+
+    def live_workspace_resolver(connection, job):
+        calls["resolver"] += 1
+        raise AssertionError("generic outer-clone tools must not resolve attempt workspaces")
+
+    monkeypatch.setattr(routes_module, "run_agent_job_tool", fake_tool)
+    monkeypatch.setattr(routes_module, "append_tool_result_to_job", lambda *args, **kwargs: gate)
+    app = create_test_app(conn, get_live_workspace_context=live_workspace_resolver)
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs/agent-projection/tools/file",
+        headers={"X-Test-User": "user-1"},
+        json={"path": "sub/../log.txt", "content": "one\n", "append": True},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["tool"]["status"] == "done"
+    assert payload["projection"] is None
+    assert calls == {"tool": 1, "resolver": 0}
+
+
+def test_live_workspace_get_is_owner_scoped_before_resolver() -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-live", status="running")
+    calls = {"resolver": 0}
+
+    def resolver(_conn, _job):
+        calls["resolver"] += 1
+        return None
+
+    app = create_test_app(conn, get_live_workspace_context=resolver)
+    response = app.test_client().get(
+        "/api/user/agent/jobs/agent-live/live-workspace",
+        headers={"X-Test-User": "user-2"},
+    )
+
+    assert response.status_code == 404
+    assert calls == {"resolver": 0}
+
+
+def test_live_workspace_get_blocks_absent_context_without_path_leak() -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-live", status="running")
+    app = create_test_app(conn, get_live_workspace_context=lambda _conn, _job: None)
+
+    response = app.test_client().get(
+        "/api/user/agent/jobs/agent-live/live-workspace",
+        headers={"X-Test-User": "user-1"},
+    )
+
+    assert response.status_code == 409
+    payload = response.get_json()
+    assert payload["state"] == "BLOCKED"
+    assert "worktreePath" not in response.get_data(as_text=True)
+
+
+def test_live_workspace_get_returns_only_path_free_context() -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-live", status="running")
+
+    class Context:
+        def to_public_dict(self):
+            return {
+                "projectionState": "LIVE",
+                "attempt": {
+                    "attemptId": "attempt-1234567890abcdef12345678",
+                    "worktreePathSha256": "a" * 64,
+                    "changedPaths": ["src/example.py"],
+                },
+            }
+
+    app = create_test_app(conn, get_live_workspace_context=lambda _conn, _job: Context())
+    response = app.test_client().get(
+        "/api/user/agent/jobs/agent-live/live-workspace",
+        headers={"X-Test-User": "user-1"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["liveWorkspace"]["projectionState"] == "LIVE"
+    raw = response.get_data(as_text=True)
+    assert "worktreePath\"" not in raw
+    assert "/fleet-worktrees/" not in raw
+
+
+def test_live_workspace_get_blocks_windows_and_unc_path_shaped_payloads() -> None:
+    for unsafe_path in ("C:\\fleet-worktrees\\secret.py", "//server/share/secret.py", "\\\\server\\share\\secret.py"):
+        conn = FakeConnection()
+        seed_job(conn, "user-1", "agent-live", status="running")
+
+        class Context:
+            def to_public_dict(self):
+                return {
+                    "projectionState": "LIVE",
+                    "attempt": {"changedPaths": [unsafe_path]},
+                }
+
+        app = create_test_app(conn, get_live_workspace_context=lambda _conn, _job: Context())
+        response = app.test_client().get(
+            "/api/user/agent/jobs/agent-live/live-workspace",
+            headers={"X-Test-User": "user-1"},
+        )
+
+        assert response.status_code == 409
+        assert unsafe_path not in response.get_data(as_text=True)
+
+
+
+def test_desktop_activation_is_owner_scoped_and_path_free() -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-live", status="running")
+    calls = {"resolver": 0, "issuer": 0}
+
+    class Activation:
+        def to_dict(self):
+            return {
+                "activationId": "a" * 64,
+                "sessionBindingHash": "b" * 64,
+                "attemptId": "attempt-" + "c" * 24,
+                "workspaceId": "job-live-workspace",
+                "worktreeIdentityHash": "d" * 64,
+                "imageReference": "ghcr.io/example/desktop@sha256:" + "e" * 64,
+                "runtimeIdentityHash": "f" * 64,
+                "handleHash": "0" * 64,
+                "authoritative": False,
+                "verificationAuthority": False,
+            }
+
+    def resolver(_conn, _job):
+        calls["resolver"] += 1
+        return object()
+
+    def issuer(_context):
+        calls["issuer"] += 1
+        return Activation()
+
+    app = create_test_app(
+        conn,
+        get_live_workspace_context=resolver,
+        issue_desktop_activation=issuer,
+    )
+    foreign = app.test_client().post(
+        "/api/user/agent/jobs/agent-live/live-workspace/desktop/activation",
+        headers={"X-Test-User": "user-2"},
+    )
+    assert foreign.status_code == 404
+    assert calls == {"resolver": 0, "issuer": 0}
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs/agent-live/live-workspace/desktop/activation",
+        headers={"X-Test-User": "user-1"},
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["desktopActivation"]["activationId"] == "a" * 64
+    assert "worktreePath" not in response.get_data(as_text=True)
+    assert calls == {"resolver": 1, "issuer": 1}
+
+
+def test_desktop_frame_is_observational_and_failure_preserves_job_state() -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-live", status="running")
+
+    class Frame:
+        content = b"\x89PNG\r\n\x1a\nframe"
+
+        @staticmethod
+        def observation():
+            return {
+                "frameHash": "a" * 64,
+                "authoritative": False,
+                "targetEffectVerified": False,
+            }
+
+    app = create_test_app(
+        conn,
+        get_live_workspace_context=lambda _conn, _job: object(),
+        get_desktop_frame=lambda _context: Frame(),
+    )
+    response = app.test_client().get(
+        "/api/user/agent/jobs/agent-live/live-workspace/desktop/frame",
+        headers={"X-Test-User": "user-1"},
+    )
+    assert response.status_code == 200
+    assert response.content_type == "image/png"
+    assert response.headers["X-Sovereign-Observation"] == "OBSERVED"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert conn.jobs["agent-live"]["status"] == "running"
+
+    unavailable = create_test_app(
+        conn,
+        get_live_workspace_context=lambda _conn, _job: object(),
+        get_desktop_frame=lambda _context: None,
+    ).test_client().get(
+        "/api/user/agent/jobs/agent-live/live-workspace/desktop/frame",
+        headers={"X-Test-User": "user-1"},
+    )
+    assert unavailable.status_code == 409
+    assert unavailable.get_json()["reason"] == "DESKTOP_FRAME_UNAVAILABLE"
+    assert conn.jobs["agent-live"]["status"] == "running"
 
 
 def test_cancel_non_terminal_job_sets_blocked():
@@ -875,6 +1130,81 @@ def test_rescue_capsule_rejects_request_fields_and_cross_tenant_access(monkeypat
     assert cross_tenant.content_type.startswith("application/json")
 
 
+def test_desktop_control_routes_are_user_scoped_and_accept_no_extra_authority() -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-control", status="running")
+    context = SimpleNamespace(to_public_dict=lambda: {"sessionBindingHash": "a" * 64})
+    captured = {}
+
+    def takeover(current, user_id):
+        captured["takeover"] = (current, user_id)
+        return {
+            "ok": True,
+            "desktopActivation": {"activationId": "b" * 64, "authoritative": False},
+            "control": {"leaseId": "livelease-1", "state": "USER_CONTROLLED", "authoritative": False},
+        }
+
+    def give_back(current, user_id, activation_id, lease_id):
+        captured["giveBack"] = (current, user_id, activation_id, lease_id)
+        return {"ok": True, "control": {"leaseId": lease_id, "state": "AGENT_CONTROLLED_REBOUND"}, "reason": None}
+
+    def user_input(current, user_id, activation_id, lease_id, arguments):
+        captured["input"] = (current, user_id, activation_id, lease_id, arguments)
+        return {"ok": True, "status": "SENT", "actionId": arguments["actionId"], "authoritative": False}
+
+    app = create_test_app(
+        conn,
+        get_live_workspace_context=lambda _conn, _job: context,
+        take_desktop_control=takeover,
+        give_back_desktop_control=give_back,
+        send_desktop_user_input=user_input,
+    )
+    client = app.test_client()
+
+    rejected = client.post(
+        "/api/user/agent/jobs/agent-control/live-workspace/desktop/takeover",
+        headers={"X-Test-User": "user-1"},
+        json={"deploy": True},
+    )
+    assert rejected.status_code == 400
+
+    active = client.post(
+        "/api/user/agent/jobs/agent-control/live-workspace/desktop/takeover",
+        headers={"X-Test-User": "user-1"},
+        json={},
+    )
+    assert active.status_code == 200
+    assert active.get_json()["control"]["state"] == "USER_CONTROLLED"
+    assert captured["takeover"][1] == "user-1"
+
+    sent = client.post(
+        "/api/user/agent/jobs/agent-control/live-workspace/desktop/input",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "activationId": "b" * 64,
+            "leaseId": "livelease-1",
+            "input": {"actionId": "human-1", "action": "click", "x": 1, "y": 1},
+        },
+    )
+    assert sent.status_code == 200
+    assert captured["input"][-1]["action"] == "click"
+
+    rebound = client.post(
+        "/api/user/agent/jobs/agent-control/live-workspace/desktop/give-back",
+        headers={"X-Test-User": "user-1"},
+        json={"activationId": "b" * 64, "leaseId": "livelease-1"},
+    )
+    assert rebound.status_code == 200
+    assert rebound.get_json()["control"]["state"] == "AGENT_CONTROLLED_REBOUND"
+
+    other = client.post(
+        "/api/user/agent/jobs/agent-control/live-workspace/desktop/takeover",
+        headers={"X-Test-User": "user-2"},
+        json={},
+    )
+    assert other.status_code == 404
+
+
 def test_rescue_capsule_blocks_stale_workspace_base(monkeypatch, tmp_path: Path):
     conn = FakeConnection()
     user_id, repair_id, _ = seed_capsule_evidence(conn, tmp_path)
@@ -892,3 +1222,129 @@ def test_rescue_capsule_blocks_stale_workspace_base(monkeypatch, tmp_path: Path)
     assert response.status_code == 409
     assert response.get_json()["blocker"] == "capsule_workspace_base_stale"
     assert response.get_json()["mutationPerformed"] is False
+
+
+def _chat_session_stub(user_id: str = "user-1"):
+    return SimpleNamespace(
+        session_id="livechat-" + ("a" * 24),
+        user_id=user_id,
+        to_public_dict=lambda: {
+            "schemaVersion": "sovereign.live-workspace-chat-session.v1",
+            "sessionId": "livechat-" + ("a" * 24),
+            "repositoryIdentity": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            "repositoryBranch": "main",
+            "recordedAt": "2026-08-23T01:00:00+00:00",
+            "persistence": "postgresql",
+            "authoritative": False,
+        },
+    )
+
+
+def test_live_workspace_chat_routes_use_server_identity_and_typed_mission_only(monkeypatch) -> None:
+    conn = FakeConnection()
+    session = _chat_session_stub()
+    captured = {}
+
+    monkeypatch.setattr(
+        routes_module,
+        "resolve_live_workspace_chat_session",
+        lambda _conn, **kwargs: session,
+    )
+    monkeypatch.setattr(
+        routes_module,
+        "read_live_workspace_chat_session",
+        lambda _conn, **kwargs: session if kwargs["user_id"] == "user-1" else None,
+    )
+    monkeypatch.setattr(
+        routes_module,
+        "list_live_workspace_chat_bubbles",
+        lambda _conn, **kwargs: [],
+    )
+
+    def append_bubble(_conn, **kwargs):
+        captured.update(kwargs)
+        return {
+            "schemaVersion": "sovereign.live-workspace-chat-bubble.v1",
+            "persistenceSchemaVersion": "sovereign.live-workspace-chat-persistence.v1",
+            "sessionId": session.session_id,
+            "clientMessageId": kwargs["client_message_id"],
+            "bubbleKind": kwargs["bubble_kind"],
+            "sourceKind": kwargs["source_kind"],
+            "text": kwargs["text"],
+            "canonicalReferenceHashes": [],
+            "sessionBindingHash": None,
+            "runId": None,
+            "attemptId": None,
+            "workflowState": kwargs["workflow_state"],
+            "boundRevision": None,
+            "effectKind": None,
+            "targetHash": None,
+            "consentBindingHash": None,
+            "bubbleHash": "b" * 64,
+            "recordedAt": "2026-08-23T01:00:00+00:00",
+            "authoritative": False,
+        }
+
+    monkeypatch.setattr(routes_module, "append_live_workspace_chat_bubble", append_bubble)
+    client = create_test_app(conn).test_client()
+
+    resolved = client.post(
+        "/api/user/agent/live-workspace/chat-session",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "repositoryIdentity": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            "repositoryBranch": "main",
+            "userId": "attacker-controlled",
+        },
+    )
+    assert resolved.status_code == 200
+    assert resolved.get_json()["session"]["persistence"] == "postgresql"
+
+    mission = client.post(
+        f"/api/user/agent/live-workspace/chat-session/{session.session_id}/mission",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "clientMessageId": "mission-1",
+            "text": "Repariere den Login.",
+            "bubbleKind": "FINAL_RESULT",
+            "workflowState": "VERIFIED",
+        },
+    )
+    assert mission.status_code == 201
+    assert mission.get_json()["bubble"]["bubbleKind"] == "MISSION_INPUT"
+    assert captured["user_id"] == "user-1"
+    assert captured["bubble_kind"] == "MISSION_INPUT"
+    assert captured["source_kind"] == "USER_INPUT"
+    assert captured["canonical_reference_hashes"] == ()
+
+
+def test_live_workspace_chat_readback_is_user_scoped(monkeypatch) -> None:
+    conn = FakeConnection()
+    monkeypatch.setattr(
+        routes_module,
+        "read_live_workspace_chat_session",
+        lambda _conn, **kwargs: None,
+    )
+    client = create_test_app(conn).test_client()
+    response = client.get(
+        "/api/user/agent/live-workspace/chat-session/livechat-" + ("a" * 24) + "/bubbles",
+        headers={"X-Test-User": "other-user"},
+    )
+    assert response.status_code == 404
+
+
+def test_live_workspace_chat_persistence_failure_is_blocking(monkeypatch) -> None:
+    conn = FakeConnection()
+    monkeypatch.setattr(
+        routes_module,
+        "resolve_live_workspace_chat_session",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("database unavailable")),
+    )
+    client = create_test_app(conn).test_client()
+    response = client.post(
+        "/api/user/agent/live-workspace/chat-session",
+        headers={"X-Test-User": "user-1"},
+        json={"repositoryIdentity": "UNBOUND", "repositoryBranch": "main"},
+    )
+    assert response.status_code == 503
+    assert response.get_json()["reason"] == "CHAT_POSTGRES_PERSISTENCE_UNAVAILABLE"

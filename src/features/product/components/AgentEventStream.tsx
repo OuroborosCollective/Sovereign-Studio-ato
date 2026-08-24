@@ -15,7 +15,9 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { C } from "./builderConstants";
 import type { AgentWorkSnapshot, AgentWorkState } from "../runtime/agentWorkRuntime";
-import type { SovereignAgentJobSnapshot, SovereignAgentRuntimeEvent } from "../runtime/sovereignAgentRuntime";
+import type { SovereignAgentJobSnapshot, SovereignAgentRuntimeEvent, SovereignLiveProjection, SovereignWorkspaceEvidenceAnchor } from "../runtime/sovereignAgentRuntime";
+import { WorkspaceEvidenceRail } from './WorkspaceEvidenceRail';
+import { LiveWorkspaceMonitor } from './LiveWorkspaceMonitor';
 
 interface StreamEvent {
   readonly id: string;
@@ -30,6 +32,8 @@ interface StreamEvent {
 export interface AgentEventStreamProps {
   readonly snapshot: AgentWorkSnapshot;
   readonly job?: SovereignAgentJobSnapshot | null;
+  readonly projections?: readonly SovereignLiveProjection[];
+  readonly evidenceAnchors?: readonly SovereignWorkspaceEvidenceAnchor[];
   readonly onCancel?: () => void;
   readonly onOpenDraftPr?: () => void;
   readonly onOpenFile?: (path: string) => void;
@@ -225,7 +229,7 @@ function headerColorFor(snapshot: AgentWorkSnapshot): string {
   return C.sky;
 }
 
-export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpenFile }: AgentEventStreamProps) {
+export function AgentEventStream({ snapshot, job, projections = [], evidenceAnchors = [], onCancel, onOpenDraftPr, onOpenFile }: AgentEventStreamProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isActive = !isTerminalState(snapshot.state) && (
     isExecutorActive(snapshot.state) || job?.status === 'running' || job?.status === 'queued'
@@ -252,7 +256,7 @@ export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpe
     ? snapshot.repoFullName + (snapshot.branchName ? ` · ${snapshot.branchName}` : '')
     : null;
 
-  if (stream.length === 0) return null;
+  if (stream.length === 0 && projections.length === 0 && evidenceAnchors.length === 0) return null;
 
   return (
     <>
@@ -278,6 +282,9 @@ export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpe
         <div ref={scrollRef} style={{ padding: '8px 12px', maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0 }}>
           {stream.map((event) => <EventRow key={event.id} event={event} />)}
         </div>
+
+        <LiveWorkspaceMonitor projections={projections} job={job} />
+        <WorkspaceEvidenceRail anchors={evidenceAnchors} />
 
         {changedFiles.length > 0 && (
           <div style={{ padding: '6px 12px', borderTop: `1px solid ${C.border}`, display: 'flex', flexWrap: 'wrap', gap: 5 }}>

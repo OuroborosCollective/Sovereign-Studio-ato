@@ -39,6 +39,7 @@ from freellm_provider_credentials import (
 from free_revolver_provider_contracts import (
     ManagedKeyContractError,
     assert_provider_target_allowed,
+    classify_provider_surface,
     general_chat_response_verified,
     is_managed_internal_provider_url,
     is_specialist_model_identifier,
@@ -562,9 +563,16 @@ def _request_owner_input(
 
 def _source_payload(source: dict[str, Any], models: list[dict[str, Any]]) -> dict[str, Any]:
     managed_source = managed_internal_source_spec(source.get("api_base")) or {}
+    control = classify_provider_surface(
+        api_base=source.get("api_base"),
+        last_error_code=source.get("last_error_code"),
+    )
     return {
         "id": str(source.get("id") or ""),
         "sourceType": str(managed_source.get("sourceId") or "external-free-provider"),
+        "providerSurfaceKind": control["providerSurfaceKind"],
+        "lifecycle": control["lifecycle"],
+        "canonicalAction": control["canonicalAction"],
         "label": str(source.get("label") or ""),
         "apiBase": str(source.get("api_base") or ""),
         "modelsUrl": source.get("models_url"),
@@ -1502,6 +1510,20 @@ def register_free_revolver_provider_runtime(
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc), "blocker": "free_provider_url_invalid"}), 400
+        control = classify_provider_surface(
+            api_base=api_base,
+            last_error_code=None,
+        )
+        if (
+            control["canonicalAction"] != "revolver-discover"
+            or control["providerSurfaceKind"] != "free-revolver"
+        ):
+            return jsonify({
+                "error": "Dieser Provider kann nur über seine kanonische typisierte Aktion erstellt oder verändert werden.",
+                "blocker": "canonical_provider_action_required",
+                "providerSurfaceKind": control["providerSurfaceKind"],
+                "canonicalAction": control["canonicalAction"],
+            }), 409
         existing = query(
             "SELECT id::text FROM llm_revolver_provider_sources WHERE lower(api_base)=lower(%s) LIMIT 1",
             (api_base,), one=True,
@@ -1561,16 +1583,28 @@ def register_free_revolver_provider_runtime(
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         source = query(
-            "SELECT id::text, label FROM llm_revolver_provider_sources WHERE id=%s::uuid LIMIT 1",
+            """SELECT id::text, label, api_base, last_error_code, auth_mode
+               FROM llm_revolver_provider_sources
+               WHERE id=%s::uuid LIMIT 1""",
             (source_id,), one=True,
         )
         if not source:
             return jsonify({"error": "Free-Provider nicht gefunden"}), 404
-        auth = query(
-            "SELECT auth_mode FROM llm_revolver_provider_sources WHERE id=%s::uuid LIMIT 1",
-            (source_id,), one=True,
-        ) or {}
-        if str(auth.get("auth_mode") or "") in {"none", _MANAGED_AUTH_MODE}:
+        control = classify_provider_surface(
+            api_base=source.get("api_base"),
+            last_error_code=source.get("last_error_code"),
+        )
+        if (
+            control["canonicalAction"] != "revolver-discover"
+            or control["providerSurfaceKind"] != "free-revolver"
+        ):
+            return jsonify({
+                "error": "Dieser Provider kann nur über seine kanonische typisierte Aktion verändert werden.",
+                "blocker": "canonical_provider_action_required",
+                "providerSurfaceKind": control["providerSurfaceKind"],
+                "canonicalAction": control["canonicalAction"],
+            }), 409
+        if str(source.get("auth_mode") or "") in {"none", _MANAGED_AUTH_MODE}:
             return jsonify({"error": "Dieser Provider verwendet keinen erneuerbaren Owner-Input-Key"}), 409
         try:
             request_id = _request_owner_input(
@@ -1931,12 +1965,24 @@ def register_free_revolver_provider_runtime(
             return jsonify({"error": str(exc)}), 400
         source = query(
             """SELECT id::text, label, api_base, models_url, auth_mode,
-                      owner_request_id::text, key_fingerprint, key_hint, status, enabled
+                      owner_request_id::text, key_fingerprint, key_hint, status, enabled,
+                      last_error_code
                FROM llm_revolver_provider_sources WHERE id=%s::uuid LIMIT 1""",
             (source_id,), one=True,
         )
         if not source:
             return jsonify({"error": "Free-Provider nicht gefunden"}), 404
+        control = classify_provider_surface(
+            api_base=source.get("api_base"),
+            last_error_code=source.get("last_error_code"),
+        )
+        if control["canonicalAction"] != "revolver-discover":
+            return jsonify({
+                "error": "Dieser Provider verwendet eine dedizierte kanonische Laufzeitprüfung.",
+                "blocker": "canonical_provider_action_required",
+                "providerSurfaceKind": control["providerSurfaceKind"],
+                "canonicalAction": control["canonicalAction"],
+            }), 409
         owner_request_id = str(source.get("owner_request_id") or "")
         owner_request = query(
             """SELECT status, target_id FROM owner_input_requests
@@ -2345,13 +2391,29 @@ def register_free_revolver_provider_runtime(
             }), 409
         source = query(
             """SELECT id::text, label, api_base, auth_mode, key_fingerprint,
-                      models_url, status, enabled
+                      models_url, status, enabled, last_error_code
                FROM llm_revolver_provider_sources
                WHERE id=%s::uuid
                LIMIT 1""",
             (source_id,),
             one=True,
         )
+        if source:
+            control = classify_provider_surface(
+                api_base=source.get("api_base"),
+                last_error_code=source.get("last_error_code"),
+            )
+            if (
+                control["canonicalAction"] != "revolver-discover"
+                or control["providerSurfaceKind"] != "free-revolver"
+            ):
+                return jsonify({
+                    "error": "Dieser Provider kann nur über seine kanonische typisierte Aktion verändert werden.",
+                    "blocker": "canonical_provider_action_required",
+                    "providerSurfaceKind": control["providerSurfaceKind"],
+                    "canonicalAction": control["canonicalAction"],
+                    "protectedValuesReturned": False,
+                }), 409
         if (
             not source
             or not bool(source.get("enabled"))
@@ -2929,6 +2991,7 @@ def register_free_revolver_provider_runtime(
         source = query(
             """SELECT id::text, label, api_base, auth_mode, key_fingerprint,
                       models_url, last_http_status, last_discovered_at, enabled,
+                      last_error_code,
                       (
                           last_discovered_at IS NOT NULL
                           AND last_discovered_at >= NOW() - INTERVAL '24 hours'
@@ -2939,6 +3002,22 @@ def register_free_revolver_provider_runtime(
             (source_id,),
             one=True,
         )
+        if source:
+            control = classify_provider_surface(
+                api_base=source.get("api_base"),
+                last_error_code=source.get("last_error_code"),
+            )
+            if (
+                control["canonicalAction"] != "revolver-discover"
+                or control["providerSurfaceKind"] != "free-revolver"
+            ):
+                return jsonify({
+                    "error": "Dieser Provider kann nur über seine kanonische typisierte Aktion verändert werden.",
+                    "blocker": "canonical_provider_action_required",
+                    "providerSurfaceKind": control["providerSurfaceKind"],
+                    "canonicalAction": control["canonicalAction"],
+                    "protectedValuesReturned": False,
+                }), 409
         if (
             not source
             or not bool(source.get("enabled"))
@@ -3422,12 +3501,24 @@ def register_free_revolver_provider_runtime(
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         source = query(
-            """SELECT id::text, api_base, auth_mode, key_fingerprint
+            """SELECT id::text, api_base, auth_mode, key_fingerprint, last_error_code
                FROM llm_revolver_provider_sources
                WHERE id=%s::uuid AND enabled=true LIMIT 1""",
             (source_id,),
             one=True,
         )
+        if source:
+            control = classify_provider_surface(
+                api_base=source.get("api_base"),
+                last_error_code=source.get("last_error_code"),
+            )
+            if control["canonicalAction"] != "revolver-discover":
+                return jsonify({
+                    "error": "Dieser Provider verwendet eine dedizierte kanonische Laufzeitprüfung.",
+                    "blocker": "canonical_provider_action_required",
+                    "providerSurfaceKind": control["providerSurfaceKind"],
+                    "canonicalAction": control["canonicalAction"],
+                }), 409
         if (
             not source
             or str(source.get("auth_mode") or "") != _MANAGED_AUTH_MODE
@@ -3635,6 +3726,25 @@ def register_free_revolver_provider_runtime(
         if "enabled" not in body:
             return jsonify({"error": "Nur enabled kann hier geändert werden"}), 400
         enabled = bool(body["enabled"])
+        source = query(
+            """SELECT api_base, last_error_code
+               FROM llm_revolver_provider_sources WHERE id=%s::uuid LIMIT 1""",
+            (source_id,),
+            one=True,
+        )
+        if not source:
+            return jsonify({"error": "Free-Provider nicht gefunden"}), 404
+        control = classify_provider_surface(
+            api_base=source.get("api_base"),
+            last_error_code=source.get("last_error_code"),
+        )
+        if control["canonicalAction"] != "revolver-discover":
+            return jsonify({
+                "error": "Dieser Provider verwendet eine dedizierte kanonische Laufzeitprüfung.",
+                "blocker": "canonical_provider_action_required",
+                "providerSurfaceKind": control["providerSurfaceKind"],
+                "canonicalAction": control["canonicalAction"],
+            }), 409
         connection = get_connection()
         try:
             with connection.cursor() as cursor:

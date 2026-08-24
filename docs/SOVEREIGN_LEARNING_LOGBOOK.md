@@ -270,3 +270,23 @@ Dieses Logbuch enthält ausschließlich evidence-geprüfte, deduplizierte Lernmu
 - Managed Compose tests (repository_check, SHA-256 6b24fae8ef369e64a1ede2fc99a39fb2a31097fd4afe579c766febdae2d9f9a9): Thirty-one managed-compose tests passed with the OmniRoute stack in the exact allowlist.
 - OmniRoute managed-compose tests (repository_check, SHA-256 8d64adaee8cf351d52679671dc32fe0175865bc971942f87e970c6a70ba51a4d): Six focused tests passed, covering OmniRoute stack replacement, transport policy, models canary and identity-bound legacy retirement.
 
+<!-- proven-learning:700ee2ee661ba3d1f1fe8dda716d5b6fbb3462c17ce558d99dc9f8639dc27a55 -->
+## Fail closed before a typed OmniRoute engine route can change product state
+
+- Zeitpunkt: 2026-08-23T09:13:01.693000Z
+- Vorgang: fix
+- Inhalts-Hash: sha256:700ee2ee661ba3d1f1fe8dda716d5b6fbb3462c17ce558d99dc9f8639dc27a55
+- Quellrevision: e7022f535fb95775370a3e0133eb07d79d9f9351
+- Merge-Ziel: main
+- Erwarteter PR-Head: e7022f535fb95775370a3e0133eb07d79d9f9351
+- Geänderte Pfade: backend/free_revolver_provider_contracts.py, scripts/sovereign-backend/app.py, scripts/sovereign-backend/free_revolver_provider_runtime.py, scripts/sovereign-backend/omniroute_execution_runtime.py, scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py, scripts/sovereign-backend/tests/test_omniroute_route_replacement_runtime.py, src/features/admin/api/adminApiClient.ts, tests/e2e/admin-typed-provider-surface.spec.ts
+- Problem: A dedicated keyless OmniRoute runtime was treated as a generic discoverable provider. Its private internal endpoint then failed generic safe-provider detection and surfaced the misleading free-provider error; historical FreeLLMPool evidence could also be confused with an executable provider surface.
+- Lösung: Separate generic discovery from the dedicated OmniRoute boundary. Reject OmniRoute and historical sources before generic owner-input writes. Permit route activation or status projection only when the canonical route, source, and model match the complete typed execution identity; use a locked transaction, exact rowcount guards, double canary, and accepted typed readback before product state can change.
+- Gültigkeit: Use for provider runtimes where an internal route is operationally distinct from generic provider discovery, especially when free quota claims, historical migration records, and UI aggregation can otherwise cause stale or unverified state to appear selectable.
+- Quellen: OuroborosCollective/Sovereign-Studio-ato@e7022f535fb95775370a3e0133eb07d79d9f9351:scripts/sovereign-backend/omniroute_execution_runtime.py; OuroborosCollective/Sovereign-Studio-ato@e7022f535fb95775370a3e0133eb07d79d9f9351:scripts/sovereign-backend/tests/test_omniroute_route_replacement_runtime.py
+
+### Nachweise
+
+- Exact-head GitHub Actions readback (github_actions, SHA-256 e2f801c21e1f6c3f37e2f3b3421b775af703dd7404e8bd554f619c41792899f0): PR #1663 at e7022f535fb95775370a3e0133eb07d79d9f9351 had 53 terminal checks with no failures, including release, runtime, E2E, type-check/tests/build, image build, security, CodeQL and Android validation.
+- Exact workspace revision resolution (repository_check, SHA-256 4380fb1903f03e13cf5618fcfd6c734aea8a474af60d0d520b0894fe5f108246): Workspace and PR head matched e7022f535fb95775370a3e0133eb07d79d9f9351; worktree was clean, base had not advanced, and CI was terminal with no failures.
+

@@ -1,0 +1,56 @@
+name: Desktop Worker
+
+on:
+  pull_request:
+    paths:
+      - "containers/sovereign-desktop-worker/**"
+      - "backend/agent_runtime/desktop_*.py"
+      - "backend/tests/test_desktop_*.py"
+      - "tools/sovereign-chatgpt-mcp/desktop_worker.py"
+      - "tools/sovereign-chatgpt-mcp/tests/test_desktop_worker.py"
+      - ".github/workflows/desktop-worker.yml"
+  push:
+    branches: [main]
+    paths:
+      - "containers/sovereign-desktop-worker/**"
+      - "backend/agent_runtime/desktop_*.py"
+      - "backend/tests/test_desktop_*.py"
+      - "tools/sovereign-chatgpt-mcp/desktop_worker.py"
+      - "tools/sovereign-chatgpt-mcp/tests/test_desktop_worker.py"
+      - ".github/workflows/desktop-worker.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build immutable-base desktop worker
+        run: docker build --pull=false --tag sovereign-desktop-worker:ci containers/sovereign-desktop-worker
+
+      - name: Run isolated desktop canary
+        shell: bash
+        run: |
+          set -euo pipefail
+          scope_dir="$(mktemp -d)"
+          workspace_dir="$(mktemp -d)"
+          trap 'docker rm --force sovereign-desktop-ci >/dev/null 2>&1 || true; docker network rm sovereign-desktop-ci >/dev/null 2>&1 || true; rm -rf "$scope_dir" "$workspace_dir"' EXIT
+          printf '%s' 'view-scope-ci-value-000000000000000000000000' > "$scope_dir/view"
+          printf '%s' 'input-scope-ci-value-00000000000000000000000' > "$scope_dir/input"
+          chmod 0444 "$scope_dir/view" "$scope_dir/input"
+          docker network create --internal sovereign-desktop-ci
+          docker run --detach --init --name sovereign-desktop-ci             --user 10001:10001             --read-only             --security-opt no-new-privileges:true             --cap-drop ALL             --pids-limit 128             --memory 1073741824             --cpus 1.0             --network sovereign-desktop-ci             --mount type=bind,src="$workspace_dir",dst=/workspace             --mount type=bind,src="$scope_dir/view",dst=/opt/desktop-scopes/view,readonly             --mount type=bind,src="$scope_dir/input",dst=/opt/desktop-scopes/input,readonly             --tmpfs /tmp:rw,noexec,nosuid,size=128m             --tmpfs /run:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700             --tmpfs /home/desktop:rw,noexec,nosuid,size=128m,uid=10001,gid=10001,mode=0700             --env DESKTOP_VIEW_SCOPE_FILE=/opt/desktop-scopes/view             --env DESKTOP_INPUT_SCOPE_FILE=/opt/desktop-scopes/input             --env DESKTOP_RUNTIME_IDENTITY_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa             --env DESKTOP_WALL_TIME_SECONDS=600             --env DESKTOP_IDLE_TIMEOUT_SECONDS=300             sovereign-desktop-worker:ci
+          for _ in $(seq 1 24); do
+            health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' sovereign-desktop-ci)"
+            [ "$health" = healthy ] && break
+            sleep 2
+          done
+          [ "$(docker inspect --format '{{.State.Health.Status}}' sovereign-desktop-ci)" = healthy ]
+          docker exec sovereign-desktop-ci python3 -c "from pathlib import Path; from urllib.request import Request,urlopen; scope=Path('/opt/desktop-scopes/view').read_text().strip(); response=urlopen(Request('http://127.0.0.1:8765/frame',headers={'X-Sovereign-Desktop-Scope':scope}),timeout=8); assert response.status==200 and response.read(4)==bytes([137,80,78,71])"
+          inspect="$(docker inspect sovereign-desktop-ci)"
+          jq -e '.[0].HostConfig.Privileged == false and .[0].HostConfig.ReadonlyRootfs == true and (.[] | .NetworkSettings.Ports | length == 0)' <<<"$inspect" >/dev/null
+          jq -e '.[0].NetworkSettings.Networks | keys == ["sovereign-desktop-ci"]' <<<"$inspect" >/dev/null
