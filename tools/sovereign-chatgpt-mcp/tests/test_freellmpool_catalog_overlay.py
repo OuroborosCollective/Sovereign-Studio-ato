@@ -81,10 +81,11 @@ def test_entrypoint_installs_overlay_fail_closed_without_persisting_it() -> None
     assert "/var/lib/freellmpool/sovereign-freellmpool-providers.toml" not in source
 
 
-def test_overlay_fix_does_not_weaken_deploy_readiness_or_request_bound() -> None:
+def test_overlay_fix_does_not_override_canonical_deploy_readiness_or_request_bound() -> None:
     deploy = DEPLOY_PATH.read_text("utf-8")
 
-    assert "minimum_ready_routes = 7" in deploy
+    assert 'minimum_ready_routes = int(provider_status.get("minimumReadyRoutes") or 0)' in deploy
+    assert "minimum_ready_routes = 7" not in deploy
     assert '"minimumReadyRoutes": minimum_ready_routes' in deploy
     assert '"minimumReadySatisfied": len(verified_receipts) >= minimum_ready_routes' in deploy
     assert 'payload={"maxModels": 20}' in deploy

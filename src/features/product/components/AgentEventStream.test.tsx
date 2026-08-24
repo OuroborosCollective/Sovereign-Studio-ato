@@ -141,6 +141,47 @@ describe('AgentEventStream', () => {
     expect(screen.queryByText(/unknown\/repo/i)).toBeNull();
   });
 
+  it('uses the live monitor as the primary surface without duplicating event rows', () => {
+    const projection: SovereignLiveProjection = {
+      projectionId: 'visual-primary-1',
+      eventId: 'visual-primary-1',
+      sessionId: 'livews-1234567890abcdef12345678',
+      sessionBindingHash: 'e'.repeat(64),
+      attemptId: 'attempt-1234567890abcdef12345678',
+      workspaceId: 'workspace-1',
+      actionId: 'action-primary-123',
+      sourceKind: 'PROCESS',
+      projectionKind: 'TERMINAL',
+      projectionState: 'VISIBLE',
+      repositoryHead: 'a'.repeat(40),
+      sourceReceiptRef: 'b'.repeat(64),
+      sourceIdentityHash: 'c'.repeat(64),
+      payload: { chunk: 'runtime monitor output', processState: 'RUNNING' },
+      projectionHash: 'd'.repeat(64),
+      authoritative: false,
+      claim: 'OBSERVED',
+    };
+
+    render(
+      <AgentEventStream
+        snapshot={runningSnapshot()}
+        job={runningJob({ jobId: 'job-1', workspaceId: 'workspace-1' })}
+        projections={[projection]}
+        primaryMonitor
+        onCancel={() => undefined}
+      />,
+    );
+
+    expect(screen.getByTestId('agent-event-stream-primary-monitor')).toHaveAttribute(
+      'data-primary-surface',
+      'desktop-monitor',
+    );
+    expect(screen.getByTestId('live-workspace-monitor')).toBeTruthy();
+    expect(screen.getByText('runtime monitor output')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Abbrechen' })).toBeTruthy();
+    expect(screen.queryByText(/Executor gestartet/)).toBeNull();
+  });
+
   it('renders receipt-bound terminal projection as observation, never as evidence truth', () => {
     const projection: SovereignLiveProjection = {
       projectionId: 'visual-1',

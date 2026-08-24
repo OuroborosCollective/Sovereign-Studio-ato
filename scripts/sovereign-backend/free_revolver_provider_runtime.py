@@ -1473,10 +1473,12 @@ def register_free_revolver_provider_runtime(
                 (source["id"],),
             ) or []
             result.append(_source_payload(dict(source), [dict(row) for row in models]))
+        minimum_ready_routes = _minimum_ready_routes()
         return jsonify({
             "ok": True,
             "schemaVersion": "sovereign.free-revolver-provider-admin.v1",
             "truthOwner": "postgresql-owner-input-direct-freellm",
+            "minimumReadyRoutes": minimum_ready_routes,
             "providers": result,
             "keyStorage": "owner-managed-direct-freellm",
             "activationRule": "managed-free-quota-plus-revision-bound-double-canary-without-positive-cost-contradiction",
@@ -2945,10 +2947,19 @@ def register_free_revolver_provider_runtime(
                 "keyCount": int(state.get("keyCount") or 0),
                 "permissionsValid": state.get("permissionsValid"),
             })
+        minimum_ready_routes = _minimum_ready_routes()
+        total_ready_routes = sum(
+            int(provider.get("readyCount") or 0)
+            for provider in providers
+            if provider.get("enabled") is True
+        )
         return jsonify({
             "ok": True,
             "status": "FREELLM_PROVIDER_STATUS",
             "providers": providers,
+            "minimumReadyRoutes": minimum_ready_routes,
+            "readyCount": total_ready_routes,
+            "minimumReadySatisfied": total_ready_routes >= minimum_ready_routes,
             "credentialPools": credential_pools,
             "ownerManagedCredentialCount": sum(
                 item["keyCount"]

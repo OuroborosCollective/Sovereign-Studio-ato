@@ -60,6 +60,7 @@ def test_enterprise_postgres_probe_accepts_production_version_ledger_layout() ->
             "revolver_state": True,
             "package_uniqueness": True,
             "transaction_receipts": True,
+            "latest_migration": 60,
         }
 
     service = EnterprisePlatformService(query=query)
@@ -67,11 +68,15 @@ def test_enterprise_postgres_probe_accepts_production_version_ledger_layout() ->
 
     assert result["status"] == "verified"
     assert result["blocker"] is None
-    assert result["evidence"]["latestMigration"] == 27
+    assert result["evidence"]["latestMigration"] == 60
     assert result["evidence"]["releaseSchemaVerified"] is True
     assert statements
-    assert all("schema_migrations" not in statement for statement in statements)
-    assert all("MAX(id)" not in statement for statement in statements)
+    probe_sql = next(statement for statement in statements if "platform:probe:postgresql" in statement)
+    assert "schema_migrations" in probe_sql
+    assert "to_jsonb(sm)->>'version'" in probe_sql
+    assert "to_jsonb(sm)->>'id'" in probe_sql
+    assert "^[0-9]{1,3}$" in probe_sql
+    assert "MAX(id)" not in probe_sql
 
 
 def test_enterprise_postgres_probe_blocks_when_release_schema_is_incomplete() -> None:

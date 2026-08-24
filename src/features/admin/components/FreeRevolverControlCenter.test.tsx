@@ -8,6 +8,7 @@ const sourceId = '0609e75c-8c48-59db-80a4-3155b823205b';
 
 function apiFixture(): UseAdminFreeRevolverProvidersResult {
   return {
+    minimumReadyRoutes: 5,
     providers: [
       {
         id: 'freellmapi-source',
@@ -162,6 +163,7 @@ describe('FreeRevolverControlCenter typed provider action boundary', () => {
     );
 
     expect(within(screen.getByTestId('free-revolver-total-ready')).getByText('0')).toBeVisible();
+    expect(within(screen.getByTestId('free-revolver-minimum-ready')).getByText('0/5')).toBeVisible();
     expect(within(screen.getByTestId('free-revolver-total-verified')).getByText('0')).toBeVisible();
     expect(within(screen.getByTestId('free-revolver-total-blocked')).getByText('1')).toBeVisible();
 
@@ -183,6 +185,7 @@ describe('FreeRevolverControlCenter typed provider action boundary', () => {
     );
 
     expect(within(screen.getByTestId('free-revolver-total-ready')).getByText('1')).toBeVisible();
+    expect(within(screen.getByTestId('free-revolver-minimum-ready')).getByText('0/5')).toBeVisible();
     expect(within(screen.getByTestId('free-revolver-total-verified')).getByText('1')).toBeVisible();
     expect(within(screen.getByTestId('free-revolver-total-blocked')).getByText('0')).toBeVisible();
   });

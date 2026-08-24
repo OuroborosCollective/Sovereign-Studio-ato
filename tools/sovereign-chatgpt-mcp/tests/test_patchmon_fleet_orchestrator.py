@@ -125,6 +125,73 @@ def test_patchmon_revision_binding_prefers_exact_main_workflow_after_merge() -> 
     assert source == "workflow_runs"
 
 
+def test_patchmon_revision_binding_uses_squash_merge_commit_after_merge() -> None:
+    expected = "a" * 40
+    pr_evidence = {
+        "state": "closed",
+        "merged": True,
+        "merged_at": "2026-08-24T03:00:15Z",
+        "head_sha": "b" * 40,
+        "merge_commit_sha": expected,
+    }
+
+    observed, bound, source = server._patchmon_revision_binding(
+        expected,
+        pr_evidence,
+        [],
+    )
+
+    assert observed == expected
+    assert bound is True
+    assert source == "pull_request_merge_commit"
+
+
+def test_patchmon_revision_binding_does_not_accept_old_pr_head_after_merge() -> None:
+    merge_sha = "a" * 40
+    head_sha = "b" * 40
+    pr_evidence = {
+        "state": "closed",
+        "merged": True,
+        "head_sha": head_sha,
+        "merge_commit_sha": merge_sha,
+    }
+
+    observed, bound, source = server._patchmon_revision_binding(
+        head_sha,
+        pr_evidence,
+        [],
+    )
+
+    assert observed == merge_sha
+    assert bound is False
+    assert source == "pull_request_merge_commit"
+
+
+def test_patchmon_revision_binding_uses_open_pr_head_before_merge() -> None:
+    expected = "a" * 40
+    observed, bound, source = server._patchmon_revision_binding(
+        expected,
+        {"state": "open", "merged": False, "head_sha": expected},
+        [],
+    )
+
+    assert observed == expected
+    assert bound is True
+    assert source == "pull_request_head"
+
+
+def test_patchmon_revision_binding_fails_closed_when_merged_pr_has_no_merge_sha() -> None:
+    observed, bound, source = server._patchmon_revision_binding(
+        "a" * 40,
+        {"state": "closed", "merged": True, "head_sha": "b" * 40},
+        [],
+    )
+
+    assert observed == ""
+    assert bound is False
+    assert source == "pull_request_merge_commit"
+
+
 def test_patchmon_revision_binding_fails_closed_when_one_run_has_no_revision() -> None:
     expected = "a" * 40
     workflow_runs = [{"head_sha": expected}, {"status": "PASS"}]

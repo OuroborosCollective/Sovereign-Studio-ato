@@ -99,7 +99,24 @@ class EnterprisePlatformService:
                               WHERE table_schema=current_schema()
                                 AND table_name='transactions'
                                 AND column_name='provider_tx_id'
-                          ) AS transaction_receipts""",
+                          ) AS transaction_receipts,
+                          COALESCE((
+                              SELECT MAX(
+                                  CASE
+                                      WHEN COALESCE(
+                                          to_jsonb(sm)->>'version',
+                                          to_jsonb(sm)->>'id',
+                                          ''
+                                      ) ~ '^[0-9]{1,3}$'
+                                      THEN COALESCE(
+                                          to_jsonb(sm)->>'version',
+                                          to_jsonb(sm)->>'id'
+                                      )::integer
+                                      ELSE NULL
+                                  END
+                              )
+                              FROM schema_migrations AS sm
+                          ), 0) AS latest_migration""",
                 one=True,
             )
             latency = max(0, int((time.monotonic() - started) * 1000))
@@ -112,7 +129,10 @@ class EnterprisePlatformService:
                 and row.get("package_uniqueness")
                 and row.get("transaction_receipts")
             )
-            migration_contract = 27 if release_schema_ready else 25 if evidence_table else 0
+            migration_contract = bounded_int(
+                (row or {}).get("latest_migration"),
+                maximum=100_000,
+            )
             return self._integration(
                 integration_id="postgresql",
                 label="PostgreSQL / Supabase",
@@ -516,21 +536,23 @@ class EnterprisePlatformService:
                      (SELECT COALESCE(SUM(provider_cost_usd), 0) FROM llm_usage_settlements WHERE created_at >= NOW() - INTERVAL '24 hours') AS provider_cost_usd_24h,
                      (SELECT COUNT(*) FROM platform_runtime_evidence) AS evidence_total,
                      (SELECT MAX(observed_at) FROM platform_runtime_evidence) AS latest_evidence_at,
-                     CASE
-                       WHEN to_regclass('public.llm_route_attempts') IS NOT NULL
-                        AND to_regclass('public.llm_route_revolver_state') IS NOT NULL
-                        AND to_regclass('public.uq_credit_packages_name') IS NOT NULL
-                        AND EXISTS (
-                            SELECT 1 FROM information_schema.columns
-                            WHERE table_schema=current_schema()
-                              AND table_name='transactions'
-                              AND column_name='provider_tx_id'
-                        )
-                       THEN 27
-                       WHEN to_regclass('public.platform_runtime_evidence') IS NOT NULL
-                       THEN 25
-                       ELSE 0
-                     END AS latest_migration""",
+                     COALESCE((
+                         SELECT MAX(
+                             CASE
+                                 WHEN COALESCE(
+                                     to_jsonb(sm)->>'version',
+                                     to_jsonb(sm)->>'id',
+                                     ''
+                                 ) ~ '^[0-9]{1,3}$'
+                                 THEN COALESCE(
+                                     to_jsonb(sm)->>'version',
+                                     to_jsonb(sm)->>'id'
+                                 )::integer
+                                 ELSE NULL
+                             END
+                         )
+                         FROM schema_migrations AS sm
+                     ), 0) AS latest_migration""",
                 one=True,
             ) or {}
             try:

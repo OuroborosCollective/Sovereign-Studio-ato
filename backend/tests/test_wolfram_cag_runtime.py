@@ -39,6 +39,16 @@ for name in (
     "resolve_cag_credentials",
 ):
     setattr(adapters_pkg, name, getattr(adapter, name))
+
+_STUBBED_MODULE_KEYS = (
+    "agent_runtime",
+    "agent_runtime.adapters",
+    "agent_runtime.adapters.wolfram_agenttools",
+    "agent_runtime.wolfram_cag_partner_ledger",
+    "flask",
+)
+_saved_sys_modules = {key: sys.modules.get(key) for key in _STUBBED_MODULE_KEYS}
+
 sys.modules["agent_runtime"] = agent_runtime_pkg
 sys.modules["agent_runtime.adapters"] = adapters_pkg
 sys.modules["agent_runtime.adapters.wolfram_agenttools"] = adapter
@@ -51,6 +61,18 @@ flask_module.request = fake_request
 sys.modules["flask"] = flask_module
 
 runtime = _load(ROOT / "backend" / "wolfram_cag_runtime.py", "wolfram_cag_runtime_test")
+
+# The stubs are only needed while the runtime module executes its top-level
+# imports. Restore the previous sys.modules state so this file stays
+# collection-safe inside the shared CI pytest process; the loaded modules
+# keep working through their own bound references.
+for _key, _original in _saved_sys_modules.items():
+    if _original is None:
+        sys.modules.pop(_key, None)
+    else:
+        sys.modules[_key] = _original
+del _key, _original
+
 WolframCagError = adapter.WolframCagError
 WolframCagErrorFamily = adapter.WolframCagErrorFamily
 

@@ -4,7 +4,6 @@ import {
   fetchBillingData,
   fetchEnabledPaymentMethods,
   purchasePackage,
-  cancelSubscription as cancelSubAction,
   selectSubscription,
   selectInvoices,
   selectIsLoading,
@@ -41,11 +40,6 @@ export const useBilling = () => {
     await dispatch(fetchBillingData()).unwrap();
   };
 
-  const cancelSubscription = async () => {
-    await dispatch(cancelSubAction()).unwrap();
-    await dispatch(fetchBillingData()).unwrap();
-  };
-
   const currentPlanId = useMemo(() => subscription?.planId ?? null, [subscription]);
 
   return {
@@ -60,6 +54,5 @@ export const useBilling = () => {
     refresh: () => dispatch(fetchBillingData()),
     purchase,
     updateSubscription,
-    cancelSubscription,
   };
 };
