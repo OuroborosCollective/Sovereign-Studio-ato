@@ -5,6 +5,11 @@
 [![Process: Evidence first](https://img.shields.io/badge/Process-Evidence%20first-111827)](docs/SOVEREIGN_PRODUCT_TRUTH.md)
 [![Truth: Runtime readback](https://img.shields.io/badge/Truth-Runtime%20readback-6D28D9)](docs/CURRENT_STATE_2026-08-03.md)
 
+[![GitHub Stars](https://img.shields.io/github/stars/OuroborosCollective/Sovereign-Studio-ato?style=social)](https://github.com/OuroborosCollective/Sovereign-Studio-ato/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/OuroborosCollective/Sovereign-Studio-ato?style=social)](https://github.com/OuroborosCollective/Sovereign-Studio-ato/network)
+[![GitHub Issues](https://img.shields.io/github/issues/OuroborosCollective/Sovereign-Studio-ato)](https://github.com/OuroborosCollective/Sovereign-Studio-ato/issues)
+[![GitHub PRs](https://img.shields.io/github/issues-pr/OuroborosCollective/Sovereign-Studio-ato)](https://github.com/OuroborosCollective/Sovereign-Studio-ato/pulls)
+
 Sovereign Studio ATO is an Android-first NoCode/AI service and agent workbench for controlled work on real repositories and connected runtime systems. Chat remains the control and question surface; during a live, workspace-bound execution the runtime monitor becomes the primary work surface without hiding the user's ability to communicate.
 
 > [!IMPORTANT]
