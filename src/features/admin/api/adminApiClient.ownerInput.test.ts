@@ -30,9 +30,9 @@ describe('adminApiClient protected owner-input endpoint', () => {
         Accept: 'application/json',
         'Content-Type': 'application/octet-stream',
       }));
-      expect(init?.body).toBeInstanceOf(Uint8Array);
+      expect(ArrayBuffer.isView(init?.body)).toBe(true);
       requestBodyReference = init?.body as Uint8Array;
-      observedBodyCopy = new Uint8Array(requestBodyReference);
+      observedBodyCopy = Uint8Array.from(requestBodyReference);
       return new Response(JSON.stringify({
         ok: true,
         status: 'consumed',
@@ -55,7 +55,9 @@ describe('adminApiClient protected owner-input endpoint', () => {
       status: 'consumed',
       targetId: 'freellm-provider-key',
     });
-    expect(new TextDecoder().decode(observedBodyCopy)).toBe('bounded-owner-input');
+    expect(Array.from(observedBodyCopy ?? [])).toEqual(
+      Array.from(new TextEncoder().encode('bounded-owner-input')),
+    );
     expect(Array.from(requestBodyReference ?? [])).toEqual(
       Array.from({ length: 'bounded-owner-input'.length }, () => 0),
     );
