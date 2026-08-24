@@ -104,6 +104,7 @@ async function installAdminMock(page: Page, calls: Call[]): Promise<void> {
         truthOwner: 'postgresql-owner-input-direct-freellm',
         keyStorage: 'owner-managed-direct-freellm',
         activationRule: 'managed-free-quota-plus-revision-bound-double-canary-without-positive-cost-contradiction',
+        minimumReadyRoutes: 5,
         providers: [
           provider('freellmapi-source'),
           provider('0609e75c-8c48-59db-80a4-3155b823205b', {
@@ -260,6 +261,7 @@ test('renders every typed provider surface and invokes only the canonical OmniRo
   await expect(page.getByTestId('provider-surface-omniroute')).toBeVisible();
   await expect(page.getByTestId('provider-surface-freellm-api')).toBeVisible();
   await expect(page.getByTestId('provider-surface-retired-freellmpool')).toBeVisible();
+  await expect(page.getByTestId('free-revolver-minimum-ready')).toContainText('0/5');
 
   await Promise.all([
     page.waitForRequest(request => (
