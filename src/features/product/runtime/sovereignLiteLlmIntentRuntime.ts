@@ -303,9 +303,15 @@ function chooseRoute(
   });
   if (enabled.length === 0) return null;
   const cleanPreferred = preferredModel?.trim();
-  return enabled.find((route) =>
-    cleanPreferred && (route.routeId === cleanPreferred || route.modelId === cleanPreferred)
-  ) ?? enabled[0];
+  if (cleanPreferred) {
+    // A manual route/model pin is a hard user-visible contract. If it is no
+    // longer present in the backend catalog, intent interpretation must fail
+    // closed instead of silently executing a different route.
+    return enabled.find((route) =>
+      route.routeId === cleanPreferred || route.modelId === cleanPreferred
+    ) ?? null;
+  }
+  return enabled[0];
 }
 
 function buildMessages(args: SovereignDirectLlmIntentRequest): readonly DevChatWorkerMessage[] {
