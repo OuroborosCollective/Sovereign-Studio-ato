@@ -23,8 +23,9 @@ const jsonOnly = process.argv.includes('--json');
 // ─── Collect test files ────────────────────────────────────────────────────
 
 const SKIPPED_DIRECTORIES = new Set([
-  '.git', '.gradle', '.idea', '.sovereign-artifacts', '__pycache__',
-  'build', 'coverage', 'dist', 'generated', 'node_modules', 'vendor',
+  '.git', '.gradle', '.idea', '.mypy_cache', '.nox', '.pytest_cache',
+  '.ruff_cache', '.sovereign-artifacts', '.tox', '.venv', '__pycache__',
+  'build', 'coverage', 'dist', 'env', 'generated', 'node_modules', 'vendor', 'venv',
 ]);
 const JAVASCRIPT_TEST_PATTERN = /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/i;
 const TEST_FILE_PATTERNS = [

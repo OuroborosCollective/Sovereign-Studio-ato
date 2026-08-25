@@ -836,6 +836,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(chatField().value).toBe("");
     // Issue #520: Normal text with repo loaded shows draft card instead of routing to Worker
     await waitFor(() => expect(screen.getByTestId("integration-intent-draft-card")).toBeInTheDocument());
+    expect(screen.getByTestId('sovereign-live-monitor-primary')).toHaveStyle({
+      overflowY: 'auto',
+      overflowX: 'hidden',
+    });
     // Draft card should show the title
     expect(screen.getByText(/Ich habe daraus diesen Integrationsauftrag erkannt/)).toBeInTheDocument();
   });
@@ -2264,6 +2268,54 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
     fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
     expect(screen.getByRole('menuitem', { name: 'GitHub Access' }).getAttribute('title')).toContain('Zugang fehlt');
+  });
+
+  it("ignores a stale OAuth failure after a newer manual PAT validation succeeds for the same repo", async () => {
+    let resolveOAuthValidation: ((response: Response) => void) | null = null;
+    const pendingOAuthValidation = new Promise<Response>((resolve) => {
+      resolveOAuthValidation = resolve;
+    });
+    let validationCalls = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (isAuthBootstrapRequest(input)) return authBootstrapResponse();
+      const url = requestUrl(input);
+      if (url.includes('/api/user/agent/github-access/scope')) {
+        return jsonResponse({ ok: true, scope: 'v1.test-scope.signature' });
+      }
+      if (url.includes('/api/user/agent/github-access/validate')) {
+        validationCalls += 1;
+        const body = requestJsonBody(init);
+        if (typeof body.githubAccessToken === 'string') {
+          return jsonResponse({ ok: true, canWrite: true, code: 'ready', error: null });
+        }
+        return pendingOAuthValidation;
+      }
+      if (url.includes('/git/trees/')) {
+        return jsonResponse({ sha: 'a'.repeat(40), tree: [{ path: 'README.md', type: 'blob', size: 12 }], truncated: false });
+      }
+      if (url.includes('/commits/')) return jsonResponse({ sha: 'c'.repeat(40) });
+      return runtimeSupportResponse(url, init)
+        ?? jsonResponse({ choices: [{ message: { content: 'unused' } }] });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentJob={repoScopedJob({ status: 'completed' })} />);
+    await loadRepoFromChat();
+    useUserStore.setState({ user: { ...TEST_AUTH_USER, githubId: 'oauth-user-123' } });
+    await waitFor(() => expect(validationCalls).toBe(1));
+
+    await validateGitHubAccessFromLauncher();
+    expect(validationCalls).toBe(2);
+    resolveOAuthValidation?.(jsonResponse({ ok: false, canWrite: false, code: 'temporary_error', error: 'stale OAuth failure' }, 503));
+    await act(async () => { await Promise.resolve(); });
+
+    const actionStream = screen.getByRole('log', { name: 'Sovereign Action Stream' });
+    expect(actionStream).toHaveTextContent('GitHub-Zugang bereit');
+    expect(actionStream).not.toHaveTextContent('GitHub OAuth reicht für dieses Repo nicht aus');
+    await new Promise((resolve) => window.setTimeout(resolve, 850));
+    expect(validationCalls).toBe(2);
+    fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
+    expect(screen.getByRole('menuitem', { name: 'GitHub Access' }).getAttribute('title')).toContain('Validiert');
   });
 
   it("serializes rapid duplicate preset submits before React busy state is visible", async () => {

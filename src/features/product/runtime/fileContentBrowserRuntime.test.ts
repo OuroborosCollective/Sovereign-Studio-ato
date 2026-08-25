@@ -52,6 +52,29 @@ describe('fileContentBrowserRuntime', () => {
     expect(result.content).toBe('License text at snapshot A');
     expect(result.sha).toBe(blobSha);
   });
+  it('uses the immutable repository fallback after a selected workspace is typed unusable', async () => {
+    const loadedSnapshotRevision = 'a'.repeat(40);
+    const blobSha = 'd'.repeat(40);
+    const fetcher = vi.fn(async (url, init) => {
+      expect(String(url)).toBe('https://example.invalid/api/toolchain/github/read-file');
+      const payload = JSON.parse(String(init?.body));
+      expect(payload.ref).toBe(loadedSnapshotRevision);
+      return response(200, { content: 'README at immutable snapshot', bytes: 28, sha: blobSha });
+    }) as unknown as typeof fetch;
+    const result = await fetchFileContent({
+      jobId: 'cleaned-workspace-job',
+      workspaceUsable: false,
+      backendBase: 'https://example.invalid',
+      filePath: 'README.md',
+      repoOwner: 'OuroborosCollective',
+      repoName: 'Sovereign-Studio-ato',
+      repoRevision: loadedSnapshotRevision,
+      fetcher,
+    });
+    expect(result.status).toBe('loaded');
+    expect(result.sha).toBe(blobSha);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
   it('blocks mutable branch names for repository fallback previews', async () => {
     const fetcher = vi.fn() as unknown as typeof fetch;
     const result = await fetchFileContent({

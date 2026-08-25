@@ -18,6 +18,7 @@ const REQUIRED_COVERAGE_FILES = [
   'tests/e2e/frontend-endpoint-contract-smoke.spec.ts',
 ];
 const REQUIRED_COVERAGE_ROOTS = ['src', 'backend/tests', 'scripts/tests', 'tests/e2e'];
+const FORBIDDEN_VIRTUAL_ENV_SEGMENTS = new Set(['.nox', '.tox', '.venv', 'env', 'venv']);
 
 function validateCoverageMap(content) {
   let report;
@@ -31,6 +32,10 @@ function validateCoverageMap(content) {
   if (!Array.isArray(report.files) || report.files.length !== report.totalTestFiles) return 'coverage map file count does not match totalTestFiles';
   const files = report.files.map((entry) => entry?.file).filter((file) => typeof file === 'string');
   if (new Set(files).size !== files.length) return 'coverage map contains duplicate test paths';
+  const virtualEnvironmentPath = files.find((file) => (
+    file.split('/').some((segment) => FORBIDDEN_VIRTUAL_ENV_SEGMENTS.has(segment))
+  ));
+  if (virtualEnvironmentPath) return `coverage map contains virtual-environment dependency test ${virtualEnvironmentPath}`;
   for (const file of REQUIRED_COVERAGE_FILES) {
     if (!files.includes(file)) return `coverage map is missing representative test ${file}`;
   }

@@ -3253,11 +3253,13 @@ export function BuilderContainer({
     setActionStream((current) => appendSovereignActionEvent(current, event));
   }, []);
 
+  const githubCredentialValidationGenerationRef = useRef(0);
   const validateCurrentRepoGithubCredential = useCallback(async (
     token: string | undefined,
     maskedToken: string,
     source: 'oauth-session' | 'manual-pat',
   ): Promise<boolean> => {
+    const validationGeneration = ++githubCredentialValidationGenerationRef.current;
     const validationTargetKey = currentRepositoryTargetKey;
     const validationRepoScopeKey = currentRepoScopeKey;
     const validationRepoSnapshot = chatRepoSnapshot;
@@ -3291,6 +3293,10 @@ export function BuilderContainer({
       globalThis.fetch,
       githubAccessApiBase,
     );
+
+    // A newer OAuth/PAT attempt for the same repository owns the state now.
+    // Stale completions must not clear or replace its credential evidence.
+    if (githubCredentialValidationGenerationRef.current !== validationGeneration) return false;
 
     if (
       currentRepositoryTargetKeyRef.current !== validationTargetKey
@@ -3396,7 +3402,9 @@ export function BuilderContainer({
       attempts: attempt.attempts + 1,
       triggerSequence: oauthValidationRetrySequence,
     };
-    void validateCurrentRepoGithubCredential(undefined, 'OAuth', 'oauth-session').then((validated) => {
+    const validationPromise = validateCurrentRepoGithubCredential(undefined, 'OAuth', 'oauth-session');
+    const oauthValidationGeneration = githubCredentialValidationGenerationRef.current;
+    void validationPromise.then((validated) => {
       const latestAttempt = oauthValidationAttemptRef.current;
       if (validated) {
         if (oauthValidationRetryTimerRef.current !== null) {
@@ -3408,6 +3416,7 @@ export function BuilderContainer({
       if (
         !latestAttempt
         || latestAttempt.targetKey !== validationTargetKey
+        || githubCredentialValidationGenerationRef.current !== oauthValidationGeneration
         || latestAttempt.attempts >= 2
         || currentRepositoryTargetKeyRef.current !== validationTargetKey
         || oauthValidationRetryTimerRef.current !== null
@@ -3516,7 +3525,8 @@ export function BuilderContainer({
       setFilePreviewResult(null);
       setFilePreviewLoading(true);
       const result = await fetchFileContent({
-        jobId: scopedAgentJob?.jobId ?? '',
+        jobId: scopedAgentJob?.status === 'cleaned' ? '' : scopedAgentJob?.jobId ?? '',
+        workspaceUsable: scopedAgentJob?.status !== 'cleaned',
         backendBase: SOVEREIGN_WORKER_BASE,
         filePath: cleanPath,
         repoOwner: chatRepoSnapshot?.owner,
@@ -3533,7 +3543,7 @@ export function BuilderContainer({
         'router',
       );
     },
-    [addLog, chatRepoSnapshot?.headSha, chatRepoSnapshot?.owner, chatRepoSnapshot?.repo, scopedAgentJob?.jobId],
+    [addLog, chatRepoSnapshot?.headSha, chatRepoSnapshot?.owner, chatRepoSnapshot?.repo, scopedAgentJob?.jobId, scopedAgentJob?.status],
   );
 
   const appendChatLine = useCallback(
@@ -4572,8 +4582,13 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       return;
     }
 
+    // Exact machine controls are already typed. Let them continue to the
+    // LLM-first/degraded executor boundary instead of treating them as unknown
+    // generic slash commands. No free-language inference occurs here.
+    const explicitRuntimeIntent = classifyOfflineSovereignExecutorIntent(submittedText);
+
     // ── Issue #428: Slash command handling
-    if (submittedText.startsWith("/")) {
+    if (submittedText.startsWith("/") && explicitRuntimeIntent === 'unknown') {
       const parsedSlash = parseSlashCommand(submittedText, skillSlashCommands);
       if (!parsedSlash) {
         appendRuntimeNotice(`Unbekannter Befehl. Verfügbare: ${[...SOVEREIGN_SLASH_COMMANDS, ...skillSlashCommands].map((c) => c.cmd).join(", ")}`);
@@ -4751,7 +4766,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     // last correlated request through the real pipeline and must never spend a
     // second interpretation call merely to understand the control itself.
     const isExactRetryControl = submittedText.trim().toLocaleLowerCase('de-DE') === 'retry';
-    const explicitRuntimeIntent = classifyOfflineSovereignExecutorIntent(submittedText);
     const shouldUseOnlineLanguageUnderstanding =
       !options.resumePendingIntent &&
       !isSafeAnalysisPreset &&
@@ -6470,7 +6484,9 @@ Das echte Repo-Setup wurde geöffnet.`,
               flex: 1,
               minWidth: 0,
               minHeight: 0,
-              overflow: "hidden",
+              overflowX: "hidden",
+              overflowY: "auto",
+              overscrollBehavior: "contain",
               background: C.bg,
               display: "flex",
               flexDirection: "column",
