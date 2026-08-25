@@ -2408,9 +2408,11 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   it("routes only the exact degraded /direct-patch machine command through the bounded code executor", async () => {
     const onStartAgent = vi.fn();
+    const oauthUser = { ...TEST_AUTH_USER, githubId: 'oauth-user-123' };
+    useUserStore.setState({ user: oauthUser });
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
-      if (isAuthBootstrapRequest(input)) return authBootstrapResponse();
+      if (isAuthBootstrapRequest(input)) return jsonResponse(oauthUser);
       if (isToolchainBootstrapRequest(input)) {
         return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
       }
@@ -2451,7 +2453,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       />,
     );
     await loadRepoFromChat();
-    await validateGitHubAccessFromLauncher();
+    await waitFor(() => expect(
+      screen.getByRole('log', { name: 'Sovereign Action Stream' }),
+    ).toHaveTextContent('GitHub-Zugang bereit'));
 
     fireEvent.change(chatField(), {
       target: { value: '/direct-patch ändere docs/README.md, prüfe den Test und erzeuge nur einen Draft PR' },
@@ -2467,6 +2471,8 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
         expectedHeadSha: 'c'.repeat(40),
       }),
     );
+    const [, startInput] = onStartAgent.mock.calls[0];
+    expect(startInput.githubAccessToken).toBeUndefined();
     expect(screen.getByRole('log', { name: 'Sovereign Action Stream' }))
       .toHaveTextContent('Sovereign Agent Job angefragt');
     expect(fetchMock.mock.calls.some(([input]) => (

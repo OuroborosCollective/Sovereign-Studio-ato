@@ -8,6 +8,7 @@ import { store } from './store';
 const agent = vi.hoisted(() => ({
   listJobs: vi.fn(),
   startJob: vi.fn(),
+  startRepositoryExecution: vi.fn(),
   startToolchainJob: vi.fn(),
   getJob: vi.fn(),
   getProjections: vi.fn(),
@@ -213,7 +214,7 @@ describe('App Draft-PR runtime flow', () => {
       runtimeId: 'job-b',
       status: 'running',
     });
-    agent.startJob.mockResolvedValue(jobBSnapshot);
+    agent.startRepositoryExecution.mockResolvedValue(jobBSnapshot);
     agent.getJob.mockResolvedValue(jobBSnapshot);
 
     render(<Provider store={store}><App /></Provider>);
