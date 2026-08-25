@@ -6090,7 +6090,10 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     if (localRepoLoading || chatResponseBusy || isPublishing) return;
     // Write/executor work wakes only when its OWN write gate is proven. A repo
     // load or unrelated LLM reply must never resume a stale mutation request.
-    if ((pendingOnlineExecution || pendingWriteIntent) && !(githubWriteAllowed || hasCurrentGitHubWriteEvidence())) return;
+    if ((pendingOnlineExecution || pendingWriteIntent) && !(githubWriteAllowed || hasCurrentGitHubWriteEvidence())) {
+      setShowGitHubAccessOverride(true);
+      return;
+    }
 
     void runSerializedSubmit(async () => {
       const currentOnlineExecution = pendingOnlineExecutionRef.current;

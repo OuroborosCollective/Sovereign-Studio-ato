@@ -502,9 +502,11 @@ async function driveRepoBlockedExecutionThroughGitHubAccess() {
     expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(1),
   );
 
-  fireEvent.click(screen.getAllByRole('button', { name: 'Zugang eingeben' })[0]);
-  fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
-  fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
+  const accessCard = await screen.findByTestId('github-access-card');
+  fireEvent.click(within(accessCard).getByRole('button', { name: 'Zugang eingeben' }));
+  const accessDialog = await screen.findByRole('dialog', { name: 'GitHub-Zugang' });
+  fireEvent.change(within(accessDialog).getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
+  fireEvent.click(within(accessDialog).getByRole('button', { name: 'Übernehmen' }));
 
   return { originalText, onStartAgent };
 }

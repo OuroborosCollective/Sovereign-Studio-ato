@@ -43,7 +43,12 @@ describe('GitHubAccessCard', () => {
       />,
     );
 
+    const accessCard = screen.getByTestId('github-access-card');
+    expect(accessCard).toHaveAttribute('role', 'group');
     fireEvent.click(screen.getByText('Zugang eingeben'));
+    const dialog = screen.getByRole('dialog', { name: 'GitHub-Zugang' });
+    expect(dialog).toBeDefined();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Abbrechen' }));
     expect(screen.getByLabelText(/GitHub Token/i)).toBeDefined();
     fireEvent.keyDown(document, { key: 'Escape' });
 
