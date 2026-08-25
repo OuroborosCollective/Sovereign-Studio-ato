@@ -1673,6 +1673,22 @@ register_progressive_skill_routes(
     repository_root=Path(__file__).resolve().parent,
 )
 
+
+def _session_github_token_for_user(user_id: str) -> str | None:
+    """Resolve one encrypted OAuth credential only inside the backend request boundary."""
+    if not user_id:
+        return None
+    row = query(
+        "SELECT github_access_token FROM admin_users WHERE id=%s::uuid LIMIT 1",
+        (user_id,),
+        one=True,
+    )
+    encrypted = str((row or {}).get("github_access_token") or "").strip()
+    if not encrypted:
+        return None
+    return _decrypt_token(encrypted)
+
+
 register_sovereign_agent_routes(
     app,
     require_session=require_session,
@@ -1702,11 +1718,13 @@ register_sovereign_agent_routes(
         arguments=arguments,
     ),
     desktop_frame_allowed=lambda context: DesktopControlGatewayV1.from_env().frame_allowed(context=context),
+    get_session_github_token=_session_github_token_for_user,
 )
 register_cognitive_swarm_routes(
     app,
     require_session=require_session,
     get_connection=get_agent_runtime_connection,
+    get_session_github_token=_session_github_token_for_user,
 )
 
 # ── Legacy external job compatibility tables ─────────────────────────────────
@@ -6361,6 +6379,7 @@ register_controller_board_routes(
     app,
     require_session=require_session,
     get_connection=get_agent_runtime_connection,
+    get_session_github_token=_session_github_token_for_user,
 )
 register_are_inference_routes(
     app,

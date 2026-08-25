@@ -3,6 +3,7 @@ import type { ChatLine, SituationalBubbleBinding } from './builderContainerTypes
 import {
   commitSituationalBubble,
   minimizeBubbleProjection,
+  projectMonitorCommunicationLine,
   projectSituationalChatLine,
   projectSituationalChatLines,
 } from './situationalBubbleRuntime';
@@ -121,11 +122,45 @@ describe('situational bubble output firewall', () => {
   it('projects only role-matched committed bubbles', () => {
     const typedMission = line(mission());
     const wrongRole = line(mission({ bubbleHash: HASH_B }), 'assistant');
+    expect(projectMonitorCommunicationLine(typedMission)).toEqual(typedMission);
     expect(projectSituationalChatLines([
       typedMission,
       wrongRole,
       { id: 'system', role: 'system', text: 'Repo verbunden' },
       { id: 'thought', role: 'thought', text: 'Ich prüfe jetzt Dateien.' },
     ])).toEqual([typedMission]);
+  });
+
+  it('requires explicit non-authoritative provenance for monitor-only conversation', () => {
+    const safe = { id: 'safe', role: 'assistant' as const, text: 'Die Analyse läuft.', createdAt: 1 };
+    expect(projectSituationalChatLine(safe)).toBeNull();
+    expect(projectMonitorCommunicationLine(safe)).toBeNull();
+
+    const conversation = {
+      ...safe,
+      monitorProjection: {
+        schemaVersion: 'sovereign.monitor-communication-projection.v1' as const,
+        sourceKind: 'LLM_RESPONSE' as const,
+        authority: 'CONVERSATION_ONLY' as const,
+        authoritative: false as const,
+      },
+    };
+    expect(projectMonitorCommunicationLine(conversation)).toEqual(conversation);
+    expect(projectMonitorCommunicationLine({ ...conversation, role: 'system' })).toBeNull();
+    expect(projectMonitorCommunicationLine({ ...conversation, text: 'Reasoning: hidden provider trace' })).toBeNull();
+    expect(projectMonitorCommunicationLine({
+      ...conversation,
+      text: ['github', 'pat', 'x'.repeat(40)].join('_'),
+    })).toBeNull();
+  });
+
+  it('never downgrades an invalid typed bubble to ephemeral monitor text', () => {
+    const wrongRole = line(mission(), 'assistant');
+    expect(projectSituationalChatLine(wrongRole)).toBeNull();
+    expect(projectMonitorCommunicationLine(wrongRole)).toBeNull();
+    expect(projectMonitorCommunicationLine({
+      ...line(mission()),
+      text: 'Text does not match the committed bubble.',
+    })).toBeNull();
   });
 });

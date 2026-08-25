@@ -1,6 +1,7 @@
 # Sovereign Studio ATO — Current State
 
 **Documentation snapshot:** 2026-08-03  
+**Product architecture reconciled:** 2026-08-25
 **Repository baseline:** `63ddbdf4ed8cd6fa895147e6b09dc39bb2330483`  
 **Authority rule:** the current Git revision and fresh target-system readbacks override this dated snapshot.
 
@@ -12,13 +13,13 @@ It does not replace:
 
 - the current repository tree and exact Git blobs;
 - runtime, CI, registry, database, container, image or PatchMon readbacks;
-- `AGENTS.md` and the Continuity Policy for mutation rules;
-- append-only continuity records;
+- `AGENTS.md` and the current technical operating profile for mutation rules;
+- append-only continuity records, which remain advisory historical provenance;
 - focused architecture documents for individual subsystems.
 
 ## Product identity
 
-Sovereign Studio ATO is an Android-first, chat-first NoCode/AI service and agent workbench for controlled work on real repositories and connected runtime systems.
+Sovereign Studio ATO is an Android-first, monitor-first NoCode/AI service and agent workbench for controlled work on real repositories and connected runtime systems. Natural-language interaction remains embedded in the monitor through a compact communication dock.
 
 The canonical product rule remains:
 
@@ -36,9 +37,9 @@ The repository is proprietary and unlicensed for reuse except with prior express
 
 - React 19, Vite 8 and Capacitor 6.
 - Android-first delivery with a web build as the shared frontend artifact.
-- Chat-first product surface under `src/features/product/`.
+- Permanent monitor-first product surface under `src/features/product/`, with an embedded communication dock rather than a legacy chat-first body.
 - Runtime and capability decisions belong in runtime modules, not in visual widgets or DOM text.
-- GitHub, diff, workflow, runtime, health, memory and inspector views are projections and inspection surfaces.
+- GitHub, diff, workflow, runtime, health, memory and inspector views are bounded projections and inspection surfaces.
 
 ### Backend and agent runtime
 
@@ -72,8 +73,9 @@ See [`architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md`](architecture/RE
 
 ### Evidence, continuity and rollback
 
-- Continuity context and policy are mandatory before mutating MCP work.
-- Continuity ledgers are append-only and mirrored according to their contract.
+- Continuity context, policy and ledgers are advisory historical provenance only; missing, stale or incomplete continuity evidence must not block mutations, PRs, merges, releases or deployments.
+- When written, Continuity ledgers remain append-only and mirrored according to their contract.
+- Exact Git revision, required authorization, CI/evidence and target-system readback are the technical authority for integration and release.
 - Fleet deployment and rollback evidence must be bound to a real repository revision or immutable image digest.
 - Liveness alone cannot prove revision parity, successful deployment or rollback readiness.
 - A missing or unbound rollback reference fails closed.
@@ -171,10 +173,10 @@ Historical documents may retain old values as dated provenance. They must clearl
 1. [`../AGENTS.md`](../AGENTS.md)
 2. [`SOVEREIGN_PRODUCT_TRUTH.md`](SOVEREIGN_PRODUCT_TRUTH.md)
 3. [`SOVEREIGN_READER.md`](SOVEREIGN_READER.md)
-4. [`sovereign-continuity/CONTEXT.md`](sovereign-continuity/CONTEXT.md)
-5. the machine-readable Continuity Policy and latest append-only ledger head
-6. the focused architecture document for the subsystem being changed
-7. current open Issue/PR and exact GitHub checks
+4. the focused architecture document for the subsystem being changed
+5. current open Issue/PR and exact GitHub checks
+
+Continuity context, policy and ledger may be consulted afterward or in parallel for historical orientation; their availability or completeness is not a mutation or merge prerequisite.
 
 ## Development and verification
 

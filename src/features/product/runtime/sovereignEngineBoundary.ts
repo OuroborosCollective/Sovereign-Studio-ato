@@ -403,6 +403,7 @@ function isCanonicalProjection(value: unknown): value is SovereignLiveProjection
     && isNonEmptyString(value.sessionId)
     && isNonEmptyString(value.sessionBindingHash)
     && isNonEmptyString(value.attemptId)
+    && isNonEmptyString(value.jobId)
     && isNonEmptyString(value.workspaceId)
     && isNonEmptyString(value.actionId)
     && isNonEmptyString(value.sourceReceiptRef)
@@ -414,6 +415,8 @@ function isCanonicalProjection(value: unknown): value is SovereignLiveProjection
 function isCanonicalEvidenceAnchor(value: unknown): value is SovereignWorkspaceEvidenceAnchor {
   if (!isObject(value)) return false;
   const anchorId = value.anchorId;
+  const jobId = value.jobId;
+  const workspaceId = value.workspaceId;
   const claimKind = value.claimKind;
   const verdict = value.verdict;
   const sourceVerdict = value.sourceVerdict;
@@ -435,6 +438,8 @@ function isCanonicalEvidenceAnchor(value: unknown): value is SovereignWorkspaceE
   const foldedText = `${String(claimKind || '')} ${String(scope || '')}`.toLowerCase();
   return value.authoritative === false
     && typeof anchorId === 'string' && /^evidence-[a-f0-9]{24}$/.test(anchorId)
+    && isNonEmptyString(jobId)
+    && isNonEmptyString(workspaceId)
     && typeof claimKind === 'string' && claimKind.trim().length > 0
     && !['EVERYTHING_WORKS', 'READY', 'DONE', 'GREEN', 'ALL_GREEN'].includes(claimKind.toUpperCase())
     && typeof verdict === 'string' && EVIDENCE_VERDICTS.has(verdict)
@@ -612,6 +617,15 @@ export async function executeSovereignEngineCommand(
       if (!Array.isArray(projections) || !projections.every(isCanonicalProjection)) {
         throw new Error('Sovereign backend returned an invalid projection contract.');
       }
+      const firstProjection = projections[0];
+      if (projections.some((projection) => (
+        projection.jobId !== command.payload.jobId
+        || projection.workspaceId !== firstProjection?.workspaceId
+        || projection.sessionBindingHash !== firstProjection?.sessionBindingHash
+        || projection.attemptId !== firstProjection?.attemptId
+      ))) {
+        throw new Error('Sovereign backend returned a projection outside the requested job/workspace/session binding.');
+      }
       return {
         ...baseEvent(command, 'CANONICAL_PROJECTIONS_ACCEPTED', 'SOVEREIGN_BACKEND', now),
         eventType: 'CANONICAL_PROJECTIONS_ACCEPTED',
@@ -631,11 +645,21 @@ export async function executeSovereignEngineCommand(
       if (!Array.isArray(evidenceAnchors) || !evidenceAnchors.every(isCanonicalEvidenceAnchor)) {
         throw new Error('Sovereign backend returned an invalid evidence anchor contract.');
       }
+      const firstAnchor = evidenceAnchors[0];
+      if (evidenceAnchors.some((anchor) => (
+        anchor.jobId !== command.payload.jobId
+        || anchor.workspaceId !== firstAnchor?.workspaceId
+        || anchor.sessionBindingHash !== firstAnchor?.sessionBindingHash
+        || anchor.attemptId !== firstAnchor?.attemptId
+      ))) {
+        throw new Error('Sovereign backend returned evidence outside the requested job/workspace/session binding.');
+      }
       return {
         ...baseEvent(command, 'CANONICAL_EVIDENCE_ANCHORS_ACCEPTED', 'SOVEREIGN_BACKEND', now),
         eventType: 'CANONICAL_EVIDENCE_ANCHORS_ACCEPTED',
         source: 'SOVEREIGN_BACKEND',
         jobId: command.payload.jobId,
+        workspaceId: firstAnchor?.workspaceId,
         attemptId: uniqueEvidenceAnchorAttempt(evidenceAnchors),
         payload: {
           commandId: command.commandId,
@@ -920,7 +944,15 @@ export function sovereignEngineReducer(
         || pending.commandType !== 'READ_PROJECTIONS'
         || pending.expectedJobId !== state.canonicalJob.jobId
         || event.jobId !== state.canonicalJob.jobId
-        || !event.payload.projections.every(isCanonicalProjection)) {
+        || !event.payload.projections.every(isCanonicalProjection)
+        || event.payload.projections.some((projection, _index, projections) => (
+          projection.jobId !== state.canonicalJob.jobId
+          || projection.workspaceId !== state.canonicalJob.workspaceId
+          || projection.workspaceId !== event.workspaceId
+          || projection.sessionBindingHash !== projections[0]?.sessionBindingHash
+          || projection.attemptId !== projections[0]?.attemptId
+          || projection.attemptId !== event.attemptId
+        ))) {
         return state;
       }
       if (pending.sequence < state.projectionSequence) {
@@ -944,7 +976,15 @@ export function sovereignEngineReducer(
         || pending.commandType !== 'READ_EVIDENCE_ANCHORS'
         || pending.expectedJobId !== state.canonicalJob.jobId
         || event.jobId !== state.canonicalJob.jobId
-        || !event.payload.evidenceAnchors.every(isCanonicalEvidenceAnchor)) {
+        || !event.payload.evidenceAnchors.every(isCanonicalEvidenceAnchor)
+        || event.payload.evidenceAnchors.some((anchor, _index, anchors) => (
+          anchor.jobId !== state.canonicalJob.jobId
+          || anchor.workspaceId !== state.canonicalJob.workspaceId
+          || anchor.workspaceId !== event.workspaceId
+          || anchor.sessionBindingHash !== anchors[0]?.sessionBindingHash
+          || anchor.attemptId !== anchors[0]?.attemptId
+          || anchor.attemptId !== event.attemptId
+        ))) {
         return state;
       }
       if (pending.sequence < state.evidenceAnchorSequence) {
@@ -988,6 +1028,20 @@ export function sovereignEngineReducer(
         && pending.sequence < state.canonicalJobSequence;
       return {
         ...state,
+        projections: pending.commandType === 'READ_PROJECTIONS'
+          && pending.sequence >= state.projectionSequence
+          ? []
+          : state.projections,
+        evidenceAnchors: pending.commandType === 'READ_EVIDENCE_ANCHORS'
+          && pending.sequence >= state.evidenceAnchorSequence
+          ? []
+          : state.evidenceAnchors,
+        projectionSequence: pending.commandType === 'READ_PROJECTIONS'
+          ? Math.max(state.projectionSequence, pending.sequence)
+          : state.projectionSequence,
+        evidenceAnchorSequence: pending.commandType === 'READ_EVIDENCE_ANCHORS'
+          ? Math.max(state.evidenceAnchorSequence, pending.sequence)
+          : state.evidenceAnchorSequence,
         pendingCommands: withoutPending(state.pendingCommands, pending.commandId),
         clientNotice: event.payload.userVisible && !staleCanonicalFailure
           ? {

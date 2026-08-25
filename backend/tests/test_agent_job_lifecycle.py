@@ -348,6 +348,39 @@ def test_invalid_ephemeral_github_token_blocks_before_workspace(tmp_path: Path):
     assert not (tmp_path / "agent-token-invalid").exists()
 
 
+def test_request_local_github_token_reaches_clone_without_entering_payload_or_evidence(monkeypatch, tmp_path: Path):
+    conn = FakeConnection()
+    token = "ghp_" + "r" * 40
+    observed = {}
+
+    def fake_clone(workspace_id, repo_url, branch, workspace_root, token=None):
+        observed["token"] = token
+        return GitWorkspaceResult(
+            status="done",
+            events=(SovereignAgentEvent(stage="repo_clone_completed", level="success", message="Repository snapshot ready."),),
+            exit_code=0,
+        )
+
+    monkeypatch.setattr("agent_runtime.job_lifecycle.clone_repo_into_workspace", fake_clone)
+    payload = valid_payload()
+    lifecycle = create_sovereign_agent_job(
+        conn,
+        user_id="user-1",
+        payload=payload,
+        github_access_token=token,
+        workspace_root=tmp_path,
+        provision_workspace=True,
+        clone_repo=True,
+        job_id="agent-session-token-ephemeral",
+    )
+
+    assert lifecycle.result.status == "running"
+    assert observed["token"] == token
+    assert "githubAccessToken" not in payload
+    assert token not in repr(conn.jobs)
+    assert token not in repr(conn.events)
+
+
 def test_clone_blocker_moves_job_to_blocked(monkeypatch, tmp_path: Path):
     conn = FakeConnection()
 

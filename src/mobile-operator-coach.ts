@@ -187,9 +187,14 @@ function normalizeState(value: unknown, fallbackSource: CoachSource): ExternalCo
   const combined = `${status} ${fallbackMessage}`;
   if (!combined.trim() && tick === undefined && !stateHash) return null;
 
+  // SECURITY: DOM-fallback source must never produce strong success (green) without explicit evidence.
+  // DOM text can contain residual keywords from previous runs - treat as yellow unless explicitly data-bound.
+  const isDomFallback = src === 'dom-fallback';
+  const domFallbackMsg = 'DOM-Fallback: Kein aktuelles Runtime-Signal. Bitte Runtime-Status pruefen.';
+
   if (has(combined, ['failed', 'failure', 'error', 'fatal', 'blocked', 'red'])) return { lamp: 'red', title: 'Runtime meldet einen Stopper', message: fallbackMessage || 'Die Runtime-Library hat einen blockierenden Zustand gemeldet.', action: 'Repair/Logs pruefen.', thinking: false, source: src, tick, hash: stateHash, updatedAt: wallClockMs() };
-  if (has(combined, ['running', 'busy', 'active', 'building', 'watching', 'progress'])) return { lamp: 'green', title: 'Runtime arbeitet', message: fallbackMessage || 'Die Runtime-Library liefert aktive Workflow-, Telemetry- oder Metrik-Signale.', action: 'Bitte warten.', thinking: true, source: src, tick, hash: stateHash, updatedAt: wallClockMs() };
-  if (has(combined, ['accepted', 'ready', 'healthy', 'passed', 'green', 'done', 'complete', 'written', 'restored'])) return { lamp: 'green', title: combined.includes('restored') ? 'Code wiederhergestellt' : 'Runtime ist bereit', message: fallbackMessage || 'Die Runtime-Library meldet einen gueltigen akzeptierten Zustand.', action: 'Files/Diff oder Monitor pruefen.', thinking: false, source: src, tick, hash: stateHash, updatedAt: wallClockMs() };
+  if (has(combined, ['running', 'busy', 'active', 'building', 'watching', 'progress'])) return { lamp: isDomFallback ? 'yellow' : 'green', title: isDomFallback ? 'Ich arbeite (DOM)' : 'Runtime arbeitet', message: isDomFallback ? domFallbackMsg : (fallbackMessage || 'Die Runtime-Library liefert aktive Workflow-, Telemetry- oder Metrik-Signale.'), action: isDomFallback ? 'Runtime-Status pruefen.' : 'Bitte warten.', thinking: true, source: src, tick, hash: stateHash, updatedAt: wallClockMs() };
+  if (has(combined, ['accepted', 'ready', 'healthy', 'passed', 'green', 'done', 'complete', 'written', 'restored'])) return { lamp: isDomFallback ? 'yellow' : 'green', title: isDomFallback ? (combined.includes('restored') ? 'Code wiederhergestellt (DOM)' : 'Ergebnis bereit (DOM)') : (combined.includes('restored') ? 'Code wiederhergestellt' : 'Runtime ist bereit'), message: isDomFallback ? domFallbackMsg : (fallbackMessage || 'Die Runtime-Library meldet einen gueltigen akzeptierten Zustand.'), action: isDomFallback ? 'Runtime-Status pruefen.' : 'Files/Diff oder Monitor pruefen.', thinking: false, source: src, tick, hash: stateHash, updatedAt: wallClockMs() };
   return { lamp: 'yellow', title: 'Runtime wartet', message: fallbackMessage || 'Die Runtime-Library wartet auf Repo, Auftrag oder naechsten Schritt.', action: 'Repo/Plan pruefen.', thinking: false, source: src, tick, hash: stateHash, updatedAt: wallClockMs() };
 }
 

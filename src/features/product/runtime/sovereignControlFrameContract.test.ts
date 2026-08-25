@@ -5,12 +5,12 @@ import {
 } from './sovereignControlFrameContract';
 
 describe('sovereignControlFrameContract', () => {
-  it('keeps chat workbench as the fixed center slot', () => {
+  it('keeps workspace monitor as the fixed center slot', () => {
     const report = validateSovereignControlFrameContract();
 
     expect(report.valid).toBe(true);
     expect(report.errors).toEqual([]);
-    expect(SOVEREIGN_CONTROL_FRAME_CONTRACT.centerSlot).toBe('center-chat-workbench');
+    expect(SOVEREIGN_CONTROL_FRAME_CONTRACT.centerSlot).toBe('center-workspace-monitor');
     expect(SOVEREIGN_CONTROL_FRAME_CONTRACT.maxMobileWidthDp).toBe(393);
   });
 

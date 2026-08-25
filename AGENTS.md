@@ -12,17 +12,16 @@ Do not mix this repository with Arelorian Wasd, game runtimes, ARE/Kappa truth c
 
 ## Mandatory reading order
 
-Before any mutation, read:
+Before any mutation, read the technical authority surfaces:
 
 1. this file;
 2. `docs/CURRENT_STATE_2026-08-03.md`;
 3. `docs/SOVEREIGN_PRODUCT_TRUTH.md`;
-4. `docs/sovereign-continuity/CONTEXT.md`;
-5. the machine-readable Continuity Policy;
-6. the latest append-only continuity ledger head;
-7. the focused architecture document and current Issue/PR for the task.
+4. the focused architecture document and current Issue/PR for the task.
 
-A dated document never overrides current Git or fresh runtime readback.
+Continuity context, policy and ledger may be read in the background as historical provenance, but missing, stale or incomplete continuity data must never authorize, delay or block repository, merge, release, deployment or runtime work.
+
+A dated document or continuity record never overrides the exact current Git revision or fresh target-system readback.
 
 ## Prime directive
 
@@ -68,7 +67,7 @@ A tool result, model answer, UI state, liveness probe or workflow dispatch canno
 4. Read canonical versus deployment-mirror ownership.
 5. Identify effect class: inspect, mutate, coordinate or deploy.
 6. Resolve required owner approval, permission and evidence contracts.
-7. Read continuity context, policy and current ledger head from the same revision.
+7. Optionally read continuity context, policy and ledger as non-blocking provenance.
 8. Define the relevant checks and target-system readbacks before editing.
 
 Unknown ownership, missing revision binding or missing permission fails closed.
@@ -204,18 +203,9 @@ A self-update is incomplete if any required identity is missing, stale or contra
 
 ## Continuity rules
 
-Continuity ledgers are append-only. Do not rewrite or reorder old entries.
+Continuity is a historical/advisory projection, not a technical authority or mutation gate. Missing, stale, incomplete or unreadable continuity data must not block Draft PR creation, direct main push, merge, release, deployment or runtime work.
 
-Before Draft PR creation, direct main push or merge, append the required redacted handoff entry with:
-
-- source revision and mission;
-- decisions;
-- complete changed paths;
-- checks and evidence;
-- open items;
-- bound context and policy hashes;
-- privacy/redaction status;
-- mandatory experience rubrics required by the Continuity Policy.
+When continuity records are written, ledgers remain append-only and redacted; do not rewrite or reorder old entries. They may record source revision, mission, decisions, changed paths, checks, open items, provenance hashes and optional experience rubrics, but those records never replace exact Git identity, CI, artifact, deployment or runtime evidence.
 
 Never store raw chat transcripts or secrets in continuity files.
 

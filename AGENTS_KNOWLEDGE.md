@@ -1,7 +1,7 @@
 # Agent Knowledge Base — Sovereign Studio ATO
 
-**Reconciled:** 2026-08-03  
-**Repository baseline:** `63ddbdf4ed8cd6fa895147e6b09dc39bb2330483`
+**Reconciled:** 2026-08-25
+**Revision authority:** exact current Git or PR head; never infer it from this document
 
 This file records durable, repository-specific knowledge. It is not a changelog, credential store, runtime status page or substitute for current Git and target-system readback.
 
@@ -23,7 +23,7 @@ A lower item cannot overrule a higher item.
 
 | Surface | Canonical location | Notes |
 | --- | --- | --- |
-| Frontend | `src/` | React/Vite/Capacitor chat-first product and inspection surfaces |
+| Frontend | `src/` | React/Vite/Capacitor monitor-first workspace, embedded communication dock and inspection surfaces |
 | Product runtime | `src/features/product/runtime/` and related runtime modules | capability decisions and state transitions belong here, not in DOM text |
 | Backend agent runtime | `backend/agent_runtime/` | canonical jobs, tasks, tools, evidence, permission and recovery code |
 | Backend mirror | `scripts/sovereign-backend/agent_runtime/` | deployment mirror; byte parity is required where ownership applies |
@@ -35,10 +35,11 @@ A lower item cannot overrule a higher item.
 
 ## 3. Current stable architecture knowledge
 
-### Chat-first product
+### Monitor-first product
 
-- Chat is the default user surface.
-- Repo, files, diff, workflow, runtime, telemetry, health, memory and inspector views are inspection surfaces.
+- The Live Workspace Monitor is the permanent primary user surface.
+- Natural-language interaction stays in the embedded communication dock; no legacy full-chat body becomes primary.
+- Repo, files, diff, workflow, runtime, telemetry, health, memory and inspector views are bounded inspection surfaces.
 - Runtime state allows, blocks or routes the next action.
 - UI state must not manufacture readiness, progress or completion.
 

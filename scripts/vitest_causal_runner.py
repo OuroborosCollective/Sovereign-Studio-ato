@@ -3,8 +3,8 @@
 
 The wrapper never returns raw test stdout/stderr. Vitest writes its raw JSON
 reporter into an automatically deleted temporary directory; this script persists
-only a redacted aggregate summary and emits the first failed ``file::test``
-identity in the Pytest-compatible form already understood by Sovereign's
+only a redacted aggregate summary and emits a bounded set of failed ``file::test``
+identities in the Pytest-compatible form already understood by Sovereign's
 revision-bound workflow failure extractor.
 
 This is test evidence only. It grants no runtime, consent or effect authority.
@@ -24,6 +24,7 @@ from typing import Any, Mapping, Sequence
 SCHEMA_VERSION = "sovereign.vitest-causal-runner.v1"
 DEFAULT_TIMEOUT_SECONDS = 900
 _MAX_IDENTITY = 320
+_MAX_CAUSAL_TESTS = 16
 _SAFE_LABEL_RE = re.compile(r"[^A-Za-z0-9._-]+")
 _SAFE_IDENTITY_RE = re.compile(r"[^A-Za-z0-9._/:-]+")
 _SECRET_PATTERNS = (
@@ -78,13 +79,13 @@ def _assertions(test_result: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
 
 
 def extract_causal_summary(payload: Mapping[str, Any], *, root: Path, label: str) -> dict[str, Any]:
-    """Return bounded counts and the first failed test identity from Vitest JSON."""
+    """Return bounded counts and redacted failed-test identities from Vitest JSON."""
 
     total = _integer(payload.get("numTotalTests"))
     passed = _integer(payload.get("numPassedTests"))
     failed = _integer(payload.get("numFailedTests"))
     skipped = _integer(payload.get("numPendingTests")) + _integer(payload.get("numTodoTests"))
-    causal: str | None = None
+    causal_tests: list[str] = []
 
     raw_results = payload.get("testResults")
     results = raw_results if isinstance(raw_results, list) else []
@@ -117,9 +118,12 @@ def extract_causal_summary(payload: Mapping[str, Any], *, root: Path, label: str
                 assertion.get("title") or assertion.get("fullName") or assertion.get("name"),
                 180,
             )
-            causal = "::".join([file_name, *parts, title])[:_MAX_IDENTITY]
-            break
-        if causal:
+            identity = "::".join([file_name, *parts, title])[:_MAX_IDENTITY]
+            if identity not in causal_tests:
+                causal_tests.append(identity)
+            if len(causal_tests) >= _MAX_CAUSAL_TESTS:
+                break
+        if len(causal_tests) >= _MAX_CAUSAL_TESTS:
             break
 
     return {
@@ -129,7 +133,8 @@ def extract_causal_summary(payload: Mapping[str, Any], *, root: Path, label: str
         "passed": passed,
         "failed": failed,
         "skipped": skipped,
-        "causalTest": causal,
+        "causalTest": causal_tests[0] if causal_tests else None,
+        "causalTests": causal_tests,
     }
 
 
@@ -219,6 +224,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "failed": 0,
                 "skipped": 0,
                 "causalTest": None,
+                "causalTests": [],
                 "exitCode": exit_code,
                 "status": "report-unavailable",
                 "rawReportPersisted": False,
@@ -240,11 +246,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"label={summary['label']} total={summary['total']} passed={summary['passed']} "
         f"failed={summary['failed']} skipped={summary['skipped']} exitCode={exit_code}"
     )
-    causal = summary.get("causalTest")
-    if causal:
-        print(f"FAILED {causal}")
-    elif exit_code != 0 or int(summary["failed"]) > 0:
-        print(f"FAILED {label}::vitest_exit_{exit_code}")
+    causal_tests = summary.get("causalTests")
+    if isinstance(causal_tests, list) and causal_tests:
+        for causal in causal_tests:
+            print(f"FAILED {causal}")
+    else:
+        causal = summary.get("causalTest")
+        if causal:
+            print(f"FAILED {causal}")
+        elif exit_code != 0 or int(summary["failed"]) > 0:
+            print(f"FAILED {label}::vitest_exit_{exit_code}")
 
     return exit_code if exit_code != 0 else (1 if int(summary["failed"]) > 0 else 0)
 

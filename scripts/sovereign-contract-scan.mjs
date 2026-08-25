@@ -223,9 +223,9 @@ function run() {
   requireText('src/App.tsx', /BuilderContainer/, 'app:builder-live-path', 'App routes the live surface to BuilderContainer.');
   requireText('src/App.tsx', /LlmAdapterProvider/, 'app:llm-provider', 'App keeps the LLM adapter provider wired.');
   requireText('src/App.tsx', /createSovereignAgentClient/, 'app:sovereign-agent-client', 'App keeps the internal Sovereign Agent client wired.');
-  requireText('src/App.tsx', /onStartAgent/, 'app:agent-start-handler', 'App passes the internal Agent start handler into the chat workbench.');
+  requireText('src/App.tsx', /onStartAgent/, 'app:agent-start-handler', 'App passes the internal Agent start handler into the monitor workbench.');
   forbidText('src/App.tsx', retiredAppAgentPattern, 'app:no-retired-agent-wiring', 'App must not restore retired external-agent client or start symbols.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /parseDevChatGithubUrl/, 'builder:repo-url-chat-detection', 'Builder detects GitHub repo URLs in chat.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /parseDevChatGithubUrl/, 'builder:repo-url-monitor-detection', 'Builder detects exact GitHub repo URLs from the monitor communication dock.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /fetchDevChatRepoTree/, 'builder:repo-tree-runtime-load', 'Builder loads repo snapshots through the runtime bridge.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /validateGitHubTokenForRepo/, 'builder:github-access-validation', 'Builder validates GitHub access before write execution.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SovereignActionStreamPanel/, 'builder:action-stream-visible', 'Builder shows route-agnostic action stream state.');
@@ -235,7 +235,8 @@ function run() {
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-repo-url-input"|data-role=\{SOVEREIGN_FORM_REPO_URL\.dataRole\}/, 'repo:mobile-repo-input', 'Repo URL input keeps Android/mobile or contract role.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-token-input"|data-role=\{SOVEREIGN_FORM_PRIVATE_ACCESS\.dataRole\}/, 'repo:mobile-access-input', 'Access input keeps Android/mobile or contract role.');
 
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Sovereign Chat Eingabe|GitHub URL oder Auftrag/, 'builder:chat-input-visible', 'Builder exposes the chat-first input.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /MonitorCommunicationDock/, 'builder:monitor-input-visible', 'Builder exposes LLM communication inside the monitor instead of a chat-first surface.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /live-desktop-monitor-primary/, 'builder:monitor-primary-layout', 'Builder declares the permanent monitor-first primary layout.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onStartAgent/, 'builder:executor-start-prop', 'Builder keeps the internal Agent start path wired as one route.');
   forbidText('src/features/product/containers/BuilderContainer.tsx', retiredBuilderAgentPattern, 'builder:no-retired-agent-start-prop', 'Builder must not restore the retired external-agent start prop.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateIdeas/, 'builder:generation-handler', 'Builder keeps generation handler wired.');

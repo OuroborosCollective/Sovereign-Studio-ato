@@ -161,7 +161,7 @@ export function SovereignSettingsTool(_props: LauncherToolProps) {
       subtitle="Sichtbare App-Regeln und sichere Session-Fähigkeiten. Keine Secrets werden angezeigt."
     >
       <Row label="Prüfergebnis" value={`${evidence.statusLabel} · ${evidence.reason}`} tone={toneForEvidence(evidence)} />
-      <Row label="Surface" value="Chat-first · Inspector nur Nebenfläche" tone="ok" />
+      <Row label="Surface" value="Monitor-first · echter Desktop-Readback · Kommunikation im Monitor-Dock" tone="ok" />
       <Row label="Merge Policy" value="Draft PR erlaubt · Auto-Merge nicht erlaubt" tone="ok" />
       <Row label="Storage" value={storageReady ? 'localStorage verfügbar' : 'localStorage blockiert'} tone={storageReady ? 'ok' : 'warn'} />
       <Row label="Client" value={`Sprache: ${language} · Netzwerk: ${online ? 'online' : 'offline'}`} tone={online ? 'ok' : 'warn'} />
@@ -299,7 +299,7 @@ export function SovereignCoverageTool(_props: LauncherToolProps) {
 export const settingsToolEntry: LauncherEntry = {
   id: 'settings',
   label: 'Settings',
-  description: 'Chat-first Regeln und Session-Fähigkeiten',
+  description: 'Monitor-first Regeln und Session-Fähigkeiten',
   icon: Settings,
   color: 'bg-sky-600',
   component: SovereignSettingsTool,

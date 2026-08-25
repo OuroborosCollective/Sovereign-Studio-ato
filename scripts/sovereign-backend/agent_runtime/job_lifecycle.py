@@ -122,6 +122,7 @@ def create_sovereign_agent_job(
     *,
     user_id: str,
     payload: dict,
+    github_access_token: object = None,
     workspace_root: Path | None = None,
     provision_workspace: bool = True,
     clone_repo: bool = False,
@@ -131,7 +132,11 @@ def create_sovereign_agent_job(
     resolved_job_id = job_id or generate_agent_job_id()
     validation = validate_agent_job_request(request)
     staged_files, staged_blocker = _parse_staged_files(payload)
-    raw_github_token = payload.get("githubAccessToken")
+    raw_github_token = (
+        github_access_token
+        if github_access_token is not None
+        else payload.get("githubAccessToken")
+    )
     github_token = normalize_ephemeral_github_token(raw_github_token)
     token_blocker = (
         "githubAccessToken has an invalid format"

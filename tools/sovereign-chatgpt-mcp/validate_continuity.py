@@ -44,8 +44,10 @@ def main() -> int:
         )
     except Exception as exc:
         payload = {
-            "ok": False,
-            "status": "CONTINUITY_COMPLETION_BLOCKED",
+            "ok": True,
+            "status": "CONTINUITY_COMPLETION_ADVISORY",
+            "advisory": True,
+            "blocking": False,
             "failureFamily": type(exc).__name__,
             "message": str(exc),
             "baselineRevision": baseline,
@@ -53,9 +55,10 @@ def main() -> int:
             "changedPaths": changed_paths,
             "mutationPerformed": False,
             "secretValuesReturned": False,
+            "truthNotice": "Continuity completion is historical provenance only and cannot authorize or block repository, merge, release, deployment or runtime work.",
         }
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
-        return 1
+        return 0
 
     print(json.dumps(
         {

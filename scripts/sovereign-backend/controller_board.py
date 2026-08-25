@@ -42,6 +42,7 @@ from agent_runtime.cognitive_swarm_routes import (
     start_cognitive_swarm_run,
 )
 from agent_runtime.cognitive_usage_billing import AgentBillingError, AgentStageBilling
+from agent_runtime.github_access import resolve_request_github_token
 from agent_runtime.job_lifecycle import create_sovereign_agent_job
 from agent_runtime.fleet_supervisor import (
     FleetContractError,
@@ -265,6 +266,7 @@ def register_controller_board_routes(
     *,
     require_session: Callable,
     get_connection: ConnectionFactory,
+    get_session_github_token: Callable[[str], str | None] | None = None,
 ) -> None:
     @app.route("/controller")
     @app.route("/controller/")
@@ -358,6 +360,11 @@ def register_controller_board_routes(
                 }, 503)
             finally:
                 _close(conn)
+            github_token = resolve_request_github_token(
+                None,
+                user_id=owner_id,
+                get_session_github_token=get_session_github_token,
+            )
             payload, status_code = start_cognitive_swarm_run(
                 get_connection=get_connection,
                 user_id=owner_id,
@@ -365,6 +372,7 @@ def register_controller_board_routes(
                 evidence=evidence,
                 mode="free",
                 intent_mode=requested_intent_mode,
+                github_access_token=github_token,
             )
             return _operator_json({
                 **payload,
@@ -577,6 +585,11 @@ def register_controller_board_routes(
                             "draftPrOnly": True,
                             "allowAutoMerge": False,
                         },
+                        github_access_token=resolve_request_github_token(
+                            None,
+                            user_id=owner_id,
+                            get_session_github_token=get_session_github_token,
+                        ),
                         workspace_root=_controller_workspace_root(),
                         provision_workspace=True,
                         clone_repo=True,

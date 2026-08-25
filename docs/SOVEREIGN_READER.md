@@ -1,7 +1,7 @@
 # Sovereign Reader — Current Contributor Map
 
-**Reconciled:** 2026-08-03  
-**Repository baseline:** `63ddbdf4ed8cd6fa895147e6b09dc39bb2330483`
+**Reconciled:** 2026-08-25
+**Revision authority:** exact current Git or PR head; never infer it from this document
 
 This is the practical orientation layer for contributors. It explains where current responsibilities live, how to classify evidence and which older route assumptions are obsolete.
 
@@ -15,24 +15,25 @@ Read first:
 
 ## Product shape
 
-Sovereign Studio ATO is Android-first and chat-first.
+Sovereign Studio ATO is Android-first and monitor-first.
 
 ```text
-User talks to Sovereign.
-Runtime resolves capability, permission and evidence boundaries.
-Tools operate only inside staged scopes.
+User speaks naturally in the embedded communication dock.
+The LLM responds and proposes a typed intent.
+Runtime validates schema, repository, exact revision, consent, credentials, policy and capability.
+A bounded executor performs the operation.
 Target systems provide readback.
-UI displays the bounded result and next allowed action.
+The LLM explains the evidenced result in the dock.
 ```
 
-Chat remains the default room. Repository, files, diff, workflow, runtime, health, memory and inspector surfaces are opened for inspection; they do not become a separate truth-producing dashboard.
+The Live Workspace Monitor remains the default room. Repository, files, diff, workflow, runtime, health, memory and inspector surfaces are bounded projections inside that monitor; they do not create truth, and a separate legacy chat body does not become the primary product surface.
 
 ## Current repository map
 
 | Area | Entry point | Responsibility |
 | --- | --- | --- |
 | App shell | `src/App.tsx` | frontend shell and navigation |
-| Product surfaces | `src/features/product/` | chat workbench, runtime projections and guarded user actions |
+| Product surfaces | `src/features/product/` | monitor-first workspace, embedded communication dock, runtime projections and guarded user actions |
 | Product runtime | `src/features/product/runtime/` and related runtime modules | state transitions, route decisions and frontend contracts |
 | GitHub integration | `src/features/github/` | repository access and frontend GitHub surfaces |
 | Backend agent runtime | `backend/agent_runtime/` | canonical jobs, tasks, tools, permissions, evidence and recovery |

@@ -108,6 +108,9 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
       {/* Card - only shown when not ready */}
       {snapshot.state !== 'ready' && (
         <div
+          data-testid="github-access-card"
+          role="group"
+          aria-label="GitHub-Zugang"
           style={{
             background: C.surface,
             border: `1px solid ${C.border}`,
@@ -179,7 +182,10 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
           </div>
 
           {/* Action Button */}
-          {(snapshot.state === 'missing' || snapshot.state === 'invalid' || snapshot.state === 'requested') && (
+          {(snapshot.state === 'missing'
+            || snapshot.state === 'invalid'
+            || snapshot.state === 'requested'
+            || snapshot.state === 'validating') && (
             <button
               type="button"
               onClick={handleOpenModal}
@@ -298,6 +304,10 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
       {/* Modal */}
       {showModal && (
         <div
+          data-testid="github-access-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="github-access-modal-title"
           onClick={handleCloseModal}
           style={{
             position: 'fixed',
@@ -325,6 +335,7 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
             {/* Header */}
             <div style={{ marginBottom: 20 }}>
               <h3
+                id="github-access-modal-title"
                 style={{
                   margin: '0 0 8px 0',
                   fontSize: 16,
@@ -399,6 +410,7 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
             <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
               <button
                 type="button"
+                autoFocus
                 onClick={handleCloseModal}
                 style={{
                   padding: '8px 16px',

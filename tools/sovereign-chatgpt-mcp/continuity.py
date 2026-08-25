@@ -148,8 +148,8 @@ def _load_policy(root: Path | None = None) -> tuple[dict[str, Any], bytes, str]:
     missing = sorted(required - set(payload))
     if missing:
         raise RuntimeError(f"continuity policy is missing required keys: {', '.join(missing)}")
-    if payload.get("enforcementMode") != "fail-closed":
-        raise RuntimeError("continuity policy must remain fail-closed")
+    if payload.get("enforcementMode") != "advisory":
+        raise RuntimeError("continuity policy must remain advisory and non-blocking")
     paths = payload.get("canonicalPaths")
     if not isinstance(paths, dict):
         raise RuntimeError("continuity canonicalPaths must be an object")
@@ -313,7 +313,7 @@ def _snapshot(root: Path | None = None, *, include_context: bool = True) -> dict
 
 
 def sovereign_continuity_context_read() -> ContinuityContextReadResult:
-    """Read and bind the canonical continuity policy, context and ledger before mutable work."""
+    """Read and bind continuity provenance for orientation without mutation authority."""
     global _READ_STATE
     snapshot = _snapshot(include_context=True)
     now = int(time.time())
@@ -354,20 +354,19 @@ def sovereign_continuity_context_read() -> ContinuityContextReadResult:
     )
 
 
-def continuity_gate_findings(tool_name: str, effect: str) -> list[dict[str, Any]]:
+def continuity_advisory_findings(tool_name: str, effect: str) -> list[dict[str, Any]]:
+    """Report provenance gaps without granting them mutation authority."""
     snapshot = _snapshot(include_context=False)
     read_gate = snapshot["policy"].get("readGate")
     read_gate = read_gate if isinstance(read_gate, dict) else {}
-    required_effects = set(read_gate.get("requiredForEffects") or [])
-    if effect not in required_effects:
-        return []
+    _ = effect
     if _READ_STATE is None:
         return [
             {
-                "severity": "P0",
+                "severity": "ADVISORY",
                 "family": "CONTINUITY_CONTEXT_NOT_READ",
                 "tool": tool_name,
-                "requiredTool": "sovereign_continuity_context_read",
+                "suggestedTool": "sovereign_continuity_context_read",
             }
         ]
     findings: list[dict[str, Any]] = []
@@ -375,7 +374,7 @@ def continuity_gate_findings(tool_name: str, effect: str) -> list[dict[str, Any]
         if _READ_STATE.get(field) != snapshot.get(field):
             findings.append(
                 {
-                    "severity": "P0",
+                    "severity": "ADVISORY",
                     "family": "CONTINUITY_CONTEXT_STALE",
                     "tool": tool_name,
                     "field": field,
@@ -387,7 +386,7 @@ def continuity_gate_findings(tool_name: str, effect: str) -> list[dict[str, Any]
     if read_epoch <= 0 or now - read_epoch > max_age:
         findings.append(
             {
-                "severity": "P0",
+                "severity": "ADVISORY",
                 "family": "CONTINUITY_CONTEXT_READ_EXPIRED",
                 "tool": tool_name,
                 "readEpoch": read_epoch,
@@ -397,15 +396,21 @@ def continuity_gate_findings(tool_name: str, effect: str) -> list[dict[str, Any]
     return findings
 
 
+def continuity_gate_findings(tool_name: str, effect: str) -> list[dict[str, Any]]:
+    """Compatibility hook for old callers; Continuity is never a mutation blocker."""
+    _ = (tool_name, effect)
+    return []
+
+
 def sovereign_continuity_status() -> ContinuityStatusResult:
     snapshot = _snapshot(include_context=False)
     now = int(time.time())
     read_epoch = int((_READ_STATE or {}).get("readEpoch") or 0)
-    findings = continuity_gate_findings("continuity-status-canary", "workspace-write")
+    findings = continuity_advisory_findings("continuity-status-canary", "workspace-write")
     return ContinuityStatusResult(
         schemaVersion="sovereign.continuity-status.v1",
-        ok=not findings,
-        status="CONTINUITY_READY" if not findings else "CONTINUITY_READ_REQUIRED",
+        ok=True,
+        status="CONTINUITY_ADVISORY_READY" if not findings else "CONTINUITY_ADVISORY_GAP",
         policyVersion=str(snapshot["policy"]["policyVersion"]),
         policySha256=snapshot["policySha256"],
         contextSha256=snapshot["contextSha256"],

@@ -2,14 +2,15 @@
  * Sovereign Control Frame Contract
  *
  * AppControlScreen is accepted as a visual/runtime-inspector frame only.
- * The center slot is reserved for the existing DevChat/Chat Workbench.
+ * The center slot is reserved for the permanent workspace monitor. LLM/user
+ * communication is embedded inside that monitor and is not a separate chat surface.
  * No simulated timers, Math.random state, or UI-generated runtime truth are allowed.
  */
 
 export type SovereignControlFrameSlot =
   | 'android-status-bar'
   | 'top-runtime-toolbar'
-  | 'center-chat-workbench'
+  | 'center-workspace-monitor'
   | 'collapsible-runtime-panel'
   | 'bottom-runtime-nav';
 
@@ -46,7 +47,7 @@ export interface SovereignControlFrameContract {
   readonly version: 1;
   readonly name: 'Sovereign Control Frame';
   readonly structureLocked: true;
-  readonly centerSlot: 'center-chat-workbench';
+  readonly centerSlot: 'center-workspace-monitor';
   readonly maxMobileWidthDp: 393;
   readonly amoledBlack: '#000000';
   readonly slots: readonly SovereignControlFrameSlotContract[];
@@ -64,7 +65,7 @@ export const SOVEREIGN_CONTROL_FRAME_CONTRACT: SovereignControlFrameContract = {
   version: 1,
   name: 'Sovereign Control Frame',
   structureLocked: true,
-  centerSlot: 'center-chat-workbench',
+  centerSlot: 'center-workspace-monitor',
   maxMobileWidthDp: 393,
   amoledBlack: '#000000',
   slots: [
@@ -81,10 +82,10 @@ export const SOVEREIGN_CONTROL_FRAME_CONTRACT: SovereignControlFrameContract = {
       purpose: 'Current module, signal and override status derived from runtime state.',
     },
     {
-      id: 'center-chat-workbench',
+      id: 'center-workspace-monitor',
       order: 2,
       required: true,
-      purpose: 'The existing Sovereign DevChat/Chat Workbench remains the main work surface.',
+      purpose: 'The Sovereign Workspace Monitor remains the main work surface; LLM communication is embedded in its dock.',
     },
     {
       id: 'collapsible-runtime-panel',
@@ -110,12 +111,12 @@ export const SOVEREIGN_CONTROL_FRAME_CONTRACT: SovereignControlFrameContract = {
     { id: 'restore', label: 'RESTORE', short: 'RST', runtimeSource: 'restoreRepoSnapshot/clearRepoSnapshot', menuOnly: true },
   ],
   invariants: [
-    'The center slot must render the existing chat workbench and must not be replaced by AppControl tabs.',
+    'The center slot must render the workspace monitor and must not be replaced by a separate chat workbench or AppControl tabs.',
     'The frame may display runtime state, but it must not create runtime truth.',
     'No Math.random, random signal drift, simulation interval, fake pattern commits or fake AutoSwitch logs are allowed in the live path.',
     'All control-frame module states must be derived from real Sovereign runtime inputs.',
     'The bottom runtime navigation is an inspector nav, not the primary product workflow.',
-    'The approved DevChat design contract remains the user-facing workbench contract inside the frame.',
+    'The monitor-first design contract remains the user-facing workbench contract inside the frame; communication stays embedded.',
   ],
 };
 
@@ -126,7 +127,7 @@ export function validateSovereignControlFrameContract(
   const slotOrder: readonly SovereignControlFrameSlot[] = [
     'android-status-bar',
     'top-runtime-toolbar',
-    'center-chat-workbench',
+    'center-workspace-monitor',
     'collapsible-runtime-panel',
     'bottom-runtime-nav',
   ];
@@ -144,7 +145,7 @@ export function validateSovereignControlFrameContract(
   if (contract.version !== 1) errors.push('Control frame contract version must be 1.');
   if (contract.name !== 'Sovereign Control Frame') errors.push('Control frame name changed.');
   if (!contract.structureLocked) errors.push('Control frame structure must stay locked.');
-  if (contract.centerSlot !== 'center-chat-workbench') errors.push('Center slot must remain the chat workbench.');
+  if (contract.centerSlot !== 'center-workspace-monitor') errors.push('Center slot must remain the workspace monitor.');
   if (contract.maxMobileWidthDp !== 393) errors.push('Android frame width contract must stay 393dp.');
   if (contract.amoledBlack !== '#000000') errors.push('AMOLED root background must remain true black.');
 

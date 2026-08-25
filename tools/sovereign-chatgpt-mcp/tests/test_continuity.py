@@ -193,13 +193,20 @@ def test_runtime_context_read_binds_nplusone_identity_and_hashes() -> None:
     assert result.secretValuesReturned is False
 
 
-def test_mutation_gate_requires_a_fresh_continuity_read(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_continuity_readback_is_advisory_and_never_blocks_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(continuity, "_READ_STATE", None)
-    blocked = continuity.continuity_gate_findings("repository_write_new_file", "workspace-write")
-    assert blocked[0]["family"] == "CONTINUITY_CONTEXT_NOT_READ"
+
+    assert continuity.continuity_gate_findings("repository_write_new_file", "workspace-write") == []
+    status = continuity.sovereign_continuity_status()
+    assert status.ok is True
+    assert status.status == "CONTINUITY_ADVISORY_GAP"
+    assert status.findings[0]["family"] == "CONTINUITY_CONTEXT_NOT_READ"
 
     continuity.sovereign_continuity_context_read()
     assert continuity.continuity_gate_findings("repository_write_new_file", "workspace-write") == []
+    ready = continuity.sovereign_continuity_status()
+    assert ready.ok is True
+    assert ready.status == "CONTINUITY_ADVISORY_READY"
 
 
 def test_workspace_completion_requires_append_only_mirrored_ledgers(tmp_path: Path) -> None:
@@ -302,6 +309,47 @@ def test_validator_runs_in_explicit_stdlib_only_mode(tmp_path: Path) -> None:
     payload = json.loads(result.stdout)
     assert payload["status"] == "CONTINUITY_COMPLETION_VERIFIED"
     assert payload["headRevision"] == head
+
+
+def test_validator_reports_completion_gap_as_non_blocking_advisory(tmp_path: Path) -> None:
+    repo, baseline, _changed_paths = _fixture_repo(tmp_path)
+    ledger_path = repo / "docs/sovereign-continuity/LEDGER.jsonl"
+    runtime_ledger_path = repo / "tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl"
+    entries = [json.loads(line) for line in ledger_path.read_text("utf-8").splitlines() if line.strip()]
+    entries[-1]["changedPaths"] = ["wrong-path.txt"]
+    _write_jsonl(ledger_path, entries)
+    runtime_ledger_path.write_bytes(ledger_path.read_bytes())
+    _git(repo, "add", "--all")
+    _git(repo, "commit", "-m", "commit advisory continuity mismatch")
+    head = _git(repo, "rev-parse", "HEAD")
+    script = Path(continuity.__file__).resolve().parent / "validate_continuity.py"
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(script),
+            "--repository",
+            str(repo),
+            "--base",
+            baseline,
+            "--head",
+            head,
+        ],
+        cwd=repo,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=90,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["status"] == "CONTINUITY_COMPLETION_ADVISORY"
+    assert payload["advisory"] is True
+    assert payload["blocking"] is False
+    assert payload["failureFamily"] == "RuntimeError"
 
 
 def test_workspace_completion_rejects_runtime_mirror_drift(tmp_path: Path) -> None:

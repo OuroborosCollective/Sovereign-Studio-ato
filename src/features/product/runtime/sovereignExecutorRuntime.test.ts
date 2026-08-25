@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyOfflineSovereignExecutorIntent,
   decideSovereignExecutorRoute,
+  resolveOfflineMachineExecutorIntent,
 } from './sovereignExecutorRuntime';
 import { buildSovereignToolCapabilityRegistry } from './sovereignToolCapabilityRuntime';
 import { createSovereignWorkspaceScope } from './sovereignWorkspaceScopeRuntime';
@@ -46,6 +47,19 @@ describe('sovereignExecutorRuntime', () => {
     expect(classifyOfflineSovereignExecutorIntent('Bitte README Titel ändern')).toBe('unknown');
     expect(classifyOfflineSovereignExecutorIntent('Implementiere Tests in src/foo.test.ts')).toBe('unknown');
     expect(classifyOfflineSovereignExecutorIntent('Erstelle einen Draft PR')).toBe('unknown');
+  });
+
+  it('maps only typed exact executor controls to supported agent intents', () => {
+    const directPatch = classifyOfflineSovereignExecutorIntent('/direct-patch README Titel ändern');
+    expect(resolveOfflineMachineExecutorIntent(directPatch)).toBe('code_execution');
+    expect(resolveOfflineMachineExecutorIntent('code_execution')).toBe('code_execution');
+    expect(resolveOfflineMachineExecutorIntent('draft_pr')).toBe('draft_pr');
+
+    const freeLanguage = classifyOfflineSovereignExecutorIntent('Bitte README Titel ändern');
+    expect(freeLanguage).toBe('unknown');
+    expect(resolveOfflineMachineExecutorIntent(freeLanguage)).toBeNull();
+    expect(resolveOfflineMachineExecutorIntent('status')).toBeNull();
+    expect(resolveOfflineMachineExecutorIntent('question')).toBeNull();
   });
 
   it('routes status questions locally and terminally', () => {
