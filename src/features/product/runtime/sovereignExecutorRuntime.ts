@@ -85,6 +85,23 @@ export function classifyOfflineSovereignExecutorIntent(text: string): SovereignE
   return OFFLINE_EXACT_COMMANDS[command] ?? 'unknown';
 }
 
+export type SovereignSupportedAgentIntent = Extract<
+  SovereignExecutorIntentKind,
+  'code_execution' | 'draft_pr'
+>;
+
+/**
+ * Map an already typed exact machine control to the intents accepted by the
+ * bounded repository executor. This function never reads natural language.
+ */
+export function resolveOfflineMachineExecutorIntent(
+  intent: SovereignExecutorIntentKind,
+): SovereignSupportedAgentIntent | null {
+  if (intent === 'direct_patch' || intent === 'code_execution') return 'code_execution';
+  if (intent === 'draft_pr') return 'draft_pr';
+  return null;
+}
+
 function event(args: {
   readonly route: SovereignActionRoute;
   readonly kind: SovereignActionEventInput['kind'];

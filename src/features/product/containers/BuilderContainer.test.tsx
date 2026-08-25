@@ -2406,42 +2406,12 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(oauthValidationCalls()).toHaveLength(2);
   });
 
-  it("routes only the exact degraded /direct-patch machine command through the bounded code executor", async () => {
+  it("routes the exact degraded /direct-patch command to the supported executor and stops at GitHub consent", async () => {
     const onStartAgent = vi.fn();
-    const oauthUser = { ...TEST_AUTH_USER, githubId: 'oauth-user-123' };
-    useUserStore.setState({ user: oauthUser });
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = requestUrl(input);
-      if (isAuthBootstrapRequest(input)) return jsonResponse(oauthUser);
-      if (isToolchainBootstrapRequest(input)) {
-        return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
-      }
-      if (url.includes('/api/llm/routes')) return liteLlmRouteCatalogResponse();
-      if (url.includes('/api/llm/chat')) {
-        return jsonResponse({ error: { message: 'language provider unavailable', type: 'upstream_error' } }, 503);
-      }
-      if (url.includes('/api/user/agent/validate-mission')) {
-        return jsonResponse({
-          score: 100,
-          specificEnough: true,
-          questions: [],
-          evidence: ['explicit_machine_command', 'bounded_target', 'draft_pr_constraint'],
-          status: 'ready',
-        });
-      }
-      if (url.includes('/api/user/agent/github-access/scope')) {
-        return jsonResponse({ ok: true, scope: 'v1.test-scope.signature' });
-      }
-      if (url.includes('/api/user/agent/github-access/validate')) {
-        return jsonResponse({ ok: true, canWrite: true, code: 'ready', error: null });
-      }
-      if (isGitHubApiRequest(input)) {
-        if (url.includes('/commits/')) return jsonResponse({ sha: 'c'.repeat(40) });
-        return jsonResponse({ tree: [{ path: 'docs/README.md', type: 'blob', size: 42 }], truncated: false });
-      }
-      return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
-    });
-    vi.stubGlobal('fetch', fetchMock);
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: 'docs/README.md', type: 'blob', size: 42 }], truncated: false }),
+      jsonResponse({ error: { message: 'language provider unavailable', type: 'upstream_error' } }, 503),
+    );
     renderWithProviders(
       <BuilderContainer
         {...baseProps()}
@@ -2453,28 +2423,17 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       />,
     );
     await loadRepoFromChat();
-    await waitFor(() => expect(
-      screen.getByRole('log', { name: 'Sovereign Action Stream' }),
-    ).toHaveTextContent('GitHub-Zugang bereit'));
 
     fireEvent.change(chatField(), {
       target: { value: '/direct-patch ändere docs/README.md, prüfe den Test und erzeuge nur einen Draft PR' },
     });
     fireEvent.click(sendButton());
 
-    await waitFor(() => expect(onStartAgent).toHaveBeenCalledTimes(1));
-    expect(onStartAgent).toHaveBeenCalledWith(
-      expect.stringContaining('/direct-patch'),
-      expect.objectContaining({
-        repoUrl: TEST_REPO_URL,
-        branch: 'main',
-        expectedHeadSha: 'c'.repeat(40),
-      }),
-    );
-    const [, startInput] = onStartAgent.mock.calls[0];
-    expect(startInput.githubAccessToken).toBeUndefined();
-    expect(screen.getByRole('log', { name: 'Sovereign Action Stream' }))
-      .toHaveTextContent('Sovereign Agent Job angefragt');
+    const actionStream = screen.getByRole('log', { name: 'Sovereign Action Stream' });
+    await waitFor(() => expect(actionStream).toHaveTextContent('Executor braucht GitHub-Zugang'));
+    expect(actionStream).not.toHaveTextContent('Kein bestätigter Code- oder Draft-PR-Ausführungsauftrag');
+    expect(onStartAgent).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
     expect(fetchMock.mock.calls.some(([input]) => (
       requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')
     ))).toBe(true);

@@ -254,6 +254,7 @@ import { buildSovereignToolCapabilityRegistry } from "../runtime/sovereignToolCa
 import { createSovereignWorkspaceScope } from "../runtime/sovereignWorkspaceScopeRuntime";
 import {
   classifyOfflineSovereignExecutorIntent,
+  resolveOfflineMachineExecutorIntent,
   type SovereignExecutorIntentKind,
 } from "../runtime/sovereignExecutorRuntime";
 import { decideSovereignExecutorBridgeRoute } from "../../../runtime/sovereignExecutorBridgeRuntime";
@@ -5227,11 +5228,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         return;
       }
 
-      if (offlineIntent === 'direct_patch' || offlineIntent === 'code_execution' || offlineIntent === 'draft_pr') {
-        const boundedExecutorIntent = offlineIntent === 'direct_patch'
-          ? 'code_execution'
-          : offlineIntent;
-        const started = await startAgentFromText(submittedText, boundedExecutorIntent);
+      const offlineExecutorIntent = resolveOfflineMachineExecutorIntent(offlineIntent);
+      if (offlineExecutorIntent) {
+        const started = await startAgentFromText(submittedText, offlineExecutorIntent);
         if (started) {
           appendRuntimeNotice('Online-Sprachdeutung war nicht verfügbar. Nur der explizite Maschinenbefehl wurde an die Runtime übergeben; Erfolg bleibt bis zu echter Runtime-Evidence offen.');
         }
