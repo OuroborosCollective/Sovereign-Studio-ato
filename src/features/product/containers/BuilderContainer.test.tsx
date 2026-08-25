@@ -2408,12 +2408,38 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   it("routes only the exact degraded /direct-patch machine command through the bounded code executor", async () => {
     const onStartAgent = vi.fn();
-    const fetchMock = mockFetchSequence(
-      jsonResponse({ tree: [{ path: "docs/README.md", type: "blob", size: 42 }], truncated: false }),
-      jsonResponse({ login: "octo" }),
-      jsonResponse({ permissions: { push: true } }),
-      jsonResponse({ error: { message: "language provider unavailable", type: "upstream_error" } }, 503),
-    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (isAuthBootstrapRequest(input)) return authBootstrapResponse();
+      if (isToolchainBootstrapRequest(input)) {
+        return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
+      }
+      if (url.includes('/api/llm/routes')) return liteLlmRouteCatalogResponse();
+      if (url.includes('/api/llm/chat')) {
+        return jsonResponse({ error: { message: 'language provider unavailable', type: 'upstream_error' } }, 503);
+      }
+      if (url.includes('/api/user/agent/validate-mission')) {
+        return jsonResponse({
+          score: 100,
+          specificEnough: true,
+          questions: [],
+          evidence: ['explicit_machine_command', 'bounded_target', 'draft_pr_constraint'],
+          status: 'ready',
+        });
+      }
+      if (url.includes('/api/user/agent/github-access/scope')) {
+        return jsonResponse({ ok: true, scope: 'v1.test-scope.signature' });
+      }
+      if (url.includes('/api/user/agent/github-access/validate')) {
+        return jsonResponse({ ok: true, canWrite: true, code: 'ready', error: null });
+      }
+      if (isGitHubApiRequest(input)) {
+        if (url.includes('/commits/')) return jsonResponse({ sha: 'c'.repeat(40) });
+        return jsonResponse({ tree: [{ path: 'docs/README.md', type: 'blob', size: 42 }], truncated: false });
+      }
+      return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
+    });
+    vi.stubGlobal('fetch', fetchMock);
     renderWithProviders(
       <BuilderContainer
         {...baseProps()}

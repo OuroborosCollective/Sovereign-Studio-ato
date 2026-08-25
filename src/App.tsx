@@ -63,6 +63,7 @@ function SovereignMonitorApp() {
     SovereignPatternLearningEvidence | undefined
   >();
   const [desktopFrame, setDesktopFrame] = useState<{
+    readonly jobId: string;
     readonly url: string;
     readonly frameHash: string;
     readonly observedAt: number;
@@ -232,6 +233,7 @@ function SovereignMonitorApp() {
         const previous = desktopFrameUrlRef.current;
         desktopFrameUrlRef.current = nextUrl;
         setDesktopFrame({
+          jobId,
           url: nextUrl,
           frameHash: observed.frameHash,
           observedAt: observed.observedAt,
@@ -539,7 +541,7 @@ function SovereignMonitorApp() {
           agentJob={agentJob}
           agentProjections={liveProjections}
           agentEvidenceAnchors={liveEvidenceAnchors}
-          desktopFrame={desktopFrame}
+          desktopFrame={desktopFrame?.jobId === canonicalAgentJob.jobId ? desktopFrame : null}
           patternLearningEvidence={patternLearningEvidence}
           agentJobStatus={agentIsRunning
             ? 'Sovereign Agent Auftrag läuft'
