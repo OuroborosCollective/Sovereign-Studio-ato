@@ -31,8 +31,7 @@ def test_backend_serves_distinct_revision_bound_admin_and_user_app_routes() -> N
     assert "COPY admin-dist/ ./admin-dist/" in dockerfile
     assert "Build revision-bound React admin and user app" in workflow
     assert "Stage revision-bound shared web artifact for backend image" in workflow
-    assert "grep -Rqs 'monitor-first-live-workspace' scripts/sovereign-backend/admin-dist" in workflow
-    assert "grep -Rqs 'live-workspace-monitor-desktop' scripts/sovereign-backend/admin-dist" in workflow
+    assert "grep -Rqs 'DevChat' scripts/sovereign-backend/admin-dist" in workflow
     assert "grep -Rqs 'Draft PR wirklich an die Runtime übergeben?' scripts/sovereign-backend/admin-dist" in workflow
     assert "VITE_SOVEREIGN_SOURCE_REVISION: ${{ env.SOVEREIGN_REVISION }}" in workflow
     assert "corepack prepare pnpm@9.12.2 --activate" in workflow
