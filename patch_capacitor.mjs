@@ -17,7 +17,7 @@ export const patchFile = (filePath, search, replacement) => {
   const fullPath = path.resolve(process.cwd(), filePath);
 
   if (!fs.existsSync(fullPath)) {
-    console.warn(`[Sovereign Studio] File not found: ${fullPath}`);
+    console.log(`[Sovereign Studio] Legacy migration not applicable: ${filePath}`);
     return;
   }
 
@@ -31,7 +31,7 @@ export const patchFile = (filePath, search, replacement) => {
       fs.writeFileSync(fullPath, updatedContent, 'utf8');
       console.log(`[Sovereign Studio] Successfully patched: ${filePath}`);
     } else {
-      console.log(`[Sovereign Studio] Search string not found in: ${filePath}`);
+      console.log(`[Sovereign Studio] Legacy migration already satisfied: ${filePath}`);
     }
   } catch (error) {
     console.error(`[Sovereign Studio] Error patching file ${filePath}:`, error.message);

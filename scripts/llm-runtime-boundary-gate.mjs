@@ -111,7 +111,7 @@ requireText(workerPath, worker, 'readonly runtimeContext?: string;', 'worker int
 requireText(workerPath, worker, 'Belegte Runtime-Fakten (nur Fakten, keine Sprachdeutung)', 'runtime context is not explicitly constrained to facts');
 
 requireText(builderPath, builder, 'const appendRuntimeNotice', 'BuilderContainer lacks a dedicated system notice path');
-requireText(builderPath, builder, "appendChatLine({ role: 'system', text });", 'runtime notices are not rendered as system state');
+requirePattern(builderPath, builder, /appendChatLine\(\{\s*role:\s*['"]system['"],\s*text(?:\s*,|\s*\})/m, 'runtime notices are not rendered as system state');
 requireText(builderPath, builder, 'runtimeContext: [', 'online interpretation does not receive runtime evidence');
 requireText(builderPath, builder, 'buildExplicitRuntimeCapabilityLanguageEvidence', 'explicit machine actions are not converted into structured language evidence');
 requireText(builderPath, builder, "source: 'explicit_runtime_action'", 'explicit runtime actions are not provenance-marked');
