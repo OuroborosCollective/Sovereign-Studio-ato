@@ -36,6 +36,7 @@ const TEST_FILE_PATTERNS = [
   /(?:^|\/)[^/]+(?:Test|Tests)\.(?:java|kt|kts)$/,
   /(?:^|\/)test_[^/]+\.(?:sh|bash|c|cc|cpp)$/i,
 ];
+const PLAYWRIGHT_TEST_ROOTS = ['tests/e2e/'];
 
 function normalizePath(filePath) {
   return filePath.replaceAll('\\', '/');
@@ -90,6 +91,11 @@ function isE2ETest(filePath) {
   return normalized.startsWith('tests/e2e/')
     || normalized.includes('/e2e/')
     || normalized.includes('/androidTest/');
+}
+
+function isPlaywrightTest(filePath) {
+  const normalized = normalizePath(filePath);
+  return PLAYWRIGHT_TEST_ROOTS.some((root) => normalized.startsWith(root));
 }
 
 function isVitestCandidate(filePath) {
@@ -232,7 +238,7 @@ function workflowCoversFile(workflow, file, gates) {
 const gateKeys = Object.keys(GATE_PATTERNS);
 const files = allTests.map((file) => {
   const gates = isVitestCandidate(file) ? gateKeys.filter((gate) => fileInGate(file, gate)) : [];
-  if (isE2ETest(file) && !gates.includes('verify')) gates.push('verify');
+  if (isPlaywrightTest(file) && !gates.includes('verify')) gates.push('verify');
   const ciCoverage = ciWorkflows
     .filter((workflow) => workflowCoversFile(workflow, file, gates))
     .map((workflow) => workflow.file)

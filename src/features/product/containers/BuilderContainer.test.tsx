@@ -662,7 +662,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3));
     await waitFor(() => expect(screen.getByText('arbeitet der Agent gerade?')).toBeDefined());
-    expect(screen.getAllByText('COMMUNICATE').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('RUNTIME').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Noch nicht. Sovereign Agent arbeitet noch.')).toBeDefined();
+    expect(screen.queryByText('Der Agent arbeitet weiterhin im gebundenen Workspace.')).toBeNull();
     expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined();
     expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
     expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-overlay', 'false');
@@ -2199,6 +2201,33 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(diffItem.getAttribute("title")).toContain("Kein Diff");
     expect(screen.queryByText("src/Foreign.tsx")).toBeNull();
     expect(screen.queryByText(/Draft PR öffnen/i)).toBeNull();
+  });
+
+  it("hides job-bound monitor observations when the loaded repository differs", async () => {
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        agentReady
+        agentJob={repoScopedJob({ repoUrl: SECOND_REPO_URL })}
+        agentProjections={[repoScopedProjection()]}
+        desktopFrame={{
+          jobId: "job_scoped",
+          url: "blob:foreign-repository-frame",
+          frameHash: "9".repeat(64),
+          observedAt: 1,
+        }}
+      />,
+    );
+    await loadRepoFromChat();
+
+    expect(screen.queryByAltText("Beobachteter Sovereign Workspace Desktop")).toBeNull();
+    expect(screen.queryByText("monitor runtime output")).toBeNull();
+    expect(screen.getByTestId("live-workspace-monitor-desktop-unavailable")).toBeDefined();
   });
 
   it("rejects a published Draft PR URL from another repository", async () => {

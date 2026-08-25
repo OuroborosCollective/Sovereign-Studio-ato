@@ -274,6 +274,7 @@ export interface BuilderContainerProps {
   agentProjections?: readonly SovereignLiveProjection[];
   agentEvidenceAnchors?: readonly SovereignWorkspaceEvidenceAnchor[];
   desktopFrame?: {
+    readonly jobId: string;
     readonly url: string;
     readonly frameHash: string;
     readonly observedAt: number;
@@ -2336,6 +2337,9 @@ export function BuilderContainer({
     () => selectRepoScopedAgentJob(agentJob, chatRepoSnapshot),
     [chatRepoSnapshot, agentJob],
   );
+  const scopedDesktopFrame = desktopFrame?.jobId === scopedAgentJob?.jobId
+    ? desktopFrame
+    : null;
   const githubAccessApiBase = useMemo(
     () => agentConfig?.agentApiUrl || resolveSovereignAgentConfig().agentApiUrl || SOVEREIGN_WORKER_BASE,
     [agentConfig],
@@ -2345,10 +2349,13 @@ export function BuilderContainer({
     && ['queued', 'provisioning', 'running', 'validating'].includes(scopedAgentJob.status),
   );
   const scopedAgentProjections = useMemo(
-    () => (agentProjections ?? []).filter((projection) => (
-      !scopedAgentJob?.workspaceId || projection.workspaceId === scopedAgentJob.workspaceId
-    )),
-    [agentProjections, scopedAgentJob?.workspaceId],
+    () => scopedAgentJob?.jobId && scopedAgentJob.workspaceId
+      ? (agentProjections ?? []).filter((projection) => (
+          projection.jobId === scopedAgentJob.jobId
+          && projection.workspaceId === scopedAgentJob.workspaceId
+        ))
+      : [],
+    [agentProjections, scopedAgentJob?.jobId, scopedAgentJob?.workspaceId],
   );
   // The workspace monitor is the permanent primary product surface. Runtime
   // projections and desktop frames enrich it when available; they never decide
@@ -5491,7 +5498,7 @@ Das echte Repo-Setup wurde geöffnet.`);
       }
       onOpenFile={openRepoExplorerFromFileBadge}
       primaryMonitor={liveMonitorPrimary}
-      desktopFrame={desktopFrame}
+      desktopFrame={scopedDesktopFrame}
     />
   ) : null;
   const activeMod = MODULES.find((m) => m.id === activeTab) ?? MODULES[0];

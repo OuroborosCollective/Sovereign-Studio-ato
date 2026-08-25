@@ -210,7 +210,12 @@ function run() {
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_SAVE_SESSION/, 'repo:save-session-action-bound', 'Repo snapshot must bind save session action contract.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /type=\{\s*SOVEREIGN_FORM_PRIVATE_ACCESS\.inputType/, 'repo:private-access-password-type', 'Private access must use password type from contract.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /autoComplete=\{\s*SOVEREIGN_FORM_PRIVATE_ACCESS\.autoComplete/, 'repo:private-access-autocomplete-off', 'Private access must use autocomplete off from contract.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_FORM_MISSION/, 'builder:mission-form-bound', 'Builder must bind mission form contract.');
+  requireText(
+    'src/features/product/containers/BuilderContainer.tsx',
+    /<MonitorCommunicationDock[\s\S]{0,400}value=\{wishText\}[\s\S]{0,200}onChange=\{setWishText\}/,
+    'builder:mission-form-bound',
+    'Builder must bind the mission input state to the live monitor communication dock.',
+  );
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_ANALYZE_MISSION/, 'builder:analyze-mission-action-bound', 'Builder must bind analyze mission action contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_DRAFT_PR/, 'builder:draft-pr-action-bound', 'Builder must bind draft PR action contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_REPAIR_LOG/, 'builder:repair-log-action-bound', 'Builder must bind repair log action contract.');
