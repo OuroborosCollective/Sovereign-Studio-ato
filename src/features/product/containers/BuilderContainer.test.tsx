@@ -471,6 +471,44 @@ async function validateGitHubAccessFromLauncher(): Promise<void> {
   );
 }
 
+async function driveRepoBlockedExecutionThroughGitHubAccess() {
+  const originalText = 'Sovereign Agent soll Feature X implementieren';
+  const onStartAgent = vi.fn();
+  mockFetchSequence(
+    jsonResponse({ choices: [{ message: { content: 'Ich habe den Ausführungsauftrag verstanden.' } }] }),
+    jsonResponse({ tree: [{ path: 'src/App.tsx', type: 'blob', size: 42 }], truncated: false }),
+    jsonResponse({ login: 'octo' }),
+    jsonResponse({ permissions: { push: true } }),
+  );
+  renderWithProviders(
+    <BuilderContainer
+      {...baseProps()}
+      mission=""
+      repoReady={false}
+      agentReady
+      agentJob={repoScopedJob({ status: 'completed' })}
+      onStartAgent={onStartAgent}
+    />,
+  );
+
+  fireEvent.change(chatField(), { target: { value: originalText } });
+  fireEvent.click(sendButton());
+  await waitFor(() => expect(screen.getByRole('dialog', { name: 'Repo Setup' })).toBeDefined());
+  expect(onStartAgent).not.toHaveBeenCalled();
+
+  fireEvent.change(screen.getByLabelText('GitHub Repository URL'), { target: { value: TEST_REPO_URL } });
+  fireEvent.click(screen.getByRole('button', { name: 'Repo-Snapshot laden' }));
+  await waitFor(() =>
+    expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(1),
+  );
+
+  fireEvent.click(screen.getAllByText('Zugang eingeben')[0]);
+  fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
+  fireEvent.click(screen.getByText('Übernehmen'));
+
+  return { originalText, onStartAgent };
+}
+
 beforeEach(() => {
   testChatBubbleSequence = 0;
   testChatSession = {
@@ -1299,34 +1337,31 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getAllByText(originalText)).toHaveLength(1);
   });
 
-  it("resumes one repo-blocked Agent request through repo load and GitHub validation", async () => {
-    const originalText = "Sovereign Agent soll Feature X implementieren";
-    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
-    mockFetchSequence(
-      jsonResponse({ choices: [{ message: { content: 'Ich habe den Ausführungsauftrag verstanden.' } }] }),
-      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
-      jsonResponse({ login: "octo" }),
-      jsonResponse({ permissions: { push: true } }),
-    );
-    renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
+  it('confirms repo-scoped GitHub access after loading the repository for a blocked execution', async () => {
+    await driveRepoBlockedExecutionThroughGitHubAccess();
 
-    fireEvent.change(chatField(), { target: { value: originalText } });
-    fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByRole("dialog", { name: "Repo Setup" })).toBeDefined());
-    expect(props.onStartAgent).not.toHaveBeenCalled();
-
-    fireEvent.change(screen.getByLabelText("GitHub Repository URL"), { target: { value: TEST_REPO_URL } });
-    fireEvent.click(screen.getByRole("button", { name: "Repo-Snapshot laden" }));
     await waitFor(() =>
-      expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(1),
+      expect(screen.getByRole('log', { name: 'Sovereign Action Stream' }))
+        .toHaveTextContent('GitHub-Zugang bereit'),
+      { timeout: 3000 },
     );
+  });
 
-    fireEvent.click(screen.getAllByText("Zugang eingeben")[0]);
-    fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
-    fireEvent.click(screen.getByText("Übernehmen"));
+  it('emits the pending-execution resume receipt after repo-scoped GitHub access becomes ready', async () => {
+    await driveRepoBlockedExecutionThroughGitHubAccess();
 
-    await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce(), { timeout: 3000 });
-    expect(props.onStartAgent.mock.calls[0][0]).toContain(originalText);
+    await waitFor(() =>
+      expect(screen.getByRole('log', { name: 'Sovereign Action Stream' }))
+        .toHaveTextContent('Blockierter Auftrag wird wiederaufgenommen'),
+      { timeout: 3000 },
+    );
+  });
+
+  it("resumes one repo-blocked Agent request through repo load and GitHub validation", async () => {
+    const { originalText, onStartAgent } = await driveRepoBlockedExecutionThroughGitHubAccess();
+
+    await waitFor(() => expect(onStartAgent).toHaveBeenCalledOnce(), { timeout: 3000 });
+    expect(onStartAgent.mock.calls[0][0]).toContain(originalText);
   });
 
   it("preserves the original mission in monitor communication across the first repository binding", async () => {
