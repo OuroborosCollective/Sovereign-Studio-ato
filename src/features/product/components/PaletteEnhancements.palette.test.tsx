@@ -21,6 +21,7 @@ import { CompactRepoSetupSheet } from './CompactRepoSetupSheet';
 import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
+import { AgentResultCard } from './AgentResultCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1041,6 +1042,65 @@ describe('Palette Accessibility Enhancements', () => {
 
       const closeClickRes = fireEvent.click(closeBtn);
       expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('AgentResultCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders with title tooltips on metadata and styled action buttons with descriptive tooltips', () => {
+      const mockSnapshot = {
+        id: 'work-123',
+        state: 'draft_pr_ready' as const,
+        draftPrUrl: 'https://github.com/owner/repo/pull/42',
+        branchName: 'feature/amazing-ux',
+        commitSha: 'a1b2c3d4e5f6',
+        repoFullName: 'owner/repo',
+        created: Date.now(),
+        updated: Date.now(),
+      };
+
+      const onOpen = vi.fn();
+      const onViewDiff = vi.fn();
+      const onWatchChecks = vi.fn();
+
+      render(
+        <AgentResultCard
+          snapshot={mockSnapshot}
+          checksState="running"
+          onOpen={onOpen}
+          onViewDiff={onViewDiff}
+          onWatchChecks={onWatchChecks}
+        />
+      );
+
+      const region = screen.getByRole('region', { name: 'Agent Ergebnis' });
+      expect(region).toBeInTheDocument();
+
+      expect(screen.getByTitle('Pull Request #42')).toBeInTheDocument();
+      expect(screen.getByTitle('owner/repo')).toBeInTheDocument();
+      expect(screen.getByTitle('feature/amazing-ux')).toBeInTheDocument();
+      expect(screen.getByTitle('Commit SHA: a1b2c3d4e5f6')).toBeInTheDocument();
+      expect(screen.getByTitle('Status: Checks laufen…')).toBeInTheDocument();
+
+      const openBtn = screen.getByRole('button', { name: 'Öffnen' });
+      expect(openBtn).toHaveAttribute('title', 'Draft PR auf GitHub öffnen');
+      expect(openBtn).toHaveClass('focus-visible:ring-2');
+
+      const diffBtn = screen.getByRole('button', { name: 'Diff ansehen' });
+      expect(diffBtn).toHaveAttribute('title', 'Diff-Vorschau der Änderungen anzeigen');
+      expect(diffBtn).toHaveClass('focus-visible:ring-2');
+
+      const watchBtn = screen.getByRole('button', { name: 'Checks beobachten' });
+      expect(watchBtn).toHaveAttribute('title', 'GitHub Commit Checks live beobachten');
+      expect(watchBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(openBtn);
+      expect(onOpen).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(diffBtn);
+      expect(onViewDiff).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(watchBtn);
+      expect(onWatchChecks).toHaveBeenCalledTimes(1);
     });
   });
 });

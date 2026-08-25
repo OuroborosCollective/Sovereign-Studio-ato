@@ -85,6 +85,7 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span
+          aria-hidden="true"
           style={{
             width: 8,
             height: 8,
@@ -106,19 +107,20 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
         {prNumber && (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 11, color: C.textSub, width: 52, flexShrink: 0 }}>PR</span>
-            <span style={{ fontSize: 12, color: C.sky, fontFamily: 'monospace' }}>{prNumber}</span>
+            <span style={{ fontSize: 12, color: C.sky, fontFamily: 'monospace' }} title={`Pull Request ${prNumber}`}>{prNumber}</span>
           </div>
         )}
         {repoFullName && (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 11, color: C.textSub, width: 52, flexShrink: 0 }}>Repo</span>
-            <span style={{ fontSize: 12, color: C.text, fontFamily: 'monospace' }}>{repoFullName}</span>
+            <span style={{ fontSize: 12, color: C.text, fontFamily: 'monospace' }} title={repoFullName}>{repoFullName}</span>
           </div>
         )}
         {branchName && (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 11, color: C.textSub, width: 52, flexShrink: 0 }}>Branch</span>
             <span
+              title={branchName}
               style={{
                 fontSize: 12,
                 color: C.sky,
@@ -133,14 +135,14 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
         {commitSha && (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 11, color: C.textSub, width: 52, flexShrink: 0 }}>Commit</span>
-            <span style={{ fontSize: 12, color: C.sky, fontFamily: 'monospace' }}>
+            <span style={{ fontSize: 12, color: C.sky, fontFamily: 'monospace' }} title={`Commit SHA: ${commitSha}`}>
               {commitSha.slice(0, 7)}
             </span>
           </div>
         )}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span style={{ fontSize: 11, color: C.textSub, width: 52, flexShrink: 0 }}>Checks</span>
-          <span style={{ fontSize: 12, color, fontFamily: 'monospace' }}>
+          <span style={{ fontSize: 12, color, fontFamily: 'monospace' }} title={`Status: ${checksLabel(checksState)}`}>
             {checksLabel(checksState)}
           </span>
         </div>
@@ -159,6 +161,7 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
           <button
             type="button"
             onClick={onOpen}
+            className="focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
             style={{
               padding: '7px 14px',
               borderRadius: 8,
@@ -169,8 +172,7 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
               fontWeight: 500,
               cursor: 'pointer',
             }}
-            aria-label="Öffnen"
-            title="Öffnen"
+            title="Draft PR auf GitHub öffnen"
           >
             Öffnen
           </button>
@@ -179,6 +181,7 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
           <button
             type="button"
             onClick={onViewDiff}
+            className="focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none"
             style={{
               padding: '7px 14px',
               borderRadius: 8,
@@ -189,8 +192,7 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
               fontWeight: 500,
               cursor: 'pointer',
             }}
-            aria-label="Diff ansehen"
-            title="Diff ansehen"
+            title="Diff-Vorschau der Änderungen anzeigen"
           >
             Diff ansehen
           </button>
@@ -199,6 +201,7 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
           <button
             type="button"
             onClick={onWatchChecks}
+            className="focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
             style={{
               padding: '7px 14px',
               borderRadius: 8,
@@ -209,8 +212,7 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
               fontWeight: 500,
               cursor: 'pointer',
             }}
-            aria-label="Checks beobachten"
-            title="Checks beobachten"
+            title="GitHub Commit Checks live beobachten"
           >
             Checks beobachten
           </button>

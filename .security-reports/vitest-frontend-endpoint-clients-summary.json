@@ -1,0 +1,13 @@
+{
+  "causalTest": null,
+  "causalTests": [],
+  "exitCode": 0,
+  "failed": 0,
+  "label": "frontend-endpoint-clients",
+  "passed": 25,
+  "rawReportPersisted": false,
+  "schemaVersion": "sovereign.vitest-causal-runner.v1",
+  "skipped": 0,
+  "status": "passed",
+  "total": 25
+}
