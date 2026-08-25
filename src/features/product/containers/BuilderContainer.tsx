@@ -520,14 +520,7 @@ const IDEA_OPTIONS: IdeaOption[] = [
 // ─────────────────────────────────────────────────────────────
 
 // Intent detection from workerIntentDetector module
-import {
-  isSovereignAgentExecutionIntent,
-  isCodeGenerationIntent,
-  isDelegatedSovereignAgentExecutionIntent,
-  buildExecutorStatusAnswer,
-  isAlternativeWriteRouteIntent,
-  buildAlternativeRouteStatusAnswer,
-} from "../runtime/workerIntentDetector";
+import { buildExecutorStatusAnswer } from "../runtime/workerIntentDetector";
 import { buildGeneratedFileDiffReportFromUnifiedDiff, type GeneratedFileDiffReport } from "../runtime/generatedFileDiffPreview";
 import { requestSemanticDiffNarration, narrativeMap, type SemanticDiffNarrationResult } from "../runtime/semanticDiffNarratorRuntime";
 import { fetchCommitsSince, type ChangelogGenerationResult } from "../runtime/changelogRuntime";
@@ -5523,7 +5516,11 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         // The browser may select a bounded route, but repository inspection and
         // mutation remain backend-owned. No local target-file inference is used.
         const executorBridgeDecision = decideSovereignExecutorBridgeRoute({
-          intent: classifyOfflineSovereignExecutorIntent(submittedText),
+          intent: capabilityDecision.capability === 'draft_pr'
+            ? 'draft_pr'
+            : capabilityDecision.capability === 'direct_github_patch'
+              ? 'direct_patch'
+              : 'code_execution',
           taskComplexity: capabilityRouterInput.language.complexity,
           capabilities: buildSovereignToolCapabilityRegistry({
             repoReady: effectiveRepoReady,
@@ -5585,32 +5582,13 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       }
       return;
     }
-    // ── #500/#501 Alternative write route: answer locally without Sovereign Agent lock-in.
-    // NOTE: Status, diagnostic, and retry intents are handled earlier in the flow
-    // (see Issue #522 P2 Fix 2 & 3 above) to ensure they don't create integration drafts.
-    // These questions must be answered from runtime state, not forwarded to Sovereign Agent.
-    if (isAlternativeWriteRouteIntent(submittedText)) {
-      // Browser-side direct patch is intentionally unavailable. The only write
-      // route is the authenticated backend workspace/executor contract.
-      const directPatchAvailable = false;
-      const altRouteAnswer = buildAlternativeRouteStatusAnswer({
-        githubAccessReady: githubWriteAllowed,
-        githubAccessState: effectiveGitHubAccessState,
-        agentReady: agentReady ?? false,
-        directPatchAvailable,
-      });
-      appendChatLine({ role: 'assistant', text: altRouteAnswer });
-      addLog('info', 'Alternative route question answered locally · browserDirectPatch=false · backendExecutor=' + sovereignAgentStartAvailable, 'router');
-      return;
-    }
-
     // ── #458 + Delegation: Execution intent routing — BEFORE credit guard.
     // Sovereign Agent execution does not go through the Worker Chat (gemini-2.0-flash) path;
     // charging LLM credits for an executor handoff is incorrect.
-    const isExecutionIntent = isSovereignAgentExecutionIntent(submittedText);
-    const isDelegatedExecution = isDelegatedSovereignAgentExecutionIntent(submittedText, chatHistory);
+    const isExecutionIntent = explicitRuntimeIntent === 'code_execution'
+      || explicitRuntimeIntent === 'draft_pr';
 
-    if (!advisoryWorkerRoute && (isExecutionIntent || isDelegatedExecution)) {
+    if (!advisoryWorkerRoute && isExecutionIntent) {
       if (!agentDisabled) {
         // Immediately reflect intent in AgentWorkTimeline — truth from runtime, not from polling.
         const _repo = chatRepoSnapshot
@@ -5628,10 +5606,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
             ? transitionIntentDetected(prev, _repo, chatRepoSnapshot?.branch ?? 'main')
             : prev,
         );
-        addLog('info', `Execution intent · type=${isDelegatedExecution ? 'delegated' : 'explicit'} · repo=${_repo}`, 'router');
+        addLog('info', `Execution intent · type=typed-explicit · repo=${_repo}`, 'router');
         const agentStartRequested = await startAgentFromText(
           submittedText,
-          classifyOfflineSovereignExecutorIntent(submittedText),
+          explicitRuntimeIntent === 'draft_pr' ? 'draft_pr' : 'code_execution',
         );
         if (agentStartRequested) {
           appendRuntimeNotice("Runtime-Aktion autorisiert.\nRoute gewählt: Sovereign Agent Runtime.\nJob-Start wurde angefragt; bestätigter Job-State kommt aus der Runtime. Ergebnis bleibt Draft PR, kein Auto-Merge.");
@@ -5641,7 +5619,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       // A disabled backend executor cannot be replaced by browser-side repository
       // inspection or mutation. The bridge remains fail-closed.
       const executorBridgeDecision = decideSovereignExecutorBridgeRoute({
-        intent: classifyOfflineSovereignExecutorIntent(submittedText),
+        intent: explicitRuntimeIntent === 'draft_pr' ? 'draft_pr' : 'code_execution',
         taskComplexity: capabilityRouterInput.language.complexity,
         capabilities: buildSovereignToolCapabilityRegistry({
           repoReady: effectiveRepoReady,
@@ -5666,7 +5644,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           role: "system",
           text: `Runtime-Aktion autorisiert.\nRoute gewählt: Sovereign Internal Operator (${executorBridgeDecision.internalOperatorRoute ?? 'intern'}).\n\nSovereignAgent Runtime bleibt optional, wenn Direct Patch den Auftrag belegen kann.\nDer Auftrag bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
         });
-        addLog('info', `Execution intent via Sovereign Internal Operator bridge · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
+        addLog('info', 'Execution intent via Sovereign Internal Operator bridge · intent=typed-explicit', 'router');
         return;
       }
 
@@ -5687,18 +5665,18 @@ ${executorBridgeDecision.reason}
 
 Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag belegen kann. Es wurde noch keine Datei geändert; nächster Schritt ist Patch/Diff erzeugen oder Executor verbinden.`,
         });
-        addLog('info', `Execution intent allowed by bridge without mandatory Sovereign Agent · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
+        addLog('info', 'Execution intent allowed by bridge without mandatory Sovereign Agent · intent=typed-explicit', 'router');
         return;
       }
 
       // Bridge blocked - show clear blocker with honest reason
       const blockerReason = executorBridgeDecision.reason;
       appendRuntimeNotice(`Runtime-Aktion blockiert.\n\nGrund: ${blockerReason}`);
-      addLog("warn", `Execution blocked by bridge: agentDisabled=true, intent=${isDelegatedExecution ? 'delegated' : 'explicit'} · ${blockerReason}`, "router");
+      addLog("warn", `Execution blocked by bridge: agentDisabled=true, intent=typed-explicit · ${blockerReason}`, "router");
       return;
     }
 
-    if (!advisoryWorkerRoute && !isSafeAnalysisPreset && isCodeGenerationIntent(submittedText)) {
+    if (!advisoryWorkerRoute && !isSafeAnalysisPreset && explicitRuntimeIntent === 'code_execution') {
       appendActionEvent(buildRouteSelectionEvent({
         route: 'code-llm',
         reason: 'Code-Auftrag erkannt; Code-LLM/Worker erzeugt Antwort oder Patchvorschlag.',

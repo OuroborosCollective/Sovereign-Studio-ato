@@ -113,7 +113,14 @@ requireText(workerPath, worker, 'Belegte Runtime-Fakten (nur Fakten, keine Sprac
 requireText(builderPath, builder, 'const appendRuntimeNotice', 'BuilderContainer lacks a dedicated system notice path');
 requireText(builderPath, builder, "appendChatLine({ role: 'system', text });", 'runtime notices are not rendered as system state');
 requireText(builderPath, builder, 'runtimeContext: [', 'online interpretation does not receive runtime evidence');
-requireText(builderPath, builder, "source: 'offline_fallback'", 'offline fallback evidence is not explicitly marked');
+requireText(builderPath, builder, 'buildExplicitRuntimeCapabilityLanguageEvidence', 'explicit machine actions are not converted into structured language evidence');
+requireText(builderPath, builder, "source: 'explicit_runtime_action'", 'explicit runtime actions are not provenance-marked');
+requireText(builderPath, builder, 'const explicitRuntimeIntent = classifyOfflineSovereignExecutorIntent(submittedText);', 'the exact machine-command classifier is not isolated at the submit boundary');
+forbidText(builderPath, builder, 'buildOfflineCapabilityLanguageEvidence(', 'BuilderContainer must not classify free user language through the offline capability helper');
+forbidText(builderPath, builder, 'isSovereignAgentExecutionIntent(', 'BuilderContainer still interprets execution language through keyword rules');
+forbidText(builderPath, builder, 'isDelegatedSovereignAgentExecutionIntent(', 'BuilderContainer still infers delegated execution from conversation text');
+forbidText(builderPath, builder, 'isCodeGenerationIntent(', 'BuilderContainer still interprets code-generation language through keyword rules');
+forbidText(builderPath, builder, 'isAlternativeWriteRouteIntent(', 'BuilderContainer still interprets alternative-route language through keyword rules');
 forbidText(builderPath, builder, 'classifySovereignExecutorIntent', 'legacy runtime language classifier returned to BuilderContainer');
 forbidText(builderPath, builder, 'Beratungsroute erkannt', 'runtime still speaks as the model');
 forbidPattern(builderPath, builder, /role:\s*['"]assistant['"][\s\S]{0,220}(?:Runtime-Aktion|Route blockiert|GitHub-Zugang ist bereit|Executor blockiert|Direct GitHub Patch fehlgeschlagen)/m, 'runtime/gate/tool state is still emitted as an assistant message');
