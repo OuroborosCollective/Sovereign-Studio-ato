@@ -161,8 +161,9 @@ change/delta + temporal envelope
 
 ## Continuity truth
 
-- Continuity context and policy are mandatory before mutating MCP work.
-- Ledgers are append-only.
+- Continuity context, policy and ledgers are advisory historical provenance only; they do not authorize, delay or block repository mutations, PRs, merges, releases, deployments or runtime work.
+- Exact Git revision, explicit owner/permission gates, required CI/evidence and fresh target-system readback remain the technical authority.
+- When written, ledgers are append-only.
 - Historical records are not current runtime state.
 - Owner-asserted personal provenance and technical evidence remain distinct.
 - Raw chat and secrets are not persisted.

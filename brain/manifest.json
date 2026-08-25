@@ -46,24 +46,24 @@
   "schemaVersion": "sovereign.brain-projection.v1",
   "sources": [
     {
-      "git_blob_sha1": "c69bd2fd90d63d5765b0d24b1aba21b50f17d45e",
+      "git_blob_sha1": "6ffef0b223601ed68589c687e434e175bf37f824",
       "path": "AGENTS.md",
-      "sha256": "308b80ac020dd37ce0b91cf71fef4f7f51dfe8593b56ee118103119c1d4349db"
+      "sha256": "4ca52c327b4e10e344381cdc3274bc80ead8bf7a0ef0baeddd301a83f2ff48af"
     },
     {
-      "git_blob_sha1": "a3569b071d014e6346aa8a17c8c3313e04cdeab0",
+      "git_blob_sha1": "6a098e46c912aea5fec6a8530b36a226d830cad9",
       "path": "docs/CURRENT_STATE_2026-08-03.md",
-      "sha256": "bba7c89c790c96df3f65a0fb28e398ae4fbb111b60564cac445a8024c1748a81"
+      "sha256": "41229de78581ce72dc2e4332155613603c9adefb20272fcf13979edef59ce0e9"
     },
     {
-      "git_blob_sha1": "c5f76bbea22293add76eab8634280666d162cafe",
+      "git_blob_sha1": "8841401e70129bfa59b8ea5c7384c639a441c576",
       "path": "docs/SOVEREIGN_PRODUCT_TRUTH.md",
-      "sha256": "ce83643ad42b653855184bf778ff66b5bb5155b112a5b95a77c5fb6b0ffbfbcf"
+      "sha256": "0c4eca997b2634e476a56e8ff8b1eaf0a5d96b71fa24bb52aa61fdb56ef7c7ee"
     },
     {
-      "git_blob_sha1": "bdf64add39067dbbb2579e7a60869f606e24fd0a",
+      "git_blob_sha1": "b88c09251c980374d30c8e26e1711cb5b2b4d032",
       "path": "docs/sovereign-continuity/CONTEXT.md",
-      "sha256": "76dfe66cd4d835331cd591c3e2294fc796e768c62741b973e744947d290318e3"
+      "sha256": "0cd5efddef1ffae45e977712d6585059a0db21b06c26ae6c0a51ce2728b0ac5d"
     },
     {
       "git_blob_sha1": "81671b6a24f908ed529ae79a5c69187e91a1773e",

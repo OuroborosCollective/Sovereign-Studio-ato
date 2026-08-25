@@ -89,6 +89,35 @@ def test_successful_stage_emits_only_bounded_summary(tmp_path: Path, monkeypatch
     assert "FAILED " not in output
 
 
+def test_structured_vitest_summary_does_not_cross_count_neighbor_fields(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        MODULE.subprocess,
+        "run",
+        lambda command, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="SOVEREIGN_VITEST_SUMMARY label=frontend-endpoint-clients total=25 passed=25 failed=0 skipped=0 exitCode=0\n",
+            stderr="",
+        ),
+    )
+    stage = MODULE.GateStage(
+        name="endpoint-client-vitest",
+        command=("python3", "scripts/vitest_causal_runner.py"),
+        failure_identity="frontend-endpoint-clients::vitest_runner",
+        forward_causal_output=True,
+    )
+
+    exit_code = MODULE.run_stage(stage, root=tmp_path, timeout_seconds=30)
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "status=passed exitCode=0 failed=0 passed=25 skipped=0" in output
+    assert "failed=25" not in output
+
+
 def test_failed_non_causal_stage_preserves_exit_and_emits_fixed_identity(
     tmp_path: Path,
     monkeypatch,

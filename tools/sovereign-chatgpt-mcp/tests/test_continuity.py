@@ -193,13 +193,20 @@ def test_runtime_context_read_binds_nplusone_identity_and_hashes() -> None:
     assert result.secretValuesReturned is False
 
 
-def test_mutation_gate_requires_a_fresh_continuity_read(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_continuity_readback_is_advisory_and_never_blocks_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(continuity, "_READ_STATE", None)
-    blocked = continuity.continuity_gate_findings("repository_write_new_file", "workspace-write")
-    assert blocked[0]["family"] == "CONTINUITY_CONTEXT_NOT_READ"
+
+    assert continuity.continuity_gate_findings("repository_write_new_file", "workspace-write") == []
+    status = continuity.sovereign_continuity_status()
+    assert status.ok is True
+    assert status.status == "CONTINUITY_ADVISORY_GAP"
+    assert status.findings[0]["family"] == "CONTINUITY_CONTEXT_NOT_READ"
 
     continuity.sovereign_continuity_context_read()
     assert continuity.continuity_gate_findings("repository_write_new_file", "workspace-write") == []
+    ready = continuity.sovereign_continuity_status()
+    assert ready.ok is True
+    assert ready.status == "CONTINUITY_ADVISORY_READY"
 
 
 def test_workspace_completion_requires_append_only_mirrored_ledgers(tmp_path: Path) -> None:

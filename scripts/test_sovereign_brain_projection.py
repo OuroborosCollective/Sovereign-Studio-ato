@@ -60,6 +60,10 @@ class SovereignBrainProjectionTests(unittest.TestCase):
                 first["truthBoundary"]["continuityGithubWorkflowAdvisoryOnly"]
             )
 
+    def test_current_repository_manifest_matches_tracked_projection_inputs(self):
+        root = Path(__file__).resolve().parents[1]
+        self.assertEqual(validate(root), [])
+
     def test_validation_detects_source_drift(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

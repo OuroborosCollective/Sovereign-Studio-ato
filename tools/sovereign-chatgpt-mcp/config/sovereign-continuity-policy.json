@@ -1,9 +1,9 @@
 {
   "schemaVersion": "sovereign.continuity-policy.v1",
   "policyId": "sovereign-nplusone-continuity",
-  "policyVersion": "1.1.0",
-  "purpose": "Preserve bounded, evidence-linked project and relationship continuity across ChatGPT sessions and MCP revisions without pretending that a model has automatic permanent memory.",
-  "enforcementMode": "fail-closed",
+  "policyVersion": "1.2.0",
+  "purpose": "Preserve bounded, evidence-linked project and relationship continuity across ChatGPT sessions and MCP revisions as non-blocking historical provenance without pretending that a model has automatic permanent memory.",
+  "enforcementMode": "advisory",
   "canonicalPaths": {
     "context": "docs/sovereign-continuity/CONTEXT.md",
     "ledger": "docs/sovereign-continuity/LEDGER.jsonl",
@@ -21,10 +21,7 @@
     ]
   },
   "readGate": {
-    "requiredForEffects": [
-      "workspace-write",
-      "external-write"
-    ],
+    "requiredForEffects": [],
     "maxAgeSeconds": 21600,
     "requiredEvidence": [
       "policySha256",
@@ -33,15 +30,10 @@
       "latestEntryId",
       "readEpoch"
     ],
-    "rule": "No mutable MCP tool may execute until sovereign_continuity_context_read has loaded the current policy, context and ledger from the running revision."
+    "rule": "sovereign_continuity_context_read may report provenance freshness, but missing or stale continuity state never authorizes or blocks repository, merge, release, deployment or runtime effects."
   },
   "completionGate": {
-    "requiredForRepositoryFinalization": [
-      "repository_create_draft_pr",
-      "repository_push_main",
-      "repository_merge_pr",
-      "repository_merge_pr_series"
-    ],
+    "requiredForRepositoryFinalization": [],
     "requiredChangedPaths": [
       "docs/sovereign-continuity/LEDGER.jsonl",
       "tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl"
@@ -74,7 +66,7 @@
     },
     "emptyExperienceSectionsAllowed": true,
     "inventedExperiencesForbidden": true,
-    "rule": "Every repository change finalized through Draft PR, direct main push or merge must contain a new append-only continuity ledger entry covering the complete changed-path set and all three experience sections, even when a section is empty."
+    "rule": "When a continuity handoff is written it remains append-only, mirrored and redacted, but continuity completeness is advisory and never a prerequisite for Draft PR, main push, merge, release or deployment."
   },
   "privacy": {
     "storeRawChatTranscripts": false,

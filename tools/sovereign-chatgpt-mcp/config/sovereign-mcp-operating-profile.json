@@ -1,8 +1,8 @@
 {
   "schemaVersion": "sovereign.mcp-operating-profile.v1",
   "profileId": "sovereign-mcp-optimal-operation",
-  "profileVersion": "1.1.1",
-  "purpose": "Persist and technically enforce continuity-read, mission-first, contract-bound and evidence-first operation across ChatGPT sessions and MCP revisions.",
+  "profileVersion": "1.1.2",
+  "purpose": "Persist and technically enforce mission-first, contract-bound, revision-bound and evidence-first operation across ChatGPT sessions and MCP revisions while retaining continuity as non-blocking historical provenance.",
   "enforcementMode": "fail-closed",
   "naturalLanguageBoundary": {
     "onlineUnderstanding": "llm-only",
@@ -33,7 +33,7 @@
       "release or rollback"
     ],
     "sequence": [
-      "read and bind the current Sovereign continuity policy, context and ledger",
+      "optionally read current continuity provenance without granting it mutation authority",
       "inventory live tool contracts",
       "map mission to structured capabilities, allowed effects and required evidence",
       "select the smallest eligible tool set",
@@ -60,8 +60,6 @@
       "mcp_toolchain_compile",
       "mcp_toolchain_validate",
       "mcp_toolchain_next_step",
-      "sovereign_continuity_context_read",
-      "sovereign_continuity_status",
       "sovereign_operating_profile_status",
       "sovereign_mission_preflight"
     ],
@@ -70,7 +68,6 @@
       "explicit output schema",
       "declared effect class",
       "validated single-tool contract chain",
-      "current continuity policy, context and ledger hashes",
       "non-secret invocation arguments"
     ],
     "argumentRules": {
@@ -91,10 +88,10 @@
       "deployment readback",
       "runtime protocol canary"
     ],
-    "continuityRequires": [
-      "current context read before every mutable MCP action",
-      "append-only ledger update before repository finalization",
-      "N+1 identity binding remains canonical",
+    "continuityAdvisory": [
+      "continuity may be read or appended as historical provenance",
+      "continuity never authorizes or blocks repository or runtime effects",
+      "N+1 identity binding remains canonical inside continuity records",
       "raw chat transcripts and secrets are not persisted"
     ],
     "learningRequires": [
@@ -147,7 +144,7 @@
     "ledgerPath": "docs/sovereign-continuity/LEDGER.jsonl",
     "readTool": "sovereign_continuity_context_read",
     "statusTool": "sovereign_continuity_status",
-    "requiredBeforeMutableTools": true,
-    "repositoryFinalizationRequiresLedgerUpdate": true
+    "requiredBeforeMutableTools": false,
+    "repositoryFinalizationRequiresLedgerUpdate": false
   }
 }
