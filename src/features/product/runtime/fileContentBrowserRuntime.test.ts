@@ -22,18 +22,22 @@ describe('fileContentBrowserRuntime', () => {
     const result = await fetchFileContent({ jobId: '', backendBase: '', filePath: 'src/a.ts' });
     expect(result.status).toBe('blocked');
   });
-  it('reads a loaded repository through the authenticated backend when no workspace job exists', async () => {
+  it('pins repository fallback reads to the loaded immutable snapshot after the branch advances', async () => {
+    const loadedSnapshotRevision = 'a'.repeat(40);
+    const currentBranchHead = 'b'.repeat(40);
+    const blobSha = 'c'.repeat(40);
     const fetcher = vi.fn(async (url, init) => {
       expect(String(url)).toBe('https://example.invalid/api/toolchain/github/read-file');
       expect(init?.credentials).toBe('include');
+      expect(currentBranchHead).not.toBe(loadedSnapshotRevision);
       const payload = JSON.parse(String(init?.body));
       expect(payload).toEqual({
         owner: 'OuroborosCollective',
         repo: 'Sovereign-Studio-ato',
         path: 'LICENSE',
-        ref: 'main',
+        ref: loadedSnapshotRevision,
       });
-      return response(200, { content: 'License text', bytes: 12, sha: 'blob-sha' });
+      return response(200, { content: 'License text at snapshot A', bytes: 26, sha: blobSha });
     }) as unknown as typeof fetch;
     const result = await fetchFileContent({
       jobId: '',
@@ -41,12 +45,65 @@ describe('fileContentBrowserRuntime', () => {
       filePath: 'LICENSE',
       repoOwner: 'OuroborosCollective',
       repoName: 'Sovereign-Studio-ato',
-      repoBranch: 'main',
+      repoRevision: loadedSnapshotRevision,
       fetcher,
     });
     expect(result.status).toBe('loaded');
-    expect(result.content).toBe('License text');
-    expect(result.sha).toBe('blob-sha');
+    expect(result.content).toBe('License text at snapshot A');
+    expect(result.sha).toBe(blobSha);
+  });
+  it('blocks mutable branch names for repository fallback previews', async () => {
+    const fetcher = vi.fn() as unknown as typeof fetch;
+    const result = await fetchFileContent({
+      jobId: '',
+      backendBase: 'https://example.invalid',
+      filePath: 'LICENSE',
+      repoOwner: 'OuroborosCollective',
+      repoName: 'Sovereign-Studio-ato',
+      repoRevision: 'main',
+      fetcher,
+    });
+    expect(result.status).toBe('blocked');
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('honors backend truncation even when original bytes remain below the frontend limit', async () => {
+    const content = 'x'.repeat(60_000);
+    const fetcher = vi.fn(async () => response(200, {
+      content,
+      bytes: 80_000,
+      sha: 'd'.repeat(40),
+      truncated: true,
+    })) as unknown as typeof fetch;
+    const result = await fetchFileContent({
+      jobId: '',
+      backendBase: 'https://example.invalid',
+      filePath: 'docs/large.md',
+      repoOwner: 'OuroborosCollective',
+      repoName: 'Sovereign-Studio-ato',
+      repoRevision: 'a'.repeat(40),
+      fetcher,
+    });
+    expect(result.status).toBe('loaded');
+    expect(result.truncated).toBe(true);
+    expect(result.content).toContain('[... content truncated at preview boundary ...]');
+  });
+  it('rejects repository content without an immutable blob identity', async () => {
+    const fetcher = vi.fn(async () => response(200, {
+      content: 'unbound content',
+      bytes: 15,
+      sha: '',
+    })) as unknown as typeof fetch;
+    const result = await fetchFileContent({
+      jobId: '',
+      backendBase: 'https://example.invalid',
+      filePath: 'README.md',
+      repoOwner: 'OuroborosCollective',
+      repoName: 'Sovereign-Studio-ato',
+      repoRevision: 'a'.repeat(40),
+      fetcher,
+    });
+    expect(result.status).toBe('error');
+    expect(result.error).toContain('immutable blob identity');
   });
   it('returns a binary result without network access', async () => {
     const fetcher = vi.fn() as unknown as typeof fetch;

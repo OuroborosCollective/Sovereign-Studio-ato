@@ -3355,19 +3355,74 @@ export function BuilderContainer({
     isCurrentRepoScope,
   ]);
 
-  const oauthValidationTargetRef = useRef<string | null>(null);
+  const oauthValidationAttemptRef = useRef<{
+    readonly targetKey: string;
+    readonly attempts: number;
+    readonly triggerSequence: number;
+  } | null>(null);
+  const oauthValidationRetryTimerRef = useRef<number | null>(null);
+  const [oauthValidationRetrySequence, setOauthValidationRetrySequence] = useState(0);
+  useEffect(() => () => {
+    if (oauthValidationRetryTimerRef.current !== null) {
+      window.clearTimeout(oauthValidationRetryTimerRef.current);
+      oauthValidationRetryTimerRef.current = null;
+    }
+  }, []);
   useEffect(() => {
-    if (!authUser?.githubId || !currentRepositoryTargetKey || !chatRepoSnapshot?.headSha) return;
+    if (!authUser?.githubId || !currentRepositoryTargetKey || !chatRepoSnapshot?.headSha) {
+      oauthValidationAttemptRef.current = null;
+      if (oauthValidationRetryTimerRef.current !== null) {
+        window.clearTimeout(oauthValidationRetryTimerRef.current);
+        oauthValidationRetryTimerRef.current = null;
+      }
+      return;
+    }
     if (githubWriteAllowed || githubAccessState.state === 'validating') return;
-    if (oauthValidationTargetRef.current === currentRepositoryTargetKey) return;
-    oauthValidationTargetRef.current = currentRepositoryTargetKey;
-    void validateCurrentRepoGithubCredential(undefined, 'OAuth', 'oauth-session');
+
+    let attempt = oauthValidationAttemptRef.current;
+    if (!attempt || attempt.targetKey !== currentRepositoryTargetKey) {
+      if (oauthValidationRetryTimerRef.current !== null) {
+        window.clearTimeout(oauthValidationRetryTimerRef.current);
+        oauthValidationRetryTimerRef.current = null;
+      }
+      attempt = { targetKey: currentRepositoryTargetKey, attempts: 0, triggerSequence: -1 };
+    }
+    if (attempt.attempts >= 2 || attempt.triggerSequence === oauthValidationRetrySequence) return;
+
+    const validationTargetKey = currentRepositoryTargetKey;
+    oauthValidationAttemptRef.current = {
+      targetKey: validationTargetKey,
+      attempts: attempt.attempts + 1,
+      triggerSequence: oauthValidationRetrySequence,
+    };
+    void validateCurrentRepoGithubCredential(undefined, 'OAuth', 'oauth-session').then((validated) => {
+      const latestAttempt = oauthValidationAttemptRef.current;
+      if (validated) {
+        if (oauthValidationRetryTimerRef.current !== null) {
+          window.clearTimeout(oauthValidationRetryTimerRef.current);
+          oauthValidationRetryTimerRef.current = null;
+        }
+        return;
+      }
+      if (
+        !latestAttempt
+        || latestAttempt.targetKey !== validationTargetKey
+        || latestAttempt.attempts >= 2
+        || currentRepositoryTargetKeyRef.current !== validationTargetKey
+        || oauthValidationRetryTimerRef.current !== null
+      ) return;
+      oauthValidationRetryTimerRef.current = window.setTimeout(() => {
+        oauthValidationRetryTimerRef.current = null;
+        setOauthValidationRetrySequence((sequence) => sequence + 1);
+      }, 750);
+    });
   }, [
     authUser?.githubId,
     chatRepoSnapshot?.headSha,
     currentRepositoryTargetKey,
     githubAccessState.state,
     githubWriteAllowed,
+    oauthValidationRetrySequence,
     validateCurrentRepoGithubCredential,
   ]);
   const inspectionEvidence = useSovereignToolInspectionStore((store) => store.evidence);
@@ -3465,7 +3520,7 @@ export function BuilderContainer({
         filePath: cleanPath,
         repoOwner: chatRepoSnapshot?.owner,
         repoName: chatRepoSnapshot?.repo,
-        repoBranch: chatRepoSnapshot?.branch,
+        repoRevision: chatRepoSnapshot?.headSha,
       });
       setFilePreviewResult(result);
       setFilePreviewLoading(false);
@@ -3477,7 +3532,7 @@ export function BuilderContainer({
         'router',
       );
     },
-    [addLog, chatRepoSnapshot?.branch, chatRepoSnapshot?.owner, chatRepoSnapshot?.repo, scopedAgentJob?.jobId],
+    [addLog, chatRepoSnapshot?.headSha, chatRepoSnapshot?.owner, chatRepoSnapshot?.repo, scopedAgentJob?.jobId],
   );
 
   const appendChatLine = useCallback(
@@ -5173,7 +5228,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       }
 
       if (offlineIntent === 'direct_patch' || offlineIntent === 'code_execution' || offlineIntent === 'draft_pr') {
-        const started = await startAgentFromText(submittedText, offlineIntent);
+        const boundedExecutorIntent = offlineIntent === 'direct_patch'
+          ? 'code_execution'
+          : offlineIntent;
+        const started = await startAgentFromText(submittedText, boundedExecutorIntent);
         if (started) {
           appendRuntimeNotice('Online-Sprachdeutung war nicht verfügbar. Nur der explizite Maschinenbefehl wurde an die Runtime übergeben; Erfolg bleibt bis zu echter Runtime-Evidence offen.');
         }

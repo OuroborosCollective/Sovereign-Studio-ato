@@ -11,6 +11,36 @@ import path from 'node:path';
 
 const root = process.cwd();
 const failures = [];
+const REQUIRED_COVERAGE_FILES = [
+  'src/App.test.tsx',
+  'backend/tests/test_agent_runtime_routes.py',
+  'scripts/tests/test_frontend_test_gate.py',
+  'tests/e2e/frontend-endpoint-contract-smoke.spec.ts',
+];
+const REQUIRED_COVERAGE_ROOTS = ['src', 'backend/tests', 'scripts/tests', 'tests/e2e'];
+
+function validateCoverageMap(content) {
+  let report;
+  try {
+    report = JSON.parse(content);
+  } catch {
+    return 'coverage map is not valid JSON';
+  }
+  if (report.schemaVersion !== 'sovereign.test-coverage-map.v2') return 'coverage map schema is not v2';
+  if (!Number.isInteger(report.totalTestFiles) || report.totalTestFiles < 1) return 'coverage map has no positive totalTestFiles';
+  if (!Array.isArray(report.files) || report.files.length !== report.totalTestFiles) return 'coverage map file count does not match totalTestFiles';
+  const files = report.files.map((entry) => entry?.file).filter((file) => typeof file === 'string');
+  if (new Set(files).size !== files.length) return 'coverage map contains duplicate test paths';
+  for (const file of REQUIRED_COVERAGE_FILES) {
+    if (!files.includes(file)) return `coverage map is missing representative test ${file}`;
+  }
+  for (const testRoot of REQUIRED_COVERAGE_ROOTS) {
+    if (!Number.isInteger(report.testRoots?.[testRoot]) || report.testRoots[testRoot] < 1) {
+      return `coverage map is missing test root ${testRoot}`;
+    }
+  }
+  return true;
+}
 
 function checkFile(label, relativePath, validate) {
   const absolutePath = path.join(root, relativePath);
@@ -40,32 +70,14 @@ checkFile('web build index', 'dist/index.html', (content) => {
 });
 
 checkDirectory('web build assets', 'dist/assets');
-checkFile('release coverage map', 'dist/generated/test-coverage-map.json', (content) => {
-  try {
-    const report = JSON.parse(content);
-    if (!Number.isInteger(report.totalTestFiles) || report.totalTestFiles < 1) return 'coverage map has no positive totalTestFiles';
-    if (!Array.isArray(report.files) || report.files.length < 1) return 'coverage map has no files array';
-    return true;
-  } catch {
-    return 'coverage map is not valid JSON';
-  }
-});
+checkFile('release coverage map', 'dist/generated/test-coverage-map.json', validateCoverageMap);
 checkDirectory('android project', 'android/app');
 checkFile('android webview index', 'android/app/src/main/assets/public/index.html', (content) => {
   if (!content.includes('<script')) return 'android index has no script tag';
   if (!content.includes('<div id="root"')) return 'android index has no React root';
   return true;
 });
-checkFile('android coverage map', 'android/app/src/main/assets/public/generated/test-coverage-map.json', (content) => {
-  try {
-    const report = JSON.parse(content);
-    return Number.isInteger(report.totalTestFiles) && report.totalTestFiles > 0
-      ? true
-      : 'android coverage map has no positive totalTestFiles';
-  } catch {
-    return 'android coverage map is not valid JSON';
-  }
-});
+checkFile('android coverage map', 'android/app/src/main/assets/public/generated/test-coverage-map.json', validateCoverageMap);
 
 if (failures.length > 0) {
   console.error('Sovereign E2E smoke failed:');

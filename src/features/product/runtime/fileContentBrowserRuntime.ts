@@ -2,7 +2,7 @@
 export type FileContentStatus = 'loaded' | 'too_large' | 'binary' | 'not_found' | 'error' | 'blocked';
 export type FileLanguage = 'typescript' | 'javascript' | 'python' | 'rust' | 'go' | 'java' | 'css' | 'html' | 'json' | 'yaml' | 'toml' | 'markdown' | 'shell' | 'text' | 'unknown';
 export interface FileContentResult { readonly status: FileContentStatus; readonly path: string; readonly content: string; readonly language: FileLanguage; readonly sizeBytes: number; readonly sha: string; readonly truncated: boolean; readonly error: string; }
-export interface FileContentRequest { readonly jobId: string; readonly backendBase: string; readonly filePath: string; readonly repoOwner?: string; readonly repoName?: string; readonly repoBranch?: string; readonly maxBytes?: number; readonly fetcher?: typeof fetch; }
+export interface FileContentRequest { readonly jobId: string; readonly backendBase: string; readonly filePath: string; readonly repoOwner?: string; readonly repoName?: string; readonly repoRevision?: string; readonly maxBytes?: number; readonly fetcher?: typeof fetch; }
 export const MAX_PREVIEW_BYTES = 100_000;
 const EXTENSIONS: Record<string, FileLanguage> = { '.ts':'typescript','.tsx':'typescript','.mts':'typescript','.cts':'typescript','.js':'javascript','.jsx':'javascript','.mjs':'javascript','.cjs':'javascript','.py':'python','.pyi':'python','.rs':'rust','.go':'go','.java':'java','.kt':'java','.kts':'java','.css':'css','.scss':'css','.sass':'css','.less':'css','.html':'html','.htm':'html','.svelte':'html','.vue':'html','.json':'json','.jsonc':'json','.yaml':'yaml','.yml':'yaml','.toml':'toml','.md':'markdown','.mdx':'markdown','.sh':'shell','.bash':'shell','.zsh':'shell','.fish':'shell','.txt':'text','.log':'text' };
 const BINARY = new Set(['.png','.jpg','.jpeg','.gif','.svg','.ico','.webp','.avif','.woff','.woff2','.ttf','.otf','.eot','.zip','.tar','.gz','.bz2','.7z','.pdf','.docx','.xlsx','.pptx','.exe','.dll','.so','.dylib','.mp4','.mp3','.wav','.ogg','.pyc','.class','.o','.a']);
@@ -35,9 +35,12 @@ export async function fetchFileContent(request: FileContentRequest): Promise<Fil
     } else {
       const owner = request.repoOwner?.trim() ?? '';
       const repo = request.repoName?.trim() ?? '';
-      const ref = request.repoBranch?.trim() || 'main';
+      const ref = request.repoRevision?.trim().toLowerCase() ?? '';
       if (!owner || !repo) {
         return makeResult(path, 'blocked', 'No workspace job or repository identity is available for file preview.');
+      }
+      if (!/^[0-9a-f]{40}$/.test(ref)) {
+        return makeResult(path, 'blocked', 'Repository file preview requires the immutable 40-character snapshot revision.');
       }
       source = 'repository';
       response = await fetcher(`${base}/api/toolchain/github/read-file`, {
@@ -60,12 +63,16 @@ export async function fetchFileContent(request: FileContentRequest): Promise<Fil
     if (!response.ok) return makeResult(path, 'error', blocker || `Repository file read failed with HTTP ${response.status}.`);
     const content = typeof body.content === 'string' ? body.content : '';
     const originalBytes = Number(body.bytes ?? new TextEncoder().encode(content).length);
-    const truncated = originalBytes > maxBytes || content.length > maxBytes;
+    const blobSha = String(body.sha ?? '').trim().toLowerCase();
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(blobSha)) {
+      return makeResult(path, 'error', 'Repository file read returned no valid immutable blob identity.');
+    }
+    const truncated = body.truncated === true || originalBytes > maxBytes || content.length > maxBytes;
     const visible = truncated ? `${content.slice(0, Math.floor(maxBytes * 0.9))}\n\n[... content truncated at preview boundary ...]` : content;
     return makeResult(path, 'loaded', '', {
       content: visible,
       sizeBytes: originalBytes,
-      sha: String(body.sha ?? ''),
+      sha: blobSha,
       truncated,
     });
   }

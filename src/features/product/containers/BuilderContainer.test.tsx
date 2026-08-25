@@ -183,6 +183,13 @@ function mockFetchSequence(...responses: Array<Response | (() => Response | Prom
     if (url.includes('/api/user/agent/github-access/validate')) {
       const first = queue[0];
       const second = queue[1];
+      if (first instanceof Response) {
+        const explicitValidation = await first.clone().json().catch(() => null) as Record<string, unknown> | null;
+        if (explicitValidation && ('canWrite' in explicitValidation || 'code' in explicitValidation)) {
+          queue.shift();
+          return first;
+        }
+      }
       if (first instanceof Response && second instanceof Response) {
         const firstPayload = await first.clone().json().catch(() => null) as Record<string, unknown> | null;
         const secondPayload = await second.clone().json().catch(() => null) as { permissions?: { push?: boolean } } | null;
@@ -2370,6 +2377,75 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText(/Route gewählt: Patch\/Draft-PR Runtime/i)).toBeNull();
     expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
     expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("retries a transient server-held OAuth validation once for the same mounted repository", async () => {
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ ok: false, canWrite: false, code: 'temporary_error', error: 'temporary backend outage' }, 503),
+      jsonResponse({ ok: true, canWrite: true, code: 'ready', error: null }),
+    );
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
+    await loadRepoFromChat();
+
+    useUserStore.setState({ user: { ...TEST_AUTH_USER, githubId: 'oauth-user-123' } });
+
+    const oauthValidationCalls = () => fetchMock.mock.calls.filter(([input]) => (
+      requestUrl(input as RequestInfo | URL).includes('/api/user/agent/github-access/validate')
+    ));
+    await waitFor(() => expect(oauthValidationCalls()).toHaveLength(1));
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
+    expect(oauthValidationCalls()).toHaveLength(1);
+    await waitFor(() => expect(oauthValidationCalls()).toHaveLength(2), { timeout: 2500 });
+    await waitFor(() => expect(
+      screen.getByRole('log', { name: 'Sovereign Action Stream' }),
+    ).toHaveTextContent('GitHub-Zugang bereit'));
+    expect(screen.queryByLabelText(/GitHub Token/i)).toBeNull();
+
+    await new Promise((resolve) => window.setTimeout(resolve, 850));
+    expect(oauthValidationCalls()).toHaveLength(2);
+  });
+
+  it("routes only the exact degraded /direct-patch machine command through the bounded code executor", async () => {
+    const onStartAgent = vi.fn();
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: "docs/README.md", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ login: "octo" }),
+      jsonResponse({ permissions: { push: true } }),
+      jsonResponse({ error: { message: "language provider unavailable", type: "upstream_error" } }, 503),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        agentReady
+        agentJob={repoScopedJob({ status: 'completed' })}
+        onStartAgent={onStartAgent}
+      />,
+    );
+    await loadRepoFromChat();
+    await validateGitHubAccessFromLauncher();
+
+    fireEvent.change(chatField(), {
+      target: { value: '/direct-patch ändere docs/README.md, prüfe den Test und erzeuge nur einen Draft PR' },
+    });
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(onStartAgent).toHaveBeenCalledTimes(1));
+    expect(onStartAgent).toHaveBeenCalledWith(
+      expect.stringContaining('/direct-patch'),
+      expect.objectContaining({
+        repoUrl: TEST_REPO_URL,
+        branch: 'main',
+        expectedHeadSha: 'c'.repeat(40),
+      }),
+    );
+    expect(screen.getByRole('log', { name: 'Sovereign Action Stream' }))
+      .toHaveTextContent('Sovereign Agent Job angefragt');
+    expect(fetchMock.mock.calls.some(([input]) => (
+      requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')
+    ))).toBe(true);
   });
 
   it("never routes ordinary free language to GitHub or the executor when the online LLM is unavailable", async () => {

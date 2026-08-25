@@ -1,6 +1,7 @@
 # Sovereign Studio ATO — Current State
 
 **Documentation snapshot:** 2026-08-03  
+**Product architecture reconciled:** 2026-08-25
 **Repository baseline:** `63ddbdf4ed8cd6fa895147e6b09dc39bb2330483`  
 **Authority rule:** the current Git revision and fresh target-system readbacks override this dated snapshot.
 
@@ -18,7 +19,7 @@ It does not replace:
 
 ## Product identity
 
-Sovereign Studio ATO is an Android-first, chat-first NoCode/AI service and agent workbench for controlled work on real repositories and connected runtime systems.
+Sovereign Studio ATO is an Android-first, monitor-first NoCode/AI service and agent workbench for controlled work on real repositories and connected runtime systems. Natural-language interaction remains embedded in the monitor through a compact communication dock.
 
 The canonical product rule remains:
 
@@ -36,9 +37,9 @@ The repository is proprietary and unlicensed for reuse except with prior express
 
 - React 19, Vite 8 and Capacitor 6.
 - Android-first delivery with a web build as the shared frontend artifact.
-- Chat-first product surface under `src/features/product/`.
+- Permanent monitor-first product surface under `src/features/product/`, with an embedded communication dock rather than a legacy chat-first body.
 - Runtime and capability decisions belong in runtime modules, not in visual widgets or DOM text.
-- GitHub, diff, workflow, runtime, health, memory and inspector views are projections and inspection surfaces.
+- GitHub, diff, workflow, runtime, health, memory and inspector views are bounded projections and inspection surfaces.
 
 ### Backend and agent runtime
 

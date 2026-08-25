@@ -13,7 +13,7 @@
  *   node scripts/audit-test-coverage-map.mjs --json   (suppress stdout, only file)
  */
 
-import { readFileSync, readdirSync, statSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, readdirSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, relative } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -22,43 +22,82 @@ const jsonOnly = process.argv.includes('--json');
 
 // ─── Collect test files ────────────────────────────────────────────────────
 
-function walk(dir, result = []) {
+const SKIPPED_DIRECTORIES = new Set([
+  '.git', '.gradle', '.idea', '.sovereign-artifacts', '__pycache__',
+  'build', 'coverage', 'dist', 'generated', 'node_modules', 'vendor',
+]);
+const JAVASCRIPT_TEST_PATTERN = /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/i;
+const TEST_FILE_PATTERNS = [
+  JAVASCRIPT_TEST_PATTERN,
+  /(?:^|\/)test_[^/]+\.py$/i,
+  /(?:^|\/)[^/]+_test\.py$/i,
+  /(?:^|\/)[^/]+_test\.go$/i,
+  /(?:^|\/)[^/]+(?:Test|Tests)\.(?:java|kt|kts)$/,
+  /(?:^|\/)test_[^/]+\.(?:sh|bash|c|cc|cpp)$/i,
+];
+
+function normalizePath(filePath) {
+  return filePath.replaceAll('\\', '/');
+}
+
+function isTestFile(filePath) {
+  const normalized = normalizePath(filePath);
+  return TEST_FILE_PATTERNS.some((pattern) => pattern.test(normalized))
+    || (normalized.includes('/tests/') && normalized.endsWith('.rs'));
+}
+
+function walkRepository(dir = ROOT, result = []) {
   if (!existsSync(dir)) return result;
-  for (const entry of readdirSync(dir)) {
-    if (entry === 'node_modules' || entry === 'dist' || entry === '.git') continue;
-    const full = join(dir, entry);
-    const st = statSync(full);
-    if (st.isDirectory()) {
-      walk(full, result);
-    } else if (
-      entry.endsWith('.test.ts') ||
-      entry.endsWith('.test.tsx') ||
-      entry.endsWith('.spec.ts') ||
-      entry.endsWith('.spec.tsx')
-    ) {
-      result.push(relative(ROOT, full));
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory() && SKIPPED_DIRECTORIES.has(entry.name)) continue;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walkRepository(full, result);
+      continue;
     }
+    if (!entry.isFile()) continue;
+    const repositoryPath = normalizePath(relative(ROOT, full));
+    if (isTestFile(repositoryPath)) result.push(repositoryPath);
   }
   return result;
 }
 
-function walkE2E(dir, result = []) {
-  if (!existsSync(dir)) return result;
-  for (const entry of readdirSync(dir)) {
-    if (entry === 'node_modules') continue;
-    const full = join(dir, entry);
-    const st = statSync(full);
-    if (st.isDirectory()) {
-      walkE2E(full, result);
-    } else if (entry.endsWith('.mjs') || entry.endsWith('.ts')) {
-      result.push(relative(ROOT, full));
-    }
-  }
-  return result;
+function testLanguage(filePath) {
+  if (/\.py$/i.test(filePath)) return 'python';
+  if (/\.(?:[cm]?[jt]sx?)$/i.test(filePath)) return 'javascript-typescript';
+  if (/\.(?:java|kt|kts)$/i.test(filePath)) return 'android-jvm';
+  if (/\.go$/i.test(filePath)) return 'go';
+  if (/\.rs$/i.test(filePath)) return 'rust';
+  if (/\.(?:sh|bash)$/i.test(filePath)) return 'shell';
+  if (/\.(?:c|cc|cpp)$/i.test(filePath)) return 'native';
+  return 'unknown';
 }
 
-const allTests = walk(join(ROOT, 'src'));
-const e2eTests = walkE2E(join(ROOT, 'scripts')).filter(f => f.includes('e2e') || f.includes('smoke'));
+function testRoot(filePath) {
+  const parts = normalizePath(filePath).split('/');
+  const marker = parts.findIndex((part) => ['tests', 'test', 'androidTest', 'e2e'].includes(part));
+  if (marker >= 0) {
+    const includeNestedE2E = parts[marker] === 'tests' && parts[marker + 1] === 'e2e';
+    return parts.slice(0, marker + (includeNestedE2E ? 2 : 1)).join('/');
+  }
+  return parts[0] || '.';
+}
+
+function isE2ETest(filePath) {
+  const normalized = normalizePath(filePath);
+  return normalized.startsWith('tests/e2e/')
+    || normalized.includes('/e2e/')
+    || normalized.includes('/androidTest/');
+}
+
+function isVitestCandidate(filePath) {
+  return JAVASCRIPT_TEST_PATTERN.test(filePath)
+    && !isE2ETest(filePath)
+    && (filePath.startsWith('src/') || filePath.startsWith('scripts/'));
+}
+
+const allTests = [...new Set(walkRepository())].sort();
 
 // ─── Parse package.json scripts ───────────────────────────────────────────
 
@@ -168,56 +207,74 @@ if (existsSync(ciDir)) {
     if (f.endsWith('.yml') || f.endsWith('.yaml')) {
       const content = readFileSync(join(ciDir, f), 'utf8');
       const scriptMatches = [...content.matchAll(/pnpm(?:\s+run)?\s+(test[:\w-]*|verify[:\w-]*)/g)].map(m => m[1]);
-      ciWorkflows.push({ file: f, scripts: [...new Set(scriptMatches)] });
+      ciWorkflows.push({ file: f, scripts: [...new Set(scriptMatches)], content });
     }
   }
 }
 
+function workflowCoversFile(workflow, file, gates) {
+  if (workflow.scripts.some((script) => gates.includes(script))) return true;
+  if (workflow.content.includes(file)) return true;
+  const root = testRoot(file);
+  if (!root || !workflow.content.includes(root)) return false;
+  const language = testLanguage(file);
+  if (language === 'python') return /(?:pytest|unittest)/.test(workflow.content);
+  if (language === 'android-jvm') return /(?:gradlew|connectedAndroidTest|testDebugUnitTest|testReleaseUnitTest)/.test(workflow.content);
+  if (language === 'go') return /go\s+test/.test(workflow.content);
+  if (language === 'rust') return /cargo\s+test/.test(workflow.content);
+  if (language === 'shell') return /(?:bash|shellcheck)/.test(workflow.content);
+  return /(?:vitest|playwright|node\s+--test|pnpm(?:\s+run)?\s+test)/.test(workflow.content);
+}
+
 // ─── Classify each test file ───────────────────────────────────────────────
 
-const report = {
-  generatedAt: new Date().toISOString(),
-  totalTestFiles: allTests.length + e2eTests.length,
-  files: [],
-};
-
 const gateKeys = Object.keys(GATE_PATTERNS);
-
-for (const file of allTests) {
-  const gates = gateKeys.filter(g => fileInGate(file, g));
+const files = allTests.map((file) => {
+  const gates = isVitestCandidate(file) ? gateKeys.filter((gate) => fileInGate(file, gate)) : [];
+  if (isE2ETest(file) && !gates.includes('verify')) gates.push('verify');
   const ciCoverage = ciWorkflows
-    .filter(w => w.scripts.some(s => gates.includes(s)))
-    .map(w => w.file);
-
-  let category;
-  if (gates.includes('test:smoke') || gates.includes('test:integration')) {
-    category = 'release-gate';
-  } else if (gates.includes('test:all') || gates.includes('verify')) {
-    category = 'verify-only';
-  } else {
-    category = 'not-in-any-gate';
-  }
-
-  report.files.push({ file, gates, ciWorkflows: ciCoverage, category });
-}
-
-for (const file of e2eTests) {
-  report.files.push({
+    .filter((workflow) => workflowCoversFile(workflow, file, gates))
+    .map((workflow) => workflow.file)
+    .sort();
+  const language = testLanguage(file);
+  let category = 'not-in-any-gate';
+  if (isE2ETest(file)) category = 'e2e';
+  else if (language === 'python') category = 'python-suite';
+  else if (language === 'android-jvm') category = 'android-suite';
+  else if (gates.includes('test:smoke') || gates.includes('test:integration')) category = 'release-gate';
+  else if (gates.includes('test:all') || gates.includes('verify')) category = 'verify-only';
+  else if (ciCoverage.length > 0) category = 'ci-only';
+  return {
     file,
-    gates: ['verify'],
-    ciWorkflows: ciWorkflows.filter(w => w.scripts.some(s => s.includes('e2e') || s === 'verify')).map(w => w.file),
-    category: 'e2e',
-  });
-}
+    language,
+    testRoot: testRoot(file),
+    gates,
+    ciWorkflows: ciCoverage,
+    category,
+  };
+});
+
+const rootCounts = new Map();
+for (const entry of files) rootCounts.set(entry.testRoot, (rootCounts.get(entry.testRoot) ?? 0) + 1);
+const report = {
+  schemaVersion: 'sovereign.test-coverage-map.v2',
+  generatedAt: new Date().toISOString(),
+  discovery: {
+    scope: 'tracked repository test conventions',
+    excludedDirectories: [...SKIPPED_DIRECTORIES].sort(),
+    representativeRoots: ['src', 'backend/tests', 'scripts/tests', 'tests/e2e'],
+  },
+  totalTestFiles: files.length,
+  testRoots: Object.fromEntries([...rootCounts.entries()].sort(([left], [right]) => left.localeCompare(right))),
+  files,
+};
 
 // ─── Summary ──────────────────────────────────────────────────────────────
 
-const byCategory = {
-  'release-gate': report.files.filter(f => f.category === 'release-gate'),
-  'verify-only': report.files.filter(f => f.category === 'verify-only'),
-  'e2e': report.files.filter(f => f.category === 'e2e'),
-  'not-in-any-gate': report.files.filter(f => f.category === 'not-in-any-gate'),
-};
+const byCategory = report.files.reduce((categories, file) => {
+  (categories[file.category] ??= []).push(file);
+  return categories;
+}, {});
 
 // ─── Write output ─────────────────────────────────────────────────────────
 
@@ -228,14 +285,17 @@ writeFileSync(outPath, JSON.stringify(report, null, 2), 'utf8');
 if (!jsonOnly) {
   console.log('\n=== Test Gate Coverage Map ===\n');
   console.log(`Total test files: ${report.totalTestFiles}`);
-  console.log(`  Release gate (smoke + integration): ${byCategory['release-gate'].length}`);
-  console.log(`  Verify-only (not in release gate):  ${byCategory['verify-only'].length}`);
-  console.log(`  E2E / smoke scripts:                ${byCategory['e2e'].length}`);
-  console.log(`  Not in any gate:                    ${byCategory['not-in-any-gate'].length}`);
+  console.log(`  Release gate (smoke + integration): ${(byCategory['release-gate'] ?? []).length}`);
+  console.log(`  Verify-only (not in release gate):  ${(byCategory['verify-only'] ?? []).length}`);
+  console.log(`  Python suites:                      ${(byCategory['python-suite'] ?? []).length}`);
+  console.log(`  Android/JVM suites:                 ${(byCategory['android-suite'] ?? []).length}`);
+  console.log(`  E2E suites:                         ${(byCategory.e2e ?? []).length}`);
+  console.log(`  CI-only suites:                     ${(byCategory['ci-only'] ?? []).length}`);
+  console.log(`  Not in any inferred gate:           ${(byCategory['not-in-any-gate'] ?? []).length}`);
 
-  if (byCategory['not-in-any-gate'].length > 0) {
-    console.log('\n⚠️  Files NOT in any gate:');
-    for (const f of byCategory['not-in-any-gate']) {
+  if ((byCategory['not-in-any-gate'] ?? []).length > 0) {
+    console.log('\n⚠️  Files NOT in any inferred gate:');
+    for (const f of byCategory['not-in-any-gate'] ?? []) {
       console.log(`  - ${f.file}`);
     }
   }

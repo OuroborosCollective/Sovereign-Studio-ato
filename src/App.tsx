@@ -247,12 +247,16 @@ function SovereignMonitorApp() {
     };
     void refresh();
     if (isSovereignAgentTerminalStatus(canonicalAgentJob.status)) {
-      return () => { cancelled = true; };
+      return () => {
+        cancelled = true;
+        clearFrame();
+      };
     }
     const timer = window.setInterval(() => { void refresh(); }, 1500);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      clearFrame();
     };
   }, [agentClient, agentConfig.ready, canonicalAgentJob.jobId, canonicalAgentJob.status]);
 
