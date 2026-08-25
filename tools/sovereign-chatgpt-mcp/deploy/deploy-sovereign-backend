@@ -4,8 +4,73 @@ set -Eeuo pipefail
 DIGEST="${1:-}"
 EXPECTED_REVISION="${2:-}"
 IMAGE_REPOSITORY="${SOVEREIGN_BACKEND_IMAGE_REPOSITORY:-}"
-ENV_FILE="${SOVEREIGN_BACKEND_ENV_FILE:-/run/secrets/sovereign-backend.env}"
-MANAGED_ENV_FILE="${SOVEREIGN_BACKEND_MANAGED_ENV_FILE:-/opt/sovereign-chatgpt-tools/backend-runtime.env}"
+MANAGED_ENV_FILE="${SOVEREIGN_BACKEND_MANAGED_ENV_FILE:-/opt/sovereign-chatgpt-tools/runtime.env}"
+
+# Resolve backend env file from managed runtime.env, then fall back to canonical paths
+# This matches the logic in install-on-vps.sh (lines 1273-1281)
+MANAGED_RUNTIME_ENV="${SOVEREIGN_MCP_RUNTIME_ENV:-/opt/sovereign-chatgpt-tools/runtime.env}"
+ALLOWED_BACKEND_ENV_PATHS=(
+  "/run/secrets/sovereign-backend.env"
+  "/opt/sovereign-backend/.env"
+)
+
+# Try to read from managed runtime.env first
+resolve_backend_env_from_managed() {
+  if [[ -f "$MANAGED_RUNTIME_ENV" ]]; then
+    local env_path
+    env_path=$(grep -E '^SOVEREIGN_BACKEND_ENV_FILE=' "$MANAGED_RUNTIME_ENV" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    if [[ -n "$env_path" && -f "$env_path" ]]; then
+      # Validate the resolved path is one of the allowed paths
+      for allowed in "${ALLOWED_BACKEND_ENV_PATHS[@]}"; do
+        if [[ "$env_path" == "$allowed" ]]; then
+          echo "$env_path"
+          return 0
+        fi
+      done
+      # Path is not in allowlist - reject arbitrary paths
+      return 1
+    fi
+  fi
+  return 1
+}
+
+# Fall back to canonical paths (same logic as install-on-vps.sh)
+resolve_backend_env_fallback() {
+  for candidate in "${ALLOWED_BACKEND_ENV_PATHS[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Resolve ENV_FILE with proper precedence
+ENV_FILE=""
+if [[ -n "${SOVEREIGN_BACKEND_ENV_FILE:-}" ]]; then
+  # If explicitly set via environment, validate it's an allowed path
+  for allowed in "${ALLOWED_BACKEND_ENV_PATHS[@]}"; do
+    if [[ "$SOVEREIGN_BACKEND_ENV_FILE" == "$allowed" ]]; then
+      ENV_FILE="$SOVEREIGN_BACKEND_ENV_FILE"
+      break
+    fi
+  done
+  if [[ -z "$ENV_FILE" ]]; then
+    # Explicit but not allowed - reject
+    echo "Error: SOVEREIGN_BACKEND_ENV_FILE must be one of: ${ALLOWED_BACKEND_ENV_PATHS[*]}" >&2
+    exit 1
+  fi
+else
+  # Try managed runtime.env first
+  ENV_FILE=$(resolve_backend_env_from_managed) || true
+  if [[ -z "$ENV_FILE" ]]; then
+    # Fall back to canonical paths
+    ENV_FILE=$(resolve_backend_env_fallback) || true
+  fi
+fi
+
+[[ -n "$ENV_FILE" && -f "$ENV_FILE" ]] || { echo "Error: could not resolve backend env file" >&2; exit 1; }
+
 CONTAINER="sovereign-backend"
 CANDIDATE="sovereign-backend-candidate"
 PREVIOUS_IMAGE=""
