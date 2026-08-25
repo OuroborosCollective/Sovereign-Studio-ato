@@ -49,7 +49,7 @@ function chatField(): HTMLTextAreaElement {
 }
 
 function sendButton(): HTMLButtonElement {
-  return screen.getByRole("button", { name: "Monitor Frage senden" }) as HTMLButtonElement;
+  return screen.getByRole("button", { name: "Senden" }) as HTMLButtonElement;
 }
 
 function jsonResponse(payload: unknown, status = 200): Response {
@@ -611,7 +611,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     const monitorQuestion = screen.getByLabelText('Frage an Sovereign während Live Monitor');
     fireEvent.change(monitorQuestion, { target: { value: 'arbeitet der Agent gerade?' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Monitor Frage senden' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Senden' }));
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3));
     await waitFor(() => expect(screen.getByText('arbeitet der Agent gerade?')).toBeDefined());
@@ -1512,8 +1512,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       />,
     );
     await loadRepoFromChat();
-    expect(screen.getAllByTitle("läuft").length).toBeGreaterThan(0);
-    expect(screen.getByText(/1 Datei/)).toBeDefined();
+    expect(screen.getByRole('region', { name: 'Sovereign Live Desktop Monitor' })).toBeDefined();
+    expect(screen.getByText('Sovereign Agent arbeitet…')).toBeDefined();
+    expect(screen.getByText('Dateien: 1')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Repo Datei öffnen: src/App.tsx' })).toBeDefined();
     expect(screen.queryByLabelText(/Karten/i)).toBeNull();
   });
 
@@ -2190,7 +2192,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(presetButton);
     fireEvent.click(presetButton);
 
-    await waitFor(() => expect(screen.getByText(/GitHub-Zugang fehlt/i)).toBeDefined());
+    await waitFor(() => expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(1));
     const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
     expect(actionStream.textContent?.match(/GitHub-Schreibzugang erforderlich/g) ?? []).toHaveLength(1);
     expect(screen.queryByText(/Ich habe diesen Auftrag vorgemerkt/i)).toBeNull();

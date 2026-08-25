@@ -6737,6 +6737,13 @@ Das echte Repo-Setup wurde geöffnet.`,
                 );
               }}
               routeCatalogError={llmRouteCatalogError}
+              routeHint={selectedLlmRouteId
+                ? `Fixiert auf Backend-Route ${selectedLlmRouteId} · kein stiller Modell-Fallback`
+                : composerRouteHint({
+                    draft: wishText,
+                    workerBlocked,
+                    agentDisabled,
+                  })}
               onKeyDown={handleComposerKeyDown}
               slashMenu={showSlashCommands ? (
                 <SlashCommandMenu

@@ -24,6 +24,7 @@ export interface MonitorCommunicationDockProps {
   readonly selectedRouteId?: string;
   readonly onRouteChange?: (routeId: string) => void;
   readonly routeCatalogError?: string | null;
+  readonly routeHint?: string;
   readonly onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
   readonly slashMenu?: React.ReactNode;
 }
@@ -52,11 +53,18 @@ export function MonitorCommunicationDock({
   selectedRouteId = '',
   onRouteChange,
   routeCatalogError,
+  routeHint,
   onKeyDown,
   slashMenu,
 }: MonitorCommunicationDockProps) {
-  const visibleEntries = entries.slice(-3);
+  const visibleEntryIds = new Set(entries.slice(-4).map((entry) => entry.id));
+  entries
+    .filter((entry) => entry.kind === 'user')
+    .slice(-2)
+    .forEach((entry) => visibleEntryIds.add(entry.id));
+  const visibleEntries = entries.filter((entry) => visibleEntryIds.has(entry.id)).slice(-6);
   const status = safeText(runtimeStatus, 240) || 'Runtimestatus nicht verfügbar';
+  const visibleRouteHint = safeText(routeHint ?? '', 240);
 
   return (
     <section
@@ -199,9 +207,9 @@ export function MonitorCommunicationDock({
           )}
         </div>
       )}
-      {selectedRouteId && !routeCatalogError && (
+      {visibleRouteHint && !routeCatalogError && (
         <div data-testid="monitor-route-hint" style={{ padding: '4px 10px 0', color: C.textMuted, font: '9px/1.3 monospace' }}>
-          Fixiert auf Backend-Route {safeText(selectedRouteId, 160)} · kein stiller Modell-Fallback
+          {visibleRouteHint}
         </div>
       )}
       {routeCatalogError && (
@@ -253,7 +261,8 @@ export function MonitorCommunicationDock({
         />
         <button
           type="submit"
-          aria-label="Monitor Frage senden"
+          aria-label="Senden"
+          title="Senden"
           disabled={disabled || busy || !value.trim()}
           style={{
             width: 44,
