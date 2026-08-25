@@ -8,11 +8,24 @@ const targets = [
   path.join(root, 'dist', 'generated', 'test-coverage-map.json'),
 ];
 
-if (!fs.existsSync(source) || !fs.statSync(source).isFile()) {
-  throw new Error('generated/test-coverage-map.json is missing; run audit-test-coverage-map.mjs first.');
+let sourceFd;
+let raw;
+try {
+  sourceFd = fs.openSync(
+    source,
+    fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0),
+  );
+  const sourceStat = fs.fstatSync(sourceFd);
+  if (!sourceStat.isFile()) {
+    throw new Error('generated/test-coverage-map.json is not a regular file.');
+  }
+  raw = fs.readFileSync(sourceFd, 'utf8');
+} catch (error) {
+  if (error instanceof Error && error.message.includes('not a regular file')) throw error;
+  throw new Error('generated/test-coverage-map.json is missing or unsafe; run audit-test-coverage-map.mjs first.');
+} finally {
+  if (sourceFd !== undefined) fs.closeSync(sourceFd);
 }
-
-const raw = fs.readFileSync(source, 'utf8');
 let parsed;
 try {
   parsed = JSON.parse(raw);
@@ -25,7 +38,17 @@ if (!parsed || typeof parsed !== 'object' || !Number.isInteger(parsed.totalTestF
 
 for (const target of targets) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, raw, 'utf8');
+  const temporaryTarget = `${target}.tmp-${process.pid}`;
+  try {
+    fs.writeFileSync(temporaryTarget, raw, { encoding: 'utf8', flag: 'wx' });
+    fs.renameSync(temporaryTarget, target);
+  } finally {
+    try {
+      fs.unlinkSync(temporaryTarget);
+    } catch (error) {
+      if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error;
+    }
+  }
   const readback = fs.readFileSync(target, 'utf8');
   if (readback !== raw) throw new Error(`Coverage-map copy readback mismatch: ${target}`);
 }
