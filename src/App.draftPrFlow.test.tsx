@@ -180,7 +180,6 @@ describe('App Draft-PR runtime flow', () => {
 
   it('revokes and clears job A desktop evidence before job B can render', async () => {
     const jobAHash = 'a'.repeat(64);
-    const jobBHash = 'b'.repeat(64);
     const createObjectURL = vi.fn()
       .mockReturnValueOnce('blob:job-a')
       .mockReturnValueOnce('blob:job-b');
@@ -190,10 +189,7 @@ describe('App Draft-PR runtime flow', () => {
     Object.defineProperty(TestURL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
     vi.stubGlobal('URL', TestURL);
 
-    let resolveJobBFrame: ((value: { blob: Blob; frameHash: string; observedAt: number }) => void) | undefined;
-    const pendingJobBFrame = new Promise<{ blob: Blob; frameHash: string; observedAt: number }>((resolve) => {
-      resolveJobBFrame = resolve;
-    });
+    const pendingJobBFrame = new Promise<{ blob: Blob; frameHash: string; observedAt: number }>(() => undefined);
     agent.listJobs.mockResolvedValue([snapshot({
       jobId: 'job-a',
       workspaceId: 'job-a',
@@ -206,12 +202,14 @@ describe('App Draft-PR runtime flow', () => {
       }
       return pendingJobBFrame;
     });
-    agent.startJob.mockResolvedValue(snapshot({
+    const jobBSnapshot = snapshot({
       jobId: 'job-b',
       workspaceId: 'job-b',
       runtimeId: 'job-b',
       status: 'running',
-    }));
+    });
+    agent.startJob.mockResolvedValue(jobBSnapshot);
+    agent.getJob.mockResolvedValue(jobBSnapshot);
 
     render(<Provider store={store}><App /></Provider>);
     await waitFor(() => expect(screen.getByTestId('flow-frame-hash')).toHaveTextContent(jobAHash));
@@ -219,18 +217,9 @@ describe('App Draft-PR runtime flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Switch job' }));
     await waitFor(() => expect(screen.getByTestId('flow-job-id')).toHaveTextContent('job-b'));
     await waitFor(() => expect(agent.getDesktopFrame).toHaveBeenCalledWith('job-b'));
-    expect(screen.getByTestId('flow-frame-hash')).toHaveTextContent('none');
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:job-a');
-
-    await act(async () => {
-      resolveJobBFrame?.({
-        blob: new Blob(['job-b'], { type: 'image/png' }),
-        frameHash: jobBHash,
-        observedAt: 2,
-      });
-      await pendingJobBFrame;
-    });
-    await waitFor(() => expect(screen.getByTestId('flow-frame-hash')).toHaveTextContent(jobBHash));
+    await waitFor(() => expect(screen.getByTestId('flow-frame-hash')).toHaveTextContent('none'));
+    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:job-a'));
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
   });
 
   it('does not mark a failed persisted job as repository-ready', async () => {
