@@ -1327,7 +1327,35 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce(), { timeout: 3000 });
     expect(props.onStartAgent.mock.calls[0][0]).toContain(originalText);
-    await waitFor(() => expect(screen.getAllByText(originalText).length).toBeGreaterThanOrEqual(1), { timeout: 3000 });
+  });
+
+  it("preserves the original mission in monitor communication across the first repository binding", async () => {
+    const originalText = "Sovereign Agent soll Feature X implementieren";
+    mockFetchSequence(
+      jsonResponse({ choices: [{ message: { content: 'Ich habe den Ausführungsauftrag verstanden.' } }] }),
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        agentReady
+        agentJob={repoScopedJob({ status: 'completed' })}
+        onStartAgent={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(chatField(), { target: { value: originalText } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Repo Setup" })).toBeDefined());
+
+    fireEvent.change(screen.getByLabelText("GitHub Repository URL"), { target: { value: TEST_REPO_URL } });
+    fireEvent.click(screen.getByRole("button", { name: "Repo-Snapshot laden" }));
+
+    await waitFor(() => expect(screen.getByLabelText('Repo Inspector öffnen')).toBeDefined());
+    await waitFor(() => expect(screen.getAllByText(originalText).length).toBeGreaterThanOrEqual(1));
+    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
   });
 
   it("does not call the protected direct LLM route for a guest session", async () => {
@@ -1487,7 +1515,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     ))).toHaveLength(2));
     expect(await screen.findByText(/Der erste Aufruf ist fehlgeschlagen/i)).toBeDefined();
 
-    fireEvent.click(screen.getAllByText("Retry")[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Worker request' }));
 
     await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => (
       requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')

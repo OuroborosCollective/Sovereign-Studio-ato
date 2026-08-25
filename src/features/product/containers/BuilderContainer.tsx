@@ -6826,6 +6826,10 @@ Das echte Repo-Setup wurde geöffnet.`,
                 blocker={workerBlocker}
                 onRetryWithMessage={(msg) => {
                   setWorkerBlocker(null);
+                  appendActionEvent(buildLocalRuntimeResultEvent({
+                    label: 'Retry gestartet',
+                    detail: 'Die Monitor-Recovery hat den korrelierten Originalrequest erneut an die echte LLM-Route übergeben.',
+                  }));
                   retrySubmit(msg, { ignoreExistingWorkerBlocker: true });
                 }}
                 onExplain={() => appendRuntimeNotice(explainDevChatWorkerDiagnostic(workerBlocker.diagnostic))}
