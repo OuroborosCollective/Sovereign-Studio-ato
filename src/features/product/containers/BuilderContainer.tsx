@@ -2175,6 +2175,8 @@ export function BuilderContainer({
   const [filePreviewPath, setFilePreviewPath] = useState<string | null>(null);
   const [filePreviewResult, setFilePreviewResult] = useState<FileContentResult | null>(null);
   const [filePreviewLoading, setFilePreviewLoading] = useState(false);
+  const [filePreviewBindingKey, setFilePreviewBindingKey] = useState<string | null>(null);
+  const filePreviewRequestGenerationRef = useRef(0);
   const [testRunnerResult, setTestRunnerResult] = useState<TestRunnerResult | null>(null);
   const [testRunnerBusy, setTestRunnerBusy] = useState(false);
   const [autoCodeReviewResult, setAutoCodeReviewResult] = useState<AutoCodeReviewResult | null>(null);
@@ -2329,6 +2331,12 @@ export function BuilderContainer({
     () => buildRepositoryTargetKey(chatRepoSnapshot),
     [chatRepoSnapshot],
   );
+  const currentFilePreviewBindingKey = useMemo(
+    () => currentRepositoryTargetKey && chatRepoSnapshot?.headSha
+      ? `${currentRepositoryTargetKey}@${chatRepoSnapshot.headSha.toLowerCase()}`
+      : null,
+    [chatRepoSnapshot?.headSha, currentRepositoryTargetKey],
+  );
   const scopedPublishedPrUrl = useMemo(
     () => selectRepositoryScopedPullRequestUrl(publishedPrUrl, currentRepositoryTargetKey),
     [currentRepositoryTargetKey, publishedPrUrl],
@@ -2340,6 +2348,12 @@ export function BuilderContainer({
   const scopedDesktopFrame = desktopFrame?.jobId === scopedAgentJob?.jobId
     ? desktopFrame
     : null;
+  const scopedAgentEvidenceAnchors = scopedAgentJob?.jobId && scopedAgentJob.workspaceId
+    ? (agentEvidenceAnchors ?? []).filter((anchor) => (
+        anchor.jobId === scopedAgentJob.jobId
+        && anchor.workspaceId === scopedAgentJob.workspaceId
+      ))
+    : [];
   const githubAccessApiBase = useMemo(
     () => agentConfig?.agentApiUrl || resolveSovereignAgentConfig().agentApiUrl || SOVEREIGN_WORKER_BASE,
     [agentConfig],
@@ -2432,6 +2446,15 @@ export function BuilderContainer({
     readonly targetKey: string;
     readonly snapshot: GitHubAccessSnapshot;
   } | null>(null);
+  const repositoryReadScopeRef = useRef<{
+    readonly targetKey: string;
+    readonly revision: string;
+    readonly scope: string;
+  } | null>(null);
+  const currentRepositoryRevisionRef = useRef(
+    chatRepoSnapshot?.headSha?.toLowerCase() ?? '',
+  );
+  currentRepositoryRevisionRef.current = chatRepoSnapshot?.headSha?.toLowerCase() ?? '';
   const hasCurrentGitHubWriteEvidence = useCallback(() => {
     const targetKey = currentRepositoryTargetKeyRef.current;
     const evidence = validatedGitHubWriteEvidenceRef.current;
@@ -2461,6 +2484,20 @@ export function BuilderContainer({
   // forwarded to the backend executor. Browser-side repository reads, patch
   // generation and GitHub writes are forbidden.
   const githubTokenRef = useRef<string | null>(null);
+  const previousFilePreviewBindingRef = useRef<string | null>(null);
+  useEffect(() => {
+    const nextBinding = currentRepositoryTargetKey && chatRepoSnapshot?.headSha
+      ? `${currentRepositoryTargetKey}@${chatRepoSnapshot.headSha.toLowerCase()}`
+      : null;
+    if (previousFilePreviewBindingRef.current === nextBinding) return;
+    previousFilePreviewBindingRef.current = nextBinding;
+    repositoryReadScopeRef.current = null;
+    filePreviewRequestGenerationRef.current += 1;
+    setFilePreviewPath(null);
+    setFilePreviewResult(null);
+    setFilePreviewLoading(false);
+    setFilePreviewBindingKey(null);
+  }, [chatRepoSnapshot?.headSha, currentRepositoryTargetKey]);
   const previousRepoScopeKeyRef = useRef<string | null>(currentRepoScopeKey);
   const arePreviousStateRef = useRef<ArePreviousState | null>(null);
   useEffect(() => {
@@ -2497,6 +2534,7 @@ export function BuilderContainer({
         pendingOnlineExecutionRef.current = null;
       }
       validatedGitHubWriteEvidenceRef.current = null;
+      repositoryReadScopeRef.current = null;
       setValidatedGitHubTargetKey(null);
       setGitHubAccessState(createGitHubAccessSnapshot());
       setShowGitHubAccessOverride(false);
@@ -2622,6 +2660,7 @@ export function BuilderContainer({
     }
 
     validatedGitHubWriteEvidenceRef.current = null;
+    repositoryReadScopeRef.current = null;
     setValidatedGitHubTargetKey(null);
     setGitHubAccessState(startGitHubAccessValidation(maskedToken));
     appendActionEvent({
@@ -2654,6 +2693,7 @@ export function BuilderContainer({
       || !isCurrentRepoScope(validationRepoScopeKey)
     ) {
       validatedGitHubWriteEvidenceRef.current = null;
+      repositoryReadScopeRef.current = null;
       setGitHubAccessState(createGitHubAccessSnapshot());
       setValidatedGitHubTargetKey(null);
       if (source === 'manual-pat') githubTokenRef.current = null;
@@ -2666,6 +2706,16 @@ export function BuilderContainer({
       return false;
     }
 
+    const validatedRepositoryReadScope = (
+      validation.repositoryReadScope
+      && validation.repositoryRevision === validationRepoSnapshot.headSha.toLowerCase()
+    ) ? {
+        targetKey: validationTargetKey,
+        revision: validation.repositoryRevision,
+        scope: validation.repositoryReadScope,
+      } : null;
+    repositoryReadScopeRef.current = validatedRepositoryReadScope;
+
     if (!validation.ok) {
       validatedGitHubWriteEvidenceRef.current = null;
       setGitHubAccessState(failGitHubAccessValidation(
@@ -2673,7 +2723,9 @@ export function BuilderContainer({
         validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.',
       ));
       setValidatedGitHubTargetKey(null);
-      if (source === 'manual-pat') githubTokenRef.current = null;
+      if (source === 'manual-pat') {
+        githubTokenRef.current = validatedRepositoryReadScope ? token || null : null;
+      }
       appendActionEvent(buildBlockedActionEvent({
         route: 'github-access',
         label: source === 'oauth-session'
@@ -2690,6 +2742,7 @@ export function BuilderContainer({
       targetKey: validationTargetKey,
       snapshot: readySnapshot,
     };
+    repositoryReadScopeRef.current = validatedRepositoryReadScope;
     setGitHubAccessState(readySnapshot);
     setValidatedGitHubTargetKey(validationTargetKey);
     setPendingResumeRetrySequence((sequence) => sequence + 1);
@@ -2870,11 +2923,25 @@ export function BuilderContainer({
     async (path: string) => {
       const cleanPath = path.trim();
       if (!cleanPath) return;
+      const requestGeneration = ++filePreviewRequestGenerationRef.current;
+      const requestRepoScopeKey = currentRepoScopeKey;
+      const requestTargetKey = currentRepositoryTargetKey;
+      const requestRevision = chatRepoSnapshot?.headSha?.toLowerCase() ?? '';
+      const requestBindingKey = currentFilePreviewBindingKey;
+      const readScopeEvidence = repositoryReadScopeRef.current;
+      const repositoryReadScope = (
+        readScopeEvidence
+        && requestTargetKey
+        && readScopeEvidence.targetKey === requestTargetKey
+        && readScopeEvidence.revision === requestRevision
+      ) ? readScopeEvidence.scope : undefined;
+
       setWishText(createRepoFilePrompt(cleanPath));
       setShowRepoExplorer(false);
       setFilePreviewPath(cleanPath);
       setFilePreviewResult(null);
       setFilePreviewLoading(true);
+      setFilePreviewBindingKey(requestBindingKey);
       const result = await fetchFileContent({
         jobId: scopedAgentJob?.status === 'cleaned' ? '' : scopedAgentJob?.jobId ?? '',
         workspaceUsable: scopedAgentJob?.status !== 'cleaned',
@@ -2883,7 +2950,14 @@ export function BuilderContainer({
         repoOwner: chatRepoSnapshot?.owner,
         repoName: chatRepoSnapshot?.repo,
         repoRevision: chatRepoSnapshot?.headSha,
+        repositoryReadScope,
+        githubAccessToken: githubTokenRef.current ?? undefined,
       });
+      if (
+        filePreviewRequestGenerationRef.current !== requestGeneration
+        || currentRepoScopeKeyRef.current !== requestRepoScopeKey
+        || currentRepositoryRevisionRef.current !== requestRevision
+      ) return;
       setFilePreviewResult(result);
       setFilePreviewLoading(false);
       addLog(
@@ -2894,7 +2968,17 @@ export function BuilderContainer({
         'router',
       );
     },
-    [addLog, chatRepoSnapshot?.headSha, chatRepoSnapshot?.owner, chatRepoSnapshot?.repo, scopedAgentJob?.jobId, scopedAgentJob?.status],
+    [
+      addLog,
+      chatRepoSnapshot?.headSha,
+      chatRepoSnapshot?.owner,
+      chatRepoSnapshot?.repo,
+      currentFilePreviewBindingKey,
+      currentRepoScopeKey,
+      currentRepositoryTargetKey,
+      scopedAgentJob?.jobId,
+      scopedAgentJob?.status,
+    ],
   );
 
   const appendChatLine = useCallback(
@@ -5489,7 +5573,7 @@ Das echte Repo-Setup wurde geöffnet.`);
       snapshot={agentWorkSnapshot}
       job={scopedAgentJob}
       projections={scopedAgentProjections}
-      evidenceAnchors={agentEvidenceAnchors ?? []}
+      evidenceAnchors={scopedAgentEvidenceAnchors}
       onCancel={onCancelAgent}
       onOpenDraftPr={
         (scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)
@@ -6029,20 +6113,25 @@ Das echte Repo-Setup wurde geöffnet.`);
           onClose={() => setShowPromptLibrary(false)}
         />
       )}
-      {filePreviewPath && (
+      {filePreviewPath && filePreviewBindingKey && filePreviewBindingKey === currentFilePreviewBindingKey && (
         <FileContentPreviewSheet
           filePath={filePreviewPath}
           result={filePreviewResult}
           loading={filePreviewLoading}
           onClose={() => {
+            filePreviewRequestGenerationRef.current += 1;
             setFilePreviewPath(null);
             setFilePreviewResult(null);
             setFilePreviewLoading(false);
+            setFilePreviewBindingKey(null);
           }}
           onSendToChat={(prompt) => {
+            filePreviewRequestGenerationRef.current += 1;
             setWishText(prompt);
             setFilePreviewPath(null);
             setFilePreviewResult(null);
+            setFilePreviewLoading(false);
+            setFilePreviewBindingKey(null);
           }}
         />
       )}

@@ -209,28 +209,236 @@ function fileInGate(file, gateKey, visited = new Set()) {
 
 const ciDir = join(ROOT, '.github', 'workflows');
 const ciWorkflows = [];
+
+function extractWorkflowRunCommands(content) {
+  const lines = content.split(/\r?\n/);
+  const commands = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/^(\s*)run:\s*(.*)$/);
+    if (!match) continue;
+    const baseIndent = match[1].length;
+    const inline = match[2].trim();
+    if (inline && !/^[|>][-+0-9]*$/.test(inline)) {
+      commands.push(inline.replace(/^(['"])([\s\S]*)\1$/, '$2'));
+      continue;
+    }
+
+    const block = [];
+    let cursor = index + 1;
+    for (; cursor < lines.length; cursor += 1) {
+      const line = lines[cursor];
+      if (!line.trim()) {
+        block.push(line);
+        continue;
+      }
+      const indent = line.match(/^\s*/)?.[0].length ?? 0;
+      if (indent <= baseIndent) break;
+      block.push(line);
+    }
+    const contentIndents = block
+      .filter((line) => line.trim())
+      .map((line) => line.match(/^\s*/)?.[0].length ?? 0);
+    const trimIndent = contentIndents.length > 0 ? Math.min(...contentIndents) : baseIndent + 2;
+    commands.push(block.map((line) => line.slice(Math.min(trimIndent, line.length))).join('\n'));
+    index = cursor - 1;
+  }
+  return commands;
+}
+
+function shellTokens(value) {
+  return (value.match(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s]+/g) ?? [])
+    .map((token) => token.replace(/^(['"])([\s\S]*)\1$/, '$2'));
+}
+
+function stripShellHereDocuments(command) {
+  const executableLines = [];
+  let delimiter = null;
+  for (const line of command.split(/\r?\n/)) {
+    if (delimiter !== null) {
+      if (line.trim() === delimiter) delimiter = null;
+      continue;
+    }
+    executableLines.push(line);
+    const match = line.match(/<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/);
+    if (match) delimiter = match[2];
+  }
+  return executableLines.join('\n');
+}
+
+function logicalShellCommands(command) {
+  return stripShellHereDocuments(command)
+    .replace(/\\\r?\n/g, ' ')
+    .split(/\r?\n|&&|\|\||;/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function extractInvokedPackageScripts(commands) {
+  const invoked = [];
+  for (const command of commands) {
+    for (let logicalCommand of logicalShellCommands(command)) {
+      logicalCommand = logicalCommand
+        .replace(/^env\s+/, '')
+        .replace(/^(?:(?:[A-Za-z_][A-Za-z0-9_]*)=(?:"[^"]*"|'[^']*'|\S+)\s+)*/, '');
+      const match = logicalCommand.match(/^pnpm(?:\s+run)?\s+(test[:\w-]*|verify[:\w-]*)\b/);
+      if (match) invoked.push(match[1]);
+    }
+  }
+  return [...new Set(invoked)];
+}
+
+const RUNNER_OPTIONS_WITH_VALUE = new Set([
+  '-c', '-k', '-m', '-n', '-o',
+  '--basetemp', '--capture', '--color', '--config', '--confcutdir', '--cov',
+  '--cov-config', '--cov-fail-under', '--cov-report', '--deselect', '--durations',
+  '--exclude', '--html', '--ignore', '--import-mode', '--junit-prefix', '--junitxml',
+  '--log-cli-level', '--log-file', '--log-file-level', '--log-level', '--maxfail',
+  '--outputFile', '--override-ini', '--project', '--reporter', '--rootdir',
+  '--tb', '--testNamePattern', '--timeout', '--workers',
+]);
+
+function normalizeRunnerTarget(rawTarget) {
+  let target = rawTarget.trim().replace(/[),]+$/, '');
+  target = target.replace(/^\$\{?GITHUB_WORKSPACE\}?\//, '');
+  target = target.split('::', 1)[0];
+  target = normalizePath(target).replace(/^\.\//, '').replace(/\/$/, '');
+  if (
+    !target
+    || target === '.'
+    || target.startsWith('-')
+    || target.startsWith('$')
+    || target.startsWith('/')
+    || target.startsWith('~')
+    || /^(?:then|do|done|fi|true|false)$/i.test(target)
+    || /^(?:[012]?>|[012]?>&)/.test(target)
+  ) return null;
+  return target;
+}
+
+function runnerTargetsFromTail(tail) {
+  const commandTail = tail.split(/\s+\|\s+/, 1)[0];
+  const tokens = shellTokens(commandTail);
+  const targets = [];
+  let skipNext = false;
+  for (const token of tokens) {
+    if (skipNext) {
+      skipNext = false;
+      continue;
+    }
+    const option = token.split('=', 1)[0];
+    if (RUNNER_OPTIONS_WITH_VALUE.has(option) && !token.includes('=')) {
+      skipNext = true;
+      continue;
+    }
+    if (token.startsWith('-') || token.includes('=')) continue;
+    const target = normalizeRunnerTarget(token);
+    if (target) targets.push(target);
+  }
+  return targets;
+}
+
+function extractWorkflowTestTargets(commands) {
+  const targets = [];
+  for (const command of commands) {
+    for (let logicalCommand of logicalShellCommands(command)) {
+      logicalCommand = logicalCommand
+        .replace(/^env\s+/, '')
+        .replace(/^(?:(?:[A-Za-z_][A-Za-z0-9_]*)=(?:"[^"]*"|'[^']*'|\S+)\s+)*/, '');
+      let match = logicalCommand.match(/^(?:(?:python|python3)(?:\.\d+)?\s+-m\s+)?pytest\b([\s\S]*)$/);
+      if (match) {
+        for (const target of runnerTargetsFromTail(match[1])) targets.push({ language: 'python', target });
+        continue;
+      }
+      match = logicalCommand.match(/^(?:python|python3)(?:\.\d+)?\s+-m\s+unittest\b([\s\S]*)$/);
+      if (match) {
+        for (const target of runnerTargetsFromTail(match[1])) targets.push({ language: 'python', target });
+        continue;
+      }
+      match = logicalCommand.match(/^(?:(?:pnpm\s+(?:exec\s+)?)|(?:npx\s+))?vitest(?:\s+run)?\b([\s\S]*)$/);
+      if (match) {
+        for (const target of runnerTargetsFromTail(match[1])) targets.push({ language: 'javascript-typescript', target });
+        continue;
+      }
+      match = logicalCommand.match(/^node\s+--test\b([\s\S]*)$/);
+      if (match) {
+        for (const target of runnerTargetsFromTail(match[1])) targets.push({ language: 'javascript-typescript', target });
+        continue;
+      }
+      match = logicalCommand.match(/^(?:(?:pnpm\s+(?:exec\s+)?)|(?:npx\s+))?playwright\s+test\b([\s\S]*)$/);
+      if (match) {
+        const explicitTargets = runnerTargetsFromTail(match[1]);
+        const playwrightTargets = explicitTargets.length > 0
+          ? explicitTargets
+          : PLAYWRIGHT_TEST_ROOTS.map((root) => root.replace(/\/$/, ''));
+        for (const target of playwrightTargets) {
+          targets.push({ language: 'javascript-typescript', target });
+        }
+      }
+    }
+  }
+  return [...new Map(targets.map((entry) => [`${entry.language}:${entry.target}`, entry])).values()];
+}
+
+function collectPackageScriptCommands(scriptName, visited = new Set()) {
+  if (visited.has(scriptName)) return [];
+  visited.add(scriptName);
+  const definition = scripts[scriptName];
+  if (typeof definition !== 'string' || !definition.trim()) return [];
+  const delegatedScripts = extractInvokedPackageScripts([definition]);
+  return [
+    definition,
+    ...delegatedScripts.flatMap((delegated) => collectPackageScriptCommands(delegated, visited)),
+  ];
+}
+
+function scriptGateKeys(scriptName, visited = new Set()) {
+  if (visited.has(scriptName)) return [];
+  visited.add(scriptName);
+  const gateKeys = GATE_PATTERNS[scriptName] ? [scriptName] : [];
+  const definition = scripts[scriptName];
+  if (typeof definition !== 'string') return gateKeys;
+  const delegatedScripts = extractInvokedPackageScripts([definition]);
+  return [
+    ...gateKeys,
+    ...delegatedScripts.flatMap((delegated) => scriptGateKeys(delegated, visited)),
+  ];
+}
+
 if (existsSync(ciDir)) {
   for (const f of readdirSync(ciDir)) {
     if (f.endsWith('.yml') || f.endsWith('.yaml')) {
       const content = readFileSync(join(ciDir, f), 'utf8');
-      const scriptMatches = [...content.matchAll(/pnpm(?:\s+run)?\s+(test[:\w-]*|verify[:\w-]*)/g)].map(m => m[1]);
-      ciWorkflows.push({ file: f, scripts: [...new Set(scriptMatches)], content });
+      const runCommands = extractWorkflowRunCommands(content);
+      const workflowScripts = extractInvokedPackageScripts(runCommands);
+      const packageCommands = workflowScripts.flatMap((script) => collectPackageScriptCommands(script));
+      ciWorkflows.push({
+        file: f,
+        scripts: workflowScripts,
+        testTargets: extractWorkflowTestTargets([...runCommands, ...packageCommands]),
+      });
     }
   }
 }
 
+function runnerTargetCoversFile(target, file) {
+  if (target.includes('*')) {
+    const sentinel = '\u0000';
+    const expression = target
+      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+      .replaceAll('**', sentinel)
+      .replaceAll('*', '[^/]*')
+      .replaceAll(sentinel, '.*');
+    return new RegExp(`^${expression}$`).test(file);
+  }
+  return file === target || file.startsWith(`${target}/`);
+}
+
 function workflowCoversFile(workflow, file, gates) {
-  if (workflow.scripts.some((script) => gates.includes(script))) return true;
-  if (workflow.content.includes(file)) return true;
-  const root = testRoot(file);
-  if (!root || !workflow.content.includes(root)) return false;
+  if (workflow.scripts.some((script) => scriptGateKeys(script).some((gate) => gates.includes(gate)))) return true;
   const language = testLanguage(file);
-  if (language === 'python') return /(?:pytest|unittest)/.test(workflow.content);
-  if (language === 'android-jvm') return /(?:gradlew|connectedAndroidTest|testDebugUnitTest|testReleaseUnitTest)/.test(workflow.content);
-  if (language === 'go') return /go\s+test/.test(workflow.content);
-  if (language === 'rust') return /cargo\s+test/.test(workflow.content);
-  if (language === 'shell') return /(?:bash|shellcheck)/.test(workflow.content);
-  return /(?:vitest|playwright|node\s+--test|pnpm(?:\s+run)?\s+test)/.test(workflow.content);
+  return workflow.testTargets.some((entry) => (
+    entry.language === language && runnerTargetCoversFile(entry.target, file)
+  ));
 }
 
 // ─── Classify each test file ───────────────────────────────────────────────

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -40,9 +41,72 @@ class GitHubAccessScope:
     purpose: str
 
 
+class GitHubRepositoryReadBlocked(PermissionError):
+    """The requested path or decoded content is unsafe to expose to a browser."""
+
+
+class GitHubRepositoryReadBinary(RuntimeError):
+    """The immutable blob is not valid previewable UTF-8 text."""
+
+
+class GitHubRepositoryReadUpstreamError(RuntimeError):
+    """GitHub returned a malformed or contradictory repository-file payload."""
+
+
 _SCOPE_REVISION = re.compile(r"^[0-9a-f]{40}$")
 _SCOPE_PURPOSE = re.compile(r"^[a-z][a-z0-9._:-]{2,95}$")
 _SCOPE_TTL_SECONDS = 600
+_REPOSITORY_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
+_SENSITIVE_REPOSITORY_FILE = re.compile(
+    r"(?:^|/)(?:\.env(?:\.[^/]*)?|\.npmrc|\.pypirc|\.netrc|\.git-credentials|"
+    r"id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|"
+    r"(?:credentials?|secrets?)(?:\.(?:json|ya?ml|toml|ini|cfg|conf|txt))?)(?:$|/)|"
+    r"\.(?:pem|key|p12|pfx|jks|keystore|kdbx)$",
+    re.IGNORECASE,
+)
+_SECRET_CONTENT_PATTERNS = (
+    re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----", re.IGNORECASE),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b", re.IGNORECASE),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b", re.IGNORECASE),
+    re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{10,}\b", re.IGNORECASE),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bAuthorization:\s*(?:Bearer\s+)?[^\s\r\n]{12,}", re.IGNORECASE),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
+    re.compile(
+        r"(?im)^\s*(?:export\s+)?[A-Z][A-Z0-9_]{1,80}"
+        r"(?:TOKEN|PASSWORD|PASSWD|SECRET|API_KEY|PRIVATE_KEY)"
+        r"\s*=\s*['\"]?[^'\"\s]{8,}"
+    ),
+    re.compile(
+        r"""(?im)(?:^|[,{])\s*["']?[A-Za-z0-9_.-]*(?:token|password|passwd|secret|"""
+        r"""api[_-]?key|private[_-]?key|access[_-]?key)[A-Za-z0-9_.-]*["']?"""
+        r"""\s*[:=]\s*["']?(?!\s*(?:$|null\b|none\b|false\b|true\b|\$\{|<))"""
+        r"""[^\s,'"}#]{6,}"""
+    ),
+)
+MAX_REPOSITORY_FILE_BYTES = 100_000
+
+
+def ensure_repository_preview_path_safe(path: str) -> None:
+    """Reject repository paths whose contents must never enter a browser preview."""
+
+    if _SENSITIVE_REPOSITORY_FILE.search(path):
+        raise GitHubRepositoryReadBlocked("repository_file_sensitive_path_blocked")
+
+
+def decode_repository_preview_bytes(path: str, content_bytes: bytes) -> str:
+    """Decode one observed byte buffer and fail closed on binary or secret content."""
+
+    ensure_repository_preview_path_safe(path)
+    try:
+        text = content_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise GitHubRepositoryReadBinary("repository_file_binary_unsupported") from exc
+    if "\x00" in text:
+        raise GitHubRepositoryReadBinary("repository_file_binary_unsupported")
+    if any(pattern.search(text) for pattern in _SECRET_CONTENT_PATTERNS):
+        raise GitHubRepositoryReadBlocked("repository_file_secret_content_blocked")
+    return text
 
 
 def _scope_target(repository: object) -> tuple[str, str] | None:
@@ -201,6 +265,106 @@ def resolve_request_github_token(
         return normalize_ephemeral_github_token(get_session_github_token(user_id))
     except Exception:
         return None
+
+
+def read_github_repository_file(
+    raw_token: object,
+    *,
+    owner: object,
+    repo: object,
+    revision: object,
+    path: object,
+    max_bytes: int = MAX_REPOSITORY_FILE_BYTES,
+    opener: Callable[..., Any] = urlopen,
+) -> dict[str, object]:
+    """Read one immutable, scoped text blob without exposing credential material."""
+
+    safe_owner = str(owner or "").strip()
+    safe_repo = str(repo or "").strip().removesuffix(".git")
+    safe_revision = str(revision or "").strip().lower()
+    raw_path = str(path or "")
+    safe_path = raw_path
+    if not _REPOSITORY_COMPONENT.fullmatch(safe_owner) or not _REPOSITORY_COMPONENT.fullmatch(safe_repo):
+        raise ValueError("repository_target_invalid")
+    if not _SCOPE_REVISION.fullmatch(safe_revision):
+        raise ValueError("repository_revision_invalid")
+    if (
+        not safe_path
+        or raw_path != raw_path.strip()
+        or safe_path.startswith("/")
+        or "\\" in safe_path
+        or "\x00" in safe_path
+        or any(segment in ("", ".", "..") for segment in safe_path.split("/"))
+    ):
+        raise ValueError("repository_file_path_invalid")
+    ensure_repository_preview_path_safe(safe_path)
+    try:
+        bounded_max_bytes = max(1, min(int(max_bytes), MAX_REPOSITORY_FILE_BYTES))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("repository_file_max_bytes_invalid") from exc
+
+    token = None
+    if raw_token is not None:
+        token = normalize_ephemeral_github_token(raw_token)
+        if token is None:
+            raise ValueError("github_access_token_invalid")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "sovereign-agent-runtime",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = Request(
+        (
+            f"https://api.github.com/repos/{quote(safe_owner, safe='')}/{quote(safe_repo, safe='')}"
+            f"/contents/{quote(safe_path, safe='/')}?ref={quote(safe_revision, safe='')}"
+        ),
+        method="GET",
+        headers=headers,
+    )
+    try:
+        with opener(request, timeout=30) as response:  # nosec B310 - fixed GitHub API origin.
+            payload = json.loads(response.read().decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise GitHubRepositoryReadUpstreamError("repository_file_payload_invalid") from exc
+    if not isinstance(payload, dict) or payload.get("type") != "file":
+        raise GitHubRepositoryReadUpstreamError("repository_file_payload_invalid")
+    if str(payload.get("encoding") or "").lower() != "base64":
+        raise GitHubRepositoryReadUpstreamError("repository_file_encoding_unsupported")
+    encoded_content = payload.get("content")
+    if not isinstance(encoded_content, str):
+        raise GitHubRepositoryReadUpstreamError("repository_file_content_missing")
+    try:
+        content_bytes = base64.b64decode("".join(encoded_content.split()), validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise GitHubRepositoryReadUpstreamError("repository_file_content_invalid") from exc
+    blob_sha = str(payload.get("sha") or "").strip().lower()
+    if not _SCOPE_REVISION.fullmatch(blob_sha):
+        raise GitHubRepositoryReadUpstreamError("repository_file_blob_identity_invalid")
+    git_blob_payload = b"blob " + str(len(content_bytes)).encode("ascii") + b"\x00" + content_bytes
+    observed_blob_sha = hashlib.sha1(git_blob_payload, usedforsecurity=False).hexdigest()
+    if not hmac.compare_digest(blob_sha, observed_blob_sha):
+        raise GitHubRepositoryReadUpstreamError("repository_file_blob_identity_mismatch")
+    full_text = decode_repository_preview_bytes(safe_path, content_bytes)
+
+    truncated = len(content_bytes) > bounded_max_bytes
+    # The full blob has already passed strict UTF-8 validation. When a bounded
+    # byte prefix ends inside one code point, drop only that partial character;
+    # the explicit truncated flag makes the intentionally incomplete preview clear.
+    visible_text = (
+        content_bytes[:bounded_max_bytes].decode("utf-8", errors="ignore")
+        if truncated
+        else full_text
+    )
+    return {
+        "path": safe_path,
+        "revision": safe_revision,
+        "sha": blob_sha,
+        "bytes": len(content_bytes),
+        "content": visible_text,
+        "truncated": truncated,
+    }
 
 
 def validate_github_access_for_repo(

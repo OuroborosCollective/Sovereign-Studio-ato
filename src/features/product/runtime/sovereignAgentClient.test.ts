@@ -298,7 +298,13 @@ describe('SovereignAgentClient', () => {
       claim: 'OBSERVED',
     };
     const legacy = { ...canonical, schemaVersion: 'sovereign.live-workspace-projection.v1', projectionId: 'legacy-1' };
-    const fetcher = vi.fn(async () => new Response(JSON.stringify({ projections: [legacy, canonical] }), { status: 200 }));
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      jobId: 'job-1',
+      workspaceId: 'ws-1',
+      sessionBindingHash: 'a'.repeat(64),
+      attemptId: 'attempt-1234567890abcdef12345678',
+      projections: [legacy, canonical],
+    }), { status: 200 }));
     const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
 
     const projections = await client.getProjections('job-1');
@@ -310,6 +316,8 @@ describe('SovereignAgentClient', () => {
     expect(projections).toHaveLength(1);
     expect(projections[0]).toMatchObject({
       projectionId: 'visual-1',
+      jobId: 'job-1',
+      workspaceId: 'ws-1',
       sessionBindingHash: 'a'.repeat(64),
       attemptId: 'attempt-1234567890abcdef12345678',
       projectionKind: 'TERMINAL',
@@ -318,6 +326,38 @@ describe('SovereignAgentClient', () => {
       authoritative: false,
       claim: 'OBSERVED',
     });
+
+    const driftFetcher = vi.fn(async () => new Response(JSON.stringify({
+      jobId: 'job-1',
+      workspaceId: 'ws-1',
+      sessionBindingHash: 'a'.repeat(64),
+      attemptId: 'attempt-1234567890abcdef12345678',
+      projections: [
+        { ...canonical, projectionId: 'foreign-job', jobId: 'job-other' },
+        { ...canonical, projectionId: 'foreign-workspace', workspaceId: 'ws-other' },
+        { ...canonical, projectionId: 'foreign-session', sessionBindingHash: '8'.repeat(64) },
+        { ...canonical, projectionId: 'foreign-attempt', attemptId: 'attempt-other' },
+      ],
+    }), { status: 200 }));
+    const driftClient = new SovereignAgentClient({
+      config,
+      fetcher: driftFetcher as unknown as typeof fetch,
+    });
+
+    expect(await driftClient.getProjections('job-1')).toEqual([]);
+  });
+
+  it('rejects a projection response whose authenticated envelope belongs to another job', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      jobId: 'job-other',
+      workspaceId: 'ws-1',
+      projections: [],
+    }), { status: 200 }));
+    const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
+
+    await expect(client.getProjections('job-1')).rejects.toThrow(
+      'Sovereign Live Workspace projections returned no exact job/workspace envelope binding.',
+    );
   });
 
   it('reads a desktop frame only with OBSERVED PNG and SHA-256 evidence', async () => {
@@ -380,7 +420,14 @@ describe('SovereignAgentClient', () => {
     };
     const frameClaim = { ...canonical, anchorId: `evidence-${'1'.repeat(24)}`, sourceKind: 'FRAME_OBSERVATION' };
     const generic = { ...canonical, anchorId: `evidence-${'2'.repeat(24)}`, claimKind: 'EVERYTHING_WORKS' };
-    const fetcher = vi.fn(async () => new Response(JSON.stringify({ evidenceAnchors: [frameClaim, generic, canonical] }), { status: 200 }));
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      jobId: 'job-1',
+      workspaceId: 'ws-1',
+      active: true,
+      sessionBindingHash: 'b'.repeat(64),
+      attemptId: 'attempt-1',
+      evidenceAnchors: [frameClaim, generic, canonical],
+    }), { status: 200 }));
     const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
 
     const anchors = await client.getEvidenceAnchors('job-1');
@@ -391,12 +438,67 @@ describe('SovereignAgentClient', () => {
     );
     expect(anchors).toHaveLength(1);
     expect(anchors[0]).toMatchObject({
+      jobId: 'job-1',
+      workspaceId: 'ws-1',
       claimKind: 'TEST_EXECUTION_RECEIPT_MATCH',
       verdict: 'VERIFIED',
       sourceKind: 'AGENT_RUN_RECEIPT',
       repositoryRevision: 'e'.repeat(40),
       authoritative: false,
     });
+
+    const driftFetcher = vi.fn(async () => new Response(JSON.stringify({
+      jobId: 'job-1',
+      workspaceId: 'ws-1',
+      active: true,
+      sessionBindingHash: 'b'.repeat(64),
+      attemptId: 'attempt-1',
+      evidenceAnchors: [
+        { ...canonical, anchorId: `evidence-${'3'.repeat(24)}`, jobId: 'job-other' },
+        { ...canonical, anchorId: `evidence-${'4'.repeat(24)}`, workspaceId: 'ws-other' },
+        { ...canonical, anchorId: `evidence-${'5'.repeat(24)}`, sessionBindingHash: '6'.repeat(64) },
+        { ...canonical, anchorId: `evidence-${'7'.repeat(24)}`, attemptId: 'attempt-other' },
+      ],
+    }), { status: 200 }));
+    const driftClient = new SovereignAgentClient({ config, fetcher: driftFetcher as unknown as typeof fetch });
+    expect(await driftClient.getEvidenceAnchors('job-1')).toEqual([]);
+
+    const wrongEnvelopeFetcher = vi.fn(async () => new Response(JSON.stringify({
+      jobId: 'job-old',
+      workspaceId: 'ws-1',
+      active: true,
+      sessionBindingHash: 'b'.repeat(64),
+      attemptId: 'attempt-1',
+      evidenceAnchors: [canonical],
+    }), { status: 200 }));
+    const wrongEnvelopeClient = new SovereignAgentClient({
+      config,
+      fetcher: wrongEnvelopeFetcher as unknown as typeof fetch,
+    });
+    await expect(wrongEnvelopeClient.getEvidenceAnchors('job-1')).rejects.toThrow(
+      'Sovereign Live Workspace evidence returned no exact job/workspace envelope binding.',
+    );
+
+    const inactiveFetcher = vi.fn(async () => new Response(JSON.stringify({
+      jobId: 'job-1',
+      workspaceId: 'ws-1',
+      active: false,
+      sessionBindingHash: 'b'.repeat(64),
+      attemptId: 'attempt-1',
+      evidenceAnchors: [{
+        ...canonical,
+        anchorId: `evidence-${'8'.repeat(24)}`,
+        verdict: 'STALE',
+        freshnessReasons: ['SESSION_NOT_ACTIVE'],
+      }],
+    }), { status: 200 }));
+    const inactiveClient = new SovereignAgentClient({ config, fetcher: inactiveFetcher as unknown as typeof fetch });
+    expect(await inactiveClient.getEvidenceAnchors('job-1')).toMatchObject([{
+      jobId: 'job-1',
+      workspaceId: 'ws-1',
+      verdict: 'STALE',
+      freshnessReasons: ['SESSION_NOT_ACTIVE'],
+    }]);
   });
 
   it('runs the deterministic janitor only through the owned job tool route', async () => {

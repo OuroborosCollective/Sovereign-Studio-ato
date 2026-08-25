@@ -20,7 +20,13 @@ from agent_runtime.contracts import (  # noqa: E402
     SovereignAgentJobResult,
 )
 from agent_runtime.evidence_gate import EvidenceGateResult  # noqa: E402
+from agent_runtime.github_access import (  # noqa: E402
+    GitHubRepositoryReadBinary,
+    GitHubRepositoryReadBlocked,
+    GitHubRepositoryReadUpstreamError,
+)
 from agent_runtime.job_store import create_agent_job_record, update_agent_job_state  # noqa: E402
+from agent_runtime.live_workspace import WorkspaceEvidenceAnchorV1  # noqa: E402
 from agent_runtime.tools.base import ToolResult  # noqa: E402
 import agent_runtime.routes as routes_module  # noqa: E402
 from agent_runtime.routes import register_sovereign_agent_routes  # noqa: E402
@@ -220,6 +226,195 @@ def test_github_access_validation_requires_sovereign_session():
     assert response.get_json()["error"] == "Nicht eingeloggt"
 
 
+def test_repository_file_read_requires_sovereign_session():
+    conn = FakeConnection()
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/repository/read-file",
+        json={
+            "owner": "OtherCollective",
+            "repo": "Public-Repository",
+            "path": "README.md",
+            "ref": "a" * 40,
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.get_json()["error"] == "Nicht eingeloggt"
+
+
+def test_repository_file_read_is_session_and_repository_scoped_without_toolchain_allowlist(monkeypatch):
+    conn = FakeConnection()
+    captured = {}
+    revision = "a" * 40
+    monkeypatch.setattr(
+        routes_module,
+        "verify_github_access_scope",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            owner="OtherCollective",
+            repo="Public-Repository",
+            branch=revision,
+            revision=revision,
+        ),
+    )
+
+    def fake_read(raw_token, **kwargs):
+        captured.update(token=raw_token, **kwargs)
+        return {
+            "path": kwargs["path"],
+            "revision": kwargs["revision"],
+            "sha": "b" * 40,
+            "bytes": 14,
+            "content": "foreign public",
+            "truncated": False,
+        }
+
+    monkeypatch.setattr(routes_module, "read_github_repository_file", fake_read)
+    app = create_test_app(conn)
+    response = app.test_client().post(
+        "/api/user/agent/repository/read-file",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "scope": "signed-repository-file-read-scope",
+            "owner": "OtherCollective",
+            "repo": "Public-Repository",
+            "path": "README.md",
+            "ref": revision,
+            "maxBytes": 8192,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "ok": True,
+        "scopeVerified": True,
+        "repositoryRevision": revision,
+        "path": "README.md",
+        "revision": revision,
+        "sha": "b" * 40,
+        "bytes": 14,
+        "content": "foreign public",
+        "truncated": False,
+    }
+    assert captured == {
+        "token": None,
+        "owner": "OtherCollective",
+        "repo": "Public-Repository",
+        "revision": revision,
+        "path": "README.md",
+        "max_bytes": 8192,
+    }
+
+
+def test_repository_file_read_requires_a_verified_server_scope(monkeypatch):
+    conn = FakeConnection()
+    calls = []
+    monkeypatch.setattr(routes_module, "verify_github_access_scope", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        routes_module,
+        "read_github_repository_file",
+        lambda *_args, **_kwargs: calls.append(True),
+    )
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/repository/read-file",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "scope": "invalid",
+            "owner": "OtherCollective",
+            "repo": "Public-Repository",
+            "path": "README.md",
+            "ref": "a" * 40,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "repository_file_scope_unverified"
+    assert calls == []
+
+
+def test_repository_file_read_rejects_scope_target_or_revision_mismatch(monkeypatch):
+    conn = FakeConnection()
+    calls = []
+    revision = "a" * 40
+    monkeypatch.setattr(
+        routes_module,
+        "verify_github_access_scope",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            owner="OtherCollective",
+            repo="Public-Repository",
+            branch=revision,
+            revision=revision,
+        ),
+    )
+    monkeypatch.setattr(
+        routes_module,
+        "read_github_repository_file",
+        lambda *_args, **_kwargs: calls.append(True),
+    )
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/repository/read-file",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "scope": "signed-repository-file-read-scope",
+            "owner": "ForeignOwner",
+            "repo": "Public-Repository",
+            "path": "README.md",
+            "ref": revision,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "repository_file_scope_mismatch"
+    assert calls == []
+
+
+def test_repository_file_read_maps_typed_preview_safety_failures(monkeypatch):
+    revision = "a" * 40
+    cases = [
+        (GitHubRepositoryReadBlocked("repository_file_secret_content_blocked"), 403, "repository_file_blocked"),
+        (GitHubRepositoryReadBinary("repository_file_binary_unsupported"), 415, "repository_file_binary_unsupported"),
+        (GitHubRepositoryReadUpstreamError("repository_file_payload_invalid"), 502, "repository_file_upstream_invalid"),
+    ]
+
+    for error, expected_status, expected_code in cases:
+        conn = FakeConnection()
+        monkeypatch.setattr(
+            routes_module,
+            "verify_github_access_scope",
+            lambda *_args, **_kwargs: SimpleNamespace(
+                owner="OtherCollective",
+                repo="Public-Repository",
+                branch=revision,
+                revision=revision,
+            ),
+        )
+
+        def fail_read(*_args, _error=error, **_kwargs):
+            raise _error
+
+        monkeypatch.setattr(routes_module, "read_github_repository_file", fail_read)
+        app = create_test_app(conn)
+        response = app.test_client().post(
+            "/api/user/agent/repository/read-file",
+            headers={"X-Test-User": "user-1"},
+            json={
+                "scope": "signed-repository-file-read-scope",
+                "owner": "OtherCollective",
+                "repo": "Public-Repository",
+                "path": "README.md",
+                "ref": revision,
+            },
+        )
+
+        assert response.status_code == expected_status
+        assert response.get_json()["code"] == expected_code
+
+
 def test_github_access_scope_bootstraps_revision_bound_validation_without_an_agent_job(monkeypatch):
     conn = FakeConnection()
     token = "ghp_" + "a" * 40
@@ -264,7 +459,15 @@ def test_github_access_scope_bootstraps_revision_bound_validation_without_an_age
     )
 
     assert validation_response.status_code == 200
-    assert validation_response.get_json() == {"ok": True, "canWrite": True, "code": "ready", "error": None}
+    validation_payload = validation_response.get_json()
+    assert {key: validation_payload[key] for key in ("ok", "canWrite", "code", "error")} == {
+        "ok": True,
+        "canWrite": True,
+        "code": "ready",
+        "error": None,
+    }
+    assert isinstance(validation_payload["repositoryReadScope"], str)
+    assert validation_payload["repositoryRevision"] == "c" * 40
     assert captured == {
         "scopeToken": token,
         "token": token,
@@ -320,7 +523,15 @@ def test_github_access_scope_and_validation_use_server_held_session_credential_w
     )
 
     assert validation_response.status_code == 200
-    assert validation_response.get_json() == {"ok": True, "canWrite": True, "code": "ready", "error": None}
+    validation_payload = validation_response.get_json()
+    assert {key: validation_payload[key] for key in ("ok", "canWrite", "code", "error")} == {
+        "ok": True,
+        "canWrite": True,
+        "code": "ready",
+        "error": None,
+    }
+    assert isinstance(validation_payload["repositoryReadScope"], str)
+    assert validation_payload["repositoryRevision"] == "c" * 40
     assert captured == {
         "scopeToken": token,
         "validationToken": token,
@@ -362,7 +573,14 @@ def test_github_access_validation_is_server_job_scoped_and_never_echoes_token(mo
 
     payload = response.get_json()
     assert response.status_code == 200
-    assert payload == {"ok": True, "canWrite": True, "code": "ready", "error": None}
+    assert payload == {
+        "ok": True,
+        "canWrite": True,
+        "code": "ready",
+        "error": None,
+        "repositoryReadScope": None,
+        "repositoryRevision": None,
+    }
     assert captured == {"token": token, "owner": "OuroborosCollective", "repo": "Sovereign-Studio-ato"}
     assert token not in response.get_data(as_text=True)
 
@@ -607,6 +825,121 @@ def test_generic_tool_route_never_invokes_live_workspace_resolver(monkeypatch):
     assert payload["tool"]["status"] == "done"
     assert payload["projection"] is None
     assert calls == {"tool": 1, "resolver": 0}
+
+
+def test_projection_read_returns_only_the_current_live_workspace_attempt(monkeypatch) -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-live", status="running")
+    current_session_hash = "b" * 64
+    stored = [
+        {
+            "projectionId": "projection-old",
+            "sessionBindingHash": "a" * 64,
+            "attemptId": "attempt-old",
+        },
+        {
+            "projectionId": "projection-current",
+            "sessionBindingHash": current_session_hash,
+            "attemptId": "attempt-current",
+        },
+    ]
+    monkeypatch.setattr(routes_module, "list_agent_projections", lambda *_args, **_kwargs: stored)
+    context = SimpleNamespace(
+        session=SimpleNamespace(
+            session_binding_hash=current_session_hash,
+            attempt_id="attempt-current",
+        ),
+    )
+    app = create_test_app(conn, get_live_workspace_context=lambda _conn, _job: context)
+
+    response = app.test_client().get(
+        "/api/user/agent/jobs/agent-live/projections",
+        headers={"X-Test-User": "user-1"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["jobId"] == "agent-live"
+    assert payload["workspaceId"] == "agent-live"
+    assert payload["sessionBindingHash"] == current_session_hash
+    assert payload["attemptId"] == "attempt-current"
+    assert payload["projections"] == [stored[1]]
+
+
+def test_projection_read_without_an_active_context_returns_no_historical_attempt(monkeypatch) -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-live", status="running")
+    monkeypatch.setattr(
+        routes_module,
+        "list_agent_projections",
+        lambda *_args, **_kwargs: [{
+            "projectionId": "projection-historical",
+            "sessionBindingHash": "a" * 64,
+            "attemptId": "attempt-historical",
+        }],
+    )
+    app = create_test_app(conn, get_live_workspace_context=lambda _conn, _job: None)
+
+    response = app.test_client().get(
+        "/api/user/agent/jobs/agent-live/projections",
+        headers={"X-Test-User": "user-1"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["projections"] == []
+    assert payload["sessionBindingHash"] is None
+    assert payload["attemptId"] is None
+
+
+def test_inactive_evidence_projects_only_latest_attempt_as_explicitly_stale(monkeypatch) -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-live", status="running")
+
+    def anchor(session_hash: str, attempt_id: str, action_id: str):
+        return WorkspaceEvidenceAnchorV1.create(
+            session=SimpleNamespace(
+                session_binding_hash=session_hash,
+                run_id=f"run-{attempt_id}",
+                task_id="task-monitor",
+                attempt_id=attempt_id,
+            ),
+            claim_kind="SOURCE_REVISION",
+            verdict="VERIFIED",
+            scope="repository-runtime",
+            source_kind="TARGET_READBACK",
+            source_refs=["c" * 64],
+            repository_revision="d" * 40,
+            action_id=action_id,
+            observed_at="2026-08-25T00:00:00Z",
+        ).to_dict()
+
+    historical = anchor("a" * 64, "attempt-old", "action-old")
+    latest = anchor("b" * 64, "attempt-latest", "action-latest")
+    monkeypatch.setattr(
+        routes_module,
+        "list_agent_evidence_anchors",
+        lambda *_args, **_kwargs: [historical, latest],
+    )
+    app = create_test_app(conn, get_live_workspace_context=lambda _conn, _job: None)
+
+    response = app.test_client().get(
+        "/api/user/agent/jobs/agent-live/evidence-anchors",
+        headers={"X-Test-User": "user-1"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["active"] is False
+    assert payload["sessionBindingHash"] == "b" * 64
+    assert payload["attemptId"] == "attempt-latest"
+    assert len(payload["evidenceAnchors"]) == 1
+    assert payload["evidenceAnchors"][0]["attemptId"] == "attempt-latest"
+    assert payload["evidenceAnchors"][0]["verdict"] == "STALE"
+    assert payload["evidenceAnchors"][0]["freshnessReasons"] == ["SESSION_NOT_ACTIVE"]
+    assert len(payload["historicalEvidenceAnchors"]) == 1
+    assert payload["historicalEvidenceAnchors"][0]["attemptId"] == "attempt-old"
+    assert payload["historicalEvidenceAnchors"][0]["freshnessReasons"] == ["ATTEMPT_NOT_CURRENT"]
 
 
 def test_live_workspace_get_is_owner_scoped_before_resolver() -> None:

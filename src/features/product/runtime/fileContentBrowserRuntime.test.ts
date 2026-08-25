@@ -3,6 +3,28 @@ import { detectLanguage, fetchFileContent, isBinaryPath, isPreviewable, MAX_PREV
 
 const response = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
+const repositoryFetcher = (
+  revision: string,
+  fileBody: Record<string, unknown>,
+  readStatus = 200,
+) => vi.fn(async (url, init) => {
+  const endpoint = String(url);
+  const payload = JSON.parse(String(init?.body));
+  expect(endpoint).toBe('https://example.invalid/api/user/agent/repository/read-file');
+  expect(payload).toMatchObject({
+    scope: 'signed-repository-file-read-scope',
+    owner: 'OuroborosCollective',
+    repo: 'Sovereign-Studio-ato',
+    ref: revision,
+  });
+  return response(readStatus, {
+    scopeVerified: true,
+    repositoryRevision: revision,
+    revision,
+    ...fileBody,
+  });
+}) as unknown as typeof fetch;
+
 describe('fileContentBrowserRuntime', () => {
   it('detects TypeScript', () => expect(detectLanguage('src/a.tsx')).toBe('typescript'));
   it('detects Python', () => expect(detectLanguage('backend/a.py')).toBe('python'));
@@ -26,19 +48,12 @@ describe('fileContentBrowserRuntime', () => {
     const loadedSnapshotRevision = 'a'.repeat(40);
     const currentBranchHead = 'b'.repeat(40);
     const blobSha = 'c'.repeat(40);
-    const fetcher = vi.fn(async (url, init) => {
-      expect(String(url)).toBe('https://example.invalid/api/toolchain/github/read-file');
-      expect(init?.credentials).toBe('include');
-      expect(currentBranchHead).not.toBe(loadedSnapshotRevision);
-      const payload = JSON.parse(String(init?.body));
-      expect(payload).toEqual({
-        owner: 'OuroborosCollective',
-        repo: 'Sovereign-Studio-ato',
-        path: 'LICENSE',
-        ref: loadedSnapshotRevision,
-      });
-      return response(200, { content: 'License text at snapshot A', bytes: 26, sha: blobSha });
-    }) as unknown as typeof fetch;
+    expect(currentBranchHead).not.toBe(loadedSnapshotRevision);
+    const fetcher = repositoryFetcher(loadedSnapshotRevision, {
+      content: 'License text at snapshot A',
+      bytes: 26,
+      sha: blobSha,
+    });
     const result = await fetchFileContent({
       jobId: '',
       backendBase: 'https://example.invalid',
@@ -46,6 +61,7 @@ describe('fileContentBrowserRuntime', () => {
       repoOwner: 'OuroborosCollective',
       repoName: 'Sovereign-Studio-ato',
       repoRevision: loadedSnapshotRevision,
+      repositoryReadScope: 'signed-repository-file-read-scope',
       fetcher,
     });
     expect(result.status).toBe('loaded');
@@ -55,12 +71,11 @@ describe('fileContentBrowserRuntime', () => {
   it('uses the immutable repository fallback after a selected workspace is typed unusable', async () => {
     const loadedSnapshotRevision = 'a'.repeat(40);
     const blobSha = 'd'.repeat(40);
-    const fetcher = vi.fn(async (url, init) => {
-      expect(String(url)).toBe('https://example.invalid/api/toolchain/github/read-file');
-      const payload = JSON.parse(String(init?.body));
-      expect(payload.ref).toBe(loadedSnapshotRevision);
-      return response(200, { content: 'README at immutable snapshot', bytes: 28, sha: blobSha });
-    }) as unknown as typeof fetch;
+    const fetcher = repositoryFetcher(loadedSnapshotRevision, {
+      content: 'README at immutable snapshot',
+      bytes: 28,
+      sha: blobSha,
+    });
     const result = await fetchFileContent({
       jobId: 'cleaned-workspace-job',
       workspaceUsable: false,
@@ -69,6 +84,7 @@ describe('fileContentBrowserRuntime', () => {
       repoOwner: 'OuroborosCollective',
       repoName: 'Sovereign-Studio-ato',
       repoRevision: loadedSnapshotRevision,
+      repositoryReadScope: 'signed-repository-file-read-scope',
       fetcher,
     });
     expect(result.status).toBe('loaded');
@@ -91,19 +107,21 @@ describe('fileContentBrowserRuntime', () => {
   });
   it('honors backend truncation even when original bytes remain below the frontend limit', async () => {
     const content = 'x'.repeat(60_000);
-    const fetcher = vi.fn(async () => response(200, {
+    const revision = 'a'.repeat(40);
+    const fetcher = repositoryFetcher(revision, {
       content,
       bytes: 80_000,
       sha: 'd'.repeat(40),
       truncated: true,
-    })) as unknown as typeof fetch;
+    });
     const result = await fetchFileContent({
       jobId: '',
       backendBase: 'https://example.invalid',
       filePath: 'docs/large.md',
       repoOwner: 'OuroborosCollective',
       repoName: 'Sovereign-Studio-ato',
-      repoRevision: 'a'.repeat(40),
+      repoRevision: revision,
+      repositoryReadScope: 'signed-repository-file-read-scope',
       fetcher,
     });
     expect(result.status).toBe('loaded');
@@ -111,10 +129,103 @@ describe('fileContentBrowserRuntime', () => {
     expect(result.content).toContain('[... content truncated at preview boundary ...]');
   });
   it('rejects repository content without an immutable blob identity', async () => {
-    const fetcher = vi.fn(async () => response(200, {
+    const revision = 'a'.repeat(40);
+    const fetcher = repositoryFetcher(revision, {
       content: 'unbound content',
       bytes: 15,
       sha: '',
+    });
+    const result = await fetchFileContent({
+      jobId: '',
+      backendBase: 'https://example.invalid',
+      filePath: 'README.md',
+      repoOwner: 'OuroborosCollective',
+      repoName: 'Sovereign-Studio-ato',
+      repoRevision: revision,
+      repositoryReadScope: 'signed-repository-file-read-scope',
+      fetcher,
+    });
+    expect(result.status).toBe('error');
+    expect(result.error).toContain('immutable blob identity');
+  });
+  it('rejects repository evidence when the readback revision drifts from the signed snapshot', async () => {
+    const revision = 'a'.repeat(40);
+    const fetcher = repositoryFetcher(revision, {
+      content: 'newer branch content',
+      bytes: 20,
+      sha: 'e'.repeat(40),
+      repositoryRevision: 'b'.repeat(40),
+    });
+    const result = await fetchFileContent({
+      jobId: '',
+      backendBase: 'https://example.invalid',
+      filePath: 'README.md',
+      repoOwner: 'OuroborosCollective',
+      repoName: 'Sovereign-Studio-ato',
+      repoRevision: revision,
+      repositoryReadScope: 'signed-repository-file-read-scope',
+      fetcher,
+    });
+    expect(result.status).toBe('error');
+    expect(result.error).toContain('revision-drifted');
+  });
+  it('derives a narrow read scope from exact revision validation before fallback read', async () => {
+    const revision = 'a'.repeat(40);
+    const fetcher = vi.fn(async (url, init) => {
+      const endpoint = String(url);
+      const payload = JSON.parse(String(init?.body));
+      if (endpoint.endsWith('/github-access/scope')) {
+        expect(payload).toMatchObject({
+          repository: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+          branch: revision,
+          expectedBaseSha: revision,
+          purpose: 'github-access-validate',
+        });
+        return response(200, {
+          ok: true,
+          scope: 'parent-validation-scope',
+          baseSha: revision,
+          purpose: 'github-access-validate',
+        });
+      }
+      if (endpoint.endsWith('/github-access/validate')) {
+        expect(payload).toEqual({ scope: 'parent-validation-scope' });
+        return response(200, {
+          ok: false,
+          canWrite: false,
+          repositoryReadScope: 'derived-read-scope',
+          repositoryRevision: revision,
+        });
+      }
+      expect(endpoint).toBe('https://example.invalid/api/user/agent/repository/read-file');
+      expect(payload.scope).toBe('derived-read-scope');
+      return response(200, {
+        ok: true,
+        scopeVerified: true,
+        repositoryRevision: revision,
+        revision,
+        content: 'public immutable content',
+        bytes: 24,
+        sha: 'b'.repeat(40),
+      });
+    }) as unknown as typeof fetch;
+    const result = await fetchFileContent({
+      jobId: '',
+      backendBase: 'https://example.invalid',
+      filePath: 'README.md',
+      repoOwner: 'OuroborosCollective',
+      repoName: 'Sovereign-Studio-ato',
+      repoRevision: revision,
+      fetcher,
+    });
+    expect(result.status).toBe('loaded');
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+  it('fails closed when exact revision validation cannot issue a parent scope', async () => {
+    const revision = 'a'.repeat(40);
+    const fetcher = vi.fn(async () => response(422, {
+      ok: false,
+      error: 'revision scope unavailable',
     })) as unknown as typeof fetch;
     const result = await fetchFileContent({
       jobId: '',
@@ -122,11 +233,131 @@ describe('fileContentBrowserRuntime', () => {
       filePath: 'README.md',
       repoOwner: 'OuroborosCollective',
       repoName: 'Sovereign-Studio-ato',
-      repoRevision: 'a'.repeat(40),
+      repoRevision: revision,
       fetcher,
     });
-    expect(result.status).toBe('error');
-    expect(result.error).toContain('immutable blob identity');
+    expect(result.status).toBe('blocked');
+    expect(result.error).toContain('revision scope unavailable');
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+  it('refreshes one expired cached read scope exactly once', async () => {
+    const revision = 'a'.repeat(40);
+    let readCalls = 0;
+    const fetcher = vi.fn(async (url, init) => {
+      const endpoint = String(url);
+      const payload = JSON.parse(String(init?.body));
+      if (endpoint.endsWith('/repository/read-file')) {
+        readCalls += 1;
+        if (readCalls === 1) {
+          expect(payload.scope).toBe('expired-read-scope');
+          return response(422, { code: 'repository_file_scope_unverified' });
+        }
+        expect(payload.scope).toBe('refreshed-read-scope');
+        return response(200, {
+          scopeVerified: true,
+          repositoryRevision: revision,
+          revision,
+          content: 'refreshed content',
+          bytes: 17,
+          sha: 'c'.repeat(40),
+        });
+      }
+      if (endpoint.endsWith('/github-access/scope')) {
+        return response(200, {
+          ok: true,
+          scope: 'parent-validation-scope',
+          baseSha: revision,
+          purpose: 'github-access-validate',
+        });
+      }
+      return response(200, {
+        repositoryReadScope: 'refreshed-read-scope',
+        repositoryRevision: revision,
+      });
+    }) as unknown as typeof fetch;
+    const result = await fetchFileContent({
+      jobId: '',
+      backendBase: 'https://example.invalid',
+      filePath: 'README.md',
+      repoOwner: 'OuroborosCollective',
+      repoName: 'Sovereign-Studio-ato',
+      repoRevision: revision,
+      repositoryReadScope: 'expired-read-scope',
+      fetcher,
+    });
+    expect(result.status).toBe('loaded');
+    expect(readCalls).toBe(2);
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+  it('forwards a manual PAT only request-locally through scope validation and private read', async () => {
+    const revision = 'a'.repeat(40);
+    const token = `ghp_${'s'.repeat(40)}`;
+    const requestBodies: string[] = [];
+    const fetcher = vi.fn(async (url, init) => {
+      const endpoint = String(url);
+      const bodyText = String(init?.body);
+      requestBodies.push(bodyText);
+      const payload = JSON.parse(bodyText);
+      expect(payload.githubAccessToken).toBe(token);
+      if (endpoint.endsWith('/github-access/scope')) {
+        return response(200, {
+          ok: true,
+          scope: 'private-parent-scope',
+          baseSha: revision,
+          purpose: 'github-access-validate',
+        });
+      }
+      if (endpoint.endsWith('/github-access/validate')) {
+        return response(200, {
+          ok: true,
+          canWrite: true,
+          repositoryReadScope: 'private-read-scope',
+          repositoryRevision: revision,
+        });
+      }
+      return response(200, {
+        scopeVerified: true,
+        repositoryRevision: revision,
+        revision,
+        content: 'private content',
+        bytes: 15,
+        sha: 'd'.repeat(40),
+      });
+    }) as unknown as typeof fetch;
+    const result = await fetchFileContent({
+      jobId: '',
+      workspaceUsable: false,
+      backendBase: 'https://example.invalid',
+      filePath: 'README.md',
+      repoOwner: 'OuroborosCollective',
+      repoName: 'Sovereign-Studio-ato',
+      repoRevision: revision,
+      githubAccessToken: token,
+      fetcher,
+    });
+    expect(result.status).toBe('loaded');
+    expect(result.content).toBe('private content');
+    expect(result.content).not.toContain(token);
+    expect(requestBodies).toHaveLength(3);
+  });
+  it('maps a backend-detected binary file without accepting content', async () => {
+    const revision = 'a'.repeat(40);
+    const fetcher = repositoryFetcher(revision, {
+      status: 'binary',
+      error: 'unsupported UTF-8',
+    }, 415);
+    const result = await fetchFileContent({
+      jobId: '',
+      backendBase: 'https://example.invalid',
+      filePath: 'assets/opaque.dat',
+      repoOwner: 'OuroborosCollective',
+      repoName: 'Sovereign-Studio-ato',
+      repoRevision: revision,
+      repositoryReadScope: 'signed-repository-file-read-scope',
+      fetcher,
+    });
+    expect(result.status).toBe('binary');
+    expect(result.content).toBe('');
   });
   it('returns a binary result without network access', async () => {
     const fetcher = vi.fn() as unknown as typeof fetch;

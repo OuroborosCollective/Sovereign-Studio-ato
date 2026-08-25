@@ -28,6 +28,15 @@ describe('test coverage map gate attribution', () => {
     for (const entry of playwrightTests) expect(entry.gates).toContain('verify');
     for (const entry of otherE2ETests) expect(entry.gates).not.toContain('verify');
 
+    const playwrightSmoke = report.files.find(
+      (entry) => entry.file === 'tests/e2e/builder-container-smoke.spec.ts',
+    );
+    expect(playwrightSmoke?.ciWorkflows).toEqual(expect.arrayContaining([
+      'e2e-testing.yml',
+      'release-verification.yml',
+    ]));
+    expect(playwrightSmoke?.ciWorkflows).not.toContain('export-sandbox-deps.yml');
+
     for (const file of [
       'backend/tests/e2e/oauth-token-never-in-frontend.spec.ts',
       'sovereign-studio-rn/e2e/detox/app.spec.ts',
@@ -37,5 +46,14 @@ describe('test coverage map gate attribution', () => {
       expect(entry?.file).toBe(file);
       expect(entry?.gates ?? []).not.toContain('verify');
     }
+
+    const integrationLaneTest = report.files.find(
+      (entry) => entry.file === 'backend/tests/test_integration_plan_lane.py',
+    );
+    const unrelatedBackendTest = report.files.find(
+      (entry) => entry.file === 'backend/tests/test_a2a_adapter.py',
+    );
+    expect(integrationLaneTest?.ciWorkflows).toContain('integration-plan-lane-gate.yml');
+    expect(unrelatedBackendTest?.ciWorkflows).not.toContain('integration-plan-lane-gate.yml');
   });
 });

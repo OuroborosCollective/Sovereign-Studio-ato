@@ -31,6 +31,8 @@ export interface GitHubAccessApiValidationResult {
   readonly ok: boolean;
   readonly error?: string;
   readonly canWrite?: boolean;
+  readonly repositoryReadScope?: string;
+  readonly repositoryRevision?: string;
 }
 
 /**
@@ -159,10 +161,19 @@ export async function validateGitHubTokenForRepo(
     if (!isObject(payload)) {
       return { ok: false, canWrite: false, error: 'Sovereign GitHub-Zugangsprüfung lieferte keine gültige Antwort.' };
     }
+    const repositoryReadScope = typeof payload.repositoryReadScope === 'string'
+      ? payload.repositoryReadScope.trim()
+      : '';
+    const repositoryRevision = typeof payload.repositoryRevision === 'string'
+      ? payload.repositoryRevision.trim().toLowerCase()
+      : '';
     return {
       ok: payload.ok === true && payload.canWrite === true,
       canWrite: payload.canWrite === true,
       error: typeof payload.error === 'string' && payload.error.trim() ? payload.error.trim() : undefined,
+      ...(repositoryReadScope && repositoryRevision === expectedBaseSha
+        ? { repositoryReadScope, repositoryRevision }
+        : {}),
     };
   } catch {
     return { ok: false, canWrite: false, error: 'Sovereign GitHub-Zugangsprüfung ist momentan nicht erreichbar.' };

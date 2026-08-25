@@ -8,7 +8,11 @@ import type { AreInferenceResult } from "../../inference/areInferenceApi";
 import { useToolchainStore } from "../../toolchain/useToolchainStore";
 import { useUserStore } from "../../user/useUserStore";
 import { useSovereignToolInspectionStore } from "../runtime/sovereignToolInspectionRuntime";
-import type { SovereignLiveProjection, SovereignLiveProjectionState } from "../runtime/sovereignAgentRuntime";
+import type {
+  SovereignLiveProjection,
+  SovereignLiveProjectionState,
+  SovereignWorkspaceEvidenceAnchor,
+} from "../runtime/sovereignAgentRuntime";
 import { store } from "../../../store";
 
 // Mock useBilling to avoid Redux context errors from PaywallModal
@@ -453,6 +457,36 @@ function repoScopedProjection(
   };
 }
 
+function repoScopedEvidenceAnchor(
+  overrides: Partial<SovereignWorkspaceEvidenceAnchor> = {},
+): SovereignWorkspaceEvidenceAnchor {
+  return {
+    anchorId: `evidence-${'a'.repeat(24)}`,
+    jobId: 'job_scoped',
+    workspaceId: 'job_scoped',
+    claimKind: 'SOURCE_REVISION',
+    verdict: 'VERIFIED',
+    sourceVerdict: 'VERIFIED',
+    sessionBindingHash: '1'.repeat(64),
+    runId: 'run-monitor',
+    taskId: 'task-monitor',
+    attemptId: 'attempt-monitor-0123456789abcdef',
+    actionId: 'action-monitor',
+    scope: 'repository-runtime',
+    sourceKind: 'TARGET_READBACK',
+    sourceRefs: ['6'.repeat(64)],
+    repositoryRevision: '7'.repeat(40),
+    targetRevision: '7'.repeat(40),
+    imageDigest: `sha256:${'8'.repeat(64)}`,
+    runtimeIdentityHash: '9'.repeat(64),
+    observedAt: '2026-08-25T00:00:00Z',
+    freshnessReasons: [],
+    evidenceHash: 'a'.repeat(64),
+    authoritative: false,
+    ...overrides,
+  };
+}
+
 async function loadRepoUrlFromChat(repoUrl: string): Promise<void> {
   fireEvent.change(chatField(), { target: { value: repoUrl } });
   fireEvent.click(sendButton());
@@ -621,17 +655,18 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
         agentReady
         agentJob={repoScopedJob()}
         agentProjections={[repoScopedProjection('VISIBLE')]}
+        agentEvidenceAnchors={[repoScopedEvidenceAnchor()]}
       />,
     );
 
     fireEvent.change(chatField(), { target: { value: TEST_REPO_URL } });
     fireEvent.click(sendButton());
 
-    await waitFor(() => expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined());
+    await waitFor(() => expect(screen.getByText('monitor runtime output')).toBeDefined());
     expect(screen.getByTestId('builder-container')).toHaveAttribute('data-layout', 'live-desktop-monitor-primary');
     expect(screen.getByTestId('primary-surface-tab')).toHaveAttribute('data-primary-surface', 'desktop-monitor');
     expect(screen.getByRole('button', { name: 'Live Monitor' })).toHaveTextContent('MONITOR');
-    expect(screen.getByText('monitor runtime output')).toBeDefined();
+    expect(screen.getByTestId('workspace-evidence-rail')).toBeDefined();
     expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
     expect(screen.queryByLabelText(/Sovereign Chat Eingabe/i)).toBeNull();
   });
@@ -2215,6 +2250,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
         agentReady
         agentJob={repoScopedJob({ repoUrl: SECOND_REPO_URL })}
         agentProjections={[repoScopedProjection()]}
+        agentEvidenceAnchors={[repoScopedEvidenceAnchor()]}
         desktopFrame={{
           jobId: "job_scoped",
           url: "blob:foreign-repository-frame",
@@ -2227,7 +2263,27 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     expect(screen.queryByAltText("Beobachteter Sovereign Workspace Desktop")).toBeNull();
     expect(screen.queryByText("monitor runtime output")).toBeNull();
+    expect(screen.queryByTestId("workspace-evidence-rail")).toBeNull();
     expect(screen.getByTestId("live-workspace-monitor-desktop-unavailable")).toBeDefined();
+  });
+
+  it("hides an evidence anchor from another job in the loaded repository", async () => {
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        agentReady
+        agentJob={repoScopedJob()}
+        agentEvidenceAnchors={[repoScopedEvidenceAnchor({ jobId: 'job-other' })]}
+      />,
+    );
+    await loadRepoFromChat();
+
+    expect(screen.queryByTestId("workspace-evidence-rail")).toBeNull();
   });
 
   it("rejects a published Draft PR URL from another repository", async () => {

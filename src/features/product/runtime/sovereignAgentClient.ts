@@ -319,7 +319,15 @@ function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim());
 }
-function projectionArray(value: unknown): SovereignLiveProjection[] {
+function projectionArray(
+  value: unknown,
+  binding: {
+    readonly jobId: string;
+    readonly workspaceId: string;
+    readonly sessionBindingHash: string;
+    readonly attemptId: string;
+  },
+): SovereignLiveProjection[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isObject).flatMap((item): SovereignLiveProjection[] => {
     if (stringValue(item.schemaVersion) !== 'sovereign.visual-projection-event.v1') return [];
@@ -338,12 +346,19 @@ function projectionArray(value: unknown): SovereignLiveProjection[] {
     const sessionId = stringValue(item.sessionId);
     const sessionBindingHash = stringValue(item.sessionBindingHash);
     const attemptId = stringValue(item.attemptId);
+    const itemJobId = stringValue(item.jobId);
     const workspaceId = stringValue(item.workspaceId);
     const actionId = stringValue(item.actionId);
     const sourceReceiptRef = stringValue(item.sourceReceiptRef);
     const sourceIdentityHash = stringValue(item.sourceIdentityHash);
     const projectionHash = stringValue(item.projectionHash);
     if (!projectionId || !eventId || !sessionId || !sessionBindingHash || !attemptId || !workspaceId || !actionId || !sourceReceiptRef || !sourceIdentityHash || !projectionHash) return [];
+    if (
+      (itemJobId && itemJobId !== binding.jobId)
+      || workspaceId !== binding.workspaceId
+      || sessionBindingHash !== binding.sessionBindingHash
+      || attemptId !== binding.attemptId
+    ) return [];
     return [{
       projectionId,
       eventId,
@@ -352,7 +367,7 @@ function projectionArray(value: unknown): SovereignLiveProjection[] {
       attemptId,
       runId: stringValue(item.runId),
       taskId: stringValue(item.taskId),
-      jobId: stringValue(item.jobId),
+      jobId: binding.jobId,
       workspaceId,
       actionId,
       sourceKind: source as SovereignLiveProjection['sourceKind'],
@@ -376,7 +391,15 @@ const REVISION_RE = /^[0-9a-f]{40}$/;
 const IMAGE_DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
 const FORBIDDEN_EVIDENCE_TEXT = ['chain-of-thought', 'reasoning:', 'system prompt', 'tool schema', 'provider_request_id', 'runtime_flags'];
 
-function evidenceAnchorArray(value: unknown): SovereignWorkspaceEvidenceAnchor[] {
+function evidenceAnchorArray(
+  value: unknown,
+  binding: {
+    readonly jobId: string;
+    readonly workspaceId: string;
+    readonly sessionBindingHash: string;
+    readonly attemptId: string;
+  },
+): SovereignWorkspaceEvidenceAnchor[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isObject).flatMap((item): SovereignWorkspaceEvidenceAnchor[] => {
     if (stringValue(item.schemaVersion) !== 'sovereign.workspace-evidence-anchor.v1' || item.authoritative !== false) return [];
@@ -407,9 +430,17 @@ function evidenceAnchorArray(value: unknown): SovereignWorkspaceEvidenceAnchor[]
     const runId = stringValue(item.runId);
     const taskId = stringValue(item.taskId);
     const attemptId = stringValue(item.attemptId);
+    const itemJobId = stringValue(item.jobId);
+    const itemWorkspaceId = stringValue(item.workspaceId);
     const actionId = stringValue(item.actionId);
     const observedAt = stringValue(item.observedAt);
     if (!runId || !taskId || !attemptId || !actionId || !observedAt || !Number.isFinite(Date.parse(observedAt))) return [];
+    if (
+      (itemJobId && itemJobId !== binding.jobId)
+      || (itemWorkspaceId && itemWorkspaceId !== binding.workspaceId)
+      || sessionBindingHash !== binding.sessionBindingHash
+      || attemptId !== binding.attemptId
+    ) return [];
     const targetRevision = stringValue(item.targetRevision)?.toLowerCase();
     const imageDigest = stringValue(item.imageDigest)?.toLowerCase();
     const runtimeIdentityHash = stringValue(item.runtimeIdentityHash)?.toLowerCase();
@@ -418,6 +449,8 @@ function evidenceAnchorArray(value: unknown): SovereignWorkspaceEvidenceAnchor[]
     if (runtimeIdentityHash && !SHA256_RE.test(runtimeIdentityHash)) return [];
     return [{
       anchorId,
+      jobId: binding.jobId,
+      workspaceId: binding.workspaceId,
       claimKind,
       verdict: verdict as SovereignWorkspaceEvidenceAnchor['verdict'],
       sourceVerdict: sourceVerdict as SovereignWorkspaceEvidenceAnchor['sourceVerdict'],
@@ -737,14 +770,32 @@ export class SovereignAgentClient {
   }
   async getProjections(jobId: string): Promise<SovereignLiveProjection[]> {
     assertReady(this.config);
-    if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
+    const requestedJobId = jobId.trim();
+    if (!requestedJobId) throw new Error('Sovereign Agent job id is required.');
     const body = await requestObject({
-      url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/projections?limit=100')),
+      url: endpoint(this.config.agentApiUrl, jobPath(requestedJobId, '/projections?limit=100')),
       init: { method: 'GET', headers: headers(), credentials: 'include' },
       fetcher: this.fetcher,
       fallback: 'Sovereign Live Workspace projections',
     });
-    return projectionArray(body.projections);
+    const responseJobId = stringValue(body.jobId);
+    const responseWorkspaceId = stringValue(body.workspaceId);
+    const responseSessionBindingHash = stringValue(body.sessionBindingHash)?.toLowerCase();
+    const responseAttemptId = stringValue(body.attemptId);
+    const responseProjections = Array.isArray(body.projections) ? body.projections : [];
+    if (responseJobId !== requestedJobId || !responseWorkspaceId) {
+      throw new Error('Sovereign Live Workspace projections returned no exact job/workspace envelope binding.');
+    }
+    if (responseProjections.length === 0) return [];
+    if (!responseSessionBindingHash || !SHA256_RE.test(responseSessionBindingHash) || !responseAttemptId) {
+      throw new Error('Sovereign Live Workspace projections returned no exact session/attempt envelope binding.');
+    }
+    return projectionArray(responseProjections, {
+      jobId: responseJobId,
+      workspaceId: responseWorkspaceId,
+      sessionBindingHash: responseSessionBindingHash,
+      attemptId: responseAttemptId,
+    });
   }
   async getDesktopFrame(jobId: string): Promise<SovereignDesktopFrameObservation> {
     assertReady(this.config);
@@ -781,14 +832,39 @@ export class SovereignAgentClient {
   }
   async getEvidenceAnchors(jobId: string): Promise<SovereignWorkspaceEvidenceAnchor[]> {
     assertReady(this.config);
-    if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
+    const requestedJobId = jobId.trim();
+    if (!requestedJobId) throw new Error('Sovereign Agent job id is required.');
     const body = await requestObject({
-      url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/evidence-anchors?limit=100')),
+      url: endpoint(this.config.agentApiUrl, jobPath(requestedJobId, '/evidence-anchors?limit=100')),
       init: { method: 'GET', headers: headers(), credentials: 'include' },
       fetcher: this.fetcher,
       fallback: 'Sovereign Live Workspace evidence anchors',
     });
-    return evidenceAnchorArray(body.evidenceAnchors);
+    const responseJobId = stringValue(body.jobId);
+    const responseWorkspaceId = stringValue(body.workspaceId);
+    const responseSessionBindingHash = stringValue(body.sessionBindingHash)?.toLowerCase();
+    const responseAttemptId = stringValue(body.attemptId);
+    const responseActive = typeof body.active === 'boolean' ? body.active : undefined;
+    const responseAnchors = Array.isArray(body.evidenceAnchors) ? body.evidenceAnchors : [];
+    if (responseJobId !== requestedJobId || !responseWorkspaceId) {
+      throw new Error('Sovereign Live Workspace evidence returned no exact job/workspace envelope binding.');
+    }
+    if (responseAnchors.length === 0) return [];
+    if (!responseSessionBindingHash || !SHA256_RE.test(responseSessionBindingHash) || !responseAttemptId || responseActive === undefined) {
+      throw new Error('Sovereign Live Workspace evidence returned no exact session/attempt envelope binding.');
+    }
+    const anchors = evidenceAnchorArray(responseAnchors, {
+      jobId: responseJobId,
+      workspaceId: responseWorkspaceId,
+      sessionBindingHash: responseSessionBindingHash,
+      attemptId: responseAttemptId,
+    });
+    if (responseActive === false && anchors.some((anchor) => (
+      anchor.verdict !== 'STALE' || !anchor.freshnessReasons.includes('SESSION_NOT_ACTIVE')
+    ))) {
+      throw new Error('Sovereign Live Workspace inactive evidence was not explicitly marked STALE.');
+    }
+    return anchors;
   }
   async cancelJob(jobId: string): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);
