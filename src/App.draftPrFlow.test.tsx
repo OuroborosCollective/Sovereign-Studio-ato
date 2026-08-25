@@ -175,7 +175,7 @@ describe('App Draft-PR runtime flow', () => {
 
     await waitFor(() => expect(screen.getByTestId('flow-job-status')).toHaveTextContent('failed'));
     expect(screen.getByTestId('flow-repo-ready')).toHaveTextContent('false');
-    expect(screen.getByTestId('flow-repo-reason')).toHaveTextContent('GitHub-URL direkt im Chat einfügen.');
+    expect(screen.getByTestId('flow-repo-reason')).toHaveTextContent('Noch kein Repository an den Workspace-Monitor gebunden.');
   });
 
   it('preserves the final runtime snapshot status instead of inventing completed state', async () => {
