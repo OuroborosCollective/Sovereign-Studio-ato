@@ -8,6 +8,8 @@ const targets = [
   path.join(root, 'dist', 'generated', 'test-coverage-map.json'),
 ];
 
+// CodeQL #646: validate and read through one descriptor so no path-based
+// check-then-use window exists between the file type check and the read.
 let sourceFd;
 let raw;
 try {
