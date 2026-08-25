@@ -45,11 +45,11 @@ function baseProps() {
 }
 
 function chatField(): HTMLTextAreaElement {
-  return screen.getByLabelText(/Sovereign Chat Eingabe/i) as HTMLTextAreaElement;
+  return screen.getByLabelText('Frage an Sovereign während Live Monitor') as HTMLTextAreaElement;
 }
 
 function sendButton(): HTMLButtonElement {
-  return screen.getByRole("button", { name: "Senden" }) as HTMLButtonElement;
+  return screen.getByRole("button", { name: "Monitor Frage senden" }) as HTMLButtonElement;
 }
 
 function jsonResponse(payload: unknown, status = 200): Response {
@@ -501,14 +501,17 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   it("renders the AppControl DevChat shell structure", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     const root = screen.getByTestId("builder-container");
-    expect(root).toHaveAttribute("data-layout", "devchat-appcontrol-integrated");
+    expect(root).toHaveAttribute("data-layout", "live-desktop-monitor-primary");
     expect(root).toHaveAttribute("aria-label", "Sovereign Builder");
     expect(screen.getAllByText("Sovereign").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("DevChat")).toBeDefined();
+    expect(screen.getAllByText("Monitor").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByLabelText("Sovereign Studio Tabs")).toBeDefined();
     expect(screen.getByText("CHAT")).toBeDefined();
     expect(screen.getByText("INSPECTOR")).toBeDefined();
-    expect(screen.getByTestId("sovereign-chat-body-window")).toBeDefined();
+    expect(screen.queryByTestId("sovereign-chat-body-window")).toBeNull();
+    expect(screen.getByTestId('live-workspace-monitor')).toBeDefined();
+    expect(screen.getByTestId('live-workspace-monitor-desktop')).toBeDefined();
+    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
     expect(chatField()).toBeDefined();
     expect(screen.getByLabelText("Menü")).toBeDefined();
   });
@@ -617,7 +620,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-overlay', 'false');
   });
 
-  it("keeps chat primary when the only workspace projection is stale", async () => {
+  it("keeps the monitor primary when the only workspace projection is stale", async () => {
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
     );
@@ -634,13 +637,13 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await loadRepoFromChat();
 
-    expect(screen.queryByTestId('sovereign-live-monitor-primary')).toBeNull();
-    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
+    expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined();
+    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
     expect(chatField()).toBeDefined();
-    expect(screen.getByTestId('primary-surface-tab')).toHaveAttribute('data-primary-surface', 'chat');
+    expect(screen.getByTestId('primary-surface-tab')).toHaveAttribute('data-primary-surface', 'desktop-monitor');
   });
 
-  it("returns to chat when the runtime is waiting for user input even with a fresh projection", async () => {
+  it("keeps user questions inside the monitor when runtime waits for input", async () => {
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
     );
@@ -657,10 +660,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await loadRepoFromChat();
 
-    expect(screen.queryByTestId('sovereign-live-monitor-primary')).toBeNull();
-    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
+    expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined();
+    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
     expect(chatField()).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Chat' })).toHaveTextContent('CHAT');
+    expect(screen.getByRole('button', { name: 'Live Monitor' })).toHaveTextContent('MONITOR');
   });
 
   it("shows the Workbench status vocabulary (Actions/Files/Logs/Errors/Draft PR) as primary nav, not technical module abbreviations", () => {
@@ -740,12 +743,13 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText(/simulate/i)).toBeNull();
   });
 
-  it("shows suggestions only in empty chat state and writes them into the input", () => {
+  it("keeps monitor action controls available in the idle state without a welcome chat screen", () => {
     const props = baseProps();
     renderWithProviders(<BuilderContainer {...props} mission="" />);
-    expect(screen.getByText("Let's build!")).toBeDefined();
-    fireEvent.click(screen.getByText("🔒 Runtime"));
-    expect(chatField().value).toContain("Prüfe den schwächsten Ablauf");
+    expect(screen.getByTestId('monitor-action-controls')).toBeDefined();
+    expect(screen.getByLabelText('Tool Launcher öffnen')).toBeDefined();
+    expect(screen.queryByText("Let's build!")).toBeNull();
+    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
@@ -1599,29 +1603,26 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  it("copies committed mission-bubble text from the long-press menu without hidden metadata", async () => {
-    const writeText = vi.fn(async () => undefined);
-    vi.stubGlobal("navigator", { clipboard: { writeText }, vibrate: vi.fn() });
+  it("keeps committed mission text in monitor communication without a legacy bubble context menu", async () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
-    fireEvent.change(chatField(), { target: { value: "Kopierbare Mission" } });
+    fireEvent.change(chatField(), { target: { value: "Beobachtbare Mission" } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByText("Kopierbare Mission")).toBeDefined());
-    fireEvent.contextMenu(screen.getByText("Kopierbare Mission"));
-    fireEvent.click(screen.getByText("📋 Kopieren"));
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Kopierbare Mission"));
+    await waitFor(() => expect(screen.getByText("Beobachtbare Mission")).toBeDefined());
+    expect(screen.getByTestId('monitor-communication-bubbles')).toBeDefined();
+    expect(screen.queryByText("📋 Kopieren")).toBeNull();
+    expect(screen.queryByText("💬 Zitieren")).toBeNull();
   });
 
-  it("fills composer from a committed mission-bubble follow-up without auto-sending", async () => {
+  it("accepts a follow-up directly in the monitor dock without reopening chat", async () => {
     const props = baseProps();
     renderWithProviders(<BuilderContainer {...props} />);
-    fireEvent.change(chatField(), { target: { value: "Zitierbare Mission" } });
+    fireEvent.change(chatField(), { target: { value: "Erste Monitor-Mission" } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByText("Zitierbare Mission")).toBeDefined());
-    fireEvent.contextMenu(screen.getByText("Zitierbare Mission"));
-    fireEvent.click(screen.getByText("💬 Zitieren"));
-    expect(chatField().value).toContain("Zitierbare Mission");
+    await waitFor(() => expect(screen.getByText("Erste Monitor-Mission")).toBeDefined());
+    fireEvent.change(chatField(), { target: { value: "Direkte Folgefrage im Monitor" } });
+    expect(chatField().value).toBe("Direkte Folgefrage im Monitor");
+    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
     expect(props.onMissionChange).not.toHaveBeenCalled();
-    expect(props.onGenerateIdeas).not.toHaveBeenCalled();
   });
 
   it("keeps primary Android controls at least 44px", () => {
@@ -1632,7 +1633,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByRole("button", { name: /RT.*Runtime Quelle/i })).toHaveStyle({ minHeight: "44px" });
     expect(screen.getByLabelText("Panel öffnen")).toHaveStyle({ minWidth: "44px", minHeight: "44px" });
     expect(screen.getByRole("button", { name: /^Actions:/ })).toHaveStyle({ minHeight: "44px" });
-    expect(screen.getByLabelText("Eingabe löschen")).toHaveStyle({ width: "44px", height: "44px" });
+    expect(chatField()).toHaveStyle({ minHeight: "44px" });
     expect(sendButton()).toHaveStyle({ width: "44px", height: "44px" });
 
     fireEvent.click(screen.getByLabelText("Menü"));
@@ -2272,4 +2273,53 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText(/Route gewählt: Patch\/Draft-PR Runtime/i)).toBeNull();
     expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
     expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3);
-  });});
+  });
+
+  it("never wakes a pending write intent from an unrelated LLM conversation fallback", async () => {
+    const onStartAgent = vi.fn();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (isAuthBootstrapRequest(input)) return authBootstrapResponse();
+      if (url.includes('/api/llm/routes')) return liteLlmRouteCatalogResponse();
+      if (url.includes('/git/trees/')) {
+        return jsonResponse({ sha: 'a'.repeat(40), tree: [{ path: 'LICENSE', type: 'blob', size: 1100 }] });
+      }
+      if (url.includes('/commits/')) return jsonResponse({ sha: 'c'.repeat(40) });
+      if (url.includes('/api/llm/chat')) {
+        return jsonResponse({
+          model: TEST_LITELLM_MODEL,
+          choices: [{ message: { content: 'Die LICENSE beschreibt die Nutzungsbedingungen des Repositorys.' } }],
+        });
+      }
+      return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        agentReady
+        agentJob={repoScopedJob({ status: 'completed' })}
+        onStartAgent={onStartAgent}
+      />,
+    );
+    await loadRepoFromChat();
+
+    const repairPreset = screen.getByRole('button', { name: /Fehler suchen & als Draft PR reparieren/i });
+    fireEvent.click(repairPreset);
+    await waitFor(() => expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(1));
+    expect(onStartAgent).not.toHaveBeenCalled();
+
+    fireEvent.change(chatField(), { target: { value: 'Erkläre mir LICENSE und was dort geregelt ist.' } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(screen.getByText(/LICENSE beschreibt die Nutzungsbedingungen/i)).toBeDefined());
+    expect(onStartAgent).not.toHaveBeenCalled();
+    const actionStream = screen.getByRole('log', { name: 'Sovereign Action Stream' });
+    expect(actionStream).toHaveTextContent('Freitext-Antwort ohne Aktionsschema übernommen');
+    expect(actionStream).not.toHaveTextContent('Blockierter Auftrag wird wiederaufgenommen');
+    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+  });
+});

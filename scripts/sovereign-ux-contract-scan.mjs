@@ -186,7 +186,9 @@ function run() {
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Repo geladen|Repo fehlt/, 'repo:status-pill-visible', 'Repo loaded/missing state must be visible.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Privater Zugang/, 'repo:private-access-visible', 'Private access state must be visible.');
 
-  requireText('src/features/product/containers/BuilderContainer.tsx', /DevChat|Sovereign Chat Eingabe/, 'builder:title-visible', 'Builder chat workbench title/input must be visible.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /MonitorCommunicationDock|live-desktop-monitor-primary/, 'builder:monitor-primary-visible', 'Builder must expose the monitor-first workbench and embedded LLM communication dock.');
+  requireFile('src/features/product/components/LiveWorkspaceMonitor.tsx', 'Real workspace monitor component is required.');
+  requireText('src/features/product/components/LiveWorkspaceMonitor.tsx', /live-workspace-monitor-desktop|DESKTOP · LIVE READBACK/, 'builder:desktop-readback-visible', 'Monitor must expose the real desktop-readback surface.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_ANALYZE_MISSION/, 'builder:analyze-visible', 'Analyze action must be bound to contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_START_TASK/, 'builder:start-visible', 'Start action must be bound to contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_REPAIR_LOG/, 'builder:repair-visible', 'Repair action must be bound to contract.');
@@ -273,15 +275,16 @@ function run() {
 
   requireText('src/SovereignAppWrapper.tsx', /return <App \/>|<App\s*\/\>/, 'wrapper:passthrough-only', 'Runtime wrapper must stay a passthrough instead of adding another shell.');
   forbidText('src/SovereignAppWrapper.tsx', /data-testid="sovereign-app-wrapper"|data-layout="composition-wrapper-around-existing-app"/, 'wrapper:no-second-shell', 'Runtime wrapper must not add a second visible shell.');
-  requireText('src/App.tsx', /data-testid="chat-only-app"/, 'app:chat-only-root-test-id', 'App must expose the chat-only live root.');
-  requireText('src/App.tsx', /data-layout="chat-only-live-entry"/, 'app:chat-only-layout-bound', 'App must declare chat-only live entry layout.');
-  requireText('src/App.tsx', /aria-label="Sovereign Chat"/, 'app:chat-aria-label-bound', 'App must expose the Sovereign Chat aria label.');
+  requireText('src/App.tsx', /data-testid="sovereign-monitor-app"/, 'app:monitor-root-test-id', 'App must expose the monitor-first live root.');
+  requireText('src/App.tsx', /data-layout="monitor-first-live-workspace"/, 'app:monitor-layout-bound', 'App must declare monitor-first live workspace layout.');
+  requireText('src/App.tsx', /aria-label="Sovereign Workspace Monitor"/, 'app:monitor-aria-label-bound', 'App must expose the Sovereign Workspace Monitor aria label.');
+  forbidText('src/App.tsx', /data-layout="chat-only-live-entry"/, 'app:no-chat-only-layout', 'The legacy chat-only app layout must not return.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /data-testid=\{builderContainerContract\.testId\}|data-testid="builder-container"/, 'builder:root-test-id-bound', 'Builder must expose stable root test-id.');
   requireText(
     'src/features/product/containers/BuilderContainer.tsx',
-    /data-layout=\{liveMonitorPrimary\s*\?\s*["']live-desktop-monitor-primary["']\s*:\s*["']devchat-appcontrol-integrated["']\}/,
+    /data-layout=\{liveMonitorPrimary\s*\?\s*["']live-desktop-monitor-primary["']\s*:\s*["']monitor-inspector-modules["']\}/,
     'builder:primary-surface-layout-bound',
-    'Builder must bind its primary layout to fresh live-monitor truth while retaining the chat workbench fallback.',
+    'Builder must keep the workspace monitor primary while using a separate technical inspector layout.',
   );
   requireText('src/features/product/containers/BuilderContainer.tsx', /SovereignToolLauncher|SovereignActionStreamPanel/, 'builder:runtime-backed-tools', 'Builder must expose runtime-backed tools or action stream.');
 

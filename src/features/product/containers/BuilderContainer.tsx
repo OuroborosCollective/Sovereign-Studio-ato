@@ -297,6 +297,11 @@ export interface BuilderContainerProps {
   agentJob?: SovereignAgentJobSnapshot;
   agentProjections?: readonly SovereignLiveProjection[];
   agentEvidenceAnchors?: readonly SovereignWorkspaceEvidenceAnchor[];
+  desktopFrame?: {
+    readonly url: string;
+    readonly frameHash: string;
+    readonly observedAt: number;
+  } | null;
   patternLearningEvidence?: SovereignPatternLearningEvidence;
   agentJobStatus?: string;
   agentIsRunning?: boolean;
@@ -745,7 +750,7 @@ function TopBar({
                 border: `1px solid ${C.accent}33`,
               }}
             >
-              DevChat
+              Monitor
             </span>
             {/* PAL badge */}
             {palTier && (
@@ -2646,25 +2651,22 @@ function Composer({
   );
 }
 
-// BottomTabBar — the primary destination follows runtime truth. Chat owns the
-// idle/control surface; an active, workspace-bound projection promotes the same
-// destination to MONITOR until the run needs user input or loses fresh projection evidence.
+// BottomTabBar — Monitor is the permanent primary destination. The communication
+// dock is embedded in that surface; there is no user-facing fallback Chat mode.
 function BottomTabBar({
   activeTab,
   onChatClick,
   inspectorOpen,
   onToggleInspector,
-  monitorActive,
 }: {
   activeTab: string;
   onChatClick: () => void;
   inspectorOpen: boolean;
   onToggleInspector: () => void;
-  monitorActive: boolean;
 }) {
-  const isChat = activeTab === "chat";
-  const primaryIcon = monitorActive ? "▣" : "⬡";
-  const primaryLabel = monitorActive ? "MONITOR" : "CHAT";
+  const isMonitor = activeTab === "chat";
+  const primaryIcon = "▣";
+  const primaryLabel = "MONITOR";
   return (
     <nav
       style={{
@@ -2680,30 +2682,30 @@ function BottomTabBar({
       <button
         type="button"
         onClick={onChatClick}
-        aria-current={isChat ? "page" : undefined}
-        aria-label={monitorActive ? "Live Monitor" : "Chat"}
+        aria-current={isMonitor ? "page" : undefined}
+        aria-label="Live Monitor"
         data-testid="primary-surface-tab"
-        data-primary-surface={monitorActive ? "desktop-monitor" : "chat"}
+        data-primary-surface="desktop-monitor"
         style={{
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
           gap: 3,
-          background: isChat ? `${C.sky}08` : "transparent",
+          background: isMonitor ? `${C.sky}08` : "transparent",
           border: "none",
-          borderTop: `2px solid ${isChat ? C.sky : "transparent"}`,
+          borderTop: `2px solid ${isMonitor ? C.sky : "transparent"}`,
           cursor: "pointer",
           padding: "4px 2px",
           minWidth: 0,
         }}
       >
-        <span style={{ fontSize: 15, color: isChat ? C.sky : C.textMuted }}>{primaryIcon}</span>
+        <span style={{ fontSize: 15, color: isMonitor ? C.sky : C.textMuted }}>{primaryIcon}</span>
         <span
           style={{
             fontFamily: "monospace",
             fontSize: 7.5,
-            color: isChat ? C.sky : C.textMuted,
+            color: isMonitor ? C.sky : C.textMuted,
             letterSpacing: 0.3,
           }}
         >
@@ -2767,6 +2769,7 @@ export function BuilderContainer({
   agentJob,
   agentProjections,
   agentEvidenceAnchors,
+  desktopFrame,
   patternLearningEvidence,
   agentJobStatus,
   agentIsRunning,
@@ -2968,16 +2971,13 @@ export function BuilderContainer({
     )),
     [agentProjections, scopedAgentJob?.workspaceId],
   );
-  const liveMonitorLatestProjection = scopedAgentProjections.at(-1) ?? null;
-  const liveMonitorPrimary = Boolean(
-    activeTab === 'chat'
-    && scopedAgentIsRunning
-    && scopedAgentJob?.workspaceId
-    && scopedAgentProjections.some((projection) => projection.projectionState !== 'STALE'),
-  );
-  const liveMonitorBindingKey = liveMonitorLatestProjection
-    ? `${liveMonitorLatestProjection.sessionBindingHash}:${liveMonitorLatestProjection.attemptId}:${liveMonitorLatestProjection.workspaceId}`
-    : 'no-live-monitor-binding';
+  // The workspace monitor is the permanent primary product surface. Runtime
+  // projections and desktop frames enrich it when available; they never decide
+  // whether the user is sent back to a legacy chat screen.
+  const liveMonitorPrimary = activeTab === 'chat';
+  // Keep LLM/user communication stable while a job starts, projections rotate or
+  // desktop evidence refreshes. Only account/repository scope changes reset it.
+  const liveMonitorBindingKey = `${authUser?.id ?? 'guest'}:${currentRepoScopeKey ?? 'unbound'}`;
   const [monitorCommunication, setMonitorCommunication] = useState<MonitorCommunicationEntry[]>([]);
   const monitorCommunicationSequenceRef = useRef(0);
   const appendMonitorCommunication = useCallback((
@@ -3010,6 +3010,9 @@ export function BuilderContainer({
   );
   const [validatedGitHubTargetKey, setValidatedGitHubTargetKey] = useState<string | null>(null);
   const pendingWriteIntentRef = useRef<string | null>(null);
+  // Read-only presets can wait only for repository evidence. Keep them separate
+  // from write intents so an unrelated repo load can never wake a stale write.
+  const pendingRepoIntentRef = useRef<string | null>(null);
   const pendingOnlineExecutionRef = useRef<{
     readonly text: string;
     readonly intent: 'code_execution' | 'draft_pr';
@@ -3078,6 +3081,7 @@ export function BuilderContainer({
       // load. A pending intent from an already-scoped previous repo is stale.
       if (previousScopeKey) {
         pendingWriteIntentRef.current = null;
+        pendingRepoIntentRef.current = null;
         pendingOnlineExecutionRef.current = null;
       }
       setValidatedGitHubTargetKey(null);
@@ -3186,6 +3190,116 @@ export function BuilderContainer({
   const appendActionEvent = useCallback((event: SovereignActionEventInput) => {
     setActionStream((current) => appendSovereignActionEvent(current, event));
   }, []);
+
+  const validateCurrentRepoGithubCredential = useCallback(async (
+    token: string | undefined,
+    maskedToken: string,
+    source: 'oauth-session' | 'manual-pat',
+  ): Promise<boolean> => {
+    const validationTargetKey = currentRepositoryTargetKey;
+    const validationRepoScopeKey = currentRepoScopeKey;
+    const validationRepoSnapshot = chatRepoSnapshot;
+    if (!validationTargetKey || !validationRepoScopeKey || !validationRepoSnapshot) {
+      setGitHubAccessState(failGitHubAccessValidation(maskedToken, 'Revisionsgebundener Repository-Scope fehlt für GitHub-Zugangsprüfung.'));
+      setValidatedGitHubTargetKey(null);
+      if (source === 'manual-pat') githubTokenRef.current = null;
+      return false;
+    }
+
+    setValidatedGitHubTargetKey(null);
+    setGitHubAccessState(startGitHubAccessValidation(maskedToken));
+    appendActionEvent({
+      kind: 'route_selected',
+      route: 'github-access',
+      label: source === 'oauth-session'
+        ? 'GitHub OAuth-Session wird geprüft'
+        : 'GitHub-Zugang wird geprüft',
+      detail: 'Backend prüft Credential, Repository, Branch und erwarteten Head ohne Credential-Readback.',
+      state: 'running',
+    });
+
+    const validation = await validateGitHubTokenForRepo(
+      token,
+      {
+        repository: validationRepoSnapshot.repoUrl,
+        branch: validationRepoSnapshot.branch,
+        expectedBaseSha: validationRepoSnapshot.headSha,
+      },
+      globalThis.fetch,
+      githubAccessApiBase,
+    );
+
+    if (
+      currentRepositoryTargetKeyRef.current !== validationTargetKey
+      || !isCurrentRepoScope(validationRepoScopeKey)
+    ) {
+      setGitHubAccessState(createGitHubAccessSnapshot());
+      setValidatedGitHubTargetKey(null);
+      if (source === 'manual-pat') githubTokenRef.current = null;
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'github-access',
+        label: 'GitHub-Zugangsprüfung verworfen',
+        detail: 'Das Repo-Ziel hat sich während der Validierung geändert. Der alte Prüferfolg wurde nicht übernommen.',
+        kind: 'blocked',
+      }));
+      return false;
+    }
+
+    if (!validation.ok) {
+      setGitHubAccessState(failGitHubAccessValidation(
+        maskedToken,
+        validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.',
+      ));
+      setValidatedGitHubTargetKey(null);
+      if (source === 'manual-pat') githubTokenRef.current = null;
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'github-access',
+        label: source === 'oauth-session'
+          ? 'GitHub OAuth reicht für dieses Repo nicht aus'
+          : 'GitHub-Zugang fehlgeschlagen',
+        detail: validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.',
+        kind: 'failed',
+      }));
+      return false;
+    }
+
+    setGitHubAccessState(completeGitHubAccessValidation(maskedToken));
+    setValidatedGitHubTargetKey(validationTargetKey);
+    githubTokenRef.current = source === 'manual-pat' ? token || null : null;
+    appendActionEvent({
+      kind: 'done',
+      route: 'github-access',
+      label: 'GitHub-Zugang bereit',
+      detail: source === 'oauth-session'
+        ? 'Serverseitig gespeichertes OAuth-Credential und Repo-Schreibzugriff wurden bestätigt; kein Token wurde an den Browser zurückgegeben.'
+        : 'Ephemeres Credential und effektiver Repo-Schreibzugriff wurden serverseitig bestätigt.',
+      state: 'done',
+    });
+    return true;
+  }, [
+    appendActionEvent,
+    chatRepoSnapshot,
+    currentRepoScopeKey,
+    currentRepositoryTargetKey,
+    githubAccessApiBase,
+    isCurrentRepoScope,
+  ]);
+
+  const oauthValidationTargetRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!authUser?.githubId || !currentRepositoryTargetKey || !chatRepoSnapshot?.headSha) return;
+    if (githubWriteAllowed || githubAccessState.state === 'validating') return;
+    if (oauthValidationTargetRef.current === currentRepositoryTargetKey) return;
+    oauthValidationTargetRef.current = currentRepositoryTargetKey;
+    void validateCurrentRepoGithubCredential(undefined, 'OAuth', 'oauth-session');
+  }, [
+    authUser?.githubId,
+    chatRepoSnapshot?.headSha,
+    currentRepositoryTargetKey,
+    githubAccessState.state,
+    githubWriteAllowed,
+    validateCurrentRepoGithubCredential,
+  ]);
   const inspectionEvidence = useSovereignToolInspectionStore((store) => store.evidence);
   const completedInspectionEvidenceRef = useRef<Partial<Record<SovereignToolInspectionId, number>>>({});
   const sovereignAgentStartAvailable = Boolean(agentReady && onStartAgent);
@@ -3279,6 +3393,9 @@ export function BuilderContainer({
         jobId: scopedAgentJob?.jobId ?? '',
         backendBase: SOVEREIGN_WORKER_BASE,
         filePath: cleanPath,
+        repoOwner: chatRepoSnapshot?.owner,
+        repoName: chatRepoSnapshot?.repo,
+        repoBranch: chatRepoSnapshot?.branch,
       });
       setFilePreviewResult(result);
       setFilePreviewLoading(false);
@@ -3290,7 +3407,7 @@ export function BuilderContainer({
         'router',
       );
     },
-    [addLog, scopedAgentJob?.jobId],
+    [addLog, chatRepoSnapshot?.branch, chatRepoSnapshot?.owner, chatRepoSnapshot?.repo, scopedAgentJob?.jobId],
   );
 
   const appendChatLine = useCallback(
@@ -3503,6 +3620,15 @@ export function BuilderContainer({
         const restored = session.messages.map(sessionMessageToChatLine);
         nowRef.current = restored.at(-1)?.createdAt ?? Date.now();
         setChatHistory(restored);
+        setMonitorCommunication(restored
+          .filter((line) => line.role !== 'thought')
+          .slice(-12)
+          .map((line, index): MonitorCommunicationEntry => ({
+            id: `restored-monitor-${line.id || index}`,
+            kind: line.role === 'user' ? 'user' : line.role === 'system' ? 'runtime' : 'communicate',
+            text: line.text,
+            createdAt: line.createdAt,
+          })));
 
         const { text: formattedAge, isStale } = formatPersistedSessionAge(session);
         setRestoredSessionAge(isStale
@@ -4947,8 +5073,25 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         return;
       }
 
-      // Preserve the exact failed request as retry target. Later advisory
-      // messages such as "Warum?" must not overwrite this correlation.
+      // A provider response that failed the action schema is still allowed to be
+      // conversation text. It is NEVER reinterpreted by browser heuristics and
+      // can never authorize an executor or GitHub-write path.
+      if (interpretationResult.rawContent) {
+        await quarantineOnlineObservation(interpretationResult.rawContent, requestedInterpretationModel);
+        appendGuardedWorkerText(interpretationResult.rawContent);
+        appendActionEvent({
+          kind: 'llm_response_received',
+          route: 'worker',
+          label: 'Freitext-Antwort ohne Aktionsschema übernommen',
+          detail: 'Ungültiges Aktionsschema; Providertext wurde ausschließlich als LLM-Kommunikation akzeptiert.',
+          state: 'done',
+        });
+        return;
+      }
+
+      // Preserve only a genuinely failed request as retry target. The degraded
+      // runtime may classify exact machine controls such as /status or /agent;
+      // free user language stays unknown and is never interpreted locally.
       setLastWorkerRequestMessage(submittedText);
       const offlineIntent = classifyOfflineSovereignExecutorIntent(submittedText);
       const offlineFallbackEvidence = offlineIntent === 'unknown'
@@ -4966,7 +5109,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       // Offline language handling is fail-closed and may only read current
       // runtime state or prepare a gated action. It never falls through to a
       // second online language endpoint.
-      if (offlineIntent === 'status' || isLocalCompletionStatusQuestion(submittedText)) {
+      if (offlineIntent === 'status') {
         const statusAnswer = buildLocalStatusAnswer({
           githubWriteAllowed,
           githubAccessState: effectiveGitHubAccessState,
@@ -4994,19 +5137,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           label: 'Offline-Status-Fallback',
           detail: 'Online-Deutung fehlgeschlagen; Status ausschließlich aus Runtime-State beantwortet.',
         }));
-        return;
-      }
-
-      if (lastAnswerWasLocal && isFollowUpWhyQuestion(submittedText)) {
-        const whyAnswer = patchPreviewReady
-          ? 'Die Patch-Vorschau wurde erzeugt, aber noch nicht angewendet. Es gibt noch keinen Commit und keinen Draft PR, weil die Vorschau erst geprüft und bestätigt werden muss.'
-          : !githubWriteAllowed
-            ? 'Weil sicherer GitHub-Zugang noch fehlt. Sobald der Zugang verifiziert ist, kann der Auftrag fortgesetzt werden.'
-            : routingWorkerBlocker
-              ? 'Weil die LLM-/Worker-Route blockiert ist. Die Runtime meldet noch keinen erfolgreichen nächsten Zustand.'
-              : 'Weil noch kein belegter Ausführungszustand vorliegt.';
-        appendChatLine({ role: 'assistant', text: whyAnswer });
-        setLastAnswerWasLocal(true);
         return;
       }
 
@@ -5058,43 +5188,11 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       }
 
       if (offlineIntent === 'direct_patch' || offlineIntent === 'code_execution' || offlineIntent === 'draft_pr') {
-        const explicitOfflineExecution =
-          isSovereignAgentExecutionIntent(submittedText) ||
-          isDelegationIntent(submittedText) ||
-          isDelegatedSovereignAgentExecutionIntent(submittedText, chatHistory);
-        if (explicitOfflineExecution) {
-          const started = await startAgentFromText(submittedText, offlineIntent);
-          if (started) {
-            appendRuntimeNotice('Online-Sprachdeutung war nicht verfügbar. Der explizite Auftrag wurde über den lokalen Offline-Fallback an die Runtime übergeben; Erfolg bleibt bis zu echter Runtime-Evidence offen.');
-          }
-          return;
+        const started = await startAgentFromText(submittedText, offlineIntent);
+        if (started) {
+          appendRuntimeNotice('Online-Sprachdeutung war nicht verfügbar. Nur der explizite Maschinenbefehl wurde an die Runtime übergeben; Erfolg bleibt bis zu echter Runtime-Evidence offen.');
         }
-
-        const repoFiles = chatRepoSnapshot?.filePaths?.map((path) => ({
-          path,
-          type: 'blob' as const,
-          size: 0,
-          sha: '',
-        })) ?? [];
-        const offlineKind: DevChatWorkerIntentKind = offlineIntent === 'draft_pr'
-          ? 'draft_pr'
-          : offlineIntent === 'direct_patch'
-            ? 'direct_patch'
-            : 'code_execution';
-        const draft = createIntegrationIntentDraft(submittedText, repoFiles, {
-          interpretation: {
-            intentKind: offlineKind,
-            source: 'offline_fallback',
-            confidence: 0,
-            actionTitle: submittedText,
-          },
-        });
-        if (draft) {
-          appendActionEvent(buildDraftCreatedEvent(draft));
-          setIntentDraftState({ status: 'pending', draft });
-          appendRuntimeNotice('Offline-Fallback: Ein lokaler Aktionshinweis wurde erkannt; Ausführung bleibt bis zur Bestätigung und zu echten Runtime-Gates blockiert.');
-          return;
-        }
+        return;
       }
 
       if (interpretationResult.rawContent && (offlineIntent === 'question' || offlineIntent === 'unknown')) {
@@ -5967,38 +6065,42 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
 
   useEffect(() => {
     const pendingOnlineExecution = pendingOnlineExecutionRef.current;
-    const pendingIntent = pendingWriteIntentRef.current;
-    if ((!pendingOnlineExecution && !pendingIntent) || !effectiveRepoReady) return;
+    const pendingWriteIntent = pendingWriteIntentRef.current;
+    const pendingRepoIntent = pendingRepoIntentRef.current;
+    if ((!pendingOnlineExecution && !pendingWriteIntent && !pendingRepoIntent) || !effectiveRepoReady) return;
     if (localRepoLoading || chatResponseBusy || isPublishing) return;
+    // Write/executor work wakes only when its OWN write gate is proven. A repo
+    // load or unrelated LLM reply must never resume a stale mutation request.
+    if ((pendingOnlineExecution || pendingWriteIntent) && !githubWriteAllowed) return;
 
     void runSerializedSubmit(async () => {
       const currentOnlineExecution = pendingOnlineExecutionRef.current;
-      const currentPendingIntent = pendingWriteIntentRef.current;
-      if (!currentOnlineExecution && !currentPendingIntent) return;
+      const currentPendingWriteIntent = pendingWriteIntentRef.current;
+      const currentPendingRepoIntent = pendingRepoIntentRef.current;
+      if (!currentOnlineExecution && !currentPendingWriteIntent && !currentPendingRepoIntent) return;
 
       pendingOnlineExecutionRef.current = null;
       pendingWriteIntentRef.current = null;
+      pendingRepoIntentRef.current = null;
       setShowGitHubAccessOverride(false);
       appendActionEvent({
         kind: 'route_selected',
         route: 'runtime',
         label: 'Blockierter Auftrag wird wiederaufgenommen',
-        detail: githubWriteAllowed
-          ? 'Repository und Schreibzugang sind jetzt durch Runtime-Evidence belegt.'
-          : 'Repository ist jetzt belegt; der Auftrag wird bis zum nächsten erforderlichen Gate fortgesetzt.',
+        detail: currentPendingRepoIntent
+          ? 'Der benötigte Repository-Snapshot ist jetzt belegt.'
+          : 'Repository und Schreibzugang sind jetzt durch Runtime-Evidence belegt.',
         state: 'running',
       });
-      addLog('info', 'Pending intent resumed after runtime gate changed', 'router');
+      addLog('info', 'Pending intent resumed only after its required runtime gate changed', 'router');
       if (currentOnlineExecution) {
-        pendingOnlineExecutionRef.current = currentOnlineExecution;
         const started = await startAgentFromText(currentOnlineExecution.text, currentOnlineExecution.intent);
-        if (started || githubWriteAllowed) pendingOnlineExecutionRef.current = null;
+        if (!started && !githubWriteAllowed) pendingOnlineExecutionRef.current = currentOnlineExecution;
         return;
       }
-      await _processSubmit(currentPendingIntent!, { resumePendingIntent: true });
+      const currentIntent = currentPendingWriteIntent ?? currentPendingRepoIntent;
+      if (currentIntent) await _processSubmit(currentIntent, { resumePendingIntent: true });
     }, { retryPendingOnReject: true });
-    // Resume is retried whenever repo/access evidence or a blocking busy gate
-    // changes. The pending ref is cleared only after the submit lock is acquired.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveRepoReady, githubWriteAllowed, localRepoLoading, chatResponseBusy, isPublishing, pendingResumeRetrySequence]);
 
@@ -6038,7 +6140,8 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
 
     if (!gate.canStart) {
       if (action.requiresRepo && !effectiveRepoReady) {
-        pendingWriteIntentRef.current = submitted;
+        if (action.requiresGithubWrite) pendingWriteIntentRef.current = submitted;
+        else pendingRepoIntentRef.current = submitted;
         setRepoSetupError(null);
         setShowRepoSetup(true);
         appendActionEvent(buildBlockedActionEvent({
@@ -6336,7 +6439,7 @@ Das echte Repo-Setup wurde geöffnet.`,
   const submitDisabled =
     localRepoLoading || chatResponseBusy || isPublishing || !wishText.trim();
   const isChat = activeTab === "chat";
-  const showAgentEventStream = agentWorkSnapshot.state !== 'idle' || scopedAgentIsRunning;
+  const showAgentEventStream = liveMonitorPrimary || agentWorkSnapshot.state !== 'idle' || scopedAgentIsRunning;
   const agentEventStream = showAgentEventStream ? (
     <AgentEventStream
       snapshot={agentWorkSnapshot}
@@ -6351,6 +6454,7 @@ Das echte Repo-Setup wurde geöffnet.`,
       }
       onOpenFile={openRepoExplorerFromFileBadge}
       primaryMonitor={liveMonitorPrimary}
+      desktopFrame={desktopFrame}
     />
   ) : null;
   const activeMod = MODULES.find((m) => m.id === activeTab) ?? MODULES[0];
@@ -6367,7 +6471,7 @@ Das echte Repo-Setup wurde geöffnet.`,
       ].filter(Boolean).join(" ")}
       data-role={builderContainerContract.dataRole}
       data-testid={builderContainerContract.testId}
-      data-layout={liveMonitorPrimary ? "live-desktop-monitor-primary" : "devchat-appcontrol-integrated"}
+      data-layout={liveMonitorPrimary ? "live-desktop-monitor-primary" : "monitor-inspector-modules"}
       aria-label={builderContainerContract.ariaLabel}
       style={{
         width: "100%",
@@ -6541,6 +6645,95 @@ Das echte Repo-Setup wurde geöffnet.`,
             }}
           >
             {agentEventStream}
+            <LauncherTaskbar />
+            <div
+              data-testid="monitor-action-controls"
+              style={{
+                flexShrink: 0,
+                borderTop: `1px solid ${C.border}`,
+                background: C.surface,
+              }}
+            >
+              <SovereignToolLauncher
+                runtimeContext={{
+                  repoReady: effectiveRepoReady,
+                  repoFileCount: effectiveRepoReady && chatRepoSnapshot
+                    ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
+                    : 0,
+                  hasDiffEvidence: Boolean(
+                    patchDiffReport ||
+                    (scopedAgentJob?.changedFiles?.length ?? 0) > 0,
+                  ),
+                  githubAccessState: effectiveGitHubAccessState,
+                  executorAvailable: sovereignAgentStartAvailable,
+                  executorActive: scopedAgentIsRunning,
+                  hasExecutorMission: Boolean(wishText.trim()),
+                  executorIntent,
+                  runtimeLogCount: runtimeEvidenceLog.length,
+                }}
+                onSelect={handleCompactToolSelect}
+                onBlockedSelect={handleCompactToolSelect}
+                onOpenLauncher={useLauncherStore.getState().openMenu}
+              />
+              <ActionSuggestionStrip
+                actions={SOVEREIGN_PRESET_ACTIONS}
+                repoReady={effectiveRepoReady}
+                githubWriteReady={githubWriteAllowed}
+                agentReady={agentReady ?? false}
+                disabled={localRepoLoading || chatResponseBusy || isPublishing}
+                onSelect={handlePresetActionSelect}
+              />
+            </div>
+            {hasPendingDraft(intentDraftState) && (() => {
+              const draft = intentDraftState.draft;
+              const mappedIntent = mapInterpretedIntentToExecutorIntent(draft.intentKind);
+              const executionIntent: 'code_execution' | 'draft_pr' = mappedIntent === 'draft_pr'
+                ? 'draft_pr'
+                : 'code_execution';
+              const gateSnapshot: IntegrationIntentDraftGateSnapshot = {
+                repoReady: effectiveRepoReady,
+                githubWriteReady: githubWriteAllowed,
+                directPatchReady: false,
+                agentReady: sovereignAgentStartAvailable,
+              };
+              return (
+                <IntegrationIntentDraftCard
+                  draft={draft}
+                  gateSnapshot={gateSnapshot}
+                  canConfirm={effectiveRepoReady && githubWriteAllowed && sovereignAgentStartAvailable}
+                  confirmBlocker={!effectiveRepoReady
+                    ? 'Repository-Snapshot fehlt.'
+                    : !sovereignAgentStartAvailable
+                      ? 'Backend-Workspace-Executor ist nicht verbunden.'
+                      : undefined}
+                  onConfirm={() => {
+                    appendActionEvent(buildDraftConfirmedEvent(draft));
+                    setIntentDraftState({ status: 'confirmed', draft });
+                    void startAgentFromText(draft.originalText, executionIntent);
+                    window.setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
+                  }}
+                  onConfirmWithGitHubAccess={() => {
+                    appendActionEvent(buildDraftConfirmedEvent(draft));
+                    pendingOnlineExecutionRef.current = {
+                      text: draft.originalText,
+                      intent: executionIntent,
+                    };
+                    setShowGitHubAccessOverride(true);
+                    setIntentDraftState({ status: 'idle' });
+                  }}
+                  onRephrase={() => {
+                    appendActionEvent(buildDraftRephrasedEvent(draft));
+                    setWishText(draft.rephrasedText);
+                    setIntentDraftState({ status: 'idle' });
+                  }}
+                  onReject={() => {
+                    appendActionEvent(buildDraftRejectedEvent());
+                    setIntentDraftState({ status: 'idle' });
+                    appendRuntimeNotice('Runtime-Aktionsentwurf verworfen.');
+                  }}
+                />
+              );
+            })()}
             <MonitorCommunicationDock
               value={wishText}
               onChange={setWishText}
@@ -6549,6 +6742,25 @@ Das echte Repo-Setup wurde geöffnet.`,
               busy={localRepoLoading || chatResponseBusy || isPublishing}
               runtimeStatus={workStateStatus}
               entries={monitorCommunication}
+              routeOptions={llmRouteOptions}
+              selectedRouteId={selectedLlmRouteId}
+              onRouteChange={(routeId) => {
+                setSelectedLlmRouteId(routeId);
+                addLog(
+                  'info',
+                  routeId ? `LLM Route manuell fixiert: ${routeId}` : 'LLM Route auf Auto/PAL zurückgesetzt',
+                  'router',
+                );
+              }}
+              routeCatalogError={llmRouteCatalogError}
+              onKeyDown={handleComposerKeyDown}
+              slashMenu={showSlashCommands ? (
+                <SlashCommandMenu
+                  commands={slashMatches}
+                  selectedIndex={selectedSlashIndex}
+                  onSelect={submitSelectedSlashCommand}
+                />
+              ) : null}
             />
             {securityCardPending && (
               <SecurityBlockCard
@@ -6561,6 +6773,66 @@ Das echte Repo-Setup wurde geöffnet.`,
                   setSecurityCardPending(null);
                 }}
                 onDismiss={() => setSecurityCardPending(null)}
+              />
+            )}
+            {!githubWriteAllowed && (scopedAgentJob?.status === 'running' || isPublishing || showGitHubAccessOverride) && (
+              <GitHubAccessCard
+                snapshot={effectiveGitHubAccessSnapshot}
+                onProvideToken={async (token) => {
+                  const formatResult = validateGitHubTokenFormat(token);
+                  if (!formatResult.isValid) {
+                    setGitHubAccessState(failGitHubAccessValidation('', formatResult.error || 'Ungültiges Format'));
+                    setValidatedGitHubTargetKey(null);
+                    githubTokenRef.current = null;
+                    return;
+                  }
+                  appendRuntimeNotice('Ephemeres GitHub-Credential übernommen. Die Backend-Prüfung läuft; der Wert wird weder in Kommunikation noch Logs gespeichert.');
+                  const ready = await validateCurrentRepoGithubCredential(
+                    token,
+                    formatResult.maskedToken,
+                    'manual-pat',
+                  );
+                  if (!ready) return;
+                  const pendingWriteIntent = pendingOnlineExecutionRef.current?.text
+                    ?? pendingWriteIntentRef.current;
+                  appendRuntimeNotice(pendingWriteIntent
+                    ? 'GitHub-Zugang ist bereit. Der vorgemerkte Auftrag wird erst durch den bestätigten Gate-State fortgesetzt.'
+                    : 'GitHub-Zugang ist bereit. Der Zugangswert bleibt ausschließlich im Speicher dieser Sitzung.');
+                }}
+                onDismiss={() => {
+                  pendingOnlineExecutionRef.current = null;
+                  pendingWriteIntentRef.current = null;
+                  setShowGitHubAccessOverride(false);
+                  appendActionEvent(buildLocalRuntimeResultEvent({
+                    label: 'GitHub-Zugangsfläche geschlossen',
+                    detail: 'Die sichere Zugangsfläche wurde geschlossen; kein Zugangsstatus wurde erfunden.',
+                  }));
+                }}
+              />
+            )}
+            {workerBlocker && (
+              <WorkerBlockerCard
+                blocker={workerBlocker}
+                onRetryWithMessage={(msg) => {
+                  setWorkerBlocker(null);
+                  retrySubmit(msg, { ignoreExistingWorkerBlocker: true });
+                }}
+                onExplain={() => appendRuntimeNotice(explainDevChatWorkerDiagnostic(workerBlocker.diagnostic))}
+                onLogin={() => setShowLogin(true)}
+                onAgentInstead={(msg) => { void startAgentFromText(msg, 'code_execution'); }}
+                userMessage={lastWorkerRequestMessage ?? undefined}
+              />
+            )}
+            {scopedAgentJob?.draftPrUrl && (
+              <DraftPrCard
+                url={scopedAgentJob.draftPrUrl}
+                changedFiles={scopedAgentJob.changedFiles || []}
+                buildStatus={resolveDraftPrBuildStatus({ draftPrUrl: scopedAgentJob.draftPrUrl })}
+                onOpenBrowser={() => {
+                  const safeUrl = safeHttpsUrl(scopedAgentJob.draftPrUrl);
+                  if (safeUrl) window.open(safeUrl, '_blank', 'noopener,noreferrer');
+                }}
+                onDiscussInChat={() => setWishText('Erkläre mir die Änderungen im Draft PR.')}
               />
             )}
           </div>
@@ -7242,7 +7514,6 @@ Das echte Repo-Setup wurde geöffnet.`,
         onChatClick={() => switchTab("chat")}
         inspectorOpen={showInspector}
         onToggleInspector={() => setShowInspector((v) => !v)}
-        monitorActive={liveMonitorPrimary}
       />
 
       {/* SOVEREIGN LAUNCHER — App-Grid Overlay + Window Host (Issues #452, #453) */}

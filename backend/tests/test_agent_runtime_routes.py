@@ -149,6 +149,7 @@ def create_test_app(
     give_back_desktop_control=None,
     send_desktop_user_input=None,
     desktop_frame_allowed=None,
+    get_session_github_token=None,
 ):
     app = Flask(__name__)
 
@@ -174,6 +175,7 @@ def create_test_app(
         give_back_desktop_control=give_back_desktop_control,
         send_desktop_user_input=send_desktop_user_input,
         desktop_frame_allowed=desktop_frame_allowed,
+        get_session_github_token=get_session_github_token,
     )
     return app
 
@@ -266,6 +268,62 @@ def test_github_access_scope_bootstraps_revision_bound_validation_without_an_age
     assert captured == {
         "scopeToken": token,
         "token": token,
+        "owner": "OuroborosCollective",
+        "repo": "Sovereign-Studio-ato",
+    }
+    assert token not in scope_response.get_data(as_text=True)
+    assert token not in validation_response.get_data(as_text=True)
+
+
+def test_github_access_scope_and_validation_use_server_held_session_credential_without_echo(monkeypatch):
+    conn = FakeConnection()
+    token = "ghp_" + "s" * 40
+    captured = {}
+    monkeypatch.setenv("JWT_SECRET", "s" * 32)
+
+    def fake_readback(repository, branch, token=None):
+        captured["scopeToken"] = token
+        return {
+            "repository": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            "baseBranch": "main",
+            "baseSha": "c" * 40,
+        }
+
+    def fake_validate(raw_token, *, owner, repo):
+        captured.update(validationToken=raw_token, owner=owner, repo=repo)
+        return SimpleNamespace(ok=True, can_write=True, code="ready", message="ready")
+
+    monkeypatch.setattr(routes_module, "resolve_github_head", fake_readback)
+    monkeypatch.setattr(routes_module, "validate_github_access_for_repo", fake_validate)
+    app = create_test_app(
+        conn,
+        get_session_github_token=lambda user_id: token if user_id == "user-1" else None,
+    )
+    client = app.test_client()
+
+    scope_response = client.post(
+        "/api/user/agent/github-access/scope",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "repository": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            "branch": "main",
+            "expectedBaseSha": "c" * 40,
+        },
+    )
+    assert scope_response.status_code == 200
+    scope = scope_response.get_json()["scope"]
+
+    validation_response = client.post(
+        "/api/user/agent/github-access/validate",
+        headers={"X-Test-User": "user-1"},
+        json={"scope": scope},
+    )
+
+    assert validation_response.status_code == 200
+    assert validation_response.get_json() == {"ok": True, "canWrite": True, "code": "ready", "error": None}
+    assert captured == {
+        "scopeToken": token,
+        "validationToken": token,
         "owner": "OuroborosCollective",
         "repo": "Sovereign-Studio-ato",
     }

@@ -18,9 +18,35 @@ describe('fileContentBrowserRuntime', () => {
     expect(result.status).toBe('blocked');
     expect(fetcher).not.toHaveBeenCalled();
   });
-  it('blocks without a workspace job', async () => {
+  it('blocks without a workspace job or repository identity', async () => {
     const result = await fetchFileContent({ jobId: '', backendBase: '', filePath: 'src/a.ts' });
     expect(result.status).toBe('blocked');
+  });
+  it('reads a loaded repository through the authenticated backend when no workspace job exists', async () => {
+    const fetcher = vi.fn(async (url, init) => {
+      expect(String(url)).toBe('https://example.invalid/api/toolchain/github/read-file');
+      expect(init?.credentials).toBe('include');
+      const payload = JSON.parse(String(init?.body));
+      expect(payload).toEqual({
+        owner: 'OuroborosCollective',
+        repo: 'Sovereign-Studio-ato',
+        path: 'LICENSE',
+        ref: 'main',
+      });
+      return response(200, { content: 'License text', bytes: 12, sha: 'blob-sha' });
+    }) as unknown as typeof fetch;
+    const result = await fetchFileContent({
+      jobId: '',
+      backendBase: 'https://example.invalid',
+      filePath: 'LICENSE',
+      repoOwner: 'OuroborosCollective',
+      repoName: 'Sovereign-Studio-ato',
+      repoBranch: 'main',
+      fetcher,
+    });
+    expect(result.status).toBe('loaded');
+    expect(result.content).toBe('License text');
+    expect(result.sha).toBe('blob-sha');
   });
   it('returns a binary result without network access', async () => {
     const fetcher = vi.fn() as unknown as typeof fetch;

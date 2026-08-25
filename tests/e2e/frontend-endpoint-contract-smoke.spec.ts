@@ -260,7 +260,17 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     ));
 
     await page.goto('/');
-    await expect(page.locator('[data-testid="chat-only-app"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-testid="sovereign-monitor-app"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-testid="sovereign-live-monitor-primary"]')).toBeVisible();
+    await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toBeVisible();
+    await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Live Monitor' })).toBeVisible();
+    const coverageResponse = await page.request.get('/generated/test-coverage-map.json');
+    expect(coverageResponse.status()).toBe(200);
+    const coveragePayload = await coverageResponse.json() as { totalTestFiles?: number; files?: unknown[] };
+    expect(coveragePayload.totalTestFiles).toBeGreaterThan(0);
+    expect(Array.isArray(coveragePayload.files)).toBe(true);
     await expect(page.getByRole('button', { name: 'Profil' })).toBeVisible();
     await page.getByRole('button', { name: 'Profil' }).click();
     await page.getByRole('button', { name: 'Credits kaufen' }).click();

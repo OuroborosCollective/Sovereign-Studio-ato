@@ -40,11 +40,31 @@ checkFile('web build index', 'dist/index.html', (content) => {
 });
 
 checkDirectory('web build assets', 'dist/assets');
+checkFile('release coverage map', 'dist/generated/test-coverage-map.json', (content) => {
+  try {
+    const report = JSON.parse(content);
+    if (!Number.isInteger(report.totalTestFiles) || report.totalTestFiles < 1) return 'coverage map has no positive totalTestFiles';
+    if (!Array.isArray(report.files) || report.files.length < 1) return 'coverage map has no files array';
+    return true;
+  } catch {
+    return 'coverage map is not valid JSON';
+  }
+});
 checkDirectory('android project', 'android/app');
 checkFile('android webview index', 'android/app/src/main/assets/public/index.html', (content) => {
   if (!content.includes('<script')) return 'android index has no script tag';
   if (!content.includes('<div id="root"')) return 'android index has no React root';
   return true;
+});
+checkFile('android coverage map', 'android/app/src/main/assets/public/generated/test-coverage-map.json', (content) => {
+  try {
+    const report = JSON.parse(content);
+    return Number.isInteger(report.totalTestFiles) && report.totalTestFiles > 0
+      ? true
+      : 'android coverage map has no positive totalTestFiles';
+  } catch {
+    return 'android coverage map is not valid JSON';
+  }
 });
 
 if (failures.length > 0) {

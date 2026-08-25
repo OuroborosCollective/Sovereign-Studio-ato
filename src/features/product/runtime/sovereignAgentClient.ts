@@ -24,6 +24,12 @@ export interface SovereignRepositoryExecutionInput {
   githubAccessToken?: string;
 }
 
+export interface SovereignDesktopFrameObservation {
+  readonly blob: Blob;
+  readonly frameHash: string;
+  readonly observedAt: number;
+}
+
 export interface SovereignPatternLearningEvidence {
   candidateId?: string;
   candidateCreated: boolean;
@@ -739,6 +745,39 @@ export class SovereignAgentClient {
       fallback: 'Sovereign Live Workspace projections',
     });
     return projectionArray(body.projections);
+  }
+  async getDesktopFrame(jobId: string): Promise<SovereignDesktopFrameObservation> {
+    assertReady(this.config);
+    if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
+    const response = await this.fetcher(
+      endpoint(this.config.agentApiUrl, jobPath(jobId, '/live-workspace/desktop/frame')),
+      {
+        method: 'GET',
+        credentials: 'include',
+        headers: { Accept: 'image/png' },
+        cache: 'no-store',
+      },
+    );
+    if (!response.ok) {
+      let body: unknown = {};
+      try { body = await readJson(response.clone()); } catch { body = {}; }
+      throw buildSovereignAgentHttpError({
+        status: response.status,
+        body,
+        fallback: 'Sovereign Live Desktop frame',
+      });
+    }
+    const observation = response.headers.get('X-Sovereign-Observation')?.trim();
+    const frameHash = response.headers.get('X-Sovereign-Frame-Hash')?.trim().toLowerCase() ?? '';
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+    if (observation !== 'OBSERVED' || !SHA256_RE.test(frameHash) || !contentType.includes('image/png')) {
+      throw new Error('Sovereign Live Desktop frame returned no valid OBSERVED PNG/hash evidence.');
+    }
+    const blob = await response.blob();
+    if (blob.size <= 0 || (blob.type && !blob.type.toLowerCase().includes('image/png'))) {
+      throw new Error('Sovereign Live Desktop frame is empty or not PNG.');
+    }
+    return { blob, frameHash, observedAt: this.now() };
   }
   async getEvidenceAnchors(jobId: string): Promise<SovereignWorkspaceEvidenceAnchor[]> {
     assertReady(this.config);

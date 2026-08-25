@@ -66,7 +66,8 @@ jobs:
           rm -rf scripts/sovereign-backend/admin-dist
           cp -a dist scripts/sovereign-backend/admin-dist
           grep -Rqs 'CANONICAL_REACT_ADMIN' scripts/sovereign-backend/admin-dist
-          grep -Rqs 'DevChat' scripts/sovereign-backend/admin-dist
+          grep -Rqs 'monitor-first-live-workspace' scripts/sovereign-backend/admin-dist
+          grep -Rqs 'live-workspace-monitor-desktop' scripts/sovereign-backend/admin-dist
           grep -Rqs 'Draft PR wirklich an die Runtime übergeben?' scripts/sovereign-backend/admin-dist
           grep -Rqs '${{ env.SOVEREIGN_REVISION }}' scripts/sovereign-backend/admin-dist
           grep -Rqs 'Free Revolver' scripts/sovereign-backend/admin-dist
@@ -129,7 +130,8 @@ jobs:
           assert (root / "index.html").is_file()
           rendered = "\n".join(path.read_text("utf-8", errors="ignore") for path in root.rglob("*") if path.is_file())
           assert "CANONICAL_REACT_ADMIN" in rendered
-          assert "DevChat" in rendered
+          assert "monitor-first-live-workspace" in rendered
+          assert "live-workspace-monitor-desktop" in rendered
           assert "Draft PR wirklich an die Runtime übergeben?" in rendered
           assert "Free Revolver" in rendered
           '

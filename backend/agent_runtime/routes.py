@@ -275,6 +275,7 @@ def register_sovereign_agent_routes(
     give_back_desktop_control: Callable[[Any, str, str, str], Mapping[str, Any] | None] | None = None,
     send_desktop_user_input: Callable[[Any, str, str, str, dict[str, Any]], Mapping[str, Any] | None] | None = None,
     desktop_frame_allowed: Callable[[Any], bool] | None = None,
+    get_session_github_token: Callable[[str], str | None] | None = None,
 ) -> None:
     """Register neutral user-facing Sovereign Agent job routes.
 
@@ -466,6 +467,28 @@ def register_sovereign_agent_routes(
         if raw_token is not None and token is None:
             return None, (jsonify({"error": "githubAccessToken has an invalid format"}), 400)
         return token, None
+
+    def _github_access_token_for_session(
+        body: dict[str, Any],
+        user_id: str,
+    ) -> tuple[str | None, tuple[Any, int] | None]:
+        """Prefer one explicit ephemeral credential, otherwise use server-held OAuth.
+
+        The resolved credential never enters a response, event, log or persisted
+        agent payload through this helper. It exists only for the current request.
+        """
+        token, token_error = _ephemeral_github_access_token(body)
+        if token_error is not None or token:
+            return token, token_error
+        if get_session_github_token is None:
+            return None, None
+        try:
+            session_token = normalize_ephemeral_github_token(
+                get_session_github_token(user_id)
+            )
+        except Exception:
+            session_token = None
+        return session_token, None
 
     def _rescue_request_origin() -> str | None:
         declared = str(request.headers.get("X-Sovereign-Rescue-Origin") or "").strip()
@@ -1225,7 +1248,7 @@ def register_sovereign_agent_routes(
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
         user_id = _current_session_user_id()
-        github_token, token_error = _ephemeral_github_access_token(body)
+        github_token, token_error = _github_access_token_for_session(body, user_id)
         if token_error is not None:
             return token_error
         try:
@@ -1299,8 +1322,18 @@ def register_sovereign_agent_routes(
                 "error": "Der servergebundene Repository-Scope konnte nicht bestätigt werden.",
             }), 422
         owner, repo = target
+        github_token, token_error = _github_access_token_for_session(body, user_id)
+        if token_error is not None:
+            return token_error
+        if not github_token:
+            return jsonify({
+                "ok": False,
+                "canWrite": False,
+                "code": "github_credential_missing",
+                "error": "Für diese Sitzung ist kein GitHub-Credential verfügbar.",
+            }), 200
         result = validate_github_access_for_repo(
-            body.get("githubAccessToken"),
+            github_token,
             owner=owner,
             repo=repo,
         )
@@ -2124,10 +2157,9 @@ def register_sovereign_agent_routes(
             body = {}
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
-        raw_github_token = body.get("githubAccessToken")
-        github_token = normalize_ephemeral_github_token(raw_github_token)
-        if raw_github_token is not None and github_token is None:
-            return jsonify({"error": "githubAccessToken has an invalid format"}), 400
+        github_token, token_error = _github_access_token_for_session(body, user_id)
+        if token_error is not None:
+            return token_error
 
         conn = _connection()
         try:

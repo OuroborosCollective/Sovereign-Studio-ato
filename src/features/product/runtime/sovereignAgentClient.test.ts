@@ -320,6 +320,43 @@ describe('SovereignAgentClient', () => {
     });
   });
 
+  it('reads a desktop frame only with OBSERVED PNG and SHA-256 evidence', async () => {
+    const frameHash = '9'.repeat(64);
+    const fetcher = vi.fn(async () => new Response(new Uint8Array([137, 80, 78, 71]), {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/png',
+        'X-Sovereign-Observation': 'OBSERVED',
+        'X-Sovereign-Frame-Hash': frameHash,
+      },
+    }));
+    const client = new SovereignAgentClient({
+      config,
+      fetcher: fetcher as unknown as typeof fetch,
+      now: () => 42,
+    });
+
+    const frame = await client.getDesktopFrame('job-1');
+
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://agent.example.test/api/user/agent/jobs/job-1/live-workspace/desktop/frame',
+      expect.objectContaining({ method: 'GET', credentials: 'include', cache: 'no-store' }),
+    );
+    expect(frame.frameHash).toBe(frameHash);
+    expect(frame.observedAt).toBe(42);
+    expect(frame.blob.size).toBeGreaterThan(0);
+  });
+
+  it('rejects a desktop response that lacks observation/hash evidence', async () => {
+    const fetcher = vi.fn(async () => new Response(new Uint8Array([137, 80, 78, 71]), {
+      status: 200,
+      headers: { 'Content-Type': 'image/png' },
+    }));
+    const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
+
+    await expect(client.getDesktopFrame('job-1')).rejects.toThrow(/OBSERVED PNG\/hash evidence/);
+  });
+
   it('reads only typed claim-granular evidence anchors and rejects frame-based verified claims', async () => {
     const canonical = {
       schemaVersion: 'sovereign.workspace-evidence-anchor.v1',

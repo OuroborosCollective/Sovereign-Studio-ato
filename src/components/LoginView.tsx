@@ -12,9 +12,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
   return (
     <main
       className="sovereign-login-shell h-[100dvh] bg-black"
-      data-testid="sovereign-chat-entry-bridge"
-      data-layout="chat-entry-bridge"
-      aria-label="Sovereign Chat wird geöffnet"
+      data-testid="sovereign-monitor-entry-bridge"
+      data-layout="monitor-entry-bridge"
+      aria-label="Sovereign Monitor wird geöffnet"
     />
   );
 };

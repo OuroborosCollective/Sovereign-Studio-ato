@@ -25,15 +25,15 @@ const state: SovereignControlFrameState = {
 };
 
 describe('SovereignControlFrame', () => {
-  it('renders children in the fixed center chat workbench slot', () => {
+  it('renders children in the fixed center workspace monitor slot', () => {
     render(
       <SovereignControlFrame state={state}>
-        <div data-testid="chat-workbench-child">Chat Workbench</div>
+        <div data-testid="workspace-monitor-child">Workspace Monitor</div>
       </SovereignControlFrame>,
     );
 
-    expect(screen.getByTestId('sovereign-control-frame')).toHaveAttribute('data-layout', 'control-frame-around-chat-workbench');
-    expect(screen.getByTestId('control-frame-center-chat-workbench')).toContainElement(screen.getByTestId('chat-workbench-child'));
+    expect(screen.getByTestId('sovereign-control-frame')).toHaveAttribute('data-layout', 'control-frame-around-workspace-monitor');
+    expect(screen.getByTestId('control-frame-center-workspace-monitor')).toContainElement(screen.getByTestId('workspace-monitor-child'));
     expect(screen.getByTestId('control-frame-bottom-nav')).toBeDefined();
     expect(screen.getByText('Sovereign Control')).toBeDefined();
   });
