@@ -190,7 +190,12 @@ function run() {
   requireFile('src/features/product/components/LiveWorkspaceMonitor.tsx', 'Real workspace monitor component is required.');
   requireText('src/features/product/components/LiveWorkspaceMonitor.tsx', /live-workspace-monitor-desktop|DESKTOP · LIVE READBACK/, 'builder:desktop-readback-visible', 'Monitor must expose the real desktop-readback surface.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_ANALYZE_MISSION/, 'builder:analyze-visible', 'Analyze action must be bound to contract.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_START_TASK/, 'builder:start-visible', 'Start action must be bound to contract.');
+  requireText(
+    'src/features/product/containers/BuilderContainer.tsx',
+    /<MonitorCommunicationDock[\s\S]{0,1200}onSubmit=\{\(\)\s*=>\s*\{\s*void handleSubmit\(\);\s*\}\}/,
+    'builder:start-visible',
+    'The monitor communication dock must submit through the live runtime handler.',
+  );
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_REPAIR_LOG/, 'builder:repair-visible', 'Repair action must be bound to contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_DRAFT_PR/, 'builder:draft-visible', 'Draft PR action must be bound to contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /route|ActionStream|SovereignActionStreamPanel|Auftrag empfangen/i, 'builder:route-guidance', 'Builder must show route/action guidance.');

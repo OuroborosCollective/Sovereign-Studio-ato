@@ -231,16 +231,38 @@ export function projectSituationalChatLine(line: ChatLine): ChatLine | null {
 }
 
 export function projectMonitorCommunicationLine(line: ChatLine): ChatLine | null {
-  // A candidate that claims to be a persisted situational bubble must pass the
-  // complete bubble firewall. It may never downgrade to ephemeral monitor text.
+  // Persisted workflow truth must pass the complete bubble firewall. It may
+  // never downgrade to a transient conversation projection.
   if (line.bubble) return projectSituationalChatLine(line);
-  if (line.role !== 'assistant' && line.role !== 'system') return null;
+
+  // Non-authoritative conversation is a separate, explicitly typed projection.
+  // Raw provider/system text cannot opt itself into the permanent monitor by
+  // merely looking harmless; only the bounded local call sites may attach this
+  // provenance envelope, and the envelope carries no action or resume authority.
+  const projection = line.monitorProjection;
+  if (!projection || Object.keys(projection).some((key) => ![
+    'schemaVersion',
+    'sourceKind',
+    'authority',
+    'authoritative',
+  ].includes(key))) return null;
+  if (
+    projection.schemaVersion !== 'sovereign.monitor-communication-projection.v1'
+    || projection.authority !== 'CONVERSATION_ONLY'
+    || projection.authoritative !== false
+  ) return null;
+  const expectedRole = projection.sourceKind === 'LLM_RESPONSE'
+    ? 'assistant'
+    : projection.sourceKind === 'RUNTIME_NOTICE'
+      ? 'system'
+      : null;
+  if (!expectedRole || line.role !== expectedRole) return null;
   const text = optionalText(line.text);
   if (!text || text.length > 4000) return null;
   const folded = text.toLocaleLowerCase('en-US');
   if (INTERNAL_TEXT_MARKERS.some((marker) => folded.includes(marker))) return null;
   if (SECRET_PATTERNS.some((pattern) => pattern.test(text))) return null;
-  return { ...line, text };
+  return { ...line, text, monitorProjection: projection };
 }
 
 export function projectSituationalChatLines(lines: readonly ChatLine[]): ChatLine[] {

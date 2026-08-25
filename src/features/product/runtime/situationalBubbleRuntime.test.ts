@@ -122,6 +122,7 @@ describe('situational bubble output firewall', () => {
   it('projects only role-matched committed bubbles', () => {
     const typedMission = line(mission());
     const wrongRole = line(mission({ bubbleHash: HASH_B }), 'assistant');
+    expect(projectMonitorCommunicationLine(typedMission)).toEqual(typedMission);
     expect(projectSituationalChatLines([
       typedMission,
       wrongRole,
@@ -130,13 +131,25 @@ describe('situational bubble output firewall', () => {
     ])).toEqual([typedMission]);
   });
 
-  it('keeps safe ephemeral conversation monitor-only and rejects internal or secret material', () => {
+  it('requires explicit non-authoritative provenance for monitor-only conversation', () => {
     const safe = { id: 'safe', role: 'assistant' as const, text: 'Die Analyse läuft.', createdAt: 1 };
     expect(projectSituationalChatLine(safe)).toBeNull();
-    expect(projectMonitorCommunicationLine(safe)).toEqual(safe);
-    expect(projectMonitorCommunicationLine({ ...safe, text: 'Reasoning: hidden provider trace' })).toBeNull();
-    expect(projectMonitorCommunicationLine({
+    expect(projectMonitorCommunicationLine(safe)).toBeNull();
+
+    const conversation = {
       ...safe,
+      monitorProjection: {
+        schemaVersion: 'sovereign.monitor-communication-projection.v1' as const,
+        sourceKind: 'LLM_RESPONSE' as const,
+        authority: 'CONVERSATION_ONLY' as const,
+        authoritative: false as const,
+      },
+    };
+    expect(projectMonitorCommunicationLine(conversation)).toEqual(conversation);
+    expect(projectMonitorCommunicationLine({ ...conversation, role: 'system' })).toBeNull();
+    expect(projectMonitorCommunicationLine({ ...conversation, text: 'Reasoning: hidden provider trace' })).toBeNull();
+    expect(projectMonitorCommunicationLine({
+      ...conversation,
       text: ['github', 'pat', 'x'.repeat(40)].join('_'),
     })).toBeNull();
   });

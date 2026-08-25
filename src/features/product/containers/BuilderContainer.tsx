@@ -2924,7 +2924,16 @@ export function BuilderContainer({
   );
 
   const appendRuntimeNotice = useCallback((text: string) => {
-    appendChatLine({ role: 'system', text });
+    appendChatLine({
+      role: 'system',
+      text,
+      monitorProjection: {
+        schemaVersion: 'sovereign.monitor-communication-projection.v1',
+        sourceKind: 'RUNTIME_NOTICE',
+        authority: 'CONVERSATION_ONLY',
+        authoritative: false,
+      },
+    });
   }, [appendChatLine]);
 
   const appendGuardedWorkerText = useCallback((text: string) => {
@@ -2935,7 +2944,16 @@ export function BuilderContainer({
     if (!claimCheck.allowed && claimCheck.violations.length > 0) {
       addLog('warn', `chatClaimGuard: ${claimCheck.violations.join(', ')}`, 'router');
     }
-    appendChatLine({ role: 'assistant', text: guardedText });
+    appendChatLine({
+      role: 'assistant',
+      text: guardedText,
+      monitorProjection: {
+        schemaVersion: 'sovereign.monitor-communication-projection.v1',
+        sourceKind: 'LLM_RESPONSE',
+        authority: 'CONVERSATION_ONLY',
+        authoritative: false,
+      },
+    });
   }, [addLog, agentWorkSnapshot, appendChatLine]);
 
   const persistMissionInput = useCallback(async (text: string): Promise<boolean> => {
@@ -3099,7 +3117,8 @@ export function BuilderContainer({
         const restored = session.messages.map(sessionMessageToChatLine);
         setChatHistory(restored);
         const restoredMonitorEntries = restored
-          .filter((line) => line.role !== 'thought')
+          .map(projectMonitorCommunicationLine)
+          .filter((line): line is ChatLine => line !== null)
           .slice(-12)
           .map((line, index): MonitorCommunicationEntry => ({
             id: `restored-monitor-${line.id || index}`,
@@ -3944,15 +3963,12 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         if (active.length === 0) {
           appendRuntimeNotice("Keine Skills installiert. Nutze /scan-skills <owner/repo> um Skills aus einem Repo zu importieren.");
         } else {
-          appendChatLine({
-            role: "assistant",
-            text: [
+          appendRuntimeNotice([
               `**${active.length} installierte Skills:**`,
               ...active.map((s) => `• \`/${s.slug}\` — ${s.description}`),
               "",
               "Tipp: /scan-skills <owner/repo> für mehr Skills.",
-            ].join("\n"),
-          });
+            ].join("\n"));
         }
         return;
       }
@@ -4112,10 +4128,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           detail: 'Der geschützte OpenRouter-/FreeLLM-Backendpfad wurde ohne bestätigte Session nicht aufgerufen.',
           kind: 'blocked',
         }));
-        appendChatLine({
-          role: 'assistant',
-          text: 'Für die Online-Sprachdeutung ist eine bestätigte Anmeldung erforderlich. Es wurde kein LLM-Aufruf gesendet und kein Credit abgezogen.',
-        });
+        appendRuntimeNotice('Für die Online-Sprachdeutung ist eine bestätigte Anmeldung erforderlich. Es wurde kein LLM-Aufruf gesendet und kein Credit abgezogen.');
         setShowLogin(true);
         return;
       }
@@ -4297,7 +4310,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
             questionText: submittedText,
             isStartup: interpretation.isStartup,
           });
-          appendChatLine({ role: 'assistant', text: statusAnswer });
+          appendRuntimeNotice(statusAnswer);
           setLastAnswerWasLocal(true);
           appendActionEvent(buildLocalRuntimeResultEvent({
             label: 'LLM-verstandene Status-Frage',
@@ -4362,10 +4375,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           },
         });
         if (!draft) {
-          appendChatLine({
-            role: 'assistant',
-            text: interpretation.assistantText || 'Die Online-Deutung war nicht konkret genug für einen ausführbaren Auftrag.',
-          });
+          appendGuardedWorkerText(
+            interpretation.assistantText || 'Die Online-Deutung war nicht konkret genug für einen ausführbaren Auftrag.',
+          );
           return;
         }
 
@@ -4438,7 +4450,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
             : undefined,
           questionText: submittedText,
         });
-        appendChatLine({ role: 'assistant', text: statusAnswer });
+        appendRuntimeNotice(statusAnswer);
         setLastAnswerWasLocal(true);
         appendActionEvent(buildLocalRuntimeResultEvent({
           label: 'Offline-Status-Fallback',
@@ -4459,25 +4471,19 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
             inputAlreadyRecorded: true,
           });
         } else {
-          appendChatLine({
-            role: 'assistant',
-            text: 'Der Blocker wurde zurückgesetzt. Es gibt keinen vorherigen korrelierten Request zum Wiederholen.',
-          });
+          appendRuntimeNotice('Der Blocker wurde zurückgesetzt. Es gibt keinen vorherigen korrelierten Request zum Wiederholen.');
         }
         return;
       }
 
       if (offlineIntent === 'status') {
-        appendChatLine({
-          role: 'assistant',
-          text: buildExecutorStatusAnswer({
+        appendRuntimeNotice(buildExecutorStatusAnswer({
             agentState: agentWorkSnapshot.state,
             agentStatus: scopedAgentJob?.status,
             changedFiles: scopedAgentJob?.changedFiles?.length ?? 0,
             draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
             blockerReason: agentWorkSnapshot.blockerReason,
-          }),
-        });
+          }));
         return;
       }
 
@@ -4524,15 +4530,12 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           createdAt: Date.now(),
         };
         setWorkerBlocker(blocker);
-        appendChatLine({
-          role: 'assistant',
-          text: buildWorkerBlockerAnswer({
+        appendRuntimeNotice(buildWorkerBlockerAnswer({
             blocker,
             repoReady: effectiveRepoReady,
             chatRepoSnapshot,
             agentReady,
-          }),
-        });
+          }));
       } else {
         appendRuntimeNotice('Online-Sprachdeutung ist nicht verfügbar und der lokale Offline-Fallback hat keinen sicheren Aktionspfad erkannt.');
       }
@@ -4594,29 +4597,20 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         pendingWriteIntentRef.current = submittedText;
         setRepoSetupError(null);
         setShowRepoSetup(true);
-        appendChatLine({
-          role: 'system',
-          text: `Route blockiert: ${capabilityDecision.reason}\nDas Repo-Setup wurde geöffnet; der Auftrag bleibt für die Wiederaufnahme vorgemerkt.`,
-        });
+        appendRuntimeNotice(`Route blockiert: ${capabilityDecision.reason}\nDas Repo-Setup wurde geöffnet; der Auftrag bleibt für die Wiederaufnahme vorgemerkt.`);
         addLog("warn", "Capability Router blocked: repo missing; intent persisted", "router");
         return;
       }
       if (capabilityDecision.blocker === 'github_access_missing') {
         pendingWriteIntentRef.current = submittedText;
         setShowGitHubAccessOverride(true);
-        appendChatLine({
-          role: 'system',
-          text: `Route blockiert: ${capabilityDecision.reason}\nDer Auftrag bleibt vorgemerkt und wird erst nach bestätigter GitHub-API-Evidence fortgesetzt.`,
-        });
+        appendRuntimeNotice(`Route blockiert: ${capabilityDecision.reason}\nDer Auftrag bleibt vorgemerkt und wird erst nach bestätigter GitHub-API-Evidence fortgesetzt.`);
         addLog("warn", "Capability Router blocked: GitHub access missing; intent persisted", "router");
         return;
       }
       if (capabilityDecision.blocker === 'github_access_validating') {
         pendingWriteIntentRef.current = submittedText;
-        appendChatLine({
-          role: 'system',
-          text: `Route blockiert: ${capabilityDecision.reason}\nDer Auftrag bleibt bis zum Ergebnis der laufenden Zugangsprüfung vorgemerkt.`,
-        });
+        appendRuntimeNotice(`Route blockiert: ${capabilityDecision.reason}\nDer Auftrag bleibt bis zum Ergebnis der laufenden Zugangsprüfung vorgemerkt.`);
         addLog("info", "Capability Router waiting for GitHub validation; intent persisted", "router");
         return;
       }
@@ -4711,12 +4705,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         triggerHaptic("medium");
         const summary = summarizeDevChatRepoSnapshot(result.snapshot);
         appendActionEvent(buildRepoLoadedEvent(summary));
-        appendChatLine({
-          role: "system",
-          text: `Repo geladen. ${summary}\nTop-Level: ${result.snapshot.dirs.join(" · ") || "keine Top-Level-Ordner erkannt"}\nDer Repo-Snapshot bleibt Runtime-Kontext und wird nicht in die Eingabezeile geschrieben.`,
-          file: result.snapshot.lastFile,
-          path: result.snapshot.lastPath,
-        });
+        appendRuntimeNotice(`Repo geladen. ${summary}\nTop-Level: ${result.snapshot.dirs.join(" · ") || "keine Top-Level-Ordner erkannt"}\nDer Repo-Snapshot bleibt Runtime-Kontext und wird nicht in die Eingabezeile geschrieben.`);
         const d = palRoute(
           `Repo geladen: ${result.snapshot.name}`,
           0,
@@ -5030,21 +5019,13 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     if (fullText && !streamError && !streamDiagnostic) {
       setWorkerBlocker(null);
       appendActionEvent(buildWorkerResponseEvent());
-      // ── Issue #445: chatClaimGuard — verify response against runtime snapshot before display
-      const claimCheck = checkChatClaim(fullText, agentWorkSnapshot);
-      let textToAppend =
-        claimCheck.allowed || !claimCheck.honestFallback
-          ? fullText
-          : `${fullText}\n\n_[Sovereign: ${claimCheck.honestFallback}]_`;
+      let textToAppend = fullText;
       
       if (streamFallbackMetadata?.fallbackUsed) {
         textToAppend += `\n\n_Hinweis: ${streamFallbackMetadata.preferredModel} war nicht erreichbar, Antwort kam von ${streamFallbackMetadata.actualModel}._`;
       }
 
-      if (!claimCheck.allowed && claimCheck.violations.length > 0) {
-        addLog("warn", `chatClaimGuard: ${claimCheck.violations.join(", ")}`, "router");
-      }
-      appendChatLine({ role: "assistant", text: textToAppend });
+      appendGuardedWorkerText(textToAppend);
       await quarantineOnlineAnswer(fullText, streamFallbackMetadata?.actualModel ?? requestedChatModel);
       return;
     }
@@ -5059,22 +5040,13 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     if (fallback?.ok && fallback.content) {
       setWorkerBlocker(null);
       appendActionEvent(buildWorkerResponseEvent());
-
-      const claimCheck = checkChatClaim(fallback.content, agentWorkSnapshot);
-      let textToAppend =
-        claimCheck.allowed || !claimCheck.honestFallback
-          ? fallback.content
-          : `${fallback.content}\n\n_[Sovereign: ${claimCheck.honestFallback}]_`;
-
-      if (!claimCheck.allowed && claimCheck.violations.length > 0) {
-        addLog("warn", `chatClaimGuard: ${claimCheck.violations.join(", ")}`, "router");
-      }
+      let textToAppend = fallback.content;
 
       if (fallback.fallbackUsed) {
         textToAppend += `\n\n_Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}._`;
       }
 
-      appendChatLine({ role: "assistant", text: textToAppend });
+      appendGuardedWorkerText(textToAppend);
       await quarantineOnlineAnswer(fallback.content, fallback.actualModel ?? requestedChatModel);
       return;
     }
@@ -5108,15 +5080,12 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       kind: 'failed',
     }));
     setWorkerBlocker(blocker);
-    appendChatLine({
-      role: "system",
-      text: buildWorkerBlockerAnswer({
+    appendRuntimeNotice(buildWorkerBlockerAnswer({
         blocker,
         repoReady: effectiveRepoReady,
         chatRepoSnapshot,
         agentReady,
-      }),
-    });
+      }));
     addLog(
       "error",
       `Worker blocked · ${diagnostic.scope}${diagnostic.status ? ` · HTTP ${diagnostic.status}` : ""}`,
@@ -5239,12 +5208,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           detail: `${gate.reason} ${gate.nextAction}`,
           kind: 'blocked',
         }));
-        appendChatLine({
-          role: 'assistant',
-          text: `${action.icon} ${action.label}
+        appendRuntimeNotice(`${action.icon} ${action.label}
 Status: ${gate.reason}
-Das echte Repo-Setup wurde geöffnet.`,
-        });
+Das echte Repo-Setup wurde geöffnet.`);
         return;
       }
       if (action.requiresGithubWrite && effectiveRepoReady && !githubWriteAllowed) {
@@ -5257,10 +5223,8 @@ Das echte Repo-Setup wurde geöffnet.`,
           detail: 'Preset-Auftrag wurde vorgemerkt; Worker-Chat wird übersprungen.',
           state: 'blocked',
         });
-        appendMonitorCommunication(
-          'runtime',
+        appendRuntimeNotice(
           `${action.icon} ${action.label}\nStatus: ${gate.reason}\nDer Auftrag wartet auf bestätigten GitHub-Schreibzugang.`,
-          `preset-github-gate:${action.id}:${currentRepoScopeKey ?? 'unbound'}`,
         );
         addLog('warn', `Preset write action blocked: GitHub access gate opened for ${action.id}`, 'router');
         return;
@@ -5272,14 +5236,11 @@ Das echte Repo-Setup wurde geöffnet.`,
         detail: `${gate.reason} ${gate.nextAction}`,
         kind: action.requiresGithubWrite ? 'access_required' : 'blocked',
       }));
-      appendChatLine({
-        role: 'assistant',
-        text: [
+      appendRuntimeNotice([
           `${action.icon} ${action.label}`,
           `Status: ${gate.reason}`,
           `Nächste Aktion: ${gate.nextAction}`,
-        ].join('\n'),
-      });
+        ].join('\n'));
       return;
     }
 
@@ -5304,10 +5265,7 @@ Das echte Repo-Setup wurde geöffnet.`,
             detail,
             kind: 'failed',
           }));
-          appendChatLine({
-            role: 'assistant',
-            text: `PR-Review blockiert: ${detail}\nEs wurde kein GitHub-Schreibzugang angefordert, kein Executor gestartet und kein LLM-Credit verbraucht.`,
-          });
+          appendRuntimeNotice(`PR-Review blockiert: ${detail}\nEs wurde kein GitHub-Schreibzugang angefordert, kein Executor gestartet und kein LLM-Credit verbraucht.`);
           addLog('warn', `Open PR read-only review failed: ${detail}`, 'router');
           return;
         }
@@ -5319,10 +5277,7 @@ Das echte Repo-Setup wurde geöffnet.`,
           detail: `${review.evidence.openPrCount} offene PR(s) mit Merge-/Check-Evidence gelesen.`,
           state: 'done',
         });
-        appendChatLine({
-          role: 'assistant',
-          text: formatOpenPrReviewEvidence(review.evidence),
-        });
+        appendRuntimeNotice(formatOpenPrReviewEvidence(review.evidence));
         setLastAnswerWasLocal(true);
         addLog('info', `Open PR review completed read-only: ${review.evidence.openPrCount} PR(s)`, 'router');
         return;
@@ -5386,12 +5341,9 @@ Das echte Repo-Setup wurde geöffnet.`,
       return;
     }
     if (decision.surface === 'github-status') {
-      appendChatLine({
-        role: 'system',
-        text: effectiveGitHubAccessState === 'ready'
+      appendRuntimeNotice(effectiveGitHubAccessState === 'ready'
           ? 'GitHub-Zugang ist validiert. Secret-Werte werden weder angezeigt noch im Chat gespeichert.'
-          : 'GitHub-Zugang wird bereits geprüft. Es wurde keine zweite Validierung gestartet.',
-      });
+          : 'GitHub-Zugang wird bereits geprüft. Es wurde keine zweite Validierung gestartet.');
       return;
     }
     if (decision.surface === 'executor-status') {
