@@ -431,7 +431,7 @@ for provider in providers:
             f"/api/internal/llm/freellm/providers/{encoded_source_id}/reconcile",
             method="POST",
             payload={"maxModels": 20},
-            timeout_seconds=45,
+            timeout_seconds=120,
         )
     except (TimeoutError, urllib.error.URLError, OSError) as exc:
         bootstrap_attempts.append({
@@ -475,7 +475,7 @@ if len(verified_receipts) < minimum_ready_routes:
                 f"/api/internal/llm/freellm/providers/{encoded_source_id}/discover",
                 method="POST",
                 payload={"maxModels": 20},
-                timeout_seconds=45,
+                timeout_seconds=120,
             )
         except (TimeoutError, urllib.error.URLError, OSError) as exc:
             bootstrap_attempts.append({
