@@ -5477,7 +5477,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         // mutation remain backend-owned. No local target-file inference is used.
         const executorBridgeDecision = decideSovereignExecutorBridgeRoute({
           intent: classifyOfflineSovereignExecutorIntent(submittedText),
-          taskComplexity: buildOfflineCapabilityLanguageEvidence(submittedText).complexity,
+          taskComplexity: capabilityRouterInput.language.complexity,
           capabilities: buildSovereignToolCapabilityRegistry({
             repoReady: effectiveRepoReady,
             githubAccessState: effectiveGitHubAccessState,
@@ -5595,7 +5595,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       // inspection or mutation. The bridge remains fail-closed.
       const executorBridgeDecision = decideSovereignExecutorBridgeRoute({
         intent: classifyOfflineSovereignExecutorIntent(submittedText),
-        taskComplexity: buildOfflineCapabilityLanguageEvidence(submittedText).complexity,
+        taskComplexity: capabilityRouterInput.language.complexity,
         capabilities: buildSovereignToolCapabilityRegistry({
           repoReady: effectiveRepoReady,
           githubAccessState: effectiveGitHubAccessState,
@@ -6655,6 +6655,18 @@ Das echte Repo-Setup wurde geöffnet.`,
                 disabled={localRepoLoading || chatResponseBusy || isPublishing}
                 onSelect={handlePresetActionSelect}
               />
+            </div>
+            <div
+              data-testid="monitor-runtime-action-trace"
+              style={{
+                flexShrink: 0,
+                maxHeight: 132,
+                overflowY: 'auto',
+                borderTop: actionStream.events.length ? `1px solid ${C.border}` : undefined,
+                background: C.bg,
+              }}
+            >
+              <SovereignActionStreamPanel stream={actionStream} maxEvents={12} />
             </div>
             {hasPendingDraft(intentDraftState) && (() => {
               const draft = intentDraftState.draft;

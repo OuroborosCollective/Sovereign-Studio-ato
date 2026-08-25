@@ -512,6 +512,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByTestId('live-workspace-monitor')).toBeDefined();
     expect(screen.getByTestId('live-workspace-monitor-desktop')).toBeDefined();
     expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
+    expect(screen.getByTestId('monitor-runtime-action-trace')).toBeDefined();
     expect(chatField()).toBeDefined();
     expect(screen.getByLabelText("Menü")).toBeDefined();
   });
@@ -751,7 +752,20 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByLabelText('Tool Launcher öffnen')).toBeDefined();
     expect(screen.queryByText("Let's build!")).toBeNull();
     expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
+    expect(screen.getByTestId('monitor-runtime-action-trace')).toBeDefined();
     expect(props.onMissionChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps runtime action receipts visible inside the monitor instead of the removed chat surface", async () => {
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" />);
+
+    fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Repo' }));
+
+    const actionStream = screen.getByRole('log', { name: 'Sovereign Action Stream' });
+    expect(screen.getByTestId('monitor-runtime-action-trace')).toContainElement(actionStream);
+    expect(actionStream).toHaveTextContent('Repo-Setup geöffnet');
+    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
   });
 
   it("shows integration intent draft card for normal text inputs when repo is ready", async () => {
