@@ -40,12 +40,12 @@ describe('MonitorCommunicationDock', () => {
     expect(screen.getByTitle(/keine verborgene Modell-Gedankenkette/i)).toBeTruthy();
   });
 
-  it('shows only the latest bounded communication bubbles with explicit roles', () => {
+  it('keeps recent receipts and the latest user mission visible with explicit roles', () => {
     renderDock();
 
     const rail = screen.getByTestId('monitor-communication-bubbles');
-    expect(rail.querySelectorAll('li')).toHaveLength(3);
-    expect(screen.queryByText('Workspace wird validiert.')).toBeNull();
+    expect(rail.querySelectorAll('li')).toHaveLength(4);
+    expect(screen.getByText('Workspace wird validiert.')).toBeTruthy();
     expect(screen.getByText('Was machst du gerade?')).toBeTruthy();
     expect(screen.getAllByText('COMMUNICATE')).toHaveLength(2);
     expect(screen.getByText('YOU')).toBeTruthy();
@@ -54,12 +54,19 @@ describe('MonitorCommunicationDock', () => {
   it('allows a question by Enter without leaving the monitor and keeps 44px touch controls', () => {
     const { onSubmit } = renderDock({ value: 'Wie ist der Stand?' });
     const input = screen.getByLabelText('Frage an Sovereign während Live Monitor');
-    const send = screen.getByRole('button', { name: 'Monitor Frage senden' });
+    const send = screen.getByRole('button', { name: 'Senden' });
 
     expect(input).toHaveStyle({ minHeight: '44px' });
     expect(send).toHaveStyle({ width: '44px', height: '44px' });
+    expect(send).toHaveAttribute('title', 'Senden');
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
     expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
+  it('shows a structural route hint without interpreting free language locally', () => {
+    renderDock({ routeHint: 'Repo erkannt · Laden' });
+
+    expect(screen.getByTestId('monitor-route-hint')).toHaveTextContent('Repo erkannt · Laden');
   });
 
   it('redacts secret-shaped assistant output before it reaches the monitor bubble', () => {

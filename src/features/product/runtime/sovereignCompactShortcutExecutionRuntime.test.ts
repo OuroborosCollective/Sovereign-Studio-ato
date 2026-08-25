@@ -43,6 +43,17 @@ describe('sovereignCompactShortcutExecutionRuntime', () => {
     expect(decideSovereignCompactShortcutExecution(input({ id: 'executor', repoSnapshotReady: true, executorAvailable: true, executorIntent: 'code_execution' }))).toMatchObject({ canExecute: false, surface: 'github-access' });
   });
 
+  it('opens bounded manual recovery while OAuth validation is still pending', () => {
+    expect(decideSovereignCompactShortcutExecution(input({
+      id: 'github_access',
+      githubAccessState: 'validating',
+    }))).toMatchObject({
+      canExecute: true,
+      surface: 'github-access',
+      reason: 'GitHub OAuth wird bereits validiert.',
+    });
+  });
+
   it('allows executor only with complete runtime evidence', () => {
     expect(decideSovereignCompactShortcutExecution(input({
       id: 'executor',

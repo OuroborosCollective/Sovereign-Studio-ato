@@ -27,6 +27,18 @@ def test_backend_and_deployment_runtime_are_exact_mirrors() -> None:
     )
 
 
+def test_toolchain_handoff_resolves_github_credential_request_locally() -> None:
+    routes = read(BACKEND / "agent_runtime" / "routes.py")
+    handoff = routes.split("def user_create_toolchain_agent_handoff():", 1)[1].split(
+        'def user_issue_github_access_scope():',
+        1,
+    )[0]
+
+    assert "_github_access_token_for_session(body, user_id)" in handoff
+    assert 'payload.pop("githubAccessToken", None)' in handoff
+    assert "github_access_token=github_token" in handoff
+
+
 def test_diagnosis_detects_real_families_and_returns_exactly_four_followups() -> None:
     evidence = (
         "ModuleNotFoundError: No module named flask\n"

@@ -116,13 +116,30 @@ def test_scope_issuer_rejects_missing_startup_secret_and_invalid_purpose() -> No
 def test_validate_route_uses_only_the_server_issued_target_and_fixed_purpose() -> None:
     route_source = (BACKEND / "agent_runtime" / "routes.py").read_text("utf-8")
     validation_start = route_source.index('    @app.route("/api/user/agent/github-access/validate", methods=["POST"])')
-    validation_end = route_source.index('    @app.route("/api/user/agent/validate-mission", methods=["POST"])')
+    validation_end = route_source.index('    @app.route("/api/user/agent/repository/read-file", methods=["POST"])')
     validation_route = route_source[validation_start:validation_end]
 
     assert 'purpose="github-access-validate"' in validation_route
     assert "target = (scope.owner, scope.repo) if scope else None" in validation_route
     assert 'body.get("repository")' not in validation_route
     assert 'body.get("repoUrl")' not in validation_route
+
+
+def test_repository_read_route_maps_typed_preview_safety_failures() -> None:
+    route_source = (BACKEND / "agent_runtime" / "routes.py").read_text("utf-8")
+    route_start = route_source.index('    @app.route("/api/user/agent/repository/read-file", methods=["POST"])')
+    route_end = route_source.index('    @app.route("/api/user/agent/validate-mission", methods=["POST"])')
+    repository_route = route_source[route_start:route_end]
+
+    assert 'purpose="repository-file-read"' in repository_route
+    assert "except GitHubRepositoryReadBlocked:" in repository_route
+    assert '"code": "repository_file_blocked"' in repository_route
+    assert "except GitHubRepositoryReadBinary:" in repository_route
+    assert '"status": "binary"' in repository_route
+    assert "except GitHubRepositoryReadUpstreamError:" in repository_route
+    assert '"code": "repository_file_upstream_invalid"' in repository_route
+    assert "owner=read_scope.owner" in repository_route
+    assert "revision=read_scope.revision" in repository_route
 
 
 def test_authority_runtime_mirror_is_byte_identical() -> None:

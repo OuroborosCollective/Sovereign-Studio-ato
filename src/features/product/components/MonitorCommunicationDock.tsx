@@ -1,6 +1,7 @@
 import React from 'react';
 import { maskSecrets } from '../../../shared/utils/crypto';
 import { C } from './builderConstants';
+import type { SovereignLlmRouteOption } from '../runtime/devChatWorkerBridge';
 
 export type MonitorCommunicationKind = 'user' | 'communicate' | 'runtime';
 
@@ -19,6 +20,13 @@ export interface MonitorCommunicationDockProps {
   readonly busy: boolean;
   readonly runtimeStatus: string;
   readonly entries: readonly MonitorCommunicationEntry[];
+  readonly routeOptions?: readonly SovereignLlmRouteOption[];
+  readonly selectedRouteId?: string;
+  readonly onRouteChange?: (routeId: string) => void;
+  readonly routeCatalogError?: string | null;
+  readonly routeHint?: string;
+  readonly onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
+  readonly slashMenu?: React.ReactNode;
 }
 
 function safeText(value: string, max = 900): string {
@@ -41,9 +49,22 @@ export function MonitorCommunicationDock({
   busy,
   runtimeStatus,
   entries,
+  routeOptions = [],
+  selectedRouteId = '',
+  onRouteChange,
+  routeCatalogError,
+  routeHint,
+  onKeyDown,
+  slashMenu,
 }: MonitorCommunicationDockProps) {
-  const visibleEntries = entries.slice(-3);
+  const visibleEntryIds = new Set(entries.slice(-4).map((entry) => entry.id));
+  entries
+    .filter((entry) => entry.kind === 'user')
+    .slice(-2)
+    .forEach((entry) => visibleEntryIds.add(entry.id));
+  const visibleEntries = entries.filter((entry) => visibleEntryIds.has(entry.id)).slice(-6);
   const status = safeText(runtimeStatus, 240) || 'Runtimestatus nicht verfügbar';
+  const visibleRouteHint = safeText(routeHint ?? '', 240);
 
   return (
     <section
@@ -124,6 +145,80 @@ export function MonitorCommunicationDock({
         </ol>
       )}
 
+      {onRouteChange && (
+        <div
+          data-testid="monitor-llm-route-picker"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '7px 10px 0',
+            borderTop: visibleEntries.length > 0 ? undefined : `1px solid ${C.border}`,
+          }}
+        >
+          <label htmlFor="monitor-llm-route-select" style={{ color: C.textMuted, font: '9px/1 monospace', flexShrink: 0 }}>
+            LLM
+          </label>
+          <select
+            id="monitor-llm-route-select"
+            data-testid="sovereign-llm-route-select"
+            aria-label="Monitor LLM Route und Modell auswählen"
+            value={selectedRouteId}
+            onChange={(event) => onRouteChange(event.target.value)}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              height: 34,
+              borderRadius: 8,
+              border: `1px solid ${routeCatalogError ? C.amber : C.border}`,
+              background: '#080c11',
+              color: C.text,
+              font: '10px/1 monospace',
+              padding: '0 8px',
+            }}
+          >
+            <option value="">Auto · Backend/PAL</option>
+            {selectedRouteId && !routeOptions.some((route) => route.id === selectedRouteId) && (
+              <option value={selectedRouteId} disabled>Route nicht mehr verfügbar · {selectedRouteId}</option>
+            )}
+            {routeOptions.map((route) => (
+              <option key={route.id} value={route.id}>
+                {route.billingCategory === 'free' ? 'FREE' : 'PAID'} · {route.provider} · {route.label} · {route.defaultModelId}
+              </option>
+            ))}
+          </select>
+          {selectedRouteId && (
+            <button
+              type="button"
+              onClick={() => onRouteChange('')}
+              aria-label="Monitor LLM Route auf Auto zurücksetzen"
+              style={{
+                minWidth: 44,
+                minHeight: 34,
+                borderRadius: 8,
+                border: `1px solid ${C.border}`,
+                background: C.surface,
+                color: C.textSub,
+                font: '9px/1 monospace',
+              }}
+            >
+              AUTO
+            </button>
+          )}
+        </div>
+      )}
+      {visibleRouteHint && !routeCatalogError && (
+        <div data-testid="monitor-route-hint" style={{ padding: '4px 10px 0', color: C.textMuted, font: '9px/1.3 monospace' }}>
+          {visibleRouteHint}
+        </div>
+      )}
+      {routeCatalogError && (
+        <div role="status" style={{ padding: '4px 10px 0', color: C.amber, font: '9px/1.3 monospace' }}>
+          Routenkatalog: {safeText(routeCatalogError, 240)}
+        </div>
+      )}
+      {slashMenu ? <div style={{ padding: '6px 10px 0' }}>{slashMenu}</div> : null}
+
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -142,6 +237,7 @@ export function MonitorCommunicationDock({
           rows={1}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
+            if (onKeyDown?.(event)) return;
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
               if (!disabled && !busy && value.trim()) onSubmit();
@@ -165,7 +261,8 @@ export function MonitorCommunicationDock({
         />
         <button
           type="submit"
-          aria-label="Monitor Frage senden"
+          aria-label="Senden"
+          title="Senden"
           disabled={disabled || busy || !value.trim()}
           style={{
             width: 44,

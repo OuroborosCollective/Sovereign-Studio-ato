@@ -1,5 +1,5 @@
 /**
- * AgentEventStream — Manus/Replit-style live action feed shown inline in the chat.
+ * AgentEventStream — runtime monitor surface for real workspace observations.
  *
  * Combines two real runtime sources:
  *  1. agentJob.events  — rich backend events (file edits, commands, test runs…)
@@ -38,8 +38,13 @@ export interface AgentEventStreamProps {
   readonly onCancel?: () => void;
   readonly onOpenDraftPr?: () => void;
   readonly onOpenFile?: (path: string) => void;
-  /** When true, the runtime monitor is the primary work surface and chat/event rows stay secondary. */
+  /** When true, the runtime monitor is the primary work surface and event rows stay secondary. */
   readonly primaryMonitor?: boolean;
+  readonly desktopFrame?: {
+    readonly url: string;
+    readonly frameHash: string;
+    readonly observedAt: number;
+  } | null;
 }
 
 const EXECUTOR_ACTIVE_STATES: ReadonlySet<AgentWorkState> = new Set([
@@ -217,7 +222,7 @@ function headerLabelFor(snapshot: AgentWorkSnapshot, job: SovereignAgentJobSnaps
   if (snapshot.state === 'access_ready') return 'GitHub-Zugang bereit';
   if (snapshot.state === 'intent_detected') return 'Status: Auftrag erkannt';
   if (isExecutorActive(snapshot.state)) return 'Sovereign Agent arbeitet…';
-  return 'Status: Auftrag erkannt';
+  return 'Bereit · kein aktiver Auftrag';
 }
 
 function headerColorFor(snapshot: AgentWorkSnapshot): string {
@@ -232,7 +237,7 @@ function headerColorFor(snapshot: AgentWorkSnapshot): string {
   return C.sky;
 }
 
-export function AgentEventStream({ snapshot, job, projections = [], evidenceAnchors = [], onCancel, onOpenDraftPr, onOpenFile, primaryMonitor = false }: AgentEventStreamProps) {
+export function AgentEventStream({ snapshot, job, projections = [], evidenceAnchors = [], onCancel, onOpenDraftPr, onOpenFile, primaryMonitor = false, desktopFrame }: AgentEventStreamProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isActive = !isTerminalState(snapshot.state) && (
     isExecutorActive(snapshot.state) || job?.status === 'running' || job?.status === 'queued'
@@ -259,7 +264,7 @@ export function AgentEventStream({ snapshot, job, projections = [], evidenceAnch
     ? snapshot.repoFullName + (snapshot.branchName ? ` · ${snapshot.branchName}` : '')
     : null;
 
-  if (stream.length === 0 && projections.length === 0 && evidenceAnchors.length === 0) return null;
+  if (!primaryMonitor && stream.length === 0 && projections.length === 0 && evidenceAnchors.length === 0) return null;
 
   return (
     <>
@@ -305,7 +310,7 @@ export function AgentEventStream({ snapshot, job, projections = [], evidenceAnch
         )}
 
         <div style={{ flex: primaryMonitor ? 1 : undefined, minHeight: primaryMonitor ? 0 : undefined, overflowY: primaryMonitor ? 'auto' : undefined }}>
-          <LiveWorkspaceMonitor projections={projections} job={job} />
+          <LiveWorkspaceMonitor projections={projections} job={job} desktopFrame={desktopFrame} />
         </div>
         <WorkspaceEvidenceRail anchors={evidenceAnchors} />
 

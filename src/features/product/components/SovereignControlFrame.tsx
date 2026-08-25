@@ -65,7 +65,7 @@ export function SovereignControlFrame({ state, children, title = 'Sovereign Cont
   const color = SIGNAL_COLOR[active.signal];
 
   return (
-    <section className="mx-auto flex h-[100dvh] w-full max-w-[393px] flex-col overflow-hidden bg-black text-slate-100" data-testid="sovereign-control-frame" data-layout="control-frame-around-chat-workbench">
+    <section className="mx-auto flex h-[100dvh] w-full max-w-[393px] flex-col overflow-hidden bg-black text-slate-100" data-testid="sovereign-control-frame" data-layout="control-frame-around-workspace-monitor">
       <div className="flex h-6 flex-shrink-0 items-center justify-between bg-black px-3 font-mono text-[9px] text-slate-500" data-testid="control-frame-android-status-bar">
         <span>{new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}</span>
         <span>conf <span style={{ color }}>{state.confidence.toFixed(2)}</span></span>
@@ -89,7 +89,7 @@ export function SovereignControlFrame({ state, children, title = 'Sovereign Cont
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden bg-black" data-testid="control-frame-center-chat-workbench">
+      <div className="min-h-0 flex-1 overflow-hidden bg-black" data-testid="control-frame-center-workspace-monitor">
         {children}
       </div>
 

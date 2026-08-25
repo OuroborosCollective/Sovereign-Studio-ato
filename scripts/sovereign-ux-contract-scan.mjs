@@ -186,9 +186,16 @@ function run() {
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Repo geladen|Repo fehlt/, 'repo:status-pill-visible', 'Repo loaded/missing state must be visible.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Privater Zugang/, 'repo:private-access-visible', 'Private access state must be visible.');
 
-  requireText('src/features/product/containers/BuilderContainer.tsx', /DevChat|Sovereign Chat Eingabe/, 'builder:title-visible', 'Builder chat workbench title/input must be visible.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /MonitorCommunicationDock|live-desktop-monitor-primary/, 'builder:monitor-primary-visible', 'Builder must expose the monitor-first workbench and embedded LLM communication dock.');
+  requireFile('src/features/product/components/LiveWorkspaceMonitor.tsx', 'Real workspace monitor component is required.');
+  requireText('src/features/product/components/LiveWorkspaceMonitor.tsx', /live-workspace-monitor-desktop|DESKTOP · LIVE READBACK/, 'builder:desktop-readback-visible', 'Monitor must expose the real desktop-readback surface.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_ANALYZE_MISSION/, 'builder:analyze-visible', 'Analyze action must be bound to contract.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_START_TASK/, 'builder:start-visible', 'Start action must be bound to contract.');
+  requireText(
+    'src/features/product/containers/BuilderContainer.tsx',
+    /<MonitorCommunicationDock[\s\S]{0,1200}onSubmit=\{\(\)\s*=>\s*\{\s*void handleSubmit\(\);\s*\}\}/,
+    'builder:start-visible',
+    'The monitor communication dock must submit through the live runtime handler.',
+  );
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_REPAIR_LOG/, 'builder:repair-visible', 'Repair action must be bound to contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_DRAFT_PR/, 'builder:draft-visible', 'Draft PR action must be bound to contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /route|ActionStream|SovereignActionStreamPanel|Auftrag empfangen/i, 'builder:route-guidance', 'Builder must show route/action guidance.');
@@ -203,7 +210,12 @@ function run() {
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_SAVE_SESSION/, 'repo:save-session-action-bound', 'Repo snapshot must bind save session action contract.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /type=\{\s*SOVEREIGN_FORM_PRIVATE_ACCESS\.inputType/, 'repo:private-access-password-type', 'Private access must use password type from contract.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /autoComplete=\{\s*SOVEREIGN_FORM_PRIVATE_ACCESS\.autoComplete/, 'repo:private-access-autocomplete-off', 'Private access must use autocomplete off from contract.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_FORM_MISSION/, 'builder:mission-form-bound', 'Builder must bind mission form contract.');
+  requireText(
+    'src/features/product/containers/BuilderContainer.tsx',
+    /<MonitorCommunicationDock[\s\S]{0,400}value=\{wishText\}[\s\S]{0,200}onChange=\{setWishText\}/,
+    'builder:mission-form-bound',
+    'Builder must bind the mission input state to the live monitor communication dock.',
+  );
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_ANALYZE_MISSION/, 'builder:analyze-mission-action-bound', 'Builder must bind analyze mission action contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_DRAFT_PR/, 'builder:draft-pr-action-bound', 'Builder must bind draft PR action contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_REPAIR_LOG/, 'builder:repair-log-action-bound', 'Builder must bind repair log action contract.');
@@ -273,15 +285,16 @@ function run() {
 
   requireText('src/SovereignAppWrapper.tsx', /return <App \/>|<App\s*\/\>/, 'wrapper:passthrough-only', 'Runtime wrapper must stay a passthrough instead of adding another shell.');
   forbidText('src/SovereignAppWrapper.tsx', /data-testid="sovereign-app-wrapper"|data-layout="composition-wrapper-around-existing-app"/, 'wrapper:no-second-shell', 'Runtime wrapper must not add a second visible shell.');
-  requireText('src/App.tsx', /data-testid="chat-only-app"/, 'app:chat-only-root-test-id', 'App must expose the chat-only live root.');
-  requireText('src/App.tsx', /data-layout="chat-only-live-entry"/, 'app:chat-only-layout-bound', 'App must declare chat-only live entry layout.');
-  requireText('src/App.tsx', /aria-label="Sovereign Chat"/, 'app:chat-aria-label-bound', 'App must expose the Sovereign Chat aria label.');
+  requireText('src/App.tsx', /data-testid="sovereign-monitor-app"/, 'app:monitor-root-test-id', 'App must expose the monitor-first live root.');
+  requireText('src/App.tsx', /data-layout="monitor-first-live-workspace"/, 'app:monitor-layout-bound', 'App must declare monitor-first live workspace layout.');
+  requireText('src/App.tsx', /aria-label="Sovereign Workspace Monitor"/, 'app:monitor-aria-label-bound', 'App must expose the Sovereign Workspace Monitor aria label.');
+  forbidText('src/App.tsx', /data-layout="chat-only-live-entry"/, 'app:no-chat-only-layout', 'The legacy chat-only app layout must not return.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /data-testid=\{builderContainerContract\.testId\}|data-testid="builder-container"/, 'builder:root-test-id-bound', 'Builder must expose stable root test-id.');
   requireText(
     'src/features/product/containers/BuilderContainer.tsx',
-    /data-layout=\{liveMonitorPrimary\s*\?\s*["']live-desktop-monitor-primary["']\s*:\s*["']devchat-appcontrol-integrated["']\}/,
+    /data-layout=\{liveMonitorPrimary\s*\?\s*["']live-desktop-monitor-primary["']\s*:\s*["']monitor-inspector-modules["']\}/,
     'builder:primary-surface-layout-bound',
-    'Builder must bind its primary layout to fresh live-monitor truth while retaining the chat workbench fallback.',
+    'Builder must keep the workspace monitor primary while using a separate technical inspector layout.',
   );
   requireText('src/features/product/containers/BuilderContainer.tsx', /SovereignToolLauncher|SovereignActionStreamPanel/, 'builder:runtime-backed-tools', 'Builder must expose runtime-backed tools or action stream.');
 

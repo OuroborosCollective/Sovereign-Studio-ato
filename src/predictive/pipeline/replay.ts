@@ -200,7 +200,7 @@ function verifyParity(
     const maxLen = Math.max(original.length, replay.length);
     for (let i = 0; i < maxLen; i++) {
       if (i < original.length && i < replay.length) {
-        results.push(verifyFeatureParity(original[i], replay[i]));
+        results.push({ index: i, ...verifyFeatureParity(original[i], replay[i]) });
       } else {
         results.push({
           index: i,

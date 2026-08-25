@@ -52,6 +52,7 @@ from .cognitive_swarm_manifest import WORKER_ROLES, manifest_payload
 from .cognitive_usage_billing import AgentBillingError, AgentStageBilling
 from .evidence_gate import EvidenceGateInput, evaluate_agent_evidence
 from .fleet_supervisor import stable_hash
+from .github_access import resolve_request_github_token
 from .job_lifecycle import create_sovereign_agent_job
 from .job_store import read_agent_job
 from .pattern_gateway import (
@@ -1343,12 +1344,11 @@ def start_cognitive_swarm_run(
                     }
                     if normalized_expected_head_sha:
                         job_payload["expectedHeadSha"] = normalized_expected_head_sha
-                    if normalized_github_access_token:
-                        job_payload["githubAccessToken"] = normalized_github_access_token
                     implementation_job = create_sovereign_agent_job(
                         conn,
                         user_id=user_id,
                         payload=job_payload,
+                        github_access_token=normalized_github_access_token,
                         workspace_root=_workspace_root(),
                         provision_workspace=True,
                         clone_repo=True,
@@ -1866,12 +1866,11 @@ def start_cognitive_swarm_run(
                 }
                 if normalized_expected_head_sha:
                     job_payload["expectedHeadSha"] = normalized_expected_head_sha
-                if normalized_github_access_token:
-                    job_payload["githubAccessToken"] = normalized_github_access_token
                 implementation_job = create_sovereign_agent_job(
                     conn,
                     user_id=user_id,
                     payload=job_payload,
+                    github_access_token=normalized_github_access_token,
                     workspace_root=_workspace_root(),
                     provision_workspace=True,
                     clone_repo=True,
@@ -2472,7 +2471,24 @@ def register_cognitive_swarm_routes(
     *,
     require_session,
     get_connection: ConnectionFactory,
+    get_session_github_token: Callable[[str], str | None] | None = None,
 ) -> None:
+    def _start_run_with_session_github_token(**kwargs):
+        raw_token = kwargs.pop("github_access_token", None)
+        user_id = str(kwargs.get("user_id") or "")
+        try:
+            github_token = resolve_request_github_token(
+                raw_token,
+                user_id=user_id,
+                get_session_github_token=get_session_github_token,
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}, 400
+        return start_cognitive_swarm_run(
+            **kwargs,
+            github_access_token=github_token,
+        )
+
     @app.route("/api/user/agent/swarm/manifest", methods=["GET"])
     @require_session
     def user_get_cognitive_swarm_manifest():
@@ -2538,7 +2554,7 @@ def register_cognitive_swarm_routes(
     @require_session
     def user_run_cognitive_swarm():
         body: dict[str, Any] = request.get_json(force=True) or {}
-        payload, status_code = start_cognitive_swarm_run(
+        payload, status_code = _start_run_with_session_github_token(
             get_connection=get_connection,
             user_id=_current_session_user_id(),
             mission=str(body.get("mission") or ""),
@@ -2551,7 +2567,11 @@ def register_cognitive_swarm_routes(
             repository_url=str(body.get("repositoryUrl") or body.get("repoUrl") or "") or None,
             repository_branch=str(body.get("repositoryBranch") or body.get("branch") or "main"),
             expected_head_sha=str(body.get("expectedHeadSha") or "") or None,
-            github_access_token=str(body.get("githubAccessToken") or "") or None,
+            github_access_token=(
+                body.get("githubAccessToken")
+                if "githubAccessToken" in body
+                else None
+            ),
             implementation_job_id=str(body.get("implementationJobId") or "") or None,
         )
         return jsonify(payload), status_code
@@ -2566,7 +2586,7 @@ def register_cognitive_swarm_routes(
         app,
         require_session=require_session,
         get_connection=get_connection,
-        start_run=start_cognitive_swarm_run,
+        start_run=_start_run_with_session_github_token,
         resume_run=resume_cognitive_swarm_run,
         service_user_resolver=lambda: _service_owner_user_id(get_connection),
     )

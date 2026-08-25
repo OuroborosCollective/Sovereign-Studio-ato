@@ -6,7 +6,6 @@ import React, {
   useState,
 } from "react";
 import {
-  appendOption,
   buildAnalyzedMission,
   buildOutcomeHints,
   collapseRepeatedAnalyzedMission,
@@ -18,20 +17,15 @@ import {
   safeHttpsUrl,
   splitFilePath,
   type AgentStatus,
-  type ChatOutcomeHint,
-  type IdeaOption,
 } from "../runtime/builderContainerHelpers";
 import { deriveBuilderContainerState } from "../runtime/builderContainerRuntime";
 import { resolveDraftPrBuildStatus } from "../runtime/draftPrBuildStatusRuntime";
 import { getSovereignContainerContract } from "../runtime/sovereignContainerContracts";
-import { SOVEREIGN_FORM_MISSION } from "../runtime/sovereignFormContracts";
 import {
   SOVEREIGN_ACTION_ANALYZE_MISSION,
   SOVEREIGN_ACTION_DRAFT_PR,
   SOVEREIGN_ACTION_REPAIR_LOG,
-  SOVEREIGN_ACTION_START_TASK,
 } from "../runtime/sovereignActionContracts";
-import { formatCuteWorkStateLabel } from "../runtime/cuteThinkingStatus";
 import {
   DEV_CHAT_WORKER_MODELS,
   SOVEREIGN_WORKER_BASE,
@@ -66,8 +60,6 @@ import {
   formatOpenPrReviewEvidence,
 } from "../runtime/githubOpenPrReviewRuntime";
 import { Ampel } from "../components/Ampel";
-import { FileBadge } from "../components/FileBadge";
-import { ThoughtBubble } from "../components/ThoughtBubble";
 import { OutcomeHints } from "../components/OutcomeHints";
 import { C, STATUS_COLOR, STATUS_LABEL } from "../components/builderConstants";
 import { WorkbenchStatusChips } from "../components/WorkbenchStatusChips";
@@ -78,8 +70,6 @@ import {
   WorkerDegradedBanner,
 } from "../components/WorkerBlockerCard";
 import { DraftPrCard } from "../components/DraftPrCard";
-import { ChatMarkdown } from "../components/ChatMarkdown";
-import { PacedChatText } from "../components/PacedChatText";
 import { GitHubAccessCard } from "../components/GitHubAccessCard";
 import { SecurityBlockCard } from "../components/SecurityBlockCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
@@ -114,14 +104,13 @@ import {
 import {
   appendMissionInput,
   downloadSessionMarkdown,
-  formatPersistedSessionAge,
   getOrCreateCurrentSession,
   loadSession,
   sessionMessageToChatLine,
   type PersistedSession,
 } from "../runtime/sessionPersistenceRuntime";
 import {
-  bubbleKindLabel,
+  projectMonitorCommunicationLine,
   projectSituationalChatLine,
 } from "../runtime/situationalBubbleRuntime";
 import { runTests, type TestRunnerResult } from "../runtime/testRunnerRuntime";
@@ -135,12 +124,6 @@ import {
   type FileContentResult,
 } from "../runtime/fileContentBrowserRuntime";
 import {
-  isNearBottom as isScrollNearBottom,
-  shouldAutoScroll,
-  shouldShowUnreadBadge,
-} from "../runtime/scrollLockBehavior";
-import {
-  copyAndroidBubbleText,
   createAndroidFollowUpDraft,
   detectAndroidQuickRepoUrl,
   triggerAndroidHaptic,
@@ -168,7 +151,6 @@ import {
 import {
   decideSovereignCapabilityRoute,
   buildCapabilityRouteActionEvent,
-  buildOfflineCapabilityLanguageEvidence,
 } from "../runtime/sovereignCapabilityRouter";
 import type { CapabilityRouterInput } from "../runtime/sovereignCapabilityRouter";
 import {
@@ -211,7 +193,6 @@ import {
   MonitorCommunicationDock,
   type MonitorCommunicationEntry,
 } from "../components/MonitorCommunicationDock";
-import { AgentResultCard } from "../components/AgentResultCard";
 import { SovereignActionStreamPanel } from "../components/SovereignActionStreamPanel";
 import {
   appendSovereignActionEvent,
@@ -228,13 +209,10 @@ import {
 import {
   createInitialDraftState,
   createIntegrationIntentDraft,
-  canConfirmIntegrationIntentDraft,
   buildDraftCreatedEvent,
   buildDraftConfirmedEvent,
   buildDraftRejectedEvent,
   buildDraftRephrasedEvent,
-  buildRouteStartedEvent,
-  buildRouteBlockedEvent,
   hasPendingDraft,
   type IntegrationIntentDraftState,
   type IntegrationIntentDraft,
@@ -251,13 +229,11 @@ import {
   usePatternMemoryStore,
   loadPatternMemoryStoreFromStorage,
 } from "../hooks/usePatternMemoryStore";
-import { buildSovereignToolCapabilityRegistry } from "../runtime/sovereignToolCapabilityRuntime";
-import { createSovereignWorkspaceScope } from "../runtime/sovereignWorkspaceScopeRuntime";
 import {
   classifyOfflineSovereignExecutorIntent,
+  resolveOfflineMachineExecutorIntent,
   type SovereignExecutorIntentKind,
 } from "../runtime/sovereignExecutorRuntime";
-import { decideSovereignExecutorBridgeRoute } from "../../../runtime/sovereignExecutorBridgeRuntime";
 
 // ─────────────────────────────────────────────────────────────
 // TYPES  (identical props to BuilderContainer — drop-in swap)
@@ -297,6 +273,12 @@ export interface BuilderContainerProps {
   agentJob?: SovereignAgentJobSnapshot;
   agentProjections?: readonly SovereignLiveProjection[];
   agentEvidenceAnchors?: readonly SovereignWorkspaceEvidenceAnchor[];
+  desktopFrame?: {
+    readonly jobId: string;
+    readonly url: string;
+    readonly frameHash: string;
+    readonly observedAt: number;
+  } | null;
   patternLearningEvidence?: SovereignPatternLearningEvidence;
   agentJobStatus?: string;
   agentIsRunning?: boolean;
@@ -318,7 +300,6 @@ export interface BuilderContainerProps {
 import type {
   AnimPhase,
   ChatLine,
-  ChatRole,
   CondStatus,
   ModuleCfg,
   ModuleCond,
@@ -336,7 +317,6 @@ import {
 } from "../runtime/builderWorkbenchStatus";
 // Chat/PAL helpers — extracted to builderChatHelpers.ts / builderPALRuntime.ts
 import {
-  buildChatLines,
   buildLocalStatusAnswer,
   buildRuntimeConfidence,
   buildWorkerBlockerAnswer,
@@ -344,9 +324,6 @@ import {
   composerRouteHint,
   confidenceLabel,
   createChatLineId,
-  isFollowUpWhyQuestion,
-  isLocalCompletionStatusQuestion,
-  isWriteIntent,
   phaseFromSignalAndConditions,
   sameConditions,
   sameRecord,
@@ -363,8 +340,6 @@ import {
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────
 
-const CUTE_THINKING_FRAME_MS = 1100;
-const CUTE_IDLE_FRAME_MS = 1450;
 const builderContainerContract = getSovereignContainerContract("builder");
 
 function mapInterpretedIntentToExecutorIntent(
@@ -385,6 +360,55 @@ function mapInterpretedIntentToExecutorIntent(
       return 'draft_pr';
     default:
       return null;
+  }
+}
+
+function buildExplicitRuntimeCapabilityLanguageEvidence(input: {
+  readonly text: string;
+  readonly intent: SovereignExecutorIntentKind;
+  readonly repositoryUrl: boolean;
+  readonly safeAnalysisPreset: boolean;
+  readonly retryControl: boolean;
+}): CapabilityRouterInput['language'] {
+  if (input.repositoryUrl) {
+    return {
+      intent: 'load_repo',
+      complexity: 'simple',
+      explicitAgentRequest: false,
+      source: 'explicit_runtime_action',
+    };
+  }
+  if (input.safeAnalysisPreset) {
+    return {
+      intent: 'free_chat',
+      complexity: 'simple',
+      explicitAgentRequest: false,
+      source: 'explicit_runtime_action',
+    };
+  }
+  if (input.retryControl) {
+    return {
+      intent: 'free_chat',
+      complexity: 'simple',
+      explicitAgentRequest: false,
+      source: 'explicit_runtime_action',
+    };
+  }
+
+  const explicitAgentRequest = /^\s*\/agent(?:\s|$)/i.test(input.text);
+  switch (input.intent) {
+    case 'status':
+      return { intent: 'status_question', complexity: 'simple', explicitAgentRequest: false, source: 'explicit_runtime_action' };
+    case 'question':
+      return { intent: 'free_chat', complexity: 'simple', explicitAgentRequest: false, source: 'explicit_runtime_action' };
+    case 'direct_patch':
+      return { intent: 'direct_patch', complexity: 'simple', explicitAgentRequest: false, source: 'explicit_runtime_action' };
+    case 'code_execution':
+      return { intent: 'code_generation', complexity: 'complex', explicitAgentRequest: explicitAgentRequest || /^\s*\/code(?:\s|$)/i.test(input.text), source: 'explicit_runtime_action' };
+    case 'draft_pr':
+      return { intent: 'draft_pr', complexity: 'complex', explicitAgentRequest: true, source: 'explicit_runtime_action' };
+    default:
+      return { intent: 'unknown', complexity: 'unknown', explicitAgentRequest: false, source: 'explicit_runtime_action' };
   }
 }
 
@@ -443,25 +467,6 @@ const INIT_CONDITIONS: Partial<Record<ModuleId, ModuleCond[]>> = {
   ],
 };
 
-const IDEA_OPTIONS: IdeaOption[] = [
-  {
-    label: "✨ Feature",
-    text: "Schlage mir ein kleines, cooles Feature vor, prüfe zuerst das Repo und baue es nur als echten, sicheren Draft-PR-tauglichen Änderungspfad.",
-  },
-  {
-    label: "🐛 Bug Fix",
-    text: "Analysiere den aktuellen Fehlerstatus, finde die betroffenen Dateien und erzeuge einen minimalen echten Fix mit passenden Tests.",
-  },
-  {
-    label: "📱 Android UX",
-    text: "Verbessere die Bedienbarkeit auf Android: Chat, Navigation, Statushinweise und klare Nutzerführung ohne neue Fensterflut.",
-  },
-  {
-    label: "🔒 Runtime",
-    text: "Prüfe den schwächsten Ablauf und ergänze Runtime-Checks, Validierungen und Tests ohne Mock-, Stub- oder Facade-Live-Pfade.",
-  },
-];
-
 // ─────────────────────────────────────────────────────────────
 // HELPERS — extracted to builderContainerHelpers.ts
 // appendOption, normalizeMissionText, collapseRepeatedAnalyzedMission,
@@ -470,18 +475,7 @@ const IDEA_OPTIONS: IdeaOption[] = [
 // ─────────────────────────────────────────────────────────────
 
 // Intent detection from workerIntentDetector module
-import {
-  isSovereignAgentExecutionIntent,
-  isCodeGenerationIntent,
-  isWorkerRetryIntent,
-  isWorkerDiagnosticQuestion,
-  isDelegationIntent,
-  isDelegatedSovereignAgentExecutionIntent,
-  isExecutorStatusQuestion,
-  buildExecutorStatusAnswer,
-  isAlternativeWriteRouteIntent,
-  buildAlternativeRouteStatusAnswer,
-} from "../runtime/workerIntentDetector";
+import { buildExecutorStatusAnswer } from "../runtime/workerIntentDetector";
 import { buildGeneratedFileDiffReportFromUnifiedDiff, type GeneratedFileDiffReport } from "../runtime/generatedFileDiffPreview";
 import { requestSemanticDiffNarration, narrativeMap, type SemanticDiffNarrationResult } from "../runtime/semanticDiffNarratorRuntime";
 import { fetchCommitsSince, type ChangelogGenerationResult } from "../runtime/changelogRuntime";
@@ -745,7 +739,7 @@ function TopBar({
                 border: `1px solid ${C.accent}33`,
               }}
             >
-              DevChat
+              Monitor
             </span>
             {/* PAL badge */}
             {palTier && (
@@ -1088,351 +1082,6 @@ function StatusPanel({
                 </div>
               );
             })}
-      </div>
-    </div>
-  );
-}
-
-// Bubble (verbatim v3 + Issue #427 markdown + Issue #429 long-press)
-function Bubble({
-  msg,
-  now,
-  onLongPress,
-  onOpenFile,
-}: {
-  msg: ChatLine;
-  now: number;
-  onLongPress?: (text: string) => void;
-  onOpenFile?: (path: string) => void;
-}) {
-  const isUser = msg.role === "user";
-  const [showMenu, setShowMenu] = useState(false);
-  const [minimized, setMinimized] = useState(false);
-  const bubbleKind = msg.bubble?.bubbleKind;
-
-  // ── Issue #429: Haptic feedback helper using runtime
-  const triggerHaptic = useCallback(
-    (type: "light" | "medium" | "heavy" = "light") => {
-      triggerAndroidHaptic(typeof navigator === "undefined" ? undefined : navigator, type);
-    },
-    [],
-  );
-
-  if (msg.role === "system") {
-    const isRestore = msg.id === "system:restore-age";
-    return (
-      <div style={{ padding: "4px 16px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <FileBadge path={msg.path} file={msg.file} onOpenFile={onOpenFile} />
-        <span
-          style={{
-            display: "inline-block",
-            fontFamily: "monospace",
-            fontSize: 10,
-            padding: "3px 12px",
-            borderRadius: 20,
-            background: isRestore ? `${C.green}18` : C.surface,
-            border: `1px solid ${isRestore ? `${C.green}44` : C.border}`,
-            color: isRestore ? C.green : C.textMuted,
-          }}
-        >
-          {isRestore ? `↻ ${msg.text}` : msg.text}
-        </span>
-      </div>
-    );
-  }
-  if (msg.role === "thought") return <ThoughtBubble text={msg.text} />;
-
-  if (!isUser && minimized && msg.bubble) {
-    return (
-      <div style={{ padding: "4px 12px" }}>
-        <button
-          type="button"
-          data-testid={`restore-bubble-${msg.bubble.bubbleHash}`}
-          onClick={() => setMinimized(false)}
-          aria-label={`${bubbleKindLabel(msg.bubble.bubbleKind)} wieder öffnen`}
-          style={{
-            minHeight: 44,
-            borderRadius: 22,
-            padding: "8px 14px",
-            border: `1px solid ${C.border}`,
-            background: C.surface,
-            color: C.textSub,
-          }}
-        >
-          {bubbleKindLabel(msg.bubble.bubbleKind)} · ausstehende UI-Projektion
-        </button>
-      </div>
-    );
-  }
-
-  // ── Issue #429: Long-press for copy/follow-up using runtime helpers
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setShowMenu(true);
-    triggerHaptic("light");
-  };
-
-  const handleCopy = async () => {
-    await copyAndroidBubbleText(msg.text, typeof navigator === "undefined" ? undefined : navigator);
-    setShowMenu(false);
-    triggerHaptic("light");
-  };
-
-  const handleFollowUp = () => {
-    const draft = createAndroidFollowUpDraft(msg.text);
-    if (draft) onLongPress?.(draft);
-    setShowMenu(false);
-    triggerHaptic("light");
-  };
-
-  return (
-    <div
-      data-bubble-kind={bubbleKind}
-      role={bubbleKind === "MATERIAL_BLOCKER" ? "alert" : undefined}
-      aria-label={bubbleKind ? bubbleKindLabel(bubbleKind) : undefined}
-      style={{
-        display: "flex",
-        alignItems: "flex-end",
-        gap: 8,
-        padding: "2px 12px",
-        flexDirection: isUser ? "row-reverse" : "row",
-      }}
-      onContextMenu={handleContextMenu}
-    >
-      {!isUser && (
-        <div
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: 10,
-            flexShrink: 0,
-            background: C.surface,
-            border: `1px solid ${C.border}`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 13,
-            color: C.textSub,
-            marginBottom: 2,
-          }}
-        >
-          ⬡
-        </div>
-      )}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          maxWidth: "82%",
-          alignItems: isUser ? "flex-end" : "flex-start",
-          gap: 2,
-        }}
-      >
-        {!isUser && bubbleKind && (
-          <span style={{ fontSize: 10, color: C.textMuted, paddingInline: 2 }}>
-            {bubbleKindLabel(bubbleKind)}
-          </span>
-        )}
-        <FileBadge path={msg.path} file={msg.file} onOpenFile={onOpenFile} />
-        <div style={{ position: "relative" }}>
-          {/* ── Issue #427: Markdown rendering for assistant bubbles */}
-          <div
-            style={{
-              padding: "9px 12px",
-              background: isUser ? C.userBg : C.asstBg,
-              borderRadius: isUser
-                ? "18px 18px 4px 18px"
-                : "4px 18px 18px 18px",
-              border: `1px solid ${isUser ? "#243c5a" : C.border}`,
-              color: C.text,
-              fontSize: 13,
-              lineHeight: 1.45,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
-            }}
-          >
-            {isUser ? msg.text : <PacedChatText content={msg.text} />}
-          </div>
-          {/* ── Issue #429: Long-press menu */}
-          {showMenu && (
-            <div
-              style={{
-                position: "absolute",
-                top: "100%",
-                left: isUser ? "auto" : 0,
-                right: isUser ? 0 : "auto",
-                marginTop: 4,
-                background: C.surface,
-                border: `1px solid ${C.border}`,
-                borderRadius: 8,
-                padding: 4,
-                zIndex: 10,
-                minWidth: 120,
-              }}
-              onClick={() => setShowMenu(false)}
-            >
-              <button
-                type="button"
-                onClick={handleCopy}
-                style={{
-                  width: "100%",
-                  padding: "8px 12px",
-                  background: "transparent",
-                  border: "none",
-                  color: C.text,
-                  fontSize: 13,
-                  cursor: "pointer",
-                  textAlign: "left",
-                  borderRadius: 6,
-                }}
-              >
-                📋 Kopieren
-              </button>
-              <button
-                type="button"
-                onClick={handleFollowUp}
-                style={{
-                  width: "100%",
-                  padding: "8px 12px",
-                  background: "transparent",
-                  border: "none",
-                  color: C.sky,
-                  fontSize: 13,
-                  cursor: "pointer",
-                  textAlign: "left",
-                  borderRadius: 6,
-                }}
-              >
-                💬 Zitieren
-              </button>
-            </div>
-          )}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontFamily: "monospace", fontSize: 9, color: C.textMuted }}>
-            {fmtTime(msg.createdAt || now)}
-          </span>
-          {!isUser && msg.bubble && (
-            <button
-              type="button"
-              onClick={() => setMinimized(true)}
-              aria-label={`${bubbleKindLabel(msg.bubble.bubbleKind)} minimieren`}
-              style={{
-                minWidth: 44,
-                minHeight: 44,
-                border: "none",
-                background: "transparent",
-                color: C.textMuted,
-                cursor: "pointer",
-              }}
-            >
-              −
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// WelcomeScreen (verbatim v3)
-function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
-  return (
-    <div
-      style={{
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "32px 20px",
-        textAlign: "center",
-      }}
-    >
-      <div
-        style={{
-          width: 72,
-          height: 72,
-          borderRadius: 20,
-          background: `${C.accent}12`,
-          border: `2px solid ${C.accent}40`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 32,
-          marginBottom: 20,
-        }}
-      >
-        🐥
-      </div>
-      <h2
-        style={{
-          fontFamily: "monospace",
-          fontSize: 20,
-          fontWeight: 800,
-          color: C.text,
-          marginBottom: 8,
-          letterSpacing: -0.5,
-        }}
-      >
-        Let&apos;s build!
-      </h2>
-      <p
-        style={{
-          fontSize: 13,
-          color: C.textSub,
-          lineHeight: 1.6,
-          maxWidth: 300,
-          marginBottom: 28,
-        }}
-      >
-        Schreib dein Ziel oder füge eine GitHub-URL ein. Sovereign prüft Gates
-        und handelt nur bei echten Stop-Punkten.
-      </p>
-      <div
-        className="sovereign-idea-grid"
-        style={{
-          display: "grid",
-          gap: 10,
-          width: "100%",
-        }}
-      >
-        {IDEA_OPTIONS.map((opt) => (
-          <button
-            key={opt.label}
-            type="button"
-            onClick={() => onIdea(opt)}
-            style={{
-              background: C.surface,
-              border: `1px solid ${C.border}`,
-              borderRadius: 14,
-              padding: "14px 12px",
-              fontFamily: "monospace",
-              fontSize: 11,
-              color: C.text,
-              fontWeight: 600,
-              cursor: "pointer",
-              textAlign: "left",
-              transition: "border-color 0.15s, background 0.15s",
-              lineHeight: 1.3,
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor =
-                C.borderHov;
-              (e.currentTarget as HTMLButtonElement).style.background =
-                "#1c2630";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor =
-                C.border;
-              (e.currentTarget as HTMLButtonElement).style.background =
-                C.surface;
-            }}
-          >
-            {opt.label}
-          </button>
-        ))}
       </div>
     </div>
   );
@@ -2390,281 +2039,22 @@ function SideDrawer({
   );
 }
 
-// Composer (verbatim v3)
-function Composer({
-  value,
-  onChange,
-  onSubmit,
-  onKeyDown,
-  disabled,
-  loading,
-  placeholder,
-  routeHint,
-  slashMenu,
-  routeOptions,
-  selectedRouteId,
-  onRouteChange,
-  routeCatalogError,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onSubmit: () => void;
-  onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
-  disabled: boolean;
-  loading: boolean;
-  placeholder: string;
-  routeHint: string;
-  slashMenu?: React.ReactNode;
-  routeOptions: readonly SovereignLlmRouteOption[];
-  selectedRouteId: string;
-  onRouteChange: (routeId: string) => void;
-  routeCatalogError?: string | null;
-}) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const resize = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }, []);
-
-  const handleClear = useCallback(() => {
-    onChange("");
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.focus();
-    }
-  }, [onChange]);
-
-  return (
-    <div
-      style={{
-        flexShrink: 0,
-        padding: "10px 10px",
-        paddingBottom: "max(10px, env(safe-area-inset-bottom))",
-        background: C.surface,
-        borderTop: `1px solid ${C.border}`,
-      }}
-    >
-      {slashMenu ? <div style={{ marginBottom: 8 }}>{slashMenu}</div> : null}
-      <div
-        data-testid="sovereign-llm-route-picker"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 8,
-          padding: "0 4px",
-          minWidth: 0,
-        }}
-      >
-        <label
-          htmlFor="sovereign-llm-route-select"
-          style={{
-            fontFamily: "monospace",
-            fontSize: 9,
-            color: C.textMuted,
-            flexShrink: 0,
-          }}
-        >
-          Route / Modell
-        </label>
-        <select
-          id="sovereign-llm-route-select"
-          data-testid="sovereign-llm-route-select"
-          value={selectedRouteId}
-          onChange={(event) => onRouteChange(event.target.value)}
-          aria-label="LLM Route und Modell auswählen"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            height: 36,
-            borderRadius: 9,
-            border: `1px solid ${routeCatalogError ? C.amber : C.border}`,
-            background: C.bg,
-            color: C.text,
-            fontFamily: "monospace",
-            fontSize: 10,
-            padding: "0 8px",
-          }}
-        >
-          <option value="">Auto · PAL / Backend-Routing</option>
-          {selectedRouteId && !routeOptions.some((route) => route.id === selectedRouteId) ? (
-            <option value={selectedRouteId} disabled>
-              Fixierte Route nicht mehr verfügbar · {selectedRouteId}
-            </option>
-          ) : null}
-          {routeOptions.map((route) => (
-            <option key={route.id} value={route.id}>
-              {route.billingCategory === 'free' ? 'FREE' : 'PAID'} · {route.provider} · {route.label} · {route.defaultModelId}
-            </option>
-          ))}
-        </select>
-        {selectedRouteId ? (
-          <button
-            type="button"
-            onClick={() => onRouteChange('')}
-            aria-label="Zur automatischen Modellwahl zurückkehren"
-            title="Auto-Routing wieder aktivieren"
-            style={{
-              minWidth: 44,
-              minHeight: 36,
-              borderRadius: 9,
-              border: `1px solid ${C.border}`,
-              background: C.surface,
-              color: C.textSub,
-              cursor: "pointer",
-              fontFamily: "monospace",
-              fontSize: 9,
-            }}
-          >
-            AUTO
-          </button>
-        ) : null}
-      </div>
-      {routeCatalogError ? (
-        <div role="status" style={{ margin: "-3px 6px 7px", fontFamily: "monospace", fontSize: 8, color: C.amber }}>
-          Routenkatalog: {routeCatalogError}
-        </div>
-      ) : null}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-end",
-          gap: 8,
-          background: C.bg,
-          border: `1px solid ${C.border}`,
-          borderRadius: 16,
-          padding: "8px 8px 8px 14px",
-          transition: "border-color 0.15s",
-        }}
-      >
-        <textarea
-          ref={textareaRef}
-          id={SOVEREIGN_FORM_MISSION.id}
-          name={SOVEREIGN_FORM_MISSION.id}
-          data-role={SOVEREIGN_FORM_MISSION.dataRole}
-          data-testid={SOVEREIGN_FORM_MISSION.testId}
-          aria-label={SOVEREIGN_FORM_MISSION.ariaLabel}
-          value={value}
-          rows={1}
-          onChange={(e) => {
-            onChange(e.target.value);
-            resize();
-          }}
-          onKeyDown={(e) => {
-            if (onKeyDown?.(e)) return;
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              if (!disabled && !loading) onSubmit();
-            }
-          }}
-          placeholder={placeholder}
-          style={{
-            flex: 1,
-            background: "transparent",
-            border: "none",
-            outline: "none",
-            fontFamily: "system-ui, -apple-system, sans-serif",
-            fontSize: 14,
-            lineHeight: 1.5,
-            color: C.text,
-            resize: "none",
-            maxHeight: 120,
-            minHeight: 24,
-            overflowY: "auto",
-          }}
-        />
-        {value && (
-          <button
-            type="button"
-            onClick={handleClear}
-            aria-label="Eingabe löschen"
-            title="Eingabe löschen"
-            style={{
-              width: 44,
-              height: 44,
-              flexShrink: 0,
-              background: "transparent",
-              border: "none",
-              color: C.textMuted,
-              fontSize: 16,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              transition: "color 0.15s",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = C.textSub)}
-            onMouseLeave={(e) => (e.currentTarget.style.color = C.textMuted)}
-          >
-            ✕
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onSubmit}
-          disabled={disabled || loading}
-          aria-label="Senden"
-          title={disabled || loading ? "Senden (deaktiviert)" : "Senden"}
-          data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
-          data-testid={SOVEREIGN_ACTION_START_TASK.testId}
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 12,
-            flexShrink: 0,
-            background: disabled || loading ? C.surface : C.orange,
-            border: "none",
-            color: "#fff",
-            fontSize: 16,
-            cursor: disabled || loading ? "not-allowed" : "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            transition: "background 0.2s, box-shadow 0.2s",
-            boxShadow:
-              disabled || loading ? "none" : `0 2px 12px ${C.orange}50`,
-            opacity: disabled || loading ? 0.45 : 1,
-          }}
-        >
-          {loading ? "…" : "↑"}
-        </button>
-      </div>
-      <div
-        style={{
-          fontFamily: "monospace",
-          fontSize: 8,
-          color: C.textMuted,
-          marginTop: 5,
-          paddingLeft: 14,
-        }}
-      >
-        {routeHint}
-      </div>
-    </div>
-  );
-}
-
-// BottomTabBar — the primary destination follows runtime truth. Chat owns the
-// idle/control surface; an active, workspace-bound projection promotes the same
-// destination to MONITOR until the run needs user input or loses fresh projection evidence.
+// BottomTabBar — Monitor is the permanent primary destination. The communication
+// dock is embedded in that surface; there is no user-facing fallback Chat mode.
 function BottomTabBar({
   activeTab,
   onChatClick,
   inspectorOpen,
   onToggleInspector,
-  monitorActive,
 }: {
   activeTab: string;
   onChatClick: () => void;
   inspectorOpen: boolean;
   onToggleInspector: () => void;
-  monitorActive: boolean;
 }) {
-  const isChat = activeTab === "chat";
-  const primaryIcon = monitorActive ? "▣" : "⬡";
-  const primaryLabel = monitorActive ? "MONITOR" : "CHAT";
+  const isMonitor = activeTab === "chat";
+  const primaryIcon = "▣";
+  const primaryLabel = "MONITOR";
   return (
     <nav
       style={{
@@ -2680,30 +2070,30 @@ function BottomTabBar({
       <button
         type="button"
         onClick={onChatClick}
-        aria-current={isChat ? "page" : undefined}
-        aria-label={monitorActive ? "Live Monitor" : "Chat"}
+        aria-current={isMonitor ? "page" : undefined}
+        aria-label="Live Monitor"
         data-testid="primary-surface-tab"
-        data-primary-surface={monitorActive ? "desktop-monitor" : "chat"}
+        data-primary-surface="desktop-monitor"
         style={{
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
           gap: 3,
-          background: isChat ? `${C.sky}08` : "transparent",
+          background: isMonitor ? `${C.sky}08` : "transparent",
           border: "none",
-          borderTop: `2px solid ${isChat ? C.sky : "transparent"}`,
+          borderTop: `2px solid ${isMonitor ? C.sky : "transparent"}`,
           cursor: "pointer",
           padding: "4px 2px",
           minWidth: 0,
         }}
       >
-        <span style={{ fontSize: 15, color: isChat ? C.sky : C.textMuted }}>{primaryIcon}</span>
+        <span style={{ fontSize: 15, color: isMonitor ? C.sky : C.textMuted }}>{primaryIcon}</span>
         <span
           style={{
             fontFamily: "monospace",
             fontSize: 7.5,
-            color: isChat ? C.sky : C.textMuted,
+            color: isMonitor ? C.sky : C.textMuted,
             letterSpacing: 0.3,
           }}
         >
@@ -2767,6 +2157,7 @@ export function BuilderContainer({
   agentJob,
   agentProjections,
   agentEvidenceAnchors,
+  desktopFrame,
   patternLearningEvidence,
   agentJobStatus,
   agentIsRunning,
@@ -2777,7 +2168,6 @@ export function BuilderContainer({
   // ── Original v3 state (verbatim)
   const [patternMemoryStore, setPatternMemoryStore] = useState<PatternMemoryStore>(() => loadPatternMemoryStoreFromStorage());
   const [wishText, setWishText] = useState(() => missionToWishText(mission));
-  const [thinkingFrameIndex, setTFI] = useState(0);
   const [showRuntimeSheet, setShowRuntime] = useState(false);
   const [showSideMenu, setShowSide] = useState(false);
   const [showRepoExplorer, setShowRepoExplorer] = useState(false);
@@ -2785,6 +2175,8 @@ export function BuilderContainer({
   const [filePreviewPath, setFilePreviewPath] = useState<string | null>(null);
   const [filePreviewResult, setFilePreviewResult] = useState<FileContentResult | null>(null);
   const [filePreviewLoading, setFilePreviewLoading] = useState(false);
+  const [filePreviewBindingKey, setFilePreviewBindingKey] = useState<string | null>(null);
+  const filePreviewRequestGenerationRef = useRef(0);
   const [testRunnerResult, setTestRunnerResult] = useState<TestRunnerResult | null>(null);
   const [testRunnerBusy, setTestRunnerBusy] = useState(false);
   const [autoCodeReviewResult, setAutoCodeReviewResult] = useState<AutoCodeReviewResult | null>(null);
@@ -2802,7 +2194,6 @@ export function BuilderContainer({
   );
   const [chatRepoError, setChatRepoError] = useState<string | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatLine[]>([]);
-  const [restoredSessionAge, setRestoredSessionAge] = useState<string | null>(null);
   const [chatResponseBusy, setChatResponseBusy] = useState(false);
   const [, setStreamingText] = useState<string | null>(null);
   const [workerBlocker, setWorkerBlocker] =
@@ -2817,13 +2208,11 @@ export function BuilderContainer({
   const [missionValidationPending, setMissionValidationPending] = useState<{ readonly mission: string; readonly intent: SovereignExecutorIntentKind; readonly result: MissionValidationResult } | null>(null);
   const missionValidationBypassRef = useRef<string | null>(null);
   const [stagedChanges, setStagedChanges] = useState<SovereignStagedChange[]>([]);
-  const [lastAnswerWasLocal, setLastAnswerWasLocal] = useState(false);
+  const [, setLastAnswerWasLocal] = useState(false);
   const [localRepoLoading, setRepoLoading] = useState(false);
   const lastMissionRef = useRef(mission);
   const ignoreNextMissionSyncRef = useRef(false);
   const chatLineIndexRef = useRef(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const nowRef = useRef(Date.now());
   const persistedSessionRef = useRef<PersistedSession | null>(null);
   const hydratedSessionScopeRef = useRef<string | null>(null);
   const clearPatchEvidence = useCallback(() => {
@@ -2934,10 +2323,6 @@ export function BuilderContainer({
     Array<{ ts: string; level: string; msg: string; tabId: string }>
   >([]);
 
-  // ── Issue #425: Auto-scroll lock and jump badge
-  const [userScrolledAway, setUserScrolledAway] = useState(false);
-  const [unseenCount, setUnseenCount] = useState(0);
-
   const currentRepoScopeKey = useMemo(
     () => buildRepoEvidenceScopeKey(chatRepoSnapshot),
     [chatRepoSnapshot],
@@ -2945,6 +2330,12 @@ export function BuilderContainer({
   const currentRepositoryTargetKey = useMemo(
     () => buildRepositoryTargetKey(chatRepoSnapshot),
     [chatRepoSnapshot],
+  );
+  const currentFilePreviewBindingKey = useMemo(
+    () => currentRepositoryTargetKey && chatRepoSnapshot?.headSha
+      ? `${currentRepositoryTargetKey}@${chatRepoSnapshot.headSha.toLowerCase()}`
+      : null,
+    [chatRepoSnapshot?.headSha, currentRepositoryTargetKey],
   );
   const scopedPublishedPrUrl = useMemo(
     () => selectRepositoryScopedPullRequestUrl(publishedPrUrl, currentRepositoryTargetKey),
@@ -2954,6 +2345,15 @@ export function BuilderContainer({
     () => selectRepoScopedAgentJob(agentJob, chatRepoSnapshot),
     [chatRepoSnapshot, agentJob],
   );
+  const scopedDesktopFrame = desktopFrame?.jobId === scopedAgentJob?.jobId
+    ? desktopFrame
+    : null;
+  const scopedAgentEvidenceAnchors = scopedAgentJob?.jobId && scopedAgentJob.workspaceId
+    ? (agentEvidenceAnchors ?? []).filter((anchor) => (
+        anchor.jobId === scopedAgentJob.jobId
+        && anchor.workspaceId === scopedAgentJob.workspaceId
+      ))
+    : [];
   const githubAccessApiBase = useMemo(
     () => agentConfig?.agentApiUrl || resolveSovereignAgentConfig().agentApiUrl || SOVEREIGN_WORKER_BASE,
     [agentConfig],
@@ -2963,21 +2363,26 @@ export function BuilderContainer({
     && ['queued', 'provisioning', 'running', 'validating'].includes(scopedAgentJob.status),
   );
   const scopedAgentProjections = useMemo(
-    () => (agentProjections ?? []).filter((projection) => (
-      !scopedAgentJob?.workspaceId || projection.workspaceId === scopedAgentJob.workspaceId
-    )),
-    [agentProjections, scopedAgentJob?.workspaceId],
+    () => scopedAgentJob?.jobId && scopedAgentJob.workspaceId
+      ? (agentProjections ?? []).filter((projection) => (
+          projection.jobId === scopedAgentJob.jobId
+          && projection.workspaceId === scopedAgentJob.workspaceId
+        ))
+      : [],
+    [agentProjections, scopedAgentJob?.jobId, scopedAgentJob?.workspaceId],
   );
-  const liveMonitorLatestProjection = scopedAgentProjections.at(-1) ?? null;
-  const liveMonitorPrimary = Boolean(
-    activeTab === 'chat'
-    && scopedAgentIsRunning
-    && scopedAgentJob?.workspaceId
-    && scopedAgentProjections.some((projection) => projection.projectionState !== 'STALE'),
-  );
-  const liveMonitorBindingKey = liveMonitorLatestProjection
-    ? `${liveMonitorLatestProjection.sessionBindingHash}:${liveMonitorLatestProjection.attemptId}:${liveMonitorLatestProjection.workspaceId}`
-    : 'no-live-monitor-binding';
+  // The workspace monitor is the permanent primary product surface. Runtime
+  // projections and desktop frames enrich it when available; they never decide
+  // whether the user is sent back to a legacy chat screen.
+  const liveMonitorPrimary = activeTab === 'chat';
+  // Keep LLM/user communication stable while a job starts, projections rotate or
+  // desktop evidence refreshes. Only account/repository scope changes reset it.
+  const monitorAccountKey = authUser?.id ?? 'guest';
+  const monitorScopeKey = currentRepoScopeKey ?? 'unbound';
+  const previousMonitorBindingRef = useRef({
+    accountKey: monitorAccountKey,
+    scopeKey: monitorScopeKey,
+  });
   const [monitorCommunication, setMonitorCommunication] = useState<MonitorCommunicationEntry[]>([]);
   const monitorCommunicationSequenceRef = useRef(0);
   const appendMonitorCommunication = useCallback((
@@ -3000,9 +2405,16 @@ export function BuilderContainer({
     });
   }, []);
   useEffect(() => {
+    const previous = previousMonitorBindingRef.current;
+    const next = { accountKey: monitorAccountKey, scopeKey: monitorScopeKey };
+    previousMonitorBindingRef.current = next;
+    const preserveFirstRepositoryBinding = previous.accountKey === next.accountKey
+      && previous.scopeKey === 'unbound'
+      && next.scopeKey !== 'unbound';
+    if (preserveFirstRepositoryBinding) return;
     setMonitorCommunication([]);
     monitorCommunicationSequenceRef.current = 0;
-  }, [liveMonitorBindingKey]);
+  }, [monitorAccountKey, monitorScopeKey]);
 
   // ── Issue #443: GitHub Access State
   const [githubAccessState, setGitHubAccessState] = useState<GitHubAccessSnapshot>(
@@ -3010,6 +2422,9 @@ export function BuilderContainer({
   );
   const [validatedGitHubTargetKey, setValidatedGitHubTargetKey] = useState<string | null>(null);
   const pendingWriteIntentRef = useRef<string | null>(null);
+  // Read-only presets can wait only for repository evidence. Keep them separate
+  // from write intents so an unrelated repo load can never wake a stale write.
+  const pendingRepoIntentRef = useRef<string | null>(null);
   const pendingOnlineExecutionRef = useRef<{
     readonly text: string;
     readonly intent: 'code_execution' | 'draft_pr';
@@ -3027,11 +2442,34 @@ export function BuilderContainer({
   );
   const currentRepositoryTargetKeyRef = useRef<string | null>(currentRepositoryTargetKey);
   currentRepositoryTargetKeyRef.current = currentRepositoryTargetKey;
+  const validatedGitHubWriteEvidenceRef = useRef<{
+    readonly targetKey: string;
+    readonly snapshot: GitHubAccessSnapshot;
+  } | null>(null);
+  const repositoryReadScopeRef = useRef<{
+    readonly targetKey: string;
+    readonly revision: string;
+    readonly scope: string;
+  } | null>(null);
+  const currentRepositoryRevisionRef = useRef(
+    chatRepoSnapshot?.headSha?.toLowerCase() ?? '',
+  );
+  currentRepositoryRevisionRef.current = chatRepoSnapshot?.headSha?.toLowerCase() ?? '';
+  const hasCurrentGitHubWriteEvidence = useCallback(() => {
+    const targetKey = currentRepositoryTargetKeyRef.current;
+    const evidence = validatedGitHubWriteEvidenceRef.current;
+    return Boolean(
+      targetKey
+      && evidence
+      && evidence.targetKey === targetKey
+      && canPerformGitHubWrite(evidence.snapshot)
+    );
+  }, []);
   const githubWriteAllowed = Boolean(
     currentRepositoryTargetKey
     && validatedGitHubTargetKey === currentRepositoryTargetKey
     && canPerformGitHubWrite(githubAccessState),
-  );
+  ) || hasCurrentGitHubWriteEvidence();
   const effectiveGitHubAccessState = githubAccessState.state === 'ready' && !githubWriteAllowed
     ? 'missing'
     : githubAccessState.state;
@@ -3046,6 +2484,20 @@ export function BuilderContainer({
   // forwarded to the backend executor. Browser-side repository reads, patch
   // generation and GitHub writes are forbidden.
   const githubTokenRef = useRef<string | null>(null);
+  const previousFilePreviewBindingRef = useRef<string | null>(null);
+  useEffect(() => {
+    const nextBinding = currentRepositoryTargetKey && chatRepoSnapshot?.headSha
+      ? `${currentRepositoryTargetKey}@${chatRepoSnapshot.headSha.toLowerCase()}`
+      : null;
+    if (previousFilePreviewBindingRef.current === nextBinding) return;
+    previousFilePreviewBindingRef.current = nextBinding;
+    repositoryReadScopeRef.current = null;
+    filePreviewRequestGenerationRef.current += 1;
+    setFilePreviewPath(null);
+    setFilePreviewResult(null);
+    setFilePreviewLoading(false);
+    setFilePreviewBindingKey(null);
+  }, [chatRepoSnapshot?.headSha, currentRepositoryTargetKey]);
   const previousRepoScopeKeyRef = useRef<string | null>(currentRepoScopeKey);
   const arePreviousStateRef = useRef<ArePreviousState | null>(null);
   useEffect(() => {
@@ -3078,8 +2530,11 @@ export function BuilderContainer({
       // load. A pending intent from an already-scoped previous repo is stale.
       if (previousScopeKey) {
         pendingWriteIntentRef.current = null;
+        pendingRepoIntentRef.current = null;
         pendingOnlineExecutionRef.current = null;
       }
+      validatedGitHubWriteEvidenceRef.current = null;
+      repositoryReadScopeRef.current = null;
       setValidatedGitHubTargetKey(null);
       setGitHubAccessState(createGitHubAccessSnapshot());
       setShowGitHubAccessOverride(false);
@@ -3186,6 +2641,204 @@ export function BuilderContainer({
   const appendActionEvent = useCallback((event: SovereignActionEventInput) => {
     setActionStream((current) => appendSovereignActionEvent(current, event));
   }, []);
+
+  const githubCredentialValidationGenerationRef = useRef(0);
+  const validateCurrentRepoGithubCredential = useCallback(async (
+    token: string | undefined,
+    maskedToken: string,
+    source: 'oauth-session' | 'manual-pat',
+  ): Promise<boolean> => {
+    const validationGeneration = ++githubCredentialValidationGenerationRef.current;
+    const validationTargetKey = currentRepositoryTargetKey;
+    const validationRepoScopeKey = currentRepoScopeKey;
+    const validationRepoSnapshot = chatRepoSnapshot;
+    if (!validationTargetKey || !validationRepoScopeKey || !validationRepoSnapshot) {
+      setGitHubAccessState(failGitHubAccessValidation(maskedToken, 'Revisionsgebundener Repository-Scope fehlt für GitHub-Zugangsprüfung.'));
+      setValidatedGitHubTargetKey(null);
+      if (source === 'manual-pat') githubTokenRef.current = null;
+      return false;
+    }
+
+    validatedGitHubWriteEvidenceRef.current = null;
+    repositoryReadScopeRef.current = null;
+    setValidatedGitHubTargetKey(null);
+    setGitHubAccessState(startGitHubAccessValidation(maskedToken));
+    appendActionEvent({
+      kind: 'route_selected',
+      route: 'github-access',
+      label: source === 'oauth-session'
+        ? 'GitHub OAuth-Session wird geprüft'
+        : 'GitHub-Zugang wird geprüft',
+      detail: 'Backend prüft Credential, Repository, Branch und erwarteten Head ohne Credential-Readback.',
+      state: 'running',
+    });
+
+    const validation = await validateGitHubTokenForRepo(
+      token,
+      {
+        repository: validationRepoSnapshot.repoUrl,
+        branch: validationRepoSnapshot.branch,
+        expectedBaseSha: validationRepoSnapshot.headSha,
+      },
+      globalThis.fetch,
+      githubAccessApiBase,
+    );
+
+    // A newer OAuth/PAT attempt for the same repository owns the state now.
+    // Stale completions must not clear or replace its credential evidence.
+    if (githubCredentialValidationGenerationRef.current !== validationGeneration) return false;
+
+    if (
+      currentRepositoryTargetKeyRef.current !== validationTargetKey
+      || !isCurrentRepoScope(validationRepoScopeKey)
+    ) {
+      validatedGitHubWriteEvidenceRef.current = null;
+      repositoryReadScopeRef.current = null;
+      setGitHubAccessState(createGitHubAccessSnapshot());
+      setValidatedGitHubTargetKey(null);
+      if (source === 'manual-pat') githubTokenRef.current = null;
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'github-access',
+        label: 'GitHub-Zugangsprüfung verworfen',
+        detail: 'Das Repo-Ziel hat sich während der Validierung geändert. Der alte Prüferfolg wurde nicht übernommen.',
+        kind: 'blocked',
+      }));
+      return false;
+    }
+
+    const validatedRepositoryReadScope = (
+      validation.repositoryReadScope
+      && validation.repositoryRevision === validationRepoSnapshot.headSha.toLowerCase()
+    ) ? {
+        targetKey: validationTargetKey,
+        revision: validation.repositoryRevision,
+        scope: validation.repositoryReadScope,
+      } : null;
+    repositoryReadScopeRef.current = validatedRepositoryReadScope;
+
+    if (!validation.ok) {
+      validatedGitHubWriteEvidenceRef.current = null;
+      setGitHubAccessState(failGitHubAccessValidation(
+        maskedToken,
+        validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.',
+      ));
+      setValidatedGitHubTargetKey(null);
+      if (source === 'manual-pat') {
+        githubTokenRef.current = validatedRepositoryReadScope ? token || null : null;
+      }
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'github-access',
+        label: source === 'oauth-session'
+          ? 'GitHub OAuth reicht für dieses Repo nicht aus'
+          : 'GitHub-Zugang fehlgeschlagen',
+        detail: validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.',
+        kind: 'failed',
+      }));
+      return false;
+    }
+
+    const readySnapshot = completeGitHubAccessValidation(maskedToken);
+    validatedGitHubWriteEvidenceRef.current = {
+      targetKey: validationTargetKey,
+      snapshot: readySnapshot,
+    };
+    repositoryReadScopeRef.current = validatedRepositoryReadScope;
+    setGitHubAccessState(readySnapshot);
+    setValidatedGitHubTargetKey(validationTargetKey);
+    setPendingResumeRetrySequence((sequence) => sequence + 1);
+    githubTokenRef.current = source === 'manual-pat' ? token || null : null;
+    appendActionEvent({
+      kind: 'done',
+      route: 'github-access',
+      label: 'GitHub-Zugang bereit',
+      detail: source === 'oauth-session'
+        ? 'Serverseitig gespeichertes OAuth-Credential und Repo-Schreibzugriff wurden bestätigt; kein Token wurde an den Browser zurückgegeben.'
+        : 'Ephemeres Credential und effektiver Repo-Schreibzugriff wurden serverseitig bestätigt.',
+      state: 'done',
+    });
+    return true;
+  }, [
+    appendActionEvent,
+    chatRepoSnapshot,
+    currentRepoScopeKey,
+    currentRepositoryTargetKey,
+    githubAccessApiBase,
+    isCurrentRepoScope,
+  ]);
+
+  const oauthValidationAttemptRef = useRef<{
+    readonly targetKey: string;
+    readonly attempts: number;
+    readonly triggerSequence: number;
+  } | null>(null);
+  const oauthValidationRetryTimerRef = useRef<number | null>(null);
+  const [oauthValidationRetrySequence, setOauthValidationRetrySequence] = useState(0);
+  useEffect(() => () => {
+    if (oauthValidationRetryTimerRef.current !== null) {
+      window.clearTimeout(oauthValidationRetryTimerRef.current);
+      oauthValidationRetryTimerRef.current = null;
+    }
+  }, []);
+  useEffect(() => {
+    if (!authUser?.githubId || !currentRepositoryTargetKey || !chatRepoSnapshot?.headSha) {
+      oauthValidationAttemptRef.current = null;
+      if (oauthValidationRetryTimerRef.current !== null) {
+        window.clearTimeout(oauthValidationRetryTimerRef.current);
+        oauthValidationRetryTimerRef.current = null;
+      }
+      return;
+    }
+    if (githubWriteAllowed || githubAccessState.state === 'validating') return;
+
+    let attempt = oauthValidationAttemptRef.current;
+    if (!attempt || attempt.targetKey !== currentRepositoryTargetKey) {
+      if (oauthValidationRetryTimerRef.current !== null) {
+        window.clearTimeout(oauthValidationRetryTimerRef.current);
+        oauthValidationRetryTimerRef.current = null;
+      }
+      attempt = { targetKey: currentRepositoryTargetKey, attempts: 0, triggerSequence: -1 };
+    }
+    if (attempt.attempts >= 2 || attempt.triggerSequence === oauthValidationRetrySequence) return;
+
+    const validationTargetKey = currentRepositoryTargetKey;
+    oauthValidationAttemptRef.current = {
+      targetKey: validationTargetKey,
+      attempts: attempt.attempts + 1,
+      triggerSequence: oauthValidationRetrySequence,
+    };
+    const validationPromise = validateCurrentRepoGithubCredential(undefined, 'OAuth', 'oauth-session');
+    const oauthValidationGeneration = githubCredentialValidationGenerationRef.current;
+    void validationPromise.then((validated) => {
+      const latestAttempt = oauthValidationAttemptRef.current;
+      if (validated) {
+        if (oauthValidationRetryTimerRef.current !== null) {
+          window.clearTimeout(oauthValidationRetryTimerRef.current);
+          oauthValidationRetryTimerRef.current = null;
+        }
+        return;
+      }
+      if (
+        !latestAttempt
+        || latestAttempt.targetKey !== validationTargetKey
+        || githubCredentialValidationGenerationRef.current !== oauthValidationGeneration
+        || latestAttempt.attempts >= 2
+        || currentRepositoryTargetKeyRef.current !== validationTargetKey
+        || oauthValidationRetryTimerRef.current !== null
+      ) return;
+      oauthValidationRetryTimerRef.current = window.setTimeout(() => {
+        oauthValidationRetryTimerRef.current = null;
+        setOauthValidationRetrySequence((sequence) => sequence + 1);
+      }, 750);
+    });
+  }, [
+    authUser?.githubId,
+    chatRepoSnapshot?.headSha,
+    currentRepositoryTargetKey,
+    githubAccessState.state,
+    githubWriteAllowed,
+    oauthValidationRetrySequence,
+    validateCurrentRepoGithubCredential,
+  ]);
   const inspectionEvidence = useSovereignToolInspectionStore((store) => store.evidence);
   const completedInspectionEvidenceRef = useRef<Partial<Record<SovereignToolInspectionId, number>>>({});
   const sovereignAgentStartAvailable = Boolean(agentReady && onStartAgent);
@@ -3270,16 +2923,41 @@ export function BuilderContainer({
     async (path: string) => {
       const cleanPath = path.trim();
       if (!cleanPath) return;
+      const requestGeneration = ++filePreviewRequestGenerationRef.current;
+      const requestRepoScopeKey = currentRepoScopeKey;
+      const requestTargetKey = currentRepositoryTargetKey;
+      const requestRevision = chatRepoSnapshot?.headSha?.toLowerCase() ?? '';
+      const requestBindingKey = currentFilePreviewBindingKey;
+      const readScopeEvidence = repositoryReadScopeRef.current;
+      const repositoryReadScope = (
+        readScopeEvidence
+        && requestTargetKey
+        && readScopeEvidence.targetKey === requestTargetKey
+        && readScopeEvidence.revision === requestRevision
+      ) ? readScopeEvidence.scope : undefined;
+
       setWishText(createRepoFilePrompt(cleanPath));
       setShowRepoExplorer(false);
       setFilePreviewPath(cleanPath);
       setFilePreviewResult(null);
       setFilePreviewLoading(true);
+      setFilePreviewBindingKey(requestBindingKey);
       const result = await fetchFileContent({
-        jobId: scopedAgentJob?.jobId ?? '',
+        jobId: scopedAgentJob?.status === 'cleaned' ? '' : scopedAgentJob?.jobId ?? '',
+        workspaceUsable: scopedAgentJob?.status !== 'cleaned',
         backendBase: SOVEREIGN_WORKER_BASE,
         filePath: cleanPath,
+        repoOwner: chatRepoSnapshot?.owner,
+        repoName: chatRepoSnapshot?.repo,
+        repoRevision: chatRepoSnapshot?.headSha,
+        repositoryReadScope,
+        githubAccessToken: githubTokenRef.current ?? undefined,
       });
+      if (
+        filePreviewRequestGenerationRef.current !== requestGeneration
+        || currentRepoScopeKeyRef.current !== requestRepoScopeKey
+        || currentRepositoryRevisionRef.current !== requestRevision
+      ) return;
       setFilePreviewResult(result);
       setFilePreviewLoading(false);
       addLog(
@@ -3290,7 +2968,17 @@ export function BuilderContainer({
         'router',
       );
     },
-    [addLog, scopedAgentJob?.jobId],
+    [
+      addLog,
+      chatRepoSnapshot?.headSha,
+      chatRepoSnapshot?.owner,
+      chatRepoSnapshot?.repo,
+      currentFilePreviewBindingKey,
+      currentRepoScopeKey,
+      currentRepositoryTargetKey,
+      scopedAgentJob?.jobId,
+      scopedAgentJob?.status,
+    ],
   );
 
   const appendChatLine = useCallback(
@@ -3307,27 +2995,36 @@ export function BuilderContainer({
         id: line.id ?? createChatLineId(line.role, chatLineIndexRef.current),
         createdAt,
       };
-      if (liveMonitorPrimary && candidate.role !== 'thought') {
+      const committed = projectSituationalChatLine(candidate);
+      const monitorLine = projectMonitorCommunicationLine(candidate);
+      if (liveMonitorPrimary && monitorLine) {
         appendMonitorCommunication(
-          candidate.role === 'user'
+          monitorLine.role === 'user'
             ? 'user'
-            : candidate.role === 'system'
+            : monitorLine.role === 'system'
               ? 'runtime'
               : 'communicate',
-          candidate.text,
-          `monitor:${candidate.id}`,
+          monitorLine.text,
+          `monitor:${monitorLine.id}`,
         );
       }
-      const committed = projectSituationalChatLine(candidate);
       if (!committed) return;
       setChatHistory((previous) => [...previous, committed]);
-      nowRef.current = createdAt;
     },
     [appendMonitorCommunication, liveMonitorPrimary],
   );
 
   const appendRuntimeNotice = useCallback((text: string) => {
-    appendChatLine({ role: 'system', text });
+    appendChatLine({
+      role: 'system',
+      text,
+      monitorProjection: {
+        schemaVersion: 'sovereign.monitor-communication-projection.v1',
+        sourceKind: 'RUNTIME_NOTICE',
+        authority: 'CONVERSATION_ONLY',
+        authoritative: false,
+      },
+    });
   }, [appendChatLine]);
 
   const appendGuardedWorkerText = useCallback((text: string) => {
@@ -3338,7 +3035,16 @@ export function BuilderContainer({
     if (!claimCheck.allowed && claimCheck.violations.length > 0) {
       addLog('warn', `chatClaimGuard: ${claimCheck.violations.join(', ')}`, 'router');
     }
-    appendChatLine({ role: 'assistant', text: guardedText });
+    appendChatLine({
+      role: 'assistant',
+      text: guardedText,
+      monitorProjection: {
+        schemaVersion: 'sovereign.monitor-communication-projection.v1',
+        sourceKind: 'LLM_RESPONSE',
+        authority: 'CONVERSATION_ONLY',
+        authoritative: false,
+      },
+    });
   }, [addLog, agentWorkSnapshot, appendChatLine]);
 
   const persistMissionInput = useCallback(async (text: string): Promise<boolean> => {
@@ -3477,7 +3183,6 @@ export function BuilderContainer({
     if (!authUser || !chatRepoSnapshot || !currentRepoScopeKey) {
       persistedSessionRef.current = null;
       hydratedSessionScopeRef.current = null;
-      setRestoredSessionAge(null);
       return;
     }
 
@@ -3501,13 +3206,25 @@ export function BuilderContainer({
         persistedSessionRef.current = session;
         chatLineIndexRef.current = session.messages.length;
         const restored = session.messages.map(sessionMessageToChatLine);
-        nowRef.current = restored.at(-1)?.createdAt ?? Date.now();
         setChatHistory(restored);
+        const restoredMonitorEntries = restored
+          .map(projectMonitorCommunicationLine)
+          .filter((line): line is ChatLine => line !== null)
+          .slice(-12)
+          .map((line, index): MonitorCommunicationEntry => ({
+            id: `restored-monitor-${line.id || index}`,
+            kind: line.role === 'user' ? 'user' : line.role === 'system' ? 'runtime' : 'communicate',
+            text: line.text,
+            createdAt: line.createdAt,
+          }));
+        setMonitorCommunication((previous) => {
+          const byId = new Map<string, MonitorCommunicationEntry>();
+          [...restoredMonitorEntries, ...previous].forEach((entry) => byId.set(entry.id, entry));
+          return [...byId.values()]
+            .sort((left, right) => left.createdAt - right.createdAt)
+            .slice(-12);
+        });
 
-        const { text: formattedAge, isStale } = formatPersistedSessionAge(session);
-        setRestoredSessionAge(isStale
-          ? `${formattedAge} · veraltet – bitte Status prüfen`
-          : formattedAge);
         addLog(
           'info',
           `PostgreSQL bubble session restored: ${session.messageCount} message(s)`,
@@ -3516,7 +3233,6 @@ export function BuilderContainer({
       } catch {
         if (cancelled) return;
         persistedSessionRef.current = null;
-        setRestoredSessionAge(null);
         setChatHistory([]);
         addLog('warn', 'PostgreSQL bubble persistence is unavailable; no local fallback was used.', 'sys');
       }
@@ -3539,25 +3255,6 @@ export function BuilderContainer({
     learningEvidence: patternLearningEvidence,
     publishedPrUrl: scopedPublishedPrUrl,
   });
-
-  // ── Aufgabe 5: Track unseen activity — not just chat lines, but also the
-  // inline action stream (Sovereign trace) and streaming worker replies.
-  // Every new chat line, action-stream event, or freshly-started stream
-  // counts as one unit of "unseen" activity while the user has scrolled away.
-  const chatActivitySignal =
-    chatHistory.length + actionStream.events.length;
-  const lastChatActivitySignalRef = useRef(chatActivitySignal);
-  useEffect(() => {
-    if (chatActivitySignal > lastChatActivitySignalRef.current) {
-      if (userScrolledAway) {
-        setUnseenCount(
-          (prev) =>
-            prev + (chatActivitySignal - lastChatActivitySignalRef.current),
-        );
-      }
-    }
-    lastChatActivitySignalRef.current = chatActivitySignal;
-  }, [chatActivitySignal, userScrolledAway]);
 
   useEffect(() => {
     setSlashMenuDismissed(false);
@@ -3588,7 +3285,6 @@ export function BuilderContainer({
   // ── Original v3 derived values (verbatim)
   // A complete local runtime snapshot is the sole Builder repo truth. The legacy
   // repoReady prop may describe another surface, but cannot authorize Builder work.
-  const isPartialRepoSnapshot = Boolean(chatRepoSnapshot && !currentRepoScopeKey);
   const effectiveRepoReady = Boolean(currentRepoScopeKey);
   const effectiveRepoReason = effectiveRepoReady && chatRepoSnapshot
     ? summarizeDevChatRepoSnapshot(chatRepoSnapshot)
@@ -3627,15 +3323,6 @@ export function BuilderContainer({
       : effectiveRepoReady
         ? "idle · Repo-Kontext bereit"
         : "idle · Repo fehlt";
-  const cuteThinkingLabel = useMemo(
-    () =>
-      formatCuteWorkStateLabel({
-        index: thinkingFrameIndex,
-        active: runtimeThinkingActive,
-        status: workStateStatus,
-      }),
-    [runtimeThinkingActive, thinkingFrameIndex, workStateStatus],
-  );
   const outcomeHints = useMemo(
     () => buildOutcomeHints(scopedAgentJob),
     [scopedAgentJob],
@@ -3723,36 +3410,6 @@ export function BuilderContainer({
       available: effectiveRepoReady,
     },
   ];
-  const chatLines = useMemo(
-    () =>
-      buildChatLines({
-        repoReady: effectiveRepoReady,
-        repoReason: effectiveRepoReason,
-        runtimeThinkingActive,
-        cuteThinkingLabel,
-        sovereignSummary,
-        disabledReason: state.disabledReason,
-        agentJob: scopedAgentJob,
-        chatRepoSnapshot,
-        chatRepoError,
-        chatHistory,
-        restoredSessionAge,
-      }),
-    [
-      chatHistory,
-      chatRepoError,
-      chatRepoSnapshot,
-      cuteThinkingLabel,
-      effectiveRepoReady,
-      effectiveRepoReason,
-      scopedAgentJob,
-      runtimeThinkingActive,
-      sovereignSummary,
-      state.disabledReason,
-      restoredSessionAge,
-    ],
-  );
-
   // PAL stats
   const palStats = useMemo(() => {
     const t = palDecisions.length;
@@ -3764,15 +3421,6 @@ export function BuilderContainer({
     };
   }, [palDecisions]);
   const lastPal = palDecisions[palDecisions.length - 1] ?? null;
-
-  // ── Original v3 effects (verbatim)
-  useEffect(() => {
-    const h = window.setInterval(
-      () => setTFI((c) => c + 1),
-      runtimeThinkingActive ? CUTE_THINKING_FRAME_MS : CUTE_IDLE_FRAME_MS,
-    );
-    return () => window.clearInterval(h);
-  }, [runtimeThinkingActive]);
 
   // Mission sync effect. Order matters: the ignore flag must be consumed BEFORE
   // lastMissionRef.current is synced to the prop, otherwise an internal
@@ -3788,36 +3436,6 @@ export function BuilderContainer({
     if (wishText.trim() || chatHistory.length > 0) return;
     setWishText(missionToWishText(mission));
   }, [chatHistory.length, mission, wishText]);
-
-  // ── Aufgabe 5: Robust autoscroll — scroll to bottom on any new chat line,
-  // action-stream event, or stream update, UNLESS the user has intentionally
-  // scrolled away. While scrolled away, new activity only bumps the unseen
-  // badge (see chatActivitySignal effect above), never yanks the viewport.
-  useEffect(() => {
-    if (!scrollRef.current) return;
-    if (!shouldAutoScroll(userScrolledAway)) return;
-    const node = scrollRef.current;
-    const raf = requestAnimationFrame(() => {
-      if (typeof node.scrollTo === "function") {
-        node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
-      } else {
-        node.scrollTop = node.scrollHeight;
-      }
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [
-    chatLines.length,
-    outcomeHints.length,
-    runtimeThinkingActive,
-    actionStream.events.length,
-    workerBlocker,
-    showGitHubAccessOverride,
-    userScrolledAway,
-  ]);
-
-  useEffect(() => {
-    nowRef.current = Date.now();
-  }, [chatLines.length]);
 
   // ── AppControl runtime binding
   // No simulated progress: lamps, phases and conditions are derived from real runtime state.
@@ -4035,7 +3653,7 @@ export function BuilderContainer({
       appendRuntimeNotice('Executor blockiert: Die strukturierte Intent-Evidence erlaubt keinen Code- oder Draft-PR-Start.');
       return false;
     }
-    if (!githubWriteAllowed) {
+    if (!(githubWriteAllowed || hasCurrentGitHubWriteEvidence())) {
       appendActionEvent({ kind: 'github_access_required', route: 'github-access', label: 'Executor braucht GitHub-Zugang', detail: 'Ausführungsauftrag erkannt, aber GitHub-Schreibzugang ist nicht validiert.', state: 'blocked' });
       if (!pendingOnlineExecutionRef.current) pendingWriteIntentRef.current = text;
       setShowGitHubAccessOverride(true);
@@ -4313,8 +3931,13 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       return;
     }
 
+    // Exact machine controls are already typed. Let them continue to the
+    // LLM-first/degraded executor boundary instead of treating them as unknown
+    // generic slash commands. No free-language inference occurs here.
+    const explicitRuntimeIntent = classifyOfflineSovereignExecutorIntent(submittedText);
+
     // ── Issue #428: Slash command handling
-    if (submittedText.startsWith("/")) {
+    if (submittedText.startsWith("/") && explicitRuntimeIntent === 'unknown') {
       const parsedSlash = parseSlashCommand(submittedText, skillSlashCommands);
       if (!parsedSlash) {
         appendRuntimeNotice(`Unbekannter Befehl. Verfügbare: ${[...SOVEREIGN_SLASH_COMMANDS, ...skillSlashCommands].map((c) => c.cmd).join(", ")}`);
@@ -4431,15 +4054,12 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         if (active.length === 0) {
           appendRuntimeNotice("Keine Skills installiert. Nutze /scan-skills <owner/repo> um Skills aus einem Repo zu importieren.");
         } else {
-          appendChatLine({
-            role: "assistant",
-            text: [
+          appendRuntimeNotice([
               `**${active.length} installierte Skills:**`,
               ...active.map((s) => `• \`/${s.slug}\` — ${s.description}`),
               "",
               "Tipp: /scan-skills <owner/repo> für mehr Skills.",
-            ].join("\n"),
-          });
+            ].join("\n"));
         }
         return;
       }
@@ -4480,8 +4100,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     }
 
     // Natural language goes to the online LLM first. Deterministic parsing is
-    // reserved for exact controls (slash commands, repository URLs) and becomes
-    // the language fallback only when the online interpretation is unavailable.
+    // reserved strictly for exact machine controls, repository URLs and
+    // machine-generated preset markers. Free user language is never reinterpreted
+    // by browser heuristics when the online LLM is unavailable.
     const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
     const isReviewableExecutionPreset =
       submittedText.includes('Risiko: reviewable_patch')
@@ -4517,7 +4138,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     // Order matters: local routes > createIntegrationIntentDraft > capability router
 
     // P2 Fix 2: Status questions - answered locally from runtime state
-    if (!shouldUseOnlineLanguageUnderstanding && isLocalCompletionStatusQuestion(submittedText)) {
+    if (!shouldUseOnlineLanguageUnderstanding && explicitRuntimeIntent === 'status') {
       const statusAnswer = buildLocalStatusAnswer({
         githubWriteAllowed,
         githubAccessState: effectiveGitHubAccessState,
@@ -4550,59 +4171,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       return;
     }
 
-    // Fix: "Warum?" follow-up after local status answer → answer locally, no worker call
-    if (!shouldUseOnlineLanguageUnderstanding && lastAnswerWasLocal && isFollowUpWhyQuestion(submittedText)) {
-      const whyAnswer = patchPreviewReady
-        ? "Die Patch-Vorschau wurde erzeugt, aber noch nicht angewendet. Es gibt noch keinen Commit und keinen Draft PR, weil die Vorschau erst geprüft und bestätigt werden muss."
-        : !githubWriteAllowed
-        ? "Weil sicherer GitHub-Zugang noch fehlt. Sobald der Zugang verifiziert ist, läuft der Auftrag automatisch weiter."
-        : routingWorkerBlocker
-        ? "Weil der Worker blockiert ist. Bitte den Fehler prüfen oder den Auftrag präzisieren."
-        : "Weil noch kein Auftrag gestartet wurde oder der Auftrag blockiert ist. Bitte Auftrag neu starten.";
-      appendRuntimeNotice(whyAnswer);
-      setLastAnswerWasLocal(true);
-      appendActionEvent(buildLocalRuntimeResultEvent({
-        label: 'Warum-Folgefrage',
-        detail: 'Lokale Erklärung aus Runtime-State — kein Worker-Call',
-      }));
-      addLog('info', 'Fix: Follow-up why question answered locally - no worker call', 'router');
-      return;
-    }
-
     // P2 Fix 2: Worker retry intents - clear blocker and trigger real retry
     // Runtime-Truth: Retry must produce Action → Request → Response, not just UI reset
-    if (!shouldUseOnlineLanguageUnderstanding && isWorkerRetryIntent(submittedText) && routingWorkerBlocker) {
-      // If user asks status question, answer locally first before retry
-              if (submittedText && isLocalCompletionStatusQuestion(submittedText)) {
-        const statusAnswer = buildLocalStatusAnswer({
-          githubWriteAllowed,
-          githubAccessState: effectiveGitHubAccessState,
-          writeIntentBlockedByRepo: !effectiveRepoReady,
-          agentRunning: scopedAgentJob?.status === 'running',
-          draftPrUrl: scopedAgentJob?.draftPrUrl ?? null,
-          hasPatch: Boolean(scopedAgentJob?.changedFiles?.length),
-          patchPreviewReady,
-          patchConfirmed,
-          hasWorkerResponse: hasScopedWorkerResponse,
-          workerBlocker: routingWorkerBlocker,
-          buildWorkerBlockerAnswer: routingWorkerBlocker
-            ? () =>
-                buildWorkerBlockerAnswer({
-                  blocker: routingWorkerBlocker,
-                  repoReady: effectiveRepoReady,
-                  chatRepoSnapshot,
-                  agentReady,
-                })
-            : undefined,
-        });
-        appendRuntimeNotice(statusAnswer);
-        appendActionEvent(buildLocalRuntimeResultEvent({
-          label: 'Status-Frage beantwortet',
-          detail: 'Lokale Antwort aus Runtime-State',
-        }));
-        addLog('info', 'Retry + status question → local answer first', 'router');
-        return;
-      }
+    if (isExactRetryControl && routingWorkerBlocker) {
       if (lastWorkerRequestMessage) {
         // Real retry: re-submit the last request through the full pipeline
         setWorkerBlocker(null);
@@ -4628,47 +4199,12 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       }
     }
 
-    // P2 Fix 3: Diagnostic questions ("warum passiert nichts?") - answered locally
-    const _executorIsActive = agentWorkSnapshot.state !== 'idle' ||
-      (scopedAgentJob != null && scopedAgentJob.status !== 'idle');
-    if (!shouldUseOnlineLanguageUnderstanding && isExecutorStatusQuestion(submittedText) && (_executorIsActive || !routingWorkerBlocker)) {
-      const statusAnswer = buildExecutorStatusAnswer({
-        agentState: agentWorkSnapshot.state,
-        agentStatus: scopedAgentJob?.status,
-        changedFiles: scopedAgentJob?.changedFiles?.length ?? 0,
-        draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-        blockerReason: agentWorkSnapshot.blockerReason,
-      });
-      appendRuntimeNotice(statusAnswer);
+    if (isExactRetryControl && !routingWorkerBlocker) {
+      appendRuntimeNotice('Retry ist ein exakter Runtime-Befehl, aber es gibt keinen aktiven korrelierten Blocker zum Wiederholen. Es wurde kein LLM-Aufruf gestartet.');
       appendActionEvent(buildLocalRuntimeResultEvent({
-        label: 'Diagnose-Frage',
-        detail: 'Lokale Antwort aus Runtime-State',
+        label: 'Retry ohne Ziel',
+        detail: 'Kein aktiver korrelierter Blocker; keine Aktion ausgeführt.',
       }));
-      addLog('info', 'Issue #522 P2 Fix 3: Diagnostic question answered locally - no draft created', 'router');
-      return;
-    }
-
-    // P2 Fix 3: Worker blocker diagnostic - answered locally, no draft
-    if (
-      !shouldUseOnlineLanguageUnderstanding &&
-      routingWorkerBlocker &&
-      !isWorkerRetryIntent(submittedText) &&
-      !isSovereignAgentExecutionIntent(submittedText)
-    ) {
-      appendChatLine({
-        role: "system",
-        text: buildWorkerBlockerAnswer({
-          blocker: routingWorkerBlocker,
-          repoReady: effectiveRepoReady,
-          chatRepoSnapshot,
-          agentReady,
-        }),
-      });
-      appendActionEvent(buildLocalRuntimeResultEvent({
-        label: 'Worker-Diagnose',
-        detail: routingWorkerBlocker.diagnostic.scope,
-      }));
-      addLog('info', `Issue #522 P2 Fix 3: Worker diagnostic answered locally - no draft created`, 'router');
       return;
     }
 
@@ -4683,10 +4219,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           detail: 'Der geschützte OpenRouter-/FreeLLM-Backendpfad wurde ohne bestätigte Session nicht aufgerufen.',
           kind: 'blocked',
         }));
-        appendChatLine({
-          role: 'assistant',
-          text: 'Für die Online-Sprachdeutung ist eine bestätigte Anmeldung erforderlich. Es wurde kein LLM-Aufruf gesendet und kein Credit abgezogen.',
-        });
+        appendRuntimeNotice('Für die Online-Sprachdeutung ist eine bestätigte Anmeldung erforderlich. Es wurde kein LLM-Aufruf gesendet und kein Credit abgezogen.');
         setShowLogin(true);
         return;
       }
@@ -4723,7 +4256,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         } else {
           addLog('info', `Manuelle LLM-Route → ${requestedInterpretationLabel} · Intent`, 'router');
         }
-        setLastWorkerRequestMessage(submittedText);
+        if (!routingWorkerBlocker || options.ignoreExistingWorkerBlocker) {
+          setLastWorkerRequestMessage(submittedText);
+        }
         setChatResponseBusy(true);
         appendActionEvent(buildWorkerRequestEvent(`${requestedInterpretationLabel} · Intent`));
 
@@ -4813,7 +4348,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         // actionable request or an explicit retry may clear that blocker.
         if (interpretation.mode === 'action' || options.ignoreExistingWorkerBlocker) {
           setWorkerBlocker(null);
-          if (options.ignoreExistingWorkerBlocker) setLastWorkerRequestMessage(null);
+          setLastWorkerRequestMessage(null);
         }
         appendActionEvent(buildWorkerResponseEvent());
         appendActionEvent({
@@ -4866,7 +4401,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
             questionText: submittedText,
             isStartup: interpretation.isStartup,
           });
-          appendChatLine({ role: 'assistant', text: statusAnswer });
+          appendRuntimeNotice(statusAnswer);
           setLastAnswerWasLocal(true);
           appendActionEvent(buildLocalRuntimeResultEvent({
             label: 'LLM-verstandene Status-Frage',
@@ -4931,10 +4466,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           },
         });
         if (!draft) {
-          appendChatLine({
-            role: 'assistant',
-            text: interpretation.assistantText || 'Die Online-Deutung war nicht konkret genug für einen ausführbaren Auftrag.',
-          });
+          appendGuardedWorkerText(
+            interpretation.assistantText || 'Die Online-Deutung war nicht konkret genug für einen ausführbaren Auftrag.',
+          );
           return;
         }
 
@@ -4947,10 +4481,29 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         return;
       }
 
-      // Preserve the exact failed request as retry target. Later advisory
-      // messages such as "Warum?" must not overwrite this correlation.
-      setLastWorkerRequestMessage(submittedText);
-      const offlineIntent = classifyOfflineSovereignExecutorIntent(submittedText);
+      // A provider response that failed the action schema is still allowed to be
+      // conversation text. It is NEVER reinterpreted by browser heuristics and
+      // can never authorize an executor or GitHub-write path.
+      if (interpretationResult.rawContent) {
+        await quarantineOnlineObservation(interpretationResult.rawContent, requestedInterpretationModel);
+        appendGuardedWorkerText(interpretationResult.rawContent);
+        appendActionEvent({
+          kind: 'llm_response_received',
+          route: 'worker',
+          label: 'Freitext-Antwort ohne Aktionsschema übernommen',
+          detail: 'Ungültiges Aktionsschema; Providertext wurde ausschließlich als LLM-Kommunikation akzeptiert.',
+          state: 'done',
+        });
+        return;
+      }
+
+      // Preserve only a genuinely failed request as retry target. The degraded
+      // runtime may classify exact machine controls such as /status or /agent;
+      // free user language stays unknown and is never interpreted locally.
+      if (!routingWorkerBlocker || options.ignoreExistingWorkerBlocker) {
+        setLastWorkerRequestMessage(submittedText);
+      }
+      const offlineIntent = explicitRuntimeIntent;
       const offlineFallbackEvidence = offlineIntent === 'unknown'
         ? 'free_language_not_safely_classifiable'
         : offlineIntent;
@@ -4966,7 +4519,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       // Offline language handling is fail-closed and may only read current
       // runtime state or prepare a gated action. It never falls through to a
       // second online language endpoint.
-      if (offlineIntent === 'status' || isLocalCompletionStatusQuestion(submittedText)) {
+      if (offlineIntent === 'status') {
         const statusAnswer = buildLocalStatusAnswer({
           githubWriteAllowed,
           githubAccessState: effectiveGitHubAccessState,
@@ -4988,7 +4541,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
             : undefined,
           questionText: submittedText,
         });
-        appendChatLine({ role: 'assistant', text: statusAnswer });
+        appendRuntimeNotice(statusAnswer);
         setLastAnswerWasLocal(true);
         appendActionEvent(buildLocalRuntimeResultEvent({
           label: 'Offline-Status-Fallback',
@@ -4997,20 +4550,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         return;
       }
 
-      if (lastAnswerWasLocal && isFollowUpWhyQuestion(submittedText)) {
-        const whyAnswer = patchPreviewReady
-          ? 'Die Patch-Vorschau wurde erzeugt, aber noch nicht angewendet. Es gibt noch keinen Commit und keinen Draft PR, weil die Vorschau erst geprüft und bestätigt werden muss.'
-          : !githubWriteAllowed
-            ? 'Weil sicherer GitHub-Zugang noch fehlt. Sobald der Zugang verifiziert ist, kann der Auftrag fortgesetzt werden.'
-            : routingWorkerBlocker
-              ? 'Weil die LLM-/Worker-Route blockiert ist. Die Runtime meldet noch keinen erfolgreichen nächsten Zustand.'
-              : 'Weil noch kein belegter Ausführungszustand vorliegt.';
-        appendChatLine({ role: 'assistant', text: whyAnswer });
-        setLastAnswerWasLocal(true);
-        return;
-      }
-
-      if (isWorkerRetryIntent(submittedText) && routingWorkerBlocker) {
+      if (isExactRetryControl && routingWorkerBlocker) {
         setWorkerBlocker(null);
         if (lastWorkerRequestMessage) {
           appendActionEvent(buildLocalRuntimeResultEvent({
@@ -5022,79 +4562,29 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
             inputAlreadyRecorded: true,
           });
         } else {
-          appendChatLine({
-            role: 'assistant',
-            text: 'Der Blocker wurde zurückgesetzt. Es gibt keinen vorherigen korrelierten Request zum Wiederholen.',
-          });
+          appendRuntimeNotice('Der Blocker wurde zurückgesetzt. Es gibt keinen vorherigen korrelierten Request zum Wiederholen.');
         }
         return;
       }
 
-      if (isExecutorStatusQuestion(submittedText)) {
-        appendChatLine({
-          role: 'assistant',
-          text: buildExecutorStatusAnswer({
+      if (offlineIntent === 'status') {
+        appendRuntimeNotice(buildExecutorStatusAnswer({
             agentState: agentWorkSnapshot.state,
             agentStatus: scopedAgentJob?.status,
             changedFiles: scopedAgentJob?.changedFiles?.length ?? 0,
             draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
             blockerReason: agentWorkSnapshot.blockerReason,
-          }),
-        });
+          }));
         return;
       }
 
-      if (routingWorkerBlocker && isWorkerDiagnosticQuestion(submittedText)) {
-        appendChatLine({
-          role: 'assistant',
-          text: buildWorkerBlockerAnswer({
-            blocker: routingWorkerBlocker,
-            repoReady: effectiveRepoReady,
-            chatRepoSnapshot,
-            agentReady,
-          }),
-        });
+      const offlineExecutorIntent = resolveOfflineMachineExecutorIntent(offlineIntent);
+      if (offlineExecutorIntent) {
+        const started = await startAgentFromText(submittedText, offlineExecutorIntent);
+        if (started) {
+          appendRuntimeNotice('Online-Sprachdeutung war nicht verfügbar. Nur der explizite Maschinenbefehl wurde an die Runtime übergeben; Erfolg bleibt bis zu echter Runtime-Evidence offen.');
+        }
         return;
-      }
-
-      if (offlineIntent === 'direct_patch' || offlineIntent === 'code_execution' || offlineIntent === 'draft_pr') {
-        const explicitOfflineExecution =
-          isSovereignAgentExecutionIntent(submittedText) ||
-          isDelegationIntent(submittedText) ||
-          isDelegatedSovereignAgentExecutionIntent(submittedText, chatHistory);
-        if (explicitOfflineExecution) {
-          const started = await startAgentFromText(submittedText, offlineIntent);
-          if (started) {
-            appendRuntimeNotice('Online-Sprachdeutung war nicht verfügbar. Der explizite Auftrag wurde über den lokalen Offline-Fallback an die Runtime übergeben; Erfolg bleibt bis zu echter Runtime-Evidence offen.');
-          }
-          return;
-        }
-
-        const repoFiles = chatRepoSnapshot?.filePaths?.map((path) => ({
-          path,
-          type: 'blob' as const,
-          size: 0,
-          sha: '',
-        })) ?? [];
-        const offlineKind: DevChatWorkerIntentKind = offlineIntent === 'draft_pr'
-          ? 'draft_pr'
-          : offlineIntent === 'direct_patch'
-            ? 'direct_patch'
-            : 'code_execution';
-        const draft = createIntegrationIntentDraft(submittedText, repoFiles, {
-          interpretation: {
-            intentKind: offlineKind,
-            source: 'offline_fallback',
-            confidence: 0,
-            actionTitle: submittedText,
-          },
-        });
-        if (draft) {
-          appendActionEvent(buildDraftCreatedEvent(draft));
-          setIntentDraftState({ status: 'pending', draft });
-          appendRuntimeNotice('Offline-Fallback: Ein lokaler Aktionshinweis wurde erkannt; Ausführung bleibt bis zur Bestätigung und zu echten Runtime-Gates blockiert.');
-          return;
-        }
       }
 
       if (interpretationResult.rawContent && (offlineIntent === 'question' || offlineIntent === 'unknown')) {
@@ -5131,15 +4621,12 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           createdAt: Date.now(),
         };
         setWorkerBlocker(blocker);
-        appendChatLine({
-          role: 'assistant',
-          text: buildWorkerBlockerAnswer({
+        appendRuntimeNotice(buildWorkerBlockerAnswer({
             blocker,
             repoReady: effectiveRepoReady,
             chatRepoSnapshot,
             agentReady,
-          }),
-        });
+          }));
       } else {
         appendRuntimeNotice('Online-Sprachdeutung ist nicht verfügbar und der lokale Offline-Fallback hat keinen sicheren Aktionspfad erkannt.');
       }
@@ -5150,7 +4637,13 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     // Central routing decision using real runtime state.
     // BuilderContainer shows the decision; it does not create it.
     const capabilityRouterInput: CapabilityRouterInput = {
-      language: buildOfflineCapabilityLanguageEvidence(submittedText),
+      language: buildExplicitRuntimeCapabilityLanguageEvidence({
+        text: submittedText,
+        intent: explicitRuntimeIntent,
+        repositoryUrl: Boolean(directRepoUrl),
+        safeAnalysisPreset: isSafeAnalysisPreset,
+        retryControl: isExactRetryControl,
+      }),
       repoReady: effectiveRepoReady,
       githubAccessState: effectiveGitHubAccessState,
       agentReady: agentReady ?? false,
@@ -5195,29 +4688,20 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         pendingWriteIntentRef.current = submittedText;
         setRepoSetupError(null);
         setShowRepoSetup(true);
-        appendChatLine({
-          role: 'system',
-          text: `Route blockiert: ${capabilityDecision.reason}\nDas Repo-Setup wurde geöffnet; der Auftrag bleibt für die Wiederaufnahme vorgemerkt.`,
-        });
+        appendRuntimeNotice(`Route blockiert: ${capabilityDecision.reason}\nDas Repo-Setup wurde geöffnet; der Auftrag bleibt für die Wiederaufnahme vorgemerkt.`);
         addLog("warn", "Capability Router blocked: repo missing; intent persisted", "router");
         return;
       }
       if (capabilityDecision.blocker === 'github_access_missing') {
         pendingWriteIntentRef.current = submittedText;
         setShowGitHubAccessOverride(true);
-        appendChatLine({
-          role: 'system',
-          text: `Route blockiert: ${capabilityDecision.reason}\nDer Auftrag bleibt vorgemerkt und wird erst nach bestätigter GitHub-API-Evidence fortgesetzt.`,
-        });
+        appendRuntimeNotice(`Route blockiert: ${capabilityDecision.reason}\nDer Auftrag bleibt vorgemerkt und wird erst nach bestätigter GitHub-API-Evidence fortgesetzt.`);
         addLog("warn", "Capability Router blocked: GitHub access missing; intent persisted", "router");
         return;
       }
       if (capabilityDecision.blocker === 'github_access_validating') {
         pendingWriteIntentRef.current = submittedText;
-        appendChatLine({
-          role: 'system',
-          text: `Route blockiert: ${capabilityDecision.reason}\nDer Auftrag bleibt bis zum Ergebnis der laufenden Zugangsprüfung vorgemerkt.`,
-        });
+        appendRuntimeNotice(`Route blockiert: ${capabilityDecision.reason}\nDer Auftrag bleibt bis zum Ergebnis der laufenden Zugangsprüfung vorgemerkt.`);
         addLog("info", "Capability Router waiting for GitHub validation; intent persisted", "router");
         return;
       }
@@ -5312,12 +4796,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         triggerHaptic("medium");
         const summary = summarizeDevChatRepoSnapshot(result.snapshot);
         appendActionEvent(buildRepoLoadedEvent(summary));
-        appendChatLine({
-          role: "system",
-          text: `Repo geladen. ${summary}\nTop-Level: ${result.snapshot.dirs.join(" · ") || "keine Top-Level-Ordner erkannt"}\nDer Repo-Snapshot bleibt Runtime-Kontext und wird nicht in die Eingabezeile geschrieben.`,
-          file: result.snapshot.lastFile,
-          path: result.snapshot.lastPath,
-        });
+        appendRuntimeNotice(`Repo geladen. ${summary}\nTop-Level: ${result.snapshot.dirs.join(" · ") || "keine Top-Level-Ordner erkannt"}\nDer Repo-Snapshot bleibt Runtime-Kontext und wird nicht in die Eingabezeile geschrieben.`);
         const d = palRoute(
           `Repo geladen: ${result.snapshot.name}`,
           0,
@@ -5342,265 +4821,48 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       return;
     }
 
+    // From this point onward the browser may only execute a route that was
+    // already typed by an exact runtime control/preset. It must never recover
+    // an execution intent by inspecting the wording of free user language.
+    if (!advisoryWorkerRoute) {
+      const typedExecutorIntent: SovereignExecutorIntentKind | null =
+        capabilityDecision.capability === 'draft_pr'
+          ? 'draft_pr'
+          : capabilityDecision.capability === 'code_patch_plan'
+            || capabilityDecision.capability === 'isolated_workspace'
+            ? 'code_execution'
+            : capabilityDecision.capability === 'direct_github_patch'
+              ? 'direct_patch'
+              : null;
+
+      if (
+        capabilityDecision.allowed
+        && capabilityDecision.route === 'sovereign-agent'
+        && (typedExecutorIntent === 'code_execution' || typedExecutorIntent === 'draft_pr')
+      ) {
+        const started = await startAgentFromText(submittedText, typedExecutorIntent);
+        if (started) {
+          appendRuntimeNotice('Der exakt typisierte Runtime-Befehl wurde an den Repository-Executor übergeben. Erfolg bleibt bis zu bestätigter Runtime-Evidence offen; Ergebnis bleibt Draft PR.');
+        }
+        return;
+      }
+
+      appendRuntimeNotice(`Runtime-Aktion nicht ausgeführt: ${capabilityDecision.reason}. Nächste Aktion: ${capabilityDecision.nextAction}. Freie Sprache wurde nicht lokal interpretiert.`);
+      return;
+    }
+
     // ── Aufgabe 2: Local completion-status questions
     // NOTE: Handled earlier in the flow (see Issue #522 P2 Fix 2 above)
     // to ensure status questions don't create integration drafts.
 
-    // ── Aufgabe 1: Write intents (README/file/patch/commit/push/PR language)
-    // must never reach the Worker chat while GitHub write access is missing.
-    // Instead of asking for a token in chat, show the GitHubAccessCard.
-    // Explicit Sovereign Agent execution intents ("Sovereign Agent", "Draft PR" with
-    // execution framing, ...) already have their own dedicated executor
-    // readiness gate below (agentDisabled) and must not be short-circuited
-    // here — this gate only covers write-language that would otherwise be
-    // sent straight to the advisory Worker chat.
-    if (
-      !advisoryWorkerRoute
-      && isWriteIntent(submittedText)
-      && !isSovereignAgentExecutionIntent(submittedText)
-    ) {
-      if (!effectiveRepoReady) {
-        appendActionEvent(buildBlockedActionEvent({
-          route: 'github-access',
-          label: 'Schreibauftrag blockiert',
-          detail: 'Kein Repo geladen. GitHub-Repo-Link zuerst einfügen.',
-          kind: 'access_required',
-        }));
-        appendChatLine({
-          role: 'system',
-          text: 'Schreibaktion blockiert.\nEs ist noch kein Repo geladen — bitte zuerst einen GitHub-Repo-Link senden.',
-        });
-        addLog('warn', 'Write intent blocked: no repo loaded', 'router');
-        return;
-      }
-      if (!githubWriteAllowed) {
-        appendActionEvent({
-          kind: 'github_access_required',
-          route: 'github-access',
-          label: 'GitHub-Schreibzugang erforderlich',
-          detail: 'Schreibauftrag erkannt · Worker-Chat wird übersprungen.',
-          state: 'blocked',
-        });
-        pendingWriteIntentRef.current = submittedText;
-        setShowGitHubAccessOverride(true);
-        appendChatLine({
-          role: 'system',
-          text: 'Schreibaktion blockiert.\nFür Datei-/Repo-Änderungen wird sicherer GitHub-Schreibzugang benötigt.\nBitte GitHub-Zugang unten einrichten — der Auftrag wird nicht an den Worker-Chat gesendet.'
-        });
-        addLog('warn', 'Write intent blocked: GitHub write access missing', 'router');
-        return;
-      }
-      appendActionEvent({
-        kind: 'route_selected',
-        route: 'github-patch',
-        label: 'Patch/Draft-PR Route gestartet',
-        detail: 'GitHub-Schreibzugang bereit · Schreibauftrag wird an Executor übergeben.',
-        state: 'running',
-      });
-      if (agentDisabled) {
-        // The browser may select a bounded route, but repository inspection and
-        // mutation remain backend-owned. No local target-file inference is used.
-        const executorBridgeDecision = decideSovereignExecutorBridgeRoute({
-          intent: classifyOfflineSovereignExecutorIntent(submittedText),
-          taskComplexity: buildOfflineCapabilityLanguageEvidence(submittedText).complexity,
-          capabilities: buildSovereignToolCapabilityRegistry({
-            repoReady: effectiveRepoReady,
-            githubAccessState: effectiveGitHubAccessState,
-            githubTokenPresent: Boolean(githubTokenRef.current),
-            directPatchSupported: false,
-            agentConfigured: sovereignAgentStartAvailable,
-            workerAvailable: !routingWorkerBlocker,
-            workspaceConfigured: sovereignAgentStartAvailable,
-            draftPrSupported: true,
-            activeExecutorStatus: scopedAgentIsRunning ? "running" : "idle",
-          }),
-          candidatePath: undefined,
-        });
-
-        // Always log the bridge decision
-        appendActionEvent(executorBridgeDecision.event);
-
-        if (executorBridgeDecision.bridgeRoute === 'sovereign_internal_operator' && executorBridgeDecision.state === 'allowed') {
-          // Internal operator is available - show honest message, no fake patch
-          appendChatLine({
-            role: 'system',
-            text: `GitHub-Zugang ist bereit.\nSovereignAgent Fallback ist nicht erforderlich.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
-          });
-          addLog('info', 'Write intent routed via Sovereign Internal Operator bridge', 'router');
-          return;
-        }
-
-        if (executorBridgeDecision.bridgeRoute === 'executor_runtime' && executorBridgeDecision.state === 'allowed') {
-          appendActionEvent(buildBlockedActionEvent({
-            route: 'agent-job',
-            label: 'Backend-Workspace-Executor nicht startbereit',
-            detail: 'Der aktuelle Agent-Pfad ist blockiert oder bereits beschäftigt. Browserseitige Repository-Lese-, Patch- und GitHub-Schreibpfade bleiben gesperrt.',
-            kind: 'patch_blocked',
-          }));
-          appendRuntimeNotice('Schreibaktion blockiert: Der backend-eigene Workspace-Executor ist nicht startbereit. Es wurde kein paralleler Job gestartet und der Browser hat keine Repository-Datei gelesen.');
-          addLog('warn', 'Write route blocked: backend executor is disabled or busy', 'router');
-          return;
-        }
-
-        // Bridge blocked - show clear blocker message with reason
-        appendRuntimeNotice(`Runtime-Schreibaktion blockiert.\n\nGrund: ${executorBridgeDecision.reason}\n\nEs wurde noch keine Datei geändert.`);
-        addLog('warn', 'Write intent blocked by bridge: ' + executorBridgeDecision.reason, 'router');
-        return;
-      }
-      addLog('info', 'Write intent routed to patch/draft-pr executor after GitHub access gate', 'router');
-      // Derive executor intent from the runtime-validated capability decision — not from
-      // offline keyword classification. The capability router already determined the route
-      // using structured runtime state; re-running keyword matching here would violate the
-      // LLM/Tool boundary (Tool must not interpret language).
-      const executorIntentFromCapability: SovereignExecutorIntentKind =
-        capabilityDecision.capability === 'draft_pr' ? 'draft_pr' : 'code_execution';
-      const agentStartRequested = await startAgentFromText(
-        submittedText,
-        executorIntentFromCapability,
-      );
-      if (agentStartRequested) {
-        appendRuntimeNotice('GitHub-Zugang ist bereit. Die Schreibaktion wurde an die Sovereign Agent Runtime übergeben. Warte auf bestätigten Job-State. Ergebnis bleibt Draft PR, kein Auto-Merge.');
-      }
-      return;
-    }
-    // ── #500/#501 Alternative write route: answer locally without Sovereign Agent lock-in.
-    // NOTE: Status, diagnostic, and retry intents are handled earlier in the flow
-    // (see Issue #522 P2 Fix 2 & 3 above) to ensure they don't create integration drafts.
-    // These questions must be answered from runtime state, not forwarded to Sovereign Agent.
-    if (isAlternativeWriteRouteIntent(submittedText)) {
-      // Browser-side direct patch is intentionally unavailable. The only write
-      // route is the authenticated backend workspace/executor contract.
-      const directPatchAvailable = false;
-      const altRouteAnswer = buildAlternativeRouteStatusAnswer({
-        githubAccessReady: githubWriteAllowed,
-        githubAccessState: effectiveGitHubAccessState,
-        agentReady: agentReady ?? false,
-        directPatchAvailable,
-      });
-      appendChatLine({ role: 'assistant', text: altRouteAnswer });
-      addLog('info', 'Alternative route question answered locally · browserDirectPatch=false · backendExecutor=' + sovereignAgentStartAvailable, 'router');
-      return;
-    }
-
-    // ── #458 + Delegation: Execution intent routing — BEFORE credit guard.
-    // Sovereign Agent execution does not go through the Worker Chat (gemini-2.0-flash) path;
-    // charging LLM credits for an executor handoff is incorrect.
-    const isExecutionIntent = isSovereignAgentExecutionIntent(submittedText);
-    const isDelegatedExecution = isDelegatedSovereignAgentExecutionIntent(submittedText, chatHistory);
-
-    if (!advisoryWorkerRoute && (isExecutionIntent || isDelegatedExecution)) {
-      if (!agentDisabled) {
-        // Immediately reflect intent in AgentWorkTimeline — truth from runtime, not from polling.
-        const _repo = chatRepoSnapshot
-          ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`
-          : 'unknown/repo';
-        appendActionEvent({
-          kind: 'intent_detected',
-          route: 'runtime',
-          label: 'Ausführungsabsicht erkannt',
-          detail: `Repo: ${_repo}`,
-          state: 'done',
-        });
-        setAgentWorkSnapshot((prev) =>
-          prev.state === 'idle'
-            ? transitionIntentDetected(prev, _repo, chatRepoSnapshot?.branch ?? 'main')
-            : prev,
-        );
-        addLog('info', `Execution intent · type=${isDelegatedExecution ? 'delegated' : 'explicit'} · repo=${_repo}`, 'router');
-        const agentStartRequested = await startAgentFromText(
-          submittedText,
-          classifyOfflineSovereignExecutorIntent(submittedText),
-        );
-        if (agentStartRequested) {
-          appendRuntimeNotice("Runtime-Aktion autorisiert.\nRoute gewählt: Sovereign Agent Runtime.\nJob-Start wurde angefragt; bestätigter Job-State kommt aus der Runtime. Ergebnis bleibt Draft PR, kein Auto-Merge.");
-        }
-        return;
-      }
-      // A disabled backend executor cannot be replaced by browser-side repository
-      // inspection or mutation. The bridge remains fail-closed.
-      const executorBridgeDecision = decideSovereignExecutorBridgeRoute({
-        intent: classifyOfflineSovereignExecutorIntent(submittedText),
-        taskComplexity: buildOfflineCapabilityLanguageEvidence(submittedText).complexity,
-        capabilities: buildSovereignToolCapabilityRegistry({
-          repoReady: effectiveRepoReady,
-          githubAccessState: effectiveGitHubAccessState,
-          githubTokenPresent: Boolean(githubTokenRef.current),
-          directPatchSupported: false,
-          agentConfigured: sovereignAgentStartAvailable,
-          workerAvailable: !routingWorkerBlocker,
-          workspaceConfigured: sovereignAgentStartAvailable,
-          draftPrSupported: true,
-          activeExecutorStatus: scopedAgentIsRunning ? "running" : "idle",
-        }),
-        candidatePath: undefined,
-      });
-
-      // Always log the bridge decision
-      appendActionEvent(executorBridgeDecision.event);
-
-      if (executorBridgeDecision.bridgeRoute === 'sovereign_internal_operator' && executorBridgeDecision.state === 'allowed') {
-        // Internal operator is available - runtime handoff decision, no fake patch claimed
-        appendChatLine({
-          role: "system",
-          text: `Runtime-Aktion autorisiert.\nRoute gewählt: Sovereign Internal Operator (${executorBridgeDecision.internalOperatorRoute ?? 'intern'}).\n\nSovereignAgent Runtime bleibt optional, wenn Direct Patch den Auftrag belegen kann.\nDer Auftrag bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
-        });
-        addLog('info', `Execution intent via Sovereign Internal Operator bridge · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
-        return;
-      }
-
-      if (executorBridgeDecision.bridgeRoute === 'executor_runtime' && executorBridgeDecision.state === 'allowed') {
-        appendActionEvent({
-          kind: 'patch_blocked',
-          route: 'github-patch',
-          label: 'Patch/Draft-PR Route geprüft — wartet auf Zielpfad',
-          detail: executorBridgeDecision.reason,
-          state: 'blocked',
-        });
-        appendChatLine({
-          role: "system",
-          text: `Runtime-Aktion autorisiert.
-Route gewählt: Patch/Draft-PR Runtime.
-
-${executorBridgeDecision.reason}
-
-Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag belegen kann. Es wurde noch keine Datei geändert; nächster Schritt ist Patch/Diff erzeugen oder Executor verbinden.`,
-        });
-        addLog('info', `Execution intent allowed by bridge without mandatory Sovereign Agent · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
-        return;
-      }
-
-      // Bridge blocked - show clear blocker with honest reason
-      const blockerReason = executorBridgeDecision.reason;
-      appendRuntimeNotice(`Runtime-Aktion blockiert.\n\nGrund: ${blockerReason}`);
-      addLog("warn", `Execution blocked by bridge: agentDisabled=true, intent=${isDelegatedExecution ? 'delegated' : 'explicit'} · ${blockerReason}`, "router");
-      return;
-    }
-
-    if (!advisoryWorkerRoute && !isSafeAnalysisPreset && isCodeGenerationIntent(submittedText)) {
-      appendActionEvent(buildRouteSelectionEvent({
-        route: 'code-llm',
-        reason: 'Code-Auftrag erkannt; Code-LLM/Worker erzeugt Antwort oder Patchvorschlag.',
-        state: 'running',
-      }));
-    }
+    // Exact typed runtime commands returned above. This continuation is advisory-only:
+    // natural language stays on the LLM route and cannot be reinterpreted by browser/runtime heuristics.
 
     // ── Aufgabe 6: Write-intent result gate. GitHub write access is verified
     // above, but a mere Worker text response still must not be treated as
     // "done" — the result gate (sovereignActionStreamRuntime) requires a
     // patch/diff, Draft PR, or an explicit blocked/access_required state
     // before the write intent can be considered resolved.
-    if (
-      !advisoryWorkerRoute
-      && !isSafeAnalysisPreset
-      && isWriteIntent(submittedText)
-      && !isCodeGenerationIntent(submittedText)
-    ) {
-      appendActionEvent(buildRouteSelectionEvent({
-        route: 'code-llm',
-        reason: 'Schreibauftrag erkannt; Ergebnis gilt erst mit Patch/Diff, Draft PR oder explizitem Blocker als abgeschlossen.',
-        state: 'running',
-      }));
-    }
 
     // ARE is evaluated before credit deduction and before any online call.
     // Reference knowledge includes uploaded PDFs; experience remains a separate,
@@ -5848,21 +5110,13 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     if (fullText && !streamError && !streamDiagnostic) {
       setWorkerBlocker(null);
       appendActionEvent(buildWorkerResponseEvent());
-      // ── Issue #445: chatClaimGuard — verify response against runtime snapshot before display
-      const claimCheck = checkChatClaim(fullText, agentWorkSnapshot);
-      let textToAppend =
-        claimCheck.allowed || !claimCheck.honestFallback
-          ? fullText
-          : `${fullText}\n\n_[Sovereign: ${claimCheck.honestFallback}]_`;
+      let textToAppend = fullText;
       
       if (streamFallbackMetadata?.fallbackUsed) {
         textToAppend += `\n\n_Hinweis: ${streamFallbackMetadata.preferredModel} war nicht erreichbar, Antwort kam von ${streamFallbackMetadata.actualModel}._`;
       }
 
-      if (!claimCheck.allowed && claimCheck.violations.length > 0) {
-        addLog("warn", `chatClaimGuard: ${claimCheck.violations.join(", ")}`, "router");
-      }
-      appendChatLine({ role: "assistant", text: textToAppend });
+      appendGuardedWorkerText(textToAppend);
       await quarantineOnlineAnswer(fullText, streamFallbackMetadata?.actualModel ?? requestedChatModel);
       return;
     }
@@ -5877,22 +5131,13 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     if (fallback?.ok && fallback.content) {
       setWorkerBlocker(null);
       appendActionEvent(buildWorkerResponseEvent());
-
-      const claimCheck = checkChatClaim(fallback.content, agentWorkSnapshot);
-      let textToAppend =
-        claimCheck.allowed || !claimCheck.honestFallback
-          ? fallback.content
-          : `${fallback.content}\n\n_[Sovereign: ${claimCheck.honestFallback}]_`;
-
-      if (!claimCheck.allowed && claimCheck.violations.length > 0) {
-        addLog("warn", `chatClaimGuard: ${claimCheck.violations.join(", ")}`, "router");
-      }
+      let textToAppend = fallback.content;
 
       if (fallback.fallbackUsed) {
         textToAppend += `\n\n_Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}._`;
       }
 
-      appendChatLine({ role: "assistant", text: textToAppend });
+      appendGuardedWorkerText(textToAppend);
       await quarantineOnlineAnswer(fallback.content, fallback.actualModel ?? requestedChatModel);
       return;
     }
@@ -5926,15 +5171,12 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       kind: 'failed',
     }));
     setWorkerBlocker(blocker);
-    appendChatLine({
-      role: "system",
-      text: buildWorkerBlockerAnswer({
+    appendRuntimeNotice(buildWorkerBlockerAnswer({
         blocker,
         repoReady: effectiveRepoReady,
         chatRepoSnapshot,
         agentReady,
-      }),
-    });
+      }));
     addLog(
       "error",
       `Worker blocked · ${diagnostic.scope}${diagnostic.status ? ` · HTTP ${diagnostic.status}` : ""}`,
@@ -5967,40 +5209,49 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
 
   useEffect(() => {
     const pendingOnlineExecution = pendingOnlineExecutionRef.current;
-    const pendingIntent = pendingWriteIntentRef.current;
-    if ((!pendingOnlineExecution && !pendingIntent) || !effectiveRepoReady) return;
+    const pendingWriteIntent = pendingWriteIntentRef.current;
+    const pendingRepoIntent = pendingRepoIntentRef.current;
+    if ((!pendingOnlineExecution && !pendingWriteIntent && !pendingRepoIntent) || !effectiveRepoReady) return;
     if (localRepoLoading || chatResponseBusy || isPublishing) return;
+    // Write/executor work wakes only when its OWN write gate is proven. A repo
+    // load or unrelated LLM reply must never resume a stale mutation request.
+    if ((pendingOnlineExecution || pendingWriteIntent) && !(githubWriteAllowed || hasCurrentGitHubWriteEvidence())) {
+      setShowGitHubAccessOverride(true);
+      return;
+    }
 
     void runSerializedSubmit(async () => {
       const currentOnlineExecution = pendingOnlineExecutionRef.current;
-      const currentPendingIntent = pendingWriteIntentRef.current;
-      if (!currentOnlineExecution && !currentPendingIntent) return;
+      const currentPendingWriteIntent = pendingWriteIntentRef.current;
+      const currentPendingRepoIntent = pendingRepoIntentRef.current;
+      if (!currentOnlineExecution && !currentPendingWriteIntent && !currentPendingRepoIntent) return;
 
       pendingOnlineExecutionRef.current = null;
       pendingWriteIntentRef.current = null;
+      pendingRepoIntentRef.current = null;
       setShowGitHubAccessOverride(false);
       appendActionEvent({
         kind: 'route_selected',
         route: 'runtime',
         label: 'Blockierter Auftrag wird wiederaufgenommen',
-        detail: githubWriteAllowed
-          ? 'Repository und Schreibzugang sind jetzt durch Runtime-Evidence belegt.'
-          : 'Repository ist jetzt belegt; der Auftrag wird bis zum nächsten erforderlichen Gate fortgesetzt.',
+        detail: currentPendingRepoIntent
+          ? 'Der benötigte Repository-Snapshot ist jetzt belegt.'
+          : 'Repository und Schreibzugang sind jetzt durch Runtime-Evidence belegt.',
         state: 'running',
       });
-      addLog('info', 'Pending intent resumed after runtime gate changed', 'router');
+      addLog('info', 'Pending intent resumed only after its required runtime gate changed', 'router');
       if (currentOnlineExecution) {
-        pendingOnlineExecutionRef.current = currentOnlineExecution;
         const started = await startAgentFromText(currentOnlineExecution.text, currentOnlineExecution.intent);
-        if (started || githubWriteAllowed) pendingOnlineExecutionRef.current = null;
+        if (!started && !(githubWriteAllowed || hasCurrentGitHubWriteEvidence())) {
+          pendingOnlineExecutionRef.current = currentOnlineExecution;
+        }
         return;
       }
-      await _processSubmit(currentPendingIntent!, { resumePendingIntent: true });
+      const currentIntent = currentPendingWriteIntent ?? currentPendingRepoIntent;
+      if (currentIntent) await _processSubmit(currentIntent, { resumePendingIntent: true });
     }, { retryPendingOnReject: true });
-    // Resume is retried whenever repo/access evidence or a blocking busy gate
-    // changes. The pending ref is cleared only after the submit lock is acquired.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveRepoReady, githubWriteAllowed, localRepoLoading, chatResponseBusy, isPublishing, pendingResumeRetrySequence]);
+  }, [effectiveRepoReady, githubWriteAllowed, hasCurrentGitHubWriteEvidence, localRepoLoading, chatResponseBusy, isPublishing, pendingResumeRetrySequence]);
 
   const handleRepoSetupLoad = () => {
     const clean = repoSetupUrl.trim();
@@ -6038,7 +5289,8 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
 
     if (!gate.canStart) {
       if (action.requiresRepo && !effectiveRepoReady) {
-        pendingWriteIntentRef.current = submitted;
+        if (action.requiresGithubWrite) pendingWriteIntentRef.current = submitted;
+        else pendingRepoIntentRef.current = submitted;
         setRepoSetupError(null);
         setShowRepoSetup(true);
         appendActionEvent(buildBlockedActionEvent({
@@ -6047,12 +5299,9 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
           detail: `${gate.reason} ${gate.nextAction}`,
           kind: 'blocked',
         }));
-        appendChatLine({
-          role: 'assistant',
-          text: `${action.icon} ${action.label}
+        appendRuntimeNotice(`${action.icon} ${action.label}
 Status: ${gate.reason}
-Das echte Repo-Setup wurde geöffnet.`,
-        });
+Das echte Repo-Setup wurde geöffnet.`);
         return;
       }
       if (action.requiresGithubWrite && effectiveRepoReady && !githubWriteAllowed) {
@@ -6065,15 +5314,9 @@ Das echte Repo-Setup wurde geöffnet.`,
           detail: 'Preset-Auftrag wurde vorgemerkt; Worker-Chat wird übersprungen.',
           state: 'blocked',
         });
-        appendChatLine({
-          role: 'assistant',
-          text: [
-            `${action.icon} ${action.label}`,
-            `Status: ${gate.reason}`,
-            'Ich habe diesen Auftrag vorgemerkt.',
-            'Bitte GitHub-Zugang im sicheren Feld eingeben — danach läuft dieser Auftrag automatisch weiter.',
-          ].join('\n'),
-        });
+        appendRuntimeNotice(
+          `${action.icon} ${action.label}\nStatus: ${gate.reason}\nDer Auftrag wartet auf bestätigten GitHub-Schreibzugang.`,
+        );
         addLog('warn', `Preset write action blocked: GitHub access gate opened for ${action.id}`, 'router');
         return;
       }
@@ -6084,14 +5327,11 @@ Das echte Repo-Setup wurde geöffnet.`,
         detail: `${gate.reason} ${gate.nextAction}`,
         kind: action.requiresGithubWrite ? 'access_required' : 'blocked',
       }));
-      appendChatLine({
-        role: 'assistant',
-        text: [
+      appendRuntimeNotice([
           `${action.icon} ${action.label}`,
           `Status: ${gate.reason}`,
           `Nächste Aktion: ${gate.nextAction}`,
-        ].join('\n'),
-      });
+        ].join('\n'));
       return;
     }
 
@@ -6116,10 +5356,7 @@ Das echte Repo-Setup wurde geöffnet.`,
             detail,
             kind: 'failed',
           }));
-          appendChatLine({
-            role: 'assistant',
-            text: `PR-Review blockiert: ${detail}\nEs wurde kein GitHub-Schreibzugang angefordert, kein Executor gestartet und kein LLM-Credit verbraucht.`,
-          });
+          appendRuntimeNotice(`PR-Review blockiert: ${detail}\nEs wurde kein GitHub-Schreibzugang angefordert, kein Executor gestartet und kein LLM-Credit verbraucht.`);
           addLog('warn', `Open PR read-only review failed: ${detail}`, 'router');
           return;
         }
@@ -6131,10 +5368,7 @@ Das echte Repo-Setup wurde geöffnet.`,
           detail: `${review.evidence.openPrCount} offene PR(s) mit Merge-/Check-Evidence gelesen.`,
           state: 'done',
         });
-        appendChatLine({
-          role: 'assistant',
-          text: formatOpenPrReviewEvidence(review.evidence),
-        });
+        appendRuntimeNotice(formatOpenPrReviewEvidence(review.evidence));
         setLastAnswerWasLocal(true);
         addLog('info', `Open PR review completed read-only: ${review.evidence.openPrCount} PR(s)`, 'router');
         return;
@@ -6198,12 +5432,9 @@ Das echte Repo-Setup wurde geöffnet.`,
       return;
     }
     if (decision.surface === 'github-status') {
-      appendChatLine({
-        role: 'system',
-        text: effectiveGitHubAccessState === 'ready'
+      appendRuntimeNotice(effectiveGitHubAccessState === 'ready'
           ? 'GitHub-Zugang ist validiert. Secret-Werte werden weder angezeigt noch im Chat gespeichert.'
-          : 'GitHub-Zugang wird bereits geprüft. Es wurde keine zweite Validierung gestartet.',
-      });
+          : 'GitHub-Zugang wird bereits geprüft. Es wurde keine zweite Validierung gestartet.');
       return;
     }
     if (decision.surface === 'executor-status') {
@@ -6336,13 +5567,13 @@ Das echte Repo-Setup wurde geöffnet.`,
   const submitDisabled =
     localRepoLoading || chatResponseBusy || isPublishing || !wishText.trim();
   const isChat = activeTab === "chat";
-  const showAgentEventStream = agentWorkSnapshot.state !== 'idle' || scopedAgentIsRunning;
+  const showAgentEventStream = liveMonitorPrimary || agentWorkSnapshot.state !== 'idle' || scopedAgentIsRunning;
   const agentEventStream = showAgentEventStream ? (
     <AgentEventStream
       snapshot={agentWorkSnapshot}
       job={scopedAgentJob}
       projections={scopedAgentProjections}
-      evidenceAnchors={agentEvidenceAnchors ?? []}
+      evidenceAnchors={scopedAgentEvidenceAnchors}
       onCancel={onCancelAgent}
       onOpenDraftPr={
         (scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)
@@ -6351,6 +5582,7 @@ Das echte Repo-Setup wurde geöffnet.`,
       }
       onOpenFile={openRepoExplorerFromFileBadge}
       primaryMonitor={liveMonitorPrimary}
+      desktopFrame={scopedDesktopFrame}
     />
   ) : null;
   const activeMod = MODULES.find((m) => m.id === activeTab) ?? MODULES[0];
@@ -6367,7 +5599,7 @@ Das echte Repo-Setup wurde geöffnet.`,
       ].filter(Boolean).join(" ")}
       data-role={builderContainerContract.dataRole}
       data-testid={builderContainerContract.testId}
-      data-layout={liveMonitorPrimary ? "live-desktop-monitor-primary" : "devchat-appcontrol-integrated"}
+      data-layout={liveMonitorPrimary ? "live-desktop-monitor-primary" : "monitor-inspector-modules"}
       aria-label={builderContainerContract.ariaLabel}
       style={{
         width: "100%",
@@ -6524,7 +5756,6 @@ Das echte Repo-Setup wurde geöffnet.`,
           </aside>
         ) : null}
       {isChat ? (
-        liveMonitorPrimary ? (
           <div
             role="region"
             aria-label="Sovereign Live Desktop Monitor"
@@ -6534,13 +5765,139 @@ Das echte Repo-Setup wurde geöffnet.`,
               flex: 1,
               minWidth: 0,
               minHeight: 0,
-              overflow: "hidden",
+              overflowX: "hidden",
+              overflowY: "auto",
+              overscrollBehavior: "contain",
               background: C.bg,
               display: "flex",
               flexDirection: "column",
             }}
           >
             {agentEventStream}
+            <LauncherTaskbar />
+            <div
+              data-testid="monitor-action-controls"
+              style={{
+                flexShrink: 0,
+                borderTop: `1px solid ${C.border}`,
+                background: C.surface,
+              }}
+            >
+              <SovereignToolLauncher
+                runtimeContext={{
+                  repoReady: effectiveRepoReady,
+                  repoFileCount: effectiveRepoReady && chatRepoSnapshot
+                    ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
+                    : 0,
+                  hasDiffEvidence: Boolean(
+                    patchDiffReport ||
+                    (scopedAgentJob?.changedFiles?.length ?? 0) > 0,
+                  ),
+                  githubAccessState: effectiveGitHubAccessState,
+                  executorAvailable: sovereignAgentStartAvailable,
+                  executorActive: scopedAgentIsRunning,
+                  hasExecutorMission: Boolean(wishText.trim()),
+                  executorIntent,
+                  runtimeLogCount: runtimeEvidenceLog.length,
+                }}
+                onSelect={handleCompactToolSelect}
+                onBlockedSelect={handleCompactToolSelect}
+                onOpenLauncher={useLauncherStore.getState().openMenu}
+              />
+              <ActionSuggestionStrip
+                actions={SOVEREIGN_PRESET_ACTIONS}
+                repoReady={effectiveRepoReady}
+                githubWriteReady={githubWriteAllowed}
+                agentReady={agentReady ?? false}
+                disabled={localRepoLoading || chatResponseBusy || isPublishing}
+                onSelect={handlePresetActionSelect}
+              />
+            </div>
+            <div
+              data-testid="monitor-runtime-action-trace"
+              style={{
+                flexShrink: 0,
+                maxHeight: 132,
+                overflowY: 'auto',
+                borderTop: actionStream.events.length ? `1px solid ${C.border}` : undefined,
+                background: C.bg,
+              }}
+            >
+              <SovereignActionStreamPanel stream={actionStream} maxEvents={12} />
+            </div>
+            <OutcomeHints hints={outcomeHints} />
+            {testRunnerBusy && (
+              <div role="status" style={{ margin: '8px 12px', padding: 10, border: `1px solid ${C.sky}44`, borderRadius: 10, color: C.sky }}>
+                Echte Workspace-Tests laufen…
+              </div>
+            )}
+            {testRunnerResult && (
+              <TestRunnerResultCard
+                result={testRunnerResult}
+                onRepair={(prompt) => setWishText(prompt)}
+              />
+            )}
+            {autoCodeReviewBusy && (
+              <div role="status" style={{ margin: '8px 12px', padding: 10, border: `1px solid ${C.violet}44`, borderRadius: 10, color: C.violet }}>
+                Auto Code Review läuft über den aufgelösten OpenRouter-/FreeLLM-Pfad…
+              </div>
+            )}
+            {autoCodeReviewResult && (
+              <AutoCodeReviewCard
+                result={autoCodeReviewResult}
+                onCancel={() => setWishText('Behebe die blockierenden Auto-Code-Review-Findings im echten Workspace, führe die relevanten Tests erneut aus und bereite danach nur einen Draft PR vor.')}
+              />
+            )}
+            {hasPendingDraft(intentDraftState) && (() => {
+              const draft = intentDraftState.draft;
+              const mappedIntent = mapInterpretedIntentToExecutorIntent(draft.intentKind);
+              const executionIntent: 'code_execution' | 'draft_pr' = mappedIntent === 'draft_pr'
+                ? 'draft_pr'
+                : 'code_execution';
+              const gateSnapshot: IntegrationIntentDraftGateSnapshot = {
+                repoReady: effectiveRepoReady,
+                githubWriteReady: githubWriteAllowed,
+                directPatchReady: false,
+                agentReady: sovereignAgentStartAvailable,
+              };
+              return (
+                <IntegrationIntentDraftCard
+                  draft={draft}
+                  gateSnapshot={gateSnapshot}
+                  canConfirm={effectiveRepoReady && githubWriteAllowed && sovereignAgentStartAvailable}
+                  confirmBlocker={!effectiveRepoReady
+                    ? 'Repository-Snapshot fehlt.'
+                    : !sovereignAgentStartAvailable
+                      ? 'Backend-Workspace-Executor ist nicht verbunden.'
+                      : undefined}
+                  onConfirm={() => {
+                    appendActionEvent(buildDraftConfirmedEvent(draft));
+                    setIntentDraftState({ status: 'confirmed', draft });
+                    void startAgentFromText(draft.originalText, executionIntent);
+                    window.setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
+                  }}
+                  onConfirmWithGitHubAccess={() => {
+                    appendActionEvent(buildDraftConfirmedEvent(draft));
+                    pendingOnlineExecutionRef.current = {
+                      text: draft.originalText,
+                      intent: executionIntent,
+                    };
+                    setShowGitHubAccessOverride(true);
+                    setIntentDraftState({ status: 'idle' });
+                  }}
+                  onRephrase={() => {
+                    appendActionEvent(buildDraftRephrasedEvent(draft));
+                    setWishText(draft.rephrasedText);
+                    setIntentDraftState({ status: 'idle' });
+                  }}
+                  onReject={() => {
+                    appendActionEvent(buildDraftRejectedEvent());
+                    setIntentDraftState({ status: 'idle' });
+                    appendRuntimeNotice('Runtime-Aktionsentwurf verworfen.');
+                  }}
+                />
+              );
+            })()}
             <MonitorCommunicationDock
               value={wishText}
               onChange={setWishText}
@@ -6549,6 +5906,32 @@ Das echte Repo-Setup wurde geöffnet.`,
               busy={localRepoLoading || chatResponseBusy || isPublishing}
               runtimeStatus={workStateStatus}
               entries={monitorCommunication}
+              routeOptions={llmRouteOptions}
+              selectedRouteId={selectedLlmRouteId}
+              onRouteChange={(routeId) => {
+                setSelectedLlmRouteId(routeId);
+                addLog(
+                  'info',
+                  routeId ? `LLM Route manuell fixiert: ${routeId}` : 'LLM Route auf Auto/PAL zurückgesetzt',
+                  'router',
+                );
+              }}
+              routeCatalogError={llmRouteCatalogError}
+              routeHint={selectedLlmRouteId
+                ? `Fixiert auf Backend-Route ${selectedLlmRouteId} · kein stiller Modell-Fallback`
+                : composerRouteHint({
+                    draft: wishText,
+                    workerBlocked,
+                    agentDisabled,
+                  })}
+              onKeyDown={handleComposerKeyDown}
+              slashMenu={showSlashCommands ? (
+                <SlashCommandMenu
+                  commands={slashMatches}
+                  selectedIndex={selectedSlashIndex}
+                  onSelect={submitSelectedSlashCommand}
+                />
+              ) : null}
             />
             {securityCardPending && (
               <SecurityBlockCard
@@ -6563,570 +5946,71 @@ Das echte Repo-Setup wurde geöffnet.`,
                 onDismiss={() => setSecurityCardPending(null)}
               />
             )}
-          </div>
-        ) : (
-        /* ── CHAT VIEW with auto-scroll lock (Issue #425) */
-        <div
-          ref={scrollRef}
-          className="sovereign-chat-body"
-          data-testid="sovereign-chat-body-window"
-          aria-label="Sovereign Chat Verlauf"
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            setUserScrolledAway(!isScrollNearBottom(el));
-          }}
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            overflowX: "hidden",
-            background: C.bg,
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          {/* Fix 5: Partial-Snapshot Guard — never show fabricated repo truth */}
-          {isPartialRepoSnapshot && (
-            <div
-              role="alert"
-              data-testid="partial-repo-snapshot-warning"
-              style={{
-                margin: '8px 0',
-                padding: '10px 14px',
-                borderRadius: 10,
-                background: '#fbbf2412',
-                border: '1px solid #fbbf2440',
-                fontSize: 12,
-                color: '#fbbf24',
-                display: 'flex',
-                gap: 8,
-                alignItems: 'flex-start',
-              }}
-            >
-              <span style={{ flexShrink: 0 }}>⚠️</span>
-              <span>
-                <strong>Unvollständiger Repo-Snapshot.</strong> Owner, Repo, Branch oder URL fehlt.
-                Der angezeigte Zustand wäre unvollständig. Bitte Repo neu laden.
-              </span>
-            </div>
-          )}
-
-          {!wishText.trim() && !chatRepoSnapshot && chatHistory.length === 0 && !securityCardPending ? (
-            <WelcomeScreen
-              onIdea={(opt) => setWishText((c) => appendOption(c, opt))}
-            />
-          ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-                padding: "12px 0 6px",
-              }}
-            >
-              {chatLines.map((line) => (
-                <Bubble
-                  key={line.id}
-                  msg={line}
-                  now={nowRef.current}
-                  onLongPress={(draft) => setWishText(draft)}
-                  onOpenFile={openRepoExplorerFromFileBadge}
-                />
-              ))}
-              <OutcomeHints hints={outcomeHints} />
-              {testRunnerBusy && (
-                <div role="status" style={{ margin: '8px 12px', padding: 10, border: `1px solid ${C.sky}44`, borderRadius: 10, color: C.sky }}>
-                  Echte Workspace-Tests laufen…
-                </div>
-              )}
-              {testRunnerResult && (
-                <TestRunnerResultCard
-                  result={testRunnerResult}
-                  onRepair={(prompt) => setWishText(prompt)}
-                />
-              )}
-              {autoCodeReviewBusy && (
-                <div role="status" style={{ margin: '8px 12px', padding: 10, border: `1px solid ${C.violet}44`, borderRadius: 10, color: C.violet }}>
-                  Auto Code Review läuft über den aufgelösten OpenRouter-/FreeLLM-Pfad…
-                </div>
-              )}
-              {autoCodeReviewResult && (
-                <AutoCodeReviewCard
-                  result={autoCodeReviewResult}
-                  onCancel={() => setWishText('Behebe die blockierenden Auto-Code-Review-Findings im echten Workspace, führe die relevanten Tests erneut aus und bereite danach nur einen Draft PR vor.')}
-                />
-              )}
-              <details style={{ margin: '8px 12px' }}>
-                <summary style={{ cursor: 'pointer', color: C.textSub, minHeight: 44 }}>
-                  Evidence / technische Details
-                </summary>
-                <SovereignActionStreamPanel stream={actionStream} />
-              </details>
-
-              {/* ── Issue #520 + #522: Integration Intent Draft Card — runtime-contracted routing */}
-              {hasPendingDraft(intentDraftState) && (() => {
-                const draft = intentDraftState.draft;
-                
-                // Build Capability Registry from runtime truth (no tokens, no fakes)
-                const capabilities = buildSovereignToolCapabilityRegistry({
-                  repoReady: effectiveRepoReady,
-                  githubAccessState: effectiveGitHubAccessState,
-                  githubTokenPresent: Boolean(githubTokenRef.current),
-                  directPatchSupported: false,
-                  agentConfigured: sovereignAgentStartAvailable,
-                  workerAvailable: !workerBlocker,
-                  workspaceConfigured: sovereignAgentStartAvailable,
-                  draftPrSupported: githubWriteAllowed,
-                  activeExecutorStatus:
-                    scopedAgentIsRunning ||
-                    ['intent_detected', 'executor_starting', 'executor_running', 'branch_created', 'commit_created'].includes(agentWorkSnapshot.state)
-                      ? 'running'
-                      : 'idle',
-                });
-
-                // Build Workspace Scope only when repo is loaded (no fake scope)
-                const workspaceScope = chatRepoSnapshot
-                  ? createSovereignWorkspaceScope({
-                      repoFullName: `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`,
-                      repoUrl: `https://github.com/${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`,
-                      branch: chatRepoSnapshot.branch,
-                      allowedPaths: ['src/', 'tests/', 'scripts/', 'README.md', 'docs/'],
-                      forbiddenPaths: ['.env', '.env.local', 'node_modules/', 'dist/', 'build/', 'android/app/build/'],
-                      draftPrOnly: true,
-                      githubWriteValidated: githubWriteAllowed,
-                      maxAction: 'draft_pr',
-                    })
-                  : null;
-
-                // Gate snapshot for card display (kept for backward compatibility)
-                const gateSnapshot: IntegrationIntentDraftGateSnapshot = {
-                  repoReady: effectiveRepoReady,
-                  githubWriteReady: capabilities.githubWrite.status === 'ready',
-                  directPatchReady: capabilities.directPatch.canStart,
-                  agentReady: capabilities.agent.canStart,
-                };
-
-                // canExecute from runtime truth
-                const canExecute = capabilities.agent.canStart;
-                const confirmCheck = canConfirmIntegrationIntentDraft(draft, gateSnapshot);
-
-                return (
-                  <IntegrationIntentDraftCard
-                    draft={draft}
-                    gateSnapshot={gateSnapshot}
-                    canConfirm={effectiveRepoReady && canExecute}
-                    confirmBlocker={!effectiveRepoReady ? confirmCheck.blocker : undefined}
-                    onConfirm={() => {
-                      // Use Runtime Bridge for route decision
-                      const intent = mapInterpretedIntentToExecutorIntent(draft.intentKind)
-                        ?? 'unknown';
-                      const bridgeDecision = decideSovereignExecutorBridgeRoute({
-                        intent,
-                        taskComplexity: intent === 'direct_patch' ? 'simple' : intent === 'code_execution' ? 'complex' : 'unknown',
-                        capabilities,
-                        workspaceScope: workspaceScope ?? undefined,
-                        candidatePath: undefined,
-                      });
-
-                      // Preserve the exact LLM-understood mission for execution and
-                      // later evidence-gated learning. A PR URL is only context; the
-                      // pattern cache requires accepted server/vector evidence.
-                      const confirmedMission = collapseRepeatedAnalyzedMission(
-                        buildAnalyzedMission({
-                          wish: draft.originalText,
-                          repoReady: effectiveRepoReady,
-                          repoReason: effectiveRepoReason,
-                        }),
-                      );
-                      if (lastMissionRef.current !== confirmedMission) {
-                        emitMissionChange(confirmedMission);
-                      }
-
-                      // Log confirmed draft
-                      appendActionEvent(buildDraftConfirmedEvent(draft));
-                      setIntentDraftState({ status: 'confirmed', draft });
-
-                      // Always log the bridge decision event
-                      appendActionEvent(bridgeDecision.event);
-
-                      // Handle Sovereign Internal Operator route
-                      if (bridgeDecision.bridgeRoute === 'sovereign_internal_operator') {
-                        if (bridgeDecision.state === 'allowed') {
-                          // Internal operator is available - runtime handoff decision
-                          appendChatLine({
-                            role: 'system',
-                            text: `Runtime-Aktion bestätigt.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
-                          });
-                          addLog('info', `Integration via Sovereign Internal Operator bridge: ${bridgeDecision.reason}`, 'router');
-                          setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
-                          return;
-                        } else {
-                          // Internal operator blocked
-                          appendRuntimeNotice(`Runtime-Aktion blockiert.\n\nGrund: ${bridgeDecision.reason}`);
-                          addLog('warn', `Integration blocked by bridge: ${bridgeDecision.reason}`, 'router');
-                          setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
-                          return;
-                        }
-                      }
-
-                      // Handle executor_runtime routes from the bridge contract.
-                      // Do not cast the bridge decision: the bridge now exposes the original
-                      // executor route explicitly so allowed Direct Patch decisions cannot fall
-                      // through to the default blocker path.
-                      const decision = {
-                        route: bridgeDecision.executorRoute ?? 'blocked',
-                        reason: bridgeDecision.reason,
-                      };
-
-                      switch (decision.route) {
-                        case 'github_access':
-                          // Open GitHub Access Gate, no executor starts
-                          pendingWriteIntentRef.current = draft.originalText;
-                          setShowGitHubAccessOverride(true);
-                          appendRuntimeNotice('GitHub-Schreibzugang wird benötigt.\nBitte Zugang unten einrichten.');
-                          break;
-
-                        case 'direct_patch':
-                          if (!sovereignAgentStartAvailable || !onStartAgent) {
-                            appendActionEvent(buildBlockedActionEvent({
-                              route: 'agent-job',
-                              label: 'Backend-Workspace-Executor nicht verfügbar',
-                              detail: 'Der bestätigte Direct-Patch-Auftrag darf nicht im Browser ausgeführt werden.',
-                              kind: 'patch_blocked',
-                            }));
-                            appendRuntimeNotice('Direct Patch blockiert: Ein bestätigter backend-eigener Workspace-Executor ist erforderlich. Der Browser hat keine Repository-Datei gelesen und keinen Patch erzeugt.');
-                            break;
-                          }
-                          addLog('info', `Integration delegated to backend workspace: ${decision.reason}`, 'router');
-                          void startAgentFromText(draft.originalText, 'code_execution');
-                          break;
-
-                        case 'sovereign-agent':
-                          // Sovereign Agent route — ONLY with validated GitHub write
-                          if (!githubWriteAllowed) {
-                            // Defensive: block and open access gate while preserving
-                            // the confirmed original intent for state-driven resume.
-                            appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
-                            pendingWriteIntentRef.current = draft.originalText;
-                            setShowGitHubAccessOverride(true);
-                            appendRuntimeNotice('Sovereign Agent Runtime benötigt GitHub-Schreibzugang.\nBitte Zugang unten einrichten.');
-                            break;
-                          }
-                          addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
-                          void startAgentFromText(draft.originalText, intent);
-                          break;
-
-                        case 'workspace':
-                          // Workspace route detected but not yet connected — honest block
-                          appendRuntimeNotice(`Workspace-Route blockiert: noch nicht verbunden.\n\nGrund: ${decision.reason}`);
-                          break;
-
-                        case 'worker_chat':
-                          // Worker Chat — advisory only, no write success
-                          appendRuntimeNotice('Runtime-Route: Worker Chat für die vom LLM erkannte Beratungsabsicht.');
-                          break;
-
-                        case 'local_status':
-                          // Status query — answer from runtime state
-                          break;
-
-                        case 'blocked':
-                        default:
-                          // Honest block with reason
-                          appendRuntimeNotice(`Runtime-Aktion blockiert.\n\nGrund: ${decision.reason}`);
-                          break;
-                      }
-
-                      // Clear draft state after processing
-                      setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
-                    }}
-                    onConfirmWithGitHubAccess={() => {
-                      // P2 Fix 4: Called when user clicks "GitHub-Zugang benötigt"
-                      // Opens the GitHub Access Gate
-                      appendActionEvent({
-                        kind: 'github_access_required',
-                        route: 'github-access',
-                        label: 'GitHub-Schreibzugang erforderlich',
-                        detail: 'Draft bestätigt aber GitHub-Zugang fehlt',
-                        state: 'blocked',
-                      });
-                      pendingWriteIntentRef.current = draft.originalText;
-                      setShowGitHubAccessOverride(true);
-                      appendRuntimeNotice('Runtime-Aktion bestätigt, aber blockiert.\nGitHub-Schreibzugang wird benötigt.\nBitte Zugang unten einrichten.');
-                      setIntentDraftState({ status: 'idle' });
-                      addLog('info', 'Integration draft confirmed: GitHub access gate opened', 'router');
-                    }}
-                    onRephrase={() => {
-                      // Rephrase the draft - put rephrased text in input, don't execute
-                      appendActionEvent(buildDraftRephrasedEvent(draft));
-                      setWishText(draft.rephrasedText);
-                      setIntentDraftState({ status: 'idle' });
-                      addLog('info', 'Integration draft rephrased, text updated in input', 'router');
-                    }}
-                    onReject={() => {
-                      // Reject the draft - clear state and log honest rejection
-                      appendActionEvent(buildDraftRejectedEvent());
-                      setIntentDraftState({ status: 'idle' });
-                      appendRuntimeNotice('Runtime-Aktionsentwurf verworfen. Bitte formuliere den Auftrag neu.');
-                      addLog('info', 'Integration draft rejected by user', 'router');
-                    }}
-                  />
-                );
-              })()}
-
-              {/* Runtime event stream stays inline only when the desktop monitor is not the primary surface. */}
-              {agentEventStream}
-
-              {/* ── Gap 3: Security Block Card — shown when secret detected in chat input */}
-              {securityCardPending && (
-                <SecurityBlockCard
-                  title={securityCardPending.title}
-                  text={securityCardPending.text}
-                  hint={securityCardPending.hint}
-                  buttonLabel={securityCardPending.buttonLabel}
-                  onOpenSecureAccess={() => {
-                    setShowGitHubAccessOverride(true);
-                    setSecurityCardPending(null);
-                  }}
-                  onDismiss={() => setSecurityCardPending(null)}
-                />
-              )}
-
-              {/* ── Issue #443: GitHub Access Card (shown when write access needed but not available) */}
-              {!githubWriteAllowed && (scopedAgentJob?.status === 'running' || isPublishing || showGitHubAccessOverride) && (
-                <GitHubAccessCard
-                  snapshot={effectiveGitHubAccessSnapshot}
-                  onProvideToken={async (token) => {
-                    // SECURITY: Token is only used for this one-shot validation.
-                    // It is never written into chat history, logs, telemetry or action events.
-                    const formatResult = validateGitHubTokenFormat(token);
-                    if (!formatResult.isValid) {
-                      setGitHubAccessState(failGitHubAccessValidation('', formatResult.error || 'Ungültiges Format'));
-                      setValidatedGitHubTargetKey(null);
-                      githubTokenRef.current = null;
-                      return;
-                    }
-
-                    const validationTargetKey = currentRepositoryTargetKey;
-                    const validationRepoScopeKey = currentRepoScopeKey;
-                    const validationRepoSnapshot = chatRepoSnapshot;
-                    if (!validationTargetKey || !validationRepoScopeKey || !validationRepoSnapshot) {
-                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Revisionsgebundener Repository-Scope fehlt für GitHub-Zugangsprüfung.'));
-                      setValidatedGitHubTargetKey(null);
-                      githubTokenRef.current = null;
-                      appendActionEvent(buildBlockedActionEvent({
-                        route: 'github-access',
-                        label: 'GitHub-Zugang fehlgeschlagen',
-                        detail: 'Revisionsgebundener Repository-Scope fehlt für GitHub-Zugangsprüfung.',
-                        kind: 'failed',
-                      }));
-                      return;
-                    }
-
+            {!githubWriteAllowed && (scopedAgentJob?.status === 'running' || isPublishing || showGitHubAccessOverride) && (
+              <GitHubAccessCard
+                snapshot={effectiveGitHubAccessSnapshot}
+                onProvideToken={async (token) => {
+                  const formatResult = validateGitHubTokenFormat(token);
+                  if (!formatResult.isValid) {
+                    setGitHubAccessState(failGitHubAccessValidation('', formatResult.error || 'Ungültiges Format'));
                     setValidatedGitHubTargetKey(null);
-                    setGitHubAccessState(startGitHubAccessValidation(formatResult.maskedToken));
-                    appendActionEvent({
-                      kind: 'route_selected',
-                      route: 'github-access',
-                      label: 'GitHub-Zugang wird geprüft',
-                      detail: 'Echte GitHub-API-Prüfung läuft.',
-                      state: 'running',
-                    });
-                    appendRuntimeNotice('Token wurde übernommen. GitHub-Zugang wird jetzt geprüft. Bitte Zwischenablage auf Android leeren, falls das Token kopiert wurde.');
-
-                    const validation = await validateGitHubTokenForRepo(
-                      token,
-                      {
-                        repository: validationRepoSnapshot.repoUrl,
-                        branch: validationRepoSnapshot.branch,
-                        expectedBaseSha: validationRepoSnapshot.headSha,
-                      },
-                      globalThis.fetch,
-                      githubAccessApiBase,
-                    );
-
-                    if (
-                      currentRepositoryTargetKeyRef.current !== validationTargetKey
-                      || !isCurrentRepoScope(validationRepoScopeKey)
-                    ) {
-                      setGitHubAccessState(createGitHubAccessSnapshot());
-                      setValidatedGitHubTargetKey(null);
-                      githubTokenRef.current = null;
-                      appendActionEvent(buildBlockedActionEvent({
-                        route: 'github-access',
-                        label: 'GitHub-Zugangsprüfung verworfen',
-                        detail: 'Das Repo-Ziel hat sich während der Validierung geändert. Der alte Prüferfolg wurde nicht übernommen.',
-                        kind: 'blocked',
-                      }));
-                      return;
-                    }
-
-                    if (!validation.ok) {
-                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.'));
-                      setValidatedGitHubTargetKey(null);
-                      githubTokenRef.current = null;
-                      appendActionEvent(buildBlockedActionEvent({
-                        route: 'github-access',
-                        label: 'GitHub-Zugang fehlgeschlagen',
-                        detail: validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.',
-                        kind: 'failed',
-                      }));
-                      appendRuntimeNotice(`GitHub-Zugangsprüfung fehlgeschlagen: ${validation.error || 'unbekannter Fehler'}`);
-                      return;
-                    }
-
-                    setGitHubAccessState(completeGitHubAccessValidation(formatResult.maskedToken));
-                    setValidatedGitHubTargetKey(validationTargetKey);
-                    githubTokenRef.current = token;
-                    appendActionEvent({
-                      kind: 'done',
-                      route: 'github-access',
-                      label: 'GitHub-Zugang bereit',
-                      detail: 'GitHub-Credential und effektiver Repo-Schreibzugriff wurden serverseitig für das geladene Repo bestätigt.',
-                      state: 'done',
-                    });
-
-                    const pendingWriteIntent = pendingOnlineExecutionRef.current?.text
-                      ?? pendingWriteIntentRef.current;
-                    if (!pendingWriteIntent) {
-                      appendRuntimeNotice('GitHub-Zugang ist bereit. Der Zugangswert wird nicht im Chat gespeichert. Wenn er in einem Screen Recording oder Clipboard-Verlauf sichtbar war, bitte rotieren.');
-                      return;
-                    }
-
-                    appendRuntimeNotice('GitHub-Zugang ist bereit. Der vorgemerkte Auftrag wird nach dem bestätigten Runtime-State automatisch über dieselbe Routing-Pipeline fortgesetzt. Der Zugangswert wird nicht im Chat gespeichert.');
-                    addLog('info', 'GitHub access confirmed; pending intent awaits state-driven resume', 'router');
-                  }}
-                  onDismiss={() => {
-                    pendingOnlineExecutionRef.current = null;
-                    pendingWriteIntentRef.current = null;
-                    setShowGitHubAccessOverride(false);
-                    appendActionEvent(buildLocalRuntimeResultEvent({
-                      label: 'GitHub-Zugangsfläche geschlossen',
-                      detail: 'Die manuell geöffnete Zugangsfläche wurde geschlossen; kein Zugangsstatus wurde verändert.',
-                    }));
-                  }}
-                />
-              )}
-
-              {/* ── Issue #426: Worker Blocker Card */}
-              {workerBlocker && (
-                <WorkerBlockerCard
-                  blocker={workerBlocker}
-                  onRetryWithMessage={(msg) => {
-                    setWorkerBlocker(null);
-                    appendActionEvent(buildLocalRuntimeResultEvent({
-                      label: 'Retry gestartet',
-                      detail: 'Worker-Blocker-Karte hat den letzten Request erneut an die echte Worker-Route übergeben.',
-                    }));
-                    addLog(
-                      "info",
-                      "Worker retry with message from card",
-                      "router",
-                    );
-                    retrySubmit(msg, { ignoreExistingWorkerBlocker: true });
-                  }}
-                  onExplain={() => {
-                    const explanation = explainDevChatWorkerDiagnostic(
-                      workerBlocker.diagnostic,
-                    );
-                    appendRuntimeNotice(explanation);
-                  }}
-                  onLogin={() => setShowLogin(true)}
-                  onAgentInstead={(msg) => {
-                    void startAgentFromText(msg, 'code_execution');
-                  }}
-                  userMessage={lastWorkerRequestMessage ?? undefined}
-                />
-              )}
-
-              {/* ── Issue #431: Draft PR Card */}
-              {scopedAgentJob?.draftPrUrl && (
-                <DraftPrCard
-                  url={scopedAgentJob.draftPrUrl}
-                  changedFiles={scopedAgentJob.changedFiles || []}
-                  buildStatus={resolveDraftPrBuildStatus({
-                    draftPrUrl: scopedAgentJob.draftPrUrl,
-                  })}
-                  onOpenBrowser={() => {
-                    const safeUrl = safeHttpsUrl(scopedAgentJob.draftPrUrl);
-                    if (safeUrl) {
-                      window.open(safeUrl, "_blank", "noopener,noreferrer");
-                    }
-                  }}
-                  onDiscussInChat={() =>
-                    setWishText(`Erkläre mir die Änderungen im Draft PR.`)
+                    githubTokenRef.current = null;
+                    return;
                   }
-                />
-              )}
-
-              {/* ── Issue #445: AgentResultCard — structured result when PR is ready */}
-              {agentWorkSnapshot.state === 'draft_pr_ready' && agentWorkSnapshot.draftPrUrl && (
-                <AgentResultCard
-                  snapshot={agentWorkSnapshot}
-                  onOpen={() => {
-                    const safeUrl = safeHttpsUrl(agentWorkSnapshot.draftPrUrl);
-                    if (safeUrl) {
-                      window.open(safeUrl, '_blank', 'noopener,noreferrer');
-                    }
-                  }}
-                  onViewDiff={() =>
-                    setWishText('Erkläre mir die Änderungen im Draft PR.')
-                  }
-                />
-              )}
-
-              {/* ── Issue #425: Scroll-away indicator */}
-              {userScrolledAway && (
-                <div
-                  style={{
-                    textAlign: "center",
-                    fontSize: 11,
-                    color: C.textMuted,
-                    padding: "4px 16px",
-                    fontFamily: "monospace",
-                  }}
-                >
-                  ↑ Nach oben gescrollt · Neue Nachrichten unten
-                </div>
-              )}
-
-              {/* ── Issue #425: Jump Badge */}
-              {shouldShowUnreadBadge(userScrolledAway, unseenCount > 0) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    scrollRef.current?.scrollTo({
-                      top: scrollRef.current.scrollHeight,
-                      behavior: "smooth",
-                    });
-                    setUnseenCount(0);
-                    setUserScrolledAway(false);
-                  }}
-                  style={{
-                    position: "sticky",
-                    bottom: 16,
-                    alignSelf: "center",
-                    padding: "8px 16px",
-                    borderRadius: 20,
-                    background: C.accent,
-                    color: C.bg,
-                    fontSize: 13,
-                    fontWeight: 500,
-                    border: "none",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                  }}
-                >
-                  ↓ {unseenCount} Neue Nachricht{unseenCount > 1 ? "en" : ""}
-                </button>
-              )}
-
-              <div style={{ height: 8 }} />
-            </div>
-          )}
-        </div>
-        )
+                  appendRuntimeNotice('Ephemeres GitHub-Credential übernommen. Die Backend-Prüfung läuft; der Wert wird weder in Kommunikation noch Logs gespeichert.');
+                  const ready = await validateCurrentRepoGithubCredential(
+                    token,
+                    formatResult.maskedToken,
+                    'manual-pat',
+                  );
+                  if (!ready) return;
+                  const pendingWriteIntent = pendingOnlineExecutionRef.current?.text
+                    ?? pendingWriteIntentRef.current;
+                  appendRuntimeNotice(pendingWriteIntent
+                    ? 'GitHub-Zugang ist bereit. Der vorgemerkte Auftrag wird erst durch den bestätigten Gate-State fortgesetzt.'
+                    : 'GitHub-Zugang ist bereit. Der Zugangswert bleibt ausschließlich im Speicher dieser Sitzung.');
+                }}
+                onDismiss={() => {
+                  pendingOnlineExecutionRef.current = null;
+                  pendingWriteIntentRef.current = null;
+                  setShowGitHubAccessOverride(false);
+                  appendActionEvent(buildLocalRuntimeResultEvent({
+                    label: 'GitHub-Zugangsfläche geschlossen',
+                    detail: 'Die sichere Zugangsfläche wurde geschlossen; kein Zugangsstatus wurde erfunden.',
+                  }));
+                }}
+              />
+            )}
+            {workerBlocker && (
+              <WorkerBlockerCard
+                blocker={workerBlocker}
+                onRetryWithMessage={(msg) => {
+                  setWorkerBlocker(null);
+                  appendActionEvent(buildLocalRuntimeResultEvent({
+                    label: 'Retry gestartet',
+                    detail: 'Die Monitor-Recovery hat den korrelierten Originalrequest erneut an die echte LLM-Route übergeben.',
+                  }));
+                  retrySubmit(msg, { ignoreExistingWorkerBlocker: true });
+                }}
+                onExplain={() => appendRuntimeNotice(explainDevChatWorkerDiagnostic(workerBlocker.diagnostic))}
+                onLogin={() => setShowLogin(true)}
+                onAgentInstead={(msg) => { void startAgentFromText(msg, 'code_execution'); }}
+                userMessage={lastWorkerRequestMessage ?? undefined}
+              />
+            )}
+            {scopedAgentJob?.draftPrUrl && (
+              <DraftPrCard
+                url={scopedAgentJob.draftPrUrl}
+                changedFiles={scopedAgentJob.changedFiles || []}
+                buildStatus={resolveDraftPrBuildStatus({ draftPrUrl: scopedAgentJob.draftPrUrl })}
+                onOpenBrowser={() => {
+                  const safeUrl = safeHttpsUrl(scopedAgentJob.draftPrUrl);
+                  if (safeUrl) window.open(safeUrl, '_blank', 'noopener,noreferrer');
+                }}
+                onDiscussInChat={() => setWishText('Erkläre mir die Änderungen im Draft PR.')}
+              />
+            )}
+          </div>
       ) : (
         /* ── MODULE VIEW */
         <div style={{ flex: 1, overflowY: "auto", background: C.bg }}>
@@ -7156,93 +6040,12 @@ Das echte Repo-Setup wurde geöffnet.`,
       )}
       </div>
 
-      {/* COMPOSER — only in chat view, v3 verbatim */}
-      {isChat && !liveMonitorPrimary && (
-        <>
-          {/* ── Issue #453: LauncherTaskbar — offene Tools als Chips */}
-          <LauncherTaskbar />
-          {/* ── Issue #445 + #452: SovereignToolLauncher — quick-action "+" launcher + Sovereign Launcher */}
-          <SovereignToolLauncher
-            runtimeContext={{
-              repoReady: effectiveRepoReady,
-              repoFileCount: effectiveRepoReady && chatRepoSnapshot
-                ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
-                : 0,
-              hasDiffEvidence: Boolean(
-                patchDiffReport ||
-                (scopedAgentJob?.changedFiles?.length ?? 0) > 0,
-              ),
-              githubAccessState: effectiveGitHubAccessState,
-              executorAvailable: sovereignAgentStartAvailable,
-              executorActive: scopedAgentIsRunning,
-              hasExecutorMission: Boolean(wishText.trim()),
-              executorIntent,
-              runtimeLogCount: runtimeEvidenceLog.length,
-            }}
-            onSelect={handleCompactToolSelect}
-            onBlockedSelect={handleCompactToolSelect}
-            onOpenLauncher={useLauncherStore.getState().openMenu}
-          />
-          <ActionSuggestionStrip
-            actions={SOVEREIGN_PRESET_ACTIONS}
-            repoReady={effectiveRepoReady}
-            githubWriteReady={githubWriteAllowed}
-            agentReady={agentReady ?? false}
-            disabled={localRepoLoading || chatResponseBusy || isPublishing}
-            onSelect={handlePresetActionSelect}
-          />
-          <Composer
-            value={wishText}
-            onChange={setWishText}
-            onSubmit={() => {
-              void handleSubmit();
-            }}
-            onKeyDown={handleComposerKeyDown}
-            disabled={submitDisabled}
-            loading={localRepoLoading}
-            placeholder={
-              chatRepoSnapshot
-                ? `Frage zu ${chatRepoSnapshot.name}…`
-                : "GitHub URL oder Auftrag…"
-            }
-            routeHint={selectedLlmRouteId
-              ? `Fixiert auf Backend-Route ${selectedLlmRouteId} · kein stiller Modell-Fallback`
-              : composerRouteHint({
-                  draft: wishText,
-                  workerBlocked,
-                  agentDisabled,
-                })}
-            routeOptions={llmRouteOptions}
-            selectedRouteId={selectedLlmRouteId}
-            onRouteChange={(routeId) => {
-              setSelectedLlmRouteId(routeId);
-              addLog(
-                'info',
-                routeId ? `LLM Route manuell fixiert: ${routeId}` : 'LLM Route auf Auto/PAL zurückgesetzt',
-                'router',
-              );
-            }}
-            routeCatalogError={llmRouteCatalogError}
-            slashMenu={
-              showSlashCommands ? (
-                <SlashCommandMenu
-                  commands={slashMatches}
-                  selectedIndex={selectedSlashIndex}
-                  onSelect={submitSelectedSlashCommand}
-                />
-              ) : null
-            }
-          />
-        </>
-      )}
-
       {/* BOTTOM TAB BAR — Chat + Inspector toggle; technical modules live behind Inspector */}
       <BottomTabBar
         activeTab={activeTab}
         onChatClick={() => switchTab("chat")}
         inspectorOpen={showInspector}
         onToggleInspector={() => setShowInspector((v) => !v)}
-        monitorActive={liveMonitorPrimary}
       />
 
       {/* SOVEREIGN LAUNCHER — App-Grid Overlay + Window Host (Issues #452, #453) */}
@@ -7310,20 +6113,25 @@ Das echte Repo-Setup wurde geöffnet.`,
           onClose={() => setShowPromptLibrary(false)}
         />
       )}
-      {filePreviewPath && (
+      {filePreviewPath && filePreviewBindingKey && filePreviewBindingKey === currentFilePreviewBindingKey && (
         <FileContentPreviewSheet
           filePath={filePreviewPath}
           result={filePreviewResult}
           loading={filePreviewLoading}
           onClose={() => {
+            filePreviewRequestGenerationRef.current += 1;
             setFilePreviewPath(null);
             setFilePreviewResult(null);
             setFilePreviewLoading(false);
+            setFilePreviewBindingKey(null);
           }}
           onSendToChat={(prompt) => {
+            filePreviewRequestGenerationRef.current += 1;
             setWishText(prompt);
             setFilePreviewPath(null);
             setFilePreviewResult(null);
+            setFilePreviewLoading(false);
+            setFilePreviewBindingKey(null);
           }}
         />
       )}

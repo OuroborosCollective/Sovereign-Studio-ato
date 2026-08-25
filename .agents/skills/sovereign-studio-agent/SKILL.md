@@ -1,13 +1,13 @@
 ---
 name: sovereign-studio-agent
-description: Use this skill when working on Sovereign Studio ATO (OuroborosCollective/Sovereign-Studio-ato). Activate when the user mentions apply patch, implement issue, BuilderContainer, runtime truth, capability router, direct GitHub patch, Sovereign Agent, workspace executor, Draft PR, run checks, push or close issues. Provides guidance on chat-first product rules, runtime library integration, GitHub access safety, branch/Draft PR workflow and issue management.
+description: Use this skill when working on Sovereign Studio ATO (OuroborosCollective/Sovereign-Studio-ato). Activate when the user mentions apply patch, implement issue, BuilderContainer, runtime truth, capability router, direct GitHub patch, Sovereign Agent, workspace executor, Draft PR, run checks, push or close issues. Provides guidance on monitor-first product rules, embedded LLM communication, runtime library integration, GitHub access safety, branch/Draft PR workflow and issue management.
 ---
 
 # Sovereign Studio Agent Skill
 
 This skill provides procedural knowledge for working with the Sovereign Studio ATO repository.
 
-The repository is an Android-first NoCode/AI service tool. It is not Areloria/WASD/MMORPG. The product must stay chat-first and runtime-truth-first.
+The repository is an Android-first NoCode/AI service tool. It is not Areloria/WASD/MMORPG. The product must stay monitor-first and runtime-truth-first, with natural-language conversation embedded in the monitor.
 
 ## Core purpose
 
@@ -23,10 +23,11 @@ The UI may only display that truth.
 
 Always preserve:
 
-- Chat-first default surface.
+- Live Workspace Monitor as the permanent primary surface.
+- Natural-language communication in the embedded dock; no legacy full-chat body as primary UI.
 - Runtime decisions in `src/features/product/runtime/**`.
 - `BuilderContainer.tsx` as central visible work surface, not product truth source.
-- Repo, Files, Diff, Workflow, Runtime, Telemetry, Health, Coverage, Memory and Inspector as inspection surfaces.
+- Repo, Files, Diff, Workflow, Runtime, Telemetry, Health, Coverage, Memory and Inspector as bounded inspection surfaces.
 - No fake success.
 - No hard percent progress unless it is a real measured metric.
 - No mocks, stubs or facades in live paths.

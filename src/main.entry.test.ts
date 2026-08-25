@@ -19,14 +19,24 @@ describe('main app entry', () => {
     expect(wrapper).not.toContain('ProductMagicApp');
   });
 
-  it('makes App.tsx the chat-only live surface', () => {
+  it('makes App.tsx the monitor-first live surface', () => {
     const app = readSource('./App.tsx');
 
     expect(app).toContain('BuilderContainer');
-    expect(app).toContain('data-testid="chat-only-app"');
-    expect(app).toContain('data-layout="chat-only-live-entry"');
-    expect(app).toContain('aria-label="Sovereign Chat"');
-    expect(app).toContain('CHAT_ONLY_STYLE');
+    expect(app).toContain('data-testid="sovereign-monitor-app"');
+    expect(app).toContain('data-layout="monitor-first-live-workspace"');
+    expect(app).toContain('aria-label="Sovereign Workspace Monitor"');
+    expect(app).toContain('MONITOR_FIRST_STYLE');
+    expect(app).not.toContain('data-layout="chat-only-live-entry"');
+  });
+
+  it('keeps the unreachable legacy chat body and composer out of the live builder', () => {
+    const builder = readSource('./features/product/containers/BuilderContainer.tsx');
+
+    expect(builder).toContain('data-testid="sovereign-live-monitor-primary"');
+    expect(builder).toContain('<MonitorCommunicationDock');
+    expect(builder).not.toContain('data-testid="sovereign-chat-body-window"');
+    expect(builder).not.toContain('isChat && !liveMonitorPrimary');
   });
 
   it('keeps the old dashboard shell out of the live app entry', () => {
@@ -41,13 +51,13 @@ describe('main app entry', () => {
     expect(app).not.toContain('RepoInsightPanelBridge');
   });
 
-  it('keeps runtime auto-routing behind the chat instead of driving visible app tabs', () => {
+  it('keeps runtime auto-routing behind the monitor instead of driving visible app tabs', () => {
     const app = readSource('./App.tsx');
 
     expect(app).not.toContain('decideSovereignAutoView');
     expect(app).not.toContain('setActiveTab(decision.tab)');
     expect(app).not.toContain('workflowStatus: workflowReport?.status');
-    expect(app).toContain('onStartAgent={startChatOnlyTask}');
+    expect(app).toContain('onStartAgent={startMonitorTask}');
   });
 
   it('feeds canonical reusable memory into normal agent starts without making recall a start blocker', () => {
