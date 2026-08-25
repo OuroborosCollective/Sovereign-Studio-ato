@@ -5689,13 +5689,6 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     // "done" — the result gate (sovereignActionStreamRuntime) requires a
     // patch/diff, Draft PR, or an explicit blocked/access_required state
     // before the write intent can be considered resolved.
-    if (false) {
-      appendActionEvent(buildRouteSelectionEvent({
-        route: 'code-llm',
-        reason: 'Schreibauftrag erkannt; Ergebnis gilt erst mit Patch/Diff, Draft PR oder explizitem Blocker als abgeschlossen.',
-        state: 'running',
-      }));
-    }
 
     // ARE is evaluated before credit deduction and before any online call.
     // Reference knowledge includes uploaded PDFs; experience remains a separate,
