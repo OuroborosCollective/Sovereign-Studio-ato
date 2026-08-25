@@ -523,11 +523,7 @@ const IDEA_OPTIONS: IdeaOption[] = [
 import {
   isSovereignAgentExecutionIntent,
   isCodeGenerationIntent,
-  isWorkerRetryIntent,
-  isWorkerDiagnosticQuestion,
-  isDelegationIntent,
   isDelegatedSovereignAgentExecutionIntent,
-  isExecutorStatusQuestion,
   buildExecutorStatusAnswer,
   isAlternativeWriteRouteIntent,
   buildAlternativeRouteStatusAnswer,
@@ -2865,7 +2861,7 @@ export function BuilderContainer({
   const [missionValidationPending, setMissionValidationPending] = useState<{ readonly mission: string; readonly intent: SovereignExecutorIntentKind; readonly result: MissionValidationResult } | null>(null);
   const missionValidationBypassRef = useRef<string | null>(null);
   const [stagedChanges, setStagedChanges] = useState<SovereignStagedChange[]>([]);
-  const [lastAnswerWasLocal, setLastAnswerWasLocal] = useState(false);
+  const [, setLastAnswerWasLocal] = useState(false);
   const [localRepoLoading, setRepoLoading] = useState(false);
   const lastMissionRef = useRef(mission);
   const ignoreNextMissionSyncRef = useRef(false);
