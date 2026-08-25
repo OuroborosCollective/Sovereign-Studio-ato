@@ -1452,7 +1452,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
         .toHaveTextContent("Online-Sprachdeutung nicht verfügbar"),
     );
-    expect(screen.queryByText(/Diese Nachricht wurde deshalb nicht semantisch beantwortet/i)).toBeNull();
+    expect(await screen.findByText(/Diese Nachricht wurde deshalb nicht semantisch beantwortet/i)).toBeDefined();
     expect(screen.queryByText(/secret=ok/i)).toBeNull();
     fireEvent.change(chatField(), { target: { value: "Warum?" } });
     fireEvent.click(sendButton());
@@ -1489,6 +1489,12 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(6));
     expect(await screen.findByText("Retry beantwortet.")).toBeDefined();
+    const llmCalls = fetchMock.mock.calls.filter(([input]) => (
+      requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')
+    ));
+    const retriedCall = llmCalls.at(-1);
+    expect(lastUserTextFromLiteLlmRequest(retriedCall?.[1] as RequestInit | undefined))
+      .toBe("Hast du Vorschläge für bessere UI?");
     expect(screen.queryByText(/Sovereign Agent für Code-Auftrag/i)).toBeNull();
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(6);
     const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
@@ -1512,7 +1518,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       />,
     );
     await loadRepoFromChat();
-    expect(screen.getByRole('region', { name: 'Sovereign Live Desktop Monitor' })).toBeDefined();
+    expect(screen.getByTestId('agent-event-stream-primary-monitor')).toBeDefined();
     expect(screen.getByText('Sovereign Agent arbeitet…')).toBeDefined();
     expect(screen.getByText('Dateien: 1')).toBeDefined();
     expect(screen.getByRole('button', { name: 'Repo Datei öffnen: src/App.tsx' })).toBeDefined();

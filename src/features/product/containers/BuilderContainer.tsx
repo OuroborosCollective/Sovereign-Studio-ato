@@ -3018,7 +3018,12 @@ export function BuilderContainer({
   const liveMonitorPrimary = activeTab === 'chat';
   // Keep LLM/user communication stable while a job starts, projections rotate or
   // desktop evidence refreshes. Only account/repository scope changes reset it.
-  const liveMonitorBindingKey = `${authUser?.id ?? 'guest'}:${currentRepoScopeKey ?? 'unbound'}`;
+  const monitorAccountKey = authUser?.id ?? 'guest';
+  const monitorScopeKey = currentRepoScopeKey ?? 'unbound';
+  const previousMonitorBindingRef = useRef({
+    accountKey: monitorAccountKey,
+    scopeKey: monitorScopeKey,
+  });
   const [monitorCommunication, setMonitorCommunication] = useState<MonitorCommunicationEntry[]>([]);
   const monitorCommunicationSequenceRef = useRef(0);
   const appendMonitorCommunication = useCallback((
@@ -3041,9 +3046,16 @@ export function BuilderContainer({
     });
   }, []);
   useEffect(() => {
+    const previous = previousMonitorBindingRef.current;
+    const next = { accountKey: monitorAccountKey, scopeKey: monitorScopeKey };
+    previousMonitorBindingRef.current = next;
+    const preserveFirstRepositoryBinding = previous.accountKey === next.accountKey
+      && previous.scopeKey === 'unbound'
+      && next.scopeKey !== 'unbound';
+    if (preserveFirstRepositoryBinding) return;
     setMonitorCommunication([]);
     monitorCommunicationSequenceRef.current = 0;
-  }, [liveMonitorBindingKey]);
+  }, [monitorAccountKey, monitorScopeKey]);
 
   // ── Issue #443: GitHub Access State
   const [githubAccessState, setGitHubAccessState] = useState<GitHubAccessSnapshot>(
@@ -3661,7 +3673,7 @@ export function BuilderContainer({
         const restored = session.messages.map(sessionMessageToChatLine);
         nowRef.current = restored.at(-1)?.createdAt ?? Date.now();
         setChatHistory(restored);
-        setMonitorCommunication(restored
+        const restoredMonitorEntries = restored
           .filter((line) => line.role !== 'thought')
           .slice(-12)
           .map((line, index): MonitorCommunicationEntry => ({
@@ -3669,7 +3681,14 @@ export function BuilderContainer({
             kind: line.role === 'user' ? 'user' : line.role === 'system' ? 'runtime' : 'communicate',
             text: line.text,
             createdAt: line.createdAt,
-          })));
+          }));
+        setMonitorCommunication((previous) => {
+          const byId = new Map<string, MonitorCommunicationEntry>();
+          [...restoredMonitorEntries, ...previous].forEach((entry) => byId.set(entry.id, entry));
+          return [...byId.values()]
+            .sort((left, right) => left.createdAt - right.createdAt)
+            .slice(-12);
+        });
 
         const { text: formattedAge, isStale } = formatPersistedSessionAge(session);
         setRestoredSessionAge(isStale
@@ -4807,7 +4826,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         } else {
           addLog('info', `Manuelle LLM-Route → ${requestedInterpretationLabel} · Intent`, 'router');
         }
-        setLastWorkerRequestMessage(submittedText);
+        if (!routingWorkerBlocker || options.ignoreExistingWorkerBlocker) {
+          setLastWorkerRequestMessage(submittedText);
+        }
         setChatResponseBusy(true);
         appendActionEvent(buildWorkerRequestEvent(`${requestedInterpretationLabel} · Intent`));
 
@@ -4897,7 +4918,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         // actionable request or an explicit retry may clear that blocker.
         if (interpretation.mode === 'action' || options.ignoreExistingWorkerBlocker) {
           setWorkerBlocker(null);
-          if (options.ignoreExistingWorkerBlocker) setLastWorkerRequestMessage(null);
+          setLastWorkerRequestMessage(null);
         }
         appendActionEvent(buildWorkerResponseEvent());
         appendActionEvent({
@@ -5050,7 +5071,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       // Preserve only a genuinely failed request as retry target. The degraded
       // runtime may classify exact machine controls such as /status or /agent;
       // free user language stays unknown and is never interpreted locally.
-      setLastWorkerRequestMessage(submittedText);
+      if (!routingWorkerBlocker || options.ignoreExistingWorkerBlocker) {
+        setLastWorkerRequestMessage(submittedText);
+      }
       const offlineIntent = explicitRuntimeIntent;
       const offlineFallbackEvidence = offlineIntent === 'unknown'
         ? 'free_language_not_safely_classifiable'
@@ -6140,15 +6163,11 @@ Das echte Repo-Setup wurde geöffnet.`,
           detail: 'Preset-Auftrag wurde vorgemerkt; Worker-Chat wird übersprungen.',
           state: 'blocked',
         });
-        appendChatLine({
-          role: 'assistant',
-          text: [
-            `${action.icon} ${action.label}`,
-            `Status: ${gate.reason}`,
-            'Ich habe diesen Auftrag vorgemerkt.',
-            'Bitte GitHub-Zugang im sicheren Feld eingeben — danach läuft dieser Auftrag automatisch weiter.',
-          ].join('\n'),
-        });
+        appendMonitorCommunication(
+          'runtime',
+          `${action.icon} ${action.label}\nStatus: ${gate.reason}\nDer Auftrag wartet auf bestätigten GitHub-Schreibzugang.`,
+          `preset-github-gate:${action.id}:${currentRepoScopeKey ?? 'unbound'}`,
+        );
         addLog('warn', `Preset write action blocked: GitHub access gate opened for ${action.id}`, 'router');
         return;
       }
