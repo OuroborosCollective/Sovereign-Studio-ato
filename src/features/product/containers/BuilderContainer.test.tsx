@@ -506,7 +506,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getAllByText("Sovereign").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Monitor").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByLabelText("Sovereign Studio Tabs")).toBeDefined();
-    expect(screen.getByText("CHAT")).toBeDefined();
+    expect(screen.getByText("MONITOR")).toBeDefined();
     expect(screen.getByText("INSPECTOR")).toBeDefined();
     expect(screen.queryByTestId("sovereign-chat-body-window")).toBeNull();
     expect(screen.getByTestId('live-workspace-monitor')).toBeDefined();
@@ -725,7 +725,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText("Draft PR öffnen")).toBeDefined();
   });
 
-  it("keeps the default builder surface quiet and chat-first", () => {
+  it("keeps the default builder surface quiet and monitor-first", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     expect(screen.queryByText("Sovereign Studio")).toBeNull();
     expect(screen.queryByText("Planner")).toBeNull();
@@ -735,7 +735,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText(/Sovereign geführter Chat Ablauf/i)).toBeNull();
   });
 
-  it("keeps DevChat limited to committed situational bubbles, not legacy runtime text", () => {
+  it("keeps the monitor free of legacy simulated runtime text", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     expect(screen.getAllByText(/Repo fehlt/).length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText("Package summary")).toBeNull();
@@ -1179,7 +1179,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den ersten Runtime-State.' } });
       fireEvent.click(sendButton());
       await waitFor(() => expect(chatCalls).toBe(1));
-      expect(screen.queryByText('Der erste Sovereign LLM-Aufruf war erfolgreich.')).toBeNull();
+      expect(await screen.findByText('Der erste Sovereign LLM-Aufruf war erfolgreich.')).toBeDefined();
 
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den neuen Runtime-State.' } });
       fireEvent.click(sendButton());
@@ -1231,7 +1231,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3));
-    expect(screen.queryByText("README-Inhalt erklärt.")).toBeNull();
+    expect(await screen.findByText("README-Inhalt erklärt.")).toBeDefined();
     expect(props.onStartAgent).not.toHaveBeenCalled();
     expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3);
@@ -1250,7 +1250,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3));
-    expect(screen.queryByText("Ein Pull Request ist eine prüfbare Änderung.")).toBeNull();
+    expect(await screen.findByText("Ein Pull Request ist eine prüfbare Änderung.")).toBeDefined();
     expect(props.onStartAgent).not.toHaveBeenCalled();
     expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3);
@@ -1312,7 +1312,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
     expect(props.onStartAgent.mock.calls[0][0]).toContain(originalText);
-    expect(screen.queryByText(originalText)).toBeNull();
+    expect(screen.getAllByText(originalText).length).toBeGreaterThanOrEqual(1);
   });
 
   it("does not call the protected direct LLM route for a guest session", async () => {
@@ -1359,7 +1359,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await waitFor(() =>
       expect(screen.getByText("Was brauchst du als nächstes?")).toBeDefined(),
     );
-    expect(screen.queryByText("Worker Antwort aus Cloudflare Route.")).toBeNull();
+    expect(await screen.findByText("Worker Antwort aus Cloudflare Route.")).toBeDefined();
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
@@ -1373,7 +1373,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2));
-    expect(screen.queryByText("Ich brauche noch etwas Kontext, um das sicher einzuordnen.")).toBeNull();
+    expect(await screen.findByText("Ich brauche noch etwas Kontext, um das sicher einzuordnen.")).toBeDefined();
     expect(screen.queryByText(/Route blockiert: Auftrag konnte nicht erkannt werden/i)).toBeNull();
   });
 
@@ -1408,11 +1408,11 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
     expect(chatField().value).toBe("");
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3));
-    expect(screen.queryByText("Repo-Frage über Worker beantwortet.")).toBeNull();
+    expect(await screen.findByText("Repo-Frage über Worker beantwortet.")).toBeDefined();
     expect(props.onStartAgent).not.toHaveBeenCalled();
   });
 
-  it("persists the mission but excludes a raw direct-LLM response from Primary chat", async () => {
+  it("persists the mission and shows the LLM response in monitor communication", async () => {
     const fetchMock = mockFetchSequence(jsonResponse({
       choices: [{ message: { content: "Erste Antwort" } }],
       model: TEST_LITELLM_MODEL,
@@ -1422,7 +1422,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
     await waitFor(() => expect(screen.getByText("Wie geht es dir?")).toBeDefined());
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2));
-    expect(screen.queryByText("Erste Antwort")).toBeNull();
+    expect(await screen.findByText("Erste Antwort")).toBeDefined();
   });
 
   it("turns direct LLM HTTP 500 into a runtime diagnostic and allows a fresh language follow-up", async () => {
@@ -1442,7 +1442,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(chatField(), { target: { value: "Warum?" } });
     fireEvent.click(sendButton());
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(4));
-    expect(screen.queryByText(/Der vorherige Sovereign LLM-Aufruf ist serverseitig fehlgeschlagen/i)).toBeNull();
+    expect(await screen.findByText(/Der vorherige Sovereign LLM-Aufruf ist serverseitig fehlgeschlagen/i)).toBeDefined();
   });
 
   it("retries the original direct LLM request after a diagnostic follow-up", async () => {
@@ -1468,12 +1468,12 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(4));
-    expect(screen.queryByText(/Der erste Aufruf ist fehlgeschlagen/i)).toBeNull();
+    expect(await screen.findByText(/Der erste Aufruf ist fehlgeschlagen/i)).toBeDefined();
 
     fireEvent.click(screen.getAllByText("Retry")[0]);
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(6));
-    expect(screen.queryByText("Retry beantwortet.")).toBeNull();
+    expect(await screen.findByText("Retry beantwortet.")).toBeDefined();
     expect(screen.queryByText(/Sovereign Agent für Code-Auftrag/i)).toBeNull();
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(6);
     const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
@@ -1700,7 +1700,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
     expect(screen.queryByText(/Sovereign Agent Runtime wird gestartet/i)).toBeNull();
-    expect(screen.queryByText(/kein Auto-Merge/i)).toBeNull();
+    await waitFor(() => expect(screen.getAllByText(/kein Auto-Merge/i).length).toBeGreaterThan(0));
   });
 
   it("ignores a direct duplicate Agent start while the first start is still in flight", async () => {
@@ -1771,7 +1771,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
     fireEvent.click(within(actionStream).getByRole("button", { name: "Details" }));
     expect(actionStream).toHaveTextContent("Backend session missing");
-    expect(screen.queryByText(/Sovereign Agent Runtime konnte nicht gestartet werden/i)).toBeNull();
+    await waitFor(() => expect(screen.getAllByText(/Sovereign Agent Runtime konnte nicht gestartet werden/i).length).toBeGreaterThan(0));
   });
 
   it("does not show Sovereign Agent as mandatory blocker when executor is not ready", async () => {
@@ -1824,7 +1824,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
         .toHaveTextContent("LLM-verstandene Status-Frage"),
     );
-    expect(screen.queryByText(/Ja, Sovereign Agent läuft/i)).toBeNull();
+    await waitFor(() => expect(screen.getAllByText(/Ja, Sovereign Agent läuft/i).length).toBeGreaterThan(0));
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsBeforeStatus + 2);
   });
 
@@ -1840,7 +1840,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
         .toHaveTextContent("LLM-verstandene Status-Frage"),
     );
-    expect(screen.queryByText(/Nein/i)).toBeNull();
+    await waitFor(() => expect(screen.getAllByText(/Nein/i).length).toBeGreaterThan(0));
     // Language understanding still uses the direct LLM runtime; its raw answer is not a Primary-chat bubble.
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
   });
@@ -1861,7 +1861,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(chatField(), { target: { value: "Warum?" } });
     fireEvent.click(sendButton());
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsAfterBlock + 2));
-    expect(screen.queryByText(/Der vorherige Sovereign LLM-Aufruf ist serverseitig fehlgeschlagen/i)).toBeNull();
+    expect(await screen.findByText(/Der vorherige Sovereign LLM-Aufruf ist serverseitig fehlgeschlagen/i)).toBeDefined();
   });
 
   it("SovereignToolLauncher github_access opens the secure GitHubAccessCard directly", async () => {
@@ -1915,7 +1915,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(diffItem).toHaveAttribute("data-can-open", "false");
     fireEvent.click(diffItem);
 
-    expect(screen.queryByText(/Keine Changed-Files- oder Patch-Diff-Evidence vorhanden/i)).toBeNull();
+    await waitFor(() => expect(screen.getAllByText(/Keine Changed-Files- oder Patch-Diff-Evidence vorhanden/i).length).toBeGreaterThan(0));
     const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
     expect(actionStream).toHaveTextContent("Diff blockiert");
     fireEvent.click(within(actionStream).getByRole("button", { name: "Details" }));
@@ -1946,7 +1946,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(executorItem);
 
     expect(onStartAgent).not.toHaveBeenCalled();
-    expect(screen.queryByText(/bereits ein bestätigter Executor-Job aktiv/i)).toBeNull();
+    await waitFor(() => expect(screen.getAllByText(/bereits ein bestätigter Executor-Job aktiv/i).length).toBeGreaterThan(0));
     const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
     expect(actionStream).toHaveTextContent("Laufender Executor-Job angezeigt");
     fireEvent.click(within(actionStream).getByRole("button", { name: "Details" }));
@@ -2269,10 +2269,42 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
         .toHaveTextContent("Executor-Start blockiert"),
     );
-    expect(screen.queryByText(/Ausführungsauftrag kann nicht ausgeführt werden/i)).toBeNull();
+    await waitFor(() => expect(screen.getAllByText(/Ausführungsauftrag kann nicht ausgeführt werden/i).length).toBeGreaterThan(0));
     expect(screen.queryByText(/Route gewählt: Patch\/Draft-PR Runtime/i)).toBeNull();
     expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
     expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("never routes ordinary free language to GitHub or the executor when the online LLM is unavailable", async () => {
+    const onStartAgent = vi.fn();
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ error: { message: "language provider unavailable", type: "upstream_error" } }, 503),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        agentReady
+        agentJob={repoScopedJob({ status: 'completed' })}
+        onStartAgent={onStartAgent}
+      />,
+    );
+    await loadRepoFromChat();
+
+    fireEvent.change(chatField(), { target: { value: 'Implementiere bitte die README neu und repariere den Text.' } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(
+      screen.getByRole('log', { name: 'Sovereign Action Stream' }),
+    ).toHaveTextContent('Online-Sprachdeutung nicht verfügbar'));
+    expect(onStartAgent).not.toHaveBeenCalled();
+    expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
+    expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
+    expect(screen.getByRole('log', { name: 'Sovereign Action Stream' }))
+      .not.toHaveTextContent('Sovereign Agent Job angefragt');
+    expect(fetchMock.mock.calls.some(([input]) => requestUrl(input as RequestInfo | URL).includes('/api/llm/chat'))).toBe(true);
   });
 
   it("never wakes a pending write intent from an unrelated LLM conversation fallback", async () => {

@@ -168,7 +168,6 @@ import {
 import {
   decideSovereignCapabilityRoute,
   buildCapabilityRouteActionEvent,
-  buildOfflineCapabilityLanguageEvidence,
 } from "../runtime/sovereignCapabilityRouter";
 import type { CapabilityRouterInput } from "../runtime/sovereignCapabilityRouter";
 import {
@@ -349,9 +348,6 @@ import {
   composerRouteHint,
   confidenceLabel,
   createChatLineId,
-  isFollowUpWhyQuestion,
-  isLocalCompletionStatusQuestion,
-  isWriteIntent,
   phaseFromSignalAndConditions,
   sameConditions,
   sameRecord,
@@ -390,6 +386,55 @@ function mapInterpretedIntentToExecutorIntent(
       return 'draft_pr';
     default:
       return null;
+  }
+}
+
+function buildExplicitRuntimeCapabilityLanguageEvidence(input: {
+  readonly text: string;
+  readonly intent: SovereignExecutorIntentKind;
+  readonly repositoryUrl: boolean;
+  readonly safeAnalysisPreset: boolean;
+  readonly retryControl: boolean;
+}): CapabilityRouterInput['language'] {
+  if (input.repositoryUrl) {
+    return {
+      intent: 'load_repo',
+      complexity: 'simple',
+      explicitAgentRequest: false,
+      source: 'explicit_runtime_action',
+    };
+  }
+  if (input.safeAnalysisPreset) {
+    return {
+      intent: 'free_chat',
+      complexity: 'simple',
+      explicitAgentRequest: false,
+      source: 'explicit_runtime_action',
+    };
+  }
+  if (input.retryControl) {
+    return {
+      intent: 'free_chat',
+      complexity: 'simple',
+      explicitAgentRequest: false,
+      source: 'explicit_runtime_action',
+    };
+  }
+
+  const explicitAgentRequest = /^\s*\/agent(?:\s|$)/i.test(input.text);
+  switch (input.intent) {
+    case 'status':
+      return { intent: 'status_question', complexity: 'simple', explicitAgentRequest: false, source: 'explicit_runtime_action' };
+    case 'question':
+      return { intent: 'free_chat', complexity: 'simple', explicitAgentRequest: false, source: 'explicit_runtime_action' };
+    case 'direct_patch':
+      return { intent: 'direct_patch', complexity: 'simple', explicitAgentRequest: false, source: 'explicit_runtime_action' };
+    case 'code_execution':
+      return { intent: 'code_generation', complexity: 'complex', explicitAgentRequest: explicitAgentRequest || /^\s*\/code(?:\s|$)/i.test(input.text), source: 'explicit_runtime_action' };
+    case 'draft_pr':
+      return { intent: 'draft_pr', complexity: 'complex', explicitAgentRequest: true, source: 'explicit_runtime_action' };
+    default:
+      return { intent: 'unknown', complexity: 'unknown', explicitAgentRequest: false, source: 'explicit_runtime_action' };
   }
 }
 
@@ -4606,8 +4651,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     }
 
     // Natural language goes to the online LLM first. Deterministic parsing is
-    // reserved for exact controls (slash commands, repository URLs) and becomes
-    // the language fallback only when the online interpretation is unavailable.
+    // reserved strictly for exact machine controls, repository URLs and
+    // machine-generated preset markers. Free user language is never reinterpreted
+    // by browser heuristics when the online LLM is unavailable.
     const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
     const isReviewableExecutionPreset =
       submittedText.includes('Risiko: reviewable_patch')
@@ -4617,6 +4663,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     // last correlated request through the real pipeline and must never spend a
     // second interpretation call merely to understand the control itself.
     const isExactRetryControl = submittedText.trim().toLocaleLowerCase('de-DE') === 'retry';
+    const explicitRuntimeIntent = classifyOfflineSovereignExecutorIntent(submittedText);
     const shouldUseOnlineLanguageUnderstanding =
       !options.resumePendingIntent &&
       !isSafeAnalysisPreset &&
@@ -4643,7 +4690,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     // Order matters: local routes > createIntegrationIntentDraft > capability router
 
     // P2 Fix 2: Status questions - answered locally from runtime state
-    if (!shouldUseOnlineLanguageUnderstanding && isLocalCompletionStatusQuestion(submittedText)) {
+    if (!shouldUseOnlineLanguageUnderstanding && explicitRuntimeIntent === 'status') {
       const statusAnswer = buildLocalStatusAnswer({
         githubWriteAllowed,
         githubAccessState: effectiveGitHubAccessState,
@@ -4676,59 +4723,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       return;
     }
 
-    // Fix: "Warum?" follow-up after local status answer → answer locally, no worker call
-    if (!shouldUseOnlineLanguageUnderstanding && lastAnswerWasLocal && isFollowUpWhyQuestion(submittedText)) {
-      const whyAnswer = patchPreviewReady
-        ? "Die Patch-Vorschau wurde erzeugt, aber noch nicht angewendet. Es gibt noch keinen Commit und keinen Draft PR, weil die Vorschau erst geprüft und bestätigt werden muss."
-        : !githubWriteAllowed
-        ? "Weil sicherer GitHub-Zugang noch fehlt. Sobald der Zugang verifiziert ist, läuft der Auftrag automatisch weiter."
-        : routingWorkerBlocker
-        ? "Weil der Worker blockiert ist. Bitte den Fehler prüfen oder den Auftrag präzisieren."
-        : "Weil noch kein Auftrag gestartet wurde oder der Auftrag blockiert ist. Bitte Auftrag neu starten.";
-      appendRuntimeNotice(whyAnswer);
-      setLastAnswerWasLocal(true);
-      appendActionEvent(buildLocalRuntimeResultEvent({
-        label: 'Warum-Folgefrage',
-        detail: 'Lokale Erklärung aus Runtime-State — kein Worker-Call',
-      }));
-      addLog('info', 'Fix: Follow-up why question answered locally - no worker call', 'router');
-      return;
-    }
-
     // P2 Fix 2: Worker retry intents - clear blocker and trigger real retry
     // Runtime-Truth: Retry must produce Action → Request → Response, not just UI reset
-    if (!shouldUseOnlineLanguageUnderstanding && isWorkerRetryIntent(submittedText) && routingWorkerBlocker) {
-      // If user asks status question, answer locally first before retry
-              if (submittedText && isLocalCompletionStatusQuestion(submittedText)) {
-        const statusAnswer = buildLocalStatusAnswer({
-          githubWriteAllowed,
-          githubAccessState: effectiveGitHubAccessState,
-          writeIntentBlockedByRepo: !effectiveRepoReady,
-          agentRunning: scopedAgentJob?.status === 'running',
-          draftPrUrl: scopedAgentJob?.draftPrUrl ?? null,
-          hasPatch: Boolean(scopedAgentJob?.changedFiles?.length),
-          patchPreviewReady,
-          patchConfirmed,
-          hasWorkerResponse: hasScopedWorkerResponse,
-          workerBlocker: routingWorkerBlocker,
-          buildWorkerBlockerAnswer: routingWorkerBlocker
-            ? () =>
-                buildWorkerBlockerAnswer({
-                  blocker: routingWorkerBlocker,
-                  repoReady: effectiveRepoReady,
-                  chatRepoSnapshot,
-                  agentReady,
-                })
-            : undefined,
-        });
-        appendRuntimeNotice(statusAnswer);
-        appendActionEvent(buildLocalRuntimeResultEvent({
-          label: 'Status-Frage beantwortet',
-          detail: 'Lokale Antwort aus Runtime-State',
-        }));
-        addLog('info', 'Retry + status question → local answer first', 'router');
-        return;
-      }
+    if (isExactRetryControl && routingWorkerBlocker) {
       if (lastWorkerRequestMessage) {
         // Real retry: re-submit the last request through the full pipeline
         setWorkerBlocker(null);
@@ -4754,47 +4751,12 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       }
     }
 
-    // P2 Fix 3: Diagnostic questions ("warum passiert nichts?") - answered locally
-    const _executorIsActive = agentWorkSnapshot.state !== 'idle' ||
-      (scopedAgentJob != null && scopedAgentJob.status !== 'idle');
-    if (!shouldUseOnlineLanguageUnderstanding && isExecutorStatusQuestion(submittedText) && (_executorIsActive || !routingWorkerBlocker)) {
-      const statusAnswer = buildExecutorStatusAnswer({
-        agentState: agentWorkSnapshot.state,
-        agentStatus: scopedAgentJob?.status,
-        changedFiles: scopedAgentJob?.changedFiles?.length ?? 0,
-        draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-        blockerReason: agentWorkSnapshot.blockerReason,
-      });
-      appendRuntimeNotice(statusAnswer);
+    if (isExactRetryControl && !routingWorkerBlocker) {
+      appendRuntimeNotice('Retry ist ein exakter Runtime-Befehl, aber es gibt keinen aktiven korrelierten Blocker zum Wiederholen. Es wurde kein LLM-Aufruf gestartet.');
       appendActionEvent(buildLocalRuntimeResultEvent({
-        label: 'Diagnose-Frage',
-        detail: 'Lokale Antwort aus Runtime-State',
+        label: 'Retry ohne Ziel',
+        detail: 'Kein aktiver korrelierter Blocker; keine Aktion ausgeführt.',
       }));
-      addLog('info', 'Issue #522 P2 Fix 3: Diagnostic question answered locally - no draft created', 'router');
-      return;
-    }
-
-    // P2 Fix 3: Worker blocker diagnostic - answered locally, no draft
-    if (
-      !shouldUseOnlineLanguageUnderstanding &&
-      routingWorkerBlocker &&
-      !isWorkerRetryIntent(submittedText) &&
-      !isSovereignAgentExecutionIntent(submittedText)
-    ) {
-      appendChatLine({
-        role: "system",
-        text: buildWorkerBlockerAnswer({
-          blocker: routingWorkerBlocker,
-          repoReady: effectiveRepoReady,
-          chatRepoSnapshot,
-          agentReady,
-        }),
-      });
-      appendActionEvent(buildLocalRuntimeResultEvent({
-        label: 'Worker-Diagnose',
-        detail: routingWorkerBlocker.diagnostic.scope,
-      }));
-      addLog('info', `Issue #522 P2 Fix 3: Worker diagnostic answered locally - no draft created`, 'router');
       return;
     }
 
@@ -5093,7 +5055,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       // runtime may classify exact machine controls such as /status or /agent;
       // free user language stays unknown and is never interpreted locally.
       setLastWorkerRequestMessage(submittedText);
-      const offlineIntent = classifyOfflineSovereignExecutorIntent(submittedText);
+      const offlineIntent = explicitRuntimeIntent;
       const offlineFallbackEvidence = offlineIntent === 'unknown'
         ? 'free_language_not_safely_classifiable'
         : offlineIntent;
@@ -5140,7 +5102,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         return;
       }
 
-      if (isWorkerRetryIntent(submittedText) && routingWorkerBlocker) {
+      if (isExactRetryControl && routingWorkerBlocker) {
         setWorkerBlocker(null);
         if (lastWorkerRequestMessage) {
           appendActionEvent(buildLocalRuntimeResultEvent({
@@ -5160,7 +5122,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         return;
       }
 
-      if (isExecutorStatusQuestion(submittedText)) {
+      if (offlineIntent === 'status') {
         appendChatLine({
           role: 'assistant',
           text: buildExecutorStatusAnswer({
@@ -5169,19 +5131,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
             changedFiles: scopedAgentJob?.changedFiles?.length ?? 0,
             draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
             blockerReason: agentWorkSnapshot.blockerReason,
-          }),
-        });
-        return;
-      }
-
-      if (routingWorkerBlocker && isWorkerDiagnosticQuestion(submittedText)) {
-        appendChatLine({
-          role: 'assistant',
-          text: buildWorkerBlockerAnswer({
-            blocker: routingWorkerBlocker,
-            repoReady: effectiveRepoReady,
-            chatRepoSnapshot,
-            agentReady,
           }),
         });
         return;
@@ -5248,7 +5197,13 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     // Central routing decision using real runtime state.
     // BuilderContainer shows the decision; it does not create it.
     const capabilityRouterInput: CapabilityRouterInput = {
-      language: buildOfflineCapabilityLanguageEvidence(submittedText),
+      language: buildExplicitRuntimeCapabilityLanguageEvidence({
+        text: submittedText,
+        intent: explicitRuntimeIntent,
+        repositoryUrl: Boolean(directRepoUrl),
+        safeAnalysisPreset: isSafeAnalysisPreset,
+        retryControl: isExactRetryControl,
+      }),
       repoReady: effectiveRepoReady,
       githubAccessState: effectiveGitHubAccessState,
       agentReady: agentReady ?? false,
@@ -5440,6 +5395,36 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       return;
     }
 
+    // From this point onward the browser may only execute a route that was
+    // already typed by an exact runtime control/preset. It must never recover
+    // an execution intent by inspecting the wording of free user language.
+    if (!advisoryWorkerRoute) {
+      const typedExecutorIntent: SovereignExecutorIntentKind | null =
+        capabilityDecision.capability === 'draft_pr'
+          ? 'draft_pr'
+          : capabilityDecision.capability === 'code_patch_plan'
+            || capabilityDecision.capability === 'isolated_workspace'
+            ? 'code_execution'
+            : capabilityDecision.capability === 'direct_github_patch'
+              ? 'direct_patch'
+              : null;
+
+      if (
+        capabilityDecision.allowed
+        && capabilityDecision.route === 'sovereign-agent'
+        && (typedExecutorIntent === 'code_execution' || typedExecutorIntent === 'draft_pr')
+      ) {
+        const started = await startAgentFromText(submittedText, typedExecutorIntent);
+        if (started) {
+          appendRuntimeNotice('Der exakt typisierte Runtime-Befehl wurde an den Repository-Executor übergeben. Erfolg bleibt bis zu bestätigter Runtime-Evidence offen; Ergebnis bleibt Draft PR.');
+        }
+        return;
+      }
+
+      appendRuntimeNotice(`Runtime-Aktion nicht ausgeführt: ${capabilityDecision.reason}. Nächste Aktion: ${capabilityDecision.nextAction}. Freie Sprache wurde nicht lokal interpretiert.`);
+      return;
+    }
+
     // ── Aufgabe 2: Local completion-status questions
     // NOTE: Handled earlier in the flow (see Issue #522 P2 Fix 2 above)
     // to ensure status questions don't create integration drafts.
@@ -5452,11 +5437,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     // readiness gate below (agentDisabled) and must not be short-circuited
     // here — this gate only covers write-language that would otherwise be
     // sent straight to the advisory Worker chat.
-    if (
-      !advisoryWorkerRoute
-      && isWriteIntent(submittedText)
-      && !isSovereignAgentExecutionIntent(submittedText)
-    ) {
+    if (false) {
       if (!effectiveRepoReady) {
         appendActionEvent(buildBlockedActionEvent({
           route: 'github-access',
@@ -5687,12 +5668,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     // "done" — the result gate (sovereignActionStreamRuntime) requires a
     // patch/diff, Draft PR, or an explicit blocked/access_required state
     // before the write intent can be considered resolved.
-    if (
-      !advisoryWorkerRoute
-      && !isSafeAnalysisPreset
-      && isWriteIntent(submittedText)
-      && !isCodeGenerationIntent(submittedText)
-    ) {
+    if (false) {
       appendActionEvent(buildRouteSelectionEvent({
         route: 'code-llm',
         reason: 'Schreibauftrag erkannt; Ergebnis gilt erst mit Patch/Diff, Draft PR oder explizitem Blocker als abgeschlossen.',

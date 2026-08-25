@@ -153,6 +153,7 @@ export function MonitorCommunicationDock({
           </label>
           <select
             id="monitor-llm-route-select"
+            data-testid="sovereign-llm-route-select"
             aria-label="Monitor LLM Route und Modell auswählen"
             value={selectedRouteId}
             onChange={(event) => onRouteChange(event.target.value)}
@@ -196,6 +197,11 @@ export function MonitorCommunicationDock({
               AUTO
             </button>
           )}
+        </div>
+      )}
+      {selectedRouteId && !routeCatalogError && (
+        <div data-testid="monitor-route-hint" style={{ padding: '4px 10px 0', color: C.textMuted, font: '9px/1.3 monospace' }}>
+          Fixiert auf Backend-Route {safeText(selectedRouteId, 160)} · kein stiller Modell-Fallback
         </div>
       )}
       {routeCatalogError && (
