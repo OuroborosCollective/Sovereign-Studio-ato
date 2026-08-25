@@ -3083,11 +3083,25 @@ export function BuilderContainer({
   );
   const currentRepositoryTargetKeyRef = useRef<string | null>(currentRepositoryTargetKey);
   currentRepositoryTargetKeyRef.current = currentRepositoryTargetKey;
+  const validatedGitHubWriteEvidenceRef = useRef<{
+    readonly targetKey: string;
+    readonly snapshot: GitHubAccessSnapshot;
+  } | null>(null);
+  const hasCurrentGitHubWriteEvidence = useCallback(() => {
+    const targetKey = currentRepositoryTargetKeyRef.current;
+    const evidence = validatedGitHubWriteEvidenceRef.current;
+    return Boolean(
+      targetKey
+      && evidence
+      && evidence.targetKey === targetKey
+      && canPerformGitHubWrite(evidence.snapshot)
+    );
+  }, []);
   const githubWriteAllowed = Boolean(
     currentRepositoryTargetKey
     && validatedGitHubTargetKey === currentRepositoryTargetKey
     && canPerformGitHubWrite(githubAccessState),
-  );
+  ) || hasCurrentGitHubWriteEvidence();
   const effectiveGitHubAccessState = githubAccessState.state === 'ready' && !githubWriteAllowed
     ? 'missing'
     : githubAccessState.state;
@@ -3137,6 +3151,7 @@ export function BuilderContainer({
         pendingRepoIntentRef.current = null;
         pendingOnlineExecutionRef.current = null;
       }
+      validatedGitHubWriteEvidenceRef.current = null;
       setValidatedGitHubTargetKey(null);
       setGitHubAccessState(createGitHubAccessSnapshot());
       setShowGitHubAccessOverride(false);
@@ -3259,6 +3274,7 @@ export function BuilderContainer({
       return false;
     }
 
+    validatedGitHubWriteEvidenceRef.current = null;
     setValidatedGitHubTargetKey(null);
     setGitHubAccessState(startGitHubAccessValidation(maskedToken));
     appendActionEvent({
@@ -3286,6 +3302,7 @@ export function BuilderContainer({
       currentRepositoryTargetKeyRef.current !== validationTargetKey
       || !isCurrentRepoScope(validationRepoScopeKey)
     ) {
+      validatedGitHubWriteEvidenceRef.current = null;
       setGitHubAccessState(createGitHubAccessSnapshot());
       setValidatedGitHubTargetKey(null);
       if (source === 'manual-pat') githubTokenRef.current = null;
@@ -3299,6 +3316,7 @@ export function BuilderContainer({
     }
 
     if (!validation.ok) {
+      validatedGitHubWriteEvidenceRef.current = null;
       setGitHubAccessState(failGitHubAccessValidation(
         maskedToken,
         validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.',
@@ -3316,7 +3334,12 @@ export function BuilderContainer({
       return false;
     }
 
-    setGitHubAccessState(completeGitHubAccessValidation(maskedToken));
+    const readySnapshot = completeGitHubAccessValidation(maskedToken);
+    validatedGitHubWriteEvidenceRef.current = {
+      targetKey: validationTargetKey,
+      snapshot: readySnapshot,
+    };
+    setGitHubAccessState(readySnapshot);
     setValidatedGitHubTargetKey(validationTargetKey);
     setPendingResumeRetrySequence((sequence) => sequence + 1);
     githubTokenRef.current = source === 'manual-pat' ? token || null : null;
@@ -4222,7 +4245,7 @@ export function BuilderContainer({
       appendRuntimeNotice('Executor blockiert: Die strukturierte Intent-Evidence erlaubt keinen Code- oder Draft-PR-Start.');
       return false;
     }
-    if (!githubWriteAllowed) {
+    if (!(githubWriteAllowed || hasCurrentGitHubWriteEvidence())) {
       appendActionEvent({ kind: 'github_access_required', route: 'github-access', label: 'Executor braucht GitHub-Zugang', detail: 'Ausführungsauftrag erkannt, aber GitHub-Schreibzugang ist nicht validiert.', state: 'blocked' });
       if (!pendingOnlineExecutionRef.current) pendingWriteIntentRef.current = text;
       setShowGitHubAccessOverride(true);
@@ -6067,7 +6090,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     if (localRepoLoading || chatResponseBusy || isPublishing) return;
     // Write/executor work wakes only when its OWN write gate is proven. A repo
     // load or unrelated LLM reply must never resume a stale mutation request.
-    if ((pendingOnlineExecution || pendingWriteIntent) && !githubWriteAllowed) return;
+    if ((pendingOnlineExecution || pendingWriteIntent) && !(githubWriteAllowed || hasCurrentGitHubWriteEvidence())) return;
 
     void runSerializedSubmit(async () => {
       const currentOnlineExecution = pendingOnlineExecutionRef.current;
@@ -6091,14 +6114,16 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       addLog('info', 'Pending intent resumed only after its required runtime gate changed', 'router');
       if (currentOnlineExecution) {
         const started = await startAgentFromText(currentOnlineExecution.text, currentOnlineExecution.intent);
-        if (!started && !githubWriteAllowed) pendingOnlineExecutionRef.current = currentOnlineExecution;
+        if (!started && !(githubWriteAllowed || hasCurrentGitHubWriteEvidence())) {
+          pendingOnlineExecutionRef.current = currentOnlineExecution;
+        }
         return;
       }
       const currentIntent = currentPendingWriteIntent ?? currentPendingRepoIntent;
       if (currentIntent) await _processSubmit(currentIntent, { resumePendingIntent: true });
     }, { retryPendingOnReject: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveRepoReady, githubWriteAllowed, localRepoLoading, chatResponseBusy, isPublishing, pendingResumeRetrySequence]);
+  }, [effectiveRepoReady, githubWriteAllowed, hasCurrentGitHubWriteEvidence, localRepoLoading, chatResponseBusy, isPublishing, pendingResumeRetrySequence]);
 
   const handleRepoSetupLoad = () => {
     const clean = repoSetupUrl.trim();
