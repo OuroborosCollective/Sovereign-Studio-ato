@@ -311,6 +311,47 @@ def test_validator_runs_in_explicit_stdlib_only_mode(tmp_path: Path) -> None:
     assert payload["headRevision"] == head
 
 
+def test_validator_reports_completion_gap_as_non_blocking_advisory(tmp_path: Path) -> None:
+    repo, baseline, _changed_paths = _fixture_repo(tmp_path)
+    ledger_path = repo / "docs/sovereign-continuity/LEDGER.jsonl"
+    runtime_ledger_path = repo / "tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl"
+    entries = [json.loads(line) for line in ledger_path.read_text("utf-8").splitlines() if line.strip()]
+    entries[-1]["changedPaths"] = ["wrong-path.txt"]
+    _write_jsonl(ledger_path, entries)
+    runtime_ledger_path.write_bytes(ledger_path.read_bytes())
+    _git(repo, "add", "--all")
+    _git(repo, "commit", "-m", "commit advisory continuity mismatch")
+    head = _git(repo, "rev-parse", "HEAD")
+    script = Path(continuity.__file__).resolve().parent / "validate_continuity.py"
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(script),
+            "--repository",
+            str(repo),
+            "--base",
+            baseline,
+            "--head",
+            head,
+        ],
+        cwd=repo,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=90,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["status"] == "CONTINUITY_COMPLETION_ADVISORY"
+    assert payload["advisory"] is True
+    assert payload["blocking"] is False
+    assert payload["failureFamily"] == "RuntimeError"
+
+
 def test_workspace_completion_rejects_runtime_mirror_drift(tmp_path: Path) -> None:
     repo, baseline, changed_paths = _fixture_repo(tmp_path)
     runtime_context = repo / "tools/sovereign-chatgpt-mcp/continuity-data/CONTEXT.md"
