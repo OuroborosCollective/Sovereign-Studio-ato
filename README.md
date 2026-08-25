@@ -10,7 +10,7 @@
 [![GitHub Issues](https://img.shields.io/github/issues/OuroborosCollective/Sovereign-Studio-ato)](https://github.com/OuroborosCollective/Sovereign-Studio-ato/issues)
 [![GitHub PRs](https://img.shields.io/github/issues-pr/OuroborosCollective/Sovereign-Studio-ato)](https://github.com/OuroborosCollective/Sovereign-Studio-ato/pulls)
 
-Sovereign Studio ATO is an Android-first NoCode/AI service and agent workbench for controlled work on real repositories and connected runtime systems. Chat remains the control and question surface; during a live, workspace-bound execution the runtime monitor becomes the primary work surface without hiding the user's ability to communicate.
+Sovereign Studio ATO is an Android-first NoCode/AI service and agent workbench for controlled work on real repositories and connected runtime systems. The permanent primary product surface is the Live Workspace Monitor; a compact embedded communication dock preserves natural-language conversation without restoring the legacy chat-first body.
 
 > [!IMPORTANT]
 > **Proprietary software — all rights reserved.** Sovereign-Studio-ato is not open source. Use, execution, copying, modification, coding, adaptation, derivative works, model training, deployment, hosting, distribution or commercialization require prior express written permission from Thomas Markgraf for himself and OuroborosCollective. Third-party components retain their own licenses. See [LICENSE](LICENSE).
@@ -31,11 +31,10 @@ Evidence and target-system readback decide completion.
 
 Consequences:
 
-- Chat is the idle/control surface and remains available for missions, questions and required user decisions.
-- A fresh, workspace-bound live projection promotes the Desktop/Live Workspace Monitor to the primary execution surface; stale projections or `waiting-for-user` return interaction to chat.
+- The Live Workspace Monitor is the permanent primary product surface, including while runtime evidence is unavailable or user input is required.
 - The monitor exposes only bounded runtime observations. It never upgrades a projection into Evidence or completion truth.
 - A compact, non-overlay communication dock keeps the monitor visible while the user asks questions. `THINK` is limited to observable runtime status; `COMMUNICATE` contains user-visible responses and never exposes hidden model reasoning.
-- Repository, files, diff, workflow, runtime, health, memory and inspector views are inspection surfaces.
+- Repository, files, diff, workflow, runtime, health, memory and inspector views remain bounded monitor projections and inspection surfaces.
 - UI text, telemetry, liveness, model output and tool success are not target-system Evidence.
 - A repository implementation is not automatically deployed.
 - A deployed container is not automatically revision- or digest-matched.
@@ -47,9 +46,9 @@ Consequences:
 ```text
 Android / Web frontend
         │
-        ├── Chat / mission / question controls
-        │
-        └── Live Workspace Monitor when a fresh bound runtime projection exists
+        └── Permanent Live Workspace Monitor
+                 ├── embedded communication dock
+                 └── bounded runtime and repository observations
                          │
                          ▼
                 Typed Engine Boundary
@@ -89,9 +88,9 @@ typed accepted engine event -> canonical product-state transition
 
 ### Live Workspace Monitor and communication
 
-During an active run, a fresh projection bound to the current workspace/attempt makes the Live Workspace Monitor the primary surface. The monitor can expose Editor, Diff, Terminal, Browser and Window-Focus observations, but only from allowlisted projection fields and with secret redaction. Missing observations remain visibly empty rather than simulated.
+The Live Workspace Monitor remains the primary surface throughout the product lifecycle. A fresh projection bound to the current workspace/attempt can expose Editor, Diff, Terminal, Browser and Window-Focus observations, but only from allowlisted projection fields and with secret redaction. Missing observations remain visibly empty rather than simulated.
 
-The monitor does not force the user back into a full chat view to ask a question. A compact dock remains in normal document flow below the monitor, so it does not cover the desktop surface. It supports user questions plus bounded `THINK` and `COMMUNICATE` bubbles. `THINK` reports only observable runtime status; it is not chain-of-thought or hidden reasoning. When the runtime explicitly enters `waiting-for-user`, or when only stale projection evidence remains, the normal chat/control surface becomes primary again.
+The monitor never forces the user into a separate full-chat body to ask a question. A compact dock remains in normal document flow below the monitor, so it does not cover the desktop surface. It supports user questions plus bounded `THINK` and `COMMUNICATE` bubbles. `THINK` reports only observable runtime status; it is not chain-of-thought or hidden reasoning. When the runtime explicitly enters `waiting-for-user`, or when only stale projection evidence remains, the monitor stays primary and displays the honest state while the dock accepts the next user decision.
 
 ### Frontend -> endpoint assurance
 
@@ -104,7 +103,7 @@ The runtime layer is separate: Playwright smoke probes are GET-only, reject miss
 | Area | Canonical path | Responsibility |
 | --- | --- | --- |
 | Frontend shell | `src/App.tsx` | application shell and navigation |
-| Product workbench | `src/features/product/` | chat/control surface, typed runtime state and live-monitor projections |
+| Product workbench | `src/features/product/` | monitor-first workspace, embedded communication dock, typed runtime state and bounded projections |
 | Backend agent runtime | `backend/agent_runtime/` | jobs, tasks, tools, permissions, evidence and recovery |
 | Backend deployment mirror | `scripts/sovereign-backend/agent_runtime/` | deployment mirror where canonical ownership requires parity |
 | MCP control plane | `tools/sovereign-chatgpt-mcp/` | repository, CI, runtime, continuity and operational tools |
@@ -119,7 +118,7 @@ The user-facing web test surface is `/app/`; `/admin/` is a separate, authentica
 
 At the current architecture baseline, the repository contains:
 
-- React/Vite/Capacitor product surfaces with chat/control mode and runtime-monitor-primary execution mode;
+- React/Vite/Capacitor monitor-first product surface with an embedded communication dock;
 - a typed engine boundary that separates UI intent, canonical events and product-state mutation;
 - a receipt-bound Live Workspace Monitor with non-overlay user communication and observable-status bubbles;
 - deterministic frontend-to-backend endpoint assurance with fail-closed ownership checks and GET-only runtime smoke coverage;

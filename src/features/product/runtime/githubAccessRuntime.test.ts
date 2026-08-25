@@ -231,6 +231,29 @@ describe('GitHub Access Runtime', () => {
       expect(fetcher).toHaveBeenCalledTimes(2);
     });
 
+    it('uses the server-held GitHub OAuth credential without sending a raw token from the browser', async () => {
+      const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        expect(String(url)).not.toContain('api.github.com');
+        expect(init?.credentials).toBe('include');
+        if (String(url).endsWith('/api/user/agent/github-access/scope')) {
+          const body = JSON.parse(String(init?.body));
+          expect(body).toEqual(target);
+          expect(body).not.toHaveProperty('githubAccessToken');
+          return new Response(JSON.stringify({ ok: true, scope: 'v1.oauth-session-scope.signature' }), { status: 200 });
+        }
+        expect(String(url)).toBe(`${backendBase}/api/user/agent/github-access/validate`);
+        const body = JSON.parse(String(init?.body));
+        expect(body).toEqual({ scope: 'v1.oauth-session-scope.signature' });
+        expect(body).not.toHaveProperty('githubAccessToken');
+        return new Response(JSON.stringify({ ok: true, canWrite: true }), { status: 200 });
+      }) as unknown as typeof fetch;
+
+      const result = await validateGitHubTokenForRepo(undefined, target, fetcher, backendBase);
+
+      expect(result).toEqual({ ok: true, canWrite: true, error: undefined });
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
     it('accepts github_pat_ candidates through the same backend contract', async () => {
       const fetcher = vi.fn(async (url: RequestInfo | URL) => new Response(JSON.stringify(
         String(url).endsWith('/scope')

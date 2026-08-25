@@ -27,20 +27,30 @@ beforeAll(() => {
 });
 
 describe('App', () => {
-  it('opens the chat-only live workbench', async () => {
+  it('opens the permanent monitor-first workspace surface', async () => {
     render(<Provider store={store}><App /></Provider>);
 
-    expect(screen.getByTestId('chat-only-app')).toHaveAttribute(
+    expect(screen.getByTestId('sovereign-monitor-app')).toHaveAttribute(
       'data-layout',
-      'chat-only-live-entry',
+      'monitor-first-live-workspace',
     );
-    expect(await screen.findByText('DevChat')).toBeDefined();
+    expect(screen.getByTestId('sovereign-monitor-app')).toHaveAttribute(
+      'data-legacy-backend-image-marker',
+      'DevChat',
+    );
+    expect(screen.queryByText('DevChat')).toBeNull();
+    expect(await screen.findAllByText('Monitor')).not.toHaveLength(0);
     expect(screen.getByTestId('builder-container')).toHaveAttribute(
       'data-layout',
-      'devchat-appcontrol-integrated',
+      'live-desktop-monitor-primary',
     );
-    expect(screen.getByLabelText(/Sovereign Chat Eingabe/i)).toBeDefined();
-    expect(screen.getByPlaceholderText(/GitHub URL oder Auftrag/)).toBeDefined();
+    expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined();
+    expect(screen.getByTestId('live-workspace-monitor')).toBeDefined();
+    expect(screen.getByTestId('live-workspace-monitor-desktop')).toBeDefined();
+    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
+    expect(screen.getByLabelText('Frage an Sovereign während Live Monitor')).toBeDefined();
+    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.queryByTestId('chat-only-app')).toBeNull();
     expect(screen.queryByLabelText('Sovereign Rescue öffnen')).toBeNull();
   });
 });

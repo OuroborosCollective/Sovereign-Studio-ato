@@ -1,6 +1,7 @@
 from functools import wraps
 from pathlib import Path
 import sys
+import threading
 from types import SimpleNamespace
 from typing import Any
 
@@ -11,6 +12,7 @@ BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
 from agent_runtime import cognitive_swarm_routes as routes_runtime
+from agent_runtime import a2a_routes as a2a_routes_runtime
 from agent_runtime.cognitive_swarm_agents import MissionIntent, SwarmExecutionError
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
 from llm_execution_resolver import ExecutionResolution, FREE_SINGLE_AGENT_PROFILE
@@ -210,12 +212,17 @@ def _require_session(handler):
     return wrapped
 
 
-def _app(factory: FakeConnectionFactory | None = None) -> Flask:
+def _app(
+    factory: FakeConnectionFactory | None = None,
+    *,
+    get_session_github_token=None,
+) -> Flask:
     app = Flask(__name__)
     register_cognitive_swarm_routes(
         app,
         require_session=_require_session,
         get_connection=factory or FakeConnectionFactory(),
+        get_session_github_token=get_session_github_token,
     )
     return app
 
@@ -256,6 +263,7 @@ def test_environment_model_allowlist_cannot_override_database_resolution(monkeyp
 
 def test_swarm_run_forwards_separate_main_and_six_agent_model_selections(monkeypatch) -> None:
     captured: dict[str, Any] = {}
+    token = "ghp_" + "a" * 40
 
     def fake_start(**kwargs: Any):
         captured.update(kwargs)
@@ -274,7 +282,7 @@ def test_swarm_run_forwards_separate_main_and_six_agent_model_selections(monkeyp
             "repositoryUrl": "https://github.com/acme/repo",
             "repositoryBranch": "repair-branch",
             "expectedHeadSha": "c" * 40,
-            "githubAccessToken": "not-a-real-github-token",
+            "githubAccessToken": token,
         },
     )
 
@@ -286,7 +294,118 @@ def test_swarm_run_forwards_separate_main_and_six_agent_model_selections(monkeyp
     assert captured["repository_url"] == "https://github.com/acme/repo"
     assert captured["repository_branch"] == "repair-branch"
     assert captured["expected_head_sha"] == "c" * 40
-    assert captured["github_access_token"] == "not-a-real-github-token"
+    assert captured["github_access_token"] == token
+
+
+def test_swarm_run_uses_server_held_github_credential_without_returning_it(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    token = "ghp_" + "b" * 40
+
+    def fake_start(**kwargs: Any):
+        captured.update(kwargs)
+        return {"ok": True, "status": "captured"}, 200
+
+    monkeypatch.setattr(routes_runtime, "start_cognitive_swarm_run", fake_start)
+    client = _app(
+        get_session_github_token=lambda user_id: token if user_id == USER_ID else None,
+    ).test_client()
+
+    response = client.post(
+        "/api/user/agent/swarm/run",
+        json={"mission": "Inspect the private repository.", "mode": "paid"},
+    )
+
+    assert response.status_code == 200
+    assert captured["github_access_token"] == token
+    assert token not in repr(response.get_json())
+
+
+def test_a2a_start_uses_same_server_held_github_credential_without_exposing_it(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    started = threading.Event()
+    token = "ghp_" + "d" * 40
+    persisted = SimpleNamespace(
+        run_id="run-a2a-oauth",
+        user_id=USER_ID,
+        job_id=None,
+        session_key="session-a2a-oauth",
+        a2a_context_id="context-a2a-oauth",
+        status="BLOCKED",
+        source="agents-sdk",
+        evidence_id="evidence-a2a-oauth",
+        trace_id="trace-a2a-oauth",
+        reason="Waiting for bounded user input.",
+        next_action="PROVIDE_INPUT",
+        mission_summary="Inspect the private repository.",
+        mission_digest="a" * 64,
+        max_active_specialists=4,
+        max_iterations=12,
+        iteration_count=1,
+        lease_active=False,
+        resume_task_id=None,
+        updated_at="2026-08-25T00:00:00Z",
+    )
+
+    def fake_start(**kwargs: Any):
+        captured.update(kwargs)
+        started.set()
+        return {
+            "runId": kwargs["run_id"],
+            "status": "BLOCKED",
+            "evidenceId": persisted.evidence_id,
+        }, 503
+
+    monkeypatch.setattr(routes_runtime, "start_cognitive_swarm_run", fake_start)
+    monkeypatch.setattr(a2a_routes_runtime, "_read_run", lambda *args, **kwargs: persisted)
+    client = _app(
+        get_session_github_token=lambda user_id: token if user_id == USER_ID else None,
+    ).test_client()
+
+    response = client.post(
+        "/a2a/v1/message:send",
+        headers={"A2A-Version": "1.0"},
+        json={
+            "message": {
+                "messageId": "message-a2a-oauth",
+                "contextId": "context-a2a-oauth",
+                "role": "ROLE_USER",
+                "parts": [{"text": "Inspect the private repository.", "mediaType": "text/plain"}],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert started.wait(timeout=1)
+    assert captured["github_access_token"] == token
+    assert token not in response.get_data(as_text=True)
+
+
+def test_swarm_run_rejects_invalid_explicit_github_credential_without_session_fallback(monkeypatch) -> None:
+    started = False
+    session_calls: list[str] = []
+
+    def fake_start(**kwargs: Any):
+        nonlocal started
+        started = True
+        return {"ok": True}, 200
+
+    monkeypatch.setattr(routes_runtime, "start_cognitive_swarm_run", fake_start)
+    client = _app(
+        get_session_github_token=lambda user_id: session_calls.append(user_id) or ("ghp_" + "c" * 40),
+    ).test_client()
+
+    response = client.post(
+        "/api/user/agent/swarm/run",
+        json={
+            "mission": "Inspect the private repository.",
+            "githubAccessToken": "not-a-token",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "githubAccessToken has an invalid format"
+    assert started is False
+    assert session_calls == []
 
 
 def test_swarm_run_fails_closed_without_protected_key(monkeypatch) -> None:

@@ -89,6 +89,35 @@ def test_successful_stage_emits_only_bounded_summary(tmp_path: Path, monkeypatch
     assert "FAILED " not in output
 
 
+def test_structured_vitest_summary_does_not_cross_count_neighbor_fields(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        MODULE.subprocess,
+        "run",
+        lambda command, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="SOVEREIGN_VITEST_SUMMARY label=frontend-endpoint-clients total=25 passed=25 failed=0 skipped=0 exitCode=0\n",
+            stderr="",
+        ),
+    )
+    stage = MODULE.GateStage(
+        name="endpoint-client-vitest",
+        command=("python3", "scripts/vitest_causal_runner.py"),
+        failure_identity="frontend-endpoint-clients::vitest_runner",
+        forward_causal_output=True,
+    )
+
+    exit_code = MODULE.run_stage(stage, root=tmp_path, timeout_seconds=30)
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "status=passed exitCode=0 failed=0 passed=25 skipped=0" in output
+    assert "failed=25" not in output
+
+
 def test_failed_non_causal_stage_preserves_exit_and_emits_fixed_identity(
     tmp_path: Path,
     monkeypatch,
@@ -194,6 +223,43 @@ def test_causal_stage_forwards_only_safe_summary_and_failed_identity(
     assert '<testcase name="clients::vitest_runner">' not in output
     assert "raw assertion body" not in output
     assert "stack trace" not in output
+
+
+def test_causal_stage_forwards_multiple_bounded_failed_identities(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    identities = [f"src/feature-{index}.test.ts::case-{index}" for index in range(16)]
+    stdout = "\n".join([
+        "SOVEREIGN_VITEST_SUMMARY label=frontend total=32 passed=16 failed=16 skipped=0 exitCode=1",
+        *(f"FAILED {identity}" for identity in identities),
+        "raw assertion body must remain private",
+    ])
+    monkeypatch.setattr(
+        MODULE.subprocess,
+        "run",
+        lambda command, **kwargs: SimpleNamespace(
+            returncode=1,
+            stdout=stdout,
+            stderr="raw stack trace",
+        ),
+    )
+    stage = MODULE.GateStage(
+        name="frontend-vitest",
+        command=("python3", "scripts/vitest_causal_runner.py"),
+        failure_identity="frontend::vitest_runner",
+        forward_causal_output=True,
+    )
+
+    exit_code = MODULE.run_stage(stage, root=tmp_path, timeout_seconds=30)
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    for identity in identities:
+        assert f"FAILED {identity}" in output
+    assert "raw assertion body" not in output
+    assert "raw stack trace" not in output
 
 
 def test_main_stops_at_first_failed_stage(monkeypatch, capsys) -> None:

@@ -496,7 +496,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert '"operational_governance_tools":true' in installer
     assert '"operational_assurance_tools":true' in installer
     assert '"operating_profile_enforced":true' in installer
-    assert '"continuity_enforced":true' in installer
+    assert '"continuity_enforced":true' not in installer
+    assert '"continuity_advisory":true' in installer
     assert '"repository_revision_resolver":true' in installer
     assert '"workspace_pr_head_sync_available":true' in installer
     assert '"github_app_repository_canary":true' in installer

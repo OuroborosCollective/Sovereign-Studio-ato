@@ -34,9 +34,14 @@ from .cognitive_swarm_routes import start_cognitive_swarm_run
 from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
 from .evidence_gate import EvidenceGateResult, evidence_gate_signal
-from .git_workspace import git_diff_full, normalize_ephemeral_github_token
+from .git_workspace import git_diff_full
 from .github_access import (
+    GitHubRepositoryReadBinary,
+    GitHubRepositoryReadBlocked,
+    GitHubRepositoryReadUpstreamError,
     issue_github_access_scope,
+    read_github_repository_file,
+    resolve_request_github_token,
     validate_github_access_for_repo,
     verify_github_access_scope,
 )
@@ -275,6 +280,7 @@ def register_sovereign_agent_routes(
     give_back_desktop_control: Callable[[Any, str, str, str], Mapping[str, Any] | None] | None = None,
     send_desktop_user_input: Callable[[Any, str, str, str, dict[str, Any]], Mapping[str, Any] | None] | None = None,
     desktop_frame_allowed: Callable[[Any], bool] | None = None,
+    get_session_github_token: Callable[[str], str | None] | None = None,
 ) -> None:
     """Register neutral user-facing Sovereign Agent job routes.
 
@@ -460,11 +466,23 @@ def register_sovereign_agent_routes(
         account["configured_owner_email"] = os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL", "")
         return account
 
-    def _ephemeral_github_access_token(body: dict[str, Any]) -> tuple[str | None, tuple[Any, int] | None]:
-        raw_token = body.get("githubAccessToken")
-        token = normalize_ephemeral_github_token(raw_token)
-        if raw_token is not None and token is None:
-            return None, (jsonify({"error": "githubAccessToken has an invalid format"}), 400)
+    def _github_access_token_for_session(
+        body: dict[str, Any],
+        user_id: str,
+    ) -> tuple[str | None, tuple[Any, int] | None]:
+        """Prefer one explicit ephemeral credential, otherwise use server-held OAuth.
+
+        The resolved credential never enters a response, event, log or persisted
+        agent payload through this helper. It exists only for the current request.
+        """
+        try:
+            token = resolve_request_github_token(
+                body.get("githubAccessToken"),
+                user_id=user_id,
+                get_session_github_token=get_session_github_token,
+            )
+        except ValueError as exc:
+            return None, (jsonify({"error": str(exc)}), 400)
         return token, None
 
     def _rescue_request_origin() -> str | None:
@@ -603,12 +621,13 @@ def register_sovereign_agent_routes(
     @app.route("/api/user/agent/rescue/diagnose", methods=["POST"])
     @require_session
     def user_diagnose_sovereign_rescue():
+        user_id = _current_session_user_id()
         body = request.get_json(force=True)
         if body is None:
             body = {}
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
-        token, token_error = _ephemeral_github_access_token(body)
+        token, token_error = _github_access_token_for_session(body, user_id)
         if token_error:
             return token_error
         try:
@@ -649,7 +668,7 @@ def register_sovereign_agent_routes(
         if not isinstance(parsed_body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
         body: dict[str, Any] = parsed_body
-        token, token_error = _ephemeral_github_access_token(body)
+        token, token_error = _github_access_token_for_session(body, user_id)
         if token_error:
             return token_error
         try:
@@ -913,7 +932,7 @@ def register_sovereign_agent_routes(
         if not isinstance(parsed_body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
         body: dict[str, Any] = parsed_body
-        token, token_error = _ephemeral_github_access_token(body)
+        token, token_error = _github_access_token_for_session(body, user_id)
         if token_error:
             return token_error
         try:
@@ -1154,6 +1173,9 @@ def register_sovereign_agent_routes(
         mission = str(body.get("mission") or "").strip()
         if not mission:
             return jsonify({"error": "mission is required"}), 400
+        github_token, token_error = _github_access_token_for_session(body, user_id)
+        if token_error is not None:
+            return token_error
         evidence_text = str(body.get("evidenceText") or body.get("logText") or "")
         try:
             handoff = build_agent_handoff_context(mission, evidence_text)
@@ -1166,6 +1188,7 @@ def register_sovereign_agent_routes(
         }
         payload.pop("evidenceText", None)
         payload.pop("logText", None)
+        payload.pop("githubAccessToken", None)
         provision_workspace = bool(payload.get("provisionWorkspace", True))
         clone_repo = bool(payload.get("cloneRepo", False))
         conn = _connection()
@@ -1180,6 +1203,7 @@ def register_sovereign_agent_routes(
                 conn,
                 user_id=user_id,
                 payload=payload,
+                github_access_token=github_token,
                 workspace_root=_workspace_root(),
                 provision_workspace=provision_workspace,
                 clone_repo=clone_repo,
@@ -1225,7 +1249,14 @@ def register_sovereign_agent_routes(
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
         user_id = _current_session_user_id()
-        github_token, token_error = _ephemeral_github_access_token(body)
+        purpose = str(body.get("purpose") or "github-access-validate").strip().lower()
+        if purpose != "github-access-validate":
+            return jsonify({
+                "ok": False,
+                "code": "server_scope_purpose_invalid",
+                "error": "Der angeforderte GitHub-Scope-Zweck ist nicht erlaubt.",
+            }), 400
+        github_token, token_error = _github_access_token_for_session(body, user_id)
         if token_error is not None:
             return token_error
         try:
@@ -1246,7 +1277,7 @@ def register_sovereign_agent_routes(
                 repository=revision["repository"],
                 branch=revision["baseBranch"],
                 revision=revision["baseSha"],
-                purpose="github-access-validate",
+                purpose=purpose,
                 secret=_github_access_scope_secret(),
             )
         except RuntimeError as exc:
@@ -1267,6 +1298,7 @@ def register_sovereign_agent_routes(
             "repository": revision["repository"],
             "baseBranch": revision["baseBranch"],
             "baseSha": revision["baseSha"],
+            "purpose": purpose,
         }), 200
 
     @app.route("/api/user/agent/github-access/validate", methods=["POST"])
@@ -1299,11 +1331,46 @@ def register_sovereign_agent_routes(
                 "error": "Der servergebundene Repository-Scope konnte nicht bestätigt werden.",
             }), 422
         owner, repo = target
+        repository_read_scope = None
+        if scope is not None:
+            try:
+                # The parent scope was issued only after an exact GitHub HEAD
+                # readback. Derive a narrower, read-only capability from that
+                # evidence without coupling file preview to write permission.
+                repository_read_scope = issue_github_access_scope(
+                    user_id=user_id,
+                    repository=f"https://github.com/{scope.owner}/{scope.repo}",
+                    branch=scope.revision,
+                    revision=scope.revision,
+                    purpose="repository-file-read",
+                    secret=_github_access_scope_secret(),
+                )
+            except RuntimeError:
+                return jsonify({
+                    "ok": False,
+                    "canWrite": False,
+                    "code": "repository_file_scope_unavailable",
+                    "error": "Der revisionsgebundene Repository-Lesescope ist momentan nicht verfügbar.",
+                }), 503
+
+        github_token, token_error = _github_access_token_for_session(body, user_id)
+        if token_error is not None:
+            return token_error
+        if not github_token:
+            return jsonify({
+                "ok": False,
+                "canWrite": False,
+                "code": "github_credential_missing",
+                "error": "Für diese Sitzung ist kein GitHub-Credential verfügbar.",
+                "repositoryReadScope": repository_read_scope,
+                "repositoryRevision": scope.revision if repository_read_scope and scope else None,
+            }), 200
         result = validate_github_access_for_repo(
-            body.get("githubAccessToken"),
+            github_token,
             owner=owner,
             repo=repo,
         )
+
         # This is a nested external-credential verdict, not a failure of the
         # authenticated Sovereign session. Keep expected GitHub rejections in a
         # typed 200 envelope so the frontend cannot confuse them with logout.
@@ -1312,6 +1379,92 @@ def register_sovereign_agent_routes(
             "canWrite": result.can_write,
             "code": result.code,
             "error": None if result.ok and result.can_write else result.message,
+            "repositoryReadScope": repository_read_scope,
+            "repositoryRevision": scope.revision if repository_read_scope and scope else None,
+        }), 200
+
+    @app.route("/api/user/agent/repository/read-file", methods=["POST"])
+    @require_session
+    def user_read_github_repository_file():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        user_id = _current_session_user_id()
+        read_scope = verify_github_access_scope(
+            body.get("scope"),
+            user_id=user_id,
+            secret=_github_access_scope_secret(),
+            purpose="repository-file-read",
+        )
+        if read_scope is None:
+            return jsonify({
+                "ok": False,
+                "code": "repository_file_scope_unverified",
+                "error": "Der servergebundene Repository-Lesescope konnte nicht bestätigt werden.",
+            }), 422
+
+        requested_owner = str(body.get("owner") or "")
+        requested_repo = str(body.get("repo") or "").removesuffix(".git")
+        requested_revision = str(body.get("ref") or "").lower()
+        if (
+            not re.fullmatch(r"[0-9a-f]{40}", requested_revision)
+            or requested_revision != read_scope.revision
+            or str(read_scope.branch).lower() != read_scope.revision
+            or requested_owner.casefold() != read_scope.owner.casefold()
+            or requested_repo.casefold() != read_scope.repo.casefold()
+        ):
+            return jsonify({
+                "ok": False,
+                "code": "repository_file_scope_mismatch",
+                "error": "Repository und Revision stimmen nicht mit dem bestätigten Lesescope überein.",
+            }), 422
+
+        github_token, token_error = _github_access_token_for_session(body, user_id)
+        if token_error is not None:
+            return token_error
+        try:
+            result = read_github_repository_file(
+                github_token,
+                owner=read_scope.owner,
+                repo=read_scope.repo,
+                revision=read_scope.revision,
+                path=body.get("path"),
+                max_bytes=body.get("maxBytes", 100_000),
+            )
+        except GitHubRepositoryReadBlocked:
+            return jsonify({
+                "ok": False,
+                "code": "repository_file_blocked",
+                "error": "Diese Repository-Datei darf nicht in der Browser-Vorschau offengelegt werden.",
+            }), 403
+        except GitHubRepositoryReadBinary:
+            return jsonify({
+                "ok": False,
+                "status": "binary",
+                "code": "repository_file_binary_unsupported",
+                "error": "Diese Repository-Datei ist keine unterstützte UTF-8-Textdatei.",
+            }), 415
+        except GitHubRepositoryReadUpstreamError:
+            return jsonify({
+                "ok": False,
+                "code": "repository_file_upstream_invalid",
+                "error": "GitHub lieferte keine verlässlich prüfbare Repository-Datei.",
+            }), 502
+        except HTTPError as exc:
+            if exc.code == 404:
+                return jsonify({"error": "Repository file not found."}), 404
+            if exc.code in (401, 403):
+                return jsonify({"error": "Repository file access was not authorized for this session."}), 403
+            return jsonify({"error": f"GitHub repository read failed with HTTP {exc.code}."}), 502
+        except (URLError, TimeoutError):
+            return jsonify({"error": "GitHub repository read is temporarily unavailable."}), 503
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({
+            "ok": True,
+            "scopeVerified": True,
+            "repositoryRevision": read_scope.revision,
+            **result,
         }), 200
 
     @app.route("/api/user/agent/validate-mission", methods=["POST"])
@@ -1358,6 +1511,11 @@ def register_sovereign_agent_routes(
             body = {}
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
+        github_token, token_error = _github_access_token_for_session(body, user_id)
+        if token_error is not None:
+            return token_error
+        payload = {**body}
+        payload.pop("githubAccessToken", None)
         provision_workspace = bool(body.get("provisionWorkspace", True))
         clone_repo = bool(body.get("cloneRepo", False))
         conn = _connection()
@@ -1365,7 +1523,8 @@ def register_sovereign_agent_routes(
             lifecycle = create_sovereign_agent_job(
                 conn,
                 user_id=user_id,
-                payload=body,
+                payload=payload,
+                github_access_token=github_token,
                 workspace_root=_workspace_root(),
                 provision_workspace=provision_workspace,
                 clone_repo=clone_repo,
@@ -1769,12 +1928,32 @@ def register_sovereign_agent_routes(
             job = _read_owned_job(conn, user_id, job_id)
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
+            stored = list_agent_projections(conn, user_id=user_id, job_id=job_id, limit=limit)
+            try:
+                context = get_live_workspace_context(conn, job) if get_live_workspace_context is not None else None
+            except Exception:
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "code": "LIVE_WORKSPACE_CONTEXT_UNAVAILABLE",
+                    "error": "Live workspace projection context is temporarily unavailable.",
+                }), 503
+            session_binding_hash = context.session.session_binding_hash if context is not None else None
+            attempt_id = context.session.attempt_id if context is not None else None
+            current = [
+                projection for projection in stored
+                if projection.get("sessionBindingHash") == session_binding_hash
+                and projection.get("attemptId") == attempt_id
+            ] if context is not None else []
             return jsonify({
                 "ok": True,
                 "runtime": "sovereign-agent",
                 "jobId": job_id,
                 "workspaceId": job.workspace_id,
-                "projections": list_agent_projections(conn, user_id=user_id, job_id=job_id, limit=limit),
+                "sessionBindingHash": session_binding_hash,
+                "attemptId": attempt_id,
+                "projections": current,
             })
         finally:
             _close(conn)
@@ -1797,7 +1976,16 @@ def register_sovereign_agent_routes(
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
             stored = list_agent_evidence_anchors(conn, user_id=user_id, job_id=job_id, limit=limit)
-            context = _resolve_live_workspace_context(conn, job)
+            try:
+                context = get_live_workspace_context(conn, job) if get_live_workspace_context is not None else None
+            except Exception:
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "code": "LIVE_WORKSPACE_CONTEXT_UNAVAILABLE",
+                    "error": "Live workspace evidence context is temporarily unavailable.",
+                }), 503
             current: list[dict[str, Any]] = []
             historical: list[dict[str, Any]] = []
             latest_historical_key: tuple[str, str] | None = None
@@ -1830,12 +2018,24 @@ def register_sovereign_agent_routes(
                     runtime_identity_hash=context.session.desktop_runtime_identity_hash,
                 )
                 current.append(anchor.to_read_model(verdict=verdict, freshness_reasons=reasons))
+            envelope_session_binding_hash = (
+                context.session.session_binding_hash
+                if context is not None
+                else latest_historical_key[0] if latest_historical_key is not None else None
+            )
+            envelope_attempt_id = (
+                context.session.attempt_id
+                if context is not None
+                else latest_historical_key[1] if latest_historical_key is not None else None
+            )
             return jsonify({
                 "ok": True,
                 "runtime": "sovereign-agent",
                 "jobId": job_id,
-                "sessionBindingHash": context.session.session_binding_hash if context is not None else None,
-                "attemptId": context.session.attempt_id if context is not None else None,
+                "workspaceId": job.workspace_id,
+                "active": context is not None,
+                "sessionBindingHash": envelope_session_binding_hash,
+                "attemptId": envelope_attempt_id,
                 "evidenceAnchors": current,
                 "historicalEvidenceAnchors": historical,
                 "authoritative": False,
@@ -2124,10 +2324,9 @@ def register_sovereign_agent_routes(
             body = {}
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
-        raw_github_token = body.get("githubAccessToken")
-        github_token = normalize_ephemeral_github_token(raw_github_token)
-        if raw_github_token is not None and github_token is None:
-            return jsonify({"error": "githubAccessToken has an invalid format"}), 400
+        github_token, token_error = _github_access_token_for_session(body, user_id)
+        if token_error is not None:
+            return token_error
 
         conn = _connection()
         try:

@@ -9,9 +9,16 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+import stat
 from typing import Any
 
 from .base import ToolBase, ToolResult, ToolPolicyError
+from ..github_access import (
+    GitHubRepositoryReadBinary,
+    GitHubRepositoryReadBlocked,
+    decode_repository_preview_bytes,
+    ensure_repository_preview_path_safe,
+)
 from ..workspace_policy import normalize_workspace_permissions
 
 
@@ -39,8 +46,11 @@ class FileReadTool(ToolBase):
         if not workspace_path:
             return ToolResult(status="blocked", blocker="No workspace path provided")
 
-        rel_path = params.get("path", "")
-        max_bytes = params.get("max_bytes", 1_000_000)
+        rel_path = str(params.get("path", "") or "")
+        try:
+            max_bytes = max(1, min(int(params.get("max_bytes", 1_000_000)), 1_000_000))
+        except (TypeError, ValueError):
+            return ToolResult(status="blocked", blocker="max_bytes must be a bounded integer")
 
         if not rel_path or rel_path.startswith("/"):
             return ToolResult(
@@ -59,20 +69,25 @@ class FileReadTool(ToolBase):
                     blocker="Path escape attempt detected",
                 )
 
-            if not target.exists():
-                return ToolResult(status="error", error=f"File not found: {rel_path}")
+            resolved_rel_path = target.relative_to(workspace_root).as_posix()
+            ensure_repository_preview_path_safe(rel_path)
+            ensure_repository_preview_path_safe(resolved_rel_path)
+            open_flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+            descriptor = os.open(target, open_flags)
+            with os.fdopen(descriptor, "rb", closefd=True) as source:
+                descriptor_stat = os.fstat(source.fileno())
+                if not stat.S_ISREG(descriptor_stat.st_mode):
+                    return ToolResult(status="error", error=f"Not a file: {rel_path}")
+                content_bytes = source.read(max_bytes + 1)
 
-            if not target.is_file():
-                return ToolResult(status="error", error=f"Not a file: {rel_path}")
-
-            content_bytes = target.read_bytes()
-            if len(content_bytes) > max_bytes:
+            if len(content_bytes) > max_bytes or descriptor_stat.st_size > max_bytes:
+                observed_bytes = max(len(content_bytes), descriptor_stat.st_size)
                 return ToolResult(
                     status="blocked",
-                    blocker=f"File exceeds max_bytes limit ({len(content_bytes)} > {max_bytes})",
+                    blocker=f"File exceeds max_bytes limit ({observed_bytes} > {max_bytes})",
                 )
 
-            content = target.read_text(encoding="utf-8", errors="replace")
+            content = decode_repository_preview_bytes(rel_path, content_bytes)
             return ToolResult(
                 status="done",
                 output=content,
@@ -83,6 +98,18 @@ class FileReadTool(ToolBase):
                 },
             )
 
+        except FileNotFoundError:
+            return ToolResult(status="error", error=f"File not found: {rel_path}")
+        except IsADirectoryError:
+            return ToolResult(status="error", error=f"Not a file: {rel_path}")
+        except GitHubRepositoryReadBinary as exc:
+            return ToolResult(
+                status="blocked",
+                blocker=str(exc),
+                metadata={"path": rel_path, "previewStatus": "binary"},
+            )
+        except GitHubRepositoryReadBlocked as exc:
+            return ToolResult(status="blocked", blocker=str(exc), metadata={"path": rel_path})
         except PermissionError:
             return ToolResult(status="error", error=f"Permission denied: {rel_path}")
         except Exception as e:

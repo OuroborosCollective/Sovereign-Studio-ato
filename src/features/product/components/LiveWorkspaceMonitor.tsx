@@ -11,6 +11,11 @@ import { C } from './builderConstants';
 export interface LiveWorkspaceMonitorProps {
   readonly projections: readonly SovereignLiveProjection[];
   readonly job?: SovereignAgentJobSnapshot | null;
+  readonly desktopFrame?: {
+    readonly url: string;
+    readonly frameHash: string;
+    readonly observedAt: number;
+  } | null;
 }
 
 interface MonitorTab {
@@ -159,6 +164,49 @@ function MetaPill({ label, value }: { readonly label: string; readonly value: st
       <span style={{ color: C.textMuted }}>{label}</span>
       <strong style={{ color: C.text, fontWeight: 600 }}>{value}</strong>
     </span>
+  );
+}
+
+function DesktopFramePane({
+  frame,
+  job,
+}: {
+  readonly frame?: LiveWorkspaceMonitorProps['desktopFrame'];
+  readonly job?: SovereignAgentJobSnapshot | null;
+}) {
+  return (
+    <div className="live-workspace-monitor__desktop" data-testid="live-workspace-monitor-desktop">
+      <div className="live-workspace-monitor__surface-toolbar">
+        <span style={{ color: C.green }}>DESKTOP · LIVE READBACK</span>
+        <span>{frame ? `OBSERVED · ${new Date(frame.observedAt).toLocaleTimeString('de-DE')}` : 'kein aktueller Frame'}</span>
+      </div>
+      {frame ? (
+        <>
+          <div className="live-workspace-monitor__desktop-frame-wrap">
+            <img
+              src={frame.url}
+              alt="Beobachteter Sovereign Workspace Desktop"
+              data-frame-hash={frame.frameHash}
+              className="live-workspace-monitor__desktop-frame"
+            />
+          </div>
+          <div className="live-workspace-monitor__metadata-grid">
+            <MetaPill label="Frame SHA" value={shortIdentity(frame.frameHash, 20)} />
+            <MetaPill label="Job" value={shortIdentity(job?.jobId, 18)} />
+            <MetaPill label="Workspace" value={shortIdentity(job?.workspaceId, 18)} />
+          </div>
+        </>
+      ) : (
+        <div className="live-workspace-monitor__honest-empty" data-testid="live-workspace-monitor-desktop-unavailable">
+          <span aria-hidden="true">▣</span>
+          <p>
+            {job?.jobId
+              ? 'Für den aktuellen Job liegt gerade kein serverbestätigter OBSERVED-PNG-Frame vor. Der Monitor zeichnet keinen Desktop nach.'
+              : 'Noch kein aktiver Workspace-Job. Der Desktop erscheint hier erst mit einem echten serverbestätigten Frame-Readback.'}
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -390,7 +438,7 @@ function ObservationRail({
   );
 }
 
-export function LiveWorkspaceMonitor({ projections, job }: LiveWorkspaceMonitorProps) {
+export function LiveWorkspaceMonitor({ projections, job, desktopFrame }: LiveWorkspaceMonitorProps) {
   const monitorId = useId().replace(/:/g, '');
   const current = useMemo(() => currentBinding(projections), [projections]);
   const projectionMap = useMemo(() => latestByKind(current), [current]);
@@ -493,6 +541,9 @@ export function LiveWorkspaceMonitor({ projections, job }: LiveWorkspaceMonitorP
         .live-workspace-monitor__pane-header strong { color: ${C.text}; }
         .live-workspace-monitor__state { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
         .live-workspace-monitor__surface { min-height: 270px; background: #090d12; }
+        .live-workspace-monitor__desktop { background: #05080c; border-bottom: 1px solid ${C.border}; }
+        .live-workspace-monitor__desktop-frame-wrap { min-height: 220px; max-height: 52vh; display: grid; place-items: center; overflow: auto; background: #020406; }
+        .live-workspace-monitor__desktop-frame { display: block; max-width: 100%; max-height: 52vh; width: auto; height: auto; object-fit: contain; image-rendering: auto; }
         .live-workspace-monitor__surface-toolbar,
         .live-workspace-monitor__browser-bar {
           min-height: 38px;
@@ -558,7 +609,9 @@ export function LiveWorkspaceMonitor({ projections, job }: LiveWorkspaceMonitorP
         <MetaPill label="Runtime" value={job?.status ?? 'nicht gebunden'} />
       </header>
 
-      <div role="tablist" aria-label="Monitoransichten" className="live-workspace-monitor__tabs">
+      <DesktopFramePane frame={desktopFrame} job={job} />
+
+      <div role="tablist" aria-label="Runtime-Beobachtungen" className="live-workspace-monitor__tabs">
         {MONITOR_TABS.map((tab) => {
           const available = projectionMap.has(tab.kind);
           const selected = selectedKind === tab.kind;

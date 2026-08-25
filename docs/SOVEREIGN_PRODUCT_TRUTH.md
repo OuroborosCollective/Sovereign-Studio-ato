@@ -2,7 +2,7 @@
 
 This document defines the non-negotiable product and evidence contract for Sovereign Studio ATO.
 
-**Reconciled:** 2026-08-03  
+**Reconciled:** 2026-08-25
 **Dated orientation:** [`CURRENT_STATE_2026-08-03.md`](CURRENT_STATE_2026-08-03.md)
 
 ## Prime directive
@@ -19,8 +19,9 @@ A proposed UI, runtime, agent, MCP, provider or deployment change that conflicts
 
 | Rule | Meaning |
 | --- | --- |
-| Chat is the default surface. | The user converses; Sovereign coordinates the control room behind the curtain. |
-| Inspection surfaces are explicit. | Repo, files, diff, workflow, runtime, telemetry, health, memory and inspector views do not become a second default dashboard. |
+| The monitor is the default surface. | The Live Workspace Monitor remains primary during execution, unavailable evidence and `waiting-for-user`; no legacy full-chat body replaces it. |
+| Communication is embedded. | The LLM converses through a compact dock inside the monitor and proposes typed intent; the runtime does not keyword-interpret free language. |
+| Inspection surfaces are explicit. | Repo, files, diff, workflow, runtime, telemetry, health, memory and inspector views are bounded monitor projections and do not create truth. |
 | Every action produces a result. | No invisible or decorative work. |
 | Every result creates or updates bound state. | State must identify owner/scope/revision where applicable. |
 | State allows, blocks or approval-gates the next action. | No blind continuation loops. |
@@ -160,8 +161,9 @@ change/delta + temporal envelope
 
 ## Continuity truth
 
-- Continuity context and policy are mandatory before mutating MCP work.
-- Ledgers are append-only.
+- Continuity context, policy and ledgers are advisory historical provenance only; they do not authorize, delay or block repository mutations, PRs, merges, releases, deployments or runtime work.
+- Exact Git revision, explicit owner/permission gates, required CI/evidence and fresh target-system readback remain the technical authority.
+- When written, ledgers are append-only.
 - Historical records are not current runtime state.
 - Owner-asserted personal provenance and technical evidence remain distinct.
 - Raw chat and secrets are not persisted.

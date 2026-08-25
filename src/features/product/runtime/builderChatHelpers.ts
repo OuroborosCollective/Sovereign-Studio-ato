@@ -16,10 +16,6 @@ import { projectSituationalChatLines } from "./situationalBubbleRuntime";
 import {
   detectAndroidQuickRepoUrl,
 } from "./androidQuickInteractionRuntime";
-import {
-  isSovereignAgentExecutionIntent,
-  isWorkerRetryIntent,
-} from "./workerIntentDetector";
 import type { SovereignAgentJobSnapshot } from "./sovereignAgentRuntime";
 import type {
   AnimPhase,
@@ -344,15 +340,9 @@ export function composerRouteHint(args: {
   const quickRepo = detectAndroidQuickRepoUrl(clean);
   if (quickRepo.recognized) return quickRepo.hint;
   if (parseDevChatGithubUrl(clean)) return "Repo laden · Runtime Snapshot";
-  if (isSovereignAgentExecutionIntent(clean))
-    return args.agentDisabled
-      ? "Sovereign Agent blockiert · Worker erklärt zuerst"
-      : "Sovereign Agent starten";
-  if (args.workerBlocked && !isWorkerRetryIntent(clean))
-    return "Worker blockiert · keine lokale Sprachdeutung";
-  if (args.workerBlocked && isWorkerRetryIntent(clean))
-    return "Worker Retry · Diagnose wird aktualisiert";
-  return "Worker Chat senden · Enter senden · Shift+Enter Zeilenumbruch";
+  if (args.workerBlocked) return "LLM Runtime blockiert · freie Sprache wartet auf Backend-Evidence";
+  if (args.agentDisabled) return "Backend-LLM versteht · Executor bleibt bis zum typisierten Auftrag gesperrt";
+  return "Backend-LLM versteht · Executor erhält nur typisierte Aktionen";
 }
 
 // ─────────────────────────────────────────────────────────────

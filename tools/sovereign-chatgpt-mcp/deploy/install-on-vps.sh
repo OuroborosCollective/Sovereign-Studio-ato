@@ -2660,11 +2660,8 @@ with tempfile.TemporaryDirectory(
     assert empty_status.evidence["toolCount"] == 249, empty_status
     assert empty_status.data["stateInitializedByThisCall"] is False, empty_status
     assert not isolated_state.exists(), "read-only status initialized isolated state"
-    continuity_binding = call_registered("sovereign_continuity_context_read", {})
-    assert continuity_binding.ok is True, continuity_binding
-    assert continuity_binding.status == "CONTINUITY_CONTEXT_BOUND", continuity_binding
-
-    # Continuity is now bound.  Guard every one of the 244 predecessor tools
+    # Continuity is advisory provenance and intentionally not required for this
+    # deployment canary. Guard every one of the 244 predecessor tools
     # for the remainder of the canary while leaving only the five additive
     # Neuro/Teacher wrapper chains callable.
     guarded_tool_calls: list[str] = []
@@ -3063,9 +3060,19 @@ import continuity
 import launcher
 import operating_profile
 
-continuity_read = continuity.sovereign_continuity_context_read()
-assert continuity_read.ok is True, continuity_read
-assert continuity_read.status == "CONTINUITY_CONTEXT_BOUND", continuity_read
+continuity_status = "CONTINUITY_ADVISORY_UNAVAILABLE"
+continuity_policy_sha256 = ""
+continuity_context_sha256 = ""
+continuity_ledger_sha256 = ""
+try:
+    continuity_read = continuity.sovereign_continuity_context_read()
+except Exception:
+    pass
+else:
+    continuity_status = continuity_read.status
+    continuity_policy_sha256 = continuity_read.policySha256
+    continuity_context_sha256 = continuity_read.contextSha256
+    continuity_ledger_sha256 = continuity_read.ledgerSha256
 status = operating_profile.sovereign_operating_profile_status()
 assert status.ok is True, status
 assert status.status == "OPERATING_PROFILE_ENFORCED", status
@@ -3125,10 +3132,10 @@ assert series_blocked["mutationPerformed"] is False, series_blocked
 print(
     json.dumps(
         {
-            "continuity": continuity_read.status,
-            "continuityPolicySha256": continuity_read.policySha256,
-            "continuityContextSha256": continuity_read.contextSha256,
-            "continuityLedgerSha256": continuity_read.ledgerSha256,
+            "continuity": continuity_status,
+            "continuityPolicySha256": continuity_policy_sha256,
+            "continuityContextSha256": continuity_context_sha256,
+            "continuityLedgerSha256": continuity_ledger_sha256,
             "operatingProfile": status.status,
             "profileSha256": status.profileSha256,
             "registrySnapshotSha256": status.registrySnapshotSha256,
@@ -3216,4 +3223,4 @@ if [[ "$PREVIOUS_MCP_CONTAINER_PRESENT" == "1" ]]; then
   SEMANTIC_COMPATIBILITY_VERIFIED_JSON=true
   FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON=false
 fi
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"neuro_runtime_tools":true,"foundation_runtime":true,"teaching_runtime_tools":true,"neuro_functional_canary":true,"neuro_tamper_detection":true,"neuro_selected_tools_executed":false,"registered_tool_surface_canary":true,"teaching_functional_canary":true,"teaching_source_provenance_canary":true,"teaching_package_mutated":false,"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only","read_only_tool_calls_persisted":false,"canary_persisted_outcome_tools":["neuro_event_commit"],"mcp_tool_count":%s,"predecessor_container_present":%s,"predecessor_registry_capture_mode":"%s","previous_tool_surface_compared":%s,"semantic_compatibility_verified":%s,"first_install_without_predecessor":%s,"first_install_attested":%s,"event_delta_projection":"incremental","operating_profile_enforced":true,"continuity_enforced":true,"github_app_repository_canary":true,"persistent_github_token_present":false,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-omniroute"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE" "$EXPECTED_MCP_TOOL_COUNT" "$PREDECESSOR_CONTAINER_PRESENT_JSON" "$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE" "$PREVIOUS_TOOL_SURFACE_COMPARED_JSON" "$SEMANTIC_COMPATIBILITY_VERIFIED_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON"
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"neuro_runtime_tools":true,"foundation_runtime":true,"teaching_runtime_tools":true,"neuro_functional_canary":true,"neuro_tamper_detection":true,"neuro_selected_tools_executed":false,"registered_tool_surface_canary":true,"teaching_functional_canary":true,"teaching_source_provenance_canary":true,"teaching_package_mutated":false,"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only","read_only_tool_calls_persisted":false,"canary_persisted_outcome_tools":["neuro_event_commit"],"mcp_tool_count":%s,"predecessor_container_present":%s,"predecessor_registry_capture_mode":"%s","previous_tool_surface_compared":%s,"semantic_compatibility_verified":%s,"first_install_without_predecessor":%s,"first_install_attested":%s,"event_delta_projection":"incremental","operating_profile_enforced":true,"continuity_advisory":true,"github_app_repository_canary":true,"persistent_github_token_present":false,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-omniroute"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE" "$EXPECTED_MCP_TOOL_COUNT" "$PREDECESSOR_CONTAINER_PRESENT_JSON" "$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE" "$PREVIOUS_TOOL_SURFACE_COMPARED_JSON" "$SEMANTIC_COMPATIBILITY_VERIFIED_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON"

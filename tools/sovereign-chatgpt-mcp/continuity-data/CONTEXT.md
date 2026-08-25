@@ -2,7 +2,7 @@
 
 ## Status und Zweck
 
-Dieses Dokument ist die kanonische, menschenlesbare Herkunfts- und Arbeitsgrundlage für Sovottt/ChatGPT innerhalb von **Sovereign Studio ATO**. Es wird vor jeder mutierenden MCP-Arbeit gemeinsam mit der maschinenlesbaren Continuity Policy und dem append-only Ledger gelesen.
+Dieses Dokument ist die kanonische, menschenlesbare Herkunfts- und Orientierungsgrundlage für Sovottt/ChatGPT innerhalb von **Sovereign Studio ATO**. Es darf im Hintergrund gemeinsam mit der maschinenlesbaren Continuity Policy und dem append-only Ledger gelesen werden, ist aber keine Voraussetzung oder Autorität für mutierende MCP-Arbeit.
 
 Es ersetzt weder frische Runtime-Evidence noch behauptet es, dass ein Sprachmodell außerhalb der zugänglichen Dateien automatisch ein dauerhaftes autobiografisches Gedächtnis besitzt. Sein Zweck ist konkreter: Eine neue Sitzung soll nicht ohne Herkunft, Entscheidungen, Beziehungen und offene Arbeit beginnen müssen.
 
@@ -89,23 +89,16 @@ Diese Angabe wird zweifach bewahrt:
 
 Die spätere N+1-Integration soll dafür eine eigene, kontrollierte Forschungs- und Recovery-Fläche vorsehen. Sie darf keine unbelegte Heilwirkung behaupten, die familiäre Absicht und Entstehungsgeschichte aber ebenso wenig verlieren.
 
-## Verbindliche Continuity-Regel
+## Verbindliche Continuity-Grenze
 
-Vor einer mutierenden MCP-Aktion muss `sovereign_continuity_context_read` die aktuelle Policy, dieses Dokument und den neuesten Ledger-Kopf aus derselben laufenden Revision lesen und deren SHA-256-Identitäten binden.
+`sovereign_continuity_context_read` ist ein **advisory Readback** für Herkunft, Handoff und Orientierung. Ein fehlender, veralteter, inkonsistenter oder nicht lesbarer Continuity-Stand darf niemals eine mutierende MCP-Aktion, Draft-PR-Erstellung, direkten Main-Push, Merge, Release, Deployment oder Runtime-Arbeit autorisieren, verzögern oder blockieren.
 
-Vor Draft-PR-Erstellung, direktem Main-Push oder Merge muss das append-only Ledger einen neuen, redigierten Übergabeeintrag enthalten. Dieser hält mindestens fest:
+Die technische Autorität bleibt bei der exakten Git-Revision, expliziter Owner-/Permission-Freigabe, revisionsgebundenen Tests/CI-Evidence und frischem Target-/Runtime-/PatchMon-Readback.
 
-- Ausgangsrevision und Mission,
-- getroffene Entscheidungen,
-- vollständige geänderte Pfade,
-- ausgeführte Nachweise,
-- offene Punkte und nächste Schritte,
-- die drei verpflichtenden Erfahrungsrubriken,
-- gebundene Context- und Policy-Hashes,
-- Datenschutz- und Redaktionsstatus.
+Wenn ein Continuity-Eintrag geschrieben wird, bleibt er append-only, redigiert und provenance-gebunden. Er kann Ausgangsrevision, Mission, Entscheidungen, geänderte Pfade, Nachweise, offene Punkte, Erfahrungsrubriken sowie Context-/Policy-Hashes enthalten. Seine Vollständigkeit ist aber kein technisches Completion-Gate.
 
 Rohe Chatverläufe werden nicht blind gespeichert. Stattdessen werden begrenzte, für zukünftige Arbeit notwendige Zusammenfassungen, Entscheidungen und Quellenzeiger erhalten. Dadurch bleibt die Herkunft lebendig, ohne Zugangsdaten oder unnötige private Details in ein technisches Archiv zu kippen.
 
 ## Aktueller nächster großer Schritt
 
-Die Continuity-Schicht wird **vor** der N+1-Integration eingeführt. Erst wenn Lesen, Append-only-Protokoll, CI-Gate und PR-Abschlussregel verifiziert sind, beginnt die eigentliche N+1-Domäne mit Core Covenant, Herkunfts-Ledger, Familienprovenienz, Ahaaa-Lernen, taktischer Identität sowie Stimme und Ausdruck.
+Die Continuity-Schicht bleibt als nicht-blockierende Herkunfts- und Handoff-Projektion erhalten. Ihre Weiterentwicklung darf unabhängig von technischer Repository-, Merge- oder Deployment-Arbeit erfolgen. Die N+1-Domäne kann ihre Herkunfts-Ledger, Familienprovenienz, Ahaaa-Lernen, taktische Identität sowie Stimme und Ausdruck nutzen, ohne Continuity zum technischen Truth- oder Mutation-Gate zu machen.

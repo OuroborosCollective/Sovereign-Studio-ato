@@ -3,6 +3,7 @@
 Verifies that tools execute correctly within workspace boundaries.
 """
 
+import hashlib
 import pytest
 import tempfile
 from pathlib import Path
@@ -53,6 +54,73 @@ class TestFileReadTool:
 
         assert result.is_ok()
         assert "Héllo" in result.output
+
+    @pytest.mark.parametrize("path", [".env", "config/credentials.json", "ops/secrets.yml"])
+    def test_read_blocks_sensitive_preview_paths(self, tmp_path, path):
+        target = tmp_path / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("ordinary text")
+
+        result = FileReadTool().execute({"path": path}, str(tmp_path))
+
+        assert result.is_blocked()
+        assert result.blocker == "repository_file_sensitive_path_blocked"
+        assert result.output is None
+
+    def test_read_blocks_symlink_that_resolves_to_a_sensitive_path(self, tmp_path):
+        sensitive = tmp_path / ".env"
+        sensitive.write_text("SAFE_NAME_TOKEN=sensitive-value")
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        os.symlink("../.env", docs / "readme")
+
+        result = FileReadTool().execute({"path": "docs/readme"}, str(tmp_path))
+
+        assert result.is_blocked()
+        assert result.blocker == "repository_file_sensitive_path_blocked"
+        assert result.output is None
+
+    def test_read_rejects_fifo_without_blocking_for_a_writer(self, tmp_path):
+        fifo = tmp_path / "events.pipe"
+        os.mkfifo(fifo)
+
+        result = FileReadTool().execute({"path": "events.pipe"}, str(tmp_path))
+
+        assert result.is_error()
+        assert result.error == "Not a file: events.pipe"
+
+    def test_read_blocks_secret_shaped_content(self, tmp_path):
+        target = tmp_path / "config.json"
+        target.write_text('{"client_secret":"ordinary-secret-value"}')
+
+        result = FileReadTool().execute({"path": "config.json"}, str(tmp_path))
+
+        assert result.is_blocked()
+        assert result.blocker == "repository_file_secret_content_blocked"
+        assert result.output is None
+
+    def test_read_rejects_invalid_utf8_as_binary_without_content(self, tmp_path):
+        target = tmp_path / "opaque.dat"
+        target.write_bytes(b"\xff\xfe\x00")
+
+        result = FileReadTool().execute({"path": "opaque.dat"}, str(tmp_path))
+
+        assert result.is_blocked()
+        assert result.blocker == "repository_file_binary_unsupported"
+        assert result.metadata["previewStatus"] == "binary"
+        assert result.output is None
+
+    def test_read_hash_and_bytes_describe_the_exact_displayed_buffer(self, tmp_path):
+        payload = b"one observed buffer"
+        target = tmp_path / "observed.txt"
+        target.write_bytes(payload)
+
+        result = FileReadTool().execute({"path": "observed.txt"}, str(tmp_path))
+
+        assert result.is_ok()
+        assert result.output == payload.decode("utf-8")
+        assert result.metadata["bytes"] == len(payload)
+        assert result.metadata["sha256"] == hashlib.sha256(payload).hexdigest()
 
 
 class TestFileWriteTool:

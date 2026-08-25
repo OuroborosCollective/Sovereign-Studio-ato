@@ -8,10 +8,12 @@ import { store } from './store';
 const agent = vi.hoisted(() => ({
   listJobs: vi.fn(),
   startJob: vi.fn(),
+  startRepositoryExecution: vi.fn(),
   startToolchainJob: vi.fn(),
   getJob: vi.fn(),
   getProjections: vi.fn(),
   getEvidenceAnchors: vi.fn(async () => []),
+  getDesktopFrame: vi.fn(),
   cancelJob: vi.fn(),
   runJanitor: vi.fn(),
   prepareDraftPr: vi.fn(),
@@ -53,6 +55,17 @@ vi.mock('./features/product/containers/BuilderContainer', () => ({
       <div data-testid="flow-pr-url">{props.agentJob?.draftPrUrl || 'none'}</div>
       <div data-testid="flow-repo-ready">{String(props.repoReady)}</div>
       <div data-testid="flow-repo-reason">{props.repoReason}</div>
+      <div data-testid="flow-frame-job-id">{props.desktopFrame?.jobId || 'none'}</div>
+      <div data-testid="flow-frame-hash">{props.desktopFrame?.frameHash || 'none'}</div>
+      <button
+        type="button"
+        onClick={() => {
+          void props.onStartAgent('Switch to job B', {
+            repoUrl: 'https://github.com/acme/repo',
+            branch: 'main',
+          });
+        }}
+      >Switch job</button>
       <button
         type="button"
         onClick={() => {
@@ -128,11 +141,13 @@ beforeEach(() => {
   memory.searchReusableMemory.mockResolvedValue([]);
   memory.reusableMemoryContext.mockReturnValue('');
   agent.getProjections.mockResolvedValue([]);
+  agent.getDesktopFrame.mockRejectedValue(new Error('desktop frame unavailable'));
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('App Draft-PR runtime flow', () => {
@@ -165,6 +180,68 @@ describe('App Draft-PR runtime flow', () => {
     expect(agent.getProjections).toHaveBeenCalledTimes(1);
   });
 
+  it('revokes and clears job A desktop evidence before job B can render', async () => {
+    const jobAHash = 'a'.repeat(64);
+    const jobBHash = 'b'.repeat(64);
+    const createObjectURL = vi.fn()
+      .mockReturnValueOnce('blob:job-a')
+      .mockReturnValueOnce('blob:job-b');
+    const revokeObjectURL = vi.fn();
+    class TestURL extends URL {}
+    Object.defineProperty(TestURL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(TestURL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    vi.stubGlobal('URL', TestURL);
+
+    let resolveJobBFrame!: (frame: { blob: Blob; frameHash: string; observedAt: number }) => void;
+    const pendingJobBFrame = new Promise<{ blob: Blob; frameHash: string; observedAt: number }>((resolve) => {
+      resolveJobBFrame = resolve;
+    });
+    agent.listJobs.mockResolvedValue([snapshot({
+      jobId: 'job-a',
+      workspaceId: 'job-a',
+      runtimeId: 'job-a',
+      status: 'completed',
+    })]);
+    agent.getDesktopFrame.mockImplementation(async (jobId: string) => {
+      if (jobId === 'job-a') {
+        return { blob: new Blob(['job-a'], { type: 'image/png' }), frameHash: jobAHash, observedAt: 1 };
+      }
+      return pendingJobBFrame;
+    });
+    const jobBSnapshot = snapshot({
+      jobId: 'job-b',
+      workspaceId: 'job-b',
+      runtimeId: 'job-b',
+      status: 'running',
+    });
+    agent.startRepositoryExecution.mockResolvedValue(jobBSnapshot);
+    agent.getJob.mockResolvedValue(jobBSnapshot);
+
+    render(<Provider store={store}><App /></Provider>);
+    await waitFor(() => expect(screen.getByTestId('flow-frame-hash')).toHaveTextContent(jobAHash));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Switch job' }));
+    await waitFor(() => expect(screen.getByTestId('flow-job-id')).toHaveTextContent('job-b'));
+    expect(screen.getByTestId('flow-frame-job-id')).not.toHaveTextContent('job-a');
+    await waitFor(() => expect(screen.getByTestId('flow-frame-job-id')).toHaveTextContent('none'));
+    await waitFor(() => expect(screen.getByTestId('flow-frame-hash')).toHaveTextContent('none'));
+    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:job-a'));
+    await waitFor(() => expect(agent.getDesktopFrame).toHaveBeenCalledWith('job-b'));
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveJobBFrame({
+        blob: new Blob(['job-b'], { type: 'image/png' }),
+        frameHash: jobBHash,
+        observedAt: 2,
+      });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.getByTestId('flow-frame-job-id')).toHaveTextContent('job-b'));
+    await waitFor(() => expect(screen.getByTestId('flow-frame-hash')).toHaveTextContent(jobBHash));
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+  });
+
   it('does not mark a failed persisted job as repository-ready', async () => {
     agent.listJobs.mockResolvedValue([snapshot({
       status: 'failed',
@@ -175,7 +252,7 @@ describe('App Draft-PR runtime flow', () => {
 
     await waitFor(() => expect(screen.getByTestId('flow-job-status')).toHaveTextContent('failed'));
     expect(screen.getByTestId('flow-repo-ready')).toHaveTextContent('false');
-    expect(screen.getByTestId('flow-repo-reason')).toHaveTextContent('GitHub-URL direkt im Chat einfügen.');
+    expect(screen.getByTestId('flow-repo-reason')).toHaveTextContent('Noch kein Repository an den Workspace-Monitor gebunden.');
   });
 
   it('preserves the final runtime snapshot status instead of inventing completed state', async () => {

@@ -243,6 +243,9 @@ def test_code_missions_use_llm_intent_and_materialize_six_tool_bound_tasks() -> 
     assert "_IMPLEMENTATION_TARGET_PATTERN" not in controller
     assert "create_sovereign_agent_job(" in controller
     assert 'clone_repo=True' in controller
+    assert "get_session_github_token: Callable[[str], str | None] | None = None" in controller
+    assert "github_access_token=github_token" in controller
+    assert "github_access_token=resolve_request_github_token(" in controller
     assert 'job_id=implementation_job.job_id if implementation_job else None' in controller
     assert "create_repository_swarm_tasks(" in controller
     assert "BoundRepositoryToolset(" in controller
@@ -298,9 +301,9 @@ def test_visible_user_swarm_route_uses_the_same_repository_execution_path() -> N
     assert "stage_billing=stage_billing," in swarm_profile
     assert swarm_profile.index("else AgentStageBilling(") < swarm_profile.index("mission_intent = asyncio.run(classify_mission_intent(")
     assert routes.index("received_state = create_agent_run(") < routes.index("if execution_resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:")
-    assert "payload, status_code = start_cognitive_swarm_run(" in routes
+    assert "payload, status_code = _start_run_with_session_github_token(" in routes
     assert "payload, status_code = resume_cognitive_swarm_run(" in routes
-    assert "start_run=start_cognitive_swarm_run" in routes
+    assert "start_run=_start_run_with_session_github_token" in routes
     assert "resume_run=resume_cognitive_swarm_run" in routes
     assert "intent_classification_failure" in routes
     assert "link_agent_run_job(" in routes

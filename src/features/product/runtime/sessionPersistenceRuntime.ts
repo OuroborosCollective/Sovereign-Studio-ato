@@ -113,9 +113,10 @@ function sessionFromApi(value: unknown, messages: readonly SessionMessage[] = []
 function messageFromApi(value: unknown): SessionMessage {
   const committed = commitSituationalBubble(value);
   if (!committed.ok) {
-    throw new SessionPersistenceError(`Bubble output firewall blocked persisted payload: ${committed.reason}`);
+    const reason = (committed as { reason: string }).reason;
+    throw new SessionPersistenceError(`Bubble output firewall blocked persisted payload: ${reason}`);
   }
-  const bubble = committed.bubble;
+  const bubble = (committed as { bubble: import('./builderContainerTypes').SituationalBubbleBinding }).bubble;
   return {
     id: bubble.bubbleHash,
     role: bubble.bubbleKind === 'MISSION_INPUT' ? 'user' : 'assistant',

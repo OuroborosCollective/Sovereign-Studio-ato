@@ -31,6 +31,8 @@ export interface GitHubAccessApiValidationResult {
   readonly ok: boolean;
   readonly error?: string;
   readonly canWrite?: boolean;
+  readonly repositoryReadScope?: string;
+  readonly repositoryRevision?: string;
 }
 
 /**
@@ -97,13 +99,16 @@ async function safeReadJson(response: Response): Promise<unknown> {
  * boundary and one token-normalization contract.
  */
 export async function validateGitHubTokenForRepo(
-  token: string,
+  token: string | undefined,
   target: GitHubAccessRepositoryTarget,
   fetcher: typeof fetch = fetch,
   backendBaseUrl = '',
 ): Promise<GitHubAccessApiValidationResult> {
-  const format = validateGitHubTokenFormat(token);
-  if (!format.isValid) return { ok: false, error: format.error };
+  const normalizedToken = token?.trim() || '';
+  if (normalizedToken) {
+    const format = validateGitHubTokenFormat(normalizedToken);
+    if (!format.isValid) return { ok: false, error: format.error };
+  }
   const repository = target.repository.trim();
   const branch = target.branch.trim();
   const expectedBaseSha = target.expectedBaseSha.trim().toLowerCase();
@@ -117,7 +122,12 @@ export async function validateGitHubTokenForRepo(
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ repository, branch, expectedBaseSha, githubAccessToken: token.trim() }),
+      body: JSON.stringify({
+        repository,
+        branch,
+        expectedBaseSha,
+        ...(normalizedToken ? { githubAccessToken: normalizedToken } : {}),
+      }),
     });
     const scopePayload = await safeReadJson(scopeResponse);
     if (!scopeResponse.ok || !isObject(scopePayload) || scopePayload.ok !== true || typeof scopePayload.scope !== 'string' || !scopePayload.scope.trim()) {
@@ -135,7 +145,7 @@ export async function validateGitHubTokenForRepo(
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         scope: scopePayload.scope,
-        githubAccessToken: token.trim(),
+        ...(normalizedToken ? { githubAccessToken: normalizedToken } : {}),
       }),
     });
     const payload = await safeReadJson(response);
@@ -151,10 +161,19 @@ export async function validateGitHubTokenForRepo(
     if (!isObject(payload)) {
       return { ok: false, canWrite: false, error: 'Sovereign GitHub-Zugangsprüfung lieferte keine gültige Antwort.' };
     }
+    const repositoryReadScope = typeof payload.repositoryReadScope === 'string'
+      ? payload.repositoryReadScope.trim()
+      : '';
+    const repositoryRevision = typeof payload.repositoryRevision === 'string'
+      ? payload.repositoryRevision.trim().toLowerCase()
+      : '';
     return {
       ok: payload.ok === true && payload.canWrite === true,
       canWrite: payload.canWrite === true,
       error: typeof payload.error === 'string' && payload.error.trim() ? payload.error.trim() : undefined,
+      ...(repositoryReadScope && repositoryRevision === expectedBaseSha
+        ? { repositoryReadScope, repositoryRevision }
+        : {}),
     };
   } catch {
     return { ok: false, canWrite: false, error: 'Sovereign GitHub-Zugangsprüfung ist momentan nicht erreichbar.' };

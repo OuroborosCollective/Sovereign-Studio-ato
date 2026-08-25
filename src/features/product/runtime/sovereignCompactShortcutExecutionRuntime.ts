@@ -135,7 +135,16 @@ export function decideSovereignCompactShortcutExecution(
       return blocked('diff', 'Diff blockiert', 'Keine Changed-Files- oder Patch-Diff-Evidence vorhanden.', 'Zuerst Patch oder Diff erzeugen.');
 
     case 'github_access':
-      if (input.githubAccessState === 'requested' || input.githubAccessState === 'validating') {
+      if (input.githubAccessState === 'validating') {
+        return {
+          canExecute: true,
+          surface: 'github-access',
+          reason: 'GitHub OAuth wird bereits validiert.',
+          nextAction: 'Sichere manuelle Zugangseingabe als Recovery öffnen; keine zweite OAuth-Prüfung starten.',
+          event: event({ kind: 'route_selected', route: 'github-access', label: 'GitHub-Zugangs-Recovery geöffnet', detail: 'Die laufende OAuth-Prüfung bleibt gebunden; ein neueres manuelles Ergebnis gewinnt über den Generation Guard.', state: 'running' }),
+        };
+      }
+      if (input.githubAccessState === 'requested') {
         return {
           canExecute: true,
           surface: 'github-status',

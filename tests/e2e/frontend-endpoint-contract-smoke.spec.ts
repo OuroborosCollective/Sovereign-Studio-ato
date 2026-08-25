@@ -260,7 +260,35 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     ));
 
     await page.goto('/');
-    await expect(page.locator('[data-testid="chat-only-app"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-testid="sovereign-monitor-app"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-testid="sovereign-live-monitor-primary"]')).toBeVisible();
+    await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toBeVisible();
+    await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Live Monitor' })).toBeVisible();
+    const coverageResponse = await page.request.get('/generated/test-coverage-map.json');
+    expect(coverageResponse.status()).toBe(200);
+    const coveragePayload = await coverageResponse.json() as {
+      schemaVersion?: string;
+      totalTestFiles?: number;
+      testRoots?: Record<string, number>;
+      files?: Array<{ file?: string }>;
+    };
+    expect(coveragePayload.schemaVersion).toBe('sovereign.test-coverage-map.v2');
+    expect(coveragePayload.totalTestFiles).toBeGreaterThan(0);
+    expect(coveragePayload.files).toHaveLength(coveragePayload.totalTestFiles);
+    const publishedTestPaths = new Set((coveragePayload.files ?? []).map((entry) => entry.file));
+    for (const representative of [
+      'src/App.test.tsx',
+      'backend/tests/test_agent_runtime_routes.py',
+      'scripts/tests/test_frontend_test_gate.py',
+      'tests/e2e/frontend-endpoint-contract-smoke.spec.ts',
+    ]) {
+      expect(publishedTestPaths.has(representative)).toBe(true);
+    }
+    for (const root of ['src', 'backend/tests', 'scripts/tests', 'tests/e2e']) {
+      expect(coveragePayload.testRoots?.[root]).toBeGreaterThan(0);
+    }
     await expect(page.getByRole('button', { name: 'Profil' })).toBeVisible();
     await page.getByRole('button', { name: 'Profil' }).click();
     await page.getByRole('button', { name: 'Credits kaufen' }).click();

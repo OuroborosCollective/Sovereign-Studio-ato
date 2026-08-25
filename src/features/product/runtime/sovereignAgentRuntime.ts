@@ -77,6 +77,8 @@ export type SovereignEvidenceSourceKind = 'AGENT_RUN_RECEIPT' | 'GITHUB_READBACK
 
 export interface SovereignWorkspaceEvidenceAnchor {
   anchorId: string;
+  jobId?: string;
+  workspaceId?: string;
   claimKind: string;
   verdict: SovereignEvidenceVerdict;
   sourceVerdict: SovereignEvidenceVerdict;
