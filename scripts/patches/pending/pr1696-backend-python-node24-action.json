@@ -1,0 +1,17 @@
+{
+  "_comment": "PR #1696: pin Node-24-native setup-python in the backend composite action",
+  "target": ".github/actions/setup-backend-python/action.yml",
+  "source_ref": "sovereign/chatgpt/1787687567-fix-three-log-failures-clean-87085c",
+  "branch_base_ref": "sovereign/chatgpt/1787687567-fix-three-log-failures-clean-87085c",
+  "branch": "sovereign/chatgpt/1787687567-fix-three-log-failures-clean-87085c",
+  "commit_message": "ci: pin Node 24 native Python setup action",
+  "pr_title": "fix: reconcile CI log failures and continuity authority",
+  "pr_body": "Applies immutable Node-24-native GitHub Action pins on the existing PR branch.",
+  "expectedSha": "1f1b5f53ced4ab97d48c62646cfb13fe37c41128",
+  "blocks": [
+    {
+      "search": "    - name: Setup Python\n      uses: actions/setup-python@v5",
+      "replace": "    - name: Setup Python\n      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6"
+    }
+  ]
+}

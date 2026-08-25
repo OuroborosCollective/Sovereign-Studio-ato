@@ -1,0 +1,29 @@
+{
+  "_comment": "PR #1696: pin Node-24-native Actions in Sovereign Validation",
+  "target": ".github/workflows/sovereign-validation.yml",
+  "source_ref": "sovereign/chatgpt/1787687567-fix-three-log-failures-clean-87085c",
+  "branch_base_ref": "sovereign/chatgpt/1787687567-fix-three-log-failures-clean-87085c",
+  "branch": "sovereign/chatgpt/1787687567-fix-three-log-failures-clean-87085c",
+  "commit_message": "ci: pin Node 24 native validation actions",
+  "pr_title": "fix: reconcile CI log failures and continuity authority",
+  "pr_body": "Applies immutable Node-24-native GitHub Action pins on the existing PR branch.",
+  "expectedSha": "1bb261bdc1afbe72bffac20ee57358b662d37436",
+  "blocks": [
+    {
+      "search": "      - name: Checkout repository\n        uses: actions/checkout@v4",
+      "replace": "      - name: Checkout repository\n        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6"
+    },
+    {
+      "search": "      - name: Setup pnpm\n        uses: pnpm/action-setup@v4",
+      "replace": "      - name: Setup pnpm\n        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6"
+    },
+    {
+      "search": "      - name: Setup Node.js\n        uses: actions/setup-node@v4",
+      "replace": "      - name: Setup Node.js\n        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6"
+    },
+    {
+      "search": "      - name: Setup Python for generated-schema parity\n        uses: actions/setup-python@v5",
+      "replace": "      - name: Setup Python for generated-schema parity\n        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6"
+    }
+  ]
+}

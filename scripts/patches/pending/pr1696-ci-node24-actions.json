@@ -1,0 +1,49 @@
+{
+  "_comment": "PR #1696: pin Node-24-native GitHub Actions in CI without broad replacements",
+  "target": ".github/workflows/ci.yml",
+  "source_ref": "sovereign/chatgpt/1787687567-fix-three-log-failures-clean-87085c",
+  "branch_base_ref": "sovereign/chatgpt/1787687567-fix-three-log-failures-clean-87085c",
+  "branch": "sovereign/chatgpt/1787687567-fix-three-log-failures-clean-87085c",
+  "commit_message": "ci: pin Node 24 native CI actions",
+  "pr_title": "fix: reconcile CI log failures and continuity authority",
+  "pr_body": "Applies immutable Node-24-native GitHub Action pins on the existing PR branch.",
+  "expectedSha": "537918495861cd0eb248ab70ea8cae1af7a0cb2a",
+  "blocks": [
+    {
+      "search": "  quality-gate:\n    name: Code Quality and Testing\n    runs-on: ubuntu-latest\n    steps:\n    - name: Checkout Repository\n      uses: actions/checkout@v4\n      with:\n        fetch-depth: 1\n    - name: Setup Node.js\n      uses: actions/setup-node@v4\n      with:\n        node-version: 22\n    - name: Install pnpm\n      shell: bash\n      run: |\n        npm install -g pnpm@${PNPM_VERSION}\n        pnpm --version\n    - name: Get pnpm store directory\n      shell: bash\n      run: echo \"STORE_PATH=$(pnpm store path --silent)\" >> $GITHUB_ENV\n    - name: Cache pnpm modules\n      uses: actions/cache@v4",
+      "replace": "  quality-gate:\n    name: Code Quality and Testing\n    runs-on: ubuntu-latest\n    steps:\n    - name: Checkout Repository\n      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6\n      with:\n        fetch-depth: 1\n    - name: Setup Node.js\n      uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6\n      with:\n        node-version: 22\n    - name: Install pnpm\n      shell: bash\n      run: |\n        npm install -g pnpm@${PNPM_VERSION}\n        pnpm --version\n    - name: Get pnpm store directory\n      shell: bash\n      run: echo \"STORE_PATH=$(pnpm store path --silent)\" >> $GITHUB_ENV\n    - name: Cache pnpm modules\n      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5"
+    },
+    {
+      "search": "  backend-tests:\n    name: Backend OAuth Security Tests (Live Path)\n    runs-on: ubuntu-latest\n    steps:\n    - name: Checkout Repository\n      uses: actions/checkout@v4\n      with:\n        fetch-depth: 1\n    - name: Setup verified backend Python runtime",
+      "replace": "  backend-tests:\n    name: Backend OAuth Security Tests (Live Path)\n    runs-on: ubuntu-latest\n    steps:\n    - name: Checkout Repository\n      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6\n      with:\n        fetch-depth: 1\n    - name: Setup verified backend Python runtime"
+    },
+    {
+      "search": "  android-build:\n    name: Android Build Verification\n    needs: quality-gate\n    runs-on: ubuntu-latest\n    steps:\n    - name: Checkout Repository\n      uses: actions/checkout@v4\n      with:\n        fetch-depth: 1\n    - name: Setup Node.js\n      uses: actions/setup-node@v4\n      with:\n        node-version: 22\n    - name: Install pnpm\n      shell: bash\n      run: |\n        npm install -g pnpm@${PNPM_VERSION}\n        pnpm --version\n    - name: Get pnpm store directory\n      shell: bash\n      run: echo \"STORE_PATH=$(pnpm store path --silent)\" >> $GITHUB_ENV\n    - name: Cache pnpm modules\n      uses: actions/cache@v4",
+      "replace": "  android-build:\n    name: Android Build Verification\n    needs: quality-gate\n    runs-on: ubuntu-latest\n    steps:\n    - name: Checkout Repository\n      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6\n      with:\n        fetch-depth: 1\n    - name: Setup Node.js\n      uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6\n      with:\n        node-version: 22\n    - name: Install pnpm\n      shell: bash\n      run: |\n        npm install -g pnpm@${PNPM_VERSION}\n        pnpm --version\n    - name: Get pnpm store directory\n      shell: bash\n      run: echo \"STORE_PATH=$(pnpm store path --silent)\" >> $GITHUB_ENV\n    - name: Cache pnpm modules\n      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5"
+    },
+    {
+      "search": "  security-audit:\n    name: Security Audit\n    runs-on: ubuntu-latest\n    steps:\n    - name: Checkout Repository\n      uses: actions/checkout@v4\n      with:\n        fetch-depth: 1\n    - name: Setup Node.js\n      uses: actions/setup-node@v4",
+      "replace": "  security-audit:\n    name: Security Audit\n    runs-on: ubuntu-latest\n    steps:\n    - name: Checkout Repository\n      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6\n      with:\n        fetch-depth: 1\n    - name: Setup Node.js\n      uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6"
+    },
+    {
+      "search": "  sovereign-agent-tests:\n    name: Sovereign Agent Runtime Tests\n    runs-on: ubuntu-latest\n    steps:\n    - name: Checkout Repository\n      uses: actions/checkout@v4\n      with:\n        fetch-depth: 1\n    - name: Setup verified backend Python runtime",
+      "replace": "  sovereign-agent-tests:\n    name: Sovereign Agent Runtime Tests\n    runs-on: ubuntu-latest\n    steps:\n    - name: Checkout Repository\n      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6\n      with:\n        fetch-depth: 1\n    - name: Setup verified backend Python runtime"
+    },
+    {
+      "search": "    - name: Upload Release Gate Evidence\n      if: always()\n      uses: actions/upload-artifact@v4",
+      "replace": "    - name: Upload Release Gate Evidence\n      if: always()\n      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6"
+    },
+    {
+      "search": "    - name: Upload Web Build Artifact\n      uses: actions/upload-artifact@v4",
+      "replace": "    - name: Upload Web Build Artifact\n      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6"
+    },
+    {
+      "search": "    - name: Upload Debug APK\n      uses: actions/upload-artifact@v4",
+      "replace": "    - name: Upload Debug APK\n      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6"
+    },
+    {
+      "search": "    - name: Upload Agent Test Results\n      if: always()\n      uses: actions/upload-artifact@v4",
+      "replace": "    - name: Upload Agent Test Results\n      if: always()\n      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6"
+    }
+  ]
+}

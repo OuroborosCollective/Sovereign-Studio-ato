@@ -1,0 +1,17 @@
+{
+  "_comment": "PR #1696: pin Node-24-native checkout in brain projection workflow",
+  "target": ".github/workflows/sovereign-brain-projection.yml",
+  "source_ref": "sovereign/chatgpt/1787687567-fix-three-log-failures-clean-87085c",
+  "branch_base_ref": "sovereign/chatgpt/1787687567-fix-three-log-failures-clean-87085c",
+  "branch": "sovereign/chatgpt/1787687567-fix-three-log-failures-clean-87085c",
+  "commit_message": "ci: pin Node 24 native brain action",
+  "pr_title": "fix: reconcile CI log failures and continuity authority",
+  "pr_body": "Applies immutable Node-24-native GitHub Action pins on the existing PR branch.",
+  "expectedSha": "41e2d5b1e7c4a6e1681d346977a5f0954ce9d9b5",
+  "blocks": [
+    {
+      "search": "      - name: Checkout repository\n        uses: actions/checkout@v4",
+      "replace": "      - name: Checkout repository\n        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6"
+    }
+  ]
+}
