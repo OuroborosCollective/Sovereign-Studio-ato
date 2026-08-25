@@ -25,6 +25,7 @@ from typing import Sequence
 SCHEMA_VERSION = "sovereign.frontend-test-gate.v1"
 DEFAULT_TIMEOUT_SECONDS = 900
 _MAX_SAFE_LINE = 420
+_MAX_FORWARDED_CAUSAL_LINES = 32
 _COUNT_LABELS = ("failed", "passed", "skipped")
 _FAILURE_IDENTITY_RE = re.compile(r"^[A-Za-z0-9._/:-]{1,320}$")
 _SECRET_PATTERNS = (
@@ -72,7 +73,7 @@ def _causal_lines(text: str) -> tuple[str, ...]:
             token = match.group(1)
             if _FAILURE_IDENTITY_RE.fullmatch(token):
                 output.append(f"FAILED {token}")
-    return tuple(output[:8])
+    return tuple(output[:_MAX_FORWARDED_CAUSAL_LINES])
 
 
 def _emit_failure(identity: str) -> None:
