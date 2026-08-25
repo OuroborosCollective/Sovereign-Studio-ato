@@ -11,7 +11,6 @@ from typing import Annotated, Any
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
-import continuity
 import operational_governance_tools
 import toolchain_composition
 from policy import contains_high_confidence_secret_value, contains_secret_shaped_value
@@ -267,8 +266,8 @@ def _status_payload() -> OperatingProfileStatus:
             "automaticPaidToFreeFallback": False,
             "successRequiresAuthoritativeReadback": True,
             "learningRequiresProvenRuntimeOutcome": True,
-            "continuityReadRequiredBeforeMutation": True,
-            "continuityLedgerRequiredBeforeRepositoryFinalization": True,
+            "continuityReadRequiredBeforeMutation": False,
+            "continuityLedgerRequiredBeforeRepositoryFinalization": False,
             "protectedValuesAcceptedByMcpArguments": False,
         },
         findings=findings,
@@ -309,14 +308,8 @@ def sovereign_mission_preflight(
 ) -> MissionPreflightResult:
     """Use this before multi-step or mutating work to route, compile and validate a non-executing live-registry toolchain."""
     status = _status_payload()
-    continuity_findings = []
-    if any(effect != "read" for effect in allowed_effects):
-        continuity_findings = continuity.continuity_gate_findings(
-            "sovereign_mission_preflight",
-            "workspace-write",
-        )
-    if not status.ok or continuity_findings:
-        findings = list(status.findings) + list(continuity_findings)
+    if not status.ok:
+        findings = list(status.findings)
         return MissionPreflightResult(
             schemaVersion="sovereign.mission-preflight.v1",
             ok=False,
@@ -329,15 +322,11 @@ def sovereign_mission_preflight(
             proposal={},
             validation={},
             findings=findings,
-            nextActions=[
-                "read sovereign continuity context before mutating mission planning"
-                if continuity_findings
-                else "restore the operating profile and mutation-gate invariants before planning work"
-            ],
+            nextActions=["restore the operating profile and mutation-gate invariants before planning work"],
             mutationPerformed=False,
             runtimeVerified=True,
             secretValuesReturned=False,
-            truthNotice="No mutating mission plan is trusted while the persistent operating or continuity contract is blocked.",
+            truthNotice="No mutating mission plan is trusted while the revision, contract, effect, authorization or evidence operating contract is blocked. Continuity is advisory provenance only.",
         )
     route = operational_governance_tools.tool_recommend_for_mission(
         mission_summary=mission_summary,
@@ -540,7 +529,6 @@ def _gate_or_raise(tool_name: str, effect: str, parameters: dict[str, Any], kwar
         validation = validated.model_dump(mode="json")
         findings.extend(validated.findings)
     findings.extend(_validate_invocation_arguments(tool_name, effect, parameters, kwargs))
-    findings.extend(continuity.continuity_gate_findings(tool_name, effect))
     if findings:
         payload = {
             "schemaVersion": "sovereign.mutation-gate-block.v1",

@@ -53,12 +53,25 @@ def _redact(value: object) -> str:
 
 
 def _last_count(text: str, label: str) -> int:
-    matches = re.findall(rf"(?<![A-Za-z0-9_])(\d+)\s+{re.escape(label)}\b", text, re.I)
+    matches = re.findall(rf"(?<![A-Za-z0-9_=])(\d+)\s+{re.escape(label)}\b", text, re.I)
     return int(matches[-1]) if matches else 0
 
 
+def _structured_vitest_count(text: str, label: str) -> int | None:
+    matches = re.findall(
+        rf"^SOVEREIGN_VITEST_SUMMARY\s+[^\r\n]*\b{re.escape(label)}=(\d+)\b",
+        text,
+        re.I | re.M,
+    )
+    return int(matches[-1]) if matches else None
+
+
 def _count_summary(text: str) -> tuple[int, int, int]:
-    return tuple(_last_count(text, label) for label in _COUNT_LABELS)  # type: ignore[return-value]
+    counts: list[int] = []
+    for label in _COUNT_LABELS:
+        structured = _structured_vitest_count(text, label)
+        counts.append(structured if structured is not None else _last_count(text, label))
+    return tuple(counts)  # type: ignore[return-value]
 
 
 def _causal_lines(text: str) -> tuple[str, ...]:

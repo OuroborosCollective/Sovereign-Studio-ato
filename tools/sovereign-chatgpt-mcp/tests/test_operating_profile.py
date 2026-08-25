@@ -26,7 +26,9 @@ def test_profile_is_loaded_registered_and_enforced_for_every_mutable_tool() -> N
     assert status.ok is True
     assert status.status == "OPERATING_PROFILE_ENFORCED"
     assert status.profileId == "sovereign-mcp-optimal-operation"
-    assert status.profileVersion == "1.1.1"
+    assert status.profileVersion == "1.1.2"
+    assert status.invariants["continuityReadRequiredBeforeMutation"] is False
+    assert status.invariants["continuityLedgerRequiredBeforeRepositoryFinalization"] is False
     assert len(status.profileSha256) == 64
     assert len(status.registrySnapshotSha256) == 64
     assert status.missingGovernanceTools == []
@@ -69,6 +71,21 @@ def test_read_only_mission_preflight_compiles_and_validates_live_contracts() -> 
     assert result.mutationPerformed is False
     assert result.secretValuesReturned is False
 
+
+
+def test_mutating_mission_preflight_does_not_depend_on_continuity_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(continuity, "_READ_STATE", None)
+
+    result = operating_profile.sovereign_mission_preflight(
+        mission_summary="Prepare an isolated repository workspace for a revision-bound code repair.",
+        required_capabilities=["repository"],
+        allowed_effects=["workspace-write"],
+        required_evidence=["exact revision"],
+        max_nodes=4,
+    )
+
+    assert result.status != "MISSION_PREFLIGHT_BLOCKED_BY_OPERATING_PROFILE"
+    assert all(not str(item.get("family") or "").startswith("CONTINUITY_") for item in result.findings)
 
 
 def test_argument_gate_requires_owner_revision_confirmation_and_blocks_secret_shapes() -> None:
@@ -238,7 +255,9 @@ def test_ci_and_vps_release_contract_require_live_profile_and_negative_canary() 
     assert "/app/skills/sovereign-mcp-optimal-operation/SKILL.md" in installer
     assert "OPERATING_PROFILE_ENFORCED" in installer
     assert "INSTALL_STAGE=\"verify_operating_profile_canaries\"" in installer
-    assert "CONTINUITY_CONTEXT_BOUND" in installer
+    assert "CONTINUITY_ADVISORY_UNAVAILABLE" in installer
+    assert "continuity_enforced" not in installer
+    assert '"continuity_advisory":true' in installer
     assert "MISSION_PREFLIGHT_VALID" in installer
     assert "MUTATION_BLOCKED_BY_OPERATING_PROFILE" in installer
     assert "OPERATING_PROFILE_OWNER_APPROVAL_REQUIRED" in installer
