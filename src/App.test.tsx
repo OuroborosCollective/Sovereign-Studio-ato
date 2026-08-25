@@ -34,6 +34,11 @@ describe('App', () => {
       'data-layout',
       'monitor-first-live-workspace',
     );
+    expect(screen.getByTestId('sovereign-monitor-app')).toHaveAttribute(
+      'data-legacy-backend-image-marker',
+      'DevChat',
+    );
+    expect(screen.queryByText('DevChat')).toBeNull();
     expect(await screen.findAllByText('Monitor')).not.toHaveLength(0);
     expect(screen.getByTestId('builder-container')).toHaveAttribute(
       'data-layout',

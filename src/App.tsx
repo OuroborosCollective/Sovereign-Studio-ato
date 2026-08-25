@@ -510,7 +510,13 @@ function SovereignMonitorApp() {
 
   return (
     <LlmAdapterProvider>
-      <main data-testid="sovereign-monitor-app" data-layout="monitor-first-live-workspace" aria-label="Sovereign Workspace Monitor" style={MONITOR_FIRST_STYLE}>
+      <main
+        data-testid="sovereign-monitor-app"
+        data-layout="monitor-first-live-workspace"
+        aria-label="Sovereign Workspace Monitor"
+        data-legacy-backend-image-marker="DevChat"
+        style={MONITOR_FIRST_STYLE}
+      >
         <BuilderContainer
           mission={mission}
           repoReady={repoReady}
