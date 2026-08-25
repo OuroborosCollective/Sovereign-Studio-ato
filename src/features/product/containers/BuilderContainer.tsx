@@ -3318,6 +3318,7 @@ export function BuilderContainer({
 
     setGitHubAccessState(completeGitHubAccessValidation(maskedToken));
     setValidatedGitHubTargetKey(validationTargetKey);
+    setPendingResumeRetrySequence((sequence) => sequence + 1);
     githubTokenRef.current = source === 'manual-pat' ? token || null : null;
     appendActionEvent({
       kind: 'done',

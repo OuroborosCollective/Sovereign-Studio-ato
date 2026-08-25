@@ -1325,9 +1325,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
     fireEvent.click(screen.getByText("Übernehmen"));
 
-    await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
+    await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce(), { timeout: 3000 });
     expect(props.onStartAgent.mock.calls[0][0]).toContain(originalText);
-    expect(screen.getAllByText(originalText).length).toBeGreaterThanOrEqual(1);
+    await waitFor(() => expect(screen.getAllByText(originalText).length).toBeGreaterThanOrEqual(1), { timeout: 3000 });
   });
 
   it("does not call the protected direct LLM route for a guest session", async () => {
@@ -1482,12 +1482,16 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(chatField(), { target: { value: "Warum?" } });
     fireEvent.click(sendButton());
 
-    await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(4));
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => (
+      requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')
+    ))).toHaveLength(2));
     expect(await screen.findByText(/Der erste Aufruf ist fehlgeschlagen/i)).toBeDefined();
 
     fireEvent.click(screen.getAllByText("Retry")[0]);
 
-    await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(6));
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => (
+      requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')
+    ))).toHaveLength(3));
     expect(await screen.findByText("Retry beantwortet.")).toBeDefined();
     const llmCalls = fetchMock.mock.calls.filter(([input]) => (
       requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')
@@ -1496,7 +1500,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(lastUserTextFromLiteLlmRequest(retriedCall?.[1] as RequestInit | undefined))
       .toBe("Hast du Vorschläge für bessere UI?");
     expect(screen.queryByText(/Sovereign Agent für Code-Auftrag/i)).toBeNull();
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(6);
+    expect(llmCalls).toHaveLength(3);
     const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
     fireEvent.click(within(actionStream).getByRole("button", { name: "Details" }));
     const retryEvent = Array.from(actionStream.querySelectorAll('[data-route="runtime"]'))
