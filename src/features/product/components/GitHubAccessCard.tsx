@@ -182,7 +182,10 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
           </div>
 
           {/* Action Button */}
-          {(snapshot.state === 'missing' || snapshot.state === 'invalid' || snapshot.state === 'requested') && (
+          {(snapshot.state === 'missing'
+            || snapshot.state === 'invalid'
+            || snapshot.state === 'requested'
+            || snapshot.state === 'validating') && (
             <button
               type="button"
               onClick={handleOpenModal}

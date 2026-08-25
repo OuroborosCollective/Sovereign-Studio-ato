@@ -461,6 +461,68 @@ def test_create_job_runs_lifecycle_and_returns_runtime_state(tmp_path, monkeypat
     assert payload["job"]["workspaceId"].startswith("agent-")
 
 
+def test_create_job_uses_server_held_github_credential_request_locally(tmp_path, monkeypatch):
+    conn = FakeConnection()
+    token = "ghp_" + "s" * 40
+    captured = {}
+    original_create = routes_module.create_sovereign_agent_job
+
+    def capture_create(*args, **kwargs):
+        captured.update(kwargs)
+        return original_create(*args, **kwargs)
+
+    monkeypatch.setenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setattr(routes_module, "create_sovereign_agent_job", capture_create)
+    app = create_test_app(
+        conn,
+        get_session_github_token=lambda user_id: token if user_id == "user-1" else None,
+    )
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "repoUrl": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            "branch": "main",
+            "mission": "Inspect the private repository and prepare a Draft PR.",
+            "provisionWorkspace": True,
+            "cloneRepo": False,
+        },
+    )
+
+    assert response.status_code == 201
+    assert captured["github_access_token"] == token
+    assert "githubAccessToken" not in captured["payload"]
+    assert token not in repr(response.get_json())
+    assert token not in repr(conn.jobs)
+
+
+def test_create_job_rejects_invalid_explicit_github_credential_without_session_fallback(tmp_path, monkeypatch):
+    conn = FakeConnection()
+    session_calls: list[str] = []
+    monkeypatch.setenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", str(tmp_path))
+    app = create_test_app(
+        conn,
+        get_session_github_token=lambda user_id: session_calls.append(user_id) or ("ghp_" + "s" * 40),
+    )
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "repoUrl": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            "branch": "main",
+            "mission": "Inspect the private repository and prepare a Draft PR.",
+            "githubAccessToken": "not-a-token",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "githubAccessToken has an invalid format"
+    assert session_calls == []
+    assert conn.jobs == {}
+
+
 def test_create_invalid_job_returns_blocked_without_fake_success(tmp_path, monkeypatch):
     conn = FakeConnection()
     monkeypatch.setenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", str(tmp_path))
@@ -865,16 +927,28 @@ def test_workspace_editor_shared_runtime_blocks_non_owner(tmp_path, monkeypatch)
 def test_rescue_free_diagnosis_is_revision_bound_and_read_only(monkeypatch):
     conn = FakeConnection()
     base_sha = "a" * 40
-    monkeypatch.setattr(
-        routes_module,
-        "resolve_github_head",
-        lambda repository, branch, token=None: {
+    token = "ghp_" + "o" * 40
+    observed = {}
+
+    def resolve_head(repository, branch, token=None):
+        observed["token"] = token
+        return {
             "repository": "https://github.com/example/broken-app",
             "baseBranch": "main",
             "baseSha": base_sha,
-        },
+        }
+
+    monkeypatch.setattr(
+        routes_module,
+        "resolve_github_head",
+        resolve_head,
     )
-    app = create_test_app(conn)
+    app = create_test_app(
+        conn,
+        get_session_github_token=lambda user_id: (
+            token if user_id == "11111111-1111-4111-8111-111111111111" else None
+        ),
+    )
 
     response = app.test_client().post(
         "/api/user/agent/rescue/diagnose",
@@ -893,6 +967,8 @@ def test_rescue_free_diagnosis_is_revision_bound_and_read_only(monkeypatch):
     assert payload["diagnosis"]["baseSha"] == base_sha
     assert payload["diagnosis"]["failureFamily"] == "github_actions_ci"
     assert payload["diagnosis"]["mutationPerformed"] is False
+    assert observed["token"] == token
+    assert token not in repr(payload)
     assert conn.jobs == {}
 
 

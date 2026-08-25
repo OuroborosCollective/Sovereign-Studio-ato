@@ -3,6 +3,7 @@ import type { ChatLine, SituationalBubbleBinding } from './builderContainerTypes
 import {
   commitSituationalBubble,
   minimizeBubbleProjection,
+  projectMonitorCommunicationLine,
   projectSituationalChatLine,
   projectSituationalChatLines,
 } from './situationalBubbleRuntime';
@@ -127,5 +128,26 @@ describe('situational bubble output firewall', () => {
       { id: 'system', role: 'system', text: 'Repo verbunden' },
       { id: 'thought', role: 'thought', text: 'Ich prüfe jetzt Dateien.' },
     ])).toEqual([typedMission]);
+  });
+
+  it('keeps safe ephemeral conversation monitor-only and rejects internal or secret material', () => {
+    const safe = { id: 'safe', role: 'assistant' as const, text: 'Die Analyse läuft.', createdAt: 1 };
+    expect(projectSituationalChatLine(safe)).toBeNull();
+    expect(projectMonitorCommunicationLine(safe)).toEqual(safe);
+    expect(projectMonitorCommunicationLine({ ...safe, text: 'Reasoning: hidden provider trace' })).toBeNull();
+    expect(projectMonitorCommunicationLine({
+      ...safe,
+      text: ['github', 'pat', 'x'.repeat(40)].join('_'),
+    })).toBeNull();
+  });
+
+  it('never downgrades an invalid typed bubble to ephemeral monitor text', () => {
+    const wrongRole = line(mission(), 'assistant');
+    expect(projectSituationalChatLine(wrongRole)).toBeNull();
+    expect(projectMonitorCommunicationLine(wrongRole)).toBeNull();
+    expect(projectMonitorCommunicationLine({
+      ...line(mission()),
+      text: 'Text does not match the committed bubble.',
+    })).toBeNull();
   });
 });

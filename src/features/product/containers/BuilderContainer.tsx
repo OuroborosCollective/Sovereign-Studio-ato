@@ -6,7 +6,6 @@ import React, {
   useState,
 } from "react";
 import {
-  appendOption,
   buildAnalyzedMission,
   buildOutcomeHints,
   collapseRepeatedAnalyzedMission,
@@ -18,20 +17,15 @@ import {
   safeHttpsUrl,
   splitFilePath,
   type AgentStatus,
-  type ChatOutcomeHint,
-  type IdeaOption,
 } from "../runtime/builderContainerHelpers";
 import { deriveBuilderContainerState } from "../runtime/builderContainerRuntime";
 import { resolveDraftPrBuildStatus } from "../runtime/draftPrBuildStatusRuntime";
 import { getSovereignContainerContract } from "../runtime/sovereignContainerContracts";
-import { SOVEREIGN_FORM_MISSION } from "../runtime/sovereignFormContracts";
 import {
   SOVEREIGN_ACTION_ANALYZE_MISSION,
   SOVEREIGN_ACTION_DRAFT_PR,
   SOVEREIGN_ACTION_REPAIR_LOG,
-  SOVEREIGN_ACTION_START_TASK,
 } from "../runtime/sovereignActionContracts";
-import { formatCuteWorkStateLabel } from "../runtime/cuteThinkingStatus";
 import {
   DEV_CHAT_WORKER_MODELS,
   SOVEREIGN_WORKER_BASE,
@@ -66,8 +60,6 @@ import {
   formatOpenPrReviewEvidence,
 } from "../runtime/githubOpenPrReviewRuntime";
 import { Ampel } from "../components/Ampel";
-import { FileBadge } from "../components/FileBadge";
-import { ThoughtBubble } from "../components/ThoughtBubble";
 import { OutcomeHints } from "../components/OutcomeHints";
 import { C, STATUS_COLOR, STATUS_LABEL } from "../components/builderConstants";
 import { WorkbenchStatusChips } from "../components/WorkbenchStatusChips";
@@ -78,8 +70,6 @@ import {
   WorkerDegradedBanner,
 } from "../components/WorkerBlockerCard";
 import { DraftPrCard } from "../components/DraftPrCard";
-import { ChatMarkdown } from "../components/ChatMarkdown";
-import { PacedChatText } from "../components/PacedChatText";
 import { GitHubAccessCard } from "../components/GitHubAccessCard";
 import { SecurityBlockCard } from "../components/SecurityBlockCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
@@ -114,14 +104,13 @@ import {
 import {
   appendMissionInput,
   downloadSessionMarkdown,
-  formatPersistedSessionAge,
   getOrCreateCurrentSession,
   loadSession,
   sessionMessageToChatLine,
   type PersistedSession,
 } from "../runtime/sessionPersistenceRuntime";
 import {
-  bubbleKindLabel,
+  projectMonitorCommunicationLine,
   projectSituationalChatLine,
 } from "../runtime/situationalBubbleRuntime";
 import { runTests, type TestRunnerResult } from "../runtime/testRunnerRuntime";
@@ -135,12 +124,6 @@ import {
   type FileContentResult,
 } from "../runtime/fileContentBrowserRuntime";
 import {
-  isNearBottom as isScrollNearBottom,
-  shouldAutoScroll,
-  shouldShowUnreadBadge,
-} from "../runtime/scrollLockBehavior";
-import {
-  copyAndroidBubbleText,
   createAndroidFollowUpDraft,
   detectAndroidQuickRepoUrl,
   triggerAndroidHaptic,
@@ -210,7 +193,6 @@ import {
   MonitorCommunicationDock,
   type MonitorCommunicationEntry,
 } from "../components/MonitorCommunicationDock";
-import { AgentResultCard } from "../components/AgentResultCard";
 import { SovereignActionStreamPanel } from "../components/SovereignActionStreamPanel";
 import {
   appendSovereignActionEvent,
@@ -227,13 +209,10 @@ import {
 import {
   createInitialDraftState,
   createIntegrationIntentDraft,
-  canConfirmIntegrationIntentDraft,
   buildDraftCreatedEvent,
   buildDraftConfirmedEvent,
   buildDraftRejectedEvent,
   buildDraftRephrasedEvent,
-  buildRouteStartedEvent,
-  buildRouteBlockedEvent,
   hasPendingDraft,
   type IntegrationIntentDraftState,
   type IntegrationIntentDraft,
@@ -250,14 +229,11 @@ import {
   usePatternMemoryStore,
   loadPatternMemoryStoreFromStorage,
 } from "../hooks/usePatternMemoryStore";
-import { buildSovereignToolCapabilityRegistry } from "../runtime/sovereignToolCapabilityRuntime";
-import { createSovereignWorkspaceScope } from "../runtime/sovereignWorkspaceScopeRuntime";
 import {
   classifyOfflineSovereignExecutorIntent,
   resolveOfflineMachineExecutorIntent,
   type SovereignExecutorIntentKind,
 } from "../runtime/sovereignExecutorRuntime";
-import { decideSovereignExecutorBridgeRoute } from "../../../runtime/sovereignExecutorBridgeRuntime";
 
 // ─────────────────────────────────────────────────────────────
 // TYPES  (identical props to BuilderContainer — drop-in swap)
@@ -323,7 +299,6 @@ export interface BuilderContainerProps {
 import type {
   AnimPhase,
   ChatLine,
-  ChatRole,
   CondStatus,
   ModuleCfg,
   ModuleCond,
@@ -341,7 +316,6 @@ import {
 } from "../runtime/builderWorkbenchStatus";
 // Chat/PAL helpers — extracted to builderChatHelpers.ts / builderPALRuntime.ts
 import {
-  buildChatLines,
   buildLocalStatusAnswer,
   buildRuntimeConfidence,
   buildWorkerBlockerAnswer,
@@ -365,8 +339,6 @@ import {
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────
 
-const CUTE_THINKING_FRAME_MS = 1100;
-const CUTE_IDLE_FRAME_MS = 1450;
 const builderContainerContract = getSovereignContainerContract("builder");
 
 function mapInterpretedIntentToExecutorIntent(
@@ -493,25 +465,6 @@ const INIT_CONDITIONS: Partial<Record<ModuleId, ModuleCond[]>> = {
     { label: "Ledger synced", status: "pass" },
   ],
 };
-
-const IDEA_OPTIONS: IdeaOption[] = [
-  {
-    label: "✨ Feature",
-    text: "Schlage mir ein kleines, cooles Feature vor, prüfe zuerst das Repo und baue es nur als echten, sicheren Draft-PR-tauglichen Änderungspfad.",
-  },
-  {
-    label: "🐛 Bug Fix",
-    text: "Analysiere den aktuellen Fehlerstatus, finde die betroffenen Dateien und erzeuge einen minimalen echten Fix mit passenden Tests.",
-  },
-  {
-    label: "📱 Android UX",
-    text: "Verbessere die Bedienbarkeit auf Android: Chat, Navigation, Statushinweise und klare Nutzerführung ohne neue Fensterflut.",
-  },
-  {
-    label: "🔒 Runtime",
-    text: "Prüfe den schwächsten Ablauf und ergänze Runtime-Checks, Validierungen und Tests ohne Mock-, Stub- oder Facade-Live-Pfade.",
-  },
-];
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS — extracted to builderContainerHelpers.ts
@@ -1128,351 +1081,6 @@ function StatusPanel({
                 </div>
               );
             })}
-      </div>
-    </div>
-  );
-}
-
-// Bubble (verbatim v3 + Issue #427 markdown + Issue #429 long-press)
-function Bubble({
-  msg,
-  now,
-  onLongPress,
-  onOpenFile,
-}: {
-  msg: ChatLine;
-  now: number;
-  onLongPress?: (text: string) => void;
-  onOpenFile?: (path: string) => void;
-}) {
-  const isUser = msg.role === "user";
-  const [showMenu, setShowMenu] = useState(false);
-  const [minimized, setMinimized] = useState(false);
-  const bubbleKind = msg.bubble?.bubbleKind;
-
-  // ── Issue #429: Haptic feedback helper using runtime
-  const triggerHaptic = useCallback(
-    (type: "light" | "medium" | "heavy" = "light") => {
-      triggerAndroidHaptic(typeof navigator === "undefined" ? undefined : navigator, type);
-    },
-    [],
-  );
-
-  if (msg.role === "system") {
-    const isRestore = msg.id === "system:restore-age";
-    return (
-      <div style={{ padding: "4px 16px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <FileBadge path={msg.path} file={msg.file} onOpenFile={onOpenFile} />
-        <span
-          style={{
-            display: "inline-block",
-            fontFamily: "monospace",
-            fontSize: 10,
-            padding: "3px 12px",
-            borderRadius: 20,
-            background: isRestore ? `${C.green}18` : C.surface,
-            border: `1px solid ${isRestore ? `${C.green}44` : C.border}`,
-            color: isRestore ? C.green : C.textMuted,
-          }}
-        >
-          {isRestore ? `↻ ${msg.text}` : msg.text}
-        </span>
-      </div>
-    );
-  }
-  if (msg.role === "thought") return <ThoughtBubble text={msg.text} />;
-
-  if (!isUser && minimized && msg.bubble) {
-    return (
-      <div style={{ padding: "4px 12px" }}>
-        <button
-          type="button"
-          data-testid={`restore-bubble-${msg.bubble.bubbleHash}`}
-          onClick={() => setMinimized(false)}
-          aria-label={`${bubbleKindLabel(msg.bubble.bubbleKind)} wieder öffnen`}
-          style={{
-            minHeight: 44,
-            borderRadius: 22,
-            padding: "8px 14px",
-            border: `1px solid ${C.border}`,
-            background: C.surface,
-            color: C.textSub,
-          }}
-        >
-          {bubbleKindLabel(msg.bubble.bubbleKind)} · ausstehende UI-Projektion
-        </button>
-      </div>
-    );
-  }
-
-  // ── Issue #429: Long-press for copy/follow-up using runtime helpers
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setShowMenu(true);
-    triggerHaptic("light");
-  };
-
-  const handleCopy = async () => {
-    await copyAndroidBubbleText(msg.text, typeof navigator === "undefined" ? undefined : navigator);
-    setShowMenu(false);
-    triggerHaptic("light");
-  };
-
-  const handleFollowUp = () => {
-    const draft = createAndroidFollowUpDraft(msg.text);
-    if (draft) onLongPress?.(draft);
-    setShowMenu(false);
-    triggerHaptic("light");
-  };
-
-  return (
-    <div
-      data-bubble-kind={bubbleKind}
-      role={bubbleKind === "MATERIAL_BLOCKER" ? "alert" : undefined}
-      aria-label={bubbleKind ? bubbleKindLabel(bubbleKind) : undefined}
-      style={{
-        display: "flex",
-        alignItems: "flex-end",
-        gap: 8,
-        padding: "2px 12px",
-        flexDirection: isUser ? "row-reverse" : "row",
-      }}
-      onContextMenu={handleContextMenu}
-    >
-      {!isUser && (
-        <div
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: 10,
-            flexShrink: 0,
-            background: C.surface,
-            border: `1px solid ${C.border}`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 13,
-            color: C.textSub,
-            marginBottom: 2,
-          }}
-        >
-          ⬡
-        </div>
-      )}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          maxWidth: "82%",
-          alignItems: isUser ? "flex-end" : "flex-start",
-          gap: 2,
-        }}
-      >
-        {!isUser && bubbleKind && (
-          <span style={{ fontSize: 10, color: C.textMuted, paddingInline: 2 }}>
-            {bubbleKindLabel(bubbleKind)}
-          </span>
-        )}
-        <FileBadge path={msg.path} file={msg.file} onOpenFile={onOpenFile} />
-        <div style={{ position: "relative" }}>
-          {/* ── Issue #427: Markdown rendering for assistant bubbles */}
-          <div
-            style={{
-              padding: "9px 12px",
-              background: isUser ? C.userBg : C.asstBg,
-              borderRadius: isUser
-                ? "18px 18px 4px 18px"
-                : "4px 18px 18px 18px",
-              border: `1px solid ${isUser ? "#243c5a" : C.border}`,
-              color: C.text,
-              fontSize: 13,
-              lineHeight: 1.45,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
-            }}
-          >
-            {isUser ? msg.text : <PacedChatText content={msg.text} />}
-          </div>
-          {/* ── Issue #429: Long-press menu */}
-          {showMenu && (
-            <div
-              style={{
-                position: "absolute",
-                top: "100%",
-                left: isUser ? "auto" : 0,
-                right: isUser ? 0 : "auto",
-                marginTop: 4,
-                background: C.surface,
-                border: `1px solid ${C.border}`,
-                borderRadius: 8,
-                padding: 4,
-                zIndex: 10,
-                minWidth: 120,
-              }}
-              onClick={() => setShowMenu(false)}
-            >
-              <button
-                type="button"
-                onClick={handleCopy}
-                style={{
-                  width: "100%",
-                  padding: "8px 12px",
-                  background: "transparent",
-                  border: "none",
-                  color: C.text,
-                  fontSize: 13,
-                  cursor: "pointer",
-                  textAlign: "left",
-                  borderRadius: 6,
-                }}
-              >
-                📋 Kopieren
-              </button>
-              <button
-                type="button"
-                onClick={handleFollowUp}
-                style={{
-                  width: "100%",
-                  padding: "8px 12px",
-                  background: "transparent",
-                  border: "none",
-                  color: C.sky,
-                  fontSize: 13,
-                  cursor: "pointer",
-                  textAlign: "left",
-                  borderRadius: 6,
-                }}
-              >
-                💬 Zitieren
-              </button>
-            </div>
-          )}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontFamily: "monospace", fontSize: 9, color: C.textMuted }}>
-            {fmtTime(msg.createdAt || now)}
-          </span>
-          {!isUser && msg.bubble && (
-            <button
-              type="button"
-              onClick={() => setMinimized(true)}
-              aria-label={`${bubbleKindLabel(msg.bubble.bubbleKind)} minimieren`}
-              style={{
-                minWidth: 44,
-                minHeight: 44,
-                border: "none",
-                background: "transparent",
-                color: C.textMuted,
-                cursor: "pointer",
-              }}
-            >
-              −
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// WelcomeScreen (verbatim v3)
-function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
-  return (
-    <div
-      style={{
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "32px 20px",
-        textAlign: "center",
-      }}
-    >
-      <div
-        style={{
-          width: 72,
-          height: 72,
-          borderRadius: 20,
-          background: `${C.accent}12`,
-          border: `2px solid ${C.accent}40`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 32,
-          marginBottom: 20,
-        }}
-      >
-        🐥
-      </div>
-      <h2
-        style={{
-          fontFamily: "monospace",
-          fontSize: 20,
-          fontWeight: 800,
-          color: C.text,
-          marginBottom: 8,
-          letterSpacing: -0.5,
-        }}
-      >
-        Let&apos;s build!
-      </h2>
-      <p
-        style={{
-          fontSize: 13,
-          color: C.textSub,
-          lineHeight: 1.6,
-          maxWidth: 300,
-          marginBottom: 28,
-        }}
-      >
-        Schreib dein Ziel oder füge eine GitHub-URL ein. Sovereign prüft Gates
-        und handelt nur bei echten Stop-Punkten.
-      </p>
-      <div
-        className="sovereign-idea-grid"
-        style={{
-          display: "grid",
-          gap: 10,
-          width: "100%",
-        }}
-      >
-        {IDEA_OPTIONS.map((opt) => (
-          <button
-            key={opt.label}
-            type="button"
-            onClick={() => onIdea(opt)}
-            style={{
-              background: C.surface,
-              border: `1px solid ${C.border}`,
-              borderRadius: 14,
-              padding: "14px 12px",
-              fontFamily: "monospace",
-              fontSize: 11,
-              color: C.text,
-              fontWeight: 600,
-              cursor: "pointer",
-              textAlign: "left",
-              transition: "border-color 0.15s, background 0.15s",
-              lineHeight: 1.3,
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor =
-                C.borderHov;
-              (e.currentTarget as HTMLButtonElement).style.background =
-                "#1c2630";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor =
-                C.border;
-              (e.currentTarget as HTMLButtonElement).style.background =
-                C.surface;
-            }}
-          >
-            {opt.label}
-          </button>
-        ))}
       </div>
     </div>
   );
@@ -2430,262 +2038,6 @@ function SideDrawer({
   );
 }
 
-// Composer (verbatim v3)
-function Composer({
-  value,
-  onChange,
-  onSubmit,
-  onKeyDown,
-  disabled,
-  loading,
-  placeholder,
-  routeHint,
-  slashMenu,
-  routeOptions,
-  selectedRouteId,
-  onRouteChange,
-  routeCatalogError,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onSubmit: () => void;
-  onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
-  disabled: boolean;
-  loading: boolean;
-  placeholder: string;
-  routeHint: string;
-  slashMenu?: React.ReactNode;
-  routeOptions: readonly SovereignLlmRouteOption[];
-  selectedRouteId: string;
-  onRouteChange: (routeId: string) => void;
-  routeCatalogError?: string | null;
-}) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const resize = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }, []);
-
-  const handleClear = useCallback(() => {
-    onChange("");
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.focus();
-    }
-  }, [onChange]);
-
-  return (
-    <div
-      style={{
-        flexShrink: 0,
-        padding: "10px 10px",
-        paddingBottom: "max(10px, env(safe-area-inset-bottom))",
-        background: C.surface,
-        borderTop: `1px solid ${C.border}`,
-      }}
-    >
-      {slashMenu ? <div style={{ marginBottom: 8 }}>{slashMenu}</div> : null}
-      <div
-        data-testid="sovereign-llm-route-picker"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 8,
-          padding: "0 4px",
-          minWidth: 0,
-        }}
-      >
-        <label
-          htmlFor="sovereign-llm-route-select"
-          style={{
-            fontFamily: "monospace",
-            fontSize: 9,
-            color: C.textMuted,
-            flexShrink: 0,
-          }}
-        >
-          Route / Modell
-        </label>
-        <select
-          id="sovereign-llm-route-select"
-          data-testid="sovereign-llm-route-select"
-          value={selectedRouteId}
-          onChange={(event) => onRouteChange(event.target.value)}
-          aria-label="LLM Route und Modell auswählen"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            height: 36,
-            borderRadius: 9,
-            border: `1px solid ${routeCatalogError ? C.amber : C.border}`,
-            background: C.bg,
-            color: C.text,
-            fontFamily: "monospace",
-            fontSize: 10,
-            padding: "0 8px",
-          }}
-        >
-          <option value="">Auto · PAL / Backend-Routing</option>
-          {selectedRouteId && !routeOptions.some((route) => route.id === selectedRouteId) ? (
-            <option value={selectedRouteId} disabled>
-              Fixierte Route nicht mehr verfügbar · {selectedRouteId}
-            </option>
-          ) : null}
-          {routeOptions.map((route) => (
-            <option key={route.id} value={route.id}>
-              {route.billingCategory === 'free' ? 'FREE' : 'PAID'} · {route.provider} · {route.label} · {route.defaultModelId}
-            </option>
-          ))}
-        </select>
-        {selectedRouteId ? (
-          <button
-            type="button"
-            onClick={() => onRouteChange('')}
-            aria-label="Zur automatischen Modellwahl zurückkehren"
-            title="Auto-Routing wieder aktivieren"
-            style={{
-              minWidth: 44,
-              minHeight: 36,
-              borderRadius: 9,
-              border: `1px solid ${C.border}`,
-              background: C.surface,
-              color: C.textSub,
-              cursor: "pointer",
-              fontFamily: "monospace",
-              fontSize: 9,
-            }}
-          >
-            AUTO
-          </button>
-        ) : null}
-      </div>
-      {routeCatalogError ? (
-        <div role="status" style={{ margin: "-3px 6px 7px", fontFamily: "monospace", fontSize: 8, color: C.amber }}>
-          Routenkatalog: {routeCatalogError}
-        </div>
-      ) : null}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-end",
-          gap: 8,
-          background: C.bg,
-          border: `1px solid ${C.border}`,
-          borderRadius: 16,
-          padding: "8px 8px 8px 14px",
-          transition: "border-color 0.15s",
-        }}
-      >
-        <textarea
-          ref={textareaRef}
-          id={SOVEREIGN_FORM_MISSION.id}
-          name={SOVEREIGN_FORM_MISSION.id}
-          data-role={SOVEREIGN_FORM_MISSION.dataRole}
-          data-testid={SOVEREIGN_FORM_MISSION.testId}
-          aria-label={SOVEREIGN_FORM_MISSION.ariaLabel}
-          value={value}
-          rows={1}
-          onChange={(e) => {
-            onChange(e.target.value);
-            resize();
-          }}
-          onKeyDown={(e) => {
-            if (onKeyDown?.(e)) return;
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              if (!disabled && !loading) onSubmit();
-            }
-          }}
-          placeholder={placeholder}
-          style={{
-            flex: 1,
-            background: "transparent",
-            border: "none",
-            outline: "none",
-            fontFamily: "system-ui, -apple-system, sans-serif",
-            fontSize: 14,
-            lineHeight: 1.5,
-            color: C.text,
-            resize: "none",
-            maxHeight: 120,
-            minHeight: 24,
-            overflowY: "auto",
-          }}
-        />
-        {value && (
-          <button
-            type="button"
-            onClick={handleClear}
-            aria-label="Eingabe löschen"
-            title="Eingabe löschen"
-            style={{
-              width: 44,
-              height: 44,
-              flexShrink: 0,
-              background: "transparent",
-              border: "none",
-              color: C.textMuted,
-              fontSize: 16,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              transition: "color 0.15s",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = C.textSub)}
-            onMouseLeave={(e) => (e.currentTarget.style.color = C.textMuted)}
-          >
-            ✕
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onSubmit}
-          disabled={disabled || loading}
-          aria-label="Senden"
-          title={disabled || loading ? "Senden (deaktiviert)" : "Senden"}
-          data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
-          data-testid={SOVEREIGN_ACTION_START_TASK.testId}
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 12,
-            flexShrink: 0,
-            background: disabled || loading ? C.surface : C.orange,
-            border: "none",
-            color: "#fff",
-            fontSize: 16,
-            cursor: disabled || loading ? "not-allowed" : "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            transition: "background 0.2s, box-shadow 0.2s",
-            boxShadow:
-              disabled || loading ? "none" : `0 2px 12px ${C.orange}50`,
-            opacity: disabled || loading ? 0.45 : 1,
-          }}
-        >
-          {loading ? "…" : "↑"}
-        </button>
-      </div>
-      <div
-        style={{
-          fontFamily: "monospace",
-          fontSize: 8,
-          color: C.textMuted,
-          marginTop: 5,
-          paddingLeft: 14,
-        }}
-      >
-        {routeHint}
-      </div>
-    </div>
-  );
-}
-
 // BottomTabBar — Monitor is the permanent primary destination. The communication
 // dock is embedded in that surface; there is no user-facing fallback Chat mode.
 function BottomTabBar({
@@ -2815,7 +2167,6 @@ export function BuilderContainer({
   // ── Original v3 state (verbatim)
   const [patternMemoryStore, setPatternMemoryStore] = useState<PatternMemoryStore>(() => loadPatternMemoryStoreFromStorage());
   const [wishText, setWishText] = useState(() => missionToWishText(mission));
-  const [thinkingFrameIndex, setTFI] = useState(0);
   const [showRuntimeSheet, setShowRuntime] = useState(false);
   const [showSideMenu, setShowSide] = useState(false);
   const [showRepoExplorer, setShowRepoExplorer] = useState(false);
@@ -2840,7 +2191,6 @@ export function BuilderContainer({
   );
   const [chatRepoError, setChatRepoError] = useState<string | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatLine[]>([]);
-  const [restoredSessionAge, setRestoredSessionAge] = useState<string | null>(null);
   const [chatResponseBusy, setChatResponseBusy] = useState(false);
   const [, setStreamingText] = useState<string | null>(null);
   const [workerBlocker, setWorkerBlocker] =
@@ -2860,8 +2210,6 @@ export function BuilderContainer({
   const lastMissionRef = useRef(mission);
   const ignoreNextMissionSyncRef = useRef(false);
   const chatLineIndexRef = useRef(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const nowRef = useRef(Date.now());
   const persistedSessionRef = useRef<PersistedSession | null>(null);
   const hydratedSessionScopeRef = useRef<string | null>(null);
   const clearPatchEvidence = useCallback(() => {
@@ -2971,10 +2319,6 @@ export function BuilderContainer({
   const [statusLogs, setStatusLogs] = useState<
     Array<{ ts: string; level: string; msg: string; tabId: string }>
   >([]);
-
-  // ── Issue #425: Auto-scroll lock and jump badge
-  const [userScrolledAway, setUserScrolledAway] = useState(false);
-  const [unseenCount, setUnseenCount] = useState(0);
 
   const currentRepoScopeKey = useMemo(
     () => buildRepoEvidenceScopeKey(chatRepoSnapshot),
@@ -3560,21 +2904,21 @@ export function BuilderContainer({
         id: line.id ?? createChatLineId(line.role, chatLineIndexRef.current),
         createdAt,
       };
-      if (liveMonitorPrimary && candidate.role !== 'thought') {
+      const committed = projectSituationalChatLine(candidate);
+      const monitorLine = projectMonitorCommunicationLine(candidate);
+      if (liveMonitorPrimary && monitorLine) {
         appendMonitorCommunication(
-          candidate.role === 'user'
+          monitorLine.role === 'user'
             ? 'user'
-            : candidate.role === 'system'
+            : monitorLine.role === 'system'
               ? 'runtime'
               : 'communicate',
-          candidate.text,
-          `monitor:${candidate.id}`,
+          monitorLine.text,
+          `monitor:${monitorLine.id}`,
         );
       }
-      const committed = projectSituationalChatLine(candidate);
       if (!committed) return;
       setChatHistory((previous) => [...previous, committed]);
-      nowRef.current = createdAt;
     },
     [appendMonitorCommunication, liveMonitorPrimary],
   );
@@ -3730,7 +3074,6 @@ export function BuilderContainer({
     if (!authUser || !chatRepoSnapshot || !currentRepoScopeKey) {
       persistedSessionRef.current = null;
       hydratedSessionScopeRef.current = null;
-      setRestoredSessionAge(null);
       return;
     }
 
@@ -3754,7 +3097,6 @@ export function BuilderContainer({
         persistedSessionRef.current = session;
         chatLineIndexRef.current = session.messages.length;
         const restored = session.messages.map(sessionMessageToChatLine);
-        nowRef.current = restored.at(-1)?.createdAt ?? Date.now();
         setChatHistory(restored);
         const restoredMonitorEntries = restored
           .filter((line) => line.role !== 'thought')
@@ -3773,10 +3115,6 @@ export function BuilderContainer({
             .slice(-12);
         });
 
-        const { text: formattedAge, isStale } = formatPersistedSessionAge(session);
-        setRestoredSessionAge(isStale
-          ? `${formattedAge} · veraltet – bitte Status prüfen`
-          : formattedAge);
         addLog(
           'info',
           `PostgreSQL bubble session restored: ${session.messageCount} message(s)`,
@@ -3785,7 +3123,6 @@ export function BuilderContainer({
       } catch {
         if (cancelled) return;
         persistedSessionRef.current = null;
-        setRestoredSessionAge(null);
         setChatHistory([]);
         addLog('warn', 'PostgreSQL bubble persistence is unavailable; no local fallback was used.', 'sys');
       }
@@ -3808,25 +3145,6 @@ export function BuilderContainer({
     learningEvidence: patternLearningEvidence,
     publishedPrUrl: scopedPublishedPrUrl,
   });
-
-  // ── Aufgabe 5: Track unseen activity — not just chat lines, but also the
-  // inline action stream (Sovereign trace) and streaming worker replies.
-  // Every new chat line, action-stream event, or freshly-started stream
-  // counts as one unit of "unseen" activity while the user has scrolled away.
-  const chatActivitySignal =
-    chatHistory.length + actionStream.events.length;
-  const lastChatActivitySignalRef = useRef(chatActivitySignal);
-  useEffect(() => {
-    if (chatActivitySignal > lastChatActivitySignalRef.current) {
-      if (userScrolledAway) {
-        setUnseenCount(
-          (prev) =>
-            prev + (chatActivitySignal - lastChatActivitySignalRef.current),
-        );
-      }
-    }
-    lastChatActivitySignalRef.current = chatActivitySignal;
-  }, [chatActivitySignal, userScrolledAway]);
 
   useEffect(() => {
     setSlashMenuDismissed(false);
@@ -3857,7 +3175,6 @@ export function BuilderContainer({
   // ── Original v3 derived values (verbatim)
   // A complete local runtime snapshot is the sole Builder repo truth. The legacy
   // repoReady prop may describe another surface, but cannot authorize Builder work.
-  const isPartialRepoSnapshot = Boolean(chatRepoSnapshot && !currentRepoScopeKey);
   const effectiveRepoReady = Boolean(currentRepoScopeKey);
   const effectiveRepoReason = effectiveRepoReady && chatRepoSnapshot
     ? summarizeDevChatRepoSnapshot(chatRepoSnapshot)
@@ -3896,15 +3213,6 @@ export function BuilderContainer({
       : effectiveRepoReady
         ? "idle · Repo-Kontext bereit"
         : "idle · Repo fehlt";
-  const cuteThinkingLabel = useMemo(
-    () =>
-      formatCuteWorkStateLabel({
-        index: thinkingFrameIndex,
-        active: runtimeThinkingActive,
-        status: workStateStatus,
-      }),
-    [runtimeThinkingActive, thinkingFrameIndex, workStateStatus],
-  );
   const outcomeHints = useMemo(
     () => buildOutcomeHints(scopedAgentJob),
     [scopedAgentJob],
@@ -3992,36 +3300,6 @@ export function BuilderContainer({
       available: effectiveRepoReady,
     },
   ];
-  const chatLines = useMemo(
-    () =>
-      buildChatLines({
-        repoReady: effectiveRepoReady,
-        repoReason: effectiveRepoReason,
-        runtimeThinkingActive,
-        cuteThinkingLabel,
-        sovereignSummary,
-        disabledReason: state.disabledReason,
-        agentJob: scopedAgentJob,
-        chatRepoSnapshot,
-        chatRepoError,
-        chatHistory,
-        restoredSessionAge,
-      }),
-    [
-      chatHistory,
-      chatRepoError,
-      chatRepoSnapshot,
-      cuteThinkingLabel,
-      effectiveRepoReady,
-      effectiveRepoReason,
-      scopedAgentJob,
-      runtimeThinkingActive,
-      sovereignSummary,
-      state.disabledReason,
-      restoredSessionAge,
-    ],
-  );
-
   // PAL stats
   const palStats = useMemo(() => {
     const t = palDecisions.length;
@@ -4033,15 +3311,6 @@ export function BuilderContainer({
     };
   }, [palDecisions]);
   const lastPal = palDecisions[palDecisions.length - 1] ?? null;
-
-  // ── Original v3 effects (verbatim)
-  useEffect(() => {
-    const h = window.setInterval(
-      () => setTFI((c) => c + 1),
-      runtimeThinkingActive ? CUTE_THINKING_FRAME_MS : CUTE_IDLE_FRAME_MS,
-    );
-    return () => window.clearInterval(h);
-  }, [runtimeThinkingActive]);
 
   // Mission sync effect. Order matters: the ignore flag must be consumed BEFORE
   // lastMissionRef.current is synced to the prop, otherwise an internal
@@ -4057,36 +3326,6 @@ export function BuilderContainer({
     if (wishText.trim() || chatHistory.length > 0) return;
     setWishText(missionToWishText(mission));
   }, [chatHistory.length, mission, wishText]);
-
-  // ── Aufgabe 5: Robust autoscroll — scroll to bottom on any new chat line,
-  // action-stream event, or stream update, UNLESS the user has intentionally
-  // scrolled away. While scrolled away, new activity only bumps the unseen
-  // badge (see chatActivitySignal effect above), never yanks the viewport.
-  useEffect(() => {
-    if (!scrollRef.current) return;
-    if (!shouldAutoScroll(userScrolledAway)) return;
-    const node = scrollRef.current;
-    const raf = requestAnimationFrame(() => {
-      if (typeof node.scrollTo === "function") {
-        node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
-      } else {
-        node.scrollTop = node.scrollHeight;
-      }
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [
-    chatLines.length,
-    outcomeHints.length,
-    runtimeThinkingActive,
-    actionStream.events.length,
-    workerBlocker,
-    showGitHubAccessOverride,
-    userScrolledAway,
-  ]);
-
-  useEffect(() => {
-    nowRef.current = Date.now();
-  }, [chatLines.length]);
 
   // ── AppControl runtime binding
   // No simulated progress: lamps, phases and conditions are derived from real runtime state.
@@ -6474,7 +5713,6 @@ Das echte Repo-Setup wurde geöffnet.`,
           </aside>
         ) : null}
       {isChat ? (
-        liveMonitorPrimary ? (
           <div
             role="region"
             aria-label="Sovereign Live Desktop Monitor"
@@ -6544,6 +5782,29 @@ Das echte Repo-Setup wurde geöffnet.`,
             >
               <SovereignActionStreamPanel stream={actionStream} maxEvents={12} />
             </div>
+            <OutcomeHints hints={outcomeHints} />
+            {testRunnerBusy && (
+              <div role="status" style={{ margin: '8px 12px', padding: 10, border: `1px solid ${C.sky}44`, borderRadius: 10, color: C.sky }}>
+                Echte Workspace-Tests laufen…
+              </div>
+            )}
+            {testRunnerResult && (
+              <TestRunnerResultCard
+                result={testRunnerResult}
+                onRepair={(prompt) => setWishText(prompt)}
+              />
+            )}
+            {autoCodeReviewBusy && (
+              <div role="status" style={{ margin: '8px 12px', padding: 10, border: `1px solid ${C.violet}44`, borderRadius: 10, color: C.violet }}>
+                Auto Code Review läuft über den aufgelösten OpenRouter-/FreeLLM-Pfad…
+              </div>
+            )}
+            {autoCodeReviewResult && (
+              <AutoCodeReviewCard
+                result={autoCodeReviewResult}
+                onCancel={() => setWishText('Behebe die blockierenden Auto-Code-Review-Findings im echten Workspace, führe die relevanten Tests erneut aus und bereite danach nur einen Draft PR vor.')}
+              />
+            )}
             {hasPendingDraft(intentDraftState) && (() => {
               const draft = intentDraftState.draft;
               const mappedIntent = mapInterpretedIntentToExecutorIntent(draft.intentKind);
@@ -6707,569 +5968,6 @@ Das echte Repo-Setup wurde geöffnet.`,
               />
             )}
           </div>
-        ) : (
-        /* ── CHAT VIEW with auto-scroll lock (Issue #425) */
-        <div
-          ref={scrollRef}
-          className="sovereign-chat-body"
-          data-testid="sovereign-chat-body-window"
-          aria-label="Sovereign Chat Verlauf"
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            setUserScrolledAway(!isScrollNearBottom(el));
-          }}
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            overflowX: "hidden",
-            background: C.bg,
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          {/* Fix 5: Partial-Snapshot Guard — never show fabricated repo truth */}
-          {isPartialRepoSnapshot && (
-            <div
-              role="alert"
-              data-testid="partial-repo-snapshot-warning"
-              style={{
-                margin: '8px 0',
-                padding: '10px 14px',
-                borderRadius: 10,
-                background: '#fbbf2412',
-                border: '1px solid #fbbf2440',
-                fontSize: 12,
-                color: '#fbbf24',
-                display: 'flex',
-                gap: 8,
-                alignItems: 'flex-start',
-              }}
-            >
-              <span style={{ flexShrink: 0 }}>⚠️</span>
-              <span>
-                <strong>Unvollständiger Repo-Snapshot.</strong> Owner, Repo, Branch oder URL fehlt.
-                Der angezeigte Zustand wäre unvollständig. Bitte Repo neu laden.
-              </span>
-            </div>
-          )}
-
-          {!wishText.trim() && !chatRepoSnapshot && chatHistory.length === 0 && !securityCardPending ? (
-            <WelcomeScreen
-              onIdea={(opt) => setWishText((c) => appendOption(c, opt))}
-            />
-          ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-                padding: "12px 0 6px",
-              }}
-            >
-              {chatLines.map((line) => (
-                <Bubble
-                  key={line.id}
-                  msg={line}
-                  now={nowRef.current}
-                  onLongPress={(draft) => setWishText(draft)}
-                  onOpenFile={openRepoExplorerFromFileBadge}
-                />
-              ))}
-              <OutcomeHints hints={outcomeHints} />
-              {testRunnerBusy && (
-                <div role="status" style={{ margin: '8px 12px', padding: 10, border: `1px solid ${C.sky}44`, borderRadius: 10, color: C.sky }}>
-                  Echte Workspace-Tests laufen…
-                </div>
-              )}
-              {testRunnerResult && (
-                <TestRunnerResultCard
-                  result={testRunnerResult}
-                  onRepair={(prompt) => setWishText(prompt)}
-                />
-              )}
-              {autoCodeReviewBusy && (
-                <div role="status" style={{ margin: '8px 12px', padding: 10, border: `1px solid ${C.violet}44`, borderRadius: 10, color: C.violet }}>
-                  Auto Code Review läuft über den aufgelösten OpenRouter-/FreeLLM-Pfad…
-                </div>
-              )}
-              {autoCodeReviewResult && (
-                <AutoCodeReviewCard
-                  result={autoCodeReviewResult}
-                  onCancel={() => setWishText('Behebe die blockierenden Auto-Code-Review-Findings im echten Workspace, führe die relevanten Tests erneut aus und bereite danach nur einen Draft PR vor.')}
-                />
-              )}
-              <details style={{ margin: '8px 12px' }}>
-                <summary style={{ cursor: 'pointer', color: C.textSub, minHeight: 44 }}>
-                  Evidence / technische Details
-                </summary>
-                <SovereignActionStreamPanel stream={actionStream} />
-              </details>
-
-              {/* ── Issue #520 + #522: Integration Intent Draft Card — runtime-contracted routing */}
-              {hasPendingDraft(intentDraftState) && (() => {
-                const draft = intentDraftState.draft;
-                
-                // Build Capability Registry from runtime truth (no tokens, no fakes)
-                const capabilities = buildSovereignToolCapabilityRegistry({
-                  repoReady: effectiveRepoReady,
-                  githubAccessState: effectiveGitHubAccessState,
-                  githubTokenPresent: Boolean(githubTokenRef.current),
-                  directPatchSupported: false,
-                  agentConfigured: sovereignAgentStartAvailable,
-                  workerAvailable: !workerBlocker,
-                  workspaceConfigured: sovereignAgentStartAvailable,
-                  draftPrSupported: githubWriteAllowed,
-                  activeExecutorStatus:
-                    scopedAgentIsRunning ||
-                    ['intent_detected', 'executor_starting', 'executor_running', 'branch_created', 'commit_created'].includes(agentWorkSnapshot.state)
-                      ? 'running'
-                      : 'idle',
-                });
-
-                // Build Workspace Scope only when repo is loaded (no fake scope)
-                const workspaceScope = chatRepoSnapshot
-                  ? createSovereignWorkspaceScope({
-                      repoFullName: `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`,
-                      repoUrl: `https://github.com/${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`,
-                      branch: chatRepoSnapshot.branch,
-                      allowedPaths: ['src/', 'tests/', 'scripts/', 'README.md', 'docs/'],
-                      forbiddenPaths: ['.env', '.env.local', 'node_modules/', 'dist/', 'build/', 'android/app/build/'],
-                      draftPrOnly: true,
-                      githubWriteValidated: githubWriteAllowed,
-                      maxAction: 'draft_pr',
-                    })
-                  : null;
-
-                // Gate snapshot for card display (kept for backward compatibility)
-                const gateSnapshot: IntegrationIntentDraftGateSnapshot = {
-                  repoReady: effectiveRepoReady,
-                  githubWriteReady: capabilities.githubWrite.status === 'ready',
-                  directPatchReady: capabilities.directPatch.canStart,
-                  agentReady: capabilities.agent.canStart,
-                };
-
-                // canExecute from runtime truth
-                const canExecute = capabilities.agent.canStart;
-                const confirmCheck = canConfirmIntegrationIntentDraft(draft, gateSnapshot);
-
-                return (
-                  <IntegrationIntentDraftCard
-                    draft={draft}
-                    gateSnapshot={gateSnapshot}
-                    canConfirm={effectiveRepoReady && canExecute}
-                    confirmBlocker={!effectiveRepoReady ? confirmCheck.blocker : undefined}
-                    onConfirm={() => {
-                      // Use Runtime Bridge for route decision
-                      const intent = mapInterpretedIntentToExecutorIntent(draft.intentKind)
-                        ?? 'unknown';
-                      const bridgeDecision = decideSovereignExecutorBridgeRoute({
-                        intent,
-                        taskComplexity: intent === 'direct_patch' ? 'simple' : intent === 'code_execution' ? 'complex' : 'unknown',
-                        capabilities,
-                        workspaceScope: workspaceScope ?? undefined,
-                        candidatePath: undefined,
-                      });
-
-                      // Preserve the exact LLM-understood mission for execution and
-                      // later evidence-gated learning. A PR URL is only context; the
-                      // pattern cache requires accepted server/vector evidence.
-                      const confirmedMission = collapseRepeatedAnalyzedMission(
-                        buildAnalyzedMission({
-                          wish: draft.originalText,
-                          repoReady: effectiveRepoReady,
-                          repoReason: effectiveRepoReason,
-                        }),
-                      );
-                      if (lastMissionRef.current !== confirmedMission) {
-                        emitMissionChange(confirmedMission);
-                      }
-
-                      // Log confirmed draft
-                      appendActionEvent(buildDraftConfirmedEvent(draft));
-                      setIntentDraftState({ status: 'confirmed', draft });
-
-                      // Always log the bridge decision event
-                      appendActionEvent(bridgeDecision.event);
-
-                      // Handle Sovereign Internal Operator route
-                      if (bridgeDecision.bridgeRoute === 'sovereign_internal_operator') {
-                        if (bridgeDecision.state === 'allowed') {
-                          // Internal operator is available - runtime handoff decision
-                          appendChatLine({
-                            role: 'system',
-                            text: `Runtime-Aktion bestätigt.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
-                          });
-                          addLog('info', `Integration via Sovereign Internal Operator bridge: ${bridgeDecision.reason}`, 'router');
-                          setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
-                          return;
-                        } else {
-                          // Internal operator blocked
-                          appendRuntimeNotice(`Runtime-Aktion blockiert.\n\nGrund: ${bridgeDecision.reason}`);
-                          addLog('warn', `Integration blocked by bridge: ${bridgeDecision.reason}`, 'router');
-                          setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
-                          return;
-                        }
-                      }
-
-                      // Handle executor_runtime routes from the bridge contract.
-                      // Do not cast the bridge decision: the bridge now exposes the original
-                      // executor route explicitly so allowed Direct Patch decisions cannot fall
-                      // through to the default blocker path.
-                      const decision = {
-                        route: bridgeDecision.executorRoute ?? 'blocked',
-                        reason: bridgeDecision.reason,
-                      };
-
-                      switch (decision.route) {
-                        case 'github_access':
-                          // Open GitHub Access Gate, no executor starts
-                          pendingWriteIntentRef.current = draft.originalText;
-                          setShowGitHubAccessOverride(true);
-                          appendRuntimeNotice('GitHub-Schreibzugang wird benötigt.\nBitte Zugang unten einrichten.');
-                          break;
-
-                        case 'direct_patch':
-                          if (!sovereignAgentStartAvailable || !onStartAgent) {
-                            appendActionEvent(buildBlockedActionEvent({
-                              route: 'agent-job',
-                              label: 'Backend-Workspace-Executor nicht verfügbar',
-                              detail: 'Der bestätigte Direct-Patch-Auftrag darf nicht im Browser ausgeführt werden.',
-                              kind: 'patch_blocked',
-                            }));
-                            appendRuntimeNotice('Direct Patch blockiert: Ein bestätigter backend-eigener Workspace-Executor ist erforderlich. Der Browser hat keine Repository-Datei gelesen und keinen Patch erzeugt.');
-                            break;
-                          }
-                          addLog('info', `Integration delegated to backend workspace: ${decision.reason}`, 'router');
-                          void startAgentFromText(draft.originalText, 'code_execution');
-                          break;
-
-                        case 'sovereign-agent':
-                          // Sovereign Agent route — ONLY with validated GitHub write
-                          if (!githubWriteAllowed) {
-                            // Defensive: block and open access gate while preserving
-                            // the confirmed original intent for state-driven resume.
-                            appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
-                            pendingWriteIntentRef.current = draft.originalText;
-                            setShowGitHubAccessOverride(true);
-                            appendRuntimeNotice('Sovereign Agent Runtime benötigt GitHub-Schreibzugang.\nBitte Zugang unten einrichten.');
-                            break;
-                          }
-                          addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
-                          void startAgentFromText(draft.originalText, intent);
-                          break;
-
-                        case 'workspace':
-                          // Workspace route detected but not yet connected — honest block
-                          appendRuntimeNotice(`Workspace-Route blockiert: noch nicht verbunden.\n\nGrund: ${decision.reason}`);
-                          break;
-
-                        case 'worker_chat':
-                          // Worker Chat — advisory only, no write success
-                          appendRuntimeNotice('Runtime-Route: Worker Chat für die vom LLM erkannte Beratungsabsicht.');
-                          break;
-
-                        case 'local_status':
-                          // Status query — answer from runtime state
-                          break;
-
-                        case 'blocked':
-                        default:
-                          // Honest block with reason
-                          appendRuntimeNotice(`Runtime-Aktion blockiert.\n\nGrund: ${decision.reason}`);
-                          break;
-                      }
-
-                      // Clear draft state after processing
-                      setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
-                    }}
-                    onConfirmWithGitHubAccess={() => {
-                      // P2 Fix 4: Called when user clicks "GitHub-Zugang benötigt"
-                      // Opens the GitHub Access Gate
-                      appendActionEvent({
-                        kind: 'github_access_required',
-                        route: 'github-access',
-                        label: 'GitHub-Schreibzugang erforderlich',
-                        detail: 'Draft bestätigt aber GitHub-Zugang fehlt',
-                        state: 'blocked',
-                      });
-                      pendingWriteIntentRef.current = draft.originalText;
-                      setShowGitHubAccessOverride(true);
-                      appendRuntimeNotice('Runtime-Aktion bestätigt, aber blockiert.\nGitHub-Schreibzugang wird benötigt.\nBitte Zugang unten einrichten.');
-                      setIntentDraftState({ status: 'idle' });
-                      addLog('info', 'Integration draft confirmed: GitHub access gate opened', 'router');
-                    }}
-                    onRephrase={() => {
-                      // Rephrase the draft - put rephrased text in input, don't execute
-                      appendActionEvent(buildDraftRephrasedEvent(draft));
-                      setWishText(draft.rephrasedText);
-                      setIntentDraftState({ status: 'idle' });
-                      addLog('info', 'Integration draft rephrased, text updated in input', 'router');
-                    }}
-                    onReject={() => {
-                      // Reject the draft - clear state and log honest rejection
-                      appendActionEvent(buildDraftRejectedEvent());
-                      setIntentDraftState({ status: 'idle' });
-                      appendRuntimeNotice('Runtime-Aktionsentwurf verworfen. Bitte formuliere den Auftrag neu.');
-                      addLog('info', 'Integration draft rejected by user', 'router');
-                    }}
-                  />
-                );
-              })()}
-
-              {/* Runtime event stream stays inline only when the desktop monitor is not the primary surface. */}
-              {agentEventStream}
-
-              {/* ── Gap 3: Security Block Card — shown when secret detected in chat input */}
-              {securityCardPending && (
-                <SecurityBlockCard
-                  title={securityCardPending.title}
-                  text={securityCardPending.text}
-                  hint={securityCardPending.hint}
-                  buttonLabel={securityCardPending.buttonLabel}
-                  onOpenSecureAccess={() => {
-                    setShowGitHubAccessOverride(true);
-                    setSecurityCardPending(null);
-                  }}
-                  onDismiss={() => setSecurityCardPending(null)}
-                />
-              )}
-
-              {/* ── Issue #443: GitHub Access Card (shown when write access needed but not available) */}
-              {!githubWriteAllowed && (scopedAgentJob?.status === 'running' || isPublishing || showGitHubAccessOverride) && (
-                <GitHubAccessCard
-                  snapshot={effectiveGitHubAccessSnapshot}
-                  onProvideToken={async (token) => {
-                    // SECURITY: Token is only used for this one-shot validation.
-                    // It is never written into chat history, logs, telemetry or action events.
-                    const formatResult = validateGitHubTokenFormat(token);
-                    if (!formatResult.isValid) {
-                      setGitHubAccessState(failGitHubAccessValidation('', formatResult.error || 'Ungültiges Format'));
-                      setValidatedGitHubTargetKey(null);
-                      githubTokenRef.current = null;
-                      return;
-                    }
-
-                    const validationTargetKey = currentRepositoryTargetKey;
-                    const validationRepoScopeKey = currentRepoScopeKey;
-                    const validationRepoSnapshot = chatRepoSnapshot;
-                    if (!validationTargetKey || !validationRepoScopeKey || !validationRepoSnapshot) {
-                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Revisionsgebundener Repository-Scope fehlt für GitHub-Zugangsprüfung.'));
-                      setValidatedGitHubTargetKey(null);
-                      githubTokenRef.current = null;
-                      appendActionEvent(buildBlockedActionEvent({
-                        route: 'github-access',
-                        label: 'GitHub-Zugang fehlgeschlagen',
-                        detail: 'Revisionsgebundener Repository-Scope fehlt für GitHub-Zugangsprüfung.',
-                        kind: 'failed',
-                      }));
-                      return;
-                    }
-
-                    setValidatedGitHubTargetKey(null);
-                    setGitHubAccessState(startGitHubAccessValidation(formatResult.maskedToken));
-                    appendActionEvent({
-                      kind: 'route_selected',
-                      route: 'github-access',
-                      label: 'GitHub-Zugang wird geprüft',
-                      detail: 'Echte GitHub-API-Prüfung läuft.',
-                      state: 'running',
-                    });
-                    appendRuntimeNotice('Token wurde übernommen. GitHub-Zugang wird jetzt geprüft. Bitte Zwischenablage auf Android leeren, falls das Token kopiert wurde.');
-
-                    const validation = await validateGitHubTokenForRepo(
-                      token,
-                      {
-                        repository: validationRepoSnapshot.repoUrl,
-                        branch: validationRepoSnapshot.branch,
-                        expectedBaseSha: validationRepoSnapshot.headSha,
-                      },
-                      globalThis.fetch,
-                      githubAccessApiBase,
-                    );
-
-                    if (
-                      currentRepositoryTargetKeyRef.current !== validationTargetKey
-                      || !isCurrentRepoScope(validationRepoScopeKey)
-                    ) {
-                      setGitHubAccessState(createGitHubAccessSnapshot());
-                      setValidatedGitHubTargetKey(null);
-                      githubTokenRef.current = null;
-                      appendActionEvent(buildBlockedActionEvent({
-                        route: 'github-access',
-                        label: 'GitHub-Zugangsprüfung verworfen',
-                        detail: 'Das Repo-Ziel hat sich während der Validierung geändert. Der alte Prüferfolg wurde nicht übernommen.',
-                        kind: 'blocked',
-                      }));
-                      return;
-                    }
-
-                    if (!validation.ok) {
-                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.'));
-                      setValidatedGitHubTargetKey(null);
-                      githubTokenRef.current = null;
-                      appendActionEvent(buildBlockedActionEvent({
-                        route: 'github-access',
-                        label: 'GitHub-Zugang fehlgeschlagen',
-                        detail: validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.',
-                        kind: 'failed',
-                      }));
-                      appendRuntimeNotice(`GitHub-Zugangsprüfung fehlgeschlagen: ${validation.error || 'unbekannter Fehler'}`);
-                      return;
-                    }
-
-                    setGitHubAccessState(completeGitHubAccessValidation(formatResult.maskedToken));
-                    setValidatedGitHubTargetKey(validationTargetKey);
-                    githubTokenRef.current = token;
-                    appendActionEvent({
-                      kind: 'done',
-                      route: 'github-access',
-                      label: 'GitHub-Zugang bereit',
-                      detail: 'GitHub-Credential und effektiver Repo-Schreibzugriff wurden serverseitig für das geladene Repo bestätigt.',
-                      state: 'done',
-                    });
-
-                    const pendingWriteIntent = pendingOnlineExecutionRef.current?.text
-                      ?? pendingWriteIntentRef.current;
-                    if (!pendingWriteIntent) {
-                      appendRuntimeNotice('GitHub-Zugang ist bereit. Der Zugangswert wird nicht im Chat gespeichert. Wenn er in einem Screen Recording oder Clipboard-Verlauf sichtbar war, bitte rotieren.');
-                      return;
-                    }
-
-                    appendRuntimeNotice('GitHub-Zugang ist bereit. Der vorgemerkte Auftrag wird nach dem bestätigten Runtime-State automatisch über dieselbe Routing-Pipeline fortgesetzt. Der Zugangswert wird nicht im Chat gespeichert.');
-                    addLog('info', 'GitHub access confirmed; pending intent awaits state-driven resume', 'router');
-                  }}
-                  onDismiss={() => {
-                    pendingOnlineExecutionRef.current = null;
-                    pendingWriteIntentRef.current = null;
-                    setShowGitHubAccessOverride(false);
-                    appendActionEvent(buildLocalRuntimeResultEvent({
-                      label: 'GitHub-Zugangsfläche geschlossen',
-                      detail: 'Die manuell geöffnete Zugangsfläche wurde geschlossen; kein Zugangsstatus wurde verändert.',
-                    }));
-                  }}
-                />
-              )}
-
-              {/* ── Issue #426: Worker Blocker Card */}
-              {workerBlocker && (
-                <WorkerBlockerCard
-                  blocker={workerBlocker}
-                  onRetryWithMessage={(msg) => {
-                    setWorkerBlocker(null);
-                    appendActionEvent(buildLocalRuntimeResultEvent({
-                      label: 'Retry gestartet',
-                      detail: 'Worker-Blocker-Karte hat den letzten Request erneut an die echte Worker-Route übergeben.',
-                    }));
-                    addLog(
-                      "info",
-                      "Worker retry with message from card",
-                      "router",
-                    );
-                    retrySubmit(msg, { ignoreExistingWorkerBlocker: true });
-                  }}
-                  onExplain={() => {
-                    const explanation = explainDevChatWorkerDiagnostic(
-                      workerBlocker.diagnostic,
-                    );
-                    appendRuntimeNotice(explanation);
-                  }}
-                  onLogin={() => setShowLogin(true)}
-                  onAgentInstead={(msg) => {
-                    void startAgentFromText(msg, 'code_execution');
-                  }}
-                  userMessage={lastWorkerRequestMessage ?? undefined}
-                />
-              )}
-
-              {/* ── Issue #431: Draft PR Card */}
-              {scopedAgentJob?.draftPrUrl && (
-                <DraftPrCard
-                  url={scopedAgentJob.draftPrUrl}
-                  changedFiles={scopedAgentJob.changedFiles || []}
-                  buildStatus={resolveDraftPrBuildStatus({
-                    draftPrUrl: scopedAgentJob.draftPrUrl,
-                  })}
-                  onOpenBrowser={() => {
-                    const safeUrl = safeHttpsUrl(scopedAgentJob.draftPrUrl);
-                    if (safeUrl) {
-                      window.open(safeUrl, "_blank", "noopener,noreferrer");
-                    }
-                  }}
-                  onDiscussInChat={() =>
-                    setWishText(`Erkläre mir die Änderungen im Draft PR.`)
-                  }
-                />
-              )}
-
-              {/* ── Issue #445: AgentResultCard — structured result when PR is ready */}
-              {agentWorkSnapshot.state === 'draft_pr_ready' && agentWorkSnapshot.draftPrUrl && (
-                <AgentResultCard
-                  snapshot={agentWorkSnapshot}
-                  onOpen={() => {
-                    const safeUrl = safeHttpsUrl(agentWorkSnapshot.draftPrUrl);
-                    if (safeUrl) {
-                      window.open(safeUrl, '_blank', 'noopener,noreferrer');
-                    }
-                  }}
-                  onViewDiff={() =>
-                    setWishText('Erkläre mir die Änderungen im Draft PR.')
-                  }
-                />
-              )}
-
-              {/* ── Issue #425: Scroll-away indicator */}
-              {userScrolledAway && (
-                <div
-                  style={{
-                    textAlign: "center",
-                    fontSize: 11,
-                    color: C.textMuted,
-                    padding: "4px 16px",
-                    fontFamily: "monospace",
-                  }}
-                >
-                  ↑ Nach oben gescrollt · Neue Nachrichten unten
-                </div>
-              )}
-
-              {/* ── Issue #425: Jump Badge */}
-              {shouldShowUnreadBadge(userScrolledAway, unseenCount > 0) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    scrollRef.current?.scrollTo({
-                      top: scrollRef.current.scrollHeight,
-                      behavior: "smooth",
-                    });
-                    setUnseenCount(0);
-                    setUserScrolledAway(false);
-                  }}
-                  style={{
-                    position: "sticky",
-                    bottom: 16,
-                    alignSelf: "center",
-                    padding: "8px 16px",
-                    borderRadius: 20,
-                    background: C.accent,
-                    color: C.bg,
-                    fontSize: 13,
-                    fontWeight: 500,
-                    border: "none",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                  }}
-                >
-                  ↓ {unseenCount} Neue Nachricht{unseenCount > 1 ? "en" : ""}
-                </button>
-              )}
-
-              <div style={{ height: 8 }} />
-            </div>
-          )}
-        </div>
-        )
       ) : (
         /* ── MODULE VIEW */
         <div style={{ flex: 1, overflowY: "auto", background: C.bg }}>
@@ -7298,86 +5996,6 @@ Das echte Repo-Setup wurde geöffnet.`,
         </div>
       )}
       </div>
-
-      {/* COMPOSER — only in chat view, v3 verbatim */}
-      {isChat && !liveMonitorPrimary && (
-        <>
-          {/* ── Issue #453: LauncherTaskbar — offene Tools als Chips */}
-          <LauncherTaskbar />
-          {/* ── Issue #445 + #452: SovereignToolLauncher — quick-action "+" launcher + Sovereign Launcher */}
-          <SovereignToolLauncher
-            runtimeContext={{
-              repoReady: effectiveRepoReady,
-              repoFileCount: effectiveRepoReady && chatRepoSnapshot
-                ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
-                : 0,
-              hasDiffEvidence: Boolean(
-                patchDiffReport ||
-                (scopedAgentJob?.changedFiles?.length ?? 0) > 0,
-              ),
-              githubAccessState: effectiveGitHubAccessState,
-              executorAvailable: sovereignAgentStartAvailable,
-              executorActive: scopedAgentIsRunning,
-              hasExecutorMission: Boolean(wishText.trim()),
-              executorIntent,
-              runtimeLogCount: runtimeEvidenceLog.length,
-            }}
-            onSelect={handleCompactToolSelect}
-            onBlockedSelect={handleCompactToolSelect}
-            onOpenLauncher={useLauncherStore.getState().openMenu}
-          />
-          <ActionSuggestionStrip
-            actions={SOVEREIGN_PRESET_ACTIONS}
-            repoReady={effectiveRepoReady}
-            githubWriteReady={githubWriteAllowed}
-            agentReady={agentReady ?? false}
-            disabled={localRepoLoading || chatResponseBusy || isPublishing}
-            onSelect={handlePresetActionSelect}
-          />
-          <Composer
-            value={wishText}
-            onChange={setWishText}
-            onSubmit={() => {
-              void handleSubmit();
-            }}
-            onKeyDown={handleComposerKeyDown}
-            disabled={submitDisabled}
-            loading={localRepoLoading}
-            placeholder={
-              chatRepoSnapshot
-                ? `Frage zu ${chatRepoSnapshot.name}…`
-                : "GitHub URL oder Auftrag…"
-            }
-            routeHint={selectedLlmRouteId
-              ? `Fixiert auf Backend-Route ${selectedLlmRouteId} · kein stiller Modell-Fallback`
-              : composerRouteHint({
-                  draft: wishText,
-                  workerBlocked,
-                  agentDisabled,
-                })}
-            routeOptions={llmRouteOptions}
-            selectedRouteId={selectedLlmRouteId}
-            onRouteChange={(routeId) => {
-              setSelectedLlmRouteId(routeId);
-              addLog(
-                'info',
-                routeId ? `LLM Route manuell fixiert: ${routeId}` : 'LLM Route auf Auto/PAL zurückgesetzt',
-                'router',
-              );
-            }}
-            routeCatalogError={llmRouteCatalogError}
-            slashMenu={
-              showSlashCommands ? (
-                <SlashCommandMenu
-                  commands={slashMatches}
-                  selectedIndex={selectedSlashIndex}
-                  onSelect={submitSelectedSlashCommand}
-                />
-              ) : null
-            }
-          />
-        </>
-      )}
 
       {/* BOTTOM TAB BAR — Chat + Inspector toggle; technical modules live behind Inspector */}
       <BottomTabBar

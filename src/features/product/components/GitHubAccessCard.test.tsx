@@ -20,17 +20,21 @@ describe('GitHubAccessCard', () => {
     expect(screen.getByText('GitHub-Zugang fehlt')).toBeDefined();
   });
 
-  it('keeps an active validation visible instead of offering a fake dismiss', () => {
+  it('keeps manual credential recovery available during an active OAuth validation', () => {
+    const onProvideToken = vi.fn();
     render(
       <GitHubAccessCard
         snapshot={startGitHubAccessValidation('ghp_****test')}
-        onProvideToken={vi.fn()}
+        onProvideToken={onProvideToken}
         onDismiss={vi.fn()}
       />,
     );
 
     expect(screen.queryByRole('button', { name: 'GitHub-Zugang schließen' })).toBeNull();
     expect(screen.getByText('GitHub-Zugang wird geprüft')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Zugang eingeben' }));
+    expect(screen.getByLabelText(/GitHub Token/i)).toBeDefined();
+    expect(onProvideToken).not.toHaveBeenCalled();
   });
 
   it('closes the secure token modal with Escape and does not submit anything', () => {

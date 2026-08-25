@@ -34,9 +34,10 @@ from .cognitive_swarm_routes import start_cognitive_swarm_run
 from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
 from .evidence_gate import EvidenceGateResult, evidence_gate_signal
-from .git_workspace import git_diff_full, normalize_ephemeral_github_token
+from .git_workspace import git_diff_full
 from .github_access import (
     issue_github_access_scope,
+    resolve_request_github_token,
     validate_github_access_for_repo,
     verify_github_access_scope,
 )
@@ -461,13 +462,6 @@ def register_sovereign_agent_routes(
         account["configured_owner_email"] = os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL", "")
         return account
 
-    def _ephemeral_github_access_token(body: dict[str, Any]) -> tuple[str | None, tuple[Any, int] | None]:
-        raw_token = body.get("githubAccessToken")
-        token = normalize_ephemeral_github_token(raw_token)
-        if raw_token is not None and token is None:
-            return None, (jsonify({"error": "githubAccessToken has an invalid format"}), 400)
-        return token, None
-
     def _github_access_token_for_session(
         body: dict[str, Any],
         user_id: str,
@@ -477,18 +471,15 @@ def register_sovereign_agent_routes(
         The resolved credential never enters a response, event, log or persisted
         agent payload through this helper. It exists only for the current request.
         """
-        token, token_error = _ephemeral_github_access_token(body)
-        if token_error is not None or token:
-            return token, token_error
-        if get_session_github_token is None:
-            return None, None
         try:
-            session_token = normalize_ephemeral_github_token(
-                get_session_github_token(user_id)
+            token = resolve_request_github_token(
+                body.get("githubAccessToken"),
+                user_id=user_id,
+                get_session_github_token=get_session_github_token,
             )
-        except Exception:
-            session_token = None
-        return session_token, None
+        except ValueError as exc:
+            return None, (jsonify({"error": str(exc)}), 400)
+        return token, None
 
     def _rescue_request_origin() -> str | None:
         declared = str(request.headers.get("X-Sovereign-Rescue-Origin") or "").strip()
@@ -626,12 +617,13 @@ def register_sovereign_agent_routes(
     @app.route("/api/user/agent/rescue/diagnose", methods=["POST"])
     @require_session
     def user_diagnose_sovereign_rescue():
+        user_id = _current_session_user_id()
         body = request.get_json(force=True)
         if body is None:
             body = {}
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
-        token, token_error = _ephemeral_github_access_token(body)
+        token, token_error = _github_access_token_for_session(body, user_id)
         if token_error:
             return token_error
         try:
@@ -672,7 +664,7 @@ def register_sovereign_agent_routes(
         if not isinstance(parsed_body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
         body: dict[str, Any] = parsed_body
-        token, token_error = _ephemeral_github_access_token(body)
+        token, token_error = _github_access_token_for_session(body, user_id)
         if token_error:
             return token_error
         try:
@@ -936,7 +928,7 @@ def register_sovereign_agent_routes(
         if not isinstance(parsed_body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
         body: dict[str, Any] = parsed_body
-        token, token_error = _ephemeral_github_access_token(body)
+        token, token_error = _github_access_token_for_session(body, user_id)
         if token_error:
             return token_error
         try:
@@ -1177,6 +1169,9 @@ def register_sovereign_agent_routes(
         mission = str(body.get("mission") or "").strip()
         if not mission:
             return jsonify({"error": "mission is required"}), 400
+        github_token, token_error = _github_access_token_for_session(body, user_id)
+        if token_error is not None:
+            return token_error
         evidence_text = str(body.get("evidenceText") or body.get("logText") or "")
         try:
             handoff = build_agent_handoff_context(mission, evidence_text)
@@ -1189,6 +1184,7 @@ def register_sovereign_agent_routes(
         }
         payload.pop("evidenceText", None)
         payload.pop("logText", None)
+        payload.pop("githubAccessToken", None)
         provision_workspace = bool(payload.get("provisionWorkspace", True))
         clone_repo = bool(payload.get("cloneRepo", False))
         conn = _connection()
@@ -1203,6 +1199,7 @@ def register_sovereign_agent_routes(
                 conn,
                 user_id=user_id,
                 payload=payload,
+                github_access_token=github_token,
                 workspace_root=_workspace_root(),
                 provision_workspace=provision_workspace,
                 clone_repo=clone_repo,
@@ -1391,6 +1388,11 @@ def register_sovereign_agent_routes(
             body = {}
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
+        github_token, token_error = _github_access_token_for_session(body, user_id)
+        if token_error is not None:
+            return token_error
+        payload = {**body}
+        payload.pop("githubAccessToken", None)
         provision_workspace = bool(body.get("provisionWorkspace", True))
         clone_repo = bool(body.get("cloneRepo", False))
         conn = _connection()
@@ -1398,7 +1400,8 @@ def register_sovereign_agent_routes(
             lifecycle = create_sovereign_agent_job(
                 conn,
                 user_id=user_id,
-                payload=body,
+                payload=payload,
+                github_access_token=github_token,
                 workspace_root=_workspace_root(),
                 provision_workspace=provision_workspace,
                 clone_repo=clone_repo,

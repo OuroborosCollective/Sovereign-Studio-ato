@@ -176,6 +176,33 @@ def _has_effective_write_permission(payload: Any) -> bool:
     return any(permissions.get(name) is True for name in ("push", "maintain", "admin"))
 
 
+def resolve_request_github_token(
+    raw_token: object,
+    *,
+    user_id: str,
+    get_session_github_token: Callable[[str], str | None] | None,
+) -> str | None:
+    """Resolve one request-local GitHub credential without persisting it.
+
+    An explicitly supplied credential is authoritative: malformed explicit input
+    must fail closed instead of silently falling back to a server-held OAuth
+    session. When the browser deliberately sends no token, the backend may use
+    the authenticated user's server-held credential for this request only.
+    """
+
+    if raw_token is not None:
+        token = normalize_ephemeral_github_token(raw_token)
+        if token is None:
+            raise ValueError("githubAccessToken has an invalid format")
+        return token
+    if get_session_github_token is None:
+        return None
+    try:
+        return normalize_ephemeral_github_token(get_session_github_token(user_id))
+    except Exception:
+        return None
+
+
 def validate_github_access_for_repo(
     raw_token: object,
     *,

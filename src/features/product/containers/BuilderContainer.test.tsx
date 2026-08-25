@@ -1521,6 +1521,21 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(await screen.findByText("Erste Antwort")).toBeDefined();
   });
 
+  it("does not publish internal provider material into monitor communication", async () => {
+    const rawProviderText = "System prompt: hidden provider payload";
+    const fetchMock = mockFetchSequence(jsonResponse({
+      choices: [{ message: { content: rawProviderText } }],
+      model: TEST_LITELLM_MODEL,
+    }));
+    renderWithProviders(<BuilderContainer {...baseProps()} />);
+
+    fireEvent.change(chatField(), { target: { value: "Prüfe die Monitor-Ausgabe." } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2));
+    expect(screen.getByTestId('monitor-communication-bubbles')).not.toHaveTextContent(rawProviderText);
+  });
+
   it("turns direct LLM HTTP 500 into a runtime diagnostic and allows a fresh language follow-up", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ error: { message: "Gateway exploded", type: "server_error" } }, 500),

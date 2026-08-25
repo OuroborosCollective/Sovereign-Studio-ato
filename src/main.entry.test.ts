@@ -30,6 +30,15 @@ describe('main app entry', () => {
     expect(app).not.toContain('data-layout="chat-only-live-entry"');
   });
 
+  it('keeps the unreachable legacy chat body and composer out of the live builder', () => {
+    const builder = readSource('./features/product/containers/BuilderContainer.tsx');
+
+    expect(builder).toContain('data-testid="sovereign-live-monitor-primary"');
+    expect(builder).toContain('<MonitorCommunicationDock');
+    expect(builder).not.toContain('data-testid="sovereign-chat-body-window"');
+    expect(builder).not.toContain('isChat && !liveMonitorPrimary');
+  });
+
   it('keeps the old dashboard shell out of the live app entry', () => {
     const app = readSource('./App.tsx');
 

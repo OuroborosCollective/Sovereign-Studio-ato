@@ -230,6 +230,19 @@ export function projectSituationalChatLine(line: ChatLine): ChatLine | null {
   return { ...line, bubble: committed.bubble };
 }
 
+export function projectMonitorCommunicationLine(line: ChatLine): ChatLine | null {
+  // A candidate that claims to be a persisted situational bubble must pass the
+  // complete bubble firewall. It may never downgrade to ephemeral monitor text.
+  if (line.bubble) return projectSituationalChatLine(line);
+  if (line.role !== 'assistant' && line.role !== 'system') return null;
+  const text = optionalText(line.text);
+  if (!text || text.length > 4000) return null;
+  const folded = text.toLocaleLowerCase('en-US');
+  if (INTERNAL_TEXT_MARKERS.some((marker) => folded.includes(marker))) return null;
+  if (SECRET_PATTERNS.some((pattern) => pattern.test(text))) return null;
+  return { ...line, text };
+}
+
 export function projectSituationalChatLines(lines: readonly ChatLine[]): ChatLine[] {
   return lines.map(projectSituationalChatLine).filter((line): line is ChatLine => line !== null);
 }
