@@ -1350,11 +1350,16 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   });
 
   it('emits the pending-execution resume receipt after repo-scoped GitHub access becomes ready', async () => {
+    const revealActionStreamHistory = () => {
+      const actionStream = screen.getByRole('log', { name: 'Sovereign Action Stream' });
+      const detailsButton = within(actionStream).queryByRole('button', { name: 'Details' });
+      if (detailsButton) fireEvent.click(detailsButton);
+      return actionStream;
+    };
     await driveRepoBlockedExecutionThroughGitHubAccess();
 
     await waitFor(() =>
-      expect(screen.getByRole('log', { name: 'Sovereign Action Stream' }))
-        .toHaveTextContent('Blockierter Auftrag wird wiederaufgenommen'),
+      expect(revealActionStreamHistory()).toHaveTextContent('Blockierter Auftrag wird wiederaufgenommen'),
       { timeout: 3000 },
     );
   });
