@@ -176,7 +176,7 @@ describe('Draft PR Evidence Integration', () => {
     });
 
     it('returns most recent entry by timestamp', () => {
-      let ledger = createInitialEvidenceLedger();
+      let ledger;
 
       // Create first entry with older timestamp
       const oldEntry = createDraftPrCreationEvidence({
