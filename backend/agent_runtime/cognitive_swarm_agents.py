@@ -29,6 +29,7 @@ from .cognitive_llm_transport import (
     RouteRuntimeError,
     build_route_run_config,
 )
+from .cognitive_output_budget import assess_output_budget_evidence
 from .cognitive_usage_billing import AgentStageBilling
 from .fleet_supervisor import FleetContractError, FleetPlan
 from .llm_contract import (
@@ -113,6 +114,7 @@ class SwarmExecutionError(RuntimeError):
         retryable: bool,
         http_status: int | None = None,
         request_id: str | None = None,
+        output_budget_evidence: dict[str, object] | None = None,
     ) -> None:
         super().__init__(family)
         self.stage = stage[:160]
@@ -122,9 +124,10 @@ class SwarmExecutionError(RuntimeError):
         self.retryable = bool(retryable)
         self.http_status = http_status
         self.request_id = (request_id or "")[:200] or None
+        self.output_budget_evidence = dict(output_budget_evidence or {})
 
     def safe_payload(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "failureStage": self.stage,
             "failureFamily": self.family,
             "errorType": self.error_type,
@@ -134,6 +137,9 @@ class SwarmExecutionError(RuntimeError):
             "requestId": self.request_id,
             "rawErrorPersisted": False,
         }
+        if self.output_budget_evidence:
+            payload["outputBudgetEvidence"] = dict(self.output_budget_evidence)
+        return payload
 
 
 def _exception_status(exc: Exception) -> int | None:
@@ -158,6 +164,23 @@ def _exception_request_id(exc: Exception) -> str | None:
     return None
 
 
+def _output_budget_failure(value: Any, *, stage: str) -> SwarmExecutionError | None:
+    evidence = assess_output_budget_evidence(
+        value,
+        output_token_limit=_AGENT_OUTPUT_TOKEN_LIMIT,
+    )
+    if evidence.get("budgetExhausted") is not True:
+        return None
+    return SwarmExecutionError(
+        stage=stage,
+        family="AGENTS_OUTPUT_BUDGET_EXHAUSTED",
+        error_type="OutputBudgetEvidence",
+        next_action="RETRY_WITH_BOUNDED_OUTPUT_BUDGET_INCREASE",
+        retryable=True,
+        output_budget_evidence=evidence,
+    )
+
+
 def classify_swarm_exception(
     exc: Exception,
     *,
@@ -167,6 +190,7 @@ def classify_swarm_exception(
     error_type = type(exc).__name__
     lowered = error_type.casefold()
     status = _exception_status(exc)
+    budget_failure = _output_budget_failure(exc, stage=stage)
     normalized_transport = str(transport or _DIRECT_ROUTE_REQUIRED_TRANSPORT).strip().lower()
     provider_name = (
         "OPENROUTER"
@@ -219,6 +243,8 @@ def classify_swarm_exception(
             "REVIEW_MODEL_AND_STRUCTURED_OUTPUT_CONTRACT",
             False,
         )
+    elif budget_failure is not None:
+        return budget_failure
     elif any(marker in lowered for marker in ("modelbehavior", "output", "validation")):
         family, next_action, retryable = "AGENTS_STRUCTURED_OUTPUT_INVALID", "RETRY_WITH_BOUNDED_SCHEMA_DIAGNOSTICS", True
     elif "maxturn" in lowered or "max_turn" in lowered:
@@ -597,12 +623,20 @@ async def classify_mission_intent(
         run_config=route_runtime.run_config,
         transport=route_runtime.transport,
     )
-    intent = (
-        _parse_freellm_intent_text(result.final_output, normalized_mission)
-        if freellm_text_contract
-        else result.final_output
-    )
+    if freellm_text_contract:
+        try:
+            intent = _parse_freellm_intent_text(result.final_output, normalized_mission)
+        except SwarmExecutionError as exc:
+            budget_failure = _output_budget_failure(result, stage="intent-router-output")
+            if budget_failure is not None:
+                raise budget_failure from exc
+            raise
+    else:
+        intent = result.final_output
     if not isinstance(intent, MissionIntent):
+        budget_failure = _output_budget_failure(result, stage="intent-router-output")
+        if budget_failure is not None:
+            raise budget_failure
         raise SwarmExecutionError(
             stage="intent-router-output",
             family="AGENTS_STRUCTURED_OUTPUT_INVALID",
@@ -725,7 +759,14 @@ async def run_free_single_agent(
         transport=route_runtime.transport,
     )
     raw_output = result.final_output
+    output_budget_evidence = assess_output_budget_evidence(
+        result,
+        output_token_limit=_AGENT_OUTPUT_TOKEN_LIMIT,
+    )
     if not isinstance(raw_output, str) or not raw_output.strip():
+        budget_failure = _output_budget_failure(result, stage="free-single-agent-output")
+        if budget_failure is not None:
+            raise budget_failure
         raise SwarmExecutionError(
             stage="free-single-agent-output",
             family="AGENTS_TEXT_OUTPUT_INVALID",
@@ -738,7 +779,10 @@ async def run_free_single_agent(
     output = FreeSingleAgentResult(
         mode=intent.mode,
         assistant_text=assistant_text,
-        response_truncated=len(normalized_output) > len(assistant_text),
+        response_truncated=(
+            len(normalized_output) > len(assistant_text)
+            or output_budget_evidence.get("budgetExhausted") is True
+        ),
     )
     repository_requested = intent.mode == "repository_execution"
     workspace_tools_available = bool(repository_tools)
@@ -817,9 +861,18 @@ class JudgeVerdict(BaseModel):
     nullfind_confirmed: bool = False
 
 
-def _parse_text_contract_output(raw_output: object, model_type: type[BaseModel], *, stage: str) -> BaseModel:
+def _parse_text_contract_output(
+    raw_output: object,
+    model_type: type[BaseModel],
+    *,
+    stage: str,
+    result: Any | None = None,
+) -> BaseModel:
     """Parse one FreeLLM JSON text contract without treating prose as structured truth."""
     if not isinstance(raw_output, str) or not raw_output.strip():
+        budget_failure = _output_budget_failure(result, stage=f"{stage}-output") if result is not None else None
+        if budget_failure is not None:
+            raise budget_failure
         raise SwarmExecutionError(
             stage=f"{stage}-output",
             family="AGENTS_TEXT_CONTRACT_INVALID",
@@ -834,6 +887,9 @@ def _parse_text_contract_output(raw_output: object, model_type: type[BaseModel],
     try:
         return model_type.model_validate_json(text)
     except Exception as exc:
+        budget_failure = _output_budget_failure(result, stage=f"{stage}-output") if result is not None else None
+        if budget_failure is not None:
+            raise budget_failure from exc
         raise SwarmExecutionError(
             stage=f"{stage}-output",
             family="AGENTS_TEXT_CONTRACT_INVALID",
@@ -1309,11 +1365,14 @@ async def run_cognitive_swarm(
         transport=main_runtime.transport,
     )
     plan = (
-        _parse_text_contract_output(plan_result.final_output, DispatchPlan, stage="dispatcher")
+        _parse_text_contract_output(plan_result.final_output, DispatchPlan, stage="dispatcher", result=plan_result)
         if text_contract
         else plan_result.final_output
     )
     if not isinstance(plan, DispatchPlan):
+        budget_failure = _output_budget_failure(plan_result, stage="dispatcher-output")
+        if budget_failure is not None:
+            raise budget_failure
         raise SwarmExecutionError(
             stage="dispatcher-output",
             family="AGENTS_STRUCTURED_OUTPUT_INVALID",
@@ -1405,11 +1464,14 @@ async def run_cognitive_swarm(
                 transport=worker_runtimes[role].transport,
             )
             report = (
-                _parse_text_contract_output(result.final_output, WorkerReport, stage=f"loop-{loop}:worker:{role}")
+                _parse_text_contract_output(result.final_output, WorkerReport, stage=f"loop-{loop}:worker:{role}", result=result)
                 if text_contract
                 else result.final_output
             )
             if not isinstance(report, WorkerReport):
+                budget_failure = _output_budget_failure(result, stage=f"loop-{loop}:worker-output:{role}")
+                if budget_failure is not None:
+                    raise budget_failure
                 raise SwarmExecutionError(
                     stage=f"loop-{loop}:worker-output:{role}",
                     family="AGENTS_STRUCTURED_OUTPUT_INVALID",
@@ -1524,11 +1586,14 @@ async def run_cognitive_swarm(
             transport=main_runtime.transport,
         )
         verdict = (
-            _parse_text_contract_output(judge_result.final_output, JudgeVerdict, stage=f"loop-{loop}:judge")
+            _parse_text_contract_output(judge_result.final_output, JudgeVerdict, stage=f"loop-{loop}:judge", result=judge_result)
             if text_contract
             else judge_result.final_output
         )
         if not isinstance(verdict, JudgeVerdict):
+            budget_failure = _output_budget_failure(judge_result, stage=f"loop-{loop}:judge-output")
+            if budget_failure is not None:
+                raise budget_failure
             raise SwarmExecutionError(
                 stage=f"loop-{loop}:judge-output",
                 family="AGENTS_STRUCTURED_OUTPUT_INVALID",
