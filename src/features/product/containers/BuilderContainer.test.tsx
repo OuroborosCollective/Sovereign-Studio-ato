@@ -502,9 +502,9 @@ async function driveRepoBlockedExecutionThroughGitHubAccess() {
     expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(1),
   );
 
-  fireEvent.click(screen.getAllByText('Zugang eingeben')[0]);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Zugang eingeben' })[0]);
   fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
-  fireEvent.click(screen.getByText('Übernehmen'));
+  fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
 
   return { originalText, onStartAgent };
 }
@@ -1181,9 +1181,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       fireEvent.click(sendButton());
       await waitFor(() => expect(inferenceSpy).toHaveBeenCalledOnce());
 
-      fireEvent.click(screen.getAllByText('Zugang eingeben')[0]);
+      fireEvent.click(screen.getAllByRole('button', { name: 'Zugang eingeben' })[0]);
       fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
-      fireEvent.click(screen.getByText('Übernehmen'));
+      fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
       await waitFor(() =>
         expect(screen.getByRole('log', { name: 'Sovereign Action Stream' }))
           .toHaveTextContent('GitHub-Zugang bereit'),
@@ -1328,9 +1328,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
     expect(props.onStartAgent).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getAllByText("Zugang eingeben")[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Zugang eingeben' })[0]);
     fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
-    fireEvent.click(screen.getByText("Übernehmen"));
+    fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
 
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
     expect(props.onStartAgent.mock.calls[0][0]).toContain(originalText);
