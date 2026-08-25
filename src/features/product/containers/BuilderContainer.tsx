@@ -5473,38 +5473,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     // readiness gate below (agentDisabled) and must not be short-circuited
     // here — this gate only covers write-language that would otherwise be
     // sent straight to the advisory Worker chat.
-    if (false) {
-      if (!effectiveRepoReady) {
-        appendActionEvent(buildBlockedActionEvent({
-          route: 'github-access',
-          label: 'Schreibauftrag blockiert',
-          detail: 'Kein Repo geladen. GitHub-Repo-Link zuerst einfügen.',
-          kind: 'access_required',
-        }));
-        appendChatLine({
-          role: 'system',
-          text: 'Schreibaktion blockiert.\nEs ist noch kein Repo geladen — bitte zuerst einen GitHub-Repo-Link senden.',
-        });
-        addLog('warn', 'Write intent blocked: no repo loaded', 'router');
-        return;
-      }
-      if (!githubWriteAllowed) {
-        appendActionEvent({
-          kind: 'github_access_required',
-          route: 'github-access',
-          label: 'GitHub-Schreibzugang erforderlich',
-          detail: 'Schreibauftrag erkannt · Worker-Chat wird übersprungen.',
-          state: 'blocked',
-        });
-        pendingWriteIntentRef.current = submittedText;
-        setShowGitHubAccessOverride(true);
-        appendChatLine({
-          role: 'system',
-          text: 'Schreibaktion blockiert.\nFür Datei-/Repo-Änderungen wird sicherer GitHub-Schreibzugang benötigt.\nBitte GitHub-Zugang unten einrichten — der Auftrag wird nicht an den Worker-Chat gesendet.'
-        });
-        addLog('warn', 'Write intent blocked: GitHub write access missing', 'router');
-        return;
-      }
       appendActionEvent({
         kind: 'route_selected',
         route: 'github-patch',
