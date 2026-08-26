@@ -36,16 +36,48 @@ function extractGithubScript(workflowText) {
   return body.join('\n');
 }
 
-test('only required workflows receive direct pull_request runners', () => {
-  assert.deepEqual(directPullRequestWorkflowFiles(), [
-    'boundary-ledger-drift.yml',
-    'desktop-worker.yml',
-    'integration-plan-lane-gate.yml',
-    'release-verification.yml',
-    'sovereign-agent-backend.yml',
-    'sovereign-continuity-gate.yml',
-    'sovereign-desktop-worker.yml',
-  ]);
+test('only required workflows and one bounded owner recovery lane receive direct pull_request runners', () => {
+  const ownerRecoveryWorkflowName = 'sovereign-owner-ruleset-unlock.yml';
+  const workflowFiles = directPullRequestWorkflowFiles();
+  assert.equal(
+    workflowFiles.filter((name) => name === ownerRecoveryWorkflowName).length,
+    1,
+    'exactly one owner recovery workflow may opt into direct pull_request execution',
+  );
+  assert.deepEqual(
+    workflowFiles.filter((name) => name !== ownerRecoveryWorkflowName),
+    [
+      'boundary-ledger-drift.yml',
+      'desktop-worker.yml',
+      'integration-plan-lane-gate.yml',
+      'release-verification.yml',
+      'sovereign-agent-backend.yml',
+      'sovereign-continuity-gate.yml',
+      'sovereign-desktop-worker.yml',
+    ],
+  );
+
+  const ownerRecoveryWorkflow = read(`.github/workflows/${ownerRecoveryWorkflowName}`);
+  assert.match(ownerRecoveryWorkflow, /name: Sovereign Owner Ruleset Unlock/);
+  assert.match(
+    ownerRecoveryWorkflow,
+    /pull_request:\n    branches: \[main\]\n    types: \[opened, synchronize, reopened\]\n    paths:\n      - '\.github\/workflows\/sovereign-owner-ruleset-unlock\.yml'/,
+    'owner recovery must run only when its own workflow file changes',
+  );
+  assert.match(ownerRecoveryWorkflow, /permissions:\n  contents: read\n/);
+  assert.match(
+    ownerRecoveryWorkflow,
+    /if: github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.ref == 'sovereign\/owner-ruleset-unlock-20260826'/,
+    'pull request execution must remain bound to the exact owner recovery branch',
+  );
+  assert.match(ownerRecoveryWorkflow, /environment:\n      name: production/);
+  assert.match(ownerRecoveryWorkflow, /target_name = 'Sovereign Main Revision Green Gate'/);
+  assert.match(ownerRecoveryWorkflow, /json=\{'enforcement': 'disabled'\}/);
+  assert.match(ownerRecoveryWorkflow, /if payload\.get\('enforcement'\) != 'disabled':/);
+  assert.match(ownerRecoveryWorkflow, /'status': 'RULESET_DISABLED'/);
+  assert.doesNotMatch(ownerRecoveryWorkflow, /\n  pull_request_target:\n/);
+  assert.doesNotMatch(ownerRecoveryWorkflow, /^\s+(?:contents|pull-requests): write\s*$/m);
+
   const releaseWorkflow = read('.github/workflows/release-verification.yml');
   const boundaryWorkflow = read('.github/workflows/boundary-ledger-drift.yml');
   const continuityWorkflow = read('.github/workflows/sovereign-continuity-gate.yml');
