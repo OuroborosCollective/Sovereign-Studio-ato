@@ -1,0 +1,331 @@
+name: Temporary Admin Free Route Recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/temporary-admin-free-route-recovery.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: temporary-admin-free-route-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact trigger revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Patch read-only provider projection and regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          client_path = Path('src/features/admin/api/adminApiClient.ts')
+          client = client_path.read_text(encoding='utf-8')
+
+          constants_old = """const FREE_REVOLVER_ACTIVATION_RULE = 'managed-free-quota-plus-revision-bound-double-canary-without-positive-cost-contradiction';
+
+const providerAuthModes"""
+          constants_new = """const FREE_REVOLVER_ACTIVATION_RULE = 'managed-free-quota-plus-revision-bound-double-canary-without-positive-cost-contradiction';
+const DEFAULT_FREE_REVOLVER_MIN_READY_ROUTES = 5;
+
+const providerAuthModes"""
+          if constants_old not in client:
+              raise SystemExit('CLIENT_CONSTANT_ANCHOR_MISMATCH')
+          client = client.replace(constants_old, constants_new, 1)
+
+          normalizer_anchor = """function isAcceptedOmniRouteStatus(value: unknown): value is OmniRouteRuntimeStatus {
+"""
+          normalizers = r'''function normalizeProviderModelReadback(value: unknown): FreeRevolverProviderModel | null {
+  if (!isRecord(value) || !isNonEmptyString(value.id) || !isNonEmptyString(value.modelId)) return null;
+  const normalized: Record<string, unknown> = {
+    ...value,
+    displayName: isNonEmptyString(value.displayName) ? value.displayName : value.modelId,
+    routeAlias: isNullableString(value.routeAlias) ? value.routeAlias : null,
+    routeId: isNullableString(value.routeId) ? value.routeId : null,
+    runtimeIdentity: isRecord(value.runtimeIdentity) ? value.runtimeIdentity : {},
+    canaryReceipt: isRecord(value.canaryReceipt) ? value.canaryReceipt : {},
+    quotaEvidence: isRecord(value.quotaEvidence) ? value.quotaEvidence : {},
+    retryEvidence: isRecord(value.retryEvidence) ? value.retryEvidence : {},
+    cooldownEvidence: isRecord(value.cooldownEvidence) ? value.cooldownEvidence : {},
+    capabilities: Array.isArray(value.capabilities)
+      ? value.capabilities.filter(isNonEmptyString)
+      : [],
+    freeEligible: typeof value.freeEligible === 'boolean' ? value.freeEligible : false,
+    eligibilitySource: isNonEmptyString(value.eligibilitySource)
+      ? value.eligibilitySource
+      : 'unverified',
+    eligibilityVerifiedAt: isNullableString(value.eligibilityVerifiedAt)
+      ? value.eligibilityVerifiedAt
+      : null,
+    status: isOneOf(value.status, providerModelStatuses) ? value.status : 'discovered',
+    lastCanaryRequestId: isNullableString(value.lastCanaryRequestId) ? value.lastCanaryRequestId : null,
+    lastCanaryAt: isNullableString(value.lastCanaryAt) ? value.lastCanaryAt : null,
+    providerCostState: isOneOf(value.providerCostState, providerCostStates)
+      ? value.providerCostState
+      : 'unreported',
+    lastProviderCostUsdMicros: isNullableFiniteNumber(value.lastProviderCostUsdMicros)
+      ? value.lastProviderCostUsdMicros
+      : null,
+    lastErrorCode: isNullableString(value.lastErrorCode) ? value.lastErrorCode : null,
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : false,
+    generalChatBlocker: isNullableString(value.generalChatBlocker)
+      ? value.generalChatBlocker
+      : undefined,
+    generalChatBlockVerified: typeof value.generalChatBlockVerified === 'boolean'
+      ? value.generalChatBlockVerified
+      : undefined,
+  };
+  return isAcceptedProviderModel(normalized) ? normalized as unknown as FreeRevolverProviderModel : null;
+}
+
+function normalizeProviderControlReadback(value: unknown): FreeRevolverProviderSource | null {
+  if (!isRecord(value) || !isNonEmptyString(value.id) || !isNonEmptyString(value.apiBase)) return null;
+  const apiBase = value.apiBase.replace(/\/$/, '').toLowerCase();
+  const retired = apiBase === RETIRED_FREELLMPOOL_API_BASE
+    || value.lastErrorCode === 'freellmpool_replaced_by_omniroute';
+  const omniRoute = apiBase === OMNIROUTE_API_BASE;
+  const models = Array.isArray(value.models)
+    ? value.models
+      .map(normalizeProviderModelReadback)
+      .filter((model): model is FreeRevolverProviderModel => model !== null)
+    : [];
+  const normalized: Record<string, unknown> = {
+    ...value,
+    sourceType: isNonEmptyString(value.sourceType)
+      ? value.sourceType
+      : omniRoute
+        ? 'omniroute'
+        : retired
+          ? 'freellmpool-private'
+          : 'external-free-provider',
+    label: isNonEmptyString(value.label) ? value.label : value.apiBase,
+    providerSurfaceKind: retired ? 'retired-reference' : omniRoute ? 'omniroute-auto' : 'free-revolver',
+    lifecycle: retired ? 'historical' : 'active',
+    canonicalAction: retired ? 'none' : omniRoute ? 'omniroute-refresh' : 'revolver-discover',
+    modelsUrl: isNullableString(value.modelsUrl) ? value.modelsUrl : null,
+    authMode: isOneOf(value.authMode, providerAuthModes)
+      ? value.authMode
+      : omniRoute
+        ? 'none'
+        : 'bearer',
+    keyHint: isNullableString(value.keyHint) ? value.keyHint : null,
+    status: isOneOf(value.status, providerStatuses)
+      ? value.status
+      : retired
+        ? 'disabled'
+        : 'degraded',
+    lastHttpStatus: isNullableFiniteNumber(value.lastHttpStatus) ? value.lastHttpStatus : null,
+    lastErrorCode: isNullableString(value.lastErrorCode) ? value.lastErrorCode : null,
+    lastDiscoveredAt: isNullableString(value.lastDiscoveredAt) ? value.lastDiscoveredAt : null,
+    lastCheckedAt: isNullableString(value.lastCheckedAt) ? value.lastCheckedAt : null,
+    enabled: retired ? false : typeof value.enabled === 'boolean' ? value.enabled : false,
+    ownerRequestId: isNullableString(value.ownerRequestId) ? value.ownerRequestId : null,
+    models,
+  };
+  return isAcceptedProviderControl(normalized) ? normalized as unknown as FreeRevolverProviderSource : null;
+}
+
+function normalizeFreeRevolverProviderReadback(value: unknown): {
+  providers: FreeRevolverProviderSource[];
+  minimumReadyRoutes: number;
+} {
+  if (!isRecord(value) || value.ok !== true || !Array.isArray(value.providers)) {
+    return { providers: [], minimumReadyRoutes: DEFAULT_FREE_REVOLVER_MIN_READY_ROUTES };
+  }
+  return {
+    providers: value.providers
+      .map(normalizeProviderControlReadback)
+      .filter((provider): provider is FreeRevolverProviderSource => provider !== null),
+    minimumReadyRoutes: isNonNegativeInteger(value.minimumReadyRoutes) && value.minimumReadyRoutes > 0
+      ? value.minimumReadyRoutes
+      : DEFAULT_FREE_REVOLVER_MIN_READY_ROUTES,
+  };
+}
+
+'''
+          if client.count(normalizer_anchor) != 1:
+              raise SystemExit('CLIENT_NORMALIZER_ANCHOR_MISMATCH')
+          client = client.replace(normalizer_anchor, normalizers + normalizer_anchor, 1)
+
+          aggregate_old = """  async getLlmProviderSurfaceReadModel(): Promise<LlmProviderSurfaceReadModel> {
+    const [providers, omniRoute, openRouterPaid, openRouterFree] = await Promise.all([
+      this.getFreeRevolverProviders(),
+      this.getOmniRouteStatus(),
+      this.getOpenRouterPaidStatus(),
+      this.getOpenRouterFreeStatus(),
+    ]);
+    if (!isAcceptedFreeRevolverProviderReadback(providers)) {
+      throw new Error('Free-Provider-Readback verletzt die kanonische typisierte Aktionsgrenze.');
+    }
+    const readModel: unknown = {
+      providers: providers.providers,
+      freeRevolverMinimumReadyRoutes: providers.minimumReadyRoutes,
+      omniRoute,
+      openRouterPaid,
+      openRouterFree,
+    };
+    if (!isAcceptedLlmProviderSurfaceReadModel(readModel)) {
+      throw new Error('Provider-Readback verletzt die kanonische typisierte Aktionsgrenze.');
+    }
+    return readModel;
+  },
+"""
+          aggregate_new = """  async getLlmProviderSurfaceReadModel(): Promise<LlmProviderSurfaceReadModel> {
+    const [providerPayload, omniRoute, openRouterPaid, openRouterFree] = await Promise.all([
+      this.getFreeRevolverProviders().catch(() => null),
+      this.getOmniRouteStatus(),
+      this.getOpenRouterPaidStatus(),
+      this.getOpenRouterFreeStatus(),
+    ]);
+    const providerReadback = isAcceptedFreeRevolverProviderReadback(providerPayload)
+      ? {
+        providers: providerPayload.providers,
+        minimumReadyRoutes: providerPayload.minimumReadyRoutes,
+      }
+      : normalizeFreeRevolverProviderReadback(providerPayload);
+    const readModel: unknown = {
+      providers: providerReadback.providers,
+      freeRevolverMinimumReadyRoutes: providerReadback.minimumReadyRoutes,
+      omniRoute,
+      openRouterPaid,
+      openRouterFree,
+    };
+    if (!isAcceptedLlmProviderSurfaceReadModel(readModel)) {
+      throw new Error('Provider-Readback verletzt die kanonische typisierte Aktionsgrenze.');
+    }
+    return readModel;
+  },
+"""
+          if client.count(aggregate_old) != 1:
+              raise SystemExit('CLIENT_AGGREGATE_CONTRACT_MISMATCH')
+          client = client.replace(aggregate_old, aggregate_new, 1)
+          client_path.write_text(client, encoding='utf-8')
+
+          test_path = Path('src/features/admin/api/adminApiClient.providerSurfaces.test.ts')
+          test = test_path.read_text(encoding='utf-8')
+          providers_old = """          minimumReadyRoutes: 5,
+          providers: [],
+        },
+"""
+          providers_new = """          minimumReadyRoutes: 5,
+          providers: useNonCanonicalEnvelope ? [
+            {
+              id: 'freellmapi-source',
+              sourceType: 'freellmapi-direct',
+              label: 'FreeLLM API',
+              apiBase: 'http://freellmapi:3001/v1',
+              modelsUrl: 'http://freellmapi:3001/v1/models',
+              authMode: 'managed-bearer',
+              keyHint: 'owner-managed',
+              status: 'healthy',
+              lastHttpStatus: 200,
+              lastErrorCode: null,
+              lastDiscoveredAt: null,
+              lastCheckedAt: null,
+              enabled: true,
+              ownerRequestId: null,
+              models: [],
+            },
+            {
+              id: 'freellmpool-source',
+              sourceType: 'freellmpool-private',
+              label: 'FreeLLMPool 0.11.4',
+              apiBase: 'http://freellmpool:8080/v1',
+              modelsUrl: null,
+              authMode: 'managed-bearer',
+              keyHint: null,
+              status: 'healthy',
+              lastHttpStatus: 200,
+              lastErrorCode: null,
+              lastDiscoveredAt: null,
+              lastCheckedAt: null,
+              enabled: true,
+              ownerRequestId: null,
+              models: [],
+            },
+          ] : [],
+        },
+"""
+          if test.count(providers_old) != 1:
+              raise SystemExit('TEST_PROVIDER_PAYLOAD_ANCHOR_MISMATCH')
+          test = test.replace(providers_old, providers_new, 1)
+
+          rejection_old = """    useNonCanonicalEnvelope = true;
+    await expect(adminApiClient.getLlmProviderSurfaceReadModel())
+      .rejects.toThrow('Free-Provider-Readback verletzt die kanonische typisierte Aktionsgrenze.');
+"""
+          rejection_new = """    useNonCanonicalEnvelope = true;
+    const recovered = await adminApiClient.getLlmProviderSurfaceReadModel();
+    expect(recovered.freeRevolverMinimumReadyRoutes).toBe(5);
+    expect(recovered.providers).toHaveLength(2);
+    expect(recovered.providers[0]).toMatchObject({
+      providerSurfaceKind: 'free-revolver',
+      lifecycle: 'active',
+      canonicalAction: 'revolver-discover',
+      enabled: true,
+    });
+    expect(recovered.providers[1]).toMatchObject({
+      providerSurfaceKind: 'retired-reference',
+      lifecycle: 'historical',
+      canonicalAction: 'none',
+      enabled: false,
+    });
+    expect(recovered.omniRoute).toEqual(omniRoute);
+"""
+          if test.count(rejection_old) != 1:
+              raise SystemExit('TEST_RECOVERY_EXPECTATION_ANCHOR_MISMATCH')
+          test = test.replace(rejection_old, rejection_new, 1)
+          test_path.write_text(test, encoding='utf-8')
+          PY
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@9.12.2 --activate
+          pnpm install --frozen-lockfile
+
+      - name: Run focused Free LLM admin regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run \
+            src/features/admin/api/adminApiClient.providerSurfaces.test.ts \
+            src/features/admin/components/FreeRevolverControlCenter.test.tsx
+          pnpm run type-check
+          git diff --check
+
+      - name: Publish tested recovery to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add \
+            src/features/admin/api/adminApiClient.ts \
+            src/features/admin/api/adminApiClient.providerSurfaces.test.ts
+          if git diff --cached --quiet; then
+            echo 'No product patch required.'
+            exit 0
+          fi
+          git commit -m 'fix(admin): preserve free LLM routes across legacy readbacks'
+          git push origin HEAD:main
