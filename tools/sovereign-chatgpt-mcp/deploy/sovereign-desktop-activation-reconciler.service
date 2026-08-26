@@ -1,0 +1,34 @@
+[Unit]
+Description=Sovereign live desktop activation reconciler
+After=docker.service sovereign-chatgpt-broker.service network-online.target
+Requires=docker.service sovereign-chatgpt-broker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=sovereign-mcp
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/sovereign-chatgpt-tools/broker
+Environment=SOVEREIGN_DESKTOP_ACTIVATION_ROOT=/opt/sovereign-desktop-activations
+Environment=SOVEREIGN_DESKTOP_WORKSPACE_ROOT=/opt/sovereign-agent-workspaces
+Environment=SOVEREIGN_DESKTOP_RECONCILE_INTERVAL_SECONDS=1
+ExecStartPre=/usr/bin/test -d /opt/sovereign-desktop-activations
+ExecStartPre=/usr/bin/docker network inspect sovereign-desktop
+ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/desktop_activation_reconciler.py
+Restart=on-failure
+RestartSec=2
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/sovereign-chatgpt-tools /opt/sovereign-agent-workspaces
+ReadWritePaths=/opt/sovereign-desktop-activations /run /var/run/docker.sock
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target
