@@ -39,14 +39,47 @@ describe('Sovereign Play-release primary-surface contract', () => {
     expect(app).not.toContain('BuilderContainer');
   });
 
-  it('guards release-chat secret input before the LLM bridge and preserves the existing deferred claim guard', () => {
+  it('guards secret-shaped input before chat, typed interpretation, or repository execution', () => {
     const chat = source('src/features/release/PlayReleaseChat.tsx');
     const builder = source('src/features/product/containers/BuilderContainer.tsx');
 
-    const guardIndex = chat.indexOf('evaluateInputPolicy(text)');
-    const requestIndex = chat.indexOf('fetchDevChatWorkerReply(');
+    const submitStart = chat.indexOf('const submit = async');
+    expect(submitStart).toBeGreaterThanOrEqual(0);
+    const submitSource = chat.slice(submitStart, chat.indexOf('const runtimeColor', submitStart));
+
+    const guardIndex = submitSource.indexOf('evaluateInputPolicy(text)');
+    const plainChatIndex = submitSource.indexOf('await sendPlainChat(');
+    const interpretationIndex = submitSource.indexOf('fetchSovereignDirectLlmInterpretation(');
+    const executeIndex = submitSource.indexOf('await startCodingAction(action)');
+
     expect(guardIndex).toBeGreaterThanOrEqual(0);
-    expect(requestIndex).toBeGreaterThan(guardIndex);
+    expect(plainChatIndex).toBeGreaterThan(guardIndex);
+    expect(interpretationIndex).toBeGreaterThan(guardIndex);
+    expect(executeIndex).toBeGreaterThan(guardIndex);
+    expect(chat).toContain("if (inputPolicy.shouldBlock)");
+    expect(chat).toContain('wurde nicht an das LLM gesendet');
+
+    // The richer deferred builder remains separately claim-guarded even though
+    // it is not mounted into the Play release root.
     expect(builder.match(/\bcheckChatClaim\(/g) ?? []).toHaveLength(1);
+  });
+
+  it('restores bounded repository coding without restoring monitor or auto-merge authority', () => {
+    const chat = source('src/features/release/PlayReleaseChat.tsx');
+    const agentRuntime = source('src/features/product/runtime/sovereignAgentRuntime.ts');
+
+    expect(chat).toContain('SovereignAgentClient');
+    expect(chat).toContain('fetchSovereignDirectLlmInterpretation');
+    expect(chat).toContain('agentClient.startJob');
+    expect(chat).toContain('agentClient.prepareDraftPr');
+    expect(chat).toContain('agentClient.createDraftPr');
+    expect(chat).toContain('Sovereign Aktivitätsverlauf');
+    expect(chat).toContain('formatCuteThinkingLabel');
+    expect(chat).not.toContain('mergePullRequest');
+    expect(chat).not.toContain('mergeWhenGreen');
+
+    expect(agentRuntime).toContain('draftPrOnly: true');
+    expect(agentRuntime).toContain('allowAutoMerge: false');
+    expect(agentRuntime).toContain('runtimeTruthRequired: true');
   });
 });
