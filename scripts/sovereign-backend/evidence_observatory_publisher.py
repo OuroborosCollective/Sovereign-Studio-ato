@@ -42,7 +42,19 @@ PUBLISHER_POLICY: dict[str, Any] = {
 }
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_GIT_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+
+_VIEWER_STRING_FIELDS = (
+    "schemaVersion", "recordType", "observedAt", "provider", "model",
+    "providerSurface", "finishReason", "truthVerdict", "sourceRevision",
+    "outputSha256", "promptSha256", "planSha256", "primaryAuthority",
+    "credentialSource", "promptClassification", "costClaim",
+)
+_VIEWER_INT_FIELDS = (
+    "maxOutputTokens", "seed", "latencyMs", "requestCount", "automaticRetries",
+)
+_VIEWER_BOOL_FIELDS = ("automaticFallback", "literalMatch", "secretValuesReturned")
 _BEARER_RE = re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{12,}", re.IGNORECASE)
 _PRIVATE_KEY_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
 _TOKEN_RE = re.compile(
@@ -67,6 +79,10 @@ def _valid_sha256(value: Any) -> bool:
     return bool(_SHA256_RE.fullmatch(str(value or "").strip().lower()))
 
 
+def _valid_git_commit(value: Any) -> bool:
+    return bool(_GIT_COMMIT_RE.fullmatch(str(value or "").strip().lower()))
+
+
 def _normalized_key(value: Any) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
 
@@ -78,6 +94,132 @@ def _verify_embedded_hash(obj: dict[str, Any], hash_key: str) -> bool:
     base = dict(obj)
     base.pop(hash_key, None)
     return sha256_json(base) == claimed
+
+
+def validate_huggingface_repository_candidate_identity(
+    *, candidate_commit: str, patch_commit: str, bundle_head_commits: list[str]
+) -> dict[str, Any]:
+    """Require one exact Git commit across candidate metadata, patch and bundle.
+
+    Execution/source revision and repository-candidate identity are intentionally
+    separate concepts. This contract validates only the latter so a packaging
+    label can never silently replace the commit actually carried by the patch
+    and bundle.
+    """
+    candidate = str(candidate_commit or "").strip().lower()
+    patch = str(patch_commit or "").strip().lower()
+    heads = [str(item or "").strip().lower() for item in bundle_head_commits]
+    if not _valid_git_commit(candidate):
+        raise RuntimeError("huggingface_candidate_identity_invalid:candidate")
+    if not _valid_git_commit(patch):
+        raise RuntimeError("huggingface_candidate_identity_invalid:patch")
+    if not heads:
+        raise RuntimeError("huggingface_candidate_identity_missing:bundle_heads")
+    if any(not _valid_git_commit(item) for item in heads):
+        raise RuntimeError("huggingface_candidate_identity_invalid:bundle_head")
+    identities = {candidate, patch, *heads}
+    if len(identities) != 1:
+        raise RuntimeError("huggingface_candidate_identity_mismatch")
+    receipt = {
+        "schemaVersion": "sovereign.hf-repository-candidate-identity.v1",
+        "candidateCommit": candidate,
+        "patchCommit": patch,
+        "bundleHeadCommits": heads,
+        "identityVerified": True,
+    }
+    receipt["identitySha256"] = sha256_json(receipt)
+    return receipt
+
+
+def _viewer_optional_string(value: Any, *, field: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise RuntimeError(f"huggingface_viewer_field_type_invalid:{field}")
+    return value
+
+
+def _viewer_optional_int(value: Any, *, field: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise RuntimeError(f"huggingface_viewer_field_type_invalid:{field}")
+    return value
+
+
+def _viewer_optional_bool(value: Any, *, field: str) -> bool | None:
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise RuntimeError(f"huggingface_viewer_field_type_invalid:{field}")
+    return value
+
+
+def build_huggingface_receipt_viewer_projection(
+    *, receipts: list[dict[str, Any]], receipt_paths: list[str] | None = None
+) -> dict[str, Any]:
+    """Build a deterministic Dataset Viewer index without rewriting receipts.
+
+    Provider-specific nested ``usage`` objects are serialized into canonical
+    JSON text. This keeps the viewer schema stable across providers while the
+    canonical receipt JSON — and therefore every receipt hash — remains
+    untouched and independently addressable via ``receiptPath``.
+    """
+    if not receipts:
+        raise RuntimeError("huggingface_viewer_projection_empty")
+    if len(receipts) > 10_000:
+        raise RuntimeError("huggingface_viewer_projection_bound_exceeded")
+    paths = list(receipt_paths or [""] * len(receipts))
+    if len(paths) != len(receipts):
+        raise RuntimeError("huggingface_viewer_receipt_path_count_mismatch")
+
+    rows: list[dict[str, Any]] = []
+    seen_receipts: set[str] = set()
+    for index, receipt in enumerate(receipts):
+        if not isinstance(receipt, dict):
+            raise RuntimeError(f"huggingface_viewer_receipt_invalid:{index}")
+        receipt_sha = str(receipt.get("receiptSha256") or "").strip().lower()
+        if not _valid_sha256(receipt_sha):
+            raise RuntimeError(f"huggingface_viewer_receipt_hash_invalid:{index}")
+        if not _verify_embedded_hash(receipt, "receiptSha256"):
+            raise RuntimeError(f"huggingface_viewer_receipt_hash_mismatch:{index}")
+        if receipt_sha in seen_receipts:
+            raise RuntimeError(f"huggingface_viewer_duplicate_receipt:{receipt_sha}")
+        seen_receipts.add(receipt_sha)
+
+        source_revision = receipt.get("sourceRevision")
+        if source_revision not in (None, "") and not _valid_git_commit(source_revision):
+            raise RuntimeError(f"huggingface_viewer_source_revision_invalid:{index}")
+        for hash_field in ("outputSha256", "promptSha256", "planSha256"):
+            value = receipt.get(hash_field)
+            if value not in (None, "") and not _valid_sha256(value):
+                raise RuntimeError(f"huggingface_viewer_field_hash_invalid:{hash_field}:{index}")
+
+        usage = receipt.get("usage")
+        if usage is not None and not isinstance(usage, dict):
+            raise RuntimeError(f"huggingface_viewer_usage_invalid:{index}")
+        row: dict[str, Any] = {"receiptSha256": receipt_sha}
+        for field in _VIEWER_STRING_FIELDS:
+            row[field] = _viewer_optional_string(receipt.get(field), field=field)
+        for field in _VIEWER_INT_FIELDS:
+            row[field] = _viewer_optional_int(receipt.get(field), field=field)
+        for field in _VIEWER_BOOL_FIELDS:
+            row[field] = _viewer_optional_bool(receipt.get(field), field=field)
+        row["usageJson"] = canonical_json(usage) if usage is not None else None
+        row["usageSha256"] = sha256_json(usage) if usage is not None else None
+        row["receiptPath"] = str(paths[index] or "") or None
+        row["viewerRowSha256"] = sha256_json(row)
+        rows.append(row)
+
+    data_bytes = ("\n".join(canonical_json(row) for row in rows) + "\n").encode("utf-8")
+    return {
+        "schemaVersion": "sovereign.hf-receipt-viewer-projection.v1",
+        "rowCount": len(rows),
+        "rows": rows,
+        "dataBytes": data_bytes,
+        "dataSha256": _sha256_bytes(data_bytes),
+        "canonicalReceiptsMutated": False,
+    }
 
 
 def load_huggingface_publication_rights() -> dict[str, Any]:
@@ -612,8 +754,10 @@ def publish_huggingface_batch(
 __all__ = [
     "PUBLISHER_POLICY",
     "build_huggingface_publish_plan",
+    "build_huggingface_receipt_viewer_projection",
     "load_huggingface_publication_rights",
     "publish_huggingface_batch",
     "scan_public_payload",
     "validate_huggingface_publication_rights",
+    "validate_huggingface_repository_candidate_identity",
 ]

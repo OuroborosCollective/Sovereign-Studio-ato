@@ -11,12 +11,14 @@ BACKEND = Path(__file__).resolve().parents[1]
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-from evidence_observatory_contracts import canonical_json, sha256_text  # noqa: E402
+from evidence_observatory_contracts import canonical_json, sha256_json, sha256_text  # noqa: E402
 from evidence_observatory_publisher import (  # noqa: E402
     PUBLISHER_POLICY,
     build_huggingface_publish_plan,
+    build_huggingface_receipt_viewer_projection,
     publish_huggingface_batch,
     scan_public_payload,
+    validate_huggingface_repository_candidate_identity,
 )
 from wolfram_cag_benchmark_publication import build_cag_benchmark_public_rows  # noqa: E402
 
@@ -92,6 +94,99 @@ def test_identical_cag_batch_has_deterministic_manifest_and_all_1507_hash_surfac
     assert len(manifest["source_publication_refs"]) == 12
     assert first["privacyScan"]["findingCount"] == 0
     assert PUBLISHER_POLICY["readbackBeforeRetry"] is True
+
+
+def test_receipt_viewer_projection_preserves_canonical_receipts_across_provider_usage_shapes():
+    receipts = [
+        {
+            "schemaVersion": "sovereign.hf-shadow-receipt.v1",
+            "recordType": "actual-inference",
+            "receiptSha256": "a" * 64,
+            "sourceRevision": "1" * 40,
+            "provider": "provider-a",
+            "model": "model-a",
+            "observedAt": "2026-08-26T00:00:00Z",
+            "maxOutputTokens": 24,
+            "seed": 1729,
+            "latencyMs": 705,
+            "automaticFallback": False,
+            "literalMatch": True,
+            "outputSha256": "b" * 64,
+            "usage": {
+                "prompt_tokens": 23,
+                "completion_tokens": 8,
+                "prompt_tokens_details": None,
+                "total_tokens": 31,
+            },
+        },
+        {
+            "schemaVersion": "sovereign.hf-shadow-receipt.v1",
+            "recordType": "actual-inference",
+            "receiptSha256": "c" * 64,
+            "sourceRevision": "2" * 40,
+            "provider": "provider-b",
+            "model": "model-b",
+            "observedAt": "2026-08-26T00:01:00Z",
+            "maxOutputTokens": 64,
+            "seed": 314159,
+            "latencyMs": 168,
+            "automaticFallback": False,
+            "literalMatch": False,
+            "outputSha256": "d" * 64,
+            "usage": {
+                "prompt_tokens": 21,
+                "completion_tokens": 64,
+                "queue_time": 0.01,
+                "total_time": 0.17,
+                "completion_tokens_details": {"reasoning_tokens": 60},
+            },
+        },
+    ]
+    for receipt in receipts:
+        receipt["receiptSha256"] = sha256_json(
+            {key: value for key, value in receipt.items() if key != "receiptSha256"}
+        )
+    receipt_hashes = [receipt["receiptSha256"] for receipt in receipts]
+    original = copy.deepcopy(receipts)
+    first = build_huggingface_receipt_viewer_projection(
+        receipts=receipts,
+        receipt_paths=["data/receipts/a.json", "data/receipts/c.json"],
+    )
+    second = build_huggingface_receipt_viewer_projection(
+        receipts=receipts,
+        receipt_paths=["data/receipts/a.json", "data/receipts/c.json"],
+    )
+
+    assert receipts == original
+    assert first["canonicalReceiptsMutated"] is False
+    assert first["rowCount"] == 2
+    assert first["dataSha256"] == second["dataSha256"]
+    assert first["dataBytes"] == second["dataBytes"]
+    assert set(first["rows"][0]) == set(first["rows"][1])
+    assert "usage" not in first["rows"][0]
+    assert first["rows"][0]["usageJson"] == canonical_json(receipts[0]["usage"])
+    assert first["rows"][1]["usageJson"] == canonical_json(receipts[1]["usage"])
+    assert first["rows"][0]["receiptSha256"] == receipt_hashes[0]
+    assert first["rows"][1]["receiptSha256"] == receipt_hashes[1]
+    assert first["rows"][0]["automaticFallback"] is False
+    assert first["rows"][1]["automaticFallback"] is False
+
+
+def test_repository_candidate_identity_fails_closed_on_packaging_label_drift():
+    identity = validate_huggingface_repository_candidate_identity(
+        candidate_commit="1" * 40,
+        patch_commit="1" * 40,
+        bundle_head_commits=["1" * 40],
+    )
+    assert identity["identityVerified"] is True
+    assert identity["candidateCommit"] == "1" * 40
+
+    with pytest.raises(RuntimeError, match="huggingface_candidate_identity_mismatch"):
+        validate_huggingface_repository_candidate_identity(
+            candidate_commit="2" * 40,
+            patch_commit="1" * 40,
+            bundle_head_commits=["1" * 40],
+        )
 
 
 def test_rights_are_fail_closed_for_unknown_license_target_and_case_scope():
