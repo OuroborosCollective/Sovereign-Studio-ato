@@ -78,7 +78,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_PARENT"
           git config user.name "Sovereign Owner Recovery"
           git config user.email "actions@users.noreply.github.com"
-          git add backend/agent_runtime/desktop_stream.py scripts/sovereign-backend/agent_runtime/desktop_stream.py scripts/sovereign-backend/agent_runtime/routes.py backend/agent_runtime/routes.py src/App.tsx src/features/product/runtime/sovereignAgentClient.ts src/features/product/components/LiveWorkspaceMonitor.tsx src/features/product/components/AgentEventStream.tsx src/features/product/containers/BuilderContainer.tsx package.json pnpm-lock.yaml
+          git add backend/agent_runtime/desktop_stream.py scripts/sovereign-backend/agent_runtime/desktop_stream.py scripts/sovereign-backend/agent_runtime/routes.py backend/agent_runtime/routes.py src/App.tsx src/appShellContract.test.ts src/features/product/runtime/sovereignAgentClient.ts src/features/product/components/LiveWorkspaceMonitor.tsx src/features/product/components/AgentEventStream.tsx src/features/product/containers/BuilderContainer.tsx package.json pnpm-lock.yaml
           git diff --cached --check
           git commit -m "feat(desktop): replace PNG polling with live RFB stream"
           git push origin HEAD:sovereign/chatgpt/bytebot-live-desktop-stream
