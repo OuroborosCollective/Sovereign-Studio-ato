@@ -11,6 +11,23 @@ def replace_once(path: str, old: str, new: str) -> None:
     target.write_text(text.replace(old, new, 1), "utf-8")
 
 
+def replace_once_in_span(path: str, span_start: str, span_end: str, old: str, new: str) -> None:
+    target = Path(path)
+    text = target.read_text("utf-8")
+    start = text.find(span_start)
+    if start < 0:
+        raise SystemExit(f"{path}: missing span start {span_start!r}")
+    end = text.find(span_end, start)
+    if end < 0:
+        raise SystemExit(f"{path}: missing span end {span_end!r}")
+    segment = text[start:end]
+    count = segment.count(old)
+    if count != 1:
+        raise SystemExit(f"{path}: expected one scoped anchor, found {count}: {old[:120]!r}")
+    segment = segment.replace(old, new, 1)
+    target.write_text(text[:start] + segment + text[end:], "utf-8")
+
+
 # App: the stream state/effect is already created by the primary patch. Replace
 # the one remaining JSX prop that still referenced the deleted PNG frame state.
 replace_once(
@@ -48,11 +65,13 @@ replacement_without_job = """  readonly desktopStream?: {
   } | null;
 """
 
-# The primary patch deliberately performs a symbol rename. Complete the type
-# migration explicitly so downstream monitor props are stream descriptors, not
-# stale PNG-frame observations.
-replace_once(
+# The BuilderContainer type is the public contract consumed by App.tsx. Scope
+# this replacement to that exported interface so another lookalike block can
+# never satisfy the patch while leaving the real component contract stale.
+replace_once_in_span(
     "src/features/product/containers/BuilderContainer.tsx",
+    "export interface BuilderContainerProps {\n",
+    "\n}\n\n// Local types",
     stream_type_with_job,
     replacement_with_job,
 )
@@ -88,5 +107,17 @@ replace_once(
     duplicate_status,
     "",
 )
+
+# Fail closed on the exact exported prop contract. This is deliberately stronger
+# than a repository-wide grep because App.tsx is type-checked against this span.
+builder = Path("src/features/product/containers/BuilderContainer.tsx").read_text("utf-8")
+start = builder.index("export interface BuilderContainerProps {\n")
+end = builder.index("\n}\n\n// Local types", start)
+props = builder[start:end]
+for required in ("desktopStream?: {", "readonly activationId: string;", "readonly sessionBindingHash: string;", "readonly expiresAtEpoch: number;"):
+    if required not in props:
+        raise SystemExit(f"BuilderContainerProps missing required stream contract: {required}")
+if "desktopFrame?:" in props or "readonly frameHash: string;" in props:
+    raise SystemExit("BuilderContainerProps still contains stale PNG frame contract")
 
 print("BYTEBOT_LIVE_DESKTOP_FRONTEND_TYPE_FIX_APPLIED")
