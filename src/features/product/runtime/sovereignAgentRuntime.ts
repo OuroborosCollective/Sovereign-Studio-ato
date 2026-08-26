@@ -112,6 +112,8 @@ export interface SovereignAgentJobSnapshot {
   branchName?: string;
   draftPrUrl?: string;
   changedFiles: string[];
+  /** Patch blocks for SEARCH/REPLACE dry-run before actual commit. Enables real diff preview. */
+  patchBlocks?: readonly { readonly search: string; readonly replace: string }[];
   events: SovereignAgentRuntimeEvent[];
   lastError?: string;
 }

@@ -42,6 +42,30 @@ export interface GitPatchResult {
   readonly error?: string;
 }
 
+/**
+ * Applies a dry-run patch to get real diff preview without committing.
+ * Returns the modified content for visualization before actual commit.
+ */
+export async function applyGitPatchDryRun(
+  repoUrl: string,
+  branch: string,
+  filePath: string,
+  blocks: readonly PatchBlock[],
+  token: string,
+  fetcher: typeof fetch = fetch,
+): Promise<GitPatchResult> {
+  return applyGitPatch({
+    repoUrl,
+    branch,
+    filePath,
+    blocks,
+    commitMessage: 'dry-run',
+    dryRun: true,
+    token,
+    fetcher,
+  });
+}
+
 import {
   buildUnifiedLikePreview,
   type GeneratedFileDiffItem,
