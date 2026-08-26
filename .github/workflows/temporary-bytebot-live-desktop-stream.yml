@@ -28,6 +28,8 @@ jobs:
           corepack enable
           pnpm install --no-frozen-lockfile
       - name: Verify desktop Python contracts
+        env:
+          PYTHONPATH: backend
         run: python3 -m pytest backend/tests/test_desktop_stream.py backend/tests/test_desktop_worker.py backend/tests/test_desktop_activation.py -q
       - name: Verify MCP desktop worker contracts
         run: python3 -m pytest tools/sovereign-chatgpt-mcp/tests/test_desktop_worker.py -q
