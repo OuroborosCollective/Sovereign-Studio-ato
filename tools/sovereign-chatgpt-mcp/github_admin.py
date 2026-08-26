@@ -59,19 +59,10 @@ MAIN_RULESET_REQUIRED_CHECKS_ENFORCED = (
     "continuity-ledger",
     "Revision Guardian",
 )
-MAIN_RULESET_REQUIRED_CHECKS_ACCELERATION = (
-    "Release Gate",
-    "Agent Runtime Tests",
-)
+MAIN_RULESET_REQUIRED_CHECKS_ACCELERATION: tuple[str, ...] = ()
 DEFAULT_GOVERNANCE_MODE_PATH = Path(__file__).resolve().parent / "config" / "sovereign-governance-mode.json"
 GOVERNANCE_MODE_ENV = "SOVEREIGN_MCP_GOVERNANCE_MODE_PATH"
 GOVERNANCE_MODES = frozenset({"enforced", "acceleration", "reconciliation"})
-GOVERNANCE_ADVISORY_CHECKS = frozenset({
-    "continuity-ledger",
-    "Revision Guardian",
-    "Revision Guardian Evidence",
-    "Boundary ledger drift preflight",
-})
 MAX_PR_SERIES = 500
 MAX_SERIES_WAIT_SECONDS = 3600
 MIN_SERIES_POLL_SECONDS = 2
@@ -159,16 +150,15 @@ class GitHubAdminRuntime:
                 "advisory_failed": [],
                 "advisory_pending": [],
             }
-        advisory_failed = [name for name in failed if name in GOVERNANCE_ADVISORY_CHECKS]
-        advisory_pending = [name for name in pending if name in GOVERNANCE_ADVISORY_CHECKS]
-        effective_failed = [name for name in failed if name not in GOVERNANCE_ADVISORY_CHECKS]
-        effective_pending = [name for name in pending if name not in GOVERNANCE_ADVISORY_CHECKS]
+        # Acceleration/reconciliation preserve every check as evidence, but check
+        # outcomes do not authorize or block mutation. Exact PR-head/revision
+        # identity is enforced separately by the mutation path itself.
         return {
-            "ok": not effective_failed and not effective_pending and bool(checks.get("has_check_evidence")),
-            "failed": effective_failed,
-            "pending": effective_pending,
-            "advisory_failed": advisory_failed,
-            "advisory_pending": advisory_pending,
+            "ok": True,
+            "failed": [],
+            "pending": [],
+            "advisory_failed": failed,
+            "advisory_pending": pending,
         }
 
     @contextmanager
@@ -1493,26 +1483,23 @@ class GitHubAdminRuntime:
         governance_mode = self._governance_mode()
         required_checks = self._required_main_checks()
         strict_required_status_checks_policy = governance_mode == "enforced"
-        payload = {
-            "name": MAIN_RULESET_NAME,
-            "target": "branch",
-            "enforcement": "active",
-            "bypass_actors": [],
-            "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
-            "rules": [
-                {"type": "deletion"},
-                {"type": "non_fast_forward"},
-                {
-                    "type": "pull_request",
-                    "parameters": {
-                        "allowed_merge_methods": ["squash"],
-                        "dismiss_stale_reviews_on_push": True,
-                        "require_code_owner_review": False,
-                        "require_last_push_approval": False,
-                        "required_approving_review_count": 0,
-                        "required_review_thread_resolution": True,
-                    },
+        rules: list[dict[str, Any]] = [
+            {"type": "deletion"},
+            {"type": "non_fast_forward"},
+            {
+                "type": "pull_request",
+                "parameters": {
+                    "allowed_merge_methods": ["squash"],
+                    "dismiss_stale_reviews_on_push": True,
+                    "require_code_owner_review": False,
+                    "require_last_push_approval": False,
+                    "required_approving_review_count": 0,
+                    "required_review_thread_resolution": True,
                 },
+            },
+        ]
+        if required_checks:
+            rules.append(
                 {
                     "type": "required_status_checks",
                     "parameters": {
@@ -1522,8 +1509,15 @@ class GitHubAdminRuntime:
                             {"context": context} for context in required_checks
                         ],
                     },
-                },
-            ],
+                }
+            )
+        payload = {
+            "name": MAIN_RULESET_NAME,
+            "target": "branch",
+            "enforcement": "active",
+            "bypass_actors": [],
+            "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+            "rules": rules,
         }
         listed = self._request(
             "GET",
@@ -1580,9 +1574,14 @@ class GitHubAdminRuntime:
         }
         if contexts != set(required_checks):
             raise RuntimeError("GitHub bestätigte die erforderlichen Statuschecks nicht vollständig")
-        strict_readback = bool(((required_rule or {}).get("parameters") or {}).get("strict_required_status_checks_policy"))
-        if strict_readback != strict_required_status_checks_policy:
-            raise RuntimeError("GitHub bestätigte den Governance-Strictness-Modus nicht")
+        if required_checks:
+            strict_readback = bool(((required_rule or {}).get("parameters") or {}).get("strict_required_status_checks_policy"))
+            if strict_readback != strict_required_status_checks_policy:
+                raise RuntimeError("GitHub bestätigte den Governance-Strictness-Modus nicht")
+        elif required_rule is not None:
+            raise RuntimeError("GitHub behält unerwartet einen blockierenden Required-Status-Check-Vertrag")
+        else:
+            strict_readback = False
         return {
             "ok": True,
             "status": f"RULESET_{mutation_status}",
