@@ -7,6 +7,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        openbox \
        scrot \
+       websockify \
+       x11vnc \
        xterm \
        xdotool \
        xvfb \
@@ -23,7 +25,7 @@ RUN chmod 0555 /opt/sovereign-desktop-worker/desktop_worker.py /usr/local/bin/so
 
 USER 10001:10001
 WORKDIR /workspace
-EXPOSE 8765
+EXPOSE 8765 6080
 HEALTHCHECK --interval=20s --timeout=5s --start-period=30s --retries=3 \
-  CMD python3 -c "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=3).status == 200"
+  CMD python3 -c "import socket,urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=3).status == 200; s=socket.create_connection(('127.0.0.1',6080),3); s.close()"
 ENTRYPOINT ["/usr/local/bin/sovereign-desktop-worker"]
