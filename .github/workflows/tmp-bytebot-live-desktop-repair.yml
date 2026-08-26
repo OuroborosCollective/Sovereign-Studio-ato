@@ -39,7 +39,7 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Typecheck real VNC monitor
-        run: pnpm run typecheck
+        run: pnpm run type-check
 
       - name: Run focused frontend runtime tests
         run: |
