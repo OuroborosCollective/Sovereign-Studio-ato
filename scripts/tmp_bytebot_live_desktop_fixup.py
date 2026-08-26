@@ -45,4 +45,24 @@ replace_once(
     """  it('never polls legacy PNG frames when switching the canonical desktop job binding', async () => {\n    agent.listJobs.mockResolvedValue([snapshot({\n      jobId: 'job-a',\n      workspaceId: 'job-a',\n      runtimeId: 'job-a',\n      status: 'completed',\n    })]);\n    const jobBSnapshot = snapshot({\n      jobId: 'job-b',\n      workspaceId: 'job-b',\n      runtimeId: 'job-b',\n      status: 'running',\n    });\n    agent.startRepositoryExecution.mockResolvedValue(jobBSnapshot);\n    agent.getJob.mockResolvedValue(jobBSnapshot);\n\n    render(<Provider store={store}><App /></Provider>);\n    await waitFor(() => expect(screen.getByTestId('flow-job-id')).toHaveTextContent('job-a'));\n    expect(agent.getDesktopFrame).not.toHaveBeenCalled();\n    expect(screen.getByTestId('flow-frame-job-id')).toHaveTextContent('none');\n    expect(screen.getByTestId('flow-frame-hash')).toHaveTextContent('none');\n\n    fireEvent.click(screen.getByRole('button', { name: 'Switch job' }));\n    await waitFor(() => expect(screen.getByTestId('flow-job-id')).toHaveTextContent('job-b'));\n    expect(agent.getDesktopFrame).not.toHaveBeenCalled();\n    expect(screen.getByTestId('flow-frame-job-id')).toHaveTextContent('none');\n    expect(screen.getByTestId('flow-frame-hash')).toHaveTextContent('none');\n  });\n""",
 )
 
+# The revision label belongs inside the build stage. Keep one global ARG for a
+# default, then redeclare it after FROM so LABEL can expand it.
+replace_once(
+    'containers/sovereign-desktop-worker/Dockerfile',
+    'ARG SOVEREIGN_SOURCE_REVISION=unverified\nARG SOVEREIGN_SOURCE_REVISION\nLABEL org.opencontainers.image.revision=${SOVEREIGN_SOURCE_REVISION}\nFROM ',
+    'ARG SOVEREIGN_SOURCE_REVISION=unverified\nFROM ',
+)
+dockerfile = ROOT / 'containers/sovereign-desktop-worker/Dockerfile'
+docker_text = dockerfile.read_text('utf-8')
+first_line_end = docker_text.find('\n', docker_text.find('FROM '))
+if first_line_end < 0:
+    raise SystemExit('desktop Dockerfile FROM line missing')
+docker_text = (
+    docker_text[: first_line_end + 1]
+    + 'ARG SOVEREIGN_SOURCE_REVISION\n'
+    + 'LABEL org.opencontainers.image.revision=${SOVEREIGN_SOURCE_REVISION}\n'
+    + docker_text[first_line_end + 1 :]
+)
+dockerfile.write_text(docker_text, 'utf-8')
+
 print('BYTEBOT_LIVE_DESKTOP_TYPECHECK_FIXUP_APPLIED')
