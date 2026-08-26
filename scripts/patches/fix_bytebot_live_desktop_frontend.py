@@ -36,6 +36,14 @@ replace_once(
     "          desktopStream={desktopStream?.jobId === canonicalAgentJob.jobId ? desktopStream : null}\n",
 )
 
+# The app-shell contract must move with the product invariant: continuous stream
+# is required; the old primary PNG polling call is explicitly forbidden.
+replace_once(
+    "src/appShellContract.test.ts",
+    "      'getDesktopFrame(jobId)',\n    ]);\n    expect(app).not.toContain('data-layout=\"chat-only-live-entry\"');\n",
+    "      'getDesktopStreamTicket(jobId)',\n    ]);\n    expect(app).not.toContain('getDesktopFrame(jobId)');\n    expect(app).not.toContain('data-layout=\"chat-only-live-entry\"');\n",
+)
+
 stream_type_with_job = """  desktopStream?: {
     readonly jobId: string;
     readonly url: string;
@@ -119,5 +127,11 @@ for required in ("desktopStream?: {", "readonly activationId: string;", "readonl
         raise SystemExit(f"BuilderContainerProps missing required stream contract: {required}")
 if "desktopFrame?:" in props or "readonly frameHash: string;" in props:
     raise SystemExit("BuilderContainerProps still contains stale PNG frame contract")
+
+shell_contract = Path("src/appShellContract.test.ts").read_text("utf-8")
+if "'getDesktopStreamTicket(jobId)'" not in shell_contract:
+    raise SystemExit("app shell contract does not require the live stream ticket")
+if "expect(app).not.toContain('getDesktopFrame(jobId)');" not in shell_contract:
+    raise SystemExit("app shell contract does not forbid primary PNG polling")
 
 print("BYTEBOT_LIVE_DESKTOP_FRONTEND_TYPE_FIX_APPLIED")
