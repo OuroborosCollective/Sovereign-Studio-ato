@@ -1,82 +1,46 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { Provider } from 'react-redux';
-import { render, screen, waitFor } from '@testing-library/react';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
-import { store } from './store';
 
-beforeAll(() => {
-  const cryptoMock = {
-    randomUUID: () => 'test-uuid',
-  };
+vi.mock('./features/release/PlayReleaseChat', () => ({
+  PlayReleaseChat: () => (
+    <main data-testid="sovereign-release-chat" data-layout="play-release-chat" aria-label="Sovereign Chat">
+      <textarea aria-label="Nachricht an Sovereign" />
+      <button type="button" aria-label="Senden">↑</button>
+    </main>
+  ),
+}));
 
-  if (!globalThis.crypto) {
-    Object.defineProperty(globalThis, 'crypto', {
-      value: cryptoMock,
-      configurable: true,
-    });
-    return;
-  }
-
-  if (!globalThis.crypto.randomUUID) {
-    Object.defineProperty(globalThis.crypto, 'randomUUID', {
-      value: cryptoMock.randomUUID,
-      configurable: true,
-    });
-  }
-});
+vi.mock('./features/evidence-observatory/EvidenceObservatoryAtlas', () => ({
+  EvidenceObservatoryAtlas: () => <main data-testid="evidence-observatory">Observatory</main>,
+}));
 
 beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
+  window.history.replaceState({}, '', '/');
   delete window.__sovereignSetupState;
 });
 
-async function openMonitorWorkspace(): Promise<void> {
-  render(<Provider store={store}><App /></Provider>);
+describe('Android Play release chat smoke', () => {
+  it('boots directly into the focused chat surface', () => {
+    render(<App />);
 
-  await waitFor(() => {
-    expect(screen.getByTestId('builder-container')).toHaveAttribute(
-      'data-layout',
-      'live-desktop-monitor-primary',
-    );
-  });
-}
-
-describe('App setup flow smoke', () => {
-  it('enters the monitor-first workbench as the Android app surface', async () => {
-    render(<Provider store={store}><App /></Provider>);
-
-    expect(screen.getByTestId('sovereign-monitor-app')).toHaveAttribute(
-      'data-layout',
-      'monitor-first-live-workspace',
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('builder-container')).toHaveAttribute(
-        'data-layout',
-        'live-desktop-monitor-primary',
-      );
-    });
-    expect(screen.getByTestId('live-workspace-monitor-desktop')).toBeDefined();
+    expect(screen.getByTestId('sovereign-release-chat')).toHaveAttribute('data-layout', 'play-release-chat');
+    expect(screen.getByLabelText('Sovereign Chat')).toBeDefined();
+    expect(screen.getByLabelText('Nachricht an Sovereign')).toBeDefined();
+    expect(screen.getByLabelText('Senden')).toBeDefined();
   });
 
-  it('keeps LLM communication inside the Android monitor without a chat surface', async () => {
-    await openMonitorWorkspace();
+  it('does not mount monitor or legacy operator controls in the Android release root', () => {
+    render(<App />);
 
-    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
-    expect(screen.getByLabelText('Frage an Sovereign während Live Monitor')).toBeDefined();
-    expect(screen.getByPlaceholderText(/ohne den Monitor zu verlassen/i)).toBeDefined();
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
-  });
-
-  it('does not open legacy controls during initial chat entry', async () => {
-    await openMonitorWorkspace();
-
+    expect(screen.queryByTestId('sovereign-monitor-app')).toBeNull();
+    expect(screen.queryByTestId('live-workspace-monitor')).toBeNull();
     expect(screen.queryByTestId('operator-monitor')).toBeNull();
     expect(screen.queryByTestId('automation__mode-select')).toBeNull();
-    expect(screen.queryByPlaceholderText('https://github.com/owner/repository')).toBeNull();
   });
 });
