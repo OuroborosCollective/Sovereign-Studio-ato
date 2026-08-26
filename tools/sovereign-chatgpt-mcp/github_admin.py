@@ -468,6 +468,16 @@ class GitHubAdminRuntime:
             }
         return None
 
+    def _require_owner_repository_admin(self, owner_approved: bool) -> dict[str, Any] | None:
+        """Owner repository/ruleset admin is independent of PR/workflow feature flags."""
+        if not self.private_owner_mode or not owner_approved:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "Repository-Administration erfordert privaten Owner-Modus und ausdrückliche Owner-Freigabe",
+            }
+        return None
+
     def _require_owner_issue_admin(self, owner_approved: bool) -> dict[str, Any] | None:
         if not _enabled("SOVEREIGN_MCP_ENABLE_PR_MERGE"):
             return {"ok": False, "status": "BLOCKED", "blocker": "Issue-Administration ist nicht aktiviert"}
@@ -615,8 +625,8 @@ class GitHubAdminRuntime:
         }
 
     def rerun_failed_workflows(self, *, pr_number: int) -> dict[str, Any]:
-        if not _enabled("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL"):
-            return {"ok": False, "status": "BLOCKED", "blocker": "Workflow-Steuerung ist nicht aktiviert"}
+        if not self.private_owner_mode and not _enabled("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL"):
+            return {"ok": False, "status": "BLOCKED", "blocker": "Workflow-Steuerung ist außerhalb des privaten Owner-Modus nicht aktiviert"}
         pull = self._pull(pr_number)
         head_sha = str((pull.get("head") or {}).get("sha") or "")
         if not COMMIT_SHA_RE.fullmatch(head_sha):
@@ -655,8 +665,8 @@ class GitHubAdminRuntime:
         }
 
     def dispatch_workflow(self, *, workflow: str, ref: str = "main", inputs: dict[str, Any] | None = None) -> dict[str, Any]:
-        if not _enabled("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL"):
-            return {"ok": False, "status": "BLOCKED", "blocker": "Workflow-Steuerung ist nicht aktiviert"}
+        if not self.private_owner_mode and not _enabled("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL"):
+            return {"ok": False, "status": "BLOCKED", "blocker": "Workflow-Steuerung ist außerhalb des privaten Owner-Modus nicht aktiviert"}
         selected = str(workflow or "").strip()
         if not WORKFLOW_RE.fullmatch(selected):
             raise ValueError("Workflow-Dateiname ist ungültig")
@@ -1469,7 +1479,7 @@ class GitHubAdminRuntime:
 
     def apply_main_ruleset(self, *, owner_approved: bool = False) -> dict[str, Any]:
         """Create or reconcile the active main ruleset and verify exact GitHub readback."""
-        blocked = self._require_owner_pr_admin(owner_approved)
+        blocked = self._require_owner_repository_admin(owner_approved)
         if blocked:
             return blocked
         default_branch = self._default_branch()
@@ -1483,6 +1493,7 @@ class GitHubAdminRuntime:
         governance_mode = self._governance_mode()
         required_checks = self._required_main_checks()
         strict_required_status_checks_policy = governance_mode == "enforced"
+        ruleset_enforcement = "active" if governance_mode == "enforced" else "disabled"
         rules: list[dict[str, Any]] = [
             {"type": "deletion"},
             {"type": "non_fast_forward"},
@@ -1514,7 +1525,7 @@ class GitHubAdminRuntime:
         payload = {
             "name": MAIN_RULESET_NAME,
             "target": "branch",
-            "enforcement": "active",
+            "enforcement": ruleset_enforcement,
             "bypass_actors": [],
             "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
             "rules": rules,
@@ -1560,7 +1571,7 @@ class GitHubAdminRuntime:
         if (
             str(readback.get("name") or "") != MAIN_RULESET_NAME
             or str(readback.get("target") or "") != "branch"
-            or str(readback.get("enforcement") or "") != "active"
+            or str(readback.get("enforcement") or "") != ruleset_enforcement
             or readback.get("bypass_actors") not in ([], None)
             or readback.get("conditions") != payload["conditions"]
         ):
@@ -1588,7 +1599,7 @@ class GitHubAdminRuntime:
             "ruleset_id": ruleset_id,
             "name": MAIN_RULESET_NAME,
             "target_ref": "refs/heads/main",
-            "enforcement": "active",
+            "enforcement": ruleset_enforcement,
             "required_status_checks": list(required_checks),
             "strict_required_status_checks_policy": strict_required_status_checks_policy,
             "governance_mode": governance_mode,

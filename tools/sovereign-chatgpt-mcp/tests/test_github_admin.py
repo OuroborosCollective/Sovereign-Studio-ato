@@ -1071,7 +1071,8 @@ def test_owner_override_blocks_non_android_pending_gate(monkeypatch) -> None:
 
 
 def test_failed_workflow_rerun_uses_failed_jobs_endpoint(monkeypatch) -> None:
-    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", "1")
+    monkeypatch.delenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", raising=False)
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
     head = "e" * 40
     runtime, _update, session = _runtime(
         monkeypatch,
@@ -1125,7 +1126,7 @@ def test_allowlisted_android_workflow_can_be_dispatched_without_secret_inputs(mo
 
 
 def test_private_owner_mode_can_dispatch_any_safe_repository_workflow(monkeypatch) -> None:
-    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", "1")
+    monkeypatch.delenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", raising=False)
     monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
     runtime, _update, session = _runtime(
         monkeypatch,
@@ -1244,14 +1245,14 @@ def test_apply_main_ruleset_creates_active_fail_closed_contract_and_verifies_rea
 
 
 def test_apply_main_ruleset_acceleration_drops_all_status_check_blockers(monkeypatch) -> None:
-    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.delenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", raising=False)
     monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
     repository_path = "/repos/OuroborosCollective/Sovereign-Studio-ato"
     readback = {
         "id": 43,
         "name": "Sovereign Main Revision Green Gate",
         "target": "branch",
-        "enforcement": "active",
+        "enforcement": "disabled",
         "bypass_actors": [],
         "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
         "rules": [
@@ -1277,8 +1278,10 @@ def test_apply_main_ruleset_acceleration_drops_all_status_check_blockers(monkeyp
     assert result["governance_mode"] == "acceleration"
     assert result["strict_required_status_checks_policy"] is False
     assert result["required_status_checks"] == []
+    assert result["enforcement"] == "disabled"
     put_call = next(call for call in session.calls if call["method"] == "PUT")
     assert not any(rule["type"] == "required_status_checks" for rule in put_call["json"]["rules"])
+    assert put_call["json"]["enforcement"] == "disabled"
 
 
 def test_apply_main_ruleset_blocks_without_owner_approval(monkeypatch) -> None:
