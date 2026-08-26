@@ -1,0 +1,47 @@
+name: Temporary Admin Free Route Recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/temporary_admin_free_route_recovery.py'
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply bounded admin recovery patch
+        run: python3 scripts/temporary_admin_free_route_recovery.py
+      - name: Install dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.12.2 --activate
+          pnpm install --frozen-lockfile
+      - name: Verify focused admin contracts
+        run: |
+          pnpm exec vitest run src/features/admin/api/adminApiClient.providerSurfaces.test.ts src/features/admin/components/FreeRevolverControlCenter.test.tsx
+          pnpm run type-check
+          git diff --check
+      - name: Publish tested product patch
+        run: |
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add src/features/admin/api/adminApiClient.ts src/features/admin/api/adminApiClient.providerSurfaces.test.ts
+          if git diff --cached --quiet; then
+            echo 'No product patch required.'
+            exit 0
+          fi
+          git commit -m 'fix(admin): preserve free LLM routes across legacy readbacks'
+          git push origin HEAD:main
