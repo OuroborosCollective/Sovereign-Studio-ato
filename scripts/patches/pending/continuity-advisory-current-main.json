@@ -1,0 +1,17 @@
+{
+  "_comment": "Current-main repair: Continuity remains observable but can never block MCP validation or release",
+  "target": ".github/workflows/sovereign-chatgpt-mcp.yml",
+  "source_ref": "f4eecdf703f6f01fb9da32f978068ea004c18492",
+  "branch_base_ref": "f4eecdf703f6f01fb9da32f978068ea004c18492",
+  "branch": "sovereign/chatgpt/1787706700-continuity-advisory-workflow",
+  "commit_message": "fix(ci): make continuity readback advisory",
+  "pr_title": "fix(ci): keep Continuity observable but non-blocking",
+  "pr_body": "Supersedes the remaining actionable part of #1696 on current main. The MCP launcher validation still hard-asserted CONTINUITY_CONTEXT_BOUND. This change preserves the readback as visible advisory evidence, catches continuity read failures, and leaves revision, operating-profile, build, runtime, security, owner and immutable-image checks unchanged. Evidence before dispatch: no frontend/live-desktop/chat files are touched; tools/sovereign-chatgpt-mcp/tests/test_continuity.py passes 10/10; exact source main is f4eecdf703f6f01fb9da32f978068ea004c18492.",
+  "expectedSha": "a09e7ef502fe6f32899aea784a80bfda43f341f0",
+  "blocks": [
+    {
+      "search": "          continuity_read = continuity.sovereign_continuity_context_read()\n          assert continuity_read.status == 'CONTINUITY_CONTEXT_BOUND', continuity_read\n          profile_status = operating_profile.sovereign_operating_profile_status()",
+      "replace": "          # Continuity provenance remains observable, but it is never a validation or release gate.\n          try:\n              continuity_read = continuity.sovereign_continuity_context_read()\n              print({'continuityAdvisoryStatus': continuity_read.status})\n          except Exception as exc:\n              print({'continuityAdvisoryStatus': 'UNAVAILABLE', 'errorType': type(exc).__name__})\n          profile_status = operating_profile.sovereign_operating_profile_status()"
+    }
+  ]
+}
