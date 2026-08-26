@@ -8,7 +8,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write
   contents: write
 
 jobs:
@@ -29,7 +28,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Patch only the owner-governance contracts
+      - name: Patch owner administration contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -48,7 +47,7 @@ jobs:
               target.write_text(text.replace(old, new, 1), encoding='utf-8')
               print({'path': path, 'status': 'patched'})
 
-          def function_bounds(text: str, function_name: str) -> tuple[int, int]:
+          def bounds(text: str, function_name: str) -> tuple[int, int]:
               marker = f'    def {function_name}('
               start = text.find(marker)
               if start < 0:
@@ -56,35 +55,20 @@ jobs:
               next_def = text.find('\n    def ', start + len(marker))
               return start, len(text) if next_def < 0 else next_def
 
-          def replace_in_function(path: str, function_name: str, old: str, new: str) -> None:
+          def replace_in_function(path: str, function_name: str, old: str, new: str, expected: int = 1) -> None:
               target = Path(path)
               text = target.read_text(encoding='utf-8')
-              start, end = function_bounds(text, function_name)
+              start, end = bounds(text, function_name)
               section = text[start:end]
               count = section.count(old)
-              if count == 0 and new in section:
+              if count == 0 and section.count(new) == expected:
                   print({'path': path, 'function': function_name, 'status': 'already_reconciled'})
                   return
-              if count != 1:
-                  raise SystemExit(f'{path}:{function_name}: expected exactly one match, found {count}')
-              section = section.replace(old, new, 1)
-              target.write_text(text[:start] + section + text[end:], encoding='utf-8')
-              print({'path': path, 'function': function_name, 'status': 'patched'})
-
-          def replace_in_function_count(path: str, function_name: str, old: str, new: str, expected_count: int) -> None:
-              target = Path(path)
-              text = target.read_text(encoding='utf-8')
-              start, end = function_bounds(text, function_name)
-              section = text[start:end]
-              count = section.count(old)
-              if count == 0 and section.count(new) == expected_count:
-                  print({'path': path, 'function': function_name, 'status': 'already_reconciled', 'count': expected_count})
-                  return
-              if count != expected_count:
-                  raise SystemExit(f'{path}:{function_name}: expected {expected_count} matches, found {count}')
+              if count != expected:
+                  raise SystemExit(f'{path}:{function_name}: expected {expected} match(es), found {count}')
               section = section.replace(old, new)
               target.write_text(text[:start] + section + text[end:], encoding='utf-8')
-              print({'path': path, 'function': function_name, 'status': 'patched', 'count': expected_count})
+              print({'path': path, 'function': function_name, 'status': 'patched', 'count': expected})
 
           admin_path = 'tools/sovereign-chatgpt-mcp/github_admin.py'
           admin = Path(admin_path).read_text(encoding='utf-8')
@@ -93,11 +77,10 @@ jobs:
               insertion = '''    def _require_owner_repository_admin(self, owner_approved: bool) -> dict[str, Any] | None:\n        """Owner repository/ruleset admin is independent of PR/workflow feature flags."""\n        if not self.private_owner_mode or not owner_approved:\n            return {\n                "ok": False,\n                "status": "BLOCKED",\n                "blocker": "Repository-Administration erfordert privaten Owner-Modus und ausdrückliche Owner-Freigabe",\n            }\n        return None\n\n'''
               replace_once(admin_path, marker, insertion + marker)
 
-          workflow_gate_old = '        if not _enabled("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL"):\n            return {"ok": False, "status": "BLOCKED", "blocker": "Workflow-Steuerung ist nicht aktiviert"}\n'
-          workflow_gate_new = '        if not self.private_owner_mode and not _enabled("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL"):\n            return {"ok": False, "status": "BLOCKED", "blocker": "Workflow-Steuerung ist außerhalb des privaten Owner-Modus nicht aktiviert"}\n'
-          replace_in_function(admin_path, 'rerun_failed_workflows', workflow_gate_old, workflow_gate_new)
-          replace_in_function(admin_path, 'dispatch_workflow', workflow_gate_old, workflow_gate_new)
-
+          old_workflow_gate = '        if not _enabled("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL"):\n            return {"ok": False, "status": "BLOCKED", "blocker": "Workflow-Steuerung ist nicht aktiviert"}\n'
+          new_workflow_gate = '        if not self.private_owner_mode and not _enabled("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL"):\n            return {"ok": False, "status": "BLOCKED", "blocker": "Workflow-Steuerung ist außerhalb des privaten Owner-Modus nicht aktiviert"}\n'
+          replace_in_function(admin_path, 'rerun_failed_workflows', old_workflow_gate, new_workflow_gate)
+          replace_in_function(admin_path, 'dispatch_workflow', old_workflow_gate, new_workflow_gate)
           replace_in_function(
               admin_path,
               'apply_main_ruleset',
@@ -110,25 +93,18 @@ jobs:
               '        strict_required_status_checks_policy = governance_mode == "enforced"\n',
               '        strict_required_status_checks_policy = governance_mode == "enforced"\n        ruleset_enforcement = "active" if governance_mode == "enforced" else "disabled"\n',
           )
-          replace_in_function_count(
+          replace_in_function(
               admin_path,
               'apply_main_ruleset',
               '            "enforcement": "active",\n',
               '            "enforcement": ruleset_enforcement,\n',
-              2,
+              expected=2,
           )
           replace_in_function(
               admin_path,
               'apply_main_ruleset',
               '            or str(readback.get("enforcement") or "") != "active"\n',
               '            or str(readback.get("enforcement") or "") != ruleset_enforcement\n',
-          )
-
-          workflow_path = '.github/workflows/sovereign-chatgpt-mcp.yml'
-          replace_once(
-              workflow_path,
-              "          continuity_read = continuity.sovereign_continuity_context_read()\n          assert continuity_read.status == 'CONTINUITY_CONTEXT_BOUND', continuity_read\n",
-              "          try:\n              continuity_read = continuity.sovereign_continuity_context_read()\n              continuity_status = continuity_read.status\n          except Exception as exc:\n              continuity_status = f'advisory-unavailable:{type(exc).__name__}'\n          print({'continuity_status': continuity_status, 'continuity_blocking': False})\n",
           )
 
           tests_path = 'tools/sovereign-chatgpt-mcp/tests/test_github_admin.py'
@@ -163,8 +139,7 @@ jobs:
               '    assert not any(rule["type"] == "required_status_checks" for rule in put_call["json"]["rules"])\n    assert put_call["json"]["enforcement"] == "disabled"\n\n\ndef test_apply_main_ruleset_blocks_without_owner_approval',
           )
 
-          static_test = Path('tools/sovereign-chatgpt-mcp/tests/test_owner_admin_unblocked.py')
-          static_test.write_text('''from __future__ import annotations\n\nfrom pathlib import Path\n\n\ndef test_continuity_is_advisory_in_mcp_validation_workflow() -> None:\n    repo = Path(__file__).resolve().parents[3]\n    workflow = (repo / ".github/workflows/sovereign-chatgpt-mcp.yml").read_text(encoding="utf-8")\n    assert "assert continuity_read.status == 'CONTINUITY_CONTEXT_BOUND'" not in workflow\n    assert "'continuity_blocking': False" in workflow\n''', encoding='utf-8')
+          Path('tools/sovereign-chatgpt-mcp/tests/test_owner_admin_unblocked.py').write_text('''from __future__ import annotations\n\nfrom pathlib import Path\n\n\ndef test_continuity_is_advisory_in_mcp_validation_workflow() -> None:\n    repo = Path(__file__).resolve().parents[3]\n    workflow = (repo / ".github/workflows/sovereign-chatgpt-mcp.yml").read_text(encoding="utf-8")\n    assert "assert continuity_read.status == 'CONTINUITY_CONTEXT_BOUND'" not in workflow\n    assert "Continuity provenance is advisory" in workflow\n''', encoding='utf-8')
           PY
 
       - name: Install MCP test dependencies
@@ -181,13 +156,11 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
-          git status --short
           git config user.name github-actions
           git config user.email github-actions@github.com
           git add tools/sovereign-chatgpt-mcp/github_admin.py \
                   tools/sovereign-chatgpt-mcp/tests/test_github_admin.py \
-                  tools/sovereign-chatgpt-mcp/tests/test_owner_admin_unblocked.py \
-                  .github/workflows/sovereign-chatgpt-mcp.yml
+                  tools/sovereign-chatgpt-mcp/tests/test_owner_admin_unblocked.py
           if git diff --cached --quiet; then
             echo 'Governance already reconciled.'
             exit 0
