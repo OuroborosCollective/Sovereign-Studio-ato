@@ -157,7 +157,7 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     });
   });
 
-  test('the built app executes critical GET wiring without an unconsented billing write', async ({ page }) => {
+  test('the built Play surface executes authenticated FreeLLM chat wiring without an unconsented billing write', async ({ page }) => {
     const observed: Array<{ method: string; path: string }> = [];
     const unexpectedApiRequests: Array<{ method: string; path: string }> = [];
     const pageErrors: string[] = [];
@@ -171,6 +171,16 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
       isBanned: false,
       createdAt: 1_700_000_000_000,
     };
+    const freeRoute = {
+      id: '00000000-0000-4000-8000-000000000777',
+      defaultModelId: 'free/test-model',
+      label: 'Verified Free Test Route',
+      description: 'Play release browser smoke',
+      provider: 'freellm',
+      billingCategory: 'free',
+      priority: 1,
+      enabled: true,
+    };
 
     await page.addInitScript((user) => {
       window.localStorage.setItem('sovereign-user', JSON.stringify({
@@ -182,14 +192,9 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     page.on('pageerror', error => pageErrors.push(error.message));
     page.on('request', request => {
       const url = new URL(request.url());
-      if (url.pathname.startsWith('/api/')) {
-        observed.push({ method: request.method(), path: url.pathname });
-      }
+      if (url.pathname.startsWith('/api/')) observed.push({ method: request.method(), path: url.pathname });
     });
 
-    // Register the catch-all first. Playwright evaluates later matching routes
-    // first, so the allowlisted handlers below win while every other /api call
-    // is contained inside this smoke test instead of reaching production.
     await page.route('**/api/**', async route => {
       const request = route.request();
       const url = new URL(request.url());
@@ -202,70 +207,21 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
       });
     });
 
-    await page.route('**/api/user/agent/jobs?limit=20', route => fulfillJson(
-      route,
-      { jobs: [], total: 0, limit: 20, runtime: 'sovereign-agent' },
-    ));
     await page.route('**/api/auth/me', route => fulfillJson(route, currentUser));
-    await page.route('**/api/llm/routes?purpose=picker', route => fulfillJson(route, { routes: [] }));
-    await page.route('**/api/toolchain/user-tools', route => fulfillJson(route, {
-      tools: [],
-      allowed_repos: [],
-      rules: {},
+    await page.route('**/api/llm/routes?purpose=picker', route => fulfillJson(route, { routes: [freeRoute] }));
+    await page.route('**/api/llm/routes', route => fulfillJson(route, { routes: [freeRoute] }));
+    await page.route('**/health/ready', route => fulfillJson(route, { ok: true, configured: true }));
+    await page.route('**/api/llm/chat', route => fulfillJson(route, {
+      content: 'Sovereign Browser-Smoke Antwort',
+      model: freeRoute.id,
     }));
-    await page.route('**/api/toolchain/universal/manifest', route => fulfillJson(route, {
-      name: 'endpoint-smoke-toolchain',
-      version: 'test',
-      runtime: 'embedded',
-      tools: [],
-      policy: {
-        autoLoad: true,
-        pushToMain: false,
-        draftPrOnly: true,
-        confirmRequired: true,
-        arbitraryShell: false,
-        directProductionRunner: false,
-        directGithubToken: false,
-        auditEvidence: true,
-      },
-    }));
-    await page.route('**/api/toolchain/skills/list', route => fulfillJson(route, { skills: [] }));
-    await page.route('**/api/billing', route => fulfillJson(route, {
-      subscription: null,
-      invoices: [],
-      availablePackages: [{
-        id: 'credits-100',
-        name: '100 Credits',
-        price: 10,
-        currency: 'EUR',
-        interval: 'once',
-        features: ['100 Credits'],
-        tier: 'free',
-        credits: 100,
-      }],
-      packages: [{
-        id: 'credits-100',
-        name: '100 Credits',
-        price: 10,
-        currency: 'EUR',
-        interval: 'once',
-        features: ['100 Credits'],
-        tier: 'free',
-        credits: 100,
-      }],
-    }));
-    await page.route('**/api/billing/payment-methods', route => fulfillJson(
-      route,
-      { methods: [{ type: 'paypal', label: 'PayPal' }] },
-    ));
 
     await page.goto('/');
-    await expect(page.locator('[data-testid="sovereign-monitor-app"]')).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator('[data-testid="sovereign-live-monitor-primary"]')).toBeVisible();
-    await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toBeVisible();
-    await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
-    await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Live Monitor' })).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-release-chat"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-testid="sovereign-monitor-app"]')).toHaveCount(0);
+    await expect(page.getByLabel('LLM Route')).toBeVisible();
+    await expect(page.getByLabel('LLM Route')).toContainText('Verified Free Test Route');
+
     const coverageResponse = await page.request.get('/generated/test-coverage-map.json');
     expect(coverageResponse.status()).toBe(200);
     const coveragePayload = await coverageResponse.json() as {
@@ -289,23 +245,17 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     for (const root of ['src', 'backend/tests', 'scripts/tests', 'tests/e2e']) {
       expect(coveragePayload.testRoots?.[root]).toBeGreaterThan(0);
     }
-    await expect(page.getByRole('button', { name: 'Profil' })).toBeVisible();
-    await page.getByRole('button', { name: 'Profil' }).click();
-    await page.getByRole('button', { name: 'Credits kaufen' }).click();
-    await expect(page.getByRole('heading', { name: 'Bereit für das nächste Level?' })).toBeVisible();
-    await expect(page.getByRole('option', { name: 'PayPal' })).toBeAttached();
 
-    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/user/agent/jobs')).toBe(true);
+    const composer = page.getByLabel('Nachricht an Sovereign');
+    await composer.fill('Antworte mit dem Browser-Smoke.');
+    await composer.press('Enter');
+    await expect(page.getByText('Sovereign Browser-Smoke Antwort')).toBeVisible({ timeout: 10_000 });
+
+    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/auth/me')).toBe(true);
     await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/llm/routes')).toBe(true);
-    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/toolchain/user-tools')).toBe(true);
-    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/toolchain/universal/manifest')).toBe(true);
-    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/toolchain/skills/list')).toBe(true);
-    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/billing')).toBe(true);
-    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/billing/payment-methods')).toBe(true);
+    await expect.poll(() => observed.some(item => item.method === 'POST' && item.path === '/api/llm/chat')).toBe(true);
 
-    const billingWrites = observed.filter(item => (
-      item.path.startsWith('/api/billing') && item.method !== 'GET'
-    ));
+    const billingWrites = observed.filter(item => item.path.startsWith('/api/billing') && item.method !== 'GET');
     expect(billingWrites).toEqual([]);
     expect(observed.some(item => item.path === '/api/billing/cancel')).toBe(false);
     expect(observed.some(item => item.path === '/api/billing/restore')).toBe(false);

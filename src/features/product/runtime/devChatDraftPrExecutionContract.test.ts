@@ -7,7 +7,7 @@ function source(path: string): string {
 }
 
 describe('DevChat Draft PR execution contract', () => {
-  it('routes reviewable presets directly to the repository executor instead of browser ARE', () => {
+  it('keeps reviewable presets routed to the repository executor in the deferred Builder runtime', () => {
     const builder = source('src/features/product/containers/BuilderContainer.tsx');
 
     expect(builder).toContain("await startAgentFromText(submitted, 'code_execution')");
@@ -16,22 +16,15 @@ describe('DevChat Draft PR execution contract', () => {
     expect(builder).toContain('Vorgemerktes Review-Preset wird direkt über den Repository-Executor wiederaufgenommen');
   });
 
-  it('routes executable swarm, recovery, and publication through the typed engine boundary', () => {
+  it('preserves executable swarm, recovery, and publication behind the typed engine boundary while the Play root stays chat-only', () => {
     const app = source('src/App.tsx');
     const boundary = source('src/features/product/runtime/sovereignEngineBoundary.ts');
     const client = source('src/features/product/runtime/sovereignAgentClient.ts');
     const runtime = source('src/features/product/runtime/sovereignAgentRuntime.ts');
 
-    expect(app).toContain("'START_REPOSITORY_EXECUTION'");
-    expect(app).toContain("'RESTORE_LATEST_JOB'");
-    expect(app).toContain("'CREATE_DRAFT_PR'");
-    expect(app).toContain("'READ_EVIDENCE_ANCHORS'");
-    expect(app).toContain('executeSovereignEngineCommand(command, agentClient)');
-    expect(app).toContain('expectedHeadSha: input.expectedHeadSha');
-    expect(app).not.toContain('agentClient.startRepositoryExecution(');
-    expect(app).not.toContain('agentClient.listJobs(');
-    expect(app).not.toContain('agentClient.createDraftPr(');
-    expect(app).not.toContain('agentClient.getEvidenceAnchors(');
+    expect(app).not.toContain("'START_REPOSITORY_EXECUTION'");
+    expect(app).not.toContain("'CREATE_DRAFT_PR'");
+    expect(app).not.toContain('executeSovereignEngineCommand');
     expect(boundary).toContain('await transport.startRepositoryExecution(command.payload.input)');
     expect(boundary).toContain('await transport.createDraftPr(command.payload.jobId, command.payload.githubAccessToken)');
     expect(boundary).toContain('await transport.getEvidenceAnchors(command.payload.jobId)');
@@ -43,7 +36,7 @@ describe('DevChat Draft PR execution contract', () => {
     expect(runtime).toContain('readSameOriginBackendUrl()');
   });
 
-  it('binds the loaded repository snapshot to a real commit SHA', () => {
+  it('binds the deferred repository snapshot to a real commit SHA', () => {
     const bridge = source('src/features/product/runtime/devChatWorkerBridge.ts');
     const builder = source('src/features/product/containers/BuilderContainer.tsx');
 
@@ -53,15 +46,16 @@ describe('DevChat Draft PR execution contract', () => {
     expect(builder).toContain('githubAccessToken: githubTokenRef.current || undefined');
   });
 
-  it('opens Rescue from canonical runtime failure or a typed local boundary notice', () => {
+  it('keeps Rescue available as a deferred module without mounting it into the Play release root', () => {
     const app = source('src/App.tsx');
+    const rescue = source('src/features/rescue/RescuePanel.tsx');
 
-    expect(app).toContain("['blocked', 'failed'].includes(canonicalAgentJob.status)");
-    expect(app).toContain('|| Boolean(engineState.clientNotice)');
-    expect(app).not.toContain("['blocked', 'failed'].includes(agentJob.status)");
+    expect(app).not.toContain('RescuePanel');
+    expect(app).not.toContain('Sovereign Rescue öffnen');
+    expect(rescue).toContain('RescuePanel');
   });
 
-  it('requires a concrete action preview before menu or slash Draft PR publication', () => {
+  it('requires a concrete action preview before menu or slash Draft PR publication in the deferred Builder', () => {
     const builder = source('src/features/product/containers/BuilderContainer.tsx');
     const preview = source('src/features/product/components/DraftPrActionPreview.tsx');
 
@@ -74,5 +68,4 @@ describe('DevChat Draft PR execution contract', () => {
     expect(preview).toContain('Draft PR nach Serverprüfung posten');
     expect(preview).toContain('expectedHeadSha');
   });
-
 });
