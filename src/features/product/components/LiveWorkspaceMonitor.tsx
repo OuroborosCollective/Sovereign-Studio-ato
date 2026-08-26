@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { VncScreen } from 'react-vnc';
 import { maskSecrets } from '../../../shared/utils/crypto';
 import type {
   SovereignAgentJobSnapshot,
@@ -11,10 +12,11 @@ import { C } from './builderConstants';
 export interface LiveWorkspaceMonitorProps {
   readonly projections: readonly SovereignLiveProjection[];
   readonly job?: SovereignAgentJobSnapshot | null;
-  readonly desktopFrame?: {
+  readonly desktopStream?: {
     readonly url: string;
-    readonly frameHash: string;
-    readonly observedAt: number;
+    readonly activationId: string;
+    readonly sessionBindingHash: string;
+    readonly expiresAtEpoch: number;
   } | null;
 }
 
@@ -167,45 +169,14 @@ function MetaPill({ label, value }: { readonly label: string; readonly value: st
   );
 }
 
-function DesktopFramePane({
-  frame,
-  job,
-}: {
-  readonly frame?: LiveWorkspaceMonitorProps['desktopFrame'];
-  readonly job?: SovereignAgentJobSnapshot | null;
-}) {
+function DesktopFramePane({ stream, job }: { readonly stream?: LiveWorkspaceMonitorProps['desktopStream']; readonly job?: SovereignAgentJobSnapshot | null; }) {
   return (
     <div className="live-workspace-monitor__desktop" data-testid="live-workspace-monitor-desktop">
-      <div className="live-workspace-monitor__surface-toolbar">
-        <span style={{ color: C.green }}>DESKTOP · LIVE READBACK</span>
-        <span>{frame ? `OBSERVED · ${new Date(frame.observedAt).toLocaleTimeString('de-DE')}` : 'kein aktueller Frame'}</span>
-      </div>
-      {frame ? (
-        <>
-          <div className="live-workspace-monitor__desktop-frame-wrap">
-            <img
-              src={frame.url}
-              alt="Beobachteter Sovereign Workspace Desktop"
-              data-frame-hash={frame.frameHash}
-              className="live-workspace-monitor__desktop-frame"
-            />
-          </div>
-          <div className="live-workspace-monitor__metadata-grid">
-            <MetaPill label="Frame SHA" value={shortIdentity(frame.frameHash, 20)} />
-            <MetaPill label="Job" value={shortIdentity(job?.jobId, 18)} />
-            <MetaPill label="Workspace" value={shortIdentity(job?.workspaceId, 18)} />
-          </div>
-        </>
-      ) : (
-        <div className="live-workspace-monitor__honest-empty" data-testid="live-workspace-monitor-desktop-unavailable">
-          <span aria-hidden="true">▣</span>
-          <p>
-            {job?.jobId
-              ? 'Für den aktuellen Job liegt gerade kein serverbestätigter OBSERVED-PNG-Frame vor. Der Monitor zeichnet keinen Desktop nach.'
-              : 'Noch kein aktiver Workspace-Job. Der Desktop erscheint hier erst mit einem echten serverbestätigten Frame-Readback.'}
-          </p>
-        </div>
-      )}
+      <div className="live-workspace-monitor__surface-toolbar"><span style={{ color: C.green }}>DESKTOP · LIVE RFB STREAM</span><span>{stream ? 'CONNECTED · VIEW ONLY' : 'warte auf Desktop-Worker'}</span></div>
+      {stream ? (<>
+        <div className="live-workspace-monitor__desktop-frame-wrap" data-testid="live-workspace-monitor-rfb-stream"><VncScreen key={`${stream.activationId}:${stream.expiresAtEpoch}`} url={stream.url} scaleViewport viewOnly rfbOptions={{ secure: false, shared: true, wsProtocols: ['binary'] }} style={{ width: '100%', height: '100%', minHeight: 420 }} /></div>
+        <div className="live-workspace-monitor__metadata-grid"><MetaPill label="Activation" value={shortIdentity(stream.activationId, 20)} /><MetaPill label="Session" value={shortIdentity(stream.sessionBindingHash, 20)} /><MetaPill label="Job" value={shortIdentity(job?.jobId, 18)} /></div>
+      </>) : (<div className="live-workspace-monitor__honest-empty" data-testid="live-workspace-monitor-desktop-unavailable"><span aria-hidden="true">▣</span><p>{job?.jobId ? 'Der Monitor wartet auf den echten Desktop-Worker und seinen RFB-WebSocket. Es werden keine Ersatzbilder erzeugt.' : 'Noch kein aktiver Workspace-Job. Der Live-Desktop startet mit dem ersten echten AttemptWorkspace.'}</p></div>)}
     </div>
   );
 }
@@ -438,7 +409,7 @@ function ObservationRail({
   );
 }
 
-export function LiveWorkspaceMonitor({ projections, job, desktopFrame }: LiveWorkspaceMonitorProps) {
+export function LiveWorkspaceMonitor({ projections, job, desktopStream }: LiveWorkspaceMonitorProps) {
   const monitorId = useId().replace(/:/g, '');
   const current = useMemo(() => currentBinding(projections), [projections]);
   const projectionMap = useMemo(() => latestByKind(current), [current]);
@@ -609,7 +580,7 @@ export function LiveWorkspaceMonitor({ projections, job, desktopFrame }: LiveWor
         <MetaPill label="Runtime" value={job?.status ?? 'nicht gebunden'} />
       </header>
 
-      <DesktopFramePane frame={desktopFrame} job={job} />
+      <DesktopFramePane stream={desktopStream} job={job} />
 
       <div role="tablist" aria-label="Runtime-Beobachtungen" className="live-workspace-monitor__tabs">
         {MONITOR_TABS.map((tab) => {

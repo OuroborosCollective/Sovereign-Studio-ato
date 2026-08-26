@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 import uuid
 
 from flask import Response, jsonify, request
+from flask_sock import Sock
 
 from .auto_code_review import AutoCodeReviewInput, auto_code_review, auto_code_review_signal
 from .productivity_insights import (
@@ -48,6 +49,7 @@ from .github_access import (
 from .job_lifecycle import create_sovereign_agent_job, generate_agent_job_id
 from .job_store import append_agent_evidence_anchor, append_agent_event, append_agent_github_draft_pr_readback, list_agent_evidence_anchors, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
 from .fleet_supervisor import FleetContractError
+from .desktop_stream import DesktopStreamError, issue_stream_ticket, proxy_rfb_websocket, verify_stream_ticket
 from .live_workspace_chat_store import (
     LiveWorkspaceChatStoreError,
     append_live_workspace_chat_bubble,
@@ -317,6 +319,9 @@ def register_sovereign_agent_routes(
     - POST /api/user/agent/toolchain/handoff
     - POST /api/user/agent/toolchain/rollback-preview
     """
+
+    sock = Sock(app)
+    app.config.setdefault('SOCK_SERVER_OPTIONS', {'ping_interval': 25, 'max_message_size': 2_000_000})
 
     def _connection():
         return get_connection()
@@ -1770,6 +1775,41 @@ def register_sovereign_agent_routes(
             })
         finally:
             _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/live-workspace/desktop/stream-ticket", methods=["POST"])
+    @require_session
+    def user_issue_live_workspace_desktop_stream_ticket(job_id: str):
+        user_id = _current_session_user_id()
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            context = _resolve_live_workspace_context(conn, job)
+            if context is None or issue_desktop_activation is None:
+                return _desktop_control_block(job_id, "DESKTOP_STREAM_UNAVAILABLE")
+            try:
+                activation = issue_desktop_activation(context)
+                handle = activation.to_dict() if activation is not None else None
+                if not isinstance(handle, dict) or _contains_live_workspace_path(handle):
+                    raise DesktopStreamError("desktop stream activation is unavailable")
+                ticket = issue_stream_ticket(user_id=user_id, job_id=job_id, activation_id=str(handle.get("activationId") or ""), session_binding_hash=context.session.session_binding_hash)
+            except Exception:
+                return _desktop_control_block(job_id, "DESKTOP_STREAM_UNAVAILABLE")
+            return jsonify({"ok": True, "runtime": "sovereign-agent", "jobId": job_id, "desktopStream": {"activationId": handle["activationId"], "sessionBindingHash": context.session.session_binding_hash, "ticket": ticket["ticket"], "expiresAtEpoch": ticket["expiresAtEpoch"], "transport": "rfb-websocket", "viewOnly": True}})
+        finally:
+            _close(conn)
+
+    @sock.route("/api/user/agent/jobs/<job_id>/live-workspace/desktop/stream")
+    def user_stream_live_workspace_desktop(ws, job_id: str):
+        try:
+            payload = verify_stream_ticket(str(request.args.get("ticket") or ""), job_id=job_id)
+            proxy_rfb_websocket(ws, session_binding_hash=str(payload["session"]))
+        except Exception:
+            try:
+                ws.close(reason=1008, message="desktop stream unavailable")
+            except Exception:
+                pass
 
     @app.route("/api/user/agent/jobs/<job_id>/live-workspace/desktop/takeover", methods=["POST"])
     @require_session

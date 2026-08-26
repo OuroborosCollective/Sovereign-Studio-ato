@@ -62,13 +62,13 @@ function SovereignMonitorApp() {
   const [patternLearningEvidence, setPatternLearningEvidence] = useState<
     SovereignPatternLearningEvidence | undefined
   >();
-  const [desktopFrame, setDesktopFrame] = useState<{
+  const [desktopStream, setDesktopStream] = useState<{
     readonly jobId: string;
     readonly url: string;
-    readonly frameHash: string;
-    readonly observedAt: number;
+    readonly activationId: string;
+    readonly sessionBindingHash: string;
+    readonly expiresAtEpoch: number;
   } | null>(null);
-  const desktopFrameUrlRef = useRef<string | null>(null);
   const [rescueOpen, setRescueOpen] = useState(
     () => typeof window !== 'undefined'
       && new URLSearchParams(window.location.search).get('rescue') === '1',
@@ -203,70 +203,21 @@ function SovereignMonitorApp() {
 
   useEffect(() => {
     const jobId = canonicalAgentJob.jobId;
-    const canReadFrame = Boolean(
-      agentConfig.ready
-      && jobId
-      && canonicalAgentJob.status !== 'idle'
-      && canonicalAgentJob.status !== 'cleaned'
-      && typeof URL.createObjectURL === 'function',
-    );
-    const clearFrame = () => {
-      const previous = desktopFrameUrlRef.current;
-      desktopFrameUrlRef.current = null;
-      if (previous && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(previous);
-      setDesktopFrame(null);
-    };
-    if (!canReadFrame || !jobId) {
-      clearFrame();
-      return;
-    }
-
+    const active = Boolean(agentConfig.ready && jobId && canonicalAgentJob.status !== 'idle' && canonicalAgentJob.status !== 'cleaned');
+    if (!active || !jobId) { setDesktopStream(null); return; }
     let cancelled = false;
-    let polling = false;
-    const refresh = async () => {
-      if (cancelled || polling) return;
-      polling = true;
+    const connect = async () => {
       try {
-        const observed = await agentClient.getDesktopFrame(jobId);
+        const stream = await agentClient.getDesktopStreamTicket(jobId);
         if (cancelled) return;
-        const nextUrl = URL.createObjectURL(observed.blob);
-        const previous = desktopFrameUrlRef.current;
-        desktopFrameUrlRef.current = nextUrl;
-        setDesktopFrame({
-          jobId,
-          url: nextUrl,
-          frameHash: observed.frameHash,
-          observedAt: observed.observedAt,
-        });
-        if (previous && previous !== nextUrl && typeof URL.revokeObjectURL === 'function') {
-          URL.revokeObjectURL(previous);
-        }
-      } catch {
-        if (!cancelled) clearFrame();
-      } finally {
-        polling = false;
-      }
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const route = `/api/user/agent/jobs/${encodeURIComponent(jobId)}/live-workspace/desktop/stream`;
+        setDesktopStream({ jobId, activationId: stream.activationId, sessionBindingHash: stream.sessionBindingHash, expiresAtEpoch: stream.expiresAtEpoch, url: `${protocol}//${window.location.host}${route}?ticket=${encodeURIComponent(stream.ticket)}` });
+      } catch { if (!cancelled) setDesktopStream(null); }
     };
-    void refresh();
-    if (isSovereignAgentTerminalStatus(canonicalAgentJob.status)) {
-      return () => {
-        cancelled = true;
-        clearFrame();
-      };
-    }
-    const timer = window.setInterval(() => { void refresh(); }, 1500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      clearFrame();
-    };
+    void connect();
+    return () => { cancelled = true; };
   }, [agentClient, agentConfig.ready, canonicalAgentJob.jobId, canonicalAgentJob.status]);
-
-  useEffect(() => () => {
-    const previous = desktopFrameUrlRef.current;
-    if (previous && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(previous);
-    desktopFrameUrlRef.current = null;
-  }, []);
 
   const evidenceWithReusableMemory = async (query: string): Promise<string> => {
     try {
@@ -541,7 +492,7 @@ function SovereignMonitorApp() {
           agentJob={agentJob}
           agentProjections={liveProjections}
           agentEvidenceAnchors={liveEvidenceAnchors}
-          desktopFrame={desktopFrame?.jobId === canonicalAgentJob.jobId ? desktopFrame : null}
+          desktopStream={desktopStream?.jobId === canonicalAgentJob.jobId ? desktopStream : null}
           patternLearningEvidence={patternLearningEvidence}
           agentJobStatus={agentIsRunning
             ? 'Sovereign Agent Auftrag läuft'

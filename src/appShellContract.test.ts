@@ -107,8 +107,9 @@ describe('current Sovereign app shell contract', () => {
       'data-layout="monitor-first-live-workspace"',
       'aria-label="Sovereign Workspace Monitor"',
       'MONITOR_FIRST_STYLE',
-      'getDesktopFrame(jobId)',
+      'getDesktopStreamTicket(jobId)',
     ]);
+    expect(app).not.toContain('getDesktopFrame(jobId)');
     expect(app).not.toContain('data-layout="chat-only-live-entry"');
 
     expectContainsNone(app, REMOVED_VISIBLE_SHELL_TOKENS);

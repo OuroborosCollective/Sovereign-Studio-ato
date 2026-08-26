@@ -273,11 +273,12 @@ export interface BuilderContainerProps {
   agentJob?: SovereignAgentJobSnapshot;
   agentProjections?: readonly SovereignLiveProjection[];
   agentEvidenceAnchors?: readonly SovereignWorkspaceEvidenceAnchor[];
-  desktopFrame?: {
+  desktopStream?: {
     readonly jobId: string;
     readonly url: string;
-    readonly frameHash: string;
-    readonly observedAt: number;
+    readonly activationId: string;
+    readonly sessionBindingHash: string;
+    readonly expiresAtEpoch: number;
   } | null;
   patternLearningEvidence?: SovereignPatternLearningEvidence;
   agentJobStatus?: string;
@@ -2157,7 +2158,7 @@ export function BuilderContainer({
   agentJob,
   agentProjections,
   agentEvidenceAnchors,
-  desktopFrame,
+  desktopStream,
   patternLearningEvidence,
   agentJobStatus,
   agentIsRunning,
@@ -2345,8 +2346,8 @@ export function BuilderContainer({
     () => selectRepoScopedAgentJob(agentJob, chatRepoSnapshot),
     [chatRepoSnapshot, agentJob],
   );
-  const scopedDesktopFrame = desktopFrame?.jobId === scopedAgentJob?.jobId
-    ? desktopFrame
+  const scopedDesktopFrame = desktopStream?.jobId === scopedAgentJob?.jobId
+    ? desktopStream
     : null;
   const scopedAgentEvidenceAnchors = scopedAgentJob?.jobId && scopedAgentJob.workspaceId
     ? (agentEvidenceAnchors ?? []).filter((anchor) => (
@@ -4567,17 +4568,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         return;
       }
 
-      if (offlineIntent === 'status') {
-        appendRuntimeNotice(buildExecutorStatusAnswer({
-            agentState: agentWorkSnapshot.state,
-            agentStatus: scopedAgentJob?.status,
-            changedFiles: scopedAgentJob?.changedFiles?.length ?? 0,
-            draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-            blockerReason: agentWorkSnapshot.blockerReason,
-          }));
-        return;
-      }
-
       const offlineExecutorIntent = resolveOfflineMachineExecutorIntent(offlineIntent);
       if (offlineExecutorIntent) {
         const started = await startAgentFromText(submittedText, offlineExecutorIntent);
@@ -5582,7 +5572,7 @@ Das echte Repo-Setup wurde geöffnet.`);
       }
       onOpenFile={openRepoExplorerFromFileBadge}
       primaryMonitor={liveMonitorPrimary}
-      desktopFrame={scopedDesktopFrame}
+      desktopStream={scopedDesktopFrame}
     />
   ) : null;
   const activeMod = MODULES.find((m) => m.id === activeTab) ?? MODULES[0];

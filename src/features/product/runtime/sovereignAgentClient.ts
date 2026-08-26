@@ -30,6 +30,15 @@ export interface SovereignDesktopFrameObservation {
   readonly observedAt: number;
 }
 
+export interface SovereignDesktopStreamTicket {
+  readonly activationId: string;
+  readonly sessionBindingHash: string;
+  readonly ticket: string;
+  readonly expiresAtEpoch: number;
+  readonly transport: 'rfb-websocket';
+  readonly viewOnly: true;
+}
+
 export interface SovereignPatternLearningEvidence {
   candidateId?: string;
   candidateCreated: boolean;
@@ -797,6 +806,20 @@ export class SovereignAgentClient {
       attemptId: responseAttemptId,
     });
   }
+  async getDesktopStreamTicket(jobId: string): Promise<SovereignDesktopStreamTicket> {
+    assertReady(this.config);
+    const requestedJobId = jobId.trim();
+    if (!requestedJobId) throw new Error('Sovereign Agent job id is required.');
+    const body = await requestObject({ url: endpoint(this.config.agentApiUrl, jobPath(requestedJobId, '/live-workspace/desktop/stream-ticket')), init: { method: 'POST', headers: headers(), credentials: 'include', body: '{}' }, fetcher: this.fetcher, fallback: 'Sovereign Live Desktop stream ticket' });
+    const stream = isObject(body.desktopStream) ? body.desktopStream : {};
+    const activationId = stringValue(stream.activationId)?.toLowerCase() ?? '';
+    const sessionBindingHash = stringValue(stream.sessionBindingHash)?.toLowerCase() ?? '';
+    const ticket = stringValue(stream.ticket) ?? '';
+    const expiresAtEpoch = typeof stream.expiresAtEpoch === 'number' ? stream.expiresAtEpoch : 0;
+    if (stringValue(body.jobId) !== requestedJobId || !SHA256_RE.test(activationId) || !SHA256_RE.test(sessionBindingHash) || !ticket.includes('.') || expiresAtEpoch <= Math.floor(this.now() / 1000) || stream.transport !== 'rfb-websocket' || stream.viewOnly !== true) throw new Error('Sovereign Live Desktop returned no valid revision-bound RFB stream ticket.');
+    return { activationId, sessionBindingHash, ticket, expiresAtEpoch, transport: 'rfb-websocket', viewOnly: true };
+  }
+
   async getDesktopFrame(jobId: string): Promise<SovereignDesktopFrameObservation> {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');

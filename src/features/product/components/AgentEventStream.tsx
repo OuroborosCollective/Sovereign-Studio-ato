@@ -40,10 +40,11 @@ export interface AgentEventStreamProps {
   readonly onOpenFile?: (path: string) => void;
   /** When true, the runtime monitor is the primary work surface and event rows stay secondary. */
   readonly primaryMonitor?: boolean;
-  readonly desktopFrame?: {
+  readonly desktopStream?: {
     readonly url: string;
-    readonly frameHash: string;
-    readonly observedAt: number;
+    readonly activationId: string;
+    readonly sessionBindingHash: string;
+    readonly expiresAtEpoch: number;
   } | null;
 }
 
@@ -237,7 +238,7 @@ function headerColorFor(snapshot: AgentWorkSnapshot): string {
   return C.sky;
 }
 
-export function AgentEventStream({ snapshot, job, projections = [], evidenceAnchors = [], onCancel, onOpenDraftPr, onOpenFile, primaryMonitor = false, desktopFrame }: AgentEventStreamProps) {
+export function AgentEventStream({ snapshot, job, projections = [], evidenceAnchors = [], onCancel, onOpenDraftPr, onOpenFile, primaryMonitor = false, desktopStream }: AgentEventStreamProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isActive = !isTerminalState(snapshot.state) && (
     isExecutorActive(snapshot.state) || job?.status === 'running' || job?.status === 'queued'
@@ -310,7 +311,7 @@ export function AgentEventStream({ snapshot, job, projections = [], evidenceAnch
         )}
 
         <div style={{ flex: primaryMonitor ? 1 : undefined, minHeight: primaryMonitor ? 0 : undefined, overflowY: primaryMonitor ? 'auto' : undefined }}>
-          <LiveWorkspaceMonitor projections={projections} job={job} desktopFrame={desktopFrame} />
+          <LiveWorkspaceMonitor projections={projections} job={job} desktopStream={desktopStream} />
         </div>
         <WorkspaceEvidenceRail anchors={evidenceAnchors} />
 
