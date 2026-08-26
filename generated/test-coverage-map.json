@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-08-25T22:49:15.280Z",
+  "generatedAt": "2026-08-26T01:19:56.959Z",
   "discovery": {
     "scope": "tracked repository test conventions",
     "excludedDirectories": [
@@ -31,12 +31,12 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 721,
+  "totalTestFiles": 723,
   "testRoots": {
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
     "backend": 1,
-    "backend/tests": 156,
+    "backend/tests": 157,
     "backend/tests/e2e": 1,
     "integrations/openhands/sovereign-mcp-toolset-plugin/tests": 1,
     "research": 1,
@@ -44,7 +44,7 @@
     "scripts/sovereign-backend/tests": 73,
     "scripts/tests": 3,
     "sovereign-studio-rn/e2e": 7,
-    "src": 355,
+    "src": 356,
     "tests/e2e": 5,
     "tools": 3,
     "tools/sovereign-chatgpt-mcp/tests": 96,
@@ -358,6 +358,14 @@
     },
     {
       "file": "backend/tests/test_cloudflare_worker_deploy_contract.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_cognitive_output_budget.py",
       "language": "python",
       "testRoot": "backend/tests",
       "gates": [],
@@ -5304,6 +5312,25 @@
     },
     {
       "file": "src/features/product/runtime/draftPrBuildStatusRuntime.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/product/runtime/draftPrEvidence.test.ts",
       "language": "javascript-typescript",
       "testRoot": "src",
       "gates": [

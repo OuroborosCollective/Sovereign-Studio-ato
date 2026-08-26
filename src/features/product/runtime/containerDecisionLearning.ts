@@ -123,21 +123,26 @@ export function getContainerDecisionLearningHistory(): ContainerDecisionLearning
 }
 
 export function summarizeContainerDecisionLearning(containerId?: string): string {
-  const filtered = containerId ? learningHistory.filter((s) => s.containerId === containerId) : [...learningHistory];
-  if (filtered.length === 0) {
+  const stats: ContainerDecisionLearningStats = { accepted: 0, rejected: 0, success: 0, failure: 0, rewrite: 0, repair: 0, total: 0 };
+  const tagSet = new Set<string>();
+
+  // ⚡ Bolt: Single-pass optimization avoids multiple O(N) intermediate array allocations
+  // (from .filter, .reduce, .map) for computing stats and unique tags.
+  for (const signal of learningHistory) {
+    if (containerId && signal.containerId !== containerId) continue;
+    stats[signal.outcome]++;
+    stats.total++;
+    tagSet.add(signal.learnTag);
+  }
+
+  if (stats.total === 0) {
     return containerId ? `No learning signals recorded for container: ${containerId}` : 'No learning signals recorded yet.';
   }
-  const stats = filtered.reduce(
-    (acc, signal) => {
-      acc[signal.outcome]++;
-      acc.total++;
-      return acc;
-    },
-    { accepted: 0, rejected: 0, success: 0, failure: 0, rewrite: 0, repair: 0, total: 0 } as ContainerDecisionLearningStats,
-  );
-  const successRate = stats.total > 0 ? Math.round((stats.success / stats.total) * 100) : 0;
-  const topTags = [...new Set(filtered.map((s) => s.learnTag))].slice(0, 5);
+
+  const successRate = Math.round((stats.success / stats.total) * 100);
+  const topTags = Array.from(tagSet).slice(0, 5);
   const containerInfo = containerId ? `for container "${containerId}"` : 'across all containers';
+
   return `Learning summary ${containerInfo}: ${stats.total} signal(s) processed. Success rate: ${successRate}%. Tags: ${topTags.join(', ') || 'none'}.`;
 }
 
@@ -146,13 +151,14 @@ export function resetContainerDecisionLearningHistory(): void {
 }
 
 export function getContainerDecisionLearningStats(containerId?: string): ContainerDecisionLearningStats {
-  const filtered = containerId ? learningHistory.filter((s) => s.containerId === containerId) : [...learningHistory];
-  return filtered.reduce(
-    (acc, signal) => {
-      acc[signal.outcome]++;
-      acc.total++;
-      return acc;
-    },
-    { accepted: 0, rejected: 0, success: 0, failure: 0, rewrite: 0, repair: 0, total: 0 } as ContainerDecisionLearningStats,
-  );
+  const stats: ContainerDecisionLearningStats = { accepted: 0, rejected: 0, success: 0, failure: 0, rewrite: 0, repair: 0, total: 0 };
+
+  // ⚡ Bolt: Single-pass loop optimization prevents O(N) array allocation overhead from chained .filter().reduce()
+  for (const signal of learningHistory) {
+    if (containerId && signal.containerId !== containerId) continue;
+    stats[signal.outcome]++;
+    stats.total++;
+  }
+
+  return stats;
 }
