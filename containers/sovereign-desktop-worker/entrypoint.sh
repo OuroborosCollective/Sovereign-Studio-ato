@@ -25,13 +25,12 @@ elif command -v epiphany >/dev/null 2>&1; then
   epiphany --incognito about:blank >/tmp/browser.log 2>&1 &
 fi
 
-# The RFB stream is deliberately view-only. Human input continues through the
-# separately leased /desktop/input contract so a WebSocket can never bypass
-# Sovereign's takeover/give-back consent boundary.
+# RFB is reachable only on the internal sovereign-desktop Docker network.
+# It is server-side view-only: pointer/keyboard authority stays on the separate
+# takeover lease + /desktop/input path even if a stream ticket is compromised.
 x11vnc \
   -display "$DISPLAY" \
   -rfbport "$RFB_PORT" \
-  -localhost \
   -forever \
   -shared \
   -viewonly \
