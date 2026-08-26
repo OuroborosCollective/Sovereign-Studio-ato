@@ -1,6 +1,7 @@
 # Core dependencies
 flask>=2.3.0
 flask-cors>=4.0.0
+flask-sock>=0.7.0,<1
 gunicorn>=21.0.0
 requests>=2.31.0
 huggingface_hub>=1.24.0,<2
