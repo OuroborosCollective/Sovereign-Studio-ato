@@ -21,18 +21,26 @@ on:
 
 permissions:
   contents: read
+  packages: write
+
+env:
+  IMAGE_REPOSITORY: ghcr.io/ouroboroscollective/sovereign-desktop-worker
 
 jobs:
   build-and-canary:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
       - name: Build immutable-base desktop worker
-        run: docker build --pull=false --tag sovereign-desktop-worker:ci containers/sovereign-desktop-worker
+        run: |
+          docker build --pull=false \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag sovereign-desktop-worker:ci \
+            containers/sovereign-desktop-worker
 
-      - name: Run isolated desktop canary
+      - name: Run isolated desktop stream canary
         shell: bash
         run: |
           set -euo pipefail
@@ -43,7 +51,27 @@ jobs:
           printf '%s' 'input-scope-ci-value-00000000000000000000000' > "$scope_dir/input"
           chmod 0444 "$scope_dir/view" "$scope_dir/input"
           docker network create --internal sovereign-desktop-ci
-          docker run --detach --init --name sovereign-desktop-ci             --user 10001:10001             --read-only             --security-opt no-new-privileges:true             --cap-drop ALL             --pids-limit 128             --memory 1073741824             --cpus 1.0             --network sovereign-desktop-ci             --mount type=bind,src="$workspace_dir",dst=/workspace             --mount type=bind,src="$scope_dir/view",dst=/opt/desktop-scopes/view,readonly             --mount type=bind,src="$scope_dir/input",dst=/opt/desktop-scopes/input,readonly             --tmpfs /tmp:rw,noexec,nosuid,size=128m             --tmpfs /run:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700             --tmpfs /home/desktop:rw,noexec,nosuid,size=128m,uid=10001,gid=10001,mode=0700             --env DESKTOP_VIEW_SCOPE_FILE=/opt/desktop-scopes/view             --env DESKTOP_INPUT_SCOPE_FILE=/opt/desktop-scopes/input             --env DESKTOP_RUNTIME_IDENTITY_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa             --env DESKTOP_WALL_TIME_SECONDS=600             --env DESKTOP_IDLE_TIMEOUT_SECONDS=300             sovereign-desktop-worker:ci
+          docker run --detach --init --name sovereign-desktop-ci \
+            --user 10001:10001 \
+            --read-only \
+            --security-opt no-new-privileges:true \
+            --cap-drop ALL \
+            --pids-limit 128 \
+            --memory 1073741824 \
+            --cpus 1.0 \
+            --network sovereign-desktop-ci \
+            --mount type=bind,src="$workspace_dir",dst=/workspace \
+            --mount type=bind,src="$scope_dir/view",dst=/opt/desktop-scopes/view,readonly \
+            --mount type=bind,src="$scope_dir/input",dst=/opt/desktop-scopes/input,readonly \
+            --tmpfs /tmp:rw,noexec,nosuid,size=128m \
+            --tmpfs /run:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700 \
+            --tmpfs /home/desktop:rw,noexec,nosuid,size=128m,uid=10001,gid=10001,mode=0700 \
+            --env DESKTOP_VIEW_SCOPE_FILE=/opt/desktop-scopes/view \
+            --env DESKTOP_INPUT_SCOPE_FILE=/opt/desktop-scopes/input \
+            --env DESKTOP_RUNTIME_IDENTITY_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --env DESKTOP_WALL_TIME_SECONDS=600 \
+            --env DESKTOP_IDLE_TIMEOUT_SECONDS=300 \
+            sovereign-desktop-worker:ci
           for _ in $(seq 1 24); do
             health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' sovereign-desktop-ci)"
             [ "$health" = healthy ] && break
@@ -51,6 +79,35 @@ jobs:
           done
           [ "$(docker inspect --format '{{.State.Health.Status}}' sovereign-desktop-ci)" = healthy ]
           docker exec sovereign-desktop-ci python3 -c "from pathlib import Path; from urllib.request import Request,urlopen; scope=Path('/opt/desktop-scopes/view').read_text().strip(); response=urlopen(Request('http://127.0.0.1:8765/frame',headers={'X-Sovereign-Desktop-Scope':scope}),timeout=8); assert response.status==200 and response.read(4)==bytes([137,80,78,71])"
+          docker exec sovereign-desktop-ci python3 - <<'PY'
+          import base64, os, socket
+          key = base64.b64encode(os.urandom(16)).decode('ascii')
+          request = (
+              'GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n'
+              'Connection: Upgrade\r\nSec-WebSocket-Version: 13\r\n'
+              f'Sec-WebSocket-Key: {key}\r\n\r\n'
+          ).encode('ascii')
+          sock = socket.create_connection(('127.0.0.1', 6080), timeout=5)
+          sock.sendall(request)
+          response = sock.recv(4096)
+          sock.close()
+          assert b' 101 ' in response.split(b'\r\n', 1)[0], response[:200]
+          PY
           inspect="$(docker inspect sovereign-desktop-ci)"
-          jq -e '.[0].HostConfig.Privileged == false and .[0].HostConfig.ReadonlyRootfs == true and (.[] | .NetworkSettings.Ports | length == 0)' <<<"$inspect" >/dev/null
+          jq -e '.[0].HostConfig.Privileged == false and .[0].HostConfig.ReadonlyRootfs == true and (.[] | .NetworkSettings.Ports | length == 2)' <<<"$inspect" >/dev/null
           jq -e '.[0].NetworkSettings.Networks | keys == ["sovereign-desktop-ci"]' <<<"$inspect" >/dev/null
+
+      - name: Publish revision-bound desktop worker
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          image="${IMAGE_REPOSITORY}:${GITHUB_SHA}"
+          docker tag sovereign-desktop-worker:ci "$image"
+          docker push "$image"
+          digest="$(docker image inspect --format '{{index .RepoDigests 0}}' "$image")"
+          case "$digest" in
+            "${IMAGE_REPOSITORY}@sha256:"*) ;;
+            *) echo "desktop worker digest readback missing" >&2; exit 1 ;;
+          esac
