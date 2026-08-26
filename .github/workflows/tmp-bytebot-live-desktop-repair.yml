@@ -6,6 +6,7 @@ on:
       - sovereign/chatgpt/bytebot-live-desktop-stream
     paths:
       - scripts/tmp_bytebot_live_desktop_repair.py
+      - scripts/tmp_bytebot_live_desktop_fixup.py
       - .github/workflows/tmp-bytebot-live-desktop-repair.yml
 
 permissions:
@@ -33,7 +34,9 @@ jobs:
         run: corepack enable && corepack prepare pnpm@9.12.2 --activate
 
       - name: Apply fail-closed live desktop patch
-        run: python3 scripts/tmp_bytebot_live_desktop_repair.py
+        run: |
+          python3 scripts/tmp_bytebot_live_desktop_repair.py
+          python3 scripts/tmp_bytebot_live_desktop_fixup.py
 
       - name: Install frontend dependencies and refresh lockfile
         run: pnpm install --no-frozen-lockfile
@@ -47,7 +50,7 @@ jobs:
             src/features/product/runtime/sovereignAgentClient.test.ts \
             src/App.draftPrFlow.test.tsx
           ! grep -q "getDesktopFrame(jobId)" src/App.tsx
-          ! grep -q "setInterval.*1500" src/App.tsx
+          ! grep -q "desktopFrame={" src/App.tsx
           grep -q "VncScreen" src/features/product/components/LiveDesktopStreamPane.tsx
           grep -q "viewOnly={!lease}" src/features/product/components/LiveDesktopStreamPane.tsx
 
@@ -138,7 +141,10 @@ jobs:
       - name: Publish tested branch snapshot and remove temporary repair lane
         run: |
           set -euo pipefail
-          rm -f scripts/tmp_bytebot_live_desktop_repair.py .github/workflows/tmp-bytebot-live-desktop-repair.yml
+          rm -f \
+            scripts/tmp_bytebot_live_desktop_repair.py \
+            scripts/tmp_bytebot_live_desktop_fixup.py \
+            .github/workflows/tmp-bytebot-live-desktop-repair.yml
           git add -A
           git diff --cached --check
           git config user.name "Ouroboros Collective"
