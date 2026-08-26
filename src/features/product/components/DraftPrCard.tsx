@@ -82,7 +82,7 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 16 }}>📝</span>
+        <span style={{ fontSize: 16 }} aria-hidden="true">📝</span>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 600, color: C.accent, fontSize: 14 }}>
             Draft PR ready
@@ -135,6 +135,7 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
         <button
           type="button"
           onClick={onOpenBrowser}
+          className="focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none"
           style={{
             padding: '6px 12px',
             borderRadius: 8,
@@ -154,6 +155,7 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
         <button
           type="button"
           onClick={onDiscussInChat}
+          className="focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:outline-none"
           style={{
             padding: '6px 12px',
             borderRadius: 8,

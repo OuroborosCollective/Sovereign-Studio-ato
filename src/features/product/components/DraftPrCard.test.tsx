@@ -18,6 +18,28 @@ describe('DraftPrCard', () => {
     expect(screen.getByText('Draft PR ready')).toBeTruthy();
   });
 
+  it('marks decorative emoji with aria-hidden and action buttons with focus-visible styles', () => {
+    render(
+      <DraftPrCard
+        url="https://github.com/owner/repo/pull/123"
+        changedFiles={['src/index.ts']}
+        onOpenBrowser={() => {}}
+        onDiscussInChat={() => {}}
+      />,
+    );
+
+    const emojiIcon = screen.getByText('📝');
+    expect(emojiIcon).toHaveAttribute('aria-hidden', 'true');
+
+    const openBtn = screen.getByRole('button', { name: 'Öffne PR im Browser' });
+    expect(openBtn).toHaveClass('focus-visible:ring-2');
+    expect(openBtn).toHaveAttribute('title', 'Öffne PR im Browser');
+
+    const discussBtn = screen.getByRole('button', { name: 'Im Chat besprechen' });
+    expect(discussBtn).toHaveClass('focus-visible:ring-2');
+    expect(discussBtn).toHaveAttribute('title', 'Im Chat besprechen');
+  });
+
   it('shows changed files count', () => {
     render(
       <DraftPrCard
