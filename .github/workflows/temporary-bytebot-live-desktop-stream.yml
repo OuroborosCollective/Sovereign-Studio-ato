@@ -5,15 +5,13 @@ on:
     branches:
       - sovereign/chatgpt/bytebot-live-desktop-stream
     paths:
-      - scripts/patches/apply_bytebot_live_desktop_stream.py
-      - scripts/patches/fix_bytebot_live_desktop_frontend.py
       - .github/workflows/temporary-bytebot-live-desktop-stream.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  repair-and-test:
+  exact-branch-canary:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -21,64 +19,247 @@ jobs:
         with:
           ref: sovereign/chatgpt/bytebot-live-desktop-stream
           fetch-depth: 0
-      - name: Apply live desktop stream patch
-        run: |
-          python3 scripts/patches/apply_bytebot_live_desktop_stream.py
-          python3 scripts/patches/fix_bytebot_live_desktop_frontend.py
+
       - name: Install test and frontend dependencies
         run: |
           python3 -m pip install --user pytest
           corepack enable
-          pnpm install --no-frozen-lockfile
-      - name: Verify desktop Python contracts
+          pnpm install --frozen-lockfile
+
+      - name: Reverify exact materialized branch contracts
         env:
           PYTHONPATH: backend
-        run: python3 -m pytest backend/tests/test_desktop_stream.py backend/tests/test_desktop_worker.py backend/tests/test_desktop_activation.py -q
-      - name: Verify MCP desktop worker contracts
-        run: python3 -m pytest tools/sovereign-chatgpt-mcp/tests/test_desktop_worker.py -q
-      - name: Verify frontend type check
-        id: frontend_typecheck
-        shell: bash
         run: |
-          set -o pipefail
-          pnpm run type-check 2>&1 | tee frontend-typecheck.log
-      - name: Preserve frontend type-check failure
-        if: failure() && steps.frontend_typecheck.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: bytebot-frontend-typecheck-${{ github.sha }}
-          path: frontend-typecheck.log
-          if-no-files-found: error
-          retention-days: 1
-      - name: Verify frontend monitor contracts
-        id: frontend_vitest
-        shell: bash
-        run: |
-          set -o pipefail
-          pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx src/appShellContract.test.ts 2>&1 | tee frontend-vitest.log
-      - name: Preserve frontend monitor-test failure
-        if: failure() && steps.frontend_vitest.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: bytebot-frontend-vitest-${{ github.sha }}
-          path: frontend-vitest.log
-          if-no-files-found: error
-          retention-days: 1
-      - name: Verify no PNG polling remains primary
-        run: |
+          python3 -m pytest backend/tests/test_desktop_stream.py backend/tests/test_desktop_worker.py backend/tests/test_desktop_activation.py -q
+          python3 -m pytest tools/sovereign-chatgpt-mcp/tests/test_desktop_worker.py -q
+          pnpm run type-check
+          pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx src/appShellContract.test.ts
           ! grep -q "getDesktopFrame(jobId)" src/App.tsx
           grep -q "getDesktopStreamTicket(jobId)" src/App.tsx
           grep -q "LIVE RFB STREAM" src/features/product/components/LiveWorkspaceMonitor.tsx
           grep -q "viewOnly" src/features/product/components/LiveWorkspaceMonitor.tsx
-      - name: Publish tested branch state
-        env:
-          EXPECTED_PARENT: ${{ github.sha }}
+
+      - name: Build exact desktop worker
+        run: |
+          docker build --pull=false \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag sovereign-desktop-worker:rfb-canary \
+            containers/sovereign-desktop-worker
+          test "$(docker image inspect --format '{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' sovereign-desktop-worker:rfb-canary)" = "$GITHUB_SHA"
+
+      - name: Run real RFB WebSocket framebuffer canary
+        id: rfb_canary
+        shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_PARENT"
-          git config user.name "Sovereign Owner Recovery"
-          git config user.email "actions@users.noreply.github.com"
-          git add backend/agent_runtime/desktop_stream.py scripts/sovereign-backend/agent_runtime/desktop_stream.py scripts/sovereign-backend/agent_runtime/routes.py backend/agent_runtime/routes.py src/App.tsx src/appShellContract.test.ts src/features/product/runtime/sovereignAgentClient.ts src/features/product/components/LiveWorkspaceMonitor.tsx src/features/product/components/AgentEventStream.tsx src/features/product/containers/BuilderContainer.tsx package.json pnpm-lock.yaml
-          git diff --cached --check
-          git commit -m "feat(desktop): replace PNG polling with live RFB stream"
-          git push origin HEAD:sovereign/chatgpt/bytebot-live-desktop-stream
+          scope_dir="$(mktemp -d)"
+          workspace_dir="$(mktemp -d)"
+          cleanup() {
+            docker rm --force sovereign-desktop-rfb-canary >/dev/null 2>&1 || true
+            docker network rm sovereign-desktop-rfb-canary >/dev/null 2>&1 || true
+            rm -rf "$scope_dir" "$workspace_dir"
+          }
+          trap cleanup EXIT
+          printf '%s' 'view-scope-ci-value-000000000000000000000000' > "$scope_dir/view"
+          printf '%s' 'input-scope-ci-value-00000000000000000000000' > "$scope_dir/input"
+          chmod 0444 "$scope_dir/view" "$scope_dir/input"
+          docker network create --internal sovereign-desktop-rfb-canary
+          docker run --detach --init --name sovereign-desktop-rfb-canary \
+            --user 10001:10001 \
+            --read-only \
+            --security-opt no-new-privileges:true \
+            --cap-drop ALL \
+            --pids-limit 128 \
+            --memory 1073741824 \
+            --cpus 1.0 \
+            --network sovereign-desktop-rfb-canary \
+            --mount type=bind,src="$workspace_dir",dst=/workspace \
+            --mount type=bind,src="$scope_dir/view",dst=/opt/desktop-scopes/view,readonly \
+            --mount type=bind,src="$scope_dir/input",dst=/opt/desktop-scopes/input,readonly \
+            --tmpfs /tmp:rw,noexec,nosuid,size=128m \
+            --tmpfs /run:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700 \
+            --tmpfs /home/desktop:rw,noexec,nosuid,size=128m,uid=10001,gid=10001,mode=0700 \
+            --env DESKTOP_VIEW_SCOPE_FILE=/opt/desktop-scopes/view \
+            --env DESKTOP_INPUT_SCOPE_FILE=/opt/desktop-scopes/input \
+            --env DESKTOP_RUNTIME_IDENTITY_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --env DESKTOP_WALL_TIME_SECONDS=600 \
+            --env DESKTOP_IDLE_TIMEOUT_SECONDS=300 \
+            sovereign-desktop-worker:rfb-canary
+
+          for _ in $(seq 1 30); do
+            health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' sovereign-desktop-rfb-canary)"
+            [ "$health" = healthy ] && break
+            sleep 2
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' sovereign-desktop-rfb-canary)" = healthy
+          test -z "$(docker port sovereign-desktop-rfb-canary)"
+
+          # 6080 is reachable only on the private container network; raw 5900 must
+          # be loopback-only and therefore unreachable from a sibling container.
+          docker run --rm --network sovereign-desktop-rfb-canary --entrypoint python3 sovereign-desktop-worker:rfb-canary -c "import socket; s=socket.create_connection(('sovereign-desktop-rfb-canary',6080),3); s.close()"
+          docker run --rm --network sovereign-desktop-rfb-canary --entrypoint python3 sovereign-desktop-worker:rfb-canary -c "import socket,sys; s=socket.socket(); s.settimeout(2); rc=s.connect_ex(('sovereign-desktop-rfb-canary',5900)); s.close(); sys.exit(0 if rc else 1)"
+
+          docker exec -i sovereign-desktop-rfb-canary python3 - <<'PY' | tee desktop-rfb-canary.log
+          import base64, hashlib, os, socket, struct, subprocess, time
+
+          class WS:
+              def __init__(self, host='127.0.0.1', port=6080):
+                  self.sock = socket.create_connection((host, port), timeout=8)
+                  self.sock.settimeout(8)
+                  key = base64.b64encode(os.urandom(16)).decode('ascii')
+                  req = (
+                      'GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n'
+                      'Connection: Upgrade\r\nSec-WebSocket-Version: 13\r\n'
+                      f'Sec-WebSocket-Key: {key}\r\n\r\n'
+                  ).encode('ascii')
+                  self.sock.sendall(req)
+                  raw = b''
+                  while b'\r\n\r\n' not in raw:
+                      raw += self.sock.recv(4096)
+                  head, self.raw = raw.split(b'\r\n\r\n', 1)
+                  assert b' 101 ' in head.split(b'\r\n', 1)[0], head[:200]
+                  self.rfb = b''
+
+              def _recv_exact_raw(self, n):
+                  while len(self.raw) < n:
+                      chunk = self.sock.recv(max(4096, n - len(self.raw)))
+                      if not chunk:
+                          raise EOFError('websocket closed')
+                      self.raw += chunk
+                  out, self.raw = self.raw[:n], self.raw[n:]
+                  return out
+
+              def _recv_frame(self):
+                  h = self._recv_exact_raw(2)
+                  fin = bool(h[0] & 0x80)
+                  opcode = h[0] & 0x0f
+                  masked = bool(h[1] & 0x80)
+                  length = h[1] & 0x7f
+                  if length == 126:
+                      length = struct.unpack('>H', self._recv_exact_raw(2))[0]
+                  elif length == 127:
+                      length = struct.unpack('>Q', self._recv_exact_raw(8))[0]
+                  mask = self._recv_exact_raw(4) if masked else None
+                  payload = self._recv_exact_raw(length)
+                  if mask:
+                      payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+                  if opcode == 8:
+                      raise EOFError('websocket close frame')
+                  if opcode == 9:
+                      self.send(payload, opcode=10)
+                      return self._recv_frame()
+                  assert opcode in (0, 2), (fin, opcode, len(payload))
+                  return payload
+
+              def recv_rfb(self, n):
+                  while len(self.rfb) < n:
+                      self.rfb += self._recv_frame()
+                  out, self.rfb = self.rfb[:n], self.rfb[n:]
+                  return out
+
+              def send(self, payload, opcode=2):
+                  mask = os.urandom(4)
+                  length = len(payload)
+                  head = bytearray([0x80 | opcode])
+                  if length < 126:
+                      head.append(0x80 | length)
+                  elif length < 65536:
+                      head.append(0x80 | 126)
+                      head.extend(struct.pack('>H', length))
+                  else:
+                      head.append(0x80 | 127)
+                      head.extend(struct.pack('>Q', length))
+                  head.extend(mask)
+                  head.extend(bytes(b ^ mask[i % 4] for i, b in enumerate(payload)))
+                  self.sock.sendall(head)
+
+          ws = WS()
+          greeting = ws.recv_rfb(12)
+          assert greeting == b'RFB 003.008\n', greeting
+          print('RFB_GREETING=' + greeting.decode('ascii').strip())
+          ws.send(greeting)
+          count = ws.recv_rfb(1)[0]
+          assert count > 0
+          security_types = ws.recv_rfb(count)
+          assert 1 in security_types, security_types
+          ws.send(b'\x01')
+          assert struct.unpack('>I', ws.recv_rfb(4))[0] == 0
+          ws.send(b'\x01')
+          init = ws.recv_rfb(24)
+          width, height = struct.unpack('>HH', init[:4])
+          bpp = init[4] // 8
+          name_len = struct.unpack('>I', init[20:24])[0]
+          name = ws.recv_rfb(name_len).decode('utf-8', 'replace')
+          assert width >= 640 and height >= 300 and bpp in (2, 4), (width, height, bpp)
+          print(f'RFB_SERVER_INIT={width}x{height} bpp={bpp} name={name!r}')
+          ws.send(b'\x02\x00\x00\x01\x00\x00\x00\x00')  # Raw encoding only.
+
+          def request_update(incremental):
+              ws.send(struct.pack('>BBHHHH', 3, incremental, 0, 0, 640, 300))
+              while True:
+                  msg_type = ws.recv_rfb(1)[0]
+                  if msg_type == 0:
+                      rest = ws.recv_rfb(3)
+                      rects = struct.unpack('>H', rest[1:3])[0]
+                      material = bytearray()
+                      for _ in range(rects):
+                          rh = ws.recv_rfb(12)
+                          _x, _y, rw, rhgt, encoding = struct.unpack('>HHHHi', rh)
+                          assert encoding == 0, encoding
+                          pixels = ws.recv_rfb(rw * rhgt * bpp)
+                          material.extend(rh)
+                          material.extend(pixels)
+                      assert material, 'empty framebuffer update'
+                      return hashlib.sha256(material).hexdigest(), len(material), rects
+                  if msg_type == 2:  # Bell
+                      continue
+                  if msg_type == 3:  # ServerCutText
+                      hdr = ws.recv_rfb(7)
+                      length = struct.unpack('>I', hdr[3:7])[0]
+                      ws.recv_rfb(length)
+                      continue
+                  raise AssertionError(f'unexpected RFB server message {msg_type}')
+
+          first = request_update(0)
+          print(f'FRAMEBUFFER_UPDATE_1={first}')
+
+          subprocess.run(['xdotool', 'search', '--onlyvisible', '--class', 'XTerm', 'windowactivate', '--sync'], check=True, stdout=subprocess.DEVNULL)
+          subprocess.run(['xdotool', 'type', '--delay', '10', 'RFB_CANARY_A'], check=True)
+          second = request_update(1)
+          print(f'FRAMEBUFFER_UPDATE_2={second}')
+          subprocess.run(['xdotool', 'type', '--delay', '10', 'B'], check=True)
+          third = request_update(1)
+          print(f'FRAMEBUFFER_UPDATE_3={third}')
+          assert len({first[0], second[0], third[0]}) >= 2
+
+          def pointer():
+              out = subprocess.check_output(['xdotool', 'getmouselocation', '--shell'], text=True)
+              vals = dict(line.split('=', 1) for line in out.splitlines() if '=' in line)
+              return int(vals['X']), int(vals['Y'])
+
+          before = pointer()
+          ws.send(struct.pack('>BBHH', 5, 0, min(width - 1, 1200), min(height - 1, 800)))
+          time.sleep(0.35)
+          after = pointer()
+          assert after == before, (before, after)
+          print(f'VIEW_ONLY_POINTER_IGNORED={before}')
+          print('RFB_CANARY=GREEN')
+          PY
+
+          inspect="$(docker inspect sovereign-desktop-rfb-canary)"
+          jq -e '.[0].HostConfig.Privileged == false and .[0].HostConfig.ReadonlyRootfs == true and (.[0].HostConfig.CapDrop | index("ALL")) != null' <<<"$inspect" >/dev/null
+          jq -e '.[0].NetworkSettings.Networks | keys == ["sovereign-desktop-rfb-canary"]' <<<"$inspect" >/dev/null
+          grep -q '^RFB_GREETING=RFB 003.008$' desktop-rfb-canary.log
+          grep -q '^FRAMEBUFFER_UPDATE_2=' desktop-rfb-canary.log
+          grep -q '^FRAMEBUFFER_UPDATE_3=' desktop-rfb-canary.log
+          grep -q '^VIEW_ONLY_POINTER_IGNORED=' desktop-rfb-canary.log
+          grep -q '^RFB_CANARY=GREEN$' desktop-rfb-canary.log
+
+      - name: Preserve RFB canary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovereign-rfb-canary-${{ github.sha }}
+          path: desktop-rfb-canary.log
+          if-no-files-found: warn
+          retention-days: 1
