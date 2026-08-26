@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import subprocess
 
@@ -33,6 +34,49 @@ def test_backend_deploy_emits_bounded_preflight_marker_before_any_host_effect() 
     assert result.returncode != 0
     assert "SOVEREIGN_DEPLOY_DIAGNOSTIC:preflight:ContractFailure" in result.stderr
     assert "invalid image digest" in result.stderr
+    assert result.stdout == ""
+
+
+def test_backend_env_resolution_runs_after_revision_preflight() -> None:
+    deploy = (MCP_ROOT / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
+
+    digest_index = deploy.index('[[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]')
+    revision_index = deploy.index('[[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]]')
+    repository_index = deploy.index('[[ -n "$IMAGE_REPOSITORY" ]]')
+    resolution_index = deploy.index(
+        "# Resolve the backend env only after the input identity contract is valid."
+    )
+
+    assert digest_index < revision_index < repository_index < resolution_index
+    assert 'MANAGED_RUNTIME_ENV="${SOVEREIGN_MCP_RUNTIME_ENV:-/opt/sovereign-chatgpt-tools/runtime.env}"' in deploy
+    assert '"/run/secrets/sovereign-backend.env"' in deploy
+    assert '"/opt/sovereign-backend/.env"' in deploy
+    assert 'ENV_FILE="$(resolve_backend_env_from_managed)" || true' in deploy
+    assert 'ENV_FILE="$(resolve_backend_env_fallback)" || true' in deploy
+    assert 'fail "SOVEREIGN_BACKEND_ENV_FILE must be one of:' in deploy
+    assert 'fail "backend env file is missing"' in deploy
+
+
+def test_backend_deploy_rejects_disallowed_explicit_env_path_via_preflight() -> None:
+    deploy = MCP_ROOT / "deploy" / "deploy-sovereign-backend"
+    env = os.environ.copy()
+    env.update(
+        {
+            "SOVEREIGN_BACKEND_IMAGE_REPOSITORY": "example.invalid/sovereign-backend",
+            "SOVEREIGN_BACKEND_ENV_FILE": "/tmp/not-an-allowed-sovereign-env",
+        }
+    )
+    result = subprocess.run(
+        ["bash", str(deploy), "sha256:" + "a" * 64, "b" * 40],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert "SOVEREIGN_DEPLOY_DIAGNOSTIC:preflight:ContractFailure" in result.stderr
+    assert "SOVEREIGN_BACKEND_ENV_FILE must be one of:" in result.stderr
     assert result.stdout == ""
 
 

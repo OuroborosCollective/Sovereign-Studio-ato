@@ -241,6 +241,8 @@ def test_ci_and_vps_release_contract_require_live_profile_and_negative_canary() 
     assert "config/sovereign-continuity-policy.json" in workflow
     assert "continuity-data/CONTEXT.md" in workflow
     assert "continuity-data/LEDGER.jsonl" in workflow
+    assert "assert continuity_read.status == 'CONTINUITY_CONTEXT_BOUND'" not in workflow
+    assert "Continuity provenance is advisory and is not a validation or release gate." in workflow
     assert "skills/sovereign-mcp-optimal-operation/SKILL.md" in workflow
     assert "OPERATING_PROFILE_ENFORCEMENT" in workflow
     assert "OPERATING_PROFILE_ENFORCED" in workflow

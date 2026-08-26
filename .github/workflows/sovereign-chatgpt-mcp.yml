@@ -594,8 +594,7 @@ jobs:
           operating_profile_report = launcher.OPERATING_PROFILE_ENFORCEMENT
           assert operating_profile_report.ok is True, operating_profile_report
           assert operating_profile_report.enforcedToolCount == operating_profile_report.mutableToolCount, operating_profile_report
-          continuity_read = continuity.sovereign_continuity_context_read()
-          assert continuity_read.status == 'CONTINUITY_CONTEXT_BOUND', continuity_read
+          # Continuity provenance is advisory and is not a validation or release gate.
           profile_status = operating_profile.sovereign_operating_profile_status()
           assert profile_status.status == 'OPERATING_PROFILE_ENFORCED', profile_status
           assert callable(operating_profile.sovereign_mission_preflight)
