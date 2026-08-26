@@ -1,0 +1,112 @@
+name: Temporary Free LLM Admin Surface Isolation Repair
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/free-llm-admin-surface-isolation
+    paths:
+      - .github/workflows/temporary-free-llm-admin-surface-isolation.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact repair head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Patch provider surfaces independently
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          client_path = Path('src/features/admin/api/adminApiClient.ts')
+          test_path = Path('src/features/admin/api/adminApiClient.providerSurfaces.test.ts')
+          client = client_path.read_text('utf-8')
+          test = test_path.read_text('utf-8')
+
+          replacements = [
+              (
+                  """export interface LlmProviderSurfaceReadModel {\n  providers: FreeRevolverProviderSource[];\n  freeRevolverMinimumReadyRoutes: number;\n  omniRoute: OmniRouteRuntimeStatus;\n  openRouterPaid: OpenRouterPaidRuntimeStatus;\n  openRouterFree: OpenRouterFreeRuntimeStatus;\n}\n""",
+                  """export interface LlmProviderSurfaceReadModel {\n  providers: FreeRevolverProviderSource[];\n  freeRevolverMinimumReadyRoutes: number;\n  omniRoute: OmniRouteRuntimeStatus | null;\n  openRouterPaid: OpenRouterPaidRuntimeStatus | null;\n  openRouterFree: OpenRouterFreeRuntimeStatus | null;\n}\n""",
+              ),
+              (
+                  "const DEFAULT_FREE_REVOLVER_MIN_READY_ROUTES = 5;",
+                  "const DEFAULT_FREE_REVOLVER_MIN_READY_ROUTES = 7;",
+              ),
+              (
+                  """    && isAcceptedOmniRouteStatus(value.omniRoute)\n    && isAcceptedOpenRouterPaidStatus(value.openRouterPaid)\n    && isAcceptedOpenRouterFreeStatus(value.openRouterFree);""",
+                  """    && (value.omniRoute === null || isAcceptedOmniRouteStatus(value.omniRoute))\n    && (value.openRouterPaid === null || isAcceptedOpenRouterPaidStatus(value.openRouterPaid))\n    && (value.openRouterFree === null || isAcceptedOpenRouterFreeStatus(value.openRouterFree));""",
+              ),
+              (
+                  """    const [providerPayload, omniRoute, openRouterPaid, openRouterFree] = await Promise.all([\n      this.getFreeRevolverProviders().catch(() => null),\n      this.getOmniRouteStatus(),\n      this.getOpenRouterPaidStatus(),\n      this.getOpenRouterFreeStatus(),\n    ]);""",
+                  """    const [providerPayload, omniRoutePayload, openRouterPaidPayload, openRouterFreePayload] = await Promise.all([\n      this.getFreeRevolverProviders().catch(() => null),\n      this.getOmniRouteStatus().catch(() => null),\n      this.getOpenRouterPaidStatus().catch(() => null),\n      this.getOpenRouterFreeStatus().catch(() => null),\n    ]);""",
+              ),
+              (
+                  """      omniRoute,\n      openRouterPaid,\n      openRouterFree,""",
+                  """      omniRoute: isAcceptedOmniRouteStatus(omniRoutePayload) ? omniRoutePayload : null,\n      openRouterPaid: isAcceptedOpenRouterPaidStatus(openRouterPaidPayload) ? openRouterPaidPayload : null,\n      openRouterFree: isAcceptedOpenRouterFreeStatus(openRouterFreePayload) ? openRouterFreePayload : null,""",
+              ),
+          ]
+          for old, new in replacements:
+              if client.count(old) != 1:
+                  raise SystemExit(f'CLIENT_ANCHOR_MISMATCH: {old[:80]!r} count={client.count(old)}')
+              client = client.replace(old, new, 1)
+
+          client_path.write_text(client, 'utf-8')
+
+          test_replacements = [
+              ("          minimumReadyRoutes: 5,", "          minimumReadyRoutes: 7,"),
+              ("    expect(result.freeRevolverMinimumReadyRoutes).toBe(5);", "    expect(result.freeRevolverMinimumReadyRoutes).toBe(7);"),
+              ("    expect(recovered.freeRevolverMinimumReadyRoutes).toBe(5);", "    expect(recovered.freeRevolverMinimumReadyRoutes).toBe(7);"),
+              ("    expect(result.openRouterPaid.selectableModels).toBe(291);", "    expect(result.openRouterPaid?.selectableModels).toBe(291);"),
+              ("    expect(result.openRouterFree.routingPolicy.paidFallbackAllowed).toBe(false);", "    expect(result.openRouterFree?.routingPolicy.paidFallbackAllowed).toBe(false);"),
+              ("      freeRevolverMinimumReadyRoutes: 5,", "      freeRevolverMinimumReadyRoutes: 7,"),
+          ]
+          for old, new in test_replacements:
+              if test.count(old) != 1:
+                  raise SystemExit(f'TEST_ANCHOR_MISMATCH: {old!r} count={test.count(old)}')
+              test = test.replace(old, new, 1)
+
+          insert_anchor = """  it('sends the only accepted OmniRoute mutation to its dedicated runtime endpoint', async () => {"""
+          if test.count(insert_anchor) != 1:
+              raise SystemExit('TEST_INSERT_ANCHOR_MISMATCH')
+          regression = """  it('keeps Free Revolver visible when adjacent provider surfaces are stale or non-canonical', async () => {\n    setAdminKey('test-admin-key');\n\n    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {\n      const path = new URL(String(input)).pathname;\n      const payloadByPath: Record<string, unknown> = {\n        '/api/admin/llm/revolver-v3/providers': {\n          ok: true,\n          truthOwner: 'legacy-envelope',\n          keyStorage: 'legacy-envelope',\n          activationRule: 'legacy-envelope',\n          minimumReadyRoutes: 7,\n          providers: [{\n            id: 'freellmapi-source',\n            sourceType: 'freellmapi-direct',\n            label: 'FreeLLM API',\n            apiBase: 'http://freellmapi:3001/v1',\n            modelsUrl: 'http://freellmapi:3001/v1/models',\n            authMode: 'managed-bearer',\n            keyHint: 'owner-managed',\n            status: 'healthy',\n            lastHttpStatus: 200,\n            lastErrorCode: null,\n            lastDiscoveredAt: null,\n            lastCheckedAt: null,\n            enabled: true,\n            ownerRequestId: null,\n            models: [],\n          }],\n        },\n        '/api/admin/llm/omniroute/status': { ok: true, routeSource: 'omniroute' },\n        '/api/admin/llm/openrouter/status': { status: 'legacy' },\n        '/api/admin/llm/openrouter/free/status': { ok: false },\n      };\n      return new Response(JSON.stringify(payloadByPath[path]), {\n        status: payloadByPath[path] ? 200 : 404,\n        headers: { 'Content-Type': 'application/json' },\n      });\n    }));\n\n    const result = await adminApiClient.getLlmProviderSurfaceReadModel();\n\n    expect(result.freeRevolverMinimumReadyRoutes).toBe(7);\n    expect(result.providers).toHaveLength(1);\n    expect(result.providers[0]).toMatchObject({\n      id: 'freellmapi-source',\n      providerSurfaceKind: 'free-revolver',\n      lifecycle: 'active',\n      canonicalAction: 'revolver-discover',\n      enabled: true,\n    });\n    expect(result.omniRoute).toBeNull();\n    expect(result.openRouterPaid).toBeNull();\n    expect(result.openRouterFree).toBeNull();\n    expect(isAcceptedLlmProviderSurfaceReadModel(result)).toBe(true);\n  });\n\n"""
+          test = test.replace(insert_anchor, regression + insert_anchor, 1)
+          test_path.write_text(test, 'utf-8')
+          PY
+
+      - name: Install exact frontend dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          corepack enable
+          corepack prepare pnpm@9.12.2 --activate
+          pnpm install --frozen-lockfile
+
+      - name: Run focused provider regression and typecheck
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          pnpm exec vitest run src/features/admin/api/adminApiClient.providerSurfaces.test.ts
+          pnpm run type-check
+          git diff --check
+
+      - name: Publish tested repair and remove temporary workflow
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git rm .github/workflows/temporary-free-llm-admin-surface-isolation.yml
+          git config user.name "Ouroboros Collective"
+          git config user.email "projectouroboroscollective@gmail.com"
+          git add src/features/admin/api/adminApiClient.ts src/features/admin/api/adminApiClient.providerSurfaces.test.ts
+          git diff --cached --check
+          git commit -m "fix(admin): isolate provider surface readbacks"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
