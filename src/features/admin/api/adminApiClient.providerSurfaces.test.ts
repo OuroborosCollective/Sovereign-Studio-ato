@@ -45,7 +45,7 @@ describe('adminApiClient typed provider surface read model', () => {
             : 'postgresql-owner-input-direct-freellm',
           keyStorage: 'owner-managed-direct-freellm',
           activationRule: 'managed-free-quota-plus-revision-bound-double-canary-without-positive-cost-contradiction',
-          minimumReadyRoutes: 5,
+          minimumReadyRoutes: 7,
           providers: useNonCanonicalEnvelope ? [
             {
               id: 'freellmapi-source',
@@ -124,10 +124,10 @@ describe('adminApiClient typed provider surface read model', () => {
 
     const result = await adminApiClient.getLlmProviderSurfaceReadModel();
 
-    expect(result.freeRevolverMinimumReadyRoutes).toBe(5);
+    expect(result.freeRevolverMinimumReadyRoutes).toBe(7);
     expect(result.omniRoute).toEqual(omniRoute);
-    expect(result.openRouterPaid.selectableModels).toBe(291);
-    expect(result.openRouterFree.routingPolicy.paidFallbackAllowed).toBe(false);
+    expect(result.openRouterPaid?.selectableModels).toBe(291);
+    expect(result.openRouterFree?.routingPolicy.paidFallbackAllowed).toBe(false);
     expect(calls.sort()).toEqual([
       '/api/admin/llm/omniroute/status',
       '/api/admin/llm/openrouter/free/status',
@@ -137,7 +137,7 @@ describe('adminApiClient typed provider surface read model', () => {
 
     useNonCanonicalEnvelope = true;
     const recovered = await adminApiClient.getLlmProviderSurfaceReadModel();
-    expect(recovered.freeRevolverMinimumReadyRoutes).toBe(5);
+    expect(recovered.freeRevolverMinimumReadyRoutes).toBe(7);
     expect(recovered.providers).toHaveLength(2);
     expect(recovered.providers[0]).toMatchObject({
       providerSurfaceKind: 'free-revolver',
@@ -152,6 +152,63 @@ describe('adminApiClient typed provider surface read model', () => {
       enabled: false,
     });
     expect(recovered.omniRoute).toEqual(omniRoute);
+  });
+
+  it('keeps Free Revolver visible when adjacent provider surfaces are stale or non-canonical', async () => {
+    setAdminKey('test-admin-key');
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname;
+      const payloadByPath: Record<string, unknown> = {
+        '/api/admin/llm/revolver-v3/providers': {
+          ok: true,
+          truthOwner: 'legacy-envelope',
+          keyStorage: 'legacy-envelope',
+          activationRule: 'legacy-envelope',
+          minimumReadyRoutes: 7,
+          providers: [{
+            id: 'freellmapi-source',
+            sourceType: 'freellmapi-direct',
+            label: 'FreeLLM API',
+            apiBase: 'http://freellmapi:3001/v1',
+            modelsUrl: 'http://freellmapi:3001/v1/models',
+            authMode: 'managed-bearer',
+            keyHint: 'owner-managed',
+            status: 'healthy',
+            lastHttpStatus: 200,
+            lastErrorCode: null,
+            lastDiscoveredAt: null,
+            lastCheckedAt: null,
+            enabled: true,
+            ownerRequestId: null,
+            models: [],
+          }],
+        },
+        '/api/admin/llm/omniroute/status': { ok: true, routeSource: 'omniroute' },
+        '/api/admin/llm/openrouter/status': { status: 'legacy' },
+        '/api/admin/llm/openrouter/free/status': { ok: false },
+      };
+      return new Response(JSON.stringify(payloadByPath[path]), {
+        status: payloadByPath[path] ? 200 : 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }));
+
+    const result = await adminApiClient.getLlmProviderSurfaceReadModel();
+
+    expect(result.freeRevolverMinimumReadyRoutes).toBe(7);
+    expect(result.providers).toHaveLength(1);
+    expect(result.providers[0]).toMatchObject({
+      id: 'freellmapi-source',
+      providerSurfaceKind: 'free-revolver',
+      lifecycle: 'active',
+      canonicalAction: 'revolver-discover',
+      enabled: true,
+    });
+    expect(result.omniRoute).toBeNull();
+    expect(result.openRouterPaid).toBeNull();
+    expect(result.openRouterFree).toBeNull();
+    expect(isAcceptedLlmProviderSurfaceReadModel(result)).toBe(true);
   });
 
   it('sends the only accepted OmniRoute mutation to its dedicated runtime endpoint', async () => {
@@ -221,7 +278,7 @@ describe('adminApiClient typed provider surface read model', () => {
   it('rejects truncated, wrong-identity, secret-bearing, and paid-fallback readbacks', () => {
     const valid = {
       providers: [],
-      freeRevolverMinimumReadyRoutes: 5,
+      freeRevolverMinimumReadyRoutes: 7,
       omniRoute,
       openRouterPaid: {
         status: 'ready',

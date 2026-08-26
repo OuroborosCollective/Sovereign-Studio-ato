@@ -231,9 +231,9 @@ export interface OpenRouterFreeRuntimeStatus {
 export interface LlmProviderSurfaceReadModel {
   providers: FreeRevolverProviderSource[];
   freeRevolverMinimumReadyRoutes: number;
-  omniRoute: OmniRouteRuntimeStatus;
-  openRouterPaid: OpenRouterPaidRuntimeStatus;
-  openRouterFree: OpenRouterFreeRuntimeStatus;
+  omniRoute: OmniRouteRuntimeStatus | null;
+  openRouterPaid: OpenRouterPaidRuntimeStatus | null;
+  openRouterFree: OpenRouterFreeRuntimeStatus | null;
 }
 
 export interface FreeRevolverProviderModel {
@@ -300,7 +300,7 @@ const RETIRED_FREELLMPOOL_API_BASE = 'http://freellmpool:8080/v1';
 const FREE_REVOLVER_TRUTH_OWNER = 'postgresql-owner-input-direct-freellm';
 const FREE_REVOLVER_KEY_STORAGE = 'owner-managed-direct-freellm';
 const FREE_REVOLVER_ACTIVATION_RULE = 'managed-free-quota-plus-revision-bound-double-canary-without-positive-cost-contradiction';
-const DEFAULT_FREE_REVOLVER_MIN_READY_ROUTES = 5;
+const DEFAULT_FREE_REVOLVER_MIN_READY_ROUTES = 7;
 
 const providerAuthModes = ['bearer', 'x-api-key', 'none', 'managed-bearer'] as const;
 const providerStatuses = [
@@ -600,9 +600,9 @@ export function isAcceptedLlmProviderSurfaceReadModel(
     && value.providers.every(isAcceptedProviderControl)
     && isNonNegativeInteger(value.freeRevolverMinimumReadyRoutes)
     && value.freeRevolverMinimumReadyRoutes > 0
-    && isAcceptedOmniRouteStatus(value.omniRoute)
-    && isAcceptedOpenRouterPaidStatus(value.openRouterPaid)
-    && isAcceptedOpenRouterFreeStatus(value.openRouterFree);
+    && (value.omniRoute === null || isAcceptedOmniRouteStatus(value.omniRoute))
+    && (value.openRouterPaid === null || isAcceptedOpenRouterPaidStatus(value.openRouterPaid))
+    && (value.openRouterFree === null || isAcceptedOpenRouterFreeStatus(value.openRouterFree));
 }
 
 export type LlmRouteUpdate = Partial<Pick<
@@ -1090,11 +1090,11 @@ export const adminApiClient = {
   },
 
   async getLlmProviderSurfaceReadModel(): Promise<LlmProviderSurfaceReadModel> {
-    const [providerPayload, omniRoute, openRouterPaid, openRouterFree] = await Promise.all([
+    const [providerPayload, omniRoutePayload, openRouterPaidPayload, openRouterFreePayload] = await Promise.all([
       this.getFreeRevolverProviders().catch(() => null),
-      this.getOmniRouteStatus(),
-      this.getOpenRouterPaidStatus(),
-      this.getOpenRouterFreeStatus(),
+      this.getOmniRouteStatus().catch(() => null),
+      this.getOpenRouterPaidStatus().catch(() => null),
+      this.getOpenRouterFreeStatus().catch(() => null),
     ]);
     const providerReadback = isAcceptedFreeRevolverProviderReadback(providerPayload)
       ? {
@@ -1105,9 +1105,9 @@ export const adminApiClient = {
     const readModel: unknown = {
       providers: providerReadback.providers,
       freeRevolverMinimumReadyRoutes: providerReadback.minimumReadyRoutes,
-      omniRoute,
-      openRouterPaid,
-      openRouterFree,
+      omniRoute: isAcceptedOmniRouteStatus(omniRoutePayload) ? omniRoutePayload : null,
+      openRouterPaid: isAcceptedOpenRouterPaidStatus(openRouterPaidPayload) ? openRouterPaidPayload : null,
+      openRouterFree: isAcceptedOpenRouterFreeStatus(openRouterFreePayload) ? openRouterFreePayload : null,
     };
     if (!isAcceptedLlmProviderSurfaceReadModel(readModel)) {
       throw new Error('Provider-Readback verletzt die kanonische typisierte Aktionsgrenze.');
