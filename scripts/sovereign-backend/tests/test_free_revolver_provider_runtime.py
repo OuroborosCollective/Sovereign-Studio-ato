@@ -812,7 +812,7 @@ def test_admin_catalog_missing_models_do_not_masquerade_as_stale_receipts() -> N
 def test_managed_reconcile_accepts_five_and_keeps_ready_routes_unbounded() -> None:
     runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
 
-    assert "_DEFAULT_MIN_READY_ROUTES = 5" in runtime
+    assert "_DEFAULT_MIN_READY_ROUTES = 7" in runtime
     assert "return _DEFAULT_MIN_READY_ROUTES" in runtime
     assert "SOVEREIGN_FREELLM_MIN_READY_ROUTES" not in runtime
     assert "receipt_current" in runtime
