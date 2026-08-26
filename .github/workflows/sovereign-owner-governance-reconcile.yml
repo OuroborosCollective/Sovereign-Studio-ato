@@ -48,15 +48,18 @@ jobs:
               target.write_text(text.replace(old, new, 1), encoding='utf-8')
               print({'path': path, 'status': 'patched'})
 
-          def replace_in_function(path: str, function_name: str, old: str, new: str) -> None:
-              target = Path(path)
-              text = target.read_text(encoding='utf-8')
+          def function_bounds(text: str, function_name: str) -> tuple[int, int]:
               marker = f'    def {function_name}('
               start = text.find(marker)
               if start < 0:
-                  raise SystemExit(f'{path}: function {function_name} not found')
+                  raise SystemExit(f'function {function_name} not found')
               next_def = text.find('\n    def ', start + len(marker))
-              end = len(text) if next_def < 0 else next_def
+              return start, len(text) if next_def < 0 else next_def
+
+          def replace_in_function(path: str, function_name: str, old: str, new: str) -> None:
+              target = Path(path)
+              text = target.read_text(encoding='utf-8')
+              start, end = function_bounds(text, function_name)
               section = text[start:end]
               count = section.count(old)
               if count == 0 and new in section:
@@ -67,6 +70,21 @@ jobs:
               section = section.replace(old, new, 1)
               target.write_text(text[:start] + section + text[end:], encoding='utf-8')
               print({'path': path, 'function': function_name, 'status': 'patched'})
+
+          def replace_in_function_count(path: str, function_name: str, old: str, new: str, expected_count: int) -> None:
+              target = Path(path)
+              text = target.read_text(encoding='utf-8')
+              start, end = function_bounds(text, function_name)
+              section = text[start:end]
+              count = section.count(old)
+              if count == 0 and section.count(new) == expected_count:
+                  print({'path': path, 'function': function_name, 'status': 'already_reconciled', 'count': expected_count})
+                  return
+              if count != expected_count:
+                  raise SystemExit(f'{path}:{function_name}: expected {expected_count} matches, found {count}')
+              section = section.replace(old, new)
+              target.write_text(text[:start] + section + text[end:], encoding='utf-8')
+              print({'path': path, 'function': function_name, 'status': 'patched', 'count': expected_count})
 
           admin_path = 'tools/sovereign-chatgpt-mcp/github_admin.py'
           admin = Path(admin_path).read_text(encoding='utf-8')
@@ -93,23 +111,18 @@ jobs:
               '        strict_required_status_checks_policy = governance_mode == "enforced"\n',
               '        strict_required_status_checks_policy = governance_mode == "enforced"\n        ruleset_enforcement = "active" if governance_mode == "enforced" else "disabled"\n',
           )
-          replace_in_function(
+          replace_in_function_count(
               admin_path,
               'apply_main_ruleset',
               '            "enforcement": "active",\n',
               '            "enforcement": ruleset_enforcement,\n',
+              2,
           )
           replace_in_function(
               admin_path,
               'apply_main_ruleset',
               '            or str(readback.get("enforcement") or "") != "active"\n',
               '            or str(readback.get("enforcement") or "") != ruleset_enforcement\n',
-          )
-          replace_in_function(
-              admin_path,
-              'apply_main_ruleset',
-              '            "enforcement": "active",\n',
-              '            "enforcement": ruleset_enforcement,\n',
           )
 
           workflow_path = '.github/workflows/sovereign-chatgpt-mcp.yml'
