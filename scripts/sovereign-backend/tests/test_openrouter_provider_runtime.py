@@ -343,3 +343,59 @@ def test_source_contract_never_persists_or_returns_raw_openrouter_key() -> None:
     assert '"/api/admin/llm/openrouter/models/<route_id>/markup"' in source
     assert "not _MARKUP_MULTIPLIER <= raw_multiplier <= 32_767" in source
     assert "config=EXCLUDED.config || jsonb_build_object(" in source
+
+
+def test_endpoints_reject_non_dictionary_json_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from flask import Flask
+
+    flask_app = Flask("test_openrouter_runtime")
+    routes: dict[str, Any] = {}
+
+    class FakeApp:
+        def route(self, rule: str, **options):
+            def decorator(fn):
+                routes[rule] = fn
+                return fn
+            return decorator
+
+    app = FakeApp()
+
+    monkeypatch.setattr(runtime, "_service_authorized", lambda: True)
+
+    runtime.register_openrouter_provider_runtime(
+        app,
+        require_admin=lambda fn: fn,
+        require_session=lambda fn: fn,
+        query=lambda *args, **kwargs: None,
+        get_connection=lambda: None,
+        audit=lambda *args, **kwargs: None,
+    )
+
+    activate_fn = routes["/api/internal/llm/openrouter/activate"]
+    markup_fn = routes["/api/admin/llm/openrouter/models/<route_id>/markup"]
+
+    malformed_payloads = [
+        ["invalid", "list"],
+        "invalid string",
+        12345,
+        True,
+        None,
+    ]
+
+    with flask_app.test_request_context():
+        for payload in malformed_payloads:
+            fake_req = types.SimpleNamespace(
+                headers={},
+                get_json=lambda silent=True, p=payload: p,
+            )
+            monkeypatch.setattr(runtime, "request", fake_req)
+
+            resp1, status1 = activate_fn()
+            assert status1 == 400
+            assert resp1.get_json()["error"] == "Der Request-Body muss ein JSON-Objekt sein."
+
+            resp2, status2 = markup_fn(route_id="openrouter-paid-gpt-5-4-mini")
+            assert status2 == 400
+            assert resp2.get_json()["error"] == "Der Request-Body muss ein JSON-Objekt sein."
