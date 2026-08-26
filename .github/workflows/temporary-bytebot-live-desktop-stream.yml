@@ -6,6 +6,7 @@ on:
       - sovereign/chatgpt/bytebot-live-desktop-stream
     paths:
       - scripts/patches/apply_bytebot_live_desktop_stream.py
+      - scripts/patches/fix_bytebot_live_desktop_frontend.py
       - .github/workflows/temporary-bytebot-live-desktop-stream.yml
 
 permissions:
@@ -21,7 +22,9 @@ jobs:
           ref: sovereign/chatgpt/bytebot-live-desktop-stream
           fetch-depth: 0
       - name: Apply live desktop stream patch
-        run: python3 scripts/patches/apply_bytebot_live_desktop_stream.py
+        run: |
+          python3 scripts/patches/apply_bytebot_live_desktop_stream.py
+          python3 scripts/patches/fix_bytebot_live_desktop_frontend.py
       - name: Install test and frontend dependencies
         run: |
           python3 -m pip install --user pytest
