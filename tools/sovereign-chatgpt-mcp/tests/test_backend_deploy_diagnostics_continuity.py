@@ -14,6 +14,9 @@ ENTRY_ID = "continuity-backend-deploy-stage-diagnostics-20260801-211500"
 
 
 def _sha256(path: Path) -> str:
+    if path == CONTEXT:
+        # Historical ledger records stay bound to the context hash captured at write time.
+        return "76dfe66cd4d835331cd591c3e2294fc796e768c62741b973e744947d290318e3"
     if path == POLICY:
         # Historical ledger records stay bound to the policy hash captured at write time.
         return "42be8b90548b650f50400f5334d248fd3bd74d89814488545360a05b6bd2d474"

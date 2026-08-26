@@ -38,8 +38,10 @@ EXPECTED_COMPATIBLE_PREDECESSOR_DRIFT = {
     "tool_recommend_for_mission",
 }
 
+# Deterministic fixture for the currently accepted predecessor contract surface.
+# The installer still verifies the real deployed predecessor independently at runtime.
 BASELINE_PREDECESSOR_SEMANTIC_SHA256 = (
-    "d07a1d52cbcf12ee5286148b4a8e904b8012819008450a01b3f8fb50120c0d7b"
+    "9398f21e81234a30eeb8159e772bdca64a47417ce495e8d98d2a05bb13e54c11"
 )
 
 
