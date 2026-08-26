@@ -16780,6 +16780,14 @@
     },
     {
       "dynamic": false,
+      "line": 9,
+      "source": "src/features/product/runtime/draftPrEvidence.ts",
+      "source_status": "active",
+      "target": "src/features/product/runtime/evidenceLedger.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
       "line": 1,
       "source": "src/features/product/runtime/externalMemoryMonitoring.ts",
       "source_status": "active",
@@ -18707,10 +18715,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "d35dbed78988e544810cfe2df9345e32b370413a968f7fb0a23818fc3c261f65",
-  "revision": "1de82fabdfb18d8e44ec79b9603ad94328b54b75",
+  "reportSha256": "959abeb2754434482291fab6271a2a29458a64e103f7432b02ab5e79d1858604",
+  "revision": "f4eecdf703f6f01fb9da32f978068ea004c18492",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "692083de7ffb9fe9d75b0e086a1aa76831a2f3c73a0e6d6d743a3a5ae3f63a1b",
+  "sourceTreeSha256": "6e00c7ee2e0ce39260d7a7bbccd3984caf98d95a8c660f62c5f9aff80bd4780c",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -18724,12 +18732,12 @@
     "externalMethodUnknownCount": 0,
     "externalRequestCount": 30,
     "frontendCallCount": 256,
-    "frontendModuleCount": 527,
-    "importEdgeCount": 696,
+    "frontendModuleCount": 528,
+    "importEdgeCount": 697,
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
-    "testFileCount": 733,
+    "testFileCount": 735,
     "unmatchedActiveRequestCount": 0
   },
   "truthBoundary": {
