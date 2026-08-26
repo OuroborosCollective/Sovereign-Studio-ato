@@ -1,0 +1,148 @@
+name: Temporary Bytebot Live Desktop Repair
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/bytebot-live-desktop-stream
+    paths:
+      - scripts/tmp_bytebot_live_desktop_repair.py
+      - .github/workflows/tmp-bytebot-live-desktop-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sovereign/chatgpt/bytebot-live-desktop-stream
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Enable pinned pnpm
+        run: corepack enable && corepack prepare pnpm@9.12.2 --activate
+
+      - name: Apply fail-closed live desktop patch
+        run: python3 scripts/tmp_bytebot_live_desktop_repair.py
+
+      - name: Install frontend dependencies and refresh lockfile
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Typecheck real VNC monitor
+        run: pnpm run typecheck
+
+      - name: Run focused frontend runtime tests
+        run: |
+          pnpm exec vitest run \
+            src/features/product/runtime/sovereignAgentClient.test.ts \
+            src/App.draftPrFlow.test.tsx
+          ! grep -q "getDesktopFrame(jobId)" src/App.tsx
+          ! grep -q "setInterval.*1500" src/App.tsx
+          grep -q "VncScreen" src/features/product/components/LiveDesktopStreamPane.tsx
+          grep -q "viewOnly={!lease}" src/features/product/components/LiveDesktopStreamPane.tsx
+
+      - name: Install backend websocket dependencies
+        run: python3 -m pip install -r scripts/sovereign-backend/requirements.txt pytest
+
+      - name: Compile and test desktop contracts
+        run: |
+          python3 -m py_compile \
+            backend/agent_runtime/desktop_stream.py \
+            scripts/sovereign-backend/agent_runtime/desktop_stream.py \
+            tools/sovereign-chatgpt-mcp/desktop_activation_reconciler.py \
+            tools/sovereign-chatgpt-mcp/desktop_worker.py
+          pytest -q \
+            backend/tests/test_desktop_control.py \
+            backend/tests/test_desktop_projection.py \
+            tools/sovereign-chatgpt-mcp/tests/test_desktop_worker.py
+
+      - name: Build real RFB desktop worker
+        run: |
+          docker build --pull=false \
+            --build-arg SOVEREIGN_SOURCE_REVISION="$(git rev-parse HEAD)" \
+            --tag sovereign-desktop-worker:stream-ci \
+            containers/sovereign-desktop-worker
+
+      - name: Canary both RFB websocket surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          scope_dir="$(mktemp -d)"
+          workspace_dir="$(mktemp -d)"
+          trap 'docker rm --force sovereign-desktop-stream-ci >/dev/null 2>&1 || true; docker network rm sovereign-desktop-stream-ci >/dev/null 2>&1 || true; rm -rf "$scope_dir" "$workspace_dir"' EXIT
+          printf '%s' 'view-scope-ci-value-000000000000000000000000' > "$scope_dir/view"
+          printf '%s' 'input-scope-ci-value-00000000000000000000000' > "$scope_dir/input"
+          chmod 0444 "$scope_dir/view" "$scope_dir/input"
+          docker network create --internal sovereign-desktop-stream-ci
+          docker run --detach --init --name sovereign-desktop-stream-ci \
+            --user 10001:10001 --read-only --security-opt no-new-privileges:true \
+            --cap-drop ALL --pids-limit 128 --memory 1073741824 --cpus 1.0 \
+            --network sovereign-desktop-stream-ci \
+            --mount type=bind,src="$workspace_dir",dst=/workspace \
+            --mount type=bind,src="$scope_dir/view",dst=/opt/desktop-scopes/view,readonly \
+            --mount type=bind,src="$scope_dir/input",dst=/opt/desktop-scopes/input,readonly \
+            --tmpfs /tmp:rw,noexec,nosuid,size=128m \
+            --tmpfs /run:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700 \
+            --tmpfs /home/desktop:rw,noexec,nosuid,size=128m,uid=10001,gid=10001,mode=0700 \
+            --env DESKTOP_VIEW_SCOPE_FILE=/opt/desktop-scopes/view \
+            --env DESKTOP_INPUT_SCOPE_FILE=/opt/desktop-scopes/input \
+            --env DESKTOP_RUNTIME_IDENTITY_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --env DESKTOP_WALL_TIME_SECONDS=600 \
+            --env DESKTOP_IDLE_TIMEOUT_SECONDS=300 \
+            sovereign-desktop-worker:stream-ci
+          for _ in $(seq 1 40); do
+            health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' sovereign-desktop-stream-ci)"
+            [ "$health" = healthy ] && break
+            sleep 2
+          done
+          [ "$(docker inspect --format '{{.State.Health.Status}}' sovereign-desktop-stream-ci)" = healthy ]
+          docker exec sovereign-desktop-stream-ci python3 - <<'PY'
+          import base64, os, socket
+          def ws(port):
+              s = socket.create_connection(('127.0.0.1', port), 5)
+              key = base64.b64encode(os.urandom(16)).decode()
+              request = (
+                  f'GET / HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n'
+                  'Upgrade: websocket\r\nConnection: Upgrade\r\n'
+                  f'Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n'
+                  'Sec-WebSocket-Protocol: binary\r\n\r\n'
+              ).encode()
+              s.sendall(request)
+              response = s.recv(4096)
+              s.close()
+              assert b' 101 ' in response, (port, response[:300])
+          ws(6080)
+          ws(6081)
+          PY
+          inspect="$(docker inspect sovereign-desktop-stream-ci)"
+          jq -e '.[0].HostConfig.Privileged == false and .[0].HostConfig.ReadonlyRootfs == true and (.[] | .NetworkSettings.Ports | to_entries | all(.value == null))' <<<"$inspect" >/dev/null
+
+      - name: Verify no fake primary desktop path remains
+        run: |
+          git diff --check
+          grep -q "react-vnc" package.json
+          grep -q "desktop_worker_start" tools/sovereign-chatgpt-mcp/broker.py
+          grep -q "stream_control_allowed" scripts/sovereign-backend/agent_runtime/desktop_control.py
+          grep -q "sovereign-desktop-reconciler.service" tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh
+
+      - name: Publish tested branch snapshot and remove temporary repair lane
+        run: |
+          set -euo pipefail
+          rm -f scripts/tmp_bytebot_live_desktop_repair.py .github/workflows/tmp-bytebot-live-desktop-repair.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "Ouroboros Collective"
+          git config user.email "projectouroboroscollective@gmail.com"
+          git commit -m "feat(monitor): replace PNG polling with lease-gated RFB stream"
+          git push origin HEAD:sovereign/chatgpt/bytebot-live-desktop-stream
