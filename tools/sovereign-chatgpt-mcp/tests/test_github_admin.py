@@ -248,6 +248,27 @@ def test_governance_mode_uses_explicit_broker_path_and_fails_closed(monkeypatch,
         GitHubAdminRuntime._governance_mode()
 
 
+def test_acceleration_preserves_all_check_failures_as_advisory_evidence(monkeypatch) -> None:
+    monkeypatch.setattr(GitHubAdminRuntime, "_governance_mode", staticmethod(lambda: "acceleration"))
+
+    result = GitHubAdminRuntime._effective_check_state(
+        {
+            "ok": False,
+            "has_check_evidence": False,
+            "failed": ["Validate MCP operator", "Compile Check"],
+            "pending": ["no_check_evidence_reported", "Type-check, tests, build"],
+        }
+    )
+
+    assert result == {
+        "ok": True,
+        "failed": [],
+        "pending": [],
+        "advisory_failed": ["Validate MCP operator", "Compile Check"],
+        "advisory_pending": ["no_check_evidence_reported", "Type-check, tests, build"],
+    }
+
+
 def test_pr_changed_paths_binds_files_to_same_head_before_and_after_read(monkeypatch) -> None:
     head = "a" * 40
     runtime, _update, _session = _runtime(
@@ -485,6 +506,9 @@ def test_merge_allows_stale_main_ancestry_only_when_governance_is_advisory(monke
                 {"id": 13, "name": "Revision Guardian", "status": "completed", "conclusion": "failure"},
                 {"id": 14, "name": "Revision Guardian Evidence", "status": "completed", "conclusion": "failure"},
                 {"id": 15, "name": "Boundary ledger drift preflight", "status": "completed", "conclusion": "failure"},
+                {"id": 16, "name": "Validate MCP operator", "status": "completed", "conclusion": "failure"},
+                {"id": 17, "name": "Compile Check", "status": "completed", "conclusion": "failure"},
+                {"id": 18, "name": "Type-check, tests, build", "status": "in_progress", "conclusion": None},
             ]
         },
     )
@@ -520,7 +544,10 @@ def test_merge_allows_stale_main_ancestry_only_when_governance_is_advisory(monke
         "Revision Guardian",
         "Revision Guardian Evidence",
         "Boundary ledger drift preflight",
+        "Validate MCP operator",
+        "Compile Check",
     ]
+    assert result["advisory_pending_checks"] == ["Type-check, tests, build"]
 
 
 def test_merge_pr_series_orders_oldest_first_and_revalidates_after_each_main_advance(monkeypatch) -> None:
@@ -1216,7 +1243,7 @@ def test_apply_main_ruleset_creates_active_fail_closed_contract_and_verifies_rea
     }
 
 
-def test_apply_main_ruleset_acceleration_keeps_product_gates_and_drops_governance_checks(monkeypatch) -> None:
+def test_apply_main_ruleset_acceleration_drops_all_status_check_blockers(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
     monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
     repository_path = "/repos/OuroborosCollective/Sovereign-Studio-ato"
@@ -1230,16 +1257,6 @@ def test_apply_main_ruleset_acceleration_keeps_product_gates_and_drops_governanc
         "rules": [
             {"type": "deletion"},
             {"type": "non_fast_forward"},
-            {
-                "type": "required_status_checks",
-                "parameters": {
-                    "strict_required_status_checks_policy": False,
-                    "required_status_checks": [
-                        {"context": "Release Gate"},
-                        {"context": "Agent Runtime Tests"},
-                    ],
-                },
-            },
         ],
         "_links": {"html": {"href": "https://github.com/OuroborosCollective/Sovereign-Studio-ato/rules/43"}},
     }
@@ -1259,14 +1276,9 @@ def test_apply_main_ruleset_acceleration_keeps_product_gates_and_drops_governanc
     assert result["status"] == "RULESET_UPDATED"
     assert result["governance_mode"] == "acceleration"
     assert result["strict_required_status_checks_policy"] is False
-    assert result["required_status_checks"] == ["Release Gate", "Agent Runtime Tests"]
+    assert result["required_status_checks"] == []
     put_call = next(call for call in session.calls if call["method"] == "PUT")
-    required = next(rule for rule in put_call["json"]["rules"] if rule["type"] == "required_status_checks")
-    assert required["parameters"]["strict_required_status_checks_policy"] is False
-    assert {item["context"] for item in required["parameters"]["required_status_checks"]} == {
-        "Release Gate",
-        "Agent Runtime Tests",
-    }
+    assert not any(rule["type"] == "required_status_checks" for rule in put_call["json"]["rules"])
 
 
 def test_apply_main_ruleset_blocks_without_owner_approval(monkeypatch) -> None:
