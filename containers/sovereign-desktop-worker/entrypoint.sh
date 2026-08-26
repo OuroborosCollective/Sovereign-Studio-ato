@@ -25,12 +25,13 @@ elif command -v epiphany >/dev/null 2>&1; then
   epiphany --incognito about:blank >/tmp/browser.log 2>&1 &
 fi
 
-# RFB is reachable only on the internal sovereign-desktop Docker network.
-# It is server-side view-only: pointer/keyboard authority stays on the separate
-# takeover lease + /desktop/input path even if a stream ticket is compromised.
+# Raw RFB never leaves loopback. Websockify is the sole worker-network ingress,
+# and RFB itself remains server-side view-only so pointer/keyboard authority
+# stays on Sovereign's separate takeover lease + /desktop/input path.
 x11vnc \
   -display "$DISPLAY" \
   -rfbport "$RFB_PORT" \
+  -localhost \
   -forever \
   -shared \
   -viewonly \
