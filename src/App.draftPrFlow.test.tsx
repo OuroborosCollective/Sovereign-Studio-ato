@@ -1,339 +1,142 @@
 import React from 'react';
-import { Provider } from 'react-redux';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import App from './App';
-import { store } from './store';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PlayReleaseChat } from './features/release/PlayReleaseChat';
 
-const agent = vi.hoisted(() => ({
-  listJobs: vi.fn(),
-  startJob: vi.fn(),
-  startRepositoryExecution: vi.fn(),
-  startToolchainJob: vi.fn(),
-  getJob: vi.fn(),
-  getProjections: vi.fn(),
-  getEvidenceAnchors: vi.fn(async () => []),
-  getDesktopFrame: vi.fn(),
-  cancelJob: vi.fn(),
-  runJanitor: vi.fn(),
-  prepareDraftPr: vi.fn(),
-  createDraftPr: vi.fn(),
+const runtime = vi.hoisted(() => ({
+  catalog: vi.fn(),
+  health: vi.fn(),
+  reply: vi.fn(),
+  evaluateInputPolicy: vi.fn(),
+  refreshUser: vi.fn(),
+  logout: vi.fn(),
 }));
 
-const memory = vi.hoisted(() => ({
-  searchReusableMemory: vi.fn(),
-  reusableMemoryContext: vi.fn(),
+vi.mock('./features/product/runtime/devChatWorkerBridge', () => ({
+  DEV_CHAT_WORKER_DEFAULT_MODEL: 'sovereign-fast',
+  fetchSovereignLlmRouteCatalog: runtime.catalog,
+  fetchDevChatWorkerHealth: runtime.health,
+  fetchDevChatWorkerReply: runtime.reply,
 }));
 
-vi.mock('./features/knowledge/knowledgeApi', () => ({
-  searchReusableMemory: memory.searchReusableMemory,
-  reusableMemoryContext: memory.reusableMemoryContext,
+vi.mock('./features/product/runtime/secureInputGuard', () => ({
+  evaluateInputPolicy: runtime.evaluateInputPolicy,
 }));
 
-vi.mock('./features/product/runtime/sovereignAgentClient', () => ({
-  createSovereignAgentClient: () => agent,
-}));
-
-vi.mock('./features/product/runtime/sovereignAgentRuntime', () => ({
-  resolveSovereignAgentConfig: () => ({
-    enabled: true,
-    ready: true,
-    reason: 'ready',
-    agentApiUrl: 'https://agent.example.test',
-  }),
-  createSovereignAgentIdleSnapshot: () => ({ status: 'idle', changedFiles: [], events: [] }),
-  maskSovereignAgentSensitiveText: (value: string) => value,
-  summarizeSovereignAgentJob: (job: { status: string }) => `status=${job.status}`,
-  isSovereignAgentTerminalStatus: (status: string) => ['blocked', 'failed', 'completed', 'cleaned'].includes(status),
-}));
-
-vi.mock('./features/product/containers/BuilderContainer', () => ({
-  BuilderContainer: (props: any) => (
-    <section>
-      <div data-testid="flow-job-id">{props.agentJob?.jobId || 'none'}</div>
-      <div data-testid="flow-job-status">{props.agentJob?.status || 'none'}</div>
-      <div data-testid="flow-pr-url">{props.agentJob?.draftPrUrl || 'none'}</div>
-      <div data-testid="flow-repo-ready">{String(props.repoReady)}</div>
-      <div data-testid="flow-repo-reason">{props.repoReason}</div>
-      <div data-testid="flow-frame-job-id">{props.desktopFrame?.jobId || 'none'}</div>
-      <div data-testid="flow-frame-hash">{props.desktopFrame?.frameHash || 'none'}</div>
-      <button
-        type="button"
-        onClick={() => {
-          void props.onStartAgent('Switch to job B', {
-            repoUrl: 'https://github.com/acme/repo',
-            branch: 'main',
-          });
-        }}
-      >Switch job</button>
-      <button
-        type="button"
-        onClick={() => {
-          void props.onPublishDraftPr({
-            repoUrl: 'https://github.com/acme/repo',
-            branch: 'main',
-            mission: 'Update README',
-            changes: [],
-            confirmed: true,
-          }).catch(() => undefined);
-        }}
-      >Publish existing</button>
-      <button
-        type="button"
-        onClick={() => {
-          void props.onPublishDraftPr({
-            repoUrl: 'https://github.com/acme/repo',
-            branch: 'main',
-            mission: 'Update README',
-            changes: [{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }],
-            confirmed: true,
-          }).catch(() => undefined);
-        }}
-      >Publish staged</button>
-    </section>
-  ),
-}));
-
-function snapshot(overrides: Record<string, unknown> = {}) {
-  return {
-    jobId: 'job-1',
-    workspaceId: 'job-1',
-    runtimeId: 'job-1',
-    status: 'running',
-    repoUrl: 'https://github.com/acme/repo',
-    branch: 'main',
-    changedFiles: ['README.md'],
-    events: [],
-    ...overrides,
-  };
-}
-
-function verifiedDraftPrCreate(jobId: string, prNumber: number) {
-  const sha = 'a'.repeat(40);
-  return {
-    ok: true,
-    jobId,
-    draftPrCreate: {
-      allowed: true,
-      status: 'created',
-      prUrl: `https://github.com/acme/repo/pull/${prNumber}`,
-      headSha: sha,
-      publishedHeadSha: sha,
-      readbackHeadSha: sha,
-      prNumber,
-      draftVerified: true,
-      prStateVerified: 'open',
-      headBranch: `sovereign/${jobId}`,
-      baseBranch: 'main',
-      readbackVerified: true,
-      checksReadbackVerified: true,
-      ciState: 'pending',
-      checkRunCount: 2,
-      checksPendingCount: 1,
-      checksSuccessCount: 1,
-      checksFailureCount: 0,
-      statusContextCount: 0,
+vi.mock('./features/user/useUserStore', () => ({
+  useUserStore: () => ({
+    user: {
+      id: 'release-user',
+      email: 'release@example.test',
+      displayName: 'Release User',
+      role: 'user',
+      credits: 100,
+      subscriptionStatus: 'free',
+      isBanned: false,
+      createdAt: 1,
     },
-  };
-}
+    refreshUser: runtime.refreshUser,
+    logout: runtime.logout,
+    isLoading: false,
+    error: null,
+    clearError: vi.fn(),
+    login: vi.fn(),
+    register: vi.fn(),
+  }),
+}));
+
+const FREE_ROUTE = {
+  id: 'free-route-1',
+  defaultModelId: 'free-model-1',
+  label: 'Free Revolver',
+  provider: 'freellm',
+  billingCategory: 'free' as const,
+  priority: 1,
+  enabled: true,
+};
 
 beforeEach(() => {
-  memory.searchReusableMemory.mockResolvedValue([]);
-  memory.reusableMemoryContext.mockReturnValue('');
-  agent.getProjections.mockResolvedValue([]);
-  agent.getDesktopFrame.mockRejectedValue(new Error('desktop frame unavailable'));
-});
-
-afterEach(() => {
-  vi.useRealTimers();
   vi.clearAllMocks();
-  vi.unstubAllGlobals();
+  runtime.catalog.mockResolvedValue([FREE_ROUTE]);
+  runtime.health.mockResolvedValue({ ok: true, route: '/health/ready', status: 200 });
+  runtime.reply.mockResolvedValue({
+    ok: true,
+    content: 'Antwort aus der aktuellen Sovereign LLM-Runtime.',
+    route: '/api/llm/chat',
+    fallbackUsed: false,
+    preferredModel: 'free-route-1',
+    actualModel: 'free-route-1',
+  });
+  runtime.evaluateInputPolicy.mockReturnValue({ shouldBlock: false });
+  runtime.refreshUser.mockResolvedValue(undefined);
+  runtime.logout.mockResolvedValue(undefined);
 });
 
-describe('App Draft-PR runtime flow', () => {
-  it('retries persisted-job recovery after a later authenticated session exists', async () => {
-    vi.useFakeTimers();
-    agent.listJobs
-      .mockRejectedValueOnce(new Error('session missing'))
-      .mockResolvedValueOnce([snapshot({ status: 'completed' })]);
+describe('Play release chat runtime integration', () => {
+  it('loads the authenticated current route catalog and keeps the free-first default', async () => {
+    render(<PlayReleaseChat />);
 
-    render(<Provider store={store}><App /></Provider>);
-    await act(async () => { await Promise.resolve(); });
-    expect(screen.getByTestId('flow-job-id')).toHaveTextContent('none');
-
-    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-
-    expect(screen.getByTestId('flow-job-id')).toHaveTextContent('job-1');
-    expect(agent.listJobs).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(runtime.catalog).toHaveBeenCalled());
+    expect(screen.getByRole('option', { name: 'Auto · FreeLLM zuerst' })).toBeDefined();
+    expect(await screen.findByRole('option', { name: 'FREE · Free Revolver' })).toBeDefined();
+    expect(screen.getByText('release@example.test')).toBeDefined();
   });
 
-  it('refreshes projections once for a terminal job and does not keep polling', async () => {
-    vi.useFakeTimers();
-    agent.listJobs.mockResolvedValue([snapshot({ status: 'completed' })]);
+  it('sends chat through the current Sovereign LLM bridge and renders the real reply', async () => {
+    render(<PlayReleaseChat />);
+    const input = screen.getByLabelText('Nachricht an Sovereign');
 
-    render(<Provider store={store}><App /></Provider>);
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-    expect(screen.getByTestId('flow-job-status')).toHaveTextContent('completed');
-    expect(agent.getProjections).toHaveBeenCalledTimes(1);
+    fireEvent.change(input, { target: { value: 'Hallo Sovereign' } });
+    fireEvent.click(screen.getByLabelText('Senden'));
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
-    expect(agent.getProjections).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(runtime.reply).toHaveBeenCalledOnce());
+    const [request] = runtime.reply.mock.calls[0];
+    expect(request.model).toBe('sovereign-fast');
+    expect(request.messages.at(-1)).toEqual({ role: 'user', content: 'Hallo Sovereign' });
+    expect(await screen.findByText('Antwort aus der aktuellen Sovereign LLM-Runtime.')).toBeDefined();
   });
 
-  it('revokes and clears job A desktop evidence before job B can render', async () => {
-    const jobAHash = 'a'.repeat(64);
-    const jobBHash = 'b'.repeat(64);
-    const createObjectURL = vi.fn()
-      .mockReturnValueOnce('blob:job-a')
-      .mockReturnValueOnce('blob:job-b');
-    const revokeObjectURL = vi.fn();
-    class TestURL extends URL {}
-    Object.defineProperty(TestURL, 'createObjectURL', { configurable: true, value: createObjectURL });
-    Object.defineProperty(TestURL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
-    vi.stubGlobal('URL', TestURL);
+  it('pins an explicitly selected free route instead of silently changing the requested route', async () => {
+    render(<PlayReleaseChat />);
+    const routeSelect = screen.getByLabelText('LLM Route');
+    await screen.findByRole('option', { name: 'FREE · Free Revolver' });
+    fireEvent.change(routeSelect, { target: { value: 'free-route-1' } });
 
-    let resolveJobBFrame!: (frame: { blob: Blob; frameHash: string; observedAt: number }) => void;
-    const pendingJobBFrame = new Promise<{ blob: Blob; frameHash: string; observedAt: number }>((resolve) => {
-      resolveJobBFrame = resolve;
-    });
-    agent.listJobs.mockResolvedValue([snapshot({
-      jobId: 'job-a',
-      workspaceId: 'job-a',
-      runtimeId: 'job-a',
-      status: 'completed',
-    })]);
-    agent.getDesktopFrame.mockImplementation(async (jobId: string) => {
-      if (jobId === 'job-a') {
-        return { blob: new Blob(['job-a'], { type: 'image/png' }), frameHash: jobAHash, observedAt: 1 };
-      }
-      return pendingJobBFrame;
-    });
-    const jobBSnapshot = snapshot({
-      jobId: 'job-b',
-      workspaceId: 'job-b',
-      runtimeId: 'job-b',
-      status: 'running',
-    });
-    agent.startRepositoryExecution.mockResolvedValue(jobBSnapshot);
-    agent.getJob.mockResolvedValue(jobBSnapshot);
+    fireEvent.change(screen.getByLabelText('Nachricht an Sovereign'), { target: { value: 'Nutze diese Route' } });
+    fireEvent.click(screen.getByLabelText('Senden'));
 
-    render(<Provider store={store}><App /></Provider>);
-    await waitFor(() => expect(screen.getByTestId('flow-frame-hash')).toHaveTextContent(jobAHash));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Switch job' }));
-    await waitFor(() => expect(screen.getByTestId('flow-job-id')).toHaveTextContent('job-b'));
-    expect(screen.getByTestId('flow-frame-job-id')).not.toHaveTextContent('job-a');
-    await waitFor(() => expect(screen.getByTestId('flow-frame-job-id')).toHaveTextContent('none'));
-    await waitFor(() => expect(screen.getByTestId('flow-frame-hash')).toHaveTextContent('none'));
-    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:job-a'));
-    await waitFor(() => expect(agent.getDesktopFrame).toHaveBeenCalledWith('job-b'));
-    expect(createObjectURL).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      resolveJobBFrame({
-        blob: new Blob(['job-b'], { type: 'image/png' }),
-        frameHash: jobBHash,
-        observedAt: 2,
-      });
-      await Promise.resolve();
-    });
-    await waitFor(() => expect(screen.getByTestId('flow-frame-job-id')).toHaveTextContent('job-b'));
-    await waitFor(() => expect(screen.getByTestId('flow-frame-hash')).toHaveTextContent(jobBHash));
-    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(runtime.reply).toHaveBeenCalledOnce());
+    expect(runtime.reply.mock.calls[0][0].model).toBe('free-route-1');
+    expect(screen.getByText(/Route fixiert: FREE · Free Revolver/)).toBeDefined();
   });
 
-  it('does not mark a failed persisted job as repository-ready', async () => {
-    agent.listJobs.mockResolvedValue([snapshot({
-      status: 'failed',
-      lastError: 'Clone fehlgeschlagen',
-    })]);
+  it('blocks secret-shaped input before any LLM request', async () => {
+    runtime.evaluateInputPolicy.mockReturnValueOnce({ shouldBlock: true });
+    render(<PlayReleaseChat />);
 
-    render(<Provider store={store}><App /></Provider>);
+    fireEvent.change(screen.getByLabelText('Nachricht an Sovereign'), { target: { value: 'ghp_secret_value_for_test' } });
+    fireEvent.click(screen.getByLabelText('Senden'));
 
-    await waitFor(() => expect(screen.getByTestId('flow-job-status')).toHaveTextContent('failed'));
-    expect(screen.getByTestId('flow-repo-ready')).toHaveTextContent('false');
-    expect(screen.getByTestId('flow-repo-reason')).toHaveTextContent('Noch kein Repository an den Workspace-Monitor gebunden.');
+    await waitFor(() => expect(screen.getByText(/wurde nicht an das LLM gesendet/i)).toBeDefined());
+    expect(runtime.reply).not.toHaveBeenCalled();
+    expect(screen.queryByText('ghp_secret_value_for_test')).toBeNull();
   });
 
-  it('preserves the final runtime snapshot status instead of inventing completed state', async () => {
-    agent.listJobs.mockResolvedValue([snapshot()]);
-    agent.prepareDraftPr.mockResolvedValue({
-      ok: true,
-      jobId: 'job-1',
-      draftPrPreparation: { allowed: true, decision: 'ready', blockers: [] },
+  it('shows the backend blocker honestly and offers a correlated retry', async () => {
+    runtime.reply.mockResolvedValueOnce({
+      ok: false,
+      error: 'free_route_revolver_exhausted',
+      route: '/api/llm/chat',
+      diagnostic: {
+        nextAction: 'Auf den Kontingent-Reset warten oder eine Free-Route prüfen.',
+      },
     });
-    agent.createDraftPr.mockResolvedValue(verifiedDraftPrCreate('job-1', 10));
-    agent.getJob.mockResolvedValue(snapshot({
-      status: 'validating',
-      draftPrUrl: 'https://github.com/acme/repo/pull/10',
-    }));
+    render(<PlayReleaseChat />);
 
-    render(<Provider store={store}><App /></Provider>);
-    await waitFor(() => expect(screen.getByTestId('flow-job-id')).toHaveTextContent('job-1'));
-    fireEvent.click(screen.getByRole('button', { name: 'Publish existing' }));
+    fireEvent.change(screen.getByLabelText('Nachricht an Sovereign'), { target: { value: 'Bitte antworte' } });
+    fireEvent.click(screen.getByLabelText('Senden'));
 
-    await waitFor(() => expect(screen.getByTestId('flow-pr-url')).toHaveTextContent('/pull/10'));
-    expect(screen.getByTestId('flow-job-status')).toHaveTextContent('validating');
-  });
-
-  it('restores a persisted job and continues the same job to the verified Draft PR URL', async () => {
-    agent.listJobs.mockResolvedValue([snapshot()]);
-    agent.prepareDraftPr.mockResolvedValue({
-      ok: true,
-      jobId: 'job-1',
-      draftPrPreparation: { allowed: true, decision: 'ready', blockers: [] },
-    });
-    agent.createDraftPr.mockResolvedValue(verifiedDraftPrCreate('job-1', 10));
-    agent.getJob.mockResolvedValue(snapshot({
-      status: 'completed',
-      draftPrUrl: 'https://github.com/acme/repo/pull/10',
-    }));
-
-    render(<Provider store={store}><App /></Provider>);
-    await waitFor(() => expect(screen.getByTestId('flow-job-id')).toHaveTextContent('job-1'));
-    fireEvent.click(screen.getByRole('button', { name: 'Publish existing' }));
-
-    await waitFor(() => expect(screen.getByTestId('flow-pr-url')).toHaveTextContent('/pull/10'));
-
-    expect(agent.startJob).not.toHaveBeenCalled();
-    expect(agent.prepareDraftPr).toHaveBeenCalledWith('job-1', undefined);
-    expect(agent.createDraftPr).toHaveBeenCalledWith('job-1', undefined);
-    expect(agent.getJob).toHaveBeenCalledWith('job-1');
-  });
-
-  it('stages confirmed content once before prepare, verified create and final reload', async () => {
-    agent.listJobs.mockResolvedValue([]);
-    agent.startToolchainJob.mockResolvedValue(snapshot({ jobId: 'job-staged', workspaceId: 'job-staged', runtimeId: 'job-staged' }));
-    agent.prepareDraftPr.mockResolvedValue({
-      ok: true,
-      jobId: 'job-staged',
-      draftPrPreparation: { allowed: true, decision: 'ready', blockers: [] },
-    });
-    agent.createDraftPr.mockResolvedValue(verifiedDraftPrCreate('job-staged', 11));
-    agent.getJob.mockResolvedValue(snapshot({
-      jobId: 'job-staged',
-      workspaceId: 'job-staged',
-      runtimeId: 'job-staged',
-      status: 'completed',
-      draftPrUrl: 'https://github.com/acme/repo/pull/11',
-    }));
-
-    render(<Provider store={store}><App /></Provider>);
-    fireEvent.click(screen.getByRole('button', { name: 'Publish staged' }));
-
-    await waitFor(() => expect(screen.getByTestId('flow-pr-url')).toHaveTextContent('/pull/11'));
-
-    expect(memory.searchReusableMemory).toHaveBeenCalledWith('Update README', 6);
-    expect(agent.startToolchainJob).toHaveBeenCalledTimes(1);
-    expect(agent.startToolchainJob).toHaveBeenCalledWith(expect.objectContaining({
-      repoUrl: 'https://github.com/acme/repo',
-      evidenceText: 'Update README',
-      cloneRepo: true,
-      provisionWorkspace: true,
-      stagedFiles: [{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }],
-    }));
-    expect(agent.prepareDraftPr).toHaveBeenCalledWith('job-staged', undefined);
-    expect(agent.createDraftPr).toHaveBeenCalledWith('job-staged', undefined);
-    expect(agent.getJob).toHaveBeenCalledWith('job-staged');
+    expect(await screen.findByText(/LLM-Anfrage blockiert:/)).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Letzte Anfrage erneut versuchen' })).toBeDefined();
   });
 });
