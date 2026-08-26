@@ -1,0 +1,53 @@
+name: Temporary MCP Stale Fixture Recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/temporary_mcp_stale_fixture_recovery.py'
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/sovereign-chatgpt-mcp/requirements.txt
+      - name: Apply bounded stale-fixture repair
+        run: python3 scripts/temporary_mcp_stale_fixture_recovery.py
+      - name: Install MCP dependencies
+        run: python -m pip install --requirement tools/sovereign-chatgpt-mcp/requirements.txt
+      - name: Verify targeted stale fixtures
+        working-directory: tools/sovereign-chatgpt-mcp
+        run: |
+          python -m pytest -q tests/test_backend_deploy_diagnostics_continuity.py tests/test_issue_closure_continuity_entry.py tests/test_neuro_deployment_install_contract.py
+      - name: Verify complete MCP suite
+        working-directory: tools/sovereign-chatgpt-mcp
+        run: python -m pytest -q
+      - name: Verify patch cleanliness
+        run: git diff --check
+      - name: Publish tested fixture repair
+        run: |
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add \
+            tools/sovereign-chatgpt-mcp/tests/test_backend_deploy_diagnostics_continuity.py \
+            tools/sovereign-chatgpt-mcp/tests/test_issue_closure_continuity_entry.py \
+            tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py
+          if git diff --cached --quiet; then
+            echo 'No fixture patch required.'
+            exit 0
+          fi
+          git commit -m 'test(mcp): bind historical evidence to captured hashes'
+          git push origin HEAD:main
