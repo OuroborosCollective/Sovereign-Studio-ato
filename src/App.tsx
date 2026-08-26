@@ -1,5 +1,5 @@
 import './runtime-adapter';
-import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import {
   BuilderContainer,
   type SovereignDraftPrPublishInput,
@@ -36,14 +36,14 @@ import {
 import { RescuePanel } from './features/rescue/RescuePanel';
 import { EvidenceObservatoryAtlas } from './features/evidence-observatory/EvidenceObservatoryAtlas';
 
-const MONITOR_FIRST_STYLE: React.CSSProperties = {
+const CHAT_ONLY_STYLE: React.CSSProperties = {
   height: '100dvh',
   overflow: 'hidden',
   background: '#0e1116',
 };
 
-function SovereignMonitorApp() {
-  const [mission, setMission] = useState('GitHub-URL einfügen oder Auftrag an das LLM geben.');
+function SovereignChatApp() {
+  const [mission, setMission] = useState('GitHub-URL einfügen oder Auftrag schreiben.');
   const agentConfig = useMemo(() => resolveSovereignAgentConfig(), []);
   const agentClient = useMemo(
     () => createSovereignAgentClient({ config: agentConfig }),
@@ -62,13 +62,6 @@ function SovereignMonitorApp() {
   const [patternLearningEvidence, setPatternLearningEvidence] = useState<
     SovereignPatternLearningEvidence | undefined
   >();
-  const [desktopFrame, setDesktopFrame] = useState<{
-    readonly jobId: string;
-    readonly url: string;
-    readonly frameHash: string;
-    readonly observedAt: number;
-  } | null>(null);
-  const desktopFrameUrlRef = useRef<string | null>(null);
   const [rescueOpen, setRescueOpen] = useState(
     () => typeof window !== 'undefined'
       && new URLSearchParams(window.location.search).get('rescue') === '1',
@@ -201,73 +194,6 @@ function SovereignMonitorApp() {
     };
   }, [agentConfig.ready, canonicalAgentJob.jobId, canonicalAgentJob.status, engineState.sessionId, runEngineCommand]);
 
-  useEffect(() => {
-    const jobId = canonicalAgentJob.jobId;
-    const canReadFrame = Boolean(
-      agentConfig.ready
-      && jobId
-      && canonicalAgentJob.status !== 'idle'
-      && canonicalAgentJob.status !== 'cleaned'
-      && typeof URL.createObjectURL === 'function',
-    );
-    const clearFrame = () => {
-      const previous = desktopFrameUrlRef.current;
-      desktopFrameUrlRef.current = null;
-      if (previous && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(previous);
-      setDesktopFrame(null);
-    };
-    if (!canReadFrame || !jobId) {
-      clearFrame();
-      return;
-    }
-
-    let cancelled = false;
-    let polling = false;
-    const refresh = async () => {
-      if (cancelled || polling) return;
-      polling = true;
-      try {
-        const observed = await agentClient.getDesktopFrame(jobId);
-        if (cancelled) return;
-        const nextUrl = URL.createObjectURL(observed.blob);
-        const previous = desktopFrameUrlRef.current;
-        desktopFrameUrlRef.current = nextUrl;
-        setDesktopFrame({
-          jobId,
-          url: nextUrl,
-          frameHash: observed.frameHash,
-          observedAt: observed.observedAt,
-        });
-        if (previous && previous !== nextUrl && typeof URL.revokeObjectURL === 'function') {
-          URL.revokeObjectURL(previous);
-        }
-      } catch {
-        if (!cancelled) clearFrame();
-      } finally {
-        polling = false;
-      }
-    };
-    void refresh();
-    if (isSovereignAgentTerminalStatus(canonicalAgentJob.status)) {
-      return () => {
-        cancelled = true;
-        clearFrame();
-      };
-    }
-    const timer = window.setInterval(() => { void refresh(); }, 1500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      clearFrame();
-    };
-  }, [agentClient, agentConfig.ready, canonicalAgentJob.jobId, canonicalAgentJob.status]);
-
-  useEffect(() => () => {
-    const previous = desktopFrameUrlRef.current;
-    if (previous && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(previous);
-    desktopFrameUrlRef.current = null;
-  }, []);
-
   const evidenceWithReusableMemory = async (query: string): Promise<string> => {
     try {
       const memory = await searchReusableMemory(query, 6);
@@ -280,7 +206,7 @@ function SovereignMonitorApp() {
     }
   };
 
-  const startMonitorTask = async (nextMission: string, input?: Partial<SovereignAgentStartJobInput>) => {
+  const startChatOnlyTask = async (nextMission: string, input?: Partial<SovereignAgentStartJobInput>) => {
     setMission(nextMission);
     setJanitorPreview('');
     setPatternLearningEvidence(undefined);
@@ -315,7 +241,7 @@ function SovereignMonitorApp() {
     }
   };
 
-  const cancelMonitorTask = async () => {
+  const cancelChatOnlyTask = async () => {
     const jobId = canonicalAgentJob.jobId;
     if (!agentConfig.ready || !jobId) return;
     const command = createSovereignEngineCommand(
@@ -516,17 +442,11 @@ function SovereignMonitorApp() {
 
   return (
     <LlmAdapterProvider>
-      <main
-        data-testid="sovereign-monitor-app"
-        data-layout="monitor-first-live-workspace"
-        aria-label="Sovereign Workspace Monitor"
-        data-legacy-backend-image-marker="DevChat"
-        style={MONITOR_FIRST_STYLE}
-      >
+      <main data-testid="chat-only-app" data-layout="chat-only-live-entry" aria-label="Sovereign Chat" style={CHAT_ONLY_STYLE}>
         <BuilderContainer
           mission={mission}
           repoReady={repoReady}
-          repoReason={repoReady ? `Runtime-Repository: ${canonicalAgentJob.repoUrl}` : 'Noch kein Repository an den Workspace-Monitor gebunden.'}
+          repoReason={repoReady ? `Runtime-Repository: ${canonicalAgentJob.repoUrl}` : 'GitHub-URL direkt im Chat einfügen.'}
           repoBusy={repoBusy}
           runtimeBusy={agentIsRunning}
           isPublishing={isPublishing}
@@ -541,14 +461,13 @@ function SovereignMonitorApp() {
           agentJob={agentJob}
           agentProjections={liveProjections}
           agentEvidenceAnchors={liveEvidenceAnchors}
-          desktopFrame={desktopFrame?.jobId === canonicalAgentJob.jobId ? desktopFrame : null}
           patternLearningEvidence={patternLearningEvidence}
           agentJobStatus={agentIsRunning
             ? 'Sovereign Agent Auftrag läuft'
             : engineState.clientNotice?.message || agentJob.lastError}
           agentIsRunning={agentIsRunning}
-          onStartAgent={startMonitorTask}
-          onCancelAgent={cancelMonitorTask}
+          onStartAgent={startChatOnlyTask}
+          onCancelAgent={cancelChatOnlyTask}
         />
         {!rescueOpen && (
           ['blocked', 'failed'].includes(canonicalAgentJob.status)
@@ -595,5 +514,5 @@ export default function App() {
     && (window.location.pathname === '/observatory'
       || window.location.pathname === '/evidence-observatory'
       || new URLSearchParams(window.location.search).get('observatory') === '1');
-  return observatoryMode ? <EvidenceObservatoryAtlas /> : <SovereignMonitorApp />;
+  return observatoryMode ? <EvidenceObservatoryAtlas /> : <SovereignChatApp />;
 }
