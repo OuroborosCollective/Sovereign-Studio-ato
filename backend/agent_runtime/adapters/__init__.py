@@ -1,5 +1,14 @@
 """Capability-bound adapters for the existing Sovereign agent runtime."""
 
+from .document_report_adapter import (
+    DOCUMENT_ADAPTER_CAPABILITIES,
+    DocumentAdapterRequest,
+    DocumentFormat,
+    EvidenceReferenceState,
+    RenderReceipt,
+    create_render_receipt,
+    render_evidence_report,
+)
 from .github_octokit_contract import (
     GITHUB_CAPABILITY_MAP,
     GitHubContractError,
@@ -40,10 +49,15 @@ from .wolfram_agenttools import (
 __all__ = [
     "CAG_SUPPLEMENTAL_ONLY",
     "CagHttpOutcome",
+    "DOCUMENT_ADAPTER_CAPABILITIES",
+    "DocumentAdapterRequest",
+    "DocumentFormat",
+    "EvidenceReferenceState",
     "GITHUB_CAPABILITY_MAP",
     "GitHubContractError",
     "GitHubExecutionReceipt",
     "GitHubVerdict",
+    "RenderReceipt",
     "RetryDecision",
     "SUPPLEMENTAL_ONLY",
     "SovereignGitHubRequestV1",
@@ -62,12 +76,14 @@ __all__ = [
     "authorize_wolfram_tool",
     "cag_retry_decision",
     "classify_cag_status",
+    "create_render_receipt",
     "execute_cag_request",
     "execute_live_cag_request",
     "is_wolfram_capability",
     "normalize_wolfram_result",
     "provision_cag_component",
     "read_cag_secret_file",
+    "render_evidence_report",
     "resolve_cag_credentials",
     "retry_decision",
 ]
