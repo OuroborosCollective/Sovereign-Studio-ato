@@ -46,7 +46,42 @@ describe('adminApiClient typed provider surface read model', () => {
           keyStorage: 'owner-managed-direct-freellm',
           activationRule: 'managed-free-quota-plus-revision-bound-double-canary-without-positive-cost-contradiction',
           minimumReadyRoutes: 5,
-          providers: [],
+          providers: useNonCanonicalEnvelope ? [
+            {
+              id: 'freellmapi-source',
+              sourceType: 'freellmapi-direct',
+              label: 'FreeLLM API',
+              apiBase: 'http://freellmapi:3001/v1',
+              modelsUrl: 'http://freellmapi:3001/v1/models',
+              authMode: 'managed-bearer',
+              keyHint: 'owner-managed',
+              status: 'healthy',
+              lastHttpStatus: 200,
+              lastErrorCode: null,
+              lastDiscoveredAt: null,
+              lastCheckedAt: null,
+              enabled: true,
+              ownerRequestId: null,
+              models: [],
+            },
+            {
+              id: 'freellmpool-source',
+              sourceType: 'freellmpool-private',
+              label: 'FreeLLMPool 0.11.4',
+              apiBase: 'http://freellmpool:8080/v1',
+              modelsUrl: null,
+              authMode: 'managed-bearer',
+              keyHint: null,
+              status: 'healthy',
+              lastHttpStatus: 200,
+              lastErrorCode: null,
+              lastDiscoveredAt: null,
+              lastCheckedAt: null,
+              enabled: true,
+              ownerRequestId: null,
+              models: [],
+            },
+          ] : [],
         },
         '/api/admin/llm/omniroute/status': omniRoute,
         '/api/admin/llm/openrouter/status': {
@@ -101,8 +136,22 @@ describe('adminApiClient typed provider surface read model', () => {
     ]);
 
     useNonCanonicalEnvelope = true;
-    await expect(adminApiClient.getLlmProviderSurfaceReadModel())
-      .rejects.toThrow('Free-Provider-Readback verletzt die kanonische typisierte Aktionsgrenze.');
+    const recovered = await adminApiClient.getLlmProviderSurfaceReadModel();
+    expect(recovered.freeRevolverMinimumReadyRoutes).toBe(5);
+    expect(recovered.providers).toHaveLength(2);
+    expect(recovered.providers[0]).toMatchObject({
+      providerSurfaceKind: 'free-revolver',
+      lifecycle: 'active',
+      canonicalAction: 'revolver-discover',
+      enabled: true,
+    });
+    expect(recovered.providers[1]).toMatchObject({
+      providerSurfaceKind: 'retired-reference',
+      lifecycle: 'historical',
+      canonicalAction: 'none',
+      enabled: false,
+    });
+    expect(recovered.omniRoute).toEqual(omniRoute);
   });
 
   it('sends the only accepted OmniRoute mutation to its dedicated runtime endpoint', async () => {
