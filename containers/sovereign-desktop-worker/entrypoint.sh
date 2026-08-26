@@ -4,6 +4,8 @@ set -eu
 export HOME=/home/desktop
 export DISPLAY=${DISPLAY:-:99}
 export XDG_RUNTIME_DIR=/run/user/10001
+RFB_PORT="${SOVEREIGN_DESKTOP_RFB_PORT:-5900}"
+WS_PORT="${SOVEREIGN_DESKTOP_WEBSOCKET_PORT:-6080}"
 mkdir -p "$HOME" "$XDG_RUNTIME_DIR" "$HOME/Downloads"
 chmod 0700 "$HOME" "$XDG_RUNTIME_DIR"
 
@@ -22,5 +24,25 @@ elif command -v firefox-esr >/dev/null 2>&1; then
 elif command -v epiphany >/dev/null 2>&1; then
   epiphany --incognito about:blank >/tmp/browser.log 2>&1 &
 fi
+
+# The RFB stream is deliberately view-only. Human input continues through the
+# separately leased /desktop/input contract so a WebSocket can never bypass
+# Sovereign's takeover/give-back consent boundary.
+x11vnc \
+  -display "$DISPLAY" \
+  -rfbport "$RFB_PORT" \
+  -localhost \
+  -forever \
+  -shared \
+  -viewonly \
+  -nopw \
+  -noxdamage \
+  >/tmp/x11vnc.log 2>&1 &
+
+websockify \
+  --heartbeat 20 \
+  "0.0.0.0:${WS_PORT}" \
+  "127.0.0.1:${RFB_PORT}" \
+  >/tmp/websockify.log 2>&1 &
 
 exec python3 /opt/sovereign-desktop-worker/desktop_worker.py
