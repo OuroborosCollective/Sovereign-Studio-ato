@@ -143,7 +143,10 @@ export const useGithubRepo = () => {
           path: directory,
           ref: branchToLoad,
         });
-        const entries = [...response.items].sort((left, right) => left.path.localeCompare(right.path));
+        // ⚡ Bolt: Fast native lexicographical string comparison replacing slow localeCompare during recursive directory tree sorting
+        const entries = [...response.items].sort((left, right) => (
+          left.path < right.path ? -1 : left.path > right.path ? 1 : 0
+        ));
         for (const entry of entries) {
           if (files.length >= 500) break;
           const type = entry.type === 'file' ? 'blob' : 'tree';
