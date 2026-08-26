@@ -8,12 +8,14 @@ metadata, and immutable price snapshots.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import hmac
 import json
 import os
 import re
 import stat
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
@@ -24,11 +26,13 @@ import requests
 from flask import jsonify, request
 
 from llm_transport import OPENROUTER_BASE_URL
+import openrouter_model_census as model_census
 
 
 ConnectionFactory = Callable[[], Any]
 OPENROUTER_OWNER_TARGET = "openrouter_api_key"
 OPENROUTER_ROOT_ROUTE_ID = "openrouter-paid-gpt-5-4-mini"
+OPENROUTER_CENSUS_ROUTE_PREFIX = "openrouter-paid-census-"
 OPENROUTER_DEFAULT_MODEL = "openai/gpt-5.4-mini"
 _OWNER_ROOT = Path("/opt/sovereign-owner-managed")
 _MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{1,239}$")
@@ -776,6 +780,371 @@ def _mark_blocked(
         return
 
 
+def _census_state_payload(state: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(state, dict):
+        return None
+    return {
+        key: state.get(key)
+        for key in (
+            "status",
+            "operationId",
+            "routeId",
+            "sourceRevision",
+            "imageDigest",
+            "catalogSnapshotSha256",
+            "modelSetSha256",
+            "catalogModelCount",
+            "clientRequestAttempts",
+            "receiptSha256",
+            "summary",
+            "blocker",
+            "updatedAt",
+            "secretValuesReturned",
+        )
+        if key in state
+    }
+
+
+def _run_openrouter_census_background(
+    *,
+    lock_handle: Any,
+    paths: dict[str, Path],
+    operation: str,
+    route_id: str,
+    models: list[dict[str, Any]],
+    catalog_snapshot_sha256: str,
+    model_set_sha256: str,
+    source_revision: str,
+    image_digest: str,
+    query: Callable[..., Any],
+) -> None:
+    try:
+        model_census.write_state(
+            paths["state"],
+            {
+                "status": "census_running",
+                "operationId": operation,
+                "routeId": route_id,
+                "sourceRevision": source_revision,
+                "imageDigest": image_digest,
+                "catalogSnapshotSha256": catalog_snapshot_sha256,
+                "modelSetSha256": model_set_sha256,
+                "catalogModelCount": len(models),
+                "secretValuesReturned": False,
+            },
+        )
+        deployment = query(
+            """SELECT status, key_fingerprint
+               FROM llm_provider_deployments
+               WHERE route_id=%s LIMIT 1""",
+            (OPENROUTER_ROOT_ROUTE_ID,),
+            one=True,
+        ) or {}
+        if deployment.get("status") != "ready" or not deployment.get("key_fingerprint"):
+            raise model_census.CensusError(
+                "openrouter_census_provider_not_ready", status_code=409
+            )
+        with _protected_key() as key:
+            fingerprint = hashlib.sha256(key.encode("utf-8")).hexdigest()
+            if not hmac.compare_digest(
+                fingerprint,
+                str(deployment.get("key_fingerprint") or ""),
+            ):
+                raise model_census.CensusError(
+                    "openrouter_secret_fingerprint_mismatch", status_code=409
+                )
+            receipt = model_census.execute_census(
+                key=key,
+                models=models,
+                catalog_snapshot_sha256=catalog_snapshot_sha256,
+                model_set_sha256=model_set_sha256,
+                source_revision=source_revision,
+                image_digest=image_digest,
+                operation=operation,
+                checkpoint_path=paths["checkpoint"],
+                receipt_path=paths["receipt"],
+                openrouter_base_url=OPENROUTER_BASE_URL,
+                request_headers=_request_headers,
+                provider_policy=_PROVIDER_POLICY,
+                max_output_tokens=model_census.DEFAULT_MAX_OUTPUT_TOKENS,
+                timeout_seconds=model_census.DEFAULT_TIMEOUT_SECONDS,
+                parallelism=model_census.DEFAULT_PARALLELISM,
+            )
+        model_census.write_state(
+            paths["state"],
+            {
+                "status": "census_completed",
+                "operationId": operation,
+                "routeId": route_id,
+                "sourceRevision": source_revision,
+                "imageDigest": image_digest,
+                "catalogSnapshotSha256": catalog_snapshot_sha256,
+                "modelSetSha256": model_set_sha256,
+                "catalogModelCount": len(models),
+                "clientRequestAttempts": receipt.get("clientRequestAttempts"),
+                "receiptSha256": receipt.get("receiptSha256"),
+                "summary": receipt.get("summary"),
+                "secretValuesReturned": False,
+            },
+        )
+    except (model_census.CensusError, OpenRouterRuntimeError) as exc:
+        family = str(getattr(exc, "family", "openrouter_census_failed"))[:120]
+        try:
+            model_census.write_state(
+                paths["state"],
+                {
+                    "status": "census_failed",
+                    "operationId": operation,
+                    "routeId": route_id,
+                    "sourceRevision": source_revision,
+                    "imageDigest": image_digest,
+                    "catalogSnapshotSha256": catalog_snapshot_sha256,
+                    "modelSetSha256": model_set_sha256,
+                    "catalogModelCount": len(models),
+                    "blocker": family,
+                    "secretValuesReturned": False,
+                },
+            )
+        except Exception:
+            pass
+    except Exception as exc:
+        family = (
+            f"openrouter_census_{_safe_openrouter_error_token(type(exc).__name__) or 'unknown'}"
+        )[:120]
+        try:
+            model_census.write_state(
+                paths["state"],
+                {
+                    "status": "census_failed",
+                    "operationId": operation,
+                    "routeId": route_id,
+                    "sourceRevision": source_revision,
+                    "imageDigest": image_digest,
+                    "catalogSnapshotSha256": catalog_snapshot_sha256,
+                    "modelSetSha256": model_set_sha256,
+                    "catalogModelCount": len(models),
+                    "blocker": family,
+                    "secretValuesReturned": False,
+                },
+            )
+        except Exception:
+            pass
+    finally:
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_handle.close()
+
+
+def _openrouter_census_operation(
+    *,
+    route_id: str,
+    expected_models: int,
+    query: Callable[..., Any],
+    audit: Callable[[str, str | None, dict[str, Any]], None],
+):
+    if not 1 <= expected_models <= _MAX_MODELS:
+        return jsonify(
+            {
+                "ok": False,
+                "status": "census_blocked",
+                "blocker": "openrouter_census_expected_model_count_invalid",
+                "routeId": route_id,
+                "secretValuesReturned": False,
+            }
+        ), 400
+    source_revision = os.getenv("SOVEREIGN_SOURCE_REVISION", "").strip().lower()
+    image_digest = os.getenv("SOVEREIGN_IMAGE_DIGEST", "").strip().lower()
+    try:
+        models, catalog_snapshot_sha256, model_set_sha256 = model_census.catalog_snapshot(
+            query,
+            model_id_pattern=_MODEL_ID_RE,
+        )
+        if len(models) != expected_models:
+            raise model_census.CensusError(
+                "openrouter_census_model_count_changed", status_code=409
+            )
+        operation = model_census.operation_id(
+            source_revision=source_revision,
+            image_digest=image_digest,
+            catalog_snapshot_sha256=catalog_snapshot_sha256,
+            model_set_sha256=model_set_sha256,
+            expected_models=expected_models,
+        )
+        paths = model_census.evidence_paths(_owner_root(), operation)
+        if paths["receipt"].is_file():
+            receipt = model_census.load_receipt(paths["receipt"])
+            return jsonify(
+                {
+                    "ok": True,
+                    "status": "census_completed",
+                    "transport": "openrouter",
+                    "routeId": route_id,
+                    "operationId": operation,
+                    "censusReceipt": receipt,
+                    "providerRequestsRepeated": False,
+                    "secretValuesReturned": False,
+                }
+            )
+
+        state = model_census.read_state(paths["state"])
+        if isinstance(state, dict) and state.get("status") == "census_failed":
+            return jsonify(
+                {
+                    "ok": False,
+                    "status": "census_failed",
+                    "transport": "openrouter",
+                    "routeId": route_id,
+                    "operationId": operation,
+                    "blocker": state.get("blocker") or "openrouter_census_failed",
+                    "census": _census_state_payload(state),
+                    "providerRequestsRepeated": False,
+                    "secretValuesReturned": False,
+                }
+            )
+
+        lock_fd = os.open(paths["lock"], os.O_RDWR | os.O_CREAT, 0o600)
+        lock_handle = os.fdopen(lock_fd, "a+b", buffering=0)
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            lock_handle.close()
+            current = model_census.read_state(paths["state"])
+            return jsonify(
+                {
+                    "ok": True,
+                    "status": "census_running",
+                    "transport": "openrouter",
+                    "routeId": route_id,
+                    "operationId": operation,
+                    "census": _census_state_payload(current),
+                    "providerRequestsRepeated": False,
+                    "secretValuesReturned": False,
+                }
+            )
+
+        if paths["receipt"].is_file():
+            try:
+                receipt = model_census.load_receipt(paths["receipt"])
+            finally:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+                lock_handle.close()
+            return jsonify(
+                {
+                    "ok": True,
+                    "status": "census_completed",
+                    "transport": "openrouter",
+                    "routeId": route_id,
+                    "operationId": operation,
+                    "censusReceipt": receipt,
+                    "providerRequestsRepeated": False,
+                    "secretValuesReturned": False,
+                }
+            )
+
+        model_census.write_state(
+            paths["state"],
+            {
+                "status": "census_starting",
+                "operationId": operation,
+                "routeId": route_id,
+                "sourceRevision": source_revision,
+                "imageDigest": image_digest,
+                "catalogSnapshotSha256": catalog_snapshot_sha256,
+                "modelSetSha256": model_set_sha256,
+                "catalogModelCount": len(models),
+                "secretValuesReturned": False,
+            },
+        )
+        worker = threading.Thread(
+            target=_run_openrouter_census_background,
+            kwargs={
+                "lock_handle": lock_handle,
+                "paths": paths,
+                "operation": operation,
+                "route_id": route_id,
+                "models": models,
+                "catalog_snapshot_sha256": catalog_snapshot_sha256,
+                "model_set_sha256": model_set_sha256,
+                "source_revision": source_revision,
+                "image_digest": image_digest,
+                "query": query,
+            },
+            name=f"openrouter-census-{operation[:12]}",
+            daemon=True,
+        )
+        try:
+            worker.start()
+        except Exception:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+            lock_handle.close()
+            raise
+        try:
+            audit(
+                "openrouter_model_census_started",
+                operation,
+                {
+                    "routeId": route_id,
+                    "modelCount": len(models),
+                    "catalogSnapshotSha256": catalog_snapshot_sha256,
+                    "modelSetSha256": model_set_sha256,
+                    "maxOutputTokens": model_census.DEFAULT_MAX_OUTPUT_TOKENS,
+                    "timeoutSeconds": model_census.DEFAULT_TIMEOUT_SECONDS,
+                    "parallelism": model_census.DEFAULT_PARALLELISM,
+                    "automaticFallback": False,
+                    "clientAutomaticRetries": 0,
+                },
+            )
+        except Exception:
+            pass
+        return jsonify(
+            {
+                "ok": True,
+                "status": "census_running",
+                "transport": "openrouter",
+                "routeId": route_id,
+                "operationId": operation,
+                "catalogModelCount": len(models),
+                "catalogSnapshotSha256": catalog_snapshot_sha256,
+                "modelSetSha256": model_set_sha256,
+                "maxOutputTokens": model_census.DEFAULT_MAX_OUTPUT_TOKENS,
+                "timeoutSeconds": model_census.DEFAULT_TIMEOUT_SECONDS,
+                "parallelism": model_census.DEFAULT_PARALLELISM,
+                "automaticFallback": False,
+                "clientAutomaticRetries": 0,
+                "providerRequestsRepeated": False,
+                "secretValuesReturned": False,
+            }
+        )
+    except model_census.CensusError as exc:
+        return jsonify(
+            {
+                "ok": False,
+                "status": "census_blocked",
+                "transport": "openrouter",
+                "routeId": route_id,
+                "blocker": exc.family,
+                "providerRequestsRepeated": False,
+                "secretValuesReturned": False,
+            }
+        ), exc.status_code
+    except Exception as exc:
+        family = (
+            f"openrouter_census_{_safe_openrouter_error_token(type(exc).__name__) or 'unknown'}"
+        )[:120]
+        return jsonify(
+            {
+                "ok": False,
+                "status": "census_blocked",
+                "transport": "openrouter",
+                "routeId": route_id,
+                "blocker": family,
+                "providerRequestsRepeated": False,
+                "secretValuesReturned": False,
+            }
+        ), 500
+
+
 def activate_openrouter_provider(
     route_id: str,
     *,
@@ -1012,6 +1381,14 @@ def _openrouter_status_payload(query: Callable[..., Any]) -> dict[str, Any]:
     if deployment_status == "ready" and selectable_models <= 0:
         effective_status = "catalog_refresh_required"
         blocker = blocker or "openrouter_catalog_refresh_required"
+    try:
+        latest_census = _census_state_payload(model_census.latest_state(_owner_root()))
+    except Exception:
+        latest_census = {
+            "status": "census_state_unreadable",
+            "blocker": "openrouter_census_state_unreadable",
+            "secretValuesReturned": False,
+        }
     return {
         "status": effective_status,
         "deploymentStatus": deployment_status,
@@ -1023,6 +1400,7 @@ def _openrouter_status_payload(query: Callable[..., Any]) -> dict[str, Any]:
         "lastCanaryRequestId": row.get("last_canary_request_id"),
         "lastCanaryAt": row.get("last_canary_at"),
         "lastErrorCode": blocker,
+        "latestCensus": latest_census,
         "secretValuesReturned": False,
     }
 
@@ -1177,6 +1555,24 @@ def register_openrouter_provider_runtime(
             return jsonify({"error": "Nicht autorisiert"}), 401
         body = request.get_json(silent=True)
         route_id = str(body.get("routeId") if isinstance(body, dict) else "").strip()
+        if route_id.startswith(OPENROUTER_CENSUS_ROUTE_PREFIX):
+            raw_count = route_id[len(OPENROUTER_CENSUS_ROUTE_PREFIX):]
+            if not re.fullmatch(r"[0-9]+", raw_count):
+                return jsonify(
+                    {
+                        "ok": False,
+                        "status": "census_blocked",
+                        "blocker": "openrouter_census_expected_model_count_invalid",
+                        "routeId": route_id,
+                        "secretValuesReturned": False,
+                    }
+                ), 400
+            return _openrouter_census_operation(
+                route_id=route_id,
+                expected_models=int(raw_count),
+                query=query,
+                audit=audit,
+            )
         if route_id and route_id != OPENROUTER_ROOT_ROUTE_ID:
             return jsonify({"error": "OpenRouter-Aktivierungsroute unbekannt"}), 404
         return activate_openrouter_provider(
