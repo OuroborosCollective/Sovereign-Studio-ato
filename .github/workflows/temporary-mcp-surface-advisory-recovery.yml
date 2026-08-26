@@ -1,0 +1,60 @@
+name: Temporary MCP Surface Advisory Recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/temporary_mcp_surface_advisory_recovery.py'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact trigger revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install MCP test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r tools/sovereign-chatgpt-mcp/requirements.txt
+          python -m pip install pytest jsonschema PyYAML
+
+      - name: Apply bounded surface-authority repair
+        run: python scripts/temporary_mcp_surface_advisory_recovery.py
+
+      - name: Validate installer syntax
+        run: bash -n tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh
+
+      - name: Run preservation regression
+        run: python -m pytest tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py -q
+
+      - name: Run complete MCP regression suite
+        run: python -m pytest tools/sovereign-chatgpt-mcp/tests -q
+
+      - name: Verify diff integrity
+        run: git diff --check
+
+      - name: Publish only tested product files
+        run: |
+          set -euo pipefail
+          git add \
+            tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh \
+            tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py
+          git diff --cached --quiet && exit 0
+          git config user.name 'Ouroboros Collective'
+          git config user.email 'projectouroboroscollective@gmail.com'
+          git commit -m 'fix(mcp): make predecessor surface drift advisory evidence'
+          git push origin HEAD:main
