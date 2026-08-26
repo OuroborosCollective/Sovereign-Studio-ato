@@ -93,12 +93,11 @@ jobs:
               insertion = '''    def _require_owner_repository_admin(self, owner_approved: bool) -> dict[str, Any] | None:\n        """Owner repository/ruleset admin is independent of PR/workflow feature flags."""\n        if not self.private_owner_mode or not owner_approved:\n            return {\n                "ok": False,\n                "status": "BLOCKED",\n                "blocker": "Repository-Administration erfordert privaten Owner-Modus und ausdrückliche Owner-Freigabe",\n            }\n        return None\n\n'''
               replace_once(admin_path, marker, insertion + marker)
 
-          replace_in_function(
-              admin_path,
-              'dispatch_workflow',
-              '        if not _enabled("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL"):\n            return {"ok": False, "status": "BLOCKED", "blocker": "Workflow-Steuerung ist nicht aktiviert"}\n',
-              '        if not self.private_owner_mode and not _enabled("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL"):\n            return {"ok": False, "status": "BLOCKED", "blocker": "Workflow-Steuerung ist außerhalb des privaten Owner-Modus nicht aktiviert"}\n',
-          )
+          workflow_gate_old = '        if not _enabled("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL"):\n            return {"ok": False, "status": "BLOCKED", "blocker": "Workflow-Steuerung ist nicht aktiviert"}\n'
+          workflow_gate_new = '        if not self.private_owner_mode and not _enabled("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL"):\n            return {"ok": False, "status": "BLOCKED", "blocker": "Workflow-Steuerung ist außerhalb des privaten Owner-Modus nicht aktiviert"}\n'
+          replace_in_function(admin_path, 'rerun_failed_workflows', workflow_gate_old, workflow_gate_new)
+          replace_in_function(admin_path, 'dispatch_workflow', workflow_gate_old, workflow_gate_new)
+
           replace_in_function(
               admin_path,
               'apply_main_ruleset',
@@ -133,35 +132,35 @@ jobs:
           )
 
           tests_path = 'tools/sovereign-chatgpt-mcp/tests/test_github_admin.py'
-          replace_in_function(
+          replace_once(
               tests_path,
-              'test_private_owner_mode_can_dispatch_any_safe_repository_workflow',
-              '    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", "1")\n',
-              '    monkeypatch.delenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", raising=False)\n',
+              'def test_failed_workflow_rerun_uses_failed_jobs_endpoint(monkeypatch) -> None:\n    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", "1")\n',
+              'def test_failed_workflow_rerun_uses_failed_jobs_endpoint(monkeypatch) -> None:\n    monkeypatch.delenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", raising=False)\n    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")\n',
           )
-          replace_in_function(
+          replace_once(
               tests_path,
-              'test_apply_main_ruleset_acceleration_drops_all_status_check_blockers',
-              '    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")\n',
-              '    monkeypatch.delenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", raising=False)\n',
+              'def test_private_owner_mode_can_dispatch_any_safe_repository_workflow(monkeypatch) -> None:\n    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", "1")\n    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")\n',
+              'def test_private_owner_mode_can_dispatch_any_safe_repository_workflow(monkeypatch) -> None:\n    monkeypatch.delenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", raising=False)\n    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")\n',
           )
-          replace_in_function(
+          replace_once(
               tests_path,
-              'test_apply_main_ruleset_acceleration_drops_all_status_check_blockers',
-              '        "enforcement": "active",\n',
-              '        "enforcement": "disabled",\n',
+              'def test_apply_main_ruleset_acceleration_drops_all_status_check_blockers(monkeypatch) -> None:\n    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")\n    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")\n',
+              'def test_apply_main_ruleset_acceleration_drops_all_status_check_blockers(monkeypatch) -> None:\n    monkeypatch.delenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", raising=False)\n    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")\n',
           )
-          replace_in_function(
+          replace_once(
               tests_path,
-              'test_apply_main_ruleset_acceleration_drops_all_status_check_blockers',
-              '    assert result["required_status_checks"] == []\n',
-              '    assert result["required_status_checks"] == []\n    assert result["enforcement"] == "disabled"\n',
+              '        "id": 43,\n        "name": "Sovereign Main Revision Green Gate",\n        "target": "branch",\n        "enforcement": "active",\n',
+              '        "id": 43,\n        "name": "Sovereign Main Revision Green Gate",\n        "target": "branch",\n        "enforcement": "disabled",\n',
           )
-          replace_in_function(
+          replace_once(
               tests_path,
-              'test_apply_main_ruleset_acceleration_drops_all_status_check_blockers',
-              '    assert not any(rule["type"] == "required_status_checks" for rule in put_call["json"]["rules"])\n',
-              '    assert not any(rule["type"] == "required_status_checks" for rule in put_call["json"]["rules"])\n    assert put_call["json"]["enforcement"] == "disabled"\n',
+              '    assert result["required_status_checks"] == []\n    put_call = next(call for call in session.calls if call["method"] == "PUT")\n',
+              '    assert result["required_status_checks"] == []\n    assert result["enforcement"] == "disabled"\n    put_call = next(call for call in session.calls if call["method"] == "PUT")\n',
+          )
+          replace_once(
+              tests_path,
+              '    assert not any(rule["type"] == "required_status_checks" for rule in put_call["json"]["rules"])\n\n\ndef test_apply_main_ruleset_blocks_without_owner_approval',
+              '    assert not any(rule["type"] == "required_status_checks" for rule in put_call["json"]["rules"])\n    assert put_call["json"]["enforcement"] == "disabled"\n\n\ndef test_apply_main_ruleset_blocks_without_owner_approval',
           )
 
           static_test = Path('tools/sovereign-chatgpt-mcp/tests/test_owner_admin_unblocked.py')
