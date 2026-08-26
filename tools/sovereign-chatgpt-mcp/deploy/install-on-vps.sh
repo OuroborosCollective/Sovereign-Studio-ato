@@ -2045,6 +2045,50 @@ print(
 )
 PY
 chmod 0600 "$NEW_MCP_REGISTRY_FILE"
+# The replacement registry itself remains a hard runtime invariant. Historical
+# predecessor compatibility is evidence, not deployment authority.
+python3 - "$NEW_MCP_REGISTRY_FILE" "$EXPECTED_MCP_TOOL_COUNT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+expected_count = int(sys.argv[2])
+value = json.loads(path.read_text("utf-8"))
+tools = value.get("tools") if isinstance(value, dict) else None
+required_additions = {
+    "neuro_event_commit",
+    "neuro_event_route_preview",
+    "neuro_runtime_contract_status",
+    "teaching_lesson_simulate",
+    "teaching_package_assess",
+}
+if (
+    value.get("schemaVersion") != "sovereign.mcp-deployment-contract-surface.v1"
+    or not isinstance(tools, list)
+    or len(tools) != expected_count
+    or value.get("toolCount") != expected_count
+):
+    raise SystemExit("replacement MCP intrinsic registry contract is invalid")
+names = [item.get("name") for item in tools if isinstance(item, dict)]
+if len(names) != expected_count or names != sorted(set(names)):
+    raise SystemExit("replacement MCP intrinsic registry names are invalid")
+if not required_additions.issubset(names):
+    raise SystemExit("replacement MCP intrinsic registry is missing required tools")
+for item in tools:
+    if (
+        not isinstance(item.get("capabilities"), list)
+        or not isinstance(item.get("effect"), str)
+        or not isinstance(item.get("annotations"), dict)
+        or not isinstance(item.get("parameters"), dict)
+        or not isinstance(item.get("outputSchema"), dict)
+    ):
+        raise SystemExit(f"replacement MCP intrinsic contract is incomplete: {item.get('name')}")
+PY
+MCP_SURFACE_ADVISORY_FILE="$ROLLBACK_DIR/mcp-tool-surface-advisory.err"
+PREDECESSOR_SEMANTIC_COMPATIBILITY_VERIFIED=0
+set +e
+{
 python3 - "$PREVIOUS_MCP_REGISTRY_FILE" "$NEW_MCP_REGISTRY_FILE" "$PREVIOUS_MCP_TOOL_SURFACE_CAPTURED" "$EXPECTED_MCP_TOOL_COUNT" <<'PY'
 from decimal import Decimal, InvalidOperation
 import json
@@ -2576,6 +2620,21 @@ print(
     )
 )
 PY
+} 2>"$MCP_SURFACE_ADVISORY_FILE"
+MCP_SURFACE_COMPARE_RC=$?
+set -e
+if (( MCP_SURFACE_COMPARE_RC == 0 )); then
+  if [[ "$PREVIOUS_MCP_TOOL_SURFACE_CAPTURED" == "1" ]]; then
+    PREDECESSOR_SEMANTIC_COMPATIBILITY_VERIFIED=1
+  fi
+else
+  MCP_SURFACE_ADVISORY_SHA256="$(sha256sum "$MCP_SURFACE_ADVISORY_FILE" | awk '{print $1}')"
+  [[ "$MCP_SURFACE_ADVISORY_SHA256" =~ ^[0-9a-f]{64}$ ]] \
+    || fail "could not hash predecessor MCP surface advisory evidence"
+  printf 'SOVEREIGN_MCP_TOOL_SURFACE_ADVISORY:%s\n' "$MCP_SURFACE_ADVISORY_SHA256" >&2
+fi
+rm -f "$MCP_SURFACE_ADVISORY_FILE"
+unset MCP_SURFACE_ADVISORY_FILE MCP_SURFACE_ADVISORY_SHA256 MCP_SURFACE_COMPARE_RC
 
 INSTALL_STAGE="verify_isolated_neuro_runtime_canary"
 docker exec -i \
@@ -3205,7 +3264,7 @@ systemctl is-active --quiet sovereign-release-reconciler.timer \
 
 if [[ "$PREVIOUS_MCP_CONTAINER_PRESENT" == "1" ]]; then
   [[ "$PREVIOUS_MCP_TOOL_SURFACE_CAPTURED" == "1" ]] \
-    || fail "predecessor MCP existed but semantic compatibility was not verified"
+    || fail "predecessor MCP existed but registry capture was not verified"
 else
   [[ "$PREVIOUS_MCP_TOOL_SURFACE_CAPTURED" == "0" ]] \
     || fail "first-install state conflicts with predecessor registry evidence"
@@ -3220,7 +3279,8 @@ SEMANTIC_COMPATIBILITY_VERIFIED_JSON=false
 FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON=true
 if [[ "$PREVIOUS_MCP_CONTAINER_PRESENT" == "1" ]]; then
   PREDECESSOR_CONTAINER_PRESENT_JSON=true
-  SEMANTIC_COMPATIBILITY_VERIFIED_JSON=true
+  [[ "$PREDECESSOR_SEMANTIC_COMPATIBILITY_VERIFIED" != "1" ]] \
+    || SEMANTIC_COMPATIBILITY_VERIFIED_JSON=true
   FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON=false
 fi
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"neuro_runtime_tools":true,"foundation_runtime":true,"teaching_runtime_tools":true,"neuro_functional_canary":true,"neuro_tamper_detection":true,"neuro_selected_tools_executed":false,"registered_tool_surface_canary":true,"teaching_functional_canary":true,"teaching_source_provenance_canary":true,"teaching_package_mutated":false,"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only","read_only_tool_calls_persisted":false,"canary_persisted_outcome_tools":["neuro_event_commit"],"mcp_tool_count":%s,"predecessor_container_present":%s,"predecessor_registry_capture_mode":"%s","previous_tool_surface_compared":%s,"semantic_compatibility_verified":%s,"first_install_without_predecessor":%s,"first_install_attested":%s,"event_delta_projection":"incremental","operating_profile_enforced":true,"continuity_advisory":true,"github_app_repository_canary":true,"persistent_github_token_present":false,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-omniroute"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE" "$EXPECTED_MCP_TOOL_COUNT" "$PREDECESSOR_CONTAINER_PRESENT_JSON" "$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE" "$PREVIOUS_TOOL_SURFACE_COMPARED_JSON" "$SEMANTIC_COMPATIBILITY_VERIFIED_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON"
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"neuro_runtime_tools":true,"foundation_runtime":true,"teaching_runtime_tools":true,"neuro_functional_canary":true,"neuro_tamper_detection":true,"neuro_selected_tools_executed":false,"registered_tool_surface_canary":true,"teaching_functional_canary":true,"teaching_source_provenance_canary":true,"teaching_package_mutated":false,"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only","read_only_tool_calls_persisted":false,"canary_persisted_outcome_tools":["neuro_event_commit"],"mcp_tool_count":%s,"predecessor_container_present":%s,"predecessor_registry_capture_mode":"%s","previous_tool_surface_compared":%s,"semantic_compatibility_verified":%s,"semantic_compatibility_blocking":false,"first_install_without_predecessor":%s,"first_install_attested":%s,"event_delta_projection":"incremental","operating_profile_enforced":true,"continuity_advisory":true,"github_app_repository_canary":true,"persistent_github_token_present":false,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-omniroute"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE" "$EXPECTED_MCP_TOOL_COUNT" "$PREDECESSOR_CONTAINER_PRESENT_JSON" "$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE" "$PREVIOUS_TOOL_SURFACE_COMPARED_JSON" "$SEMANTIC_COMPATIBILITY_VERIFIED_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON"

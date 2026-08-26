@@ -174,8 +174,12 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
     assert 'docker rm -f "$PREVIOUS_MCP_INTROSPECTION_CONTAINER"' in script
     assert 'bounded predecessor introspection container was not cleaned' in script
     assert '[[ "$PREVIOUS_MCP_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]' in script
-    assert 'predecessor MCP existed but semantic compatibility was not verified' in script
+    assert 'predecessor MCP existed but registry capture was not verified' in script
+    assert 'MCP_SURFACE_ADVISORY_FILE="$ROLLBACK_DIR/mcp-tool-surface-advisory.err"' in script
+    assert 'PREDECESSOR_SEMANTIC_COMPATIBILITY_VERIFIED=0' in script
+    assert 'SOVEREIGN_MCP_TOOL_SURFACE_ADVISORY:%s' in script
     assert '"semantic_compatibility_verified":%s' in script
+    assert '"semantic_compatibility_blocking":false' in script
     assert '"first_install_attested":%s' in script
     assert "if not old_capabilities <= new_capabilities:" in script
     assert 'canonical(old["effect"]) != canonical(new["effect"])' in script
