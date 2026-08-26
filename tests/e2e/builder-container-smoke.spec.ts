@@ -18,7 +18,7 @@ test.describe('Play release chat browser smoke', () => {
   });
 
   test('2. Email/password login is reachable and external OAuth is not visible', async ({ page }) => {
-    await page.getByRole('button', { name: 'Anmelden' }).click();
+    await page.getByRole('button', { name: 'Anmelden', exact: true }).click();
     await expect(page.locator('input[type="email"]')).toBeVisible();
     await expect(page.locator('input[type="password"]')).toBeVisible();
     await expect(page.getByText(/Google/i)).toHaveCount(0);
@@ -43,7 +43,7 @@ test.describe('Play release chat browser smoke', () => {
   test('5. Release shell remains responsive at phone width', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.locator('[data-testid="sovereign-release-chat"]')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Anmelden', exact: true })).toBeVisible();
     await expect(page.getByLabel('Nachricht an Sovereign')).toBeVisible();
   });
 });
