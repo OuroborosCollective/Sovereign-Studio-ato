@@ -48,6 +48,8 @@ The GitHub Actions canary:
 - proves a current input lease permits one bounded input, replay is rejected, and GIVE BACK blocks a fresh post-revocation input;
 - proves anonymous view access is denied, a bound private capability creates an opaque cookie, and two authenticated WebSocket upgrades reconnect.
 
+An exact-head refresh may be triggered by a documentation-only change inside this worker directory so the same canary revalidates the image and runtime boundary against the repository's current revision. A passing refresh does not expand production authority or substitute for production readback.
+
 This is repository and CI evidence only. It is not a production deployment or a target-effect verdict. A production runtime claim requires a separately registered managed desktop-worker deployment/readback path.
 
 ## Explicit upstream decision
