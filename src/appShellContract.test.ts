@@ -91,7 +91,6 @@ describe('Play release rescue app shell contract', () => {
       'fetchSovereignLlmRouteCatalog',
       'fetchDevChatWorkerReply',
       'DEV_CHAT_WORKER_DEFAULT_MODEL',
-      "credentials",
       'evaluateInputPolicy',
       '<LoginModal',
     ]);
