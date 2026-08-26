@@ -1176,7 +1176,9 @@ def register_openrouter_provider_runtime(
         if not _service_authorized():
             return jsonify({"error": "Nicht autorisiert"}), 401
         body = request.get_json(silent=True)
-        route_id = str(body.get("routeId") if isinstance(body, dict) else "").strip()
+        if not isinstance(body, dict):
+            return jsonify({"error": "Der Request-Body muss ein JSON-Objekt sein."}), 400
+        route_id = str(body.get("routeId") or "").strip()
         if route_id and route_id != OPENROUTER_ROOT_ROUTE_ID:
             return jsonify({"error": "OpenRouter-Aktivierungsroute unbekannt"}), 404
         return activate_openrouter_provider(
@@ -1212,7 +1214,9 @@ def register_openrouter_provider_runtime(
     @require_admin
     def update_openrouter_model_markup(route_id: str):
         body = request.get_json(silent=True)
-        raw_multiplier = body.get("markupMultiplier") if isinstance(body, dict) else None
+        if not isinstance(body, dict):
+            return jsonify({"error": "Der Request-Body muss ein JSON-Objekt sein."}), 400
+        raw_multiplier = body.get("markupMultiplier")
         if isinstance(raw_multiplier, bool) or not isinstance(raw_multiplier, int):
             return jsonify(
                 {

@@ -544,7 +544,7 @@
     },
     {
       "file": "scripts/sovereign-backend/openrouter_provider_runtime.py",
-      "line": 1189,
+      "line": 1191,
       "methods": [
         "GET"
       ],
@@ -553,7 +553,7 @@
     },
     {
       "file": "scripts/sovereign-backend/openrouter_provider_runtime.py",
-      "line": 1208,
+      "line": 1210,
       "methods": [
         "PATCH"
       ],
@@ -3253,7 +3253,7 @@
     },
     {
       "file": "scripts/sovereign-backend/openrouter_provider_runtime.py",
-      "line": 1317,
+      "line": 1321,
       "methods": [
         "GET"
       ],
@@ -3568,7 +3568,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1123,
+        "line": 1214,
         "method": "UNKNOWN",
         "path": "/api/admin/audit-log",
         "source_kind": "route-literal",
@@ -3597,7 +3597,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 934,
+        "line": 1022,
         "method": "UNKNOWN",
         "path": "/api/admin/billing/stats",
         "source_kind": "route-literal",
@@ -3626,7 +3626,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1157,
+        "line": 1248,
         "method": "UNKNOWN",
         "path": "/api/admin/credit-packages",
         "source_kind": "route-literal",
@@ -3675,7 +3675,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1172,
+        "line": 1263,
         "method": "UNKNOWN",
         "path": "/api/admin/credit-packages/<p>",
         "source_kind": "route-literal",
@@ -3724,7 +3724,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1179,
+        "line": 1270,
         "method": "UNKNOWN",
         "path": "/api/admin/credit-packages/<p>",
         "source_kind": "route-literal",
@@ -3773,7 +3773,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1162,
+        "line": 1253,
         "method": "UNKNOWN",
         "path": "/api/admin/credit-packages/init",
         "source_kind": "route-literal",
@@ -3802,7 +3802,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 938,
+        "line": 1026,
         "method": "UNKNOWN",
         "path": "/api/admin/launcher/tools",
         "source_kind": "route-literal",
@@ -3833,7 +3833,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 942,
+        "line": 1030,
         "method": "UNKNOWN",
         "path": "/api/admin/launcher/tools/<p>",
         "source_kind": "route-literal",
@@ -3864,7 +3864,7 @@
         "active_surface": true,
         "call_name": "fetch",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 788,
+        "line": 876,
         "method": "POST",
         "path": "/api/admin/llm/freellm/provider-credentials/auto",
         "source_kind": "request-call",
@@ -3895,7 +3895,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 990,
+        "line": 1078,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/omniroute/refresh",
         "source_kind": "route-literal",
@@ -3930,7 +3930,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 986,
+        "line": 1074,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/omniroute/status",
         "source_kind": "route-literal",
@@ -3963,7 +3963,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1113,
+        "line": 1204,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/openrouter/catalog/refresh",
         "source_kind": "route-literal",
@@ -3994,7 +3994,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1001,
+        "line": 1089,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/openrouter/free/status",
         "source_kind": "route-literal",
@@ -4027,7 +4027,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 997,
+        "line": 1085,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/openrouter/status",
         "source_kind": "route-literal",
@@ -4069,7 +4069,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 982,
+        "line": 1070,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/revolver-v3/providers",
         "source_kind": "route-literal",
@@ -4115,7 +4115,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1042,
+        "line": 1133,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/revolver-v3/providers",
         "source_kind": "route-literal",
@@ -4152,7 +4152,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1097,
+        "line": 1188,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/revolver-v3/providers/<p>",
         "source_kind": "route-literal",
@@ -4189,7 +4189,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1077,
+        "line": 1168,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/revolver-v3/providers/<p>/discover",
         "source_kind": "route-literal",
@@ -4226,7 +4226,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1050,
+        "line": 1141,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/revolver-v3/providers/<p>/owner-input",
         "source_kind": "route-literal",
@@ -4263,7 +4263,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1089,
+        "line": 1180,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/revolver-v3/providers/<p>/recheck",
         "source_kind": "route-literal",
@@ -4300,7 +4300,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 957,
+        "line": 1045,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/routes",
         "source_kind": "route-literal",
@@ -4333,7 +4333,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 961,
+        "line": 1049,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/routes/<p>",
         "source_kind": "route-literal",
@@ -4366,7 +4366,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 969,
+        "line": 1057,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/routes/<p>/revolver-reset",
         "source_kind": "route-literal",
@@ -4399,7 +4399,7 @@
         "active_surface": true,
         "call_name": "fetch",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 726,
+        "line": 814,
         "method": "POST",
         "path": "/api/admin/owner-input/requests/<p>/resolve",
         "source_kind": "request-call",
@@ -4430,7 +4430,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1133,
+        "line": 1224,
         "method": "UNKNOWN",
         "path": "/api/admin/payment-methods",
         "source_kind": "route-literal",
@@ -4468,7 +4468,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1140,
+        "line": 1231,
         "method": "UNKNOWN",
         "path": "/api/admin/payment-methods/<p>",
         "source_kind": "route-literal",
@@ -4497,7 +4497,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1188,
+        "line": 1279,
         "method": "UNKNOWN",
         "path": "/api/admin/payment-methods/crypto/confirm",
         "source_kind": "route-literal",
@@ -4535,7 +4535,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1147,
+        "line": 1238,
         "method": "UNKNOWN",
         "path": "/api/admin/payment-methods/init",
         "source_kind": "route-literal",
@@ -4564,7 +4564,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 853,
+        "line": 941,
         "method": "UNKNOWN",
         "path": "/api/admin/ping",
         "source_kind": "route-literal",
@@ -4587,7 +4587,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 871,
+        "line": 959,
         "method": "UNKNOWN",
         "path": "/api/admin/platform/v1/canaries",
         "source_kind": "route-literal",
@@ -4609,7 +4609,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 863,
+        "line": 951,
         "method": "UNKNOWN",
         "path": "/api/admin/platform/v1/evidence",
         "source_kind": "route-literal",
@@ -4631,7 +4631,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 882,
+        "line": 970,
         "method": "UNKNOWN",
         "path": "/api/admin/platform/v1/openapi.json",
         "source_kind": "route-literal",
@@ -4653,7 +4653,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 857,
+        "line": 945,
         "method": "UNKNOWN",
         "path": "/api/admin/platform/v1/overview",
         "source_kind": "route-literal",
@@ -4695,7 +4695,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1242,
+        "line": 1333,
         "method": "UNKNOWN",
         "path": "/api/admin/toolchain/tools",
         "source_kind": "route-literal",
@@ -4733,7 +4733,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1254,
+        "line": 1345,
         "method": "UNKNOWN",
         "path": "/api/admin/toolchain/tools",
         "source_kind": "route-literal",
@@ -4771,7 +4771,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1269,
+        "line": 1360,
         "method": "UNKNOWN",
         "path": "/api/admin/toolchain/tools/<p>",
         "source_kind": "route-literal",
@@ -4809,7 +4809,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1276,
+        "line": 1367,
         "method": "UNKNOWN",
         "path": "/api/admin/toolchain/tools/<p>",
         "source_kind": "route-literal",
@@ -4838,7 +4838,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 925,
+        "line": 1013,
         "method": "UNKNOWN",
         "path": "/api/admin/transactions",
         "source_kind": "route-literal",
@@ -4867,7 +4867,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 890,
+        "line": 978,
         "method": "UNKNOWN",
         "path": "/api/admin/users",
         "source_kind": "route-literal",
@@ -4896,7 +4896,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 894,
+        "line": 982,
         "method": "UNKNOWN",
         "path": "/api/admin/users/<p>",
         "source_kind": "route-literal",
@@ -4925,7 +4925,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 911,
+        "line": 999,
         "method": "UNKNOWN",
         "path": "/api/admin/users/<p>/credit-adjustment",
         "source_kind": "route-literal",
@@ -6003,9 +6003,7 @@
       "status": "BOUND",
       "testReferences": {
         "backend": [],
-        "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
-        ],
+        "e2e": [],
         "unit": [
           "src/features/billing/billingSlice.test.ts"
         ]
@@ -6036,9 +6034,7 @@
       "status": "PATH_BOUND_METHOD_UNKNOWN",
       "testReferences": {
         "backend": [],
-        "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
-        ],
+        "e2e": [],
         "unit": [
           "src/features/billing/billingSlice.test.ts"
         ]
@@ -7018,8 +7014,11 @@
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_runtime_truth_source_contracts.py"
         ],
-        "e2e": [],
+        "e2e": [
+          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
+        ],
         "unit": [
+          "src/App.draftPrFlow.test.tsx",
           "src/features/product/containers/BuilderContainer.test.tsx",
           "src/features/product/llm/primaryBridgeConfig.test.ts",
           "src/features/product/runtime/builderChatHelpers.test.ts",
@@ -7059,8 +7058,11 @@
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_runtime_truth_source_contracts.py"
         ],
-        "e2e": [],
+        "e2e": [
+          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
+        ],
         "unit": [
+          "src/App.draftPrFlow.test.tsx",
           "src/features/product/containers/BuilderContainer.test.tsx",
           "src/features/product/llm/primaryBridgeConfig.test.ts",
           "src/features/product/runtime/builderChatHelpers.test.ts",
@@ -7100,8 +7102,11 @@
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_runtime_truth_source_contracts.py"
         ],
-        "e2e": [],
+        "e2e": [
+          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
+        ],
         "unit": [
+          "src/App.draftPrFlow.test.tsx",
           "src/features/product/containers/BuilderContainer.test.tsx",
           "src/features/product/llm/primaryBridgeConfig.test.ts",
           "src/features/product/runtime/builderChatHelpers.test.ts",
@@ -7141,8 +7146,11 @@
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_runtime_truth_source_contracts.py"
         ],
-        "e2e": [],
+        "e2e": [
+          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
+        ],
         "unit": [
+          "src/App.draftPrFlow.test.tsx",
           "src/features/product/containers/BuilderContainer.test.tsx",
           "src/features/product/llm/primaryBridgeConfig.test.ts",
           "src/features/product/runtime/builderChatHelpers.test.ts",
@@ -7182,8 +7190,11 @@
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_runtime_truth_source_contracts.py"
         ],
-        "e2e": [],
+        "e2e": [
+          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
+        ],
         "unit": [
+          "src/App.draftPrFlow.test.tsx",
           "src/features/product/containers/BuilderContainer.test.tsx",
           "src/features/product/llm/primaryBridgeConfig.test.ts",
           "src/features/product/runtime/builderChatHelpers.test.ts",
@@ -7223,8 +7234,11 @@
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_runtime_truth_source_contracts.py"
         ],
-        "e2e": [],
+        "e2e": [
+          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
+        ],
         "unit": [
+          "src/App.draftPrFlow.test.tsx",
           "src/features/product/containers/BuilderContainer.test.tsx",
           "src/features/product/llm/primaryBridgeConfig.test.ts",
           "src/features/product/runtime/builderChatHelpers.test.ts",
@@ -7264,8 +7278,11 @@
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_runtime_truth_source_contracts.py"
         ],
-        "e2e": [],
+        "e2e": [
+          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
+        ],
         "unit": [
+          "src/App.draftPrFlow.test.tsx",
           "src/features/product/containers/BuilderContainer.test.tsx",
           "src/features/product/llm/primaryBridgeConfig.test.ts",
           "src/features/product/runtime/builderChatHelpers.test.ts",
@@ -8873,9 +8890,7 @@
       "status": "BOUND",
       "testReferences": {
         "backend": [],
-        "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
-        ],
+        "e2e": [],
         "unit": [
           "src/features/product/containers/BuilderContainer.test.tsx",
           "src/features/toolchain/skillsApi.test.ts"
@@ -8907,9 +8922,7 @@
       "status": "BOUND",
       "testReferences": {
         "backend": [],
-        "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
-        ],
+        "e2e": [],
         "unit": [
           "src/features/product/containers/BuilderContainer.test.tsx",
           "src/features/toolchain/skillsApi.test.ts"
@@ -9030,9 +9043,7 @@
       "status": "BOUND",
       "testReferences": {
         "backend": [],
-        "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
-        ],
+        "e2e": [],
         "unit": [
           "src/features/product/containers/BuilderContainer.test.tsx"
         ]
@@ -9134,7 +9145,6 @@
       "testReferences": {
         "backend": [],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -9159,7 +9169,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1225,
+        "line": 1316,
         "method": "UNKNOWN",
         "path": "/api/toolchain/universal/briefing",
         "source_kind": "route-literal",
@@ -9259,9 +9269,7 @@
       "status": "BOUND",
       "testReferences": {
         "backend": [],
-        "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
-        ],
+        "e2e": [],
         "unit": [
           "src/features/product/containers/BuilderContainer.test.tsx"
         ]
@@ -9283,7 +9291,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1208,
+        "line": 1299,
         "method": "UNKNOWN",
         "path": "/api/toolchain/universal/manifest",
         "source_kind": "route-literal",
@@ -9292,9 +9300,7 @@
       "status": "LITERAL_BOUND",
       "testReferences": {
         "backend": [],
-        "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
-        ],
+        "e2e": [],
         "unit": [
           "src/features/product/containers/BuilderContainer.test.tsx"
         ]
@@ -9316,7 +9322,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1216,
+        "line": 1307,
         "method": "UNKNOWN",
         "path": "/api/toolchain/universal/status",
         "source_kind": "route-literal",
@@ -9356,9 +9362,7 @@
       "status": "BOUND",
       "testReferences": {
         "backend": [],
-        "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
-        ],
+        "e2e": [],
         "unit": [
           "src/features/product/containers/BuilderContainer.test.tsx"
         ]
@@ -9685,7 +9689,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -9753,7 +9756,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -9821,7 +9823,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -9871,7 +9872,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -9921,7 +9921,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -9971,7 +9970,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10021,7 +10019,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10071,7 +10068,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10121,7 +10117,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10171,7 +10166,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10221,7 +10215,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10271,7 +10264,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10321,7 +10313,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10371,7 +10362,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10421,7 +10411,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10471,7 +10460,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10521,7 +10509,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10571,7 +10558,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10621,7 +10607,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10671,7 +10656,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10721,7 +10705,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10771,7 +10754,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10821,7 +10803,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10871,7 +10852,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10921,7 +10901,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -10971,7 +10950,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -11021,7 +10999,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -11071,7 +11048,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -11121,7 +11097,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -11171,7 +11146,6 @@
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
         "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
@@ -13412,7 +13386,7 @@
     },
     {
       "dynamic": false,
-      "line": 37,
+      "line": 3,
       "source": "src/App.tsx",
       "source_status": "active",
       "target": "src/features/evidence-observatory/EvidenceObservatoryAtlas.tsx",
@@ -13420,58 +13394,10 @@
     },
     {
       "dynamic": false,
-      "line": 32,
+      "line": 4,
       "source": "src/App.tsx",
       "source_status": "active",
-      "target": "src/features/knowledge/knowledgeApi.ts",
-      "target_status": "active"
-    },
-    {
-      "dynamic": false,
-      "line": 3,
-      "source": "src/App.tsx",
-      "source_status": "active",
-      "target": "src/features/product/containers/BuilderContainer.tsx",
-      "target_status": "active"
-    },
-    {
-      "dynamic": false,
-      "line": 7,
-      "source": "src/App.tsx",
-      "source_status": "active",
-      "target": "src/features/product/contexts/LlmAdapterContext.tsx",
-      "target_status": "active"
-    },
-    {
-      "dynamic": false,
-      "line": 8,
-      "source": "src/App.tsx",
-      "source_status": "active",
-      "target": "src/features/product/runtime/sovereignAgentClient.ts",
-      "target_status": "active"
-    },
-    {
-      "dynamic": false,
-      "line": 13,
-      "source": "src/App.tsx",
-      "source_status": "active",
-      "target": "src/features/product/runtime/sovereignAgentRuntime.ts",
-      "target_status": "active"
-    },
-    {
-      "dynamic": false,
-      "line": 18,
-      "source": "src/App.tsx",
-      "source_status": "active",
-      "target": "src/features/product/runtime/sovereignEngineBoundary.ts",
-      "target_status": "active"
-    },
-    {
-      "dynamic": false,
-      "line": 36,
-      "source": "src/App.tsx",
-      "source_status": "active",
-      "target": "src/features/rescue/RescuePanel.tsx",
+      "target": "src/features/release/PlayReleaseChat.tsx",
       "target_status": "active"
     },
     {
@@ -17581,6 +17507,38 @@
     {
       "dynamic": false,
       "line": 2,
+      "source": "src/features/release/PlayReleaseChat.tsx",
+      "source_status": "active",
+      "target": "src/features/product/runtime/devChatWorkerBridge.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 10,
+      "source": "src/features/release/PlayReleaseChat.tsx",
+      "source_status": "active",
+      "target": "src/features/product/runtime/secureInputGuard.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 11,
+      "source": "src/features/release/PlayReleaseChat.tsx",
+      "source_status": "active",
+      "target": "src/features/user/components/LoginModal.tsx",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 12,
+      "source": "src/features/release/PlayReleaseChat.tsx",
+      "source_status": "active",
+      "target": "src/features/user/useUserStore.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 2,
       "source": "src/features/rescue/RescuePanel.tsx",
       "source_status": "active",
       "target": "src/features/billing/PaywallModal.tsx",
@@ -17652,23 +17610,7 @@
     },
     {
       "dynamic": false,
-      "line": 8,
-      "source": "src/features/user/components/LoginModal.tsx",
-      "source_status": "active",
-      "target": "src/features/github/githubOAuthLogin.ts",
-      "target_status": "active"
-    },
-    {
-      "dynamic": false,
-      "line": 9,
-      "source": "src/features/user/components/LoginModal.tsx",
-      "source_status": "active",
-      "target": "src/features/user/googleOAuthLogin.ts",
-      "target_status": "active"
-    },
-    {
-      "dynamic": false,
-      "line": 7,
+      "line": 11,
       "source": "src/features/user/components/LoginModal.tsx",
       "source_status": "active",
       "target": "src/features/user/useUserStore.ts",
@@ -18715,10 +18657,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "959abeb2754434482291fab6271a2a29458a64e103f7432b02ab5e79d1858604",
-  "revision": "f4eecdf703f6f01fb9da32f978068ea004c18492",
+  "reportSha256": "e0ed9b937f9d295cfeb7b8f2582ffd53f82358ec173478301418fe8a750a9602",
+  "revision": "754177ebca382d1e2d99119baac394d94da68ac0",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "6e00c7ee2e0ce39260d7a7bbccd3984caf98d95a8c660f62c5f9aff80bd4780c",
+  "sourceTreeSha256": "9b86457525a1ccaacbdd9e7f7c5fb1b6ee16a5dda9a99ad5dd6417f19b95732e",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -18732,12 +18674,12 @@
     "externalMethodUnknownCount": 0,
     "externalRequestCount": 30,
     "frontendCallCount": 256,
-    "frontendModuleCount": 528,
-    "importEdgeCount": 697,
+    "frontendModuleCount": 529,
+    "importEdgeCount": 693,
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
-    "testFileCount": 735,
+    "testFileCount": 739,
     "unmatchedActiveRequestCount": 0
   },
   "truthBoundary": {

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-08-26T01:19:56.959Z",
+  "generatedAt": "2026-08-26T23:27:56.268Z",
   "discovery": {
     "scope": "tracked repository test conventions",
     "excludedDirectories": [
@@ -31,12 +31,12 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 723,
+  "totalTestFiles": 727,
   "testRoots": {
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
     "backend": 1,
-    "backend/tests": 157,
+    "backend/tests": 160,
     "backend/tests/e2e": 1,
     "integrations/openhands/sovereign-mcp-toolset-plugin/tests": 1,
     "research": 1,
@@ -47,7 +47,7 @@
     "src": 356,
     "tests/e2e": 5,
     "tools": 3,
-    "tools/sovereign-chatgpt-mcp/tests": 96,
+    "tools/sovereign-chatgpt-mcp/tests": 97,
     "tools/sovereign-github-patch-mcp/tests": 4,
     "tools/sovereign-toolchain/tests": 2
   },
@@ -478,6 +478,30 @@
       "ciWorkflows": [
         "sovereign-agent-backend.yml"
       ],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_control_mutation_contract.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_control_mutation_receipts.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_control_mutation_single_variable.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
       "category": "python-suite"
     },
     {
@@ -9356,7 +9380,9 @@
       "language": "python",
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
       "gates": [],
-      "ciWorkflows": [],
+      "ciWorkflows": [
+        "sovereign-owner-boundary-evidence-reconcile.yml"
+      ],
       "category": "python-suite"
     },
     {
@@ -9388,7 +9414,9 @@
       "language": "python",
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
       "gates": [],
-      "ciWorkflows": [],
+      "ciWorkflows": [
+        "sovereign-owner-boundary-evidence-reconcile.yml"
+      ],
       "category": "python-suite"
     },
     {
@@ -9661,7 +9689,8 @@
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
       "gates": [],
       "ciWorkflows": [
-        "boundary-ledger-drift.yml"
+        "boundary-ledger-drift.yml",
+        "sovereign-owner-boundary-evidence-reconcile.yml"
       ],
       "category": "python-suite"
     },
@@ -9779,6 +9808,14 @@
     },
     {
       "file": "tools/sovereign-chatgpt-mcp/tests/test_output_contracts.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-chatgpt-mcp/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-chatgpt-mcp/tests/test_owner_admin_unblocked.py",
       "language": "python",
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
       "gates": [],
