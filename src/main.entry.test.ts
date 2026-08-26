@@ -64,14 +64,24 @@ describe('main app entry', () => {
     expect(chat).toContain('DEV_CHAT_WORKER_DEFAULT_MODEL');
   });
 
-  it('keeps repository-agent memory and execution outside the Play chat root', () => {
+  it('keeps repository execution inside the focused Play chat but bounded to typed intent and Draft PR evidence', () => {
     const app = readSource('./App.tsx');
     const chat = readSource('./features/release/PlayReleaseChat.tsx');
+    const agentRuntime = readSource('./features/product/runtime/sovereignAgentRuntime.ts');
 
     expect(app).not.toContain('searchReusableMemory');
-    expect(app).not.toContain('startRepositoryExecution');
     expect(chat).not.toContain('searchReusableMemory');
-    expect(chat).not.toContain('createDraftPr');
+    expect(chat).toContain('fetchSovereignDirectLlmInterpretation');
+    expect(chat).toContain('SovereignAgentClient');
+    expect(chat).toContain('agentClient.startJob');
+    expect(chat).toContain('agentClient.prepareDraftPr');
+    expect(chat).toContain('agentClient.createDraftPr');
+    expect(chat).toContain('Sovereign Aktivitätsverlauf');
+    expect(chat).toContain('formatCuteThinkingLabel');
+    expect(chat).not.toContain('mergePullRequest');
+    expect(chat).not.toContain('mergeWhenGreen');
+    expect(agentRuntime).toContain('draftPrOnly: true');
+    expect(agentRuntime).toContain('allowAutoMerge: false');
   });
 
   it('keeps the release shell styling contract in the Android web build', () => {
