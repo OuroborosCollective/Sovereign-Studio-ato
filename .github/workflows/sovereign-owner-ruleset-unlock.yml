@@ -1,3 +1,4 @@
+# Owner-admin recovery lane; direct workflow administration intentionally supported.
 name: Sovereign Owner Ruleset Unlock
 
 on:
