@@ -203,9 +203,19 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert 'if [[ "$SELF_UPDATE_TUNNEL_MODE" == "required" ]]; then' in updater
     assert 'systemctl is-active --quiet sovereign-openai-tunnel.service' in updater
     assert 'tunnel not required' in updater
-    assert '"cross_runtime_parity_proven": sys.argv[2] == "UPDATED"' in updater
+    assert '"revision_verified": revision_verified' in updater
+    assert '"image_digest_verified": image_digest_verified' in updater
+    assert '"container_healthy": updated' in updater
+    assert '"mcp_protocol_ready": updated' in updater
+    assert '"broker_rpc_ready": updated' in updater
+    assert '"cross_runtime_parity_proven": updated' in updater
     assert 'immutable_image_label_and_ci_vector_comparison' in updater
     assert 'CURRENT_STAGE="completed"' in updater
+    assert 'RUNNING_IMAGE_REFERENCE="$(docker inspect --format' in updater
+    assert 'RUNNING_IMAGE_DIGEST="${RUNNING_REPO_DIGEST##*@}"' in updater
+    assert '[[ "$RUNNING_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]' in updater
+    assert '[[ "$RUNNING_REVISION" == "$EXPECTED_REVISION" ]]' in updater
+    assert 'write_status UPDATED "$EXPECTED_REVISION" "$COMPLETION_DETAIL" "$RUNNING_IMAGE_DIGEST"' in updater
     assert "StateDirectory=sovereign-chatgpt-self-update" in service
     assert "ConditionPathExists=/run/sovereign-chatgpt-broker/self-update.request.json" in service
 

@@ -7,9 +7,15 @@ const runtime = vi.hoisted(() => ({
   catalog: vi.fn(),
   health: vi.fn(),
   reply: vi.fn(),
+  interpret: vi.fn(),
+  parseRepo: vi.fn(),
   evaluateInputPolicy: vi.fn(),
   refreshUser: vi.fn(),
   logout: vi.fn(),
+  agentStart: vi.fn(),
+  agentGet: vi.fn(),
+  prepareDraftPr: vi.fn(),
+  createDraftPr: vi.fn(),
 }));
 
 vi.mock('./features/product/runtime/devChatWorkerBridge', () => ({
@@ -17,6 +23,34 @@ vi.mock('./features/product/runtime/devChatWorkerBridge', () => ({
   fetchSovereignLlmRouteCatalog: runtime.catalog,
   fetchDevChatWorkerHealth: runtime.health,
   fetchDevChatWorkerReply: runtime.reply,
+  parseDevChatGithubUrl: runtime.parseRepo,
+}));
+
+vi.mock('./features/product/runtime/sovereignDirectLlmIntentRuntime', () => ({
+  fetchSovereignDirectLlmInterpretation: runtime.interpret,
+}));
+
+vi.mock('./features/product/runtime/sovereignAgentClient', () => ({
+  createSovereignAgentClient: () => ({
+    startRepositoryExecution: runtime.agentStart,
+    getJob: runtime.agentGet,
+    prepareDraftPr: runtime.prepareDraftPr,
+    createDraftPr: runtime.createDraftPr,
+  }),
+}));
+
+vi.mock('./features/product/runtime/sovereignAgentRuntime', () => ({
+  resolveSovereignAgentConfig: () => ({
+    enabled: true,
+    deploymentMode: 'sovereign-agent-backend',
+    agentApiUrl: 'https://backend.example.test',
+    ready: true,
+    reason: 'ready',
+  }),
+  isSovereignAgentTerminalStatus: (status: string) => ['blocked', 'failed', 'completed', 'cleaned'].includes(status),
+  summarizeSovereignAgentJob: (job: { status: string; draftPrUrl?: string }) => job.draftPrUrl
+    ? `Draft PR ${job.draftPrUrl}`
+    : `Agent ${job.status}`,
 }));
 
 vi.mock('./features/product/runtime/secureInputGuard', () => ({
@@ -67,12 +101,37 @@ beforeEach(() => {
     preferredModel: 'free-route-1',
     actualModel: 'free-route-1',
   });
+  runtime.interpret.mockResolvedValue({ ok: false, error: 'no repo context' });
+  runtime.parseRepo.mockReturnValue(null);
+  runtime.agentStart.mockReset();
+  runtime.agentGet.mockReset();
+  runtime.prepareDraftPr.mockReset();
+  runtime.createDraftPr.mockReset();
   runtime.evaluateInputPolicy.mockReturnValue({ shouldBlock: false });
   runtime.refreshUser.mockResolvedValue(undefined);
   runtime.logout.mockResolvedValue(undefined);
 });
 
 describe('Play release chat runtime integration', () => {
+  it('keeps the compact release menu, model picker and evidence-derived status cues visible', async () => {
+    render(<PlayReleaseChat />);
+
+    expect(screen.getByTestId('play-release-menu-frame')).toBeDefined();
+    expect(screen.getByRole('button', { name: /Chat/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /GitHub/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Modelle/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Konto/ })).toBeDefined();
+    expect(screen.getByLabelText('LLM Route')).toBeDefined();
+    expect(screen.getByLabelText('Session bestätigt')).toBeDefined();
+    expect(screen.getByLabelText('GitHub nicht verbunden')).toBeDefined();
+
+    await waitFor(() => expect(screen.getByLabelText('LLM bereit')).toBeDefined());
+    expect(screen.getByTestId('release-guide-mood')).toHaveTextContent('😊✨');
+
+    fireEvent.click(screen.getByRole('button', { name: /GitHub/ }));
+    expect(screen.getByText(/Noch kein Repository-Ziel im Chat gebunden/)).toBeDefined();
+  });
+
   it('loads the authenticated current route catalog and keeps the free-first default', async () => {
     render(<PlayReleaseChat />);
 
@@ -80,6 +139,121 @@ describe('Play release chat runtime integration', () => {
     expect(screen.getByRole('option', { name: 'Auto · FreeLLM zuerst' })).toBeDefined();
     expect(await screen.findByRole('option', { name: 'FREE · Free Revolver' })).toBeDefined();
     expect(screen.getByText('release@example.test')).toBeDefined();
+  });
+
+  it('routes an explicit GitHub coding command through agent execution and verified Draft-PR readback', async () => {
+    runtime.parseRepo.mockReturnValue({
+      owner: 'acme',
+      repo: 'repo',
+      branch: 'main',
+      path: '',
+      name: 'repo',
+      repoUrl: 'https://github.com/acme/repo',
+    });
+    runtime.interpret.mockResolvedValue({
+      ok: true,
+      interpretation: {
+        mode: 'action',
+        intent: 'draft_pr',
+        actionDisposition: 'execute',
+        assistantText: '',
+        actionTitle: 'README aktualisieren',
+        confidence: 0.98,
+        language: 'de',
+        model: 'free-route-1',
+        fallbackUsed: false,
+      },
+    });
+    runtime.agentStart.mockResolvedValue({
+      jobId: 'job-release-1',
+      workspaceId: 'ws-release-1',
+      runtimeId: 'run-release-1',
+      status: 'completed',
+      repoUrl: 'https://github.com/acme/repo',
+      branch: 'main',
+      changedFiles: ['README.md'],
+      events: [],
+    });
+    runtime.prepareDraftPr.mockResolvedValue({
+      ok: true,
+      jobId: 'job-release-1',
+      draftPrPreparation: {
+        allowed: true,
+        decision: 'ready',
+        canCreateDraftPr: true,
+        blockers: [],
+      },
+    });
+    runtime.createDraftPr.mockResolvedValue({
+      ok: true,
+      jobId: 'job-release-1',
+      draftPrCreate: {
+        allowed: true,
+        status: 'created',
+        prUrl: 'https://github.com/acme/repo/pull/42',
+        headSha: 'a'.repeat(40),
+        publishedHeadSha: 'a'.repeat(40),
+        readbackHeadSha: 'a'.repeat(40),
+        prNumber: 42,
+        draftVerified: true,
+        prStateVerified: 'open',
+        headBranch: 'sovereign/release-42',
+        baseBranch: 'main',
+        readbackVerified: true,
+        checksReadbackVerified: true,
+        ciState: 'pending',
+        checkRunCount: 1,
+        checksPendingCount: 1,
+        checksSuccessCount: 0,
+        checksFailureCount: 0,
+        statusContextCount: 0,
+      },
+    });
+
+    render(<PlayReleaseChat />);
+    fireEvent.change(screen.getByLabelText('Nachricht an Sovereign'), {
+      target: { value: 'Ändere die README jetzt und erstelle einen Draft PR: https://github.com/acme/repo' },
+    });
+    fireEvent.click(screen.getByLabelText('Senden'));
+
+    await waitFor(() => expect(runtime.agentStart).toHaveBeenCalledOnce());
+    expect(runtime.agentStart).toHaveBeenCalledWith(expect.objectContaining({
+      repoUrl: 'https://github.com/acme/repo',
+      branch: 'main',
+      mission: 'README aktualisieren',
+    }));
+    await waitFor(() => expect(runtime.prepareDraftPr).toHaveBeenCalledWith('job-release-1'));
+    await waitFor(() => expect(runtime.createDraftPr).toHaveBeenCalledWith('job-release-1'));
+    expect(await screen.findByText(/github\.com\/acme\/repo\/pull\/42/)).toBeDefined();
+    expect(runtime.reply).not.toHaveBeenCalled();
+  });
+
+  it('keeps a direct patch in the runtime workspace until Draft-PR publication is explicitly requested', async () => {
+    runtime.parseRepo.mockReturnValue({
+      owner: 'acme', repo: 'repo', branch: 'main', path: '', name: 'repo', repoUrl: 'https://github.com/acme/repo',
+    });
+    runtime.interpret.mockResolvedValue({
+      ok: true,
+      interpretation: {
+        mode: 'action', intent: 'direct_patch', actionDisposition: 'execute', assistantText: '',
+        actionTitle: 'README aktualisieren', confidence: 0.97, language: 'de', model: 'free-route-1', fallbackUsed: false,
+      },
+    });
+    runtime.agentStart.mockResolvedValue({
+      jobId: 'job-release-2', workspaceId: 'ws-release-2', runtimeId: 'run-release-2', status: 'completed',
+      repoUrl: 'https://github.com/acme/repo', branch: 'main', changedFiles: ['README.md'], events: [],
+    });
+
+    render(<PlayReleaseChat />);
+    fireEvent.change(screen.getByLabelText('Nachricht an Sovereign'), {
+      target: { value: 'Ändere die README jetzt: https://github.com/acme/repo' },
+    });
+    fireEvent.click(screen.getByLabelText('Senden'));
+
+    await waitFor(() => expect(runtime.agentStart).toHaveBeenCalledOnce());
+    expect(await screen.findByText(/Kein externer GitHub-Write wurde ausgeführt/)).toBeDefined();
+    expect(runtime.prepareDraftPr).not.toHaveBeenCalled();
+    expect(runtime.createDraftPr).not.toHaveBeenCalled();
   });
 
   it('sends chat through the current Sovereign LLM bridge and renders the real reply', async () => {

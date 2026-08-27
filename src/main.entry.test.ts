@@ -64,14 +64,19 @@ describe('main app entry', () => {
     expect(chat).toContain('DEV_CHAT_WORKER_DEFAULT_MODEL');
   });
 
-  it('keeps repository-agent memory and execution outside the Play chat root', () => {
+  it('keeps repository memory and monitor wiring outside App while restoring bounded GitHub execution in Play chat', () => {
     const app = readSource('./App.tsx');
     const chat = readSource('./features/release/PlayReleaseChat.tsx');
 
     expect(app).not.toContain('searchReusableMemory');
     expect(app).not.toContain('startRepositoryExecution');
     expect(chat).not.toContain('searchReusableMemory');
-    expect(chat).not.toContain('createDraftPr');
+    expect(chat).toContain('fetchSovereignDirectLlmInterpretation');
+    expect(chat).toContain('startRepositoryExecution');
+    expect(chat).toContain('prepareDraftPr');
+    expect(chat).toContain('createDraftPr');
+    expect(chat).toContain("interpretation.intent === 'draft_pr'");
+    expect(chat).not.toContain('getDesktopFrame');
   });
 
   it('keeps the release shell styling contract in the Android web build', () => {
