@@ -81,6 +81,7 @@ import { TestRunnerResultCard } from "../components/TestRunnerResultCard";
 import { AutoCodeReviewCard } from "../components/AutoCodeReviewCard";
 import { FileContentPreviewSheet } from "../components/FileContentPreviewSheet";
 import { PromptLibraryPanel } from "../components/PromptLibraryPanel";
+import { OpenHandsOperatorBriefingPanel } from "../components/OpenHandsOperatorBriefingPanel";
 import { ActionSuggestionStrip } from "../components/ActionSuggestionStrip";
 import { SlashCommandMenu } from "../components/SlashCommandMenu";
 import {
@@ -1731,6 +1732,25 @@ function SideDrawer({
               NoCode Agent Runtime
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setOHB(true)}
+            aria-label="OpenHands Briefing"
+            title="OpenHands Briefing"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: C.textMuted,
+              fontSize: 16,
+              cursor: "pointer",
+              minWidth: 44,
+              minHeight: 44,
+              padding: 0,
+              borderRadius: 6,
+            }}
+          >
+            🤖
+          </button>
           <button
             type="button"
             onClick={onClose}
@@ -6271,6 +6291,9 @@ Das echte Repo-Setup wurde geöffnet.`);
               border: `1px solid ${C.border}`,
             }}
           >
+            <div className="p-4">
+              <OpenHandsOperatorBriefingPanel />
+            </div>
           </div>
         </div>
       )}
