@@ -5,6 +5,7 @@ import {
   buildLocalStatusAnswer,
   buildChatLines,
   buildWorkerBlockerAnswer,
+  sameRecord,
 } from './builderChatHelpers';
 
 describe('isWriteIntent', () => {
@@ -197,5 +198,36 @@ describe('buildChatLines', () => {
       disabledReason: 'Worker blockiert',
     });
     expect(lines).toEqual([]);
+  });
+});
+
+describe('sameRecord', () => {
+  it('returns true for identical records', () => {
+    const a = { chat: 'idle', init: 'active', sync: 'processing' };
+    const b = { chat: 'idle', init: 'active', sync: 'processing' };
+    expect(sameRecord(a, b)).toBe(true);
+  });
+
+  it('returns true for empty records', () => {
+    expect(sameRecord({}, {})).toBe(true);
+  });
+
+  it('returns false when key counts differ', () => {
+    const a = { chat: 'idle' };
+    const b = { chat: 'idle', init: 'active' };
+    expect(sameRecord(a, b)).toBe(false);
+    expect(sameRecord(b, a)).toBe(false);
+  });
+
+  it('returns false when values for the same key differ', () => {
+    const a = { chat: 'idle', init: 'active' };
+    const b = { chat: 'idle', init: 'idle' };
+    expect(sameRecord(a, b)).toBe(false);
+  });
+
+  it('returns false when keys differ even if total key count matches', () => {
+    const a = { chat: 'idle', init: 'active' };
+    const b = { chat: 'idle', sync: 'active' };
+    expect(sameRecord(a, b)).toBe(false);
   });
 });
