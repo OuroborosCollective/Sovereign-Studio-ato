@@ -8,10 +8,12 @@ import {
   type SovereignLlmRouteOption,
 } from '../product/runtime/devChatWorkerBridge';
 import { evaluateInputPolicy } from '../product/runtime/secureInputGuard';
+import { deriveReleaseGuideState } from '../product/runtime/sovereignReleaseGuide';
 import { LoginModal } from '../user/components/LoginModal';
 import { useUserStore } from '../user/useUserStore';
 
 type ChatRole = 'user' | 'assistant' | 'system';
+type ReleaseMenuKey = 'chat' | 'github' | 'models' | 'account';
 
 interface ChatEntry {
   readonly id: string;
@@ -83,7 +85,10 @@ export function PlayReleaseChat() {
   const [busy, setBusy] = useState(false);
   const [runtimeState, setRuntimeState] = useState<'checking' | 'ready' | 'degraded'>('checking');
   const [lastFailedText, setLastFailedText] = useState<string | null>(null);
+  const [activeMenu, setActiveMenu] = useState<ReleaseMenuKey>('chat');
   const listRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const routeSelectRef = useRef<HTMLSelectElement>(null);
   const sequenceRef = useRef(0);
 
   useEffect(() => {
@@ -131,6 +136,25 @@ export function PlayReleaseChat() {
     () => routes.find((route) => route.id === selectedRoute),
     [routes, selectedRoute],
   );
+  const githubConnected = Boolean(user?.githubId || user?.githubUsername);
+  const runtimeLamp = runtimeState === 'ready' ? 'green' : runtimeState === 'checking' ? 'yellow' : 'red';
+  const guide = useMemo(() => deriveReleaseGuideState({
+    lamp: runtimeLamp,
+    title: 'Sovereign Play Release',
+    message: runtimeState === 'ready' ? 'LLM Runtime bereit' : runtimeState === 'checking' ? 'Runtime wird geprüft' : 'Runtime eingeschränkt',
+    action: busy ? 'Auftrag wird analysiert' : 'Chat bereit',
+    thinking: busy,
+    source: 'play-release-chat',
+  }), [busy, runtimeLamp, runtimeState]);
+
+  const activateMenu = (menu: ReleaseMenuKey) => {
+    setActiveMenu(menu);
+    window.setTimeout(() => {
+      if (menu === 'chat') composerRef.current?.focus();
+      if (menu === 'models') routeSelectRef.current?.focus();
+      if (menu === 'account' && !user) setShowLogin(true);
+    }, 0);
+  };
 
   const addMessage = (role: ChatRole, text: string) => {
     sequenceRef.current += 1;
@@ -204,8 +228,10 @@ export function PlayReleaseChat() {
     }
   };
 
-  const runtimeColor = runtimeState === 'ready' ? C.green : runtimeState === 'degraded' ? C.amber : C.muted;
+  const runtimeColor = runtimeState === 'ready' ? C.green : runtimeState === 'degraded' ? C.rose : C.amber;
   const runtimeLabel = runtimeState === 'ready' ? 'LLM bereit' : runtimeState === 'degraded' ? 'LLM eingeschränkt' : 'LLM wird geprüft';
+  const sessionColor = user ? C.green : C.amber;
+  const githubColor = githubConnected ? C.green : user ? C.amber : C.muted;
 
   return (
     <main
@@ -225,12 +251,15 @@ export function PlayReleaseChat() {
     >
       <style>{`
         * { box-sizing: border-box; }
-        .release-chat-header { padding-top: max(10px, env(safe-area-inset-top)); }
-        .release-chat-shell { width: 100%; max-width: 980px; margin: 0 auto; }
+        .release-chat-header { padding-top: max(8px, env(safe-area-inset-top)); }
+        .release-chat-shell { width: 100%; max-width: 1120px; margin: 0 auto; }
         .release-chat-composer { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
-        @media (max-width: 640px) {
+        .release-chat-menu-scroll { scrollbar-width: none; }
+        .release-chat-menu-scroll::-webkit-scrollbar { display: none; }
+        @media (max-width: 720px) {
           .release-chat-title-sub { display: none; }
-          .release-chat-route { max-width: 145px !important; }
+          .release-chat-status-label { display: none; }
+          .release-chat-route { min-width: 168px !important; max-width: 210px !important; }
         }
       `}</style>
 
@@ -244,30 +273,13 @@ export function PlayReleaseChat() {
             <div style={{ fontWeight: 750, fontSize: 15 }}>Sovereign</div>
             <div className="release-chat-title-sub" style={{ color: C.sub, fontSize: 10.5 }}>Chat · stabiler Play-Release-Modus</div>
           </div>
-          {user && (
-            <select
-              className="release-chat-route"
-              aria-label="LLM Route"
-              value={selectedRoute}
-              onChange={(event) => setSelectedRoute(event.target.value)}
-              style={{
-                maxWidth: 230,
-                minHeight: 40,
-                borderRadius: 8,
-                border: `1px solid ${C.border}`,
-                background: C.bg,
-                color: C.text,
-                padding: '0 8px',
-                fontSize: 11,
-              }}
-            >
-              <option value="">Auto · FreeLLM zuerst</option>
-              {routes.map((route) => <option key={route.id} value={route.id}>{routeLabel(route)}</option>)}
-            </select>
-          )}
-          <span title={routeError ?? runtimeLabel} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: runtimeColor, fontSize: 10, whiteSpace: 'nowrap' }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: runtimeColor }} />
-            <span className="release-chat-title-sub">{runtimeLabel}</span>
+          <span
+            data-testid="release-guide-mood"
+            title={guide.helperMessage}
+            aria-label={`Sovereign Status ${guide.mood}`}
+            style={{ fontSize: 19, lineHeight: 1, whiteSpace: 'nowrap' }}
+          >
+            {guide.mood}
           </span>
           {user ? (
             <button
@@ -290,6 +302,103 @@ export function PlayReleaseChat() {
           )}
         </div>
       </header>
+
+      <nav
+        data-testid="play-release-menu-frame"
+        aria-label="Sovereign Hauptmenü"
+        style={{ flexShrink: 0, borderBottom: `1px solid ${C.border}`, background: '#0f151e' }}
+      >
+        <div
+          className="release-chat-shell release-chat-menu-scroll"
+          style={{ minHeight: 52, display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', overflowX: 'auto' }}
+        >
+          {([
+            ['chat', '💬', 'Chat'],
+            ['github', '⌘', 'GitHub'],
+            ['models', '◫', 'Modelle'],
+            ['account', '◉', 'Konto'],
+          ] as const).map(([key, icon, label]) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={activeMenu === key}
+              onClick={() => activateMenu(key)}
+              style={{
+                minHeight: 38,
+                minWidth: 42,
+                padding: '0 10px',
+                borderRadius: 9,
+                border: `1px solid ${activeMenu === key ? C.accent + '77' : C.border}`,
+                background: activeMenu === key ? C.accent + '12' : C.bg,
+                color: activeMenu === key ? C.accent : C.sub,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                fontSize: 11,
+                fontWeight: 700,
+              }}
+            >
+              <span aria-hidden="true">{icon}</span>
+              <span className="release-chat-nav-label">{label}</span>
+            </button>
+          ))}
+
+          <select
+            ref={routeSelectRef}
+            className="release-chat-route"
+            aria-label="LLM Route"
+            value={selectedRoute}
+            onFocus={() => setActiveMenu('models')}
+            onChange={(event) => setSelectedRoute(event.target.value)}
+            disabled={!user}
+            style={{
+              marginLeft: 2,
+              minWidth: 205,
+              maxWidth: 280,
+              minHeight: 38,
+              borderRadius: 9,
+              border: `1px solid ${activeMenu === 'models' ? C.accent + '77' : C.border}`,
+              background: C.bg,
+              color: user ? C.text : C.muted,
+              padding: '0 9px',
+              fontSize: 11,
+            }}
+          >
+            <option value="">{user ? 'Auto · FreeLLM zuerst' : 'Modelle · nach Anmeldung'}</option>
+            {routes.map((route) => <option key={route.id} value={route.id}>{routeLabel(route)}</option>)}
+          </select>
+
+          <span style={{ flex: 1, minWidth: 6 }} />
+          <span title={runtimeLabel} aria-label={runtimeLabel} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: C.sub, fontSize: 9.5, whiteSpace: 'nowrap' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: runtimeColor, boxShadow: `0 0 7px ${runtimeColor}88` }} />
+            <span className="release-chat-status-label">LLM</span>
+          </span>
+          <span title={githubConnected ? `GitHub ${user?.githubUsername ? `@${user.githubUsername}` : 'verbunden'}` : 'GitHub noch nicht verbunden'} aria-label={githubConnected ? 'GitHub verbunden' : 'GitHub nicht verbunden'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: C.sub, fontSize: 9.5, whiteSpace: 'nowrap' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: githubColor, boxShadow: githubConnected ? `0 0 7px ${githubColor}88` : undefined }} />
+            <span className="release-chat-status-label">GitHub</span>
+          </span>
+          <span title={user ? 'Session bestätigt' : 'Nicht angemeldet'} aria-label={user ? 'Session bestätigt' : 'Session nicht bestätigt'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: C.sub, fontSize: 9.5, whiteSpace: 'nowrap' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: sessionColor, boxShadow: user ? `0 0 7px ${sessionColor}88` : undefined }} />
+            <span className="release-chat-status-label">Session</span>
+          </span>
+        </div>
+      </nav>
+
+      {activeMenu !== 'chat' && (
+        <div style={{ flexShrink: 0, borderBottom: `1px solid ${C.border}`, background: C.surface }}>
+          <div className="release-chat-shell" style={{ minHeight: 34, display: 'flex', alignItems: 'center', padding: '5px 12px', color: C.sub, fontSize: 10.5 }}>
+            {activeMenu === 'github' && (
+              githubConnected
+                ? `GitHub verbunden${user?.githubUsername ? ` · @${user.githubUsername}` : ''}. Schreibaktionen bleiben revisionsgebunden und benötigen echte Runtime-Evidence.`
+                : 'GitHub ist noch nicht als bestätigte User-Verbindung sichtbar. Der Chat darf deshalb keinen GitHub-Erfolg behaupten.'
+            )}
+            {activeMenu === 'models' && (activeRoute ? `Aktiv: ${routeLabel(activeRoute)}` : 'Automatische Free-first-Routenwahl. Eine manuell gewählte Route bleibt hart fixiert.')}
+            {activeMenu === 'account' && (user ? `${user.email} · ${user.credits} Credits` : 'Für Runtime- und GitHub-Aktionen bitte anmelden.')}
+          </div>
+        </div>
+      )}
 
       <div ref={listRef} className="release-chat-shell" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 14px 20px', scrollBehavior: 'smooth' }}>
         {messages.length === 0 ? (
@@ -319,6 +428,7 @@ export function PlayReleaseChat() {
           )}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
             <textarea
+              ref={composerRef}
               aria-label="Nachricht an Sovereign"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}

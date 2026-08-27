@@ -24,6 +24,13 @@ describe('Sovereign Play-release primary-surface contract', () => {
     expect(chat).toContain('fetchSovereignLlmRouteCatalog');
     expect(chat).toContain('fetchDevChatWorkerReply');
     expect(chat).toContain('DEV_CHAT_WORKER_DEFAULT_MODEL');
+    expect(chat).toContain('data-testid="play-release-menu-frame"');
+    expect(chat).toContain("['chat', '💬', 'Chat']");
+    expect(chat).toContain("['github', '⌘', 'GitHub']");
+    expect(chat).toContain("['models', '◫', 'Modelle']");
+    expect(chat).toContain("['account', '◉', 'Konto']");
+    expect(chat).toContain('aria-label="LLM Route"');
+    expect(chat).toContain('deriveReleaseGuideState');
     expect(chat).not.toContain('getDesktopFrame');
     expect(chat).not.toContain('VncScreen');
   });

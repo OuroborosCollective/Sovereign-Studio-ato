@@ -73,6 +73,25 @@ beforeEach(() => {
 });
 
 describe('Play release chat runtime integration', () => {
+  it('keeps the compact release menu, model picker and evidence-derived status cues visible', async () => {
+    render(<PlayReleaseChat />);
+
+    expect(screen.getByTestId('play-release-menu-frame')).toBeDefined();
+    expect(screen.getByRole('button', { name: /Chat/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /GitHub/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Modelle/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Konto/ })).toBeDefined();
+    expect(screen.getByLabelText('LLM Route')).toBeDefined();
+    expect(screen.getByLabelText('Session bestätigt')).toBeDefined();
+    expect(screen.getByLabelText('GitHub nicht verbunden')).toBeDefined();
+
+    await waitFor(() => expect(screen.getByLabelText('LLM bereit')).toBeDefined());
+    expect(screen.getByTestId('release-guide-mood')).toHaveTextContent('😊✨');
+
+    fireEvent.click(screen.getByRole('button', { name: /GitHub/ }));
+    expect(screen.getByText(/GitHub ist noch nicht als bestätigte User-Verbindung sichtbar/)).toBeDefined();
+  });
+
   it('loads the authenticated current route catalog and keeps the free-first default', async () => {
     render(<PlayReleaseChat />);
 
