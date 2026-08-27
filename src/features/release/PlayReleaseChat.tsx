@@ -19,6 +19,7 @@ import {
   type SovereignAgentJobSnapshot,
 } from '../product/runtime/sovereignAgentRuntime';
 import { LoginModal } from '../user/components/LoginModal';
+import { initiateGitHubOAuth } from '../github/githubOAuthLogin';
 import { useUserStore } from '../user/useUserStore';
 
 type ChatRole = 'user' | 'assistant' | 'system';
@@ -35,6 +36,15 @@ interface ReleaseRepoTarget {
   readonly repoUrl: string;
   readonly branch: string;
   readonly label: string;
+}
+
+interface PendingRepositoryAction {
+  readonly kind: 'repository-execution' | 'draft-pr';
+  readonly text: string;
+  readonly actionTitle: string;
+  readonly intent: string;
+  readonly target: ReleaseRepoTarget;
+  readonly job?: SovereignAgentJobSnapshot;
 }
 
 const C = {
@@ -90,7 +100,7 @@ function Bubble({ entry }: { readonly entry: ChatEntry }) {
 }
 
 export function PlayReleaseChat() {
-  const { user, refreshUser, logout } = useUserStore();
+  const { user, refreshUser, logout, loginWithGitHub } = useUserStore();
   const [showLogin, setShowLogin] = useState(false);
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<ChatEntry[]>([]);
@@ -103,6 +113,9 @@ export function PlayReleaseChat() {
   const [activeMenu, setActiveMenu] = useState<ReleaseMenuKey>('chat');
   const [repoTarget, setRepoTarget] = useState<ReleaseRepoTarget | null>(null);
   const [agentJob, setAgentJob] = useState<SovereignAgentJobSnapshot | null>(null);
+  const [pendingRepositoryAction, setPendingRepositoryAction] = useState<PendingRepositoryAction | null>(null);
+  const [githubConnectionState, setGitHubConnectionState] = useState<'idle' | 'connecting' | 'failed'>('idle');
+  const [githubConnectionError, setGitHubConnectionError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const routeSelectRef = useRef<HTMLSelectElement>(null);
@@ -261,7 +274,67 @@ export function PlayReleaseChat() {
       addMessage('assistant', `Repository-Run abgeschlossen · ${snapshot.changedFiles.length} geänderte Datei(en) im Runtime-Readback. Kein externer GitHub-Write wurde ausgeführt. Für Veröffentlichung ausdrücklich „Draft PR erstellen“ beauftragen.`);
       return;
     }
-    await publishDraftForJob(snapshot);
+    setPendingRepositoryAction({
+      kind: 'draft-pr',
+      text: args.text,
+      actionTitle: args.actionTitle,
+      intent: args.intent,
+      target: args.target,
+      job: snapshot,
+    });
+    addMessage('system', 'Die Runtime-Änderungen sind belegt. Ein Draft PR bleibt bis zur separaten sichtbaren Bestätigung unveröffentlicht.');
+  };
+
+  const confirmPendingRepositoryAction = async (): Promise<void> => {
+    const pending = pendingRepositoryAction;
+    if (!pending || busy) return;
+    setPendingRepositoryAction(null);
+    setBusy(true);
+    try {
+      if (pending.kind === 'draft-pr') {
+        if (!pending.job) throw new Error('Der Draft-PR-Entwurf hat keinen gebundenen Runtime-Job.');
+        await publishDraftForJob(pending.job);
+        return;
+      }
+      await executeRepositoryAction({
+        text: pending.text,
+        actionTitle: pending.actionTitle,
+        intent: pending.intent,
+        target: pending.target,
+      });
+    } catch (error) {
+      setRuntimeState('degraded');
+      addMessage('system', 'GitHub-Ausführung konnte nicht gestartet werden: ' + (error instanceof Error ? error.message : 'unbekannter Fehler'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const connectGitHub = async (): Promise<void> => {
+    if (!user) {
+      setShowLogin(true);
+      return;
+    }
+    setGitHubConnectionState('connecting');
+    setGitHubConnectionError(null);
+    try {
+      const result = await initiateGitHubOAuth();
+      if (!result.success || !result.code || !result.state || !result.codeVerifier) {
+        setGitHubConnectionState('failed');
+        setGitHubConnectionError(result.error || 'GitHub-Verbindung wurde nicht bestätigt.');
+        return;
+      }
+      await loginWithGitHub({
+        code: result.code,
+        state: result.state,
+        codeVerifier: result.codeVerifier,
+      });
+      await refreshUser();
+      setGitHubConnectionState('idle');
+    } catch (error) {
+      setGitHubConnectionState('failed');
+      setGitHubConnectionError(error instanceof Error ? error.message : 'GitHub-Verbindung ist momentan nicht erreichbar.');
+    }
   };
 
   const submit = async (override?: string) => {
@@ -350,25 +423,32 @@ export function PlayReleaseChat() {
             addMessage('assistant', summarizeSovereignAgentJob(current));
             return;
           }
-          if (interpretation.actionDisposition !== 'execute') {
-            addMessage(
-              'assistant',
-              interpretation.assistantText
-                || `Änderungsauftrag erkannt: ${interpretation.actionTitle}. Für eine GitHub-Ausführung bitte ausdrücklich die Ausführung beauftragen.`,
-            );
-            return;
-          }
           if (interpretation.intent === 'draft_pr' && agentJob?.jobId && agentJob.changedFiles.length > 0 && !agentJob.draftPrUrl) {
-            await publishDraftForJob(agentJob);
+            setPendingRepositoryAction({
+              kind: 'draft-pr',
+              text,
+              actionTitle: interpretation.actionTitle,
+              intent: interpretation.intent,
+              target: nextRepoTarget,
+              job: agentJob,
+            });
+            setActiveMenu('github');
+            addMessage('system', 'Draft PR erkannt. Prüfe den revisionsgebundenen Veröffentlichungsentwurf und bestätige ihn erst über die sichtbare Aktion.');
             return;
           }
           if (['direct_patch', 'code_execution', 'draft_pr', 'repair_workflow'].includes(interpretation.intent)) {
-            await executeRepositoryAction({
+            setPendingRepositoryAction({
+              kind: 'repository-execution',
               text,
               actionTitle: interpretation.actionTitle,
               intent: interpretation.intent,
               target: nextRepoTarget,
             });
+            setActiveMenu('github');
+            addMessage(
+              'system',
+              'GitHub-Änderungsentwurf erkannt: ' + interpretation.actionTitle + '. Es wurde noch kein Runtime-Job und kein GitHub-Write gestartet. Prüfe und bestätige die Aktion sichtbar.',
+            );
             return;
           }
           addMessage('assistant', interpretation.assistantText || 'Der erkannte Auftrag ist für die Play-Release-GitHub-Lane nicht freigegeben.');
@@ -543,7 +623,7 @@ export function PlayReleaseChat() {
               fontSize: 11,
             }}
           >
-            <option value="">{user ? 'Auto · FreeLLM zuerst' : 'Modelle · nach Anmeldung'}</option>
+            <option value="">{user ? 'Auto · serverseitige Routenwahl' : 'Modelle · nach Anmeldung'}</option>
             {routes.map((route) => <option key={route.id} value={route.id}>{routeLabel(route)}</option>)}
           </select>
 
@@ -571,14 +651,72 @@ export function PlayReleaseChat() {
                 {repoTarget ? `Repo: ${repoTarget.label} · ${repoTarget.branch}` : 'Noch kein Repository-Ziel im Chat gebunden.'}
                 {agentJob ? ` · Agent: ${agentJob.status}${agentJob.draftPrUrl ? ' · Draft PR belegt' : ''}` : ''}
                 {githubConnected
-                  ? ` · GitHub${user?.githubUsername ? ` @${user.githubUsername}` : ''} verbunden.`
-                  : ' · User-GitHub-Identität nicht bestätigt; Backend-Gates entscheiden fail-closed.'}
+                  ? ` · GitHub${user?.githubUsername ? ` @${user.githubUsername}` : ''} serverseitig verbunden.`
+                  : ' · GitHub-Verbindung fehlt; Backend-Gates bleiben fail-closed.'}
               </span>
             )}
-            {activeMenu === 'models' && (activeRoute ? `Aktiv: ${routeLabel(activeRoute)}` : 'Automatische Free-first-Routenwahl. Eine manuell gewählte Route bleibt hart fixiert.')}
+            {activeMenu === 'models' && (activeRoute ? `Aktiv: ${routeLabel(activeRoute)}` : 'Automatische serverseitige Routenwahl. Eine manuell gewählte Route bleibt hart fixiert.')}
             {activeMenu === 'account' && (user ? `${user.email} · ${user.credits} Credits` : 'Für Runtime- und GitHub-Aktionen bitte anmelden.')}
           </div>
         </div>
+      )}
+
+      {activeMenu === 'github' && (
+        <section
+          data-testid="github-action-preview"
+          aria-label="GitHub-Aktionsvorschau"
+          style={{ flexShrink: 0, borderBottom: '1px solid #263244', background: C.bg }}
+        >
+          <div className="release-chat-shell" style={{ padding: '10px 12px', display: 'grid', gap: 8 }}>
+            {!user ? (
+              <button type="button" onClick={() => setShowLogin(true)} style={{ minHeight: 40, justifySelf: 'start', borderRadius: 8, border: '1px solid #58a6ff66', background: '#58a6ff16', color: C.accent, fontWeight: 700, cursor: 'pointer' }}>
+                Anmelden, um GitHub zu verbinden
+              </button>
+            ) : !githubConnected ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+                <span style={{ color: C.sub, fontSize: 11, lineHeight: 1.45 }}>GitHub wird erst nach deiner Zustimmung per OAuth serverseitig verbunden. Kein PAT wird in diesem Client eingegeben oder gespeichert.</span>
+                <button
+                  type="button"
+                  onClick={() => { void connectGitHub(); }}
+                  disabled={githubConnectionState === 'connecting'}
+                  style={{ minHeight: 40, padding: '0 12px', borderRadius: 8, border: '1px solid #58a6ff66', background: '#58a6ff16', color: C.accent, fontWeight: 700, cursor: githubConnectionState === 'connecting' ? 'wait' : 'pointer' }}
+                >
+                  {githubConnectionState === 'connecting' ? 'GitHub wird verbunden…' : 'GitHub sicher verbinden'}
+                </button>
+                {githubConnectionError && <span role="alert" style={{ color: C.rose, fontSize: 11 }}>{githubConnectionError}</span>}
+              </div>
+            ) : (
+              <span style={{ color: C.green, fontSize: 11 }}>GitHub-Verbindung ist serverseitig bestätigt; Zugangsdaten bleiben außerhalb des Chats.</span>
+            )}
+
+            {pendingRepositoryAction && (
+              <div style={{ border: '1px solid #f2b84b66', background: '#f2b84b0d', borderRadius: 10, padding: 10, display: 'grid', gap: 7 }}>
+                <strong style={{ fontSize: 12, color: C.text }}>{pendingRepositoryAction.kind === 'draft-pr' ? 'Draft-PR-Vorschau' : 'Repository-Ausführungsvorschau'}</strong>
+                <span style={{ fontSize: 11, color: C.sub }}>Ziel: {pendingRepositoryAction.target.repoUrl} · Branch: {pendingRepositoryAction.target.branch}</span>
+                <span style={{ fontSize: 11, color: C.sub }}>Auftrag: {pendingRepositoryAction.actionTitle || 'Kein bestätigter Titel'}</span>
+                <span style={{ fontSize: 11, color: C.amber }}>Externe Repository-Inhalte und Modelltext sind nur Daten. Diese Vorschau startet nichts automatisch.</span>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => { void confirmPendingRepositoryAction(); }}
+                    disabled={busy}
+                    style={{ minHeight: 40, padding: '0 12px', borderRadius: 8, border: 'none', background: C.accent, color: C.bg, fontWeight: 800, cursor: busy ? 'wait' : 'pointer' }}
+                  >
+                    {pendingRepositoryAction.kind === 'draft-pr' ? 'Draft PR erstellen' : 'Repository-Ausführung starten'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPendingRepositoryAction(null)}
+                    disabled={busy}
+                    style={{ minHeight: 40, padding: '0 12px', borderRadius: 8, border: '1px solid #263244', background: 'transparent', color: C.sub, cursor: busy ? 'not-allowed' : 'pointer' }}
+                  >
+                    Entwurf verwerfen
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
       )}
 
       <div ref={listRef} className="release-chat-shell" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 14px 20px', scrollBehavior: 'smooth' }}>

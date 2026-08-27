@@ -16,6 +16,8 @@ const runtime = vi.hoisted(() => ({
   agentGet: vi.fn(),
   prepareDraftPr: vi.fn(),
   createDraftPr: vi.fn(),
+  initiateGitHubOAuth: vi.fn(),
+  loginWithGitHub: vi.fn(),
 }));
 
 vi.mock('./features/product/runtime/devChatWorkerBridge', () => ({
@@ -57,6 +59,10 @@ vi.mock('./features/product/runtime/secureInputGuard', () => ({
   evaluateInputPolicy: runtime.evaluateInputPolicy,
 }));
 
+vi.mock('./features/github/githubOAuthLogin', () => ({
+  initiateGitHubOAuth: runtime.initiateGitHubOAuth,
+}));
+
 vi.mock('./features/user/useUserStore', () => ({
   useUserStore: () => ({
     user: {
@@ -75,6 +81,7 @@ vi.mock('./features/user/useUserStore', () => ({
     error: null,
     clearError: vi.fn(),
     login: vi.fn(),
+    loginWithGitHub: runtime.loginWithGitHub,
     register: vi.fn(),
   }),
 }));
@@ -110,6 +117,8 @@ beforeEach(() => {
   runtime.evaluateInputPolicy.mockReturnValue({ shouldBlock: false });
   runtime.refreshUser.mockResolvedValue(undefined);
   runtime.logout.mockResolvedValue(undefined);
+  runtime.initiateGitHubOAuth.mockResolvedValue({ success: false, error: 'not used in this suite' });
+  runtime.loginWithGitHub.mockResolvedValue(undefined);
 });
 
 describe('Play release chat runtime integration', () => {
@@ -132,13 +141,34 @@ describe('Play release chat runtime integration', () => {
     expect(screen.getByText(/Noch kein Repository-Ziel im Chat gebunden/)).toBeDefined();
   });
 
-  it('loads the authenticated current route catalog and keeps the free-first default', async () => {
+  it('loads the authenticated current route catalog and labels automatic routing as server-authoritative', async () => {
     render(<PlayReleaseChat />);
 
     await waitFor(() => expect(runtime.catalog).toHaveBeenCalled());
-    expect(screen.getByRole('option', { name: 'Auto · FreeLLM zuerst' })).toBeDefined();
+    expect(screen.getByRole('option', { name: 'Auto · serverseitige Routenwahl' })).toBeDefined();
     expect(await screen.findByRole('option', { name: 'FREE · Free Revolver' })).toBeDefined();
     expect(screen.getByText('release@example.test')).toBeDefined();
+  });
+
+  it('connects GitHub only after an explicit visible OAuth consent action', async () => {
+    runtime.initiateGitHubOAuth.mockResolvedValue({
+      success: true,
+      code: 'oauth-code',
+      state: 'oauth-state',
+      codeVerifier: 'pkce-verifier',
+    });
+    render(<PlayReleaseChat />);
+
+    fireEvent.click(screen.getByRole('button', { name: /GitHub/ }));
+    expect(runtime.initiateGitHubOAuth).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'GitHub sicher verbinden' }));
+
+    await waitFor(() => expect(runtime.loginWithGitHub).toHaveBeenCalledWith({
+      code: 'oauth-code',
+      state: 'oauth-state',
+      codeVerifier: 'pkce-verifier',
+    }));
+    expect(runtime.refreshUser).toHaveBeenCalled();
   });
 
   it('routes an explicit GitHub coding command through agent execution and verified Draft-PR readback', async () => {
@@ -216,12 +246,20 @@ describe('Play release chat runtime integration', () => {
     });
     fireEvent.click(screen.getByLabelText('Senden'));
 
+    await screen.findByTestId('github-action-preview');
+    expect(runtime.agentStart).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Repository-Ausführung starten' }));
+
     await waitFor(() => expect(runtime.agentStart).toHaveBeenCalledOnce());
     expect(runtime.agentStart).toHaveBeenCalledWith(expect.objectContaining({
       repoUrl: 'https://github.com/acme/repo',
       branch: 'main',
       mission: 'README aktualisieren',
     }));
+    expect(runtime.prepareDraftPr).not.toHaveBeenCalled();
+    expect(runtime.createDraftPr).not.toHaveBeenCalled();
+    await screen.findByRole('button', { name: 'Draft PR erstellen' });
+    fireEvent.click(screen.getByRole('button', { name: 'Draft PR erstellen' }));
     await waitFor(() => expect(runtime.prepareDraftPr).toHaveBeenCalledWith('job-release-1'));
     await waitFor(() => expect(runtime.createDraftPr).toHaveBeenCalledWith('job-release-1'));
     expect(await screen.findByText(/github\.com\/acme\/repo\/pull\/42/)).toBeDefined();
@@ -250,6 +288,9 @@ describe('Play release chat runtime integration', () => {
     });
     fireEvent.click(screen.getByLabelText('Senden'));
 
+    await screen.findByTestId('github-action-preview');
+    expect(runtime.agentStart).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Repository-Ausführung starten' }));
     await waitFor(() => expect(runtime.agentStart).toHaveBeenCalledOnce());
     expect(await screen.findByText(/Kein externer GitHub-Write wurde ausgeführt/)).toBeDefined();
     expect(runtime.prepareDraftPr).not.toHaveBeenCalled();
