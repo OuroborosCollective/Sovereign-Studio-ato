@@ -165,7 +165,10 @@ IMAGE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.ope
 [[ "$IMAGE_REVISION" == "$EXPECTED_REVISION" ]] || fail "image revision label does not match expected commit"
 
 STAGE="network_preflight"
-for network in supabase_default areloria_arelorian-network sovereign-private traefik-proxy; do
+# Managed Traefik runs with network_mode=host on this VPS. Sovereign's own
+# shared bridge is sovereign-private; Areloria is legacy compatibility only and
+# must not be required for a Sovereign release.
+for network in supabase_default sovereign-private; do
   docker network inspect "$network" >/dev/null 2>&1 || fail "required docker network missing: $network"
 done
 
@@ -275,7 +278,7 @@ start_production() {
     --group-add "$BROKER_GID" \
     --label "org.opencontainers.image.revision=$revision" \
     --label "traefik.enable=true" \
-    --label "traefik.docker.network=traefik-proxy" \
+    --label "traefik.docker.network=sovereign-private" \
     --label 'traefik.http.routers.sovereign-backend.rule=Host(`sovereign-backend.arelorian.de`)' \
     --label "traefik.http.routers.sovereign-backend.entrypoints=websecure" \
     --label "traefik.http.routers.sovereign-backend.tls=true" \
@@ -285,9 +288,10 @@ start_production() {
     --label "traefik.http.services.sovereign-backend.loadbalancer.server.scheme=http" \
     -p 127.0.0.1:8788:8787 \
     "$image" >/dev/null
-  docker network connect areloria_arelorian-network "$CONTAINER"
+  if docker network inspect areloria_arelorian-network >/dev/null 2>&1; then
+    docker network connect areloria_arelorian-network "$CONTAINER"
+  fi
   docker network connect sovereign-private "$CONTAINER"
-  docker network connect traefik-proxy "$CONTAINER"
 }
 
 start_production "$NEW_IMAGE" "$EXPECTED_REVISION" "$DIGEST"
