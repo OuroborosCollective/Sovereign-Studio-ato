@@ -298,7 +298,9 @@ start_production "$NEW_IMAGE" "$EXPECTED_REVISION" "$DIGEST"
 
 wait_for_host_health() {
   local health=""
-  for attempt in $(seq 1 12); do
+  local max_attempts="${SOVEREIGN_BACKEND_HEALTH_ATTEMPTS:-36}"
+  [[ "$max_attempts" =~ ^[1-9][0-9]{0,2}$ ]] || max_attempts=36
+  for attempt in $(seq 1 "$max_attempts"); do
     health="$(python3 -c 'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:8788/health", timeout=4).read().decode())' 2>/dev/null || true)"
     if printf '%s' "$health" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
       printf '%s' "$health"

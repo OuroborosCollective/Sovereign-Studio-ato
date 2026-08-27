@@ -285,9 +285,12 @@ function run() {
 
   requireText('src/SovereignAppWrapper.tsx', /return <App \/>|<App\s*\/\>/, 'wrapper:passthrough-only', 'Runtime wrapper must stay a passthrough instead of adding another shell.');
   forbidText('src/SovereignAppWrapper.tsx', /data-testid="sovereign-app-wrapper"|data-layout="composition-wrapper-around-existing-app"/, 'wrapper:no-second-shell', 'Runtime wrapper must not add a second visible shell.');
-  requireText('src/App.tsx', /data-testid="sovereign-monitor-app"/, 'app:monitor-root-test-id', 'App must expose the monitor-first live root.');
-  requireText('src/App.tsx', /data-layout="monitor-first-live-workspace"/, 'app:monitor-layout-bound', 'App must declare monitor-first live workspace layout.');
-  requireText('src/App.tsx', /aria-label="Sovereign Workspace Monitor"/, 'app:monitor-aria-label-bound', 'App must expose the Sovereign Workspace Monitor aria label.');
+  requireText('src/App.tsx', /PlayReleaseChat/, 'app:release-chat-root', 'App must render the Play release chat root.');
+  requireText('src/features/release/PlayReleaseChat.tsx', /data-testid="sovereign-release-chat"/, 'app:release-chat-test-id', 'Play release chat must expose its stable root test id.');
+  requireText('src/features/release/PlayReleaseChat.tsx', /data-layout="play-release-chat"/, 'app:release-chat-layout', 'Play release chat must declare its release layout.');
+  requireText('src/features/release/PlayReleaseChat.tsx', /aria-label="Sovereign Chat"/, 'app:release-chat-aria-label', 'Play release chat must expose its accessibility label.');
+  requireText('src/features/release/PlayReleaseChat.tsx', /github-action-preview/, 'app:github-action-preview', 'GitHub actions must expose a visible consent preview.');
+  requireText('src/features/release/PlayReleaseChat.tsx', /GitHub sicher verbinden/, 'app:github-oauth-connect', 'GitHub connection must use the explicit server-held OAuth path.');
   forbidText('src/App.tsx', /data-layout="chat-only-live-entry"/, 'app:no-chat-only-layout', 'The legacy chat-only app layout must not return.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /data-testid=\{builderContainerContract\.testId\}|data-testid="builder-container"/, 'builder:root-test-id-bound', 'Builder must expose stable root test-id.');
   requireText(

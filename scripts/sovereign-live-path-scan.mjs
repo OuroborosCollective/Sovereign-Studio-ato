@@ -176,11 +176,21 @@ function scanMainBootPath() {
 
 function scanRuntimeContracts() {
   const app = read('src/App.tsx');
+  const releaseChat = read('src/features/release/PlayReleaseChat.tsx');
   const builder = read('src/features/product/containers/BuilderContainer.tsx');
   const monitor = read('src/global-runtime-monitor.tsx');
 
-  if (/BuilderContainer/.test(app)) pass('app:builder-live-path', 'App routes live work to BuilderContainer.');
-  else fail('app:builder-live-path', 'App must route live work to BuilderContainer.');
+  if (/PlayReleaseChat/.test(app) && /fetchDevChatWorkerReply/.test(releaseChat) && /startRepositoryExecution/.test(releaseChat) && /pendingRepositoryAction/.test(releaseChat)) {
+    pass('app:release-chat-live-path', 'App routes live work through the server-owned Play release chat and its consent-gated repository runtime.');
+  } else {
+    fail('app:release-chat-live-path', 'App must route the Play client through the server-owned chat and consent-gated repository runtime.');
+  }
+
+  if (/evaluateInputPolicy\(text\)/.test(releaseChat) && /initiateGitHubOAuth/.test(releaseChat) && /loginWithGitHub/.test(releaseChat)) {
+    pass('release-chat:input-and-oauth-boundary', 'Play release chat guards secret-shaped input and uses the explicit server-held GitHub OAuth path.');
+  } else {
+    fail('release-chat:input-and-oauth-boundary', 'Play release chat must guard secret-shaped input and use the explicit server-held GitHub OAuth path.');
+  }
 
   if (/appendActionEvent|SovereignActionStreamPanel/.test(builder)) pass('builder:action-stream-runtime', 'Builder publishes route/action state through the action stream.');
   else fail('builder:action-stream-runtime', 'Builder must publish route/action state through the action stream.');
