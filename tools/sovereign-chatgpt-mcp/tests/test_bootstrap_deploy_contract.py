@@ -75,6 +75,7 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
         "previous_identity",
         "production_start",
         "production_health",
+        "public_ingress_canary",
         "admin_canary",
         "rollback_receipt",
         "complete",
@@ -108,6 +109,12 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
     # The isolated candidate must stay private; only the production/rollback
     # container is registered with Traefik after its internal health check.
     assert deploy.count('docker network connect traefik-proxy "$CONTAINER"') == 1
+    for script in (deploy, rollback):
+        assert "https://sovereign-backend.arelorian.de/owner-approvals" in script
+        assert "<title>Sovereign Owner-Freigaben</title>" in script
+        assert '"status": "PUBLIC_OWNER_INGRESS_VERIFIED" if ok else "PUBLIC_OWNER_INGRESS_CONTRADICTED"' in script
+        assert '"secretValuesReturned": False' in script
+        assert '"publicIngress"' in script
 
 
 def test_operator_deployment_path_has_no_curl_dependency() -> None:

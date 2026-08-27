@@ -322,6 +322,50 @@ if ! printf '%s' "$HOST_HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; t
   fail "production health check failed; previous image restoration attempted"
 fi
 
+STAGE="public_ingress_canary"
+PUBLIC_OWNER_INGRESS=""
+for attempt in $(seq 1 12); do
+  PUBLIC_OWNER_INGRESS="$(python3 - <<'PY'
+import hashlib
+import json
+import urllib.request
+
+url = "https://sovereign-backend.arelorian.de/owner-approvals"
+try:
+    with urllib.request.urlopen(url, timeout=8) as response:
+        body = response.read(512_000)
+        ok = (
+            int(response.status) == 200
+            and b"<title>Sovereign Owner-Freigaben</title>" in body
+        )
+        payload = {
+            "ok": ok,
+            "status": "PUBLIC_OWNER_INGRESS_VERIFIED" if ok else "PUBLIC_OWNER_INGRESS_CONTRADICTED",
+            "httpStatus": int(response.status),
+            "responseSha256": hashlib.sha256(body).hexdigest(),
+            "markerVerified": b"<title>Sovereign Owner-Freigaben</title>" in body,
+            "secretValuesReturned": False,
+        }
+except Exception as exc:
+    payload = {
+        "ok": False,
+        "status": "PUBLIC_OWNER_INGRESS_UNAVAILABLE",
+        "errorType": type(exc).__name__,
+        "secretValuesReturned": False,
+    }
+print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+PY
+)"
+  if printf '%s' "$PUBLIC_OWNER_INGRESS" | grep -q '"ok":true'; then
+    break
+  fi
+  sleep 5
+done
+if ! printf '%s' "$PUBLIC_OWNER_INGRESS" | grep -q '"ok":true'; then
+  restore_previous
+  fail "public Traefik owner-approval ingress check failed; previous image restoration attempted"
+fi
+
 STAGE="admin_canary"
 if ! ADMIN_CANARY="$(docker exec -i "$CONTAINER" python3 - "$EXPECTED_REVISION" "$DIGEST" <<'PY'
 import hashlib
@@ -697,6 +741,6 @@ chmod 0600 "$ROLLBACK_RECEIPT_TMP"
 mv -f "$ROLLBACK_RECEIPT_TMP" "$ROLLBACK_RECEIPT_FILE"
 
 STAGE="complete"
-printf '{"ok":true,"status":"DEPLOYED_ADMIN_VERIFIED","container":"%s","image":"%s","imageDigest":"%s","revision":"%s","health":%s,"adminCanary":%s,"rollback":{"previousImageDigest":"%s","previousRevision":"%s","previewVerified":%s,"receiptSha256":"%s"},"readbackVerified":true,"mutationPerformed":true,"secretValuesReturned":false}\n' \
-  "$CONTAINER" "$NEW_IMAGE" "$DIGEST" "$EXPECTED_REVISION" "$HOST_HEALTH" "$ADMIN_CANARY" \
+printf '{"ok":true,"status":"DEPLOYED_ADMIN_VERIFIED","container":"%s","image":"%s","imageDigest":"%s","revision":"%s","health":%s,"publicIngress":%s,"adminCanary":%s,"rollback":{"previousImageDigest":"%s","previousRevision":"%s","previewVerified":%s,"receiptSha256":"%s"},"readbackVerified":true,"mutationPerformed":true,"secretValuesReturned":false}\n' \
+  "$CONTAINER" "$NEW_IMAGE" "$DIGEST" "$EXPECTED_REVISION" "$HOST_HEALTH" "$PUBLIC_OWNER_INGRESS" "$ADMIN_CANARY" \
   "$PREVIOUS_DIGEST" "$PREVIOUS_REVISION" "$([[ -n "$PREVIOUS_DIGEST" && -n "$PREVIOUS_REVISION" ]] && printf true || printf false)" "$ROLLBACK_RECEIPT_SHA256"
