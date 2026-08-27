@@ -4,14 +4,18 @@ import { C, STATUS_COLOR, STATUS_LABEL } from "./builderConstants";
 
 export function Ampel({ status, compact = false }: { status: AgentStatus; compact?: boolean }) {
   const col = STATUS_COLOR[status];
+  const label = STATUS_LABEL[status] ?? status;
   return (
     <div
+      role="status"
+      aria-label={`Agent-Status: ${label}`}
       style={{ display: "flex", alignItems: "center", gap: 5 }}
-      title={STATUS_LABEL[status]}
+      title={label}
     >
       {(["idle", "thinking", "editing"] as AgentStatus[]).map((s) => (
         <span
           key={s}
+          aria-hidden="true"
           style={{
             display: "inline-block",
             width: 7,

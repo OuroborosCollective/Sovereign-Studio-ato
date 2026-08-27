@@ -22,6 +22,7 @@ import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
+import { Ampel } from './Ampel';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1042,6 +1043,22 @@ describe('Palette Accessibility Enhancements', () => {
 
       const closeClickRes = fireEvent.click(closeBtn);
       expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Ampel Accessibility and Micro-UX Enhancements', () => {
+    it('renders status landmark with proper aria-label and title', () => {
+      render(<Ampel status="idle" />);
+      const statusElement = screen.getByRole('status', { name: 'Agent-Status: bereit' });
+      expect(statusElement).toBeInTheDocument();
+      expect(statusElement).toHaveAttribute('title', 'bereit');
+    });
+
+    it('renders with compact status and aria-hidden dots', () => {
+      render(<Ampel status="thinking" compact />);
+      const statusElement = screen.getByRole('status', { name: 'Agent-Status: denkt…' });
+      expect(statusElement).toBeInTheDocument();
+      expect(statusElement).toHaveAttribute('title', 'denkt…');
     });
   });
 
