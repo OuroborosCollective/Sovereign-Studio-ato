@@ -92,6 +92,23 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
     assert 'rollbackPreviewVerified' in deploy
     assert 'secretValuesReturned' in deploy
 
+    for script in (deploy, rollback):
+        assert "supabase_default areloria_arelorian-network sovereign-private traefik-proxy" in script
+        assert '--label "traefik.enable=true"' in script
+        assert '--label "traefik.docker.network=traefik-proxy"' in script
+        assert "traefik.http.routers.sovereign-backend.rule=Host(`sovereign-backend.arelorian.de`)" in script
+        assert '--label "traefik.http.routers.sovereign-backend.entrypoints=websecure"' in script
+        assert '--label "traefik.http.routers.sovereign-backend.tls=true"' in script
+        assert '--label "traefik.http.routers.sovereign-backend.tls.certresolver=letsencrypt"' in script
+        assert '--label "traefik.http.routers.sovereign-backend.service=sovereign-backend"' in script
+        assert '--label "traefik.http.services.sovereign-backend.loadbalancer.server.port=8787"' in script
+        assert '--label "traefik.http.services.sovereign-backend.loadbalancer.server.scheme=http"' in script
+        assert 'docker network connect traefik-proxy "$CONTAINER"' in script
+
+    # The isolated candidate must stay private; only the production/rollback
+    # container is registered with Traefik after its internal health check.
+    assert deploy.count('docker network connect traefik-proxy "$CONTAINER"') == 1
+
 
 def test_operator_deployment_path_has_no_curl_dependency() -> None:
     for relative in (
