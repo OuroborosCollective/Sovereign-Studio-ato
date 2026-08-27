@@ -21,21 +21,35 @@ write_status() {
   local status="$1"
   local revision="${2:-}"
   local detail="${3:-}"
-  python3 - "$STATUS_FILE" "$status" "$revision" "$detail" <<'PY'
+  local image_digest="${4:-}"
+  python3 - "$STATUS_FILE" "$status" "$revision" "$detail" "$image_digest" <<'PY'
 from pathlib import Path
 import json
 import os
+import re
 import sys
 import time
 
 path = Path(sys.argv[1])
+status = sys.argv[2]
+revision = sys.argv[3]
+image_digest = sys.argv[5]
+updated = status == "UPDATED"
+revision_verified = bool(updated and re.fullmatch(r"[0-9a-f]{40}", revision))
+image_digest_verified = bool(updated and re.fullmatch(r"sha256:[0-9a-f]{64}", image_digest))
 payload = {
-    "ok": sys.argv[2] == "UPDATED",
-    "status": sys.argv[2],
-    "revision": sys.argv[3],
+    "ok": updated,
+    "status": status,
+    "revision": revision,
     "detail": sys.argv[4][:2000],
-    "cross_runtime_parity_proven": sys.argv[2] == "UPDATED",
-    "parity_evidence_source": "immutable_image_label_and_ci_vector_comparison" if sys.argv[2] == "UPDATED" else "unavailable",
+    "image_digest": image_digest if image_digest_verified else "",
+    "revision_verified": revision_verified,
+    "image_digest_verified": image_digest_verified,
+    "container_healthy": updated,
+    "mcp_protocol_ready": updated,
+    "broker_rpc_ready": updated,
+    "cross_runtime_parity_proven": updated,
+    "parity_evidence_source": "immutable_image_label_and_ci_vector_comparison" if updated else "unavailable",
     "updated_at": int(time.time()),
 }
 temporary = path.with_suffix(".tmp")
@@ -323,10 +337,22 @@ if [[ "$SELF_UPDATE_TUNNEL_MODE" == "required" ]]; then
 fi
 
 CURRENT_STAGE="completed"
+RUNNING_IMAGE_REFERENCE="$(docker inspect --format '{{.Config.Image}}' sovereign-chatgpt-mcp)"
+RUNNING_REPO_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$RUNNING_IMAGE_REFERENCE" 2>/dev/null || true)"
+RUNNING_IMAGE_DIGEST="${RUNNING_REPO_DIGEST##*@}"
+RUNNING_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$RUNNING_IMAGE_REFERENCE" 2>/dev/null || true)"
+[[ "$RUNNING_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; running MCP image has no verified immutable digest"
+  exit 1
+}
+[[ "$RUNNING_REVISION" == "$EXPECTED_REVISION" ]] || {
+  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; running MCP image revision does not match expected revision"
+  exit 1
+}
 if [[ "$SELF_UPDATE_TUNNEL_MODE" == "required" ]]; then
   COMPLETION_DETAIL="private ChatGPT MCP, host command worker, broker RPC, protocol handshake and required tunnel verified"
 else
   COMPLETION_DETAIL="private ChatGPT MCP, host command worker, broker RPC and protocol handshake verified; tunnel not required"
 fi
-write_status UPDATED "$EXPECTED_REVISION" "$COMPLETION_DETAIL"
+write_status UPDATED "$EXPECTED_REVISION" "$COMPLETION_DETAIL" "$RUNNING_IMAGE_DIGEST"
 rm -f "$REQUEST_FILE"
