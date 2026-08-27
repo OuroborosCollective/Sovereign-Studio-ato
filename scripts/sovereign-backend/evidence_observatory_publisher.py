@@ -16,10 +16,12 @@ import json
 import os
 import re
 import uuid
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 from evidence_observatory_contracts import canonical_json, https_url, sha256_json, sha256_text
+from freellm_provider_credentials import provider_secret_paths
 
 PUBLISHER_POLICY: dict[str, Any] = {
     "schemaVersion": "sovereign.evidence-hf-publisher-policy.v2",
@@ -57,6 +59,45 @@ _HF_RIGHTS_PATH = Path(
     os.getenv("SOVEREIGN_HF_PUBLICATION_RIGHTS_FILE")
     or str(_OWNER_INPUT_ROOT / "hf_publication_rights.json")
 ).resolve()
+
+
+def _load_huggingface_runtime_token() -> str:
+    """Resolve one existing owner-managed HF credential only at transport time.
+
+    The publisher intentionally reuses the canonical FreeLLM provider credential
+    pool instead of introducing a second Hugging Face secret store.  Raw token
+    values never enter manifests, receipts, logs or return payloads.
+    """
+    candidates: list[tuple[int, Path]] = []
+    for path in provider_secret_paths(_OWNER_INPUT_ROOT, "huggingface"):
+        try:
+            if path.is_symlink() or not path.is_file():
+                continue
+            stat = path.stat()
+        except OSError:
+            continue
+        if stat.st_size < 8 or stat.st_size > 8192:
+            continue
+        if stat.st_mode & 0o077:
+            continue
+        candidates.append((int(stat.st_mtime_ns), path))
+
+    for _, path in sorted(candidates, key=lambda item: item[0], reverse=True):
+        protected = bytearray()
+        try:
+            protected = bytearray(path.read_bytes())
+            if not protected or len(protected) > 8192:
+                continue
+            token = bytes(protected).strip().decode("utf-8")
+            if not token.startswith("hf_") or len(token) < 20:
+                continue
+            return token
+        except (OSError, UnicodeDecodeError):
+            continue
+        finally:
+            for index in range(len(protected)):
+                protected[index] = 0
+    raise RuntimeError("huggingface_runtime_credential_missing")
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -461,11 +502,13 @@ def publish_huggingface_batch(
         rows=rows, repo_id=repo_id, revision=target_revision, license_rights=rights
     )
     try:
-        from huggingface_hub import CommitOperationAdd, HfApi, hf_hub_download
+        from huggingface_hub import CommitOperationAdd, HfApi, hf_hub_download as raw_hf_hub_download
     except ImportError as exc:
         raise RuntimeError("huggingface_hub_dependency_missing") from exc
 
-    api = HfApi()
+    runtime_token = _load_huggingface_runtime_token()
+    api = HfApi(token=runtime_token)
+    hf_hub_download = partial(raw_hf_hub_download, token=runtime_token)
     prewrite_revision = _branch_sha(api, repo_id=repo_id, revision=target_revision)
     revisions_to_scan = ["main"]
     if prewrite_revision:
