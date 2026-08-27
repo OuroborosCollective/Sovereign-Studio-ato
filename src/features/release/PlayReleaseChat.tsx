@@ -335,14 +335,6 @@ export function PlayReleaseChat() {
             addMessage('assistant', interpretation.assistantText);
             return;
           }
-          if (interpretation.actionDisposition !== 'execute') {
-            addMessage(
-              'assistant',
-              interpretation.assistantText
-                || `Änderungsauftrag erkannt: ${interpretation.actionTitle}. Für eine GitHub-Ausführung bitte ausdrücklich die Ausführung beauftragen.`,
-            );
-            return;
-          }
           if (interpretation.intent === 'load_repo') {
             addMessage('assistant', `Repository-Ziel gebunden: ${nextRepoTarget.label} · ${nextRepoTarget.branch}. Noch keine Änderung ausgeführt.`);
             setActiveMenu('github');
@@ -356,6 +348,14 @@ export function PlayReleaseChat() {
             const current = await agentClient.getJob(agentJob.jobId);
             setAgentJob(current);
             addMessage('assistant', summarizeSovereignAgentJob(current));
+            return;
+          }
+          if (interpretation.actionDisposition !== 'execute') {
+            addMessage(
+              'assistant',
+              interpretation.assistantText
+                || `Änderungsauftrag erkannt: ${interpretation.actionTitle}. Für eine GitHub-Ausführung bitte ausdrücklich die Ausführung beauftragen.`,
+            );
             return;
           }
           if (interpretation.intent === 'draft_pr' && agentJob?.jobId && agentJob.changedFiles.length > 0 && !agentJob.draftPrUrl) {
