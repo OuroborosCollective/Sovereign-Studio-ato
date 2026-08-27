@@ -12,6 +12,7 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from evidence_observatory_contracts import canonical_json, sha256_text  # noqa: E402
+import evidence_observatory_publisher as publisher  # noqa: E402
 from evidence_observatory_publisher import (  # noqa: E402
     PUBLISHER_POLICY,
     build_huggingface_publish_plan,
@@ -172,6 +173,8 @@ def _install_fake_hub(monkeypatch, tmp_path, *, mode: str = "success", main_rows
         "events": [],
         "write_attempts": 0,
         "branch_creates": 0,
+        "api_tokens": [],
+        "download_tokens": [],
     }
 
     def snapshot(revision: str) -> dict[str, bytes]:
@@ -187,6 +190,9 @@ def _install_fake_hub(monkeypatch, tmp_path, *, mode: str = "success", main_rows
             self.path_or_fileobj = path_or_fileobj
 
     class HfApi:
+        def __init__(self, token=None):
+            state["api_tokens"].append(token)
+
         def repo_info(self, *, repo_id, repo_type, revision):
             if revision in state["branch_shas"]:
                 return types.SimpleNamespace(sha=state["branch_shas"][revision])
@@ -224,7 +230,8 @@ def _install_fake_hub(monkeypatch, tmp_path, *, mode: str = "success", main_rows
                 raise TimeoutError("simulated_timeout_after_accepted_write")
             return types.SimpleNamespace(oid=oid)
 
-    def hf_hub_download(*, repo_id, filename, repo_type, revision):
+    def hf_hub_download(*, repo_id, filename, repo_type, revision, token=None):
+        state["download_tokens"].append(token)
         state["events"].append(f"read:{revision}:{filename}")
         content = snapshot(revision)[filename]
         local = tmp_path / f"{revision.replace('/', '_')}-{filename.replace('/', '_')}"
@@ -236,6 +243,7 @@ def _install_fake_hub(monkeypatch, tmp_path, *, mode: str = "success", main_rows
     fake.HfApi = HfApi
     fake.hf_hub_download = hf_hub_download
     monkeypatch.setitem(sys.modules, "huggingface_hub", fake)
+    monkeypatch.setattr(publisher, "_load_huggingface_runtime_token", lambda: "hf_test_runtime_token_1234567890")
     return state
 
 
@@ -252,6 +260,22 @@ def test_duplicate_target_content_is_idempotent_noop_without_hf_mutation(monkeyp
     assert result["readbackVerified"] is False
     assert state["write_attempts"] == 0
     assert state["branch_creates"] == 0
+
+
+def test_runtime_hf_credential_is_transport_only_and_never_returned(monkeypatch, tmp_path):
+    rows = build_cag_benchmark_public_rows()
+    rights = _rights([row["caseId"] for row in rows])
+    state = _install_fake_hub(monkeypatch, tmp_path)
+    result = publish_huggingface_batch(
+        rows=rows, repo_id=REPO_ID, revision=REVISION, license_rights=rights
+    )
+    expected_token = "hf_test_runtime_token_1234567890"
+    assert state["api_tokens"] == [expected_token]
+    assert state["download_tokens"]
+    assert set(state["download_tokens"]) == {expected_token}
+    assert expected_token not in repr(result)
+    assert result["status"] == "PUBLISHED_VERIFIED"
+    assert result["readbackVerified"] is True
 
 
 def test_timeout_after_accepted_write_is_recovered_by_readback_before_retry(monkeypatch, tmp_path):
