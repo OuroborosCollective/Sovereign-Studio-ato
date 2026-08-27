@@ -94,9 +94,12 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
     assert 'secretValuesReturned' in deploy
 
     for script in (deploy, rollback):
-        assert "supabase_default areloria_arelorian-network sovereign-private traefik-proxy" in script
+        assert "for network in supabase_default sovereign-private" in script
+        assert 'required docker network missing: $network' in script
+        assert 'docker network inspect areloria_arelorian-network' in script
+        assert 'docker network connect areloria_arelorian-network "$CONTAINER"' in script
         assert '--label "traefik.enable=true"' in script
-        assert '--label "traefik.docker.network=traefik-proxy"' in script
+        assert '--label "traefik.docker.network=sovereign-private"' in script
         assert "traefik.http.routers.sovereign-backend.rule=Host(`sovereign-backend.arelorian.de`)" in script
         assert '--label "traefik.http.routers.sovereign-backend.entrypoints=websecure"' in script
         assert '--label "traefik.http.routers.sovereign-backend.tls=true"' in script
@@ -104,11 +107,11 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
         assert '--label "traefik.http.routers.sovereign-backend.service=sovereign-backend"' in script
         assert '--label "traefik.http.services.sovereign-backend.loadbalancer.server.port=8787"' in script
         assert '--label "traefik.http.services.sovereign-backend.loadbalancer.server.scheme=http"' in script
-        assert 'docker network connect traefik-proxy "$CONTAINER"' in script
+        assert "traefik-proxy" not in script
 
-    # The isolated candidate must stay private; only the production/rollback
-    # container is registered with Traefik after its internal health check.
-    assert deploy.count('docker network connect traefik-proxy "$CONTAINER"') == 1
+    # The isolated candidate stays unregistered with Traefik; production and
+    # rollback advertise only Sovereign's own bridge to the host-network proxy.
+    assert deploy.count('--label "traefik.docker.network=sovereign-private"') == 1
     for script in (deploy, rollback):
         assert "https://sovereign-backend.arelorian.de/owner-approvals" in script
         assert "<title>Sovereign Owner-Freigaben</title>" in script
