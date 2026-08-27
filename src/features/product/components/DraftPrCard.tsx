@@ -82,7 +82,7 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 16 }}>📝</span>
+        <span style={{ fontSize: 16 }} aria-hidden="true">📝</span>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 600, color: C.accent, fontSize: 14 }}>
             Draft PR ready
@@ -144,9 +144,11 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
             fontSize: 12,
             fontWeight: 500,
             cursor: 'pointer',
+            outline: 'none',
           }}
           aria-label="Öffne PR im Browser"
           title="Öffne PR im Browser"
+          className="draft-pr-card-focus-ring"
         >
           Im Browser öffnen
         </button>
@@ -163,9 +165,11 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
             fontSize: 12,
             fontWeight: 500,
             cursor: 'pointer',
+            outline: 'none',
           }}
           aria-label="Im Chat besprechen"
           title="Im Chat besprechen"
+          className="draft-pr-card-focus-ring"
         >
           Im Chat besprechen
         </button>

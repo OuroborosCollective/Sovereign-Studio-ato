@@ -403,3 +403,10 @@ button {
     width: 100%;
   }
 }
+
+/* DraftPrCard accessibility: focus-visible ring styles */
+.draft-pr-card-focus-ring:focus-visible {
+  outline: 2px solid var(--accent-2, #22d3ee);
+  outline-offset: 2px;
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.4);
+}
