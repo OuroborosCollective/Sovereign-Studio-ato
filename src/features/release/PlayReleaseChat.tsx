@@ -4,11 +4,20 @@ import {
   fetchDevChatWorkerHealth,
   fetchDevChatWorkerReply,
   fetchSovereignLlmRouteCatalog,
+  parseDevChatGithubUrl,
   type DevChatWorkerMessage,
   type SovereignLlmRouteOption,
 } from '../product/runtime/devChatWorkerBridge';
 import { evaluateInputPolicy } from '../product/runtime/secureInputGuard';
 import { deriveReleaseGuideState } from '../product/runtime/sovereignReleaseGuide';
+import { fetchSovereignDirectLlmInterpretation } from '../product/runtime/sovereignDirectLlmIntentRuntime';
+import { createSovereignAgentClient } from '../product/runtime/sovereignAgentClient';
+import {
+  isSovereignAgentTerminalStatus,
+  resolveSovereignAgentConfig,
+  summarizeSovereignAgentJob,
+  type SovereignAgentJobSnapshot,
+} from '../product/runtime/sovereignAgentRuntime';
 import { LoginModal } from '../user/components/LoginModal';
 import { useUserStore } from '../user/useUserStore';
 
@@ -20,6 +29,12 @@ interface ChatEntry {
   readonly role: ChatRole;
   readonly text: string;
   readonly createdAt: number;
+}
+
+interface ReleaseRepoTarget {
+  readonly repoUrl: string;
+  readonly branch: string;
+  readonly label: string;
 }
 
 const C = {
@@ -86,10 +101,15 @@ export function PlayReleaseChat() {
   const [runtimeState, setRuntimeState] = useState<'checking' | 'ready' | 'degraded'>('checking');
   const [lastFailedText, setLastFailedText] = useState<string | null>(null);
   const [activeMenu, setActiveMenu] = useState<ReleaseMenuKey>('chat');
+  const [repoTarget, setRepoTarget] = useState<ReleaseRepoTarget | null>(null);
+  const [agentJob, setAgentJob] = useState<SovereignAgentJobSnapshot | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const routeSelectRef = useRef<HTMLSelectElement>(null);
   const sequenceRef = useRef(0);
+  const agentClient = useMemo(() => createSovereignAgentClient({
+    config: resolveSovereignAgentConfig(),
+  }), []);
 
   useEffect(() => {
     void refreshUser();
@@ -167,6 +187,83 @@ export function PlayReleaseChat() {
     setMessages((current) => [...current.slice(-79), entry]);
   };
 
+  const waitForRepositoryJob = async (initial: SovereignAgentJobSnapshot): Promise<SovereignAgentJobSnapshot> => {
+    let snapshot = initial;
+    if (!snapshot.jobId) throw new Error('Repository-Ausführung lieferte keine Job-ID.');
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      if (isSovereignAgentTerminalStatus(snapshot.status) || snapshot.status === 'waiting-for-user') return snapshot;
+      await new Promise((resolve) => window.setTimeout(resolve, 1250));
+      snapshot = await agentClient.getJob(snapshot.jobId);
+      setAgentJob(snapshot);
+    }
+    return snapshot;
+  };
+
+  const publishDraftForJob = async (snapshot: SovereignAgentJobSnapshot): Promise<void> => {
+    if (!snapshot.jobId) throw new Error('Draft-PR-Pfad benötigt eine bestätigte Job-ID.');
+    const preparation = await agentClient.prepareDraftPr(snapshot.jobId);
+    if (!preparation.ok || !preparation.draftPrPreparation.allowed || preparation.draftPrPreparation.canCreateDraftPr === false) {
+      const blocker = preparation.draftPrPreparation.blockers.join('; ')
+        || preparation.draftPrPreparation.summary
+        || preparation.draftPrPreparation.nextAction
+        || 'Draft-PR-Gate hat die Veröffentlichung nicht freigegeben.';
+      addMessage('system', `Änderungen liegen im Runtime-Workspace, aber Draft PR ist blockiert: ${blocker}`);
+      return;
+    }
+    const created = await agentClient.createDraftPr(snapshot.jobId);
+    setAgentJob({ ...snapshot, draftPrUrl: created.draftPrCreate.prUrl });
+    addMessage(
+      'assistant',
+      `Draft PR erstellt und von GitHub zurückgelesen:\n${created.draftPrCreate.prUrl}\nHead: ${created.draftPrCreate.readbackHeadSha.slice(0, 12)} · CI: ${created.draftPrCreate.ciState}`,
+    );
+  };
+
+  const executeRepositoryAction = async (args: {
+    readonly text: string;
+    readonly actionTitle: string;
+    readonly intent: string;
+    readonly target: ReleaseRepoTarget;
+  }): Promise<void> => {
+    setActiveMenu('github');
+    addMessage('system', `GitHub-Auftrag erkannt · ${args.target.label} · Start nur über die revisionsgebundene Agent-Runtime.`);
+    let snapshot = await agentClient.startRepositoryExecution({
+      repoUrl: args.target.repoUrl,
+      branch: args.target.branch,
+      mission: args.actionTitle || args.text,
+      evidenceText: args.text,
+    });
+    setAgentJob(snapshot);
+    snapshot = await waitForRepositoryJob(snapshot);
+    setAgentJob(snapshot);
+
+    if (snapshot.status === 'waiting-for-user') {
+      addMessage('system', 'GitHub-Ausführung wartet auf eine Nutzerentscheidung. Es wurde kein Erfolg behauptet.');
+      return;
+    }
+    if (snapshot.status === 'blocked' || snapshot.status === 'failed') {
+      addMessage('system', `GitHub-Ausführung blockiert: ${snapshot.lastError || summarizeSovereignAgentJob(snapshot)}`);
+      return;
+    }
+    if (!isSovereignAgentTerminalStatus(snapshot.status)) {
+      addMessage('system', `GitHub-Ausführung läuft weiter (${snapshot.status}). Noch kein Abschluss-Readback vorhanden.`);
+      return;
+    }
+    if (snapshot.draftPrUrl) {
+      addMessage('assistant', `GitHub-Änderung ist als Draft PR belegt:\n${snapshot.draftPrUrl}`);
+      return;
+    }
+    if (snapshot.changedFiles.length === 0) {
+      addMessage('system', 'Agent-Run ist abgeschlossen, aber es sind keine geänderten Dateien belegt. Kein Draft PR wurde erzeugt.');
+      return;
+    }
+
+    if (args.intent !== 'draft_pr') {
+      addMessage('assistant', `Repository-Run abgeschlossen · ${snapshot.changedFiles.length} geänderte Datei(en) im Runtime-Readback. Kein externer GitHub-Write wurde ausgeführt. Für Veröffentlichung ausdrücklich „Draft PR erstellen“ beauftragen.`);
+      return;
+    }
+    await publishDraftForJob(snapshot);
+  };
+
   const submit = async (override?: string) => {
     const text = (override ?? draft).trim();
     if (!text || busy) return;
@@ -203,6 +300,86 @@ export function PlayReleaseChat() {
     ];
 
     try {
+      const parsedRepo = parseDevChatGithubUrl(text);
+      const nextRepoTarget = parsedRepo
+        ? {
+            repoUrl: parsedRepo.repoUrl,
+            branch: parsedRepo.branch,
+            label: `${parsedRepo.owner}/${parsedRepo.repo}`,
+          }
+        : repoTarget;
+      if (parsedRepo) setRepoTarget(nextRepoTarget);
+
+      if (nextRepoTarget) {
+        const recentMessages = messages
+          .filter((entry) => entry.role === 'user' || entry.role === 'assistant')
+          .slice(-6)
+          .map((entry): DevChatWorkerMessage => ({
+            role: entry.role as 'user' | 'assistant',
+            content: entry.text,
+          }));
+        const interpreted = await fetchSovereignDirectLlmInterpretation({
+          preferredModel: model,
+          text,
+          repoContext: `${nextRepoTarget.label} · ${nextRepoTarget.branch}`,
+          runtimeContext: agentJob
+            ? `Letzter belegter Agent-Status: ${agentJob.status}; Draft PR: ${agentJob.draftPrUrl || 'none'}`
+            : 'Noch kein Agent-Run in diesem Chat.',
+          recentMessages,
+        });
+
+        if (interpreted.ok && interpreted.interpretation) {
+          const interpretation = interpreted.interpretation;
+          setRuntimeState('ready');
+          if (interpretation.mode === 'chat') {
+            addMessage('assistant', interpretation.assistantText);
+            return;
+          }
+          if (interpretation.actionDisposition !== 'execute') {
+            addMessage(
+              'assistant',
+              interpretation.assistantText
+                || `Änderungsauftrag erkannt: ${interpretation.actionTitle}. Für eine GitHub-Ausführung bitte ausdrücklich die Ausführung beauftragen.`,
+            );
+            return;
+          }
+          if (interpretation.intent === 'load_repo') {
+            addMessage('assistant', `Repository-Ziel gebunden: ${nextRepoTarget.label} · ${nextRepoTarget.branch}. Noch keine Änderung ausgeführt.`);
+            setActiveMenu('github');
+            return;
+          }
+          if (interpretation.intent === 'status') {
+            if (!agentJob?.jobId) {
+              addMessage('assistant', 'Für dieses Chat-Repository gibt es noch keinen belegten Agent-Run.');
+              return;
+            }
+            const current = await agentClient.getJob(agentJob.jobId);
+            setAgentJob(current);
+            addMessage('assistant', summarizeSovereignAgentJob(current));
+            return;
+          }
+          if (interpretation.intent === 'draft_pr' && agentJob?.jobId && agentJob.changedFiles.length > 0 && !agentJob.draftPrUrl) {
+            await publishDraftForJob(agentJob);
+            return;
+          }
+          if (['direct_patch', 'code_execution', 'draft_pr', 'repair_workflow'].includes(interpretation.intent)) {
+            await executeRepositoryAction({
+              text,
+              actionTitle: interpretation.actionTitle,
+              intent: interpretation.intent,
+              target: nextRepoTarget,
+            });
+            return;
+          }
+          addMessage('assistant', interpretation.assistantText || 'Der erkannte Auftrag ist für die Play-Release-GitHub-Lane nicht freigegeben.');
+          return;
+        }
+
+        if (interpreted.rawContent) {
+          addMessage('system', 'Die LLM-Antwort war kein gültiger Aktionsvertrag. Sie wurde nicht zur GitHub-Ausführung verwendet.');
+        }
+      }
+
       const result = await fetchDevChatWorkerReply(
         { model, messages: conversation },
         { maxRetries: 1, retryDelayMs: 700 },
@@ -390,9 +567,13 @@ export function PlayReleaseChat() {
         <div style={{ flexShrink: 0, borderBottom: `1px solid ${C.border}`, background: C.surface }}>
           <div className="release-chat-shell" style={{ minHeight: 34, display: 'flex', alignItems: 'center', padding: '5px 12px', color: C.sub, fontSize: 10.5 }}>
             {activeMenu === 'github' && (
-              githubConnected
-                ? `GitHub verbunden${user?.githubUsername ? ` · @${user.githubUsername}` : ''}. Schreibaktionen bleiben revisionsgebunden und benötigen echte Runtime-Evidence.`
-                : 'GitHub ist noch nicht als bestätigte User-Verbindung sichtbar. Der Chat darf deshalb keinen GitHub-Erfolg behaupten.'
+              <span>
+                {repoTarget ? `Repo: ${repoTarget.label} · ${repoTarget.branch}` : 'Noch kein Repository-Ziel im Chat gebunden.'}
+                {agentJob ? ` · Agent: ${agentJob.status}${agentJob.draftPrUrl ? ' · Draft PR belegt' : ''}` : ''}
+                {githubConnected
+                  ? ` · GitHub${user?.githubUsername ? ` @${user.githubUsername}` : ''} verbunden.`
+                  : ' · User-GitHub-Identität nicht bestätigt; Backend-Gates entscheiden fail-closed.'}
+              </span>
             )}
             {activeMenu === 'models' && (activeRoute ? `Aktiv: ${routeLabel(activeRoute)}` : 'Automatische Free-first-Routenwahl. Eine manuell gewählte Route bleibt hart fixiert.')}
             {activeMenu === 'account' && (user ? `${user.email} · ${user.credits} Credits` : 'Für Runtime- und GitHub-Aktionen bitte anmelden.')}

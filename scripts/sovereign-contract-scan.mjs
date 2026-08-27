@@ -224,7 +224,13 @@ function run() {
   requireText('src/App.tsx', /PlayReleaseChat/, 'app:play-release-chat-root', 'App routes the Google Play release root to the focused chat surface.');
   forbidText('src/App.tsx', /BuilderContainer|LiveWorkspaceMonitor|LlmAdapterProvider|createSovereignAgentClient|onStartAgent/, 'app:no-deferred-monitor-root-wiring', 'Google Play release root must not remount deferred monitor or direct agent wiring.');
   requireText('src/features/release/PlayReleaseChat.tsx', /fetchSovereignLlmRouteCatalog/, 'play-chat:route-catalog', 'Play release chat uses the server-owned LLM route catalog.');
-  requireText('src/features/release/PlayReleaseChat.tsx', /fetchDevChatWorkerReply/, 'play-chat:backend-worker', 'Play release chat sends work through the backend-owned worker bridge.');
+  requireText('src/features/release/PlayReleaseChat.tsx', /fetchDevChatWorkerReply/, 'play-chat:backend-worker', 'Play release chat sends ordinary conversation through the backend-owned worker bridge.');
+  requireText('src/features/release/PlayReleaseChat.tsx', /parseDevChatGithubUrl/, 'play-chat:github-target-binding', 'Play release chat binds an exact GitHub repository URL before repository execution.');
+  requireText('src/features/release/PlayReleaseChat.tsx', /fetchSovereignDirectLlmInterpretation/, 'play-chat:llm-action-boundary', 'Play release chat uses the LLM intent schema rather than browser keyword heuristics for repository actions.');
+  requireText('src/features/release/PlayReleaseChat.tsx', /startRepositoryExecution/, 'play-chat:repository-execution', 'Play release chat reaches the canonical repository Agent runtime.');
+  requireText('src/features/release/PlayReleaseChat.tsx', /interpretation\.intent === 'draft_pr'[\s\S]*publishDraftForJob/, 'play-chat:draft-pr-explicit-consent', 'Existing workspace changes publish only after an explicit draft_pr execute intent.');
+  requireText('src/features/release/PlayReleaseChat.tsx', /prepareDraftPr[\s\S]*createDraftPr/, 'play-chat:draft-pr-readback-chain', 'Play release chat preserves prepare-before-create Draft PR verification.');
+  requireText('src/features/release/PlayReleaseChat.tsx', /Kein externer GitHub-Write wurde ausgeführt/, 'play-chat:no-implicit-publish', 'A direct patch does not silently become an external GitHub write.');
   requireText('src/features/release/PlayReleaseChat.tsx', /evaluateInputPolicy\(text\)/, 'play-chat:secret-input-guard', 'Play release chat evaluates secret-shaped input before sending it to the LLM bridge.');
   forbidText('src/features/release/PlayReleaseChat.tsx', /getDesktopFrame|VncScreen|LiveWorkspaceMonitor/, 'play-chat:no-monitor-runtime', 'Google Play release chat must stay free of deferred desktop-monitor runtime dependencies.');
   forbidText('src/App.tsx', retiredAppAgentPattern, 'app:no-retired-agent-wiring', 'App must not restore retired external-agent client or start symbols.');
