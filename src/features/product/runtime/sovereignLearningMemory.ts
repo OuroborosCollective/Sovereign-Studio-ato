@@ -260,8 +260,16 @@ export function queryLearningMemory(store: LearningMemoryStore, query: LearningM
 
 export function buildLearningMemoryRuntimeSummary(store: LearningMemoryStore): string {
   const report = validateLearningMemoryStore(store);
-  const observed = store.patterns.filter((pattern) => pattern.confidence === 'observed').length;
-  const inferred = store.patterns.filter((pattern) => pattern.confidence === 'inferred').length;
-  const manual = store.patterns.filter((pattern) => pattern.confidence === 'manual').length;
+
+  // ⚡ Bolt: Single-pass loop optimization avoids multiple O(N) array allocations from chained .filter()
+  let observed = 0;
+  let inferred = 0;
+  let manual = 0;
+  for (const pattern of store.patterns) {
+    if (pattern.confidence === 'observed') observed++;
+    else if (pattern.confidence === 'inferred') inferred++;
+    else if (pattern.confidence === 'manual') manual++;
+  }
+
   return `${report.summary} Confidence: ${observed} observed, ${inferred} inferred, ${manual} manual.`;
 }

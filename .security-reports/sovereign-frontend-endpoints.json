@@ -17506,6 +17506,14 @@
     },
     {
       "dynamic": false,
+      "line": 22,
+      "source": "src/features/release/PlayReleaseChat.tsx",
+      "source_status": "active",
+      "target": "src/features/github/githubOAuthLogin.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
       "line": 2,
       "source": "src/features/release/PlayReleaseChat.tsx",
       "source_status": "active",
@@ -17514,7 +17522,7 @@
     },
     {
       "dynamic": false,
-      "line": 10,
+      "line": 11,
       "source": "src/features/release/PlayReleaseChat.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/secureInputGuard.ts",
@@ -17522,7 +17530,39 @@
     },
     {
       "dynamic": false,
-      "line": 11,
+      "line": 14,
+      "source": "src/features/release/PlayReleaseChat.tsx",
+      "source_status": "active",
+      "target": "src/features/product/runtime/sovereignAgentClient.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 15,
+      "source": "src/features/release/PlayReleaseChat.tsx",
+      "source_status": "active",
+      "target": "src/features/product/runtime/sovereignAgentRuntime.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 13,
+      "source": "src/features/release/PlayReleaseChat.tsx",
+      "source_status": "active",
+      "target": "src/features/product/runtime/sovereignDirectLlmIntentRuntime.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 12,
+      "source": "src/features/release/PlayReleaseChat.tsx",
+      "source_status": "active",
+      "target": "src/features/product/runtime/sovereignReleaseGuide.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 21,
       "source": "src/features/release/PlayReleaseChat.tsx",
       "source_status": "active",
       "target": "src/features/user/components/LoginModal.tsx",
@@ -17530,7 +17570,7 @@
     },
     {
       "dynamic": false,
-      "line": 12,
+      "line": 23,
       "source": "src/features/release/PlayReleaseChat.tsx",
       "source_status": "active",
       "target": "src/features/user/useUserStore.ts",
@@ -18657,10 +18697,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "e0ed9b937f9d295cfeb7b8f2582ffd53f82358ec173478301418fe8a750a9602",
-  "revision": "754177ebca382d1e2d99119baac394d94da68ac0",
+  "reportSha256": "aadbcf0ccf0b731c63f055c4d43349cfe05283cf891f34229a8b0924c7dbfbe3",
+  "revision": "78c093e44c89f7f1e7784beddb787a25e796a774",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "9b86457525a1ccaacbdd9e7f7c5fb1b6ee16a5dda9a99ad5dd6417f19b95732e",
+  "sourceTreeSha256": "c2d7a5a6a82f863c70b875201c0c90b667c38a57ace835d4b79949b4a56a97ad",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -18675,7 +18715,7 @@
     "externalRequestCount": 30,
     "frontendCallCount": 256,
     "frontendModuleCount": 529,
-    "importEdgeCount": 693,
+    "importEdgeCount": 698,
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,

@@ -4,10 +4,10 @@
   "exitCode": 0,
   "failed": 0,
   "label": "frontend-smoke",
-  "passed": 3622,
+  "passed": 3626,
   "rawReportPersisted": false,
   "schemaVersion": "sovereign.vitest-causal-runner.v1",
   "skipped": 2,
   "status": "passed",
-  "total": 3624
+  "total": 3628
 }
