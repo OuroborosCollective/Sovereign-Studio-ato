@@ -103,6 +103,31 @@ def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(s.encode()).hexdigest()
 
 
+def _normalize_value(value: Optional[str], field_name: str) -> Optional[str]:
+    """Normalize a value based on its field type for consistent hashing.
+
+    This must be called BEFORE computing hashes in the factory to ensure
+    the hash matches what __post_init__ will compute after normalization.
+    """
+    if value is None:
+        return None
+
+    # Determine field type and normalize accordingly
+    if field_name in ("case_sha256", "execution_receipt_sha256", "target_readback_sha256",
+                       "receipt_sha256"):
+        return _normalize_sha64(value, label=field_name)
+    elif field_name in ("repository_revision", "runtime_revision"):
+        return _normalize_sha40(value, label=field_name)
+    elif field_name == "image_digest":
+        return _normalize_image_digest(value, label=field_name)
+    elif field_name == "observed_block_code":
+        # Normalize block code: strip whitespace and lowercase
+        normalized = str(value).strip().lower()
+        return normalized if normalized else None
+
+    return value
+
+
 def _reject_secret_shaped_field(value: Any, *, path: str = "$") -> None:
     """Reject secret-shaped raw fields from receipts."""
     if isinstance(value, dict):
@@ -267,29 +292,40 @@ def build_control_mutation_receipt(
     Returns:
         Immutable ControlMutationReceipt with computed hash
     """
-    # Build receipt body for hash computation
+    # Normalize input values to match what __post_init__ will produce
+    # This ensures the computed receipt_sha256 matches after __post_init__ normalization
+    normalized_case_sha256 = _normalize_value(case_sha256, "case_sha256")
+    normalized_repository_revision = _normalize_value(repository_revision, "repository_revision")
+    normalized_runtime_revision = _normalize_value(runtime_revision, "runtime_revision") if runtime_revision else None
+    normalized_image_digest = _normalize_value(image_digest, "image_digest") if image_digest else None
+    normalized_execution_receipt_sha256 = _normalize_value(execution_receipt_sha256, "execution_receipt_sha256") if execution_receipt_sha256 else None
+    normalized_target_readback_sha256 = _normalize_value(target_readback_sha256, "target_readback_sha256") if target_readback_sha256 else None
+    normalized_observed_block_code = _normalize_value(observed_block_code, "observed_block_code") if observed_block_code else None
+
+    # Build receipt body for hash computation (using normalized values)
     receipt_body = {
         "schema_version": SCHEMA_VERSION,
-        "case_sha256": case_sha256,
-        "repository_revision": repository_revision,
-        "runtime_revision": runtime_revision,
-        "image_digest": image_digest,
-        "execution_receipt_sha256": execution_receipt_sha256,
-        "target_readback_sha256": target_readback_sha256,
-        "observed_block_code": observed_block_code,
+        "case_sha256": normalized_case_sha256,
+        "repository_revision": normalized_repository_revision,
+        "runtime_revision": normalized_runtime_revision,
+        "image_digest": normalized_image_digest,
+        "execution_receipt_sha256": normalized_execution_receipt_sha256,
+        "target_readback_sha256": normalized_target_readback_sha256,
+        "observed_block_code": normalized_observed_block_code,
         "verdict": verdict,
     }
     computed_receipt_sha256 = _canonical_sha256(receipt_body)
 
+    # Build the receipt (using normalized values to match the hash)
     receipt = ControlMutationReceipt(
         schema_version=SCHEMA_VERSION,
-        case_sha256=case_sha256,
-        repository_revision=repository_revision,
-        runtime_revision=runtime_revision,
-        image_digest=image_digest,
-        execution_receipt_sha256=execution_receipt_sha256,
-        target_readback_sha256=target_readback_sha256,
-        observed_block_code=observed_block_code,
+        case_sha256=normalized_case_sha256,
+        repository_revision=normalized_repository_revision,
+        runtime_revision=normalized_runtime_revision,
+        image_digest=normalized_image_digest,
+        execution_receipt_sha256=normalized_execution_receipt_sha256,
+        target_readback_sha256=normalized_target_readback_sha256,
+        observed_block_code=normalized_observed_block_code,
         verdict=verdict,
         receipt_sha256=computed_receipt_sha256,
     )

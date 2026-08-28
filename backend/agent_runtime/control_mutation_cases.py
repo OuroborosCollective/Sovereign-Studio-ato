@@ -158,6 +158,35 @@ def _normalize_identifier(value: str, *, label: str) -> str:
     return normalized
 
 
+def _normalize_value(value: Any, field_name: str) -> Any:
+    """Normalize a value based on its field type for consistent hashing.
+
+    This must be called BEFORE computing hashes in the factory to ensure
+    the hash matches what __post_init__ will compute after normalization.
+    """
+    if value is None:
+        return None
+
+    # Determine field type and normalize accordingly
+    if field_name in ("mutation_id", "repository", "control_owner", "protected_operation_family"):
+        return _normalize_identifier(value, label=field_name)
+    elif field_name in ("repository_revision",):
+        return _normalize_sha40(value, label=field_name)
+    elif field_name in ("baseline_contract_sha256", "mutated_contract_sha256",
+                         "operation_input_sha256", "case_sha256"):
+        return _normalize_sha64(value, label=field_name)
+    elif field_name == "image_digest":
+        return _normalize_image_digest(value, label=field_name)
+    elif field_name == "expected_block_code":
+        # Normalize block code: strip whitespace and lowercase
+        if value is not None:
+            normalized = str(value).strip().lower()
+            return normalized if normalized else None
+        return None
+
+    return value
+
+
 def _reject_secret_shaped_field(value: Any, *, path: str = "$") -> None:
     """Reject secret-shaped raw fields from contracts."""
     if isinstance(value, dict):
@@ -380,6 +409,16 @@ def build_control_mutation_case(
     if not valid:
         raise ControlMutationContractError(f"single-variable invariant violated: {error}")
 
+    # Normalize input values to match what __post_init__ will produce
+    # This ensures the computed case_sha256 matches after __post_init__ normalization
+    normalized_mutation_id = _normalize_value(mutation_id, "mutation_id")
+    normalized_repository = _normalize_value(repository, "repository")
+    normalized_repository_revision = _normalize_value(repository_revision, "repository_revision")
+    normalized_control_owner = _normalize_value(control_owner, "control_owner")
+    normalized_protected_operation_family = _normalize_value(protected_operation_family, "protected_operation_family")
+    normalized_operation_input_sha256 = _normalize_value(operation_input_sha256, "operation_input_sha256")
+    normalized_expected_block_code = _normalize_value(expected_block_code, "expected_block_code")
+
     # Compute contract hashes
     baseline_sha = _canonical_sha256(baseline_contract)
     mutated_sha = _canonical_sha256(mutated_contract)
@@ -388,37 +427,37 @@ def build_control_mutation_case(
     runtime_required = requires_runtime_execution(operator)
     readback_required = requires_target_readback(operator)
 
-    # Build the case body for hash computation
+    # Build the case body for hash computation (using normalized values)
     case_body = {
         "schema_version": SCHEMA_VERSION,
-        "mutation_id": mutation_id,
+        "mutation_id": normalized_mutation_id,
         "operator": operator.value,
-        "repository": repository,
-        "repository_revision": repository_revision,
-        "control_owner": control_owner,
+        "repository": normalized_repository,
+        "repository_revision": normalized_repository_revision,
+        "control_owner": normalized_control_owner,
         "baseline_contract_sha256": baseline_sha,
         "mutated_contract_sha256": mutated_sha,
-        "protected_operation_family": protected_operation_family,
-        "operation_input_sha256": operation_input_sha256,
-        "expected_block_code": expected_block_code,
+        "protected_operation_family": normalized_protected_operation_family,
+        "operation_input_sha256": normalized_operation_input_sha256,
+        "expected_block_code": normalized_expected_block_code,
         "requires_runtime_execution": runtime_required,
         "requires_target_readback": readback_required,
     }
     computed_case_sha256 = _canonical_sha256(case_body)
 
-    # Build the case
+    # Build the case (using normalized values to match the hash)
     case = ControlMutationCase(
         schema_version=SCHEMA_VERSION,
-        mutation_id=mutation_id,
+        mutation_id=normalized_mutation_id,
         operator=operator,
-        repository=repository,
-        repository_revision=repository_revision,
-        control_owner=control_owner,
+        repository=normalized_repository,
+        repository_revision=normalized_repository_revision,
+        control_owner=normalized_control_owner,
         baseline_contract_sha256=baseline_sha,
         mutated_contract_sha256=mutated_sha,
-        protected_operation_family=protected_operation_family,
-        operation_input_sha256=operation_input_sha256,
-        expected_block_code=expected_block_code,
+        protected_operation_family=normalized_protected_operation_family,
+        operation_input_sha256=normalized_operation_input_sha256,
+        expected_block_code=normalized_expected_block_code,
         requires_runtime_execution=runtime_required,
         requires_target_readback=readback_required,
         case_sha256=computed_case_sha256,
