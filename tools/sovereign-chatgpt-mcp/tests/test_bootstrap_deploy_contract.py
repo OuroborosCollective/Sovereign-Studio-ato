@@ -107,6 +107,10 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
         assert '--label "traefik.http.routers.sovereign-backend.service=sovereign-backend"' in script
         assert '--label "traefik.http.services.sovereign-backend.loadbalancer.server.port=8787"' in script
         assert '--label "traefik.http.services.sovereign-backend.loadbalancer.server.scheme=http"' in script
+        assert '--label "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.path=/health/live"' in script
+        assert '--label "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.interval=15s"' in script
+        assert '--label "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.timeout=5s"' in script
+        assert "127.0.0.1:8788/health/live" in script
         assert "traefik-proxy" not in script
 
     # The isolated candidate stays unregistered with Traefik; production and
