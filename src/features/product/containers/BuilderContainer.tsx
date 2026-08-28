@@ -863,6 +863,31 @@ function TopBar({
           RT
         </button>
 
+        {/* OpenHands Agent Briefing */}
+        <button
+          type="button"
+          onClick={() => setOHB(true)}
+          aria-label="OpenHands Operator Briefing"
+          title="OpenHands Operator Briefing"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            minHeight: 44,
+            padding: "6px 10px",
+            borderRadius: 8,
+            background: C.bg,
+            border: `1px solid ${C.border}`,
+            color: C.textMuted,
+            fontSize: 11,
+            fontWeight: 500,
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          🤖
+        </button>
+
         {/* Panel toggle */}
         <button
           type="button"
@@ -6269,8 +6294,121 @@ Das echte Repo-Setup wurde geöffnet.`);
               overflowY: "auto",
               borderRadius: 20,
               border: `1px solid ${C.border}`,
+              background: C.bg,
+              padding: 24,
             }}
           >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+              <div style={{
+                width: 48, height: 48,
+                borderRadius: 16,
+                background: 'rgba(6,182,212,0.15)',
+                border: '1px solid rgba(6,182,212,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 24,
+              }}>
+                🤖
+              </div>
+              <div>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: C.text, margin: 0 }}>
+                  OpenHands Operator Briefing
+                </h2>
+                <p style={{ fontSize: 12, color: C.textMuted, margin: '4px 0 0' }}>
+                  Sovereign Studio Agent Runtime
+                </p>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '10px 14px', borderRadius: 10,
+                background: agentConfig.ready ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                border: `1px solid ${agentConfig.ready ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
+              }}>
+                <span style={{
+                  width: 10, height: 10, borderRadius: '50%',
+                  background: agentConfig.ready ? '#10b981' : '#ef4444',
+                  boxShadow: agentConfig.ready ? '0 0 8px #10b981' : '0 0 8px #ef4444',
+                }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: agentConfig.ready ? '#10b981' : '#ef4444' }}>
+                  {agentConfig.ready ? 'Runtime Bereit' : 'Runtime Nicht Verfügbar'}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <h3 style={{ fontSize: 11, fontWeight: 600, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                Konfiguration
+              </h3>
+              <div style={{ background: C.surface, borderRadius: 12, padding: 14, border: `1px solid ${C.border}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, color: C.textMuted }}>Modus</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{agentConfig.deploymentMode}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, color: C.textMuted }}>Aktiviert</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: agentConfig.enabled ? '#10b981' : '#ef4444' }}>
+                    {agentConfig.enabled ? 'Ja' : 'Nein'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 12, color: C.textMuted }}>API URL</span>
+                  <code style={{
+                    fontSize: 11, color: C.accent,
+                    background: 'rgba(6,182,212,0.1)',
+                    padding: '8px 10px', borderRadius: 8,
+                    wordBreak: 'break-all',
+                    fontFamily: 'monospace',
+                  }}>
+                    {agentConfig.agentApiUrl || 'Nicht konfiguriert'}
+                  </code>
+                </div>
+              </div>
+            </div>
+
+            {agentConfig.reason && !agentConfig.ready && (
+              <div style={{ marginBottom: 16 }}>
+                <h3 style={{ fontSize: 11, fontWeight: 600, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                  Grund
+                </h3>
+                <div style={{ background: 'rgba(239,68,68,0.1)', borderRadius: 12, padding: 14, border: '1px solid rgba(239,68,68,0.3)' }}>
+                  <p style={{ fontSize: 12, color: '#ef4444', margin: 0 }}>{agentConfig.reason}</p>
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginBottom: 20 }}>
+              <h3 style={{ fontSize: 11, fontWeight: 600, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                Anleitung
+              </h3>
+              <div style={{ background: C.surface, borderRadius: 12, padding: 14, border: `1px solid ${C.border}` }}>
+                <ol style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: C.text, lineHeight: 1.8 }}>
+                  <li style={{ marginBottom: 8 }}>Repo im <strong>Repository</strong>-Tab laden</li>
+                  <li style={{ marginBottom: 8 }}>Mission im <strong>Builder</strong>-Tab definieren</li>
+                  <li style={{ marginBottom: 8 }}>Auf <strong>"Start Autonomous"</strong> klicken</li>
+                  <li>Fortschritt im <strong>Monitor</strong>-Tab verfolgen</li>
+                </ol>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setOHB(false)}
+              style={{
+                width: '100%',
+                padding: '12px 20px',
+                borderRadius: 12,
+                background: C.accent,
+                border: 'none',
+                color: '#fff',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Verstanden
+            </button>
           </div>
         </div>
       )}
