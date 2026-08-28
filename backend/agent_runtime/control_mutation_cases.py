@@ -388,19 +388,33 @@ def build_control_mutation_case(
     runtime_required = requires_runtime_execution(operator)
     readback_required = requires_target_readback(operator)
 
-    # Build the case body for hash computation
+    # Normalize values BEFORE computing hash to match __post_init__ validation
+    # This ensures the hash computed here matches the hash computed in the constructor
+    norm_mutation_id = _normalize_identifier(mutation_id, label="mutation_id")
+    norm_repository = _normalize_identifier(repository, label="repository")
+    norm_revision = _normalize_sha40(repository_revision, label="repository_revision")
+    norm_control_owner = _normalize_identifier(control_owner, label="control_owner")
+    norm_baseline_sha = _normalize_sha64(baseline_sha, label="baseline_contract_sha256")
+    norm_mutated_sha = _normalize_sha64(mutated_sha, label="mutated_contract_sha256")
+    norm_operation_sha = _normalize_sha64(operation_input_sha256, label="operation_input_sha256")
+    norm_family = _normalize_identifier(protected_operation_family, label="protected_operation_family")
+    norm_block_code = str(expected_block_code).strip().lower() if expected_block_code else None
+    if norm_block_code and not norm_block_code:
+        norm_block_code = None
+
+    # Build the case body for hash computation using NORMALIZED values
     case_body = {
         "schema_version": SCHEMA_VERSION,
-        "mutation_id": mutation_id,
+        "mutation_id": norm_mutation_id,
         "operator": operator.value,
-        "repository": repository,
-        "repository_revision": repository_revision,
-        "control_owner": control_owner,
-        "baseline_contract_sha256": baseline_sha,
-        "mutated_contract_sha256": mutated_sha,
-        "protected_operation_family": protected_operation_family,
-        "operation_input_sha256": operation_input_sha256,
-        "expected_block_code": expected_block_code,
+        "repository": norm_repository,
+        "repository_revision": norm_revision,
+        "control_owner": norm_control_owner,
+        "baseline_contract_sha256": norm_baseline_sha,
+        "mutated_contract_sha256": norm_mutated_sha,
+        "protected_operation_family": norm_family,
+        "operation_input_sha256": norm_operation_sha,
+        "expected_block_code": norm_block_code,
         "requires_runtime_execution": runtime_required,
         "requires_target_readback": readback_required,
     }

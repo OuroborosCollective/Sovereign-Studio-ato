@@ -267,29 +267,41 @@ def build_control_mutation_receipt(
     Returns:
         Immutable ControlMutationReceipt with computed hash
     """
-    # Build receipt body for hash computation
+    # Normalize values BEFORE computing hash to match __post_init__ validation
+    # This ensures the hash computed here matches the hash computed in the constructor
+    norm_case_sha256 = _normalize_sha64(case_sha256, label="case_sha256")
+    norm_revision = _normalize_sha40(repository_revision, label="repository_revision")
+    norm_runtime = _normalize_sha40(runtime_revision, label="runtime_revision") if runtime_revision else None
+    norm_image = _normalize_image_digest(image_digest, label="image_digest") if image_digest else None
+    norm_exec_receipt = _normalize_sha64(execution_receipt_sha256, label="execution_receipt_sha256") if execution_receipt_sha256 else None
+    norm_readback = _normalize_sha64(target_readback_sha256, label="target_readback_sha256") if target_readback_sha256 else None
+    norm_block_code = str(observed_block_code).strip().lower() if observed_block_code else None
+    if norm_block_code and not norm_block_code:
+        norm_block_code = None
+
+    # Build receipt body for hash computation using NORMALIZED values
     receipt_body = {
         "schema_version": SCHEMA_VERSION,
-        "case_sha256": case_sha256,
-        "repository_revision": repository_revision,
-        "runtime_revision": runtime_revision,
-        "image_digest": image_digest,
-        "execution_receipt_sha256": execution_receipt_sha256,
-        "target_readback_sha256": target_readback_sha256,
-        "observed_block_code": observed_block_code,
+        "case_sha256": norm_case_sha256,
+        "repository_revision": norm_revision,
+        "runtime_revision": norm_runtime,
+        "image_digest": norm_image,
+        "execution_receipt_sha256": norm_exec_receipt,
+        "target_readback_sha256": norm_readback,
+        "observed_block_code": norm_block_code,
         "verdict": verdict,
     }
     computed_receipt_sha256 = _canonical_sha256(receipt_body)
 
     receipt = ControlMutationReceipt(
         schema_version=SCHEMA_VERSION,
-        case_sha256=case_sha256,
-        repository_revision=repository_revision,
-        runtime_revision=runtime_revision,
-        image_digest=image_digest,
-        execution_receipt_sha256=execution_receipt_sha256,
-        target_readback_sha256=target_readback_sha256,
-        observed_block_code=observed_block_code,
+        case_sha256=norm_case_sha256,
+        repository_revision=norm_revision,
+        runtime_revision=norm_runtime,
+        image_digest=norm_image,
+        execution_receipt_sha256=norm_exec_receipt,
+        target_readback_sha256=norm_readback,
+        observed_block_code=norm_block_code,
         verdict=verdict,
         receipt_sha256=computed_receipt_sha256,
     )
