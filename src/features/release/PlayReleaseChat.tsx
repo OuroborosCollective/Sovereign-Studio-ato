@@ -337,6 +337,59 @@ export function PlayReleaseChat() {
     }
   };
 
+  const recheckRuntimeAndRoutes = async (): Promise<void> => {
+    const failedText = lastFailedText;
+    if (!user || !failedText || busy) return;
+
+    setBusy(true);
+    try {
+      const [catalog, health] = await Promise.allSettled([
+        fetchSovereignLlmRouteCatalog(undefined, 'execution'),
+        fetchDevChatWorkerHealth(),
+      ]);
+      const nextRoutes = catalog.status === 'fulfilled' ? catalog.value : [];
+      const catalogAvailable = catalog.status === 'fulfilled' && nextRoutes.length > 0;
+      const healthReady = health.status === 'fulfilled' && health.value.ok;
+      const selectedRouteStillAvailable = !selectedRoute || nextRoutes.some((route) => route.id === selectedRoute);
+
+      if (catalog.status === 'fulfilled') {
+        setRoutes(nextRoutes);
+        setRouteError(catalogAvailable ? null : 'Keine freigegebene LLM-Route ist derzeit verfügbar.');
+      } else {
+        setRoutes([]);
+        setRouteError('Routenkatalog ist gerade nicht verfügbar.');
+      }
+
+      if (healthReady && catalogAvailable && selectedRouteStillAvailable) {
+        const restoredToComposer = !draft.trim();
+        if (restoredToComposer) setDraft(failedText);
+        setLastFailedText(null);
+        setRuntimeState('ready');
+        addMessage(
+          'system',
+          restoredToComposer
+            ? 'Backend und Routenkatalog wurden neu geprüft. Die ursprüngliche Anfrage wurde nicht erneut gesendet; sie liegt jetzt im Eingabefeld und kann bewusst versendet werden.'
+            : 'Backend und Routenkatalog wurden neu geprüft. Die ursprüngliche Anfrage wurde nicht erneut gesendet; dein aktueller Entwurf blieb unverändert.',
+        );
+        return;
+      }
+
+      setRuntimeState('degraded');
+      const reason = !healthReady
+        ? 'Das Sovereign-Backend ist noch nicht bereit.'
+        : !catalogAvailable
+          ? 'Es ist weiterhin keine freigegebene LLM-Route verfügbar.'
+          : 'Die zuvor fixierte Route ist nicht mehr verfügbar. Bitte wähle ausdrücklich eine neue Route.';
+      addMessage('system', `Erneuter LLM-Aufruf wurde nicht gesendet: ${reason}`);
+    } catch (error) {
+      setRuntimeState('degraded');
+      setRouteError('Runtime-Prüfung ist gerade nicht verfügbar.');
+      addMessage('system', `Erneuter LLM-Aufruf wurde nicht gesendet: ${error instanceof Error ? error.message : 'Runtime-Prüfung fehlgeschlagen.'}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submit = async (override?: string) => {
     const text = (override ?? draft).trim();
     if (!text || busy) return;
@@ -741,8 +794,8 @@ export function PlayReleaseChat() {
         <div className="release-chat-shell" style={{ padding: '10px 12px 0' }}>
           {activeRoute && <div style={{ color: C.muted, fontSize: 9.5, marginBottom: 5 }}>Route fixiert: {routeLabel(activeRoute)} · kein stiller Routenwechsel</div>}
           {lastFailedText && !busy && (
-            <button type="button" onClick={() => { void submit(lastFailedText); }} style={{ marginBottom: 7, minHeight: 36, padding: '0 11px', borderRadius: 8, border: `1px solid ${C.amber}55`, background: C.amber + '10', color: C.amber, cursor: 'pointer' }}>
-              Letzte Anfrage erneut versuchen
+            <button type="button" onClick={() => { void recheckRuntimeAndRoutes(); }} style={{ marginBottom: 7, minHeight: 36, padding: '0 11px', borderRadius: 8, border: `1px solid ${C.amber}55`, background: C.amber + '10', color: C.amber, cursor: 'pointer' }}>
+              Runtime und Routen neu prüfen
             </button>
           )}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>

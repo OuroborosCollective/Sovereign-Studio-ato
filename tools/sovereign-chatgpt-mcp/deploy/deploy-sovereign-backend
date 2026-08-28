@@ -206,7 +206,7 @@ trap candidate_cleanup EXIT
 STAGE="candidate_health"
 HEALTH=""
 for attempt in $(seq 1 12); do
-  HEALTH="$(docker exec "$CANDIDATE" python3 -c 'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:8787/health", timeout=4).read().decode())' 2>/dev/null || true)"
+  HEALTH="$(docker exec "$CANDIDATE" python3 -c 'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:8787/health/live", timeout=4).read().decode())' 2>/dev/null || true)"
   if printf '%s' "$HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
     break
   fi
@@ -286,6 +286,9 @@ start_production() {
     --label "traefik.http.routers.sovereign-backend.service=sovereign-backend" \
     --label "traefik.http.services.sovereign-backend.loadbalancer.server.port=8787" \
     --label "traefik.http.services.sovereign-backend.loadbalancer.server.scheme=http" \
+    --label "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.path=/health/live" \
+    --label "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.interval=15s" \
+    --label "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.timeout=5s" \
     -p 127.0.0.1:8788:8787 \
     "$image" >/dev/null
   if docker network inspect areloria_arelorian-network >/dev/null 2>&1; then
@@ -301,7 +304,7 @@ wait_for_host_health() {
   local max_attempts="${SOVEREIGN_BACKEND_HEALTH_ATTEMPTS:-36}"
   [[ "$max_attempts" =~ ^[1-9][0-9]{0,2}$ ]] || max_attempts=36
   for attempt in $(seq 1 "$max_attempts"); do
-    health="$(python3 -c 'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:8788/health", timeout=4).read().decode())' 2>/dev/null || true)"
+    health="$(python3 -c 'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:8788/health/live", timeout=4).read().decode())' 2>/dev/null || true)"
     if printf '%s' "$health" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
       printf '%s' "$health"
       return 0

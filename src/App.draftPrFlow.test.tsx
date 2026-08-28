@@ -337,7 +337,7 @@ describe('Play release chat runtime integration', () => {
     expect(screen.queryByText('ghp_secret_value_for_test')).toBeNull();
   });
 
-  it('shows the backend blocker honestly and offers a correlated retry', async () => {
+  it('shows the backend blocker honestly and rechecks without blind resend', async () => {
     runtime.reply.mockResolvedValueOnce({
       ok: false,
       error: 'free_route_revolver_exhausted',
@@ -352,6 +352,17 @@ describe('Play release chat runtime integration', () => {
     fireEvent.click(screen.getByLabelText('Senden'));
 
     expect(await screen.findByText(/LLM-Anfrage blockiert:/)).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Letzte Anfrage erneut versuchen' })).toBeDefined();
+    await waitFor(() => expect(runtime.catalog).toHaveBeenCalled());
+    await waitFor(() => expect(runtime.health).toHaveBeenCalled());
+    const catalogCallsBeforeRecheck = runtime.catalog.mock.calls.length;
+    const healthCallsBeforeRecheck = runtime.health.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Runtime und Routen neu prüfen' }));
+
+    await waitFor(() => expect(runtime.catalog.mock.calls.length).toBeGreaterThan(catalogCallsBeforeRecheck));
+    await waitFor(() => expect(runtime.health.mock.calls.length).toBeGreaterThan(healthCallsBeforeRecheck));
+    expect(runtime.catalog).toHaveBeenCalledWith(undefined, 'execution');
+    expect(runtime.reply).toHaveBeenCalledOnce();
+    expect(await screen.findByText(/Die ursprüngliche Anfrage wurde nicht erneut gesendet/)).toBeDefined();
+    expect(screen.getByLabelText('Nachricht an Sovereign')).toHaveValue('Bitte antworte');
   });
 });

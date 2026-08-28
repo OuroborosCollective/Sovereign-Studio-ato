@@ -84,6 +84,7 @@ def test_live_chat_and_catalog_use_verified_direct_transports() -> None:
 def test_readiness_and_legacy_litellm_retirement_are_required() -> None:
     app = (BACKEND / "app.py").read_text("utf-8")
     backend_compose = (BACKEND / "docker-compose.yml").read_text("utf-8")
+    dockerfile = (BACKEND / "Dockerfile").read_text("utf-8")
     stack = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "litellm_stack.py").read_text("utf-8")
     installer = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "install-on-vps.sh").read_text("utf-8")
     workflow = (ROOT / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
@@ -93,7 +94,15 @@ def test_readiness_and_legacy_litellm_retirement_are_required() -> None:
     assert "027_billing_idempotency_and_package_uniqueness.sql" in app
     assert "uq_credit_packages_name" in app
     assert "invalidDirectRoutes" in app
-    assert "/health/ready" in backend_compose
+    assert '@app.route("/health/live")' in app
+    assert "/health/live" in backend_compose
+    assert "urlopen('http://localhost:8787/health/live'" in backend_compose
+    assert "urlopen('http://localhost:8787/health/ready'" not in backend_compose
+    assert "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.path=/health/live" in backend_compose
+    assert "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.interval=15s" in backend_compose
+    assert "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.timeout=5s" in backend_compose
+    assert "HEALTHCHECK" in dockerfile
+    assert "/health/live" in dockerfile
     assert "LITELLM_BASE_URL" not in backend_compose
     assert "LITELLM_MASTER_KEY_FILE" not in backend_compose
     assert "direct OpenRouter and FreeLLM routing network" in backend_compose

@@ -34,6 +34,10 @@ RUN chmod +x /docker-entrypoint.d/auto-migrate.sh
 
 # Expose only the container port. Compose owns the loopback-only host binding.
 EXPOSE 8787
+# The Docker/Traefik health gate proves process liveness only. Direct-provider
+# route availability is a separate readiness contract at /health/ready.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health/live', timeout=8)"
 STOPSIGNAL SIGTERM
 
 # Run migrations on startup, then start bounded threaded gunicorn workers.
