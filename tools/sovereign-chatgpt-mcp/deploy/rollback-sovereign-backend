@@ -16,6 +16,7 @@ WORKSPACE_GID="10001"
 BROKER_SOCKET="${SOVEREIGN_MCP_BROKER_SOCKET:-/run/sovereign-chatgpt-broker/operator.sock}"
 BROKER_RUNTIME_DIR="$(dirname "$BROKER_SOCKET")"
 BROKER_GID=""
+TRAEFIK_DOCKER_NETWORK="${SOVEREIGN_TRAEFIK_DOCKER_NETWORK:-traefik-public}"
 
 fail() {
   printf 'rollback blocked: %s\n' "$*" >&2
@@ -24,6 +25,8 @@ fail() {
 
 [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid image digest"
 [[ -n "$IMAGE_REPOSITORY" ]] || fail "SOVEREIGN_BACKEND_IMAGE_REPOSITORY is missing"
+[[ "$TRAEFIK_DOCKER_NETWORK" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ ]] \
+  || fail "Traefik Docker network name is invalid"
 [[ -f "$ENV_FILE" ]] || fail "backend env file is missing"
 [[ -f "$MANAGED_ENV_FILE" ]] || fail "backend managed env file is missing"
 umask 077
@@ -57,9 +60,9 @@ ACTUAL_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$TARG
 REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$TARGET_IMAGE" 2>/dev/null || true)"
 [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "target image has no valid revision label"
 
-# Managed Traefik runs with network_mode=host. Sovereign's own shared bridge
-# is sovereign-private; Areloria is optional migration compatibility only.
-for network in supabase_default sovereign-private; do
+# The restored backend must return to Traefik's actual shared bridge. Otherwise
+# a healthy rollback container is invisible to the Docker provider.
+for network in supabase_default sovereign-private "$TRAEFIK_DOCKER_NETWORK"; do
   docker network inspect "$network" >/dev/null 2>&1 || fail "required docker network missing: $network"
 done
 
@@ -88,7 +91,7 @@ docker run -d \
   --group-add "$BROKER_GID" \
   --label "org.opencontainers.image.revision=$REVISION" \
   --label "traefik.enable=true" \
-  --label "traefik.docker.network=sovereign-private" \
+  --label "traefik.docker.network=$TRAEFIK_DOCKER_NETWORK" \
   --label 'traefik.http.routers.sovereign-backend.rule=Host(`sovereign-backend.arelorian.de`)' \
   --label "traefik.http.routers.sovereign-backend.entrypoints=websecure" \
   --label "traefik.http.routers.sovereign-backend.tls=true" \
@@ -105,6 +108,7 @@ if docker network inspect areloria_arelorian-network >/dev/null 2>&1; then
   docker network connect areloria_arelorian-network "$CONTAINER"
 fi
 docker network connect sovereign-private "$CONTAINER"
+docker network connect "$TRAEFIK_DOCKER_NETWORK" "$CONTAINER"
 
 HEALTH=""
 for attempt in $(seq 1 12); do

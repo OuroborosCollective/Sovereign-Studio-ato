@@ -5,6 +5,7 @@ import {
   fetchDevChatWorkerReply,
   fetchSovereignLlmRouteCatalog,
   parseDevChatGithubUrl,
+  type DevChatWorkerDiagnostic,
   type DevChatWorkerMessage,
   type SovereignLlmRouteOption,
 } from '../product/runtime/devChatWorkerBridge';
@@ -66,6 +67,15 @@ function routeLabel(route: SovereignLlmRouteOption): string {
   return `${billing} · ${route.label}`;
 }
 
+function requiresSessionOrStepUpResolution(diagnostic: DevChatWorkerDiagnostic | null): boolean {
+  if (!diagnostic) return false;
+  return diagnostic.scope === 'authentication'
+    || diagnostic.scope === 'step_up_required'
+    || diagnostic.status === 401
+    || diagnostic.status === 403
+    || diagnostic.status === 428;
+}
+
 function Bubble({ entry }: { readonly entry: ChatEntry }) {
   const user = entry.role === 'user';
   const system = entry.role === 'system';
@@ -110,6 +120,7 @@ export function PlayReleaseChat() {
   const [busy, setBusy] = useState(false);
   const [runtimeState, setRuntimeState] = useState<'checking' | 'ready' | 'degraded'>('checking');
   const [lastFailedText, setLastFailedText] = useState<string | null>(null);
+  const [lastFailureDiagnostic, setLastFailureDiagnostic] = useState<DevChatWorkerDiagnostic | null>(null);
   const [activeMenu, setActiveMenu] = useState<ReleaseMenuKey>('chat');
   const [repoTarget, setRepoTarget] = useState<ReleaseRepoTarget | null>(null);
   const [agentJob, setAgentJob] = useState<SovereignAgentJobSnapshot | null>(null);
@@ -341,6 +352,18 @@ export function PlayReleaseChat() {
     const failedText = lastFailedText;
     if (!user || !failedText || busy) return;
 
+    // A green global health check or route catalog cannot prove that the
+    // original user/session/paid-step-up gate has been fulfilled. Preserve that
+    // precise blocker until the user completes the corresponding flow.
+    if (requiresSessionOrStepUpResolution(lastFailureDiagnostic)) {
+      setRuntimeState('degraded');
+      addMessage(
+        'system',
+        `Die ursprüngliche Anfrage bleibt blockiert: ${lastFailureDiagnostic?.nextAction ?? 'Sitzung oder Step-Up-Freigabe prüfen.'} Die Routenprüfung ersetzt diese Freigabe nicht und hat nichts erneut gesendet.`,
+      );
+      return;
+    }
+
     setBusy(true);
     try {
       const [catalog, health] = await Promise.allSettled([
@@ -364,6 +387,7 @@ export function PlayReleaseChat() {
         const restoredToComposer = !draft.trim();
         if (restoredToComposer) setDraft(failedText);
         setLastFailedText(null);
+        setLastFailureDiagnostic(null);
         setRuntimeState('ready');
         addMessage(
           'system',
@@ -408,6 +432,7 @@ export function PlayReleaseChat() {
     setDraft('');
     setBusy(true);
     setLastFailedText(null);
+    setLastFailureDiagnostic(null);
     addMessage('user', text);
 
     const conversation: DevChatWorkerMessage[] = [
@@ -520,6 +545,7 @@ export function PlayReleaseChat() {
       if (!result.ok || !result.content) {
         const detail = result.diagnostic?.nextAction || result.error || 'Die LLM-Runtime hat keine Antwort geliefert.';
         setLastFailedText(text);
+        setLastFailureDiagnostic(result.diagnostic ?? null);
         setRuntimeState('degraded');
         addMessage('system', `LLM-Anfrage blockiert: ${detail}`);
         return;
@@ -531,6 +557,7 @@ export function PlayReleaseChat() {
       addMessage('assistant', `${result.content}${fallback}`);
     } catch (error) {
       setLastFailedText(text);
+      setLastFailureDiagnostic(null);
       setRuntimeState('degraded');
       addMessage('system', `LLM-Verbindung fehlgeschlagen: ${error instanceof Error ? error.message : 'unbekannter Fehler'}`);
     } finally {

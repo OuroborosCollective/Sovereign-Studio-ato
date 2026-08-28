@@ -67,6 +67,10 @@ WORKSPACE_GID="10001"
 BROKER_SOCKET="${SOVEREIGN_MCP_BROKER_SOCKET:-/run/sovereign-chatgpt-broker/operator.sock}"
 BROKER_RUNTIME_DIR="$(dirname "$BROKER_SOCKET")"
 BROKER_GID=""
+# The Docker provider selects the container IP from this shared bridge. It is
+# intentionally separate from sovereign-private, which only carries backend
+# dependencies such as PostgreSQL and direct FreeLLM/OpenRouter transports.
+TRAEFIK_DOCKER_NETWORK="${SOVEREIGN_TRAEFIK_DOCKER_NETWORK:-traefik-public}"
 STAGE="preflight"
 
 on_error() {
@@ -86,6 +90,8 @@ trap on_error ERR
 [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid image digest"
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "invalid expected revision"
 [[ -n "$IMAGE_REPOSITORY" ]] || fail "SOVEREIGN_BACKEND_IMAGE_REPOSITORY is missing"
+[[ "$TRAEFIK_DOCKER_NETWORK" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ ]] \
+  || fail "Traefik Docker network name is invalid"
 
 # Resolve the backend env only after the input identity contract is valid. This keeps
 # host state from masking malformed digest/revision evidence during preflight.
@@ -165,10 +171,10 @@ IMAGE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.ope
 [[ "$IMAGE_REVISION" == "$EXPECTED_REVISION" ]] || fail "image revision label does not match expected commit"
 
 STAGE="network_preflight"
-# Managed Traefik runs with network_mode=host on this VPS. Sovereign's own
-# shared bridge is sovereign-private; Areloria is legacy compatibility only and
-# must not be required for a Sovereign release.
-for network in supabase_default sovereign-private; do
+# Traefik reads Docker labels but can only route to a container IP on a shared
+# Docker bridge. Production and rollback therefore require the configured
+# Traefik bridge as well as Sovereign's private dependency bridge.
+for network in supabase_default sovereign-private "$TRAEFIK_DOCKER_NETWORK"; do
   docker network inspect "$network" >/dev/null 2>&1 || fail "required docker network missing: $network"
 done
 
@@ -278,7 +284,7 @@ start_production() {
     --group-add "$BROKER_GID" \
     --label "org.opencontainers.image.revision=$revision" \
     --label "traefik.enable=true" \
-    --label "traefik.docker.network=sovereign-private" \
+    --label "traefik.docker.network=$TRAEFIK_DOCKER_NETWORK" \
     --label 'traefik.http.routers.sovereign-backend.rule=Host(`sovereign-backend.arelorian.de`)' \
     --label "traefik.http.routers.sovereign-backend.entrypoints=websecure" \
     --label "traefik.http.routers.sovereign-backend.tls=true" \
@@ -295,6 +301,7 @@ start_production() {
     docker network connect areloria_arelorian-network "$CONTAINER"
   fi
   docker network connect sovereign-private "$CONTAINER"
+  docker network connect "$TRAEFIK_DOCKER_NETWORK" "$CONTAINER"
 }
 
 start_production "$NEW_IMAGE" "$EXPECTED_REVISION" "$DIGEST"
@@ -525,77 +532,33 @@ def revision_bound_v3_chat_receipts(provider_payload: dict):
     return verified
 
 
-stage = "health"
-health, health_evidence = json_payload("/health")
-if health.get("ok") is not True:
-    raise RuntimeError("health is not green")
-if health.get("sourceRevision") != expected_revision or health.get("imageDigest") != expected_digest:
-    raise RuntimeError("health runtime identity mismatch")
-
-stage = "freellm_bootstrap_status"
-provider_status_code, provider_status, provider_status_evidence = internal_json_request(
-    "/api/internal/llm/freellm/providers"
-)
-if provider_status_code != 200 or provider_status.get("ok") is not True:
-    raise RuntimeError("FreeLLM provider status is unavailable")
-providers = [
-    item for item in (provider_status.get("providers") or [])
-    if isinstance(item, dict) and item.get("enabled") is True
-]
 bootstrap_attempts = []
-for provider in providers:
-    source_id = str(provider.get("sourceId") or "")
-    if not source_id:
-        continue
-    encoded_source_id = urllib.parse.quote(source_id, safe="")
-    stage = "freellm_bootstrap_reconcile"
-    try:
-        status_code, reconcile_payload, reconcile_evidence = internal_json_request(
-            f"/api/internal/llm/freellm/providers/{encoded_source_id}/reconcile",
-            method="POST",
-            payload={"maxModels": 20},
-            timeout_seconds=45,
-        )
-    except (TimeoutError, urllib.error.URLError, OSError) as exc:
-        bootstrap_attempts.append({
-            "sourceId": source_id,
-            "action": "reconcile",
-            "httpStatus": None,
-            "ok": False,
-            "blocker": "provider_request_timeout_or_network_error",
-            "errorType": type(exc).__name__,
-            "responseSha256": None,
-        })
-        continue
-    bootstrap_attempts.append({
-        "sourceId": source_id,
-        "action": "reconcile",
-        "httpStatus": status_code,
-        "ok": reconcile_payload.get("ok") is True,
-        "blocker": str(reconcile_payload.get("blocker") or "")[:120] or None,
-        "responseSha256": reconcile_evidence["responseSha256"],
-    })
-    if status_code not in {200, 409}:
-        continue
 
-stage = "freellm_bootstrap_recheck_status"
-provider_status_code, provider_status, provider_status_evidence = internal_json_request(
-    "/api/internal/llm/freellm/providers"
-)
-verified_receipts = revision_bound_v3_chat_receipts(provider_status)
-minimum_ready_routes = int(provider_status.get("minimumReadyRoutes") or 0)
-if minimum_ready_routes < 1:
-    raise RuntimeError("FreeLLM provider status did not expose its canonical minimum-ready contract")
-if len(verified_receipts) < minimum_ready_routes:
+class FreeLlmReadinessDegraded(RuntimeError):
+    """The backend can remain live while direct FreeLLM routes are unavailable."""
+
+
+def bootstrap_freellm_readiness():
+    global stage
+    stage = "freellm_bootstrap_status"
+    provider_status_code, provider_status, provider_status_evidence = internal_json_request(
+        "/api/internal/llm/freellm/providers"
+    )
+    if provider_status_code != 200 or provider_status.get("ok") is not True:
+        raise FreeLlmReadinessDegraded("FreeLLM provider status is unavailable")
+    providers = [
+        item for item in (provider_status.get("providers") or [])
+        if isinstance(item, dict) and item.get("enabled") is True
+    ]
     for provider in providers:
         source_id = str(provider.get("sourceId") or "")
         if not source_id:
             continue
         encoded_source_id = urllib.parse.quote(source_id, safe="")
-        stage = "freellm_bootstrap_discover"
+        stage = "freellm_bootstrap_reconcile"
         try:
-            status_code, discover_payload, discover_evidence = internal_json_request(
-                f"/api/internal/llm/freellm/providers/{encoded_source_id}/discover",
+            status_code, reconcile_payload, reconcile_evidence = internal_json_request(
+                f"/api/internal/llm/freellm/providers/{encoded_source_id}/reconcile",
                 method="POST",
                 payload={"maxModels": 20},
                 timeout_seconds=45,
@@ -603,7 +566,7 @@ if len(verified_receipts) < minimum_ready_routes:
         except (TimeoutError, urllib.error.URLError, OSError) as exc:
             bootstrap_attempts.append({
                 "sourceId": source_id,
-                "action": "discover",
+                "action": "reconcile",
                 "httpStatus": None,
                 "ok": False,
                 "blocker": "provider_request_timeout_or_network_error",
@@ -613,37 +576,114 @@ if len(verified_receipts) < minimum_ready_routes:
             continue
         bootstrap_attempts.append({
             "sourceId": source_id,
-            "action": "discover",
+            "action": "reconcile",
             "httpStatus": status_code,
-            "ok": discover_payload.get("ok") is True,
-            "blocker": str(discover_payload.get("blocker") or "")[:120] or None,
-            "responseSha256": discover_evidence["responseSha256"],
+            "ok": reconcile_payload.get("ok") is True,
+            "blocker": str(reconcile_payload.get("blocker") or "")[:120] or None,
+            "responseSha256": reconcile_evidence["responseSha256"],
         })
         if status_code not in {200, 409}:
             continue
-    stage = "freellm_bootstrap_final_status"
+    stage = "freellm_bootstrap_recheck_status"
     provider_status_code, provider_status, provider_status_evidence = internal_json_request(
         "/api/internal/llm/freellm/providers"
     )
     verified_receipts = revision_bound_v3_chat_receipts(provider_status)
-if not verified_receipts:
-    raise RuntimeError("no revision-bound FreeLLM v3 chat-evidence receipt became ready")
-freellm_bootstrap = {
-    "ok": True,
-    "providerCount": len(providers),
-    "revisionBoundV3ChatReadyCount": len(verified_receipts),
-    "minimumReadyRoutes": minimum_ready_routes,
-    "minimumReadySatisfied": len(verified_receipts) >= minimum_ready_routes,
-    "receipts": verified_receipts[:20],
-    "attempts": bootstrap_attempts[:20],
-    "statusEvidence": provider_status_evidence,
-    "protectedValuesReturned": False,
-}
+    minimum_ready_routes = int(provider_status.get("minimumReadyRoutes") or 0)
+    if minimum_ready_routes < 1:
+        raise FreeLlmReadinessDegraded("FreeLLM provider status did not expose its canonical minimum-ready contract")
+    if len(verified_receipts) < minimum_ready_routes:
+        for provider in providers:
+            source_id = str(provider.get("sourceId") or "")
+            if not source_id:
+                continue
+            encoded_source_id = urllib.parse.quote(source_id, safe="")
+            stage = "freellm_bootstrap_discover"
+            try:
+                status_code, discover_payload, discover_evidence = internal_json_request(
+                    f"/api/internal/llm/freellm/providers/{encoded_source_id}/discover",
+                    method="POST",
+                    payload={"maxModels": 20},
+                    timeout_seconds=45,
+                )
+            except (TimeoutError, urllib.error.URLError, OSError) as exc:
+                bootstrap_attempts.append({
+                    "sourceId": source_id,
+                    "action": "discover",
+                    "httpStatus": None,
+                    "ok": False,
+                    "blocker": "provider_request_timeout_or_network_error",
+                    "errorType": type(exc).__name__,
+                    "responseSha256": None,
+                })
+                continue
+            bootstrap_attempts.append({
+                "sourceId": source_id,
+                "action": "discover",
+                "httpStatus": status_code,
+                "ok": discover_payload.get("ok") is True,
+                "blocker": str(discover_payload.get("blocker") or "")[:120] or None,
+                "responseSha256": discover_evidence["responseSha256"],
+            })
+            if status_code not in {200, 409}:
+                continue
+        stage = "freellm_bootstrap_final_status"
+        provider_status_code, provider_status, provider_status_evidence = internal_json_request(
+            "/api/internal/llm/freellm/providers"
+        )
+        verified_receipts = revision_bound_v3_chat_receipts(provider_status)
+    if len(verified_receipts) < minimum_ready_routes:
+        raise FreeLlmReadinessDegraded("no revision-bound FreeLLM v3 chat-evidence receipt became ready")
+    return {
+        "ok": True,
+        "status": "FREELLM_ROUTE_READINESS_VERIFIED",
+        "providerCount": len(providers),
+        "revisionBoundV3ChatReadyCount": len(verified_receipts),
+        "minimumReadyRoutes": minimum_ready_routes,
+        "minimumReadySatisfied": True,
+        "receipts": verified_receipts[:20],
+        "attempts": bootstrap_attempts[:20],
+        "statusEvidence": provider_status_evidence,
+        "protectedValuesReturned": False,
+    }
+
+
+stage = "health"
+health, health_evidence = json_payload("/health")
+if health.get("ok") is not True:
+    raise RuntimeError("health is not green")
+if health.get("sourceRevision") != expected_revision or health.get("imageDigest") != expected_digest:
+    raise RuntimeError("health runtime identity mismatch")
+
+try:
+    freellm_bootstrap = bootstrap_freellm_readiness()
+except Exception as exc:
+    freellm_bootstrap = {
+        "ok": False,
+        "status": "FREELLM_ROUTE_READINESS_DEGRADED",
+        "failureStage": stage,
+        "failureFamily": type(exc).__name__,
+        "minimumReadySatisfied": False,
+        "attempts": bootstrap_attempts[:20],
+        "protectedValuesReturned": False,
+    }
 
 stage = "readiness"
-ready, ready_evidence = json_payload("/health/ready")
-if ready.get("ok") is not True:
-    raise RuntimeError("readiness is not green")
+try:
+    ready, ready_evidence = json_payload("/health/ready")
+    readiness = {
+        **ready_evidence,
+        "ok": ready.get("ok") is True,
+        "status": "ROUTE_READINESS_VERIFIED" if ready.get("ok") is True else "ROUTE_READINESS_DEGRADED",
+    }
+except Exception as exc:
+    readiness = {
+        "ok": False,
+        "status": "ROUTE_READINESS_UNAVAILABLE",
+        "failureFamily": type(exc).__name__,
+        "protectedValuesReturned": False,
+    }
+llm_route_readiness_ok = bool(freellm_bootstrap.get("ok") and readiness.get("ok"))
 
 stage = "react_admin"
 admin_status, admin_url, admin_headers, admin_body = fetch("/admin")
@@ -681,12 +721,20 @@ required_verified = [item for item in required_rows if item.get("status") == "ve
 stage = "admin_canary_complete"
 result = {
     "ok": True,
-    "status": "ENTERPRISE_ADMIN_LIVE_CANARY_VERIFIED",
+    "status": (
+        "ENTERPRISE_ADMIN_LIVE_CANARY_VERIFIED"
+        if llm_route_readiness_ok
+        else "ENTERPRISE_ADMIN_LIVE_CANARY_LLM_DEGRADED"
+    ),
     "sourceRevision": expected_revision,
     "imageDigest": expected_digest,
     "health": health_evidence,
     "freellmBootstrap": freellm_bootstrap,
-    "readiness": ready_evidence,
+    "readiness": readiness,
+    "llmRouteReadiness": {
+        "ok": llm_route_readiness_ok,
+        "status": "VERIFIED" if llm_route_readiness_ok else "DEGRADED",
+    },
     "admin": {
         "httpStatus": admin_status,
         "finalPath": admin_url.removeprefix(base_url),

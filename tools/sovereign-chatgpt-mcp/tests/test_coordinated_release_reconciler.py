@@ -188,7 +188,7 @@ def _scoped_reconcile_fixture(
         "containerId": "old-container",
         "running": True,
         "startedAt": "2026-08-14T18:00:00Z",
-        "networks": ["areloria_arelorian-network", "sovereign-private", "supabase_default"],
+        "networks": ["areloria_arelorian-network", "sovereign-private", "supabase_default", "traefik-public"],
         "revision": previous_revision,
         "digest": previous_digest,
     }
@@ -372,7 +372,13 @@ def test_backend_restore_requires_network_attachment_parity(monkeypatch, tmp_pat
     module, _scope, _previous_backend, current_backend = _scoped_reconcile_fixture(
         monkeypatch, tmp_path
     )
-    current_backend["networks"] = ["supabase_default"]
+    # The runtime route depends on the Traefik Docker bridge, not merely the
+    # private data-plane bridge. A recreated backend missing it is not restored.
+    current_backend["networks"] = [
+        "areloria_arelorian-network",
+        "sovereign-private",
+        "supabase_default",
+    ]
 
     def failed_backend_command(_argv, **_kwargs):
         raise module.ReconcileError(

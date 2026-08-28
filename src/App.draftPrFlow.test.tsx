@@ -365,4 +365,32 @@ describe('Play release chat runtime integration', () => {
     expect(await screen.findByText(/Die ursprüngliche Anfrage wurde nicht erneut gesendet/)).toBeDefined();
     expect(screen.getByLabelText('Nachricht an Sovereign')).toHaveValue('Bitte antworte');
   });
+
+  it('preserves an authentication blocker when generic route health is green', async () => {
+    runtime.reply.mockResolvedValueOnce({
+      ok: false,
+      error: 'Nicht eingeloggt',
+      route: '/api/llm/chat',
+      diagnostic: {
+        status: 401,
+        scope: 'authentication',
+        nextAction: 'Backend-Session erneut bestätigen oder anmelden.',
+      },
+    });
+    render(<PlayReleaseChat />);
+
+    fireEvent.change(screen.getByLabelText('Nachricht an Sovereign'), { target: { value: 'Bitte sichere Antwort' } });
+    fireEvent.click(screen.getByLabelText('Senden'));
+
+    expect(await screen.findByText(/LLM-Anfrage blockiert:/)).toBeDefined();
+    await waitFor(() => expect(runtime.catalog).toHaveBeenCalled());
+    await waitFor(() => expect(runtime.health).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'Runtime und Routen neu prüfen' }));
+
+    expect(await screen.findByText(/Routenprüfung ersetzt diese Freigabe nicht/)).toBeDefined();
+    expect(runtime.catalog).not.toHaveBeenCalledWith(undefined, 'execution');
+    expect(runtime.health).not.toHaveBeenCalledWith();
+    expect(runtime.reply).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText('Nachricht an Sovereign')).toHaveValue('');
+  });
 });

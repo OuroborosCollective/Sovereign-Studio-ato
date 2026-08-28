@@ -103,6 +103,9 @@ def test_readiness_and_legacy_litellm_retirement_are_required() -> None:
     assert "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.timeout=5s" in backend_compose
     assert "HEALTHCHECK" in dockerfile
     assert "/health/live" in dockerfile
+    assert "traefik.docker.network=traefik-public" in backend_compose
+    assert "- traefik-public" in backend_compose
+    assert "traefik-public:\n    external: true" in backend_compose
     assert "LITELLM_BASE_URL" not in backend_compose
     assert "LITELLM_MASTER_KEY_FILE" not in backend_compose
     assert "direct OpenRouter and FreeLLM routing network" in backend_compose
