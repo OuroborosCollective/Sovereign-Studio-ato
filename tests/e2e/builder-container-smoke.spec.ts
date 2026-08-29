@@ -17,21 +17,21 @@ test.describe('Play release chat browser smoke', () => {
     await expect(page.locator('[data-testid="live-workspace-monitor"]')).toHaveCount(0);
   });
 
-  test('2. Email/password login is reachable and external OAuth controls are absent from the login dialog', async ({ page }) => {
-    await page.getByRole('button', { name: 'Anmelden', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Anmelden' });
-    await expect(dialog.locator('input[type="email"]')).toBeVisible();
-    await expect(dialog.locator('input[type="password"]')).toBeVisible();
-    await expect(dialog.getByText(/Google/i)).toHaveCount(0);
-    await expect(dialog.getByText(/GitHub/i)).toHaveCount(0);
-    await expect(dialog.getByText(/Passkey/i)).toHaveCount(0);
-    await expect(dialog.getByText(/Account-Key/i)).toHaveCount(0);
+  test('2. Guest entry has no manual login gate and GitHub OAuth is directly reachable', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'Anmelden', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'GitHub', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'GitHub sicher verbinden' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Anmelden' })).toHaveCount(0);
   });
 
-  test('3. Chat composer is present but requires an authenticated session', async ({ page }) => {
+  test('3. Chat composer is present while the pseudonymous guest session initializes', async ({ page }) => {
     const composer = page.getByLabel('Nachricht an Sovereign');
     await expect(composer).toBeVisible();
-    await expect(composer).toHaveAttribute('placeholder', 'Zum Chatten bitte anmelden…');
+    await expect(composer).toHaveAttribute(
+      'placeholder',
+      /^(Gast-Sitzung wird vorbereitet…|Nachricht an Sovereign…)$/,
+    );
+    await expect(page.getByText('E-Mail/Passwort-Anmeldung erforderlich')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Senden/i })).toBeDisabled();
   });
 
@@ -44,7 +44,7 @@ test.describe('Play release chat browser smoke', () => {
   test('5. Release shell remains responsive at phone width', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.locator('[data-testid="sovereign-release-chat"]')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Anmelden', exact: true })).toBeVisible();
+    await expect(page.getByText('Gastzugang', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Nachricht an Sovereign')).toBeVisible();
   });
 });
