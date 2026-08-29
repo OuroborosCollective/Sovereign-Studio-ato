@@ -83,6 +83,9 @@ describe('maskSecrets', () => {
     expect(maskSecrets('auth_token=auth_token_val_789')).toBe('auth_token=****');
     expect(maskSecrets('id_token=id_token_val_101')).toBe('id_token=****');
     expect(maskSecrets('api_secret: api_secret_val_202')).toBe('api_secret: ****');
+    expect(maskSecrets('client_id: client_id_12345')).toBe('client_id: ****');
+    expect(maskSecrets('session_token=session_token_67890')).toBe('session_token=****');
+    expect(maskSecrets('session_id: sess_123456789')).toBe('session_id: ****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
