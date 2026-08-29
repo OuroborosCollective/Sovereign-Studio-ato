@@ -34,9 +34,10 @@ interface PopupDouble {
 
 function initPayload() {
   return {
-    authUrl: 'https://github.com/login/oauth/authorize?client_id=Iv1_test&redirect_uri=https%3A%2F%2Fchat.arelorian.de%2Fauth%2Fgithub%2Fcallback.html&state=state_test',
+    authUrl: 'https://github.com/login/oauth/authorize?client_id=Iv1_test&redirect_uri=https%3A%2F%2Fsovereign-backend.arelorian.de%2Fapi%2Fauth%2Fgithub-app%2Fcallback&state=state_test',
     state: 'state_test',
     codeVerifier: 'verifier_test',
+    authorizeRedirectUri: 'https://sovereign-backend.arelorian.de/api/auth/github-app/callback',
     callbackOrigin: 'https://chat.arelorian.de',
     openerOrigin: window.location.origin,
   };
@@ -138,6 +139,23 @@ describe('GitHub OAuth verified return channel', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('Authorize-Endpunkt');
+    expect(nativeRuntime.open).not.toHaveBeenCalled();
+  });
+
+  it('rejects an authorize URL whose redirect differs from the backend-confirmed binding', async () => {
+    nativeRuntime.native = true;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      JSON.stringify({
+        ...initPayload(),
+        authUrl: 'https://github.com/login/oauth/authorize?client_id=Iv1_test&redirect_uri=https%3A%2F%2Fchat.arelorian.de%2Fauth%2Fgithub%2Fcallback.html&state=state_test',
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ));
+
+    const result = await initiateGitHubOAuth(undefined, 2_000);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Authorize-Bindung');
     expect(nativeRuntime.open).not.toHaveBeenCalled();
   });
 

@@ -233,6 +233,26 @@ class TestOAuthContractWithApp:
         assert one is True
         assert write is True
 
+    def test_github_app_redirect_contract_fails_closed_before_authorize(self, monkeypatch):
+        app_module = require_app_import()
+        monkeypatch.setattr(app_module, "GITHUB_APP_ID", "42")
+        monkeypatch.setattr(app_module, "GITHUB_APP_CLIENT_ID", "Iv1_contract")
+        monkeypatch.setattr(app_module, "GITHUB_APP_CLIENT_SECRET", "paired-value")
+        monkeypatch.setattr(app_module, "GITHUB_CLIENT_ID", "")
+        monkeypatch.setattr(app_module, "GITHUB_CLIENT_SECRET", "")
+        monkeypatch.setattr(app_module, "github_app_identity_evidence", lambda: {"ok": True})
+        monkeypatch.setattr(
+            app_module,
+            "GITHUB_APP_OAUTH_REDIRECT_URI",
+            "https://chat.arelorian.de/auth/github/callback.html",
+        )
+
+        contract = app_module._github_oauth_credential_contract()
+
+        assert contract["configured"] is False
+        assert contract["source"] == "github-app"
+        assert contract["blocker"] == "github_app_oauth_redirect_uri_invalid"
+
     def test_auth_github_init_limits_scopes_and_uses_central_pkce(self, monkeypatch):
         """Client-Input darf OAuth nicht auf repo/write-Scope erweitern."""
         app_module = require_app_import()
@@ -278,6 +298,7 @@ class TestOAuthContractWithApp:
         assert "code_verifier" not in captured_state["data"]
         assert payload["codeVerifier"] == "verifier_test"
         assert payload["openerOrigin"] == "https://chat.arelorian.de"
+        assert payload["authorizeRedirectUri"] == "https://sovereign-backend.arelorian.de/api/auth/github"
         assert payload["callbackOrigin"] == "https://sovereign-backend.arelorian.de"
 
     def test_auth_github_init_rejects_unapproved_opener_origin(self):
@@ -496,11 +517,13 @@ class TestOAuthContractWithApp:
         assert captured["decode"]["options"]["verify_aud"] is True
         assert captured["decode"]["options"]["require"] == ["exp", "iat", "iss", "sub"]
 
-    def test_github_app_init_explicitly_binds_canonical_callback(self, monkeypatch):
+    def test_github_app_init_uses_backend_bridge_and_keeps_browser_callback_origin(self, monkeypatch):
         app_module = require_app_import()
         captured_state = {}
-        canonical_callback = "https://chat.arelorian.de/auth/github/callback.html"
-        monkeypatch.setattr(app_module, "GITHUB_OAUTH_REDIRECT_URI", canonical_callback)
+        app_callback = "https://sovereign-backend.arelorian.de/api/auth/github-app/callback"
+        browser_callback = "https://chat.arelorian.de/auth/github/callback.html"
+        monkeypatch.setattr(app_module, "GITHUB_APP_OAUTH_REDIRECT_URI", app_callback)
+        monkeypatch.setattr(app_module, "GITHUB_OAUTH_REDIRECT_URI", browser_callback)
         monkeypatch.setattr(app_module, "_github_oauth_credential_contract", lambda: {
             "configured": True,
             "source": "github-app",
@@ -522,10 +545,12 @@ class TestOAuthContractWithApp:
         assert response.status_code == 200
         payload = response.get_json()
         assert "https://github.com/login/oauth/authorize?" in payload["authUrl"]
-        assert "redirect_uri=https%3A%2F%2Fchat.arelorian.de%2Fauth%2Fgithub%2Fcallback.html" in payload["authUrl"]
+        assert "redirect_uri=https%3A%2F%2Fsovereign-backend.arelorian.de%2Fapi%2Fauth%2Fgithub-app%2Fcallback" in payload["authUrl"]
         assert "scope=" not in payload["authUrl"]
-        assert captured_state["data"]["redirect_uri"] == canonical_callback
+        assert captured_state["data"]["redirect_uri"] == app_callback
         assert captured_state["data"]["opener_origin"] == "https://localhost"
+        assert payload["authorizeRedirectUri"] == app_callback
+        assert payload["callbackOrigin"] == "https://chat.arelorian.de"
 
 
 class TestOAuthContractCodeAnalysis:

@@ -55,16 +55,18 @@ def test_init_and_exchange_share_the_same_resolved_oauth_identity() -> None:
     assert '"rawCredentialReturned": False' in source
 
 
-def test_github_app_authorize_explicitly_binds_canonical_login_callback() -> None:
+def test_authorize_redirect_is_selected_per_oauth_identity_and_state_bound() -> None:
     source = APP_SOURCE.read_text(encoding="utf-8")
     start = source.index("def auth_github_init():")
     end = source.index("# ═════════════════════════════════════════════════════════════════════════════\n# SOVEREIGN APP TOOLCHAIN", start)
     route = source[start:end]
 
-    assert 'redirect_uri = GITHUB_OAUTH_REDIRECT_URI' in route
+    assert 'redirect_uri = _github_oauth_authorize_redirect_uri(oauth_contract["source"])' in route
     assert 'auth_params["redirect_uri"] = redirect_uri' in route
-    assert 'redirect_uri = (\n            ""\n            if oauth_contract["source"] == "github-app"' not in route
-    assert '"redirect_uri": redirect_uri' not in route.split("auth_params = {", 1)[1].split("}", 1)[0]
+    assert '"redirect_uri": redirect_uri' in route
+    assert '"authorizeRedirectUri": redirect_uri' in route
+    assert 'GITHUB_APP_OAUTH_REDIRECT_URI' in source
+    assert '"https://sovereign-backend.arelorian.de/api/auth/github-app/callback"' in source
 
 
 def test_github_app_backend_callback_forwards_code_and_state_to_fixed_login_callback() -> None:
@@ -76,6 +78,7 @@ def test_github_app_backend_callback_forwards_code_and_state_to_fixed_login_call
     assert 'state = str(request.args.get("state")' in route
     assert 'github_app_oauth_state_missing' in route
     assert 'GITHUB_APP_LOGIN_FORWARD_URI' in route
+    assert '"GITHUB_APP_LOGIN_FORWARD_URI"' in source
     assert 'urllib.parse.urlencode({"code": code, "state": state})' in route
     assert 'response = redirect(target, code=302)' in route
     assert 'response.headers["Cache-Control"] = "no-store"' in route

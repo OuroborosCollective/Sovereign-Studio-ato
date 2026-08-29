@@ -297,6 +297,82 @@ describe('Play release chat runtime integration', () => {
     expect(runtime.createDraftPr).not.toHaveBeenCalled();
   });
 
+  it('recovers a user-owned repository action when the online model returns malformed prose', async () => {
+    const target = {
+      owner: 'acme', repo: 'repo', branch: 'main', path: '', name: 'repo', repoUrl: 'https://github.com/acme/repo',
+    };
+    runtime.parseRepo.mockReturnValueOnce(target).mockReturnValue(null);
+    runtime.interpret
+      .mockResolvedValueOnce({
+        ok: true,
+        interpretation: {
+          mode: 'action', intent: 'load_repo', actionDisposition: 'execute', assistantText: '',
+          actionTitle: 'Repository laden', confidence: 0.99, language: 'de', model: 'free-route-1', fallbackUsed: false,
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        error: 'invalid action contract',
+        rawContent: 'Ungebundene Modellprosa darf keine Repository-Aktion steuern.',
+      });
+
+    render(<PlayReleaseChat />);
+    fireEvent.change(screen.getByLabelText('Nachricht an Sovereign'), {
+      target: { value: 'https://github.com/acme/repo' },
+    });
+    fireEvent.click(screen.getByLabelText('Senden'));
+    expect(await screen.findByText(/Repository-Ziel gebunden: acme\/repo/)).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('Nachricht an Sovereign'), {
+      target: { value: 'Bitte passe die repository doku an mit dem heutigen Datum!' },
+    });
+    fireEvent.click(screen.getByLabelText('Senden'));
+
+    await screen.findByRole('button', { name: 'Repository-Ausführung starten' });
+    expect(screen.getByText(/Auftrag: Bitte passe die repository doku an mit dem heutigen Datum!/)).toBeDefined();
+    expect(screen.queryByText(/Ungebundene Modellprosa/)).toBeNull();
+    expect(runtime.agentStart).not.toHaveBeenCalled();
+    expect(runtime.reply).not.toHaveBeenCalled();
+  });
+
+  it('keeps an explicitly entered PAT outside chat and passes it only to repository execution', async () => {
+    const sessionToken = 'github_pat_' + 'a'.repeat(24);
+    runtime.parseRepo.mockReturnValue({
+      owner: 'acme', repo: 'repo', branch: 'main', path: '', name: 'repo', repoUrl: 'https://github.com/acme/repo',
+    });
+    runtime.interpret.mockResolvedValue({
+      ok: true,
+      interpretation: {
+        mode: 'action', intent: 'direct_patch', actionDisposition: 'execute', assistantText: '',
+        actionTitle: 'README aktualisieren', confidence: 0.97, language: 'de', model: 'free-route-1', fallbackUsed: false,
+      },
+    });
+    runtime.agentStart.mockResolvedValue({
+      jobId: 'job-pat-1', workspaceId: 'ws-pat-1', runtimeId: 'run-pat-1', status: 'completed',
+      repoUrl: 'https://github.com/acme/repo', branch: 'main', changedFiles: ['README.md'], events: [],
+    });
+
+    render(<PlayReleaseChat />);
+    fireEvent.click(screen.getByRole('button', { name: /GitHub/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Zugang eingeben' }));
+    fireEvent.change(screen.getByLabelText(/GitHub Token/), { target: { value: sessionToken } });
+    fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
+
+    expect(screen.queryByText(sessionToken)).toBeNull();
+    fireEvent.change(screen.getByLabelText('Nachricht an Sovereign'), {
+      target: { value: 'Ändere die README: https://github.com/acme/repo' },
+    });
+    fireEvent.click(screen.getByLabelText('Senden'));
+    await screen.findByRole('button', { name: 'Repository-Ausführung starten' });
+    fireEvent.click(screen.getByRole('button', { name: 'Repository-Ausführung starten' }));
+
+    await waitFor(() => expect(runtime.agentStart).toHaveBeenCalledWith(expect.objectContaining({
+      githubAccessToken: sessionToken,
+      repoUrl: 'https://github.com/acme/repo',
+    })));
+    expect(runtime.reply).not.toHaveBeenCalled();
+  });
+
   it('sends chat through the current Sovereign LLM bridge and renders the real reply', async () => {
     render(<PlayReleaseChat />);
     const input = screen.getByLabelText('Nachricht an Sovereign');
