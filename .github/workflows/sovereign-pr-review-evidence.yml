@@ -54,12 +54,14 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/sovereign/owner-ready-pr-1748-1c3791f'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    environment:
+      name: production-runtime-readback
     steps:
       - name: Verify exact control commit and mark PR ready
         uses: actions/github-script@v7
         env:
           EXPECTED_ACTOR: OuroborosCollective
-          EXPECTED_CONTROL_PARENT: b51cfad9cde014c269c621e8c092183722dbbad3
+          EXPECTED_CONTROL_PARENT: 52e1acbc28393d02094426b7c159a21e608a2b80
           EXPECTED_MAIN: de16bb619e6b1af5e18cad17dfcb28f545ac4d4c
           TARGET_PR_NUMBER: '1748'
           EXPECTED_PR_HEAD: 1c3791f7006add0d76c79f4c9cb84376da810f95
@@ -210,6 +212,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          test -n "$RUNTIME_READBACK_SSH_PRIVATE_KEY"
           ssh_dir="$(mktemp -d)"
           trap 'rm -rf "$ssh_dir"' EXIT
           install -m 0600 /dev/null "$ssh_dir/id_ed25519"
