@@ -41,6 +41,41 @@ const STATE_COLOR: Record<SovereignActionEventState, string> = {
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
+/**
+ * Issue #1567 B2: Routes that represent a real mutating effect (patch, draft PR,
+ * agent job). A done event on free-chat after one of these routes was blocked
+ * is a fallback answer, not a successful execution.
+ */
+const EFFECT_ROUTES: ReadonlySet<string> = new Set([
+  'code-llm',
+  'github-patch',
+  'direct-github-patch',
+  'sovereign-agent',
+  'agent-job',
+  'agent-workspace',
+  'agent-tool',
+  'agent-evidence',
+]);
+
+/**
+ * Returns true if the stream contains a blocked or failed event on an effect
+ * route in the same input cycle (since the last input_received event), meaning
+ * the user's original intent was blocked and only a fallback answer was produced.
+ */
+function hasBlockedEffectRouteInSameCycle(stream: SovereignActionStreamState): boolean {
+  const { events } = stream;
+  const lastInputIndex = events.reduce(
+    (last, event, index) => (event.kind === 'input_received' ? index : last),
+    -1,
+  );
+  const scopedEvents = lastInputIndex >= 0 ? events.slice(lastInputIndex) : events;
+  return scopedEvents.some(
+    (event) =>
+      (event.state === 'blocked' || event.state === 'failed')
+      && EFFECT_ROUTES.has(event.route),
+  );
+}
+
 function formatTime(value: number): string {
   try {
     return new Date(value).toLocaleTimeString('de-DE', {
@@ -64,6 +99,11 @@ function workerTitle(stream: SovereignActionStreamState): string {
   if (stream.activeRoute) return `Sovereign beobachtet · ${stream.activeRoute}`;
   if (state === 'blocked') return 'Sovereign wartet auf nächsten echten Schritt';
   if (state === 'failed')  return 'Sovereign hat einen Blocker gefunden';
+  // Issue #1567 B2: "fertig" must not be shown when the original intent was blocked
+  // and only a free-chat fallback answer was produced.
+  if (state === 'done' && hasBlockedEffectRouteInSameCycle(stream)) {
+    return 'Antwort übernommen – ursprünglicher Auftrag nicht ausgeführt';
+  }
   return 'Sovereign hat den Arbeitsschritt protokolliert';
 }
 
@@ -73,6 +113,9 @@ function dotStyle(stream: SovereignActionStreamState): { color: string; glow: bo
   if (stream.activeRoute && state === 'running') return { color: C.sky, glow: true };
   if (stream.activeRoute) return { color: C.textSub, glow: false };
   if (state === 'blocked' || state === 'failed') return { color: C.rose, glow: false };
+  // Issue #1567 B2: green dot only when the original intent was actually executed.
+  // If the effect route was blocked and only a fallback answer was produced, show amber.
+  if (state === 'done' && hasBlockedEffectRouteInSameCycle(stream)) return { color: C.amber, glow: false };
   if (state === 'done')                          return { color: C.green, glow: false };
   return { color: C.textSub, glow: false };
 }
