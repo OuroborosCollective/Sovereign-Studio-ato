@@ -4470,6 +4470,13 @@ if _token_encryption_key:
     init_token_encryption(_token_encryption_key)
 
 
+_GUEST_EMAIL_SUFFIX = "@guest.sovereign.invalid"
+
+
+def _is_guest_user_row(row) -> bool:
+    return bool(row and str(row.get("email") or "").lower().endswith(_GUEST_EMAIL_SUFFIX))
+
+
 def _user_row_to_dict(row) -> dict:
     """Konvertiert nur einen cache-/ledger-verifizierten User zur API-Antwort."""
     user_id = str(row["id"])
@@ -4483,6 +4490,7 @@ def _user_row_to_dict(row) -> dict:
         "creditStateVerified": True,
         "subscriptionStatus": row.get("subscription_status") or "free",
         "isBanned":           bool(row.get("is_banned")),
+        "isGuest":            _is_guest_user_row(row),
         "createdAt":          str(row.get("created_at") or ""),
         "avatarUrl":          row.get("avatar_url"),
         "googleId":           row.get("google_id"),
@@ -4514,6 +4522,40 @@ def _get_session_user_id() -> str | None:
     return _decode_jwt(token)
 
 
+
+
+@app.route("/api/auth/guest", methods=["POST"])
+def auth_guest():
+    """Create or restore a pseudonymous zero-credit session without manual login."""
+    try:
+        existing_user_id = _get_session_user_id()
+        if existing_user_id:
+            existing = query(
+                "SELECT * FROM admin_users WHERE id = %s::uuid LIMIT 1",
+                (existing_user_id,), one=True,
+            )
+            if existing and not existing.get("is_banned"):
+                return jsonify(_user_row_to_dict(existing))
+
+        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+        if "," in client_ip:
+            client_ip = client_ip.split(",")[0].strip()
+        allowed, _remaining = _check_rate_limit(f"guest_session:{client_ip}", max_requests=20)
+        if not allowed:
+            return jsonify({"error": "Zu viele Gast-Sitzungen. Bitte später erneut versuchen."}), 429
+
+        user_id = str(uuid.uuid4())
+        _create_user_with_initial_credits(
+            user_id=user_id,
+            email=f"{user_id}{_GUEST_EMAIL_SUFFIX}",
+            display_name="Gast",
+            initial_credits=0,
+        )
+        row = query("SELECT * FROM admin_users WHERE id = %s::uuid LIMIT 1", (user_id,), one=True)
+        resp = make_response(jsonify(_user_row_to_dict(row)))
+        return _set_session_cookie(resp, user_id)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/api/auth/register", methods=["POST"])
@@ -4841,6 +4883,14 @@ def auth_github():
             "SELECT * FROM admin_users WHERE github_id = %s OR email = %s LIMIT 1",
             (github_id, email), one=True,
         )
+        if not row:
+            session_user_id = _get_session_user_id()
+            session_row = query(
+                "SELECT * FROM admin_users WHERE id = %s::uuid LIMIT 1",
+                (session_user_id,), one=True,
+            ) if session_user_id else None
+            if _is_guest_user_row(session_row):
+                row = session_row
 
         if row:
             user_id = str(row["id"])

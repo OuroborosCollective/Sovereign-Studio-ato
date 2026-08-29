@@ -23,6 +23,7 @@ export interface CurrentUser {
   credits: number;
   subscriptionStatus: SubscriptionStatus;
   isBanned: boolean;
+  isGuest?: boolean;
   createdAt: number;
   avatarUrl?: string;
   googleId?: string;
@@ -83,6 +84,7 @@ function normalizeCurrentUser(value: unknown): CurrentUser | null {
       ? statusValue as SubscriptionStatus
       : 'free',
     isBanned: value.isBanned === true,
+    isGuest: value.isGuest === true,
     createdAt,
     avatarUrl: pickString(value, 'avatarUrl') || undefined,
     googleId: pickString(value, 'googleId') || undefined,
@@ -124,6 +126,7 @@ interface UserStore {
   loginWithAccountKey: (key: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
+  ensureGuestSession: () => Promise<void>;
   refreshUser: () => Promise<void>;
   clearError: () => void;
 }
@@ -274,6 +277,29 @@ export const useUserStore = create<UserStore>()(
           set({ user: null, isLoading: false, error: null });
         } catch {
           set({ isLoading: false, error: 'Logout konnte die Backend-Session nicht bestätigen.' });
+        }
+      },
+
+      ensureGuestSession: async () => {
+        set({ isLoading: true, error: null });
+        try {
+          let res = await authFetch('/api/auth/me', { method: 'GET', cache: 'no-store' });
+          if (res.status === 401) {
+            res = await authFetch('/api/auth/guest', { method: 'POST' });
+          }
+          if (!res.ok) {
+            const payload = await res.json().catch(() => ({})) as { error?: string };
+            set({ user: null, isLoading: false, error: payload.error || `Gast-Sitzung nicht verfügbar (HTTP ${res.status}).` });
+            return;
+          }
+          const user = normalizeCurrentUser(await res.json());
+          if (!user) {
+            set({ user: null, isLoading: false, error: 'Backend lieferte keine gültige Gast-Session-Evidence.' });
+            return;
+          }
+          set({ user, isLoading: false, error: null });
+        } catch {
+          set({ user: null, isLoading: false, error: 'Gast-Sitzung konnte nicht bestätigt werden.' });
         }
       },
 

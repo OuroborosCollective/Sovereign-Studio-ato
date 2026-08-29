@@ -258,6 +258,60 @@ describe('SovereignAgentClient', () => {
     });
   });
 
+  it('reads a persisted blocked job when the swarm route returns HTTP 503 with a job id', async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL) => {
+      if (fetcher.mock.calls.length === 1) {
+        return new Response(JSON.stringify({
+          ok: false,
+          status: 'BLOCKED',
+          jobId: 'job-evidence-blocked',
+          workspaceId: 'ws-evidence-blocked',
+          blocker: 'The free single-agent workspace execution lacks required tool, diff or test evidence.',
+        }), { status: 503 });
+      }
+      return new Response(JSON.stringify({
+        job: {
+          id: 'job-evidence-blocked',
+          workspaceId: 'ws-evidence-blocked',
+          status: 'blocked',
+          repoUrl: 'https://github.com/acme/repo',
+          branch: 'main',
+          changedFiles: [],
+          events: [],
+          lastError: 'The free single-agent workspace execution lacks required tool, diff or test evidence.',
+        },
+      }), { status: 200 });
+    });
+    const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
+
+    const snapshot = await client.startRepositoryExecution({
+      repoUrl: 'https://github.com/acme/repo',
+      mission: 'Edit the README and prepare a Draft PR.',
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[1]?.[0]).toBe('https://agent.example.test/api/user/agent/jobs/job-evidence-blocked');
+    expect(snapshot).toMatchObject({
+      jobId: 'job-evidence-blocked',
+      workspaceId: 'ws-evidence-blocked',
+      status: 'blocked',
+      changedFiles: [],
+    });
+  });
+
+  it('still rejects HTTP failures that contain no persisted repository job id', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      blocker: 'repository runtime unavailable',
+    }), { status: 503 }));
+    const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
+
+    await expect(client.startRepositoryExecution({
+      repoUrl: 'https://github.com/acme/repo',
+      mission: 'Edit the README.',
+    })).rejects.toThrow('repository runtime unavailable');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it('lists persisted jobs for app reinstall recovery', async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({
       jobs: [{ id: 'job-latest', workspaceId: 'ws-latest', status: 'running', changedFiles: [], events: [] }],
