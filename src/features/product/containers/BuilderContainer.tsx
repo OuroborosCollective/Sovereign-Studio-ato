@@ -104,6 +104,7 @@ import {
 import {
   appendMissionInput,
   downloadSessionMarkdown,
+  formatPersistedSessionAge,
   getOrCreateCurrentSession,
   loadSession,
   sessionMessageToChatLine,
@@ -3230,6 +3231,12 @@ export function BuilderContainer({
           `PostgreSQL bubble session restored: ${session.messageCount} message(s)`,
           'sys',
         );
+        const age = formatPersistedSessionAge(session);
+        if (age.isStale) {
+          appendRuntimeNotice(`Warnung: Die wiederhergestellte Session ist älter als 3 Tage (Alter: ${age.text}) und möglicherweise nicht mehr mit dem aktuellen Codebase-Stand synchron.`);
+        } else {
+          appendRuntimeNotice(`Session erfolgreich wiederhergestellt (Alter: ${age.text}).`);
+        }
       } catch {
         if (cancelled) return;
         persistedSessionRef.current = null;
