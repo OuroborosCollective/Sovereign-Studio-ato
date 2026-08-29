@@ -159,12 +159,23 @@ def _normalize_identifier(value: str, *, label: str) -> str:
 
 
 def _reject_secret_shaped_field(value: Any, *, path: str = "$") -> None:
-    """Reject secret-shaped raw fields from contracts."""
+    """Reject secret-shaped raw fields from contracts.
+
+    Security dimension names (revision, image_digest, tool_binding, owner,
+    credential, receipt, environment, operation_input, egress_policy,
+    runtime_evidence) are exempt: they represent structural metadata
+    (scope hashes, identity markers), not raw secrets.
+    """
+    _DIMENSION_VALUE_EXEMPTIONS: frozenset[str] = frozenset(
+        dim.value for dim in SecurityDimension
+    )
     if isinstance(value, dict):
         for key, item in value.items():
             if isinstance(key, str):
                 key_lower = key.lower()
-                if any(marker in key_lower for marker in _SECRET_KEY_MARKERS):
+                if key_lower in _DIMENSION_VALUE_EXEMPTIONS:
+                    pass  # Dimension names are structural, not secret
+                elif any(marker in key_lower for marker in _SECRET_KEY_MARKERS):
                     raise ControlMutationContractError(
                         f"secret-shaped field '{key}' is forbidden at {path}"
                     )
