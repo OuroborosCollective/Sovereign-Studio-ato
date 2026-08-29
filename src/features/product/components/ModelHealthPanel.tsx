@@ -51,9 +51,16 @@ export function ModelHealthPanel({
   onRefresh,
   showRefresh = true,
 }: ModelHealthPanelProps) {
-  const healthyCount = models.filter((m) => m.status === 'healthy').length;
-  const degradedCount = models.filter((m) => m.status === 'degraded').length;
-  const unknownCount = models.filter((m) => m.status === 'unknown').length;
+  // ⚡ Bolt: Single-pass iteration to prevent O(N) array allocation overhead from multiple .filter().length
+  let healthyCount = 0;
+  let degradedCount = 0;
+  let unknownCount = 0;
+  for (let i = 0; i < models.length; i++) {
+    const s = models[i].status;
+    if (s === 'healthy') healthyCount++;
+    else if (s === 'degraded') degradedCount++;
+    else if (s === 'unknown') unknownCount++;
+  }
 
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">

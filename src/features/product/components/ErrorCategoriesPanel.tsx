@@ -70,12 +70,14 @@ export const ErrorCategoriesPanel: React.FC<ErrorCategoriesPanelProps> = ({ regi
   const activeFindings = useMemo(() => registry.findings.filter((finding) => finding.status === 'active'), [registry.findings]);
   const resolvedCount = registry.findings.length - activeFindings.length;
 
-  const bySeverity = useMemo(() => ({
-    critical: activeFindings.filter((finding) => finding.severity === 'critical').length,
-    high: activeFindings.filter((finding) => finding.severity === 'high').length,
-    medium: activeFindings.filter((finding) => finding.severity === 'medium').length,
-    low: activeFindings.filter((finding) => finding.severity === 'low').length,
-  }), [activeFindings]);
+  const bySeverity = useMemo(() => {
+    // ⚡ Bolt: Single-pass iteration to prevent O(N) array allocation overhead from chained .filter().length
+    const counts = { critical: 0, high: 0, medium: 0, low: 0 };
+    for (let i = 0; i < activeFindings.length; i++) {
+      counts[activeFindings[i].severity]++;
+    }
+    return counts;
+  }, [activeFindings]);
 
   return (
     <section aria-label="Fehlerkategorien Übersicht" className={`rounded-2xl border border-slate-700/60 bg-slate-900 ${className}`}>

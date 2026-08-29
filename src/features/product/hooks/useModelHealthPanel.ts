@@ -53,9 +53,21 @@ export function useModelHealthPanel(options: UseModelHealthPanelOptions): UseMod
   });
 
   const models = useMemo(() => sortedModels, [sortedModels]);
-  const healthyCount = useMemo(() => models.filter((model) => model.status === 'healthy').length, [models]);
-  const degradedCount = useMemo(() => models.filter((model) => model.status === 'degraded').length, [models]);
-  const unknownCount = useMemo(() => models.filter((model) => model.status === 'unknown').length, [models]);
+
+  // ⚡ Bolt: Single-pass iteration to prevent O(N) array allocation overhead from multiple .filter().length
+  const counts = useMemo(() => {
+    let healthyCount = 0;
+    let degradedCount = 0;
+    let unknownCount = 0;
+    for (let i = 0; i < models.length; i++) {
+      const s = models[i].status;
+      if (s === 'healthy') healthyCount++;
+      else if (s === 'degraded') degradedCount++;
+      else if (s === 'unknown') unknownCount++;
+    }
+    return { healthyCount, degradedCount, unknownCount };
+  }, [models]);
+
   const bestModel = useMemo(() => getBestModel(), [getBestModel]);
   const hasAvailableModelValue = useMemo(() => hasAvailableModel(), [hasAvailableModel]);
 
@@ -68,9 +80,9 @@ export function useModelHealthPanel(options: UseModelHealthPanelOptions): UseMod
     isChecking,
     lastCheck: lastGlobalCheck,
     onRefresh,
-    healthyCount,
-    degradedCount,
-    unknownCount,
+    healthyCount: counts.healthyCount,
+    degradedCount: counts.degradedCount,
+    unknownCount: counts.unknownCount,
     hasAvailableModel: hasAvailableModelValue,
     bestModel,
   };
