@@ -27,6 +27,47 @@ afterEach(() => {
 });
 
 describe('OAuth session effect readback', () => {
+  it('creates a zero-friction guest session only after /api/auth/me reports no session', async () => {
+    const guestUser = {
+      ...verifiedUser,
+      id: 'guest-session',
+      email: 'guest-session@guest.sovereign.invalid',
+      displayName: 'Gast',
+      credits: 0,
+      isGuest: true,
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(guestUser), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+
+    await useUserStore.getState().ensureGuestSession();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/api/auth/me');
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/api/auth/guest');
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'POST', credentials: 'include' });
+    expect(useUserStore.getState().user).toMatchObject({
+      id: 'guest-session',
+      credits: 0,
+      isGuest: true,
+    });
+  });
+
+  it('reuses an existing authenticated session without creating a guest account', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(
+      JSON.stringify(verifiedUser),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ));
+
+    await useUserStore.getState().ensureGuestSession();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/api/auth/me');
+    expect(useUserStore.getState().user?.id).toBe('user-session');
+  });
   it('accepts Google exchange only after /api/auth/me confirms the cookie session', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'untrusted-post-body', email: 'post@example.test' }), {

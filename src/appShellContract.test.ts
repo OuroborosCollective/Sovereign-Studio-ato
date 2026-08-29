@@ -68,7 +68,7 @@ describe('Play release rescue app shell contract', () => {
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
-  it('makes the focused authenticated chat the primary Play surface and excludes the unfinished monitor transport', () => {
+  it('makes the focused guest-capable chat the primary Play surface and excludes the unfinished monitor transport', () => {
     const app = read(APP_PATH);
     const chat = read(RELEASE_CHAT_PATH);
 
@@ -92,9 +92,11 @@ describe('Play release rescue app shell contract', () => {
       'fetchDevChatWorkerReply',
       'DEV_CHAT_WORKER_DEFAULT_MODEL',
       'evaluateInputPolicy',
-      '<LoginModal',
+      'ensureGuestSession',
     ]);
     expectContainsNone(chat, [
+      '<LoginModal',
+      'setShowLogin',
       'getDesktopFrame',
       'desktopFrame',
       'VncScreen',

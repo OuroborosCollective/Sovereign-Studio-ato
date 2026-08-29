@@ -722,9 +722,9 @@ export class SovereignAgentClient {
 
   async startRepositoryExecution(input: SovereignRepositoryExecutionInput): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);
-    const body = await requestObject({
-      url: endpoint(this.config.agentApiUrl, '/api/user/agent/swarm/run'),
-      init: {
+    const response = await this.fetcher(
+      endpoint(this.config.agentApiUrl, '/api/user/agent/swarm/run'),
+      {
         method: 'POST',
         headers: headers(),
         credentials: 'include',
@@ -739,10 +739,22 @@ export class SovereignAgentClient {
           ...(input.githubAccessToken?.trim() ? { githubAccessToken: input.githubAccessToken.trim() } : {}),
         }),
       },
-      fetcher: this.fetcher,
-      fallback: 'Sovereign repository execution',
-    });
+    );
+    const rawBody = await readJson(response);
+    const body = isObject(rawBody) ? rawBody : {};
     const jobId = stringValue(body.jobId);
+
+    // A repository execution can be accepted, persisted and then fail closed
+    // with HTTP 503 because the selected agent produced no tool/diff/test
+    // evidence. A linked job id is authoritative evidence that execution did
+    // start; fetch its snapshot instead of misreporting a transport failure.
+    if (!response.ok && !jobId) {
+      throw buildSovereignAgentHttpError({
+        status: response.status,
+        body,
+        fallback: 'Sovereign repository execution',
+      });
+    }
     if (!jobId) throw new Error('Sovereign repository execution returned no linked job id.');
     const snapshot = await this.getJob(jobId);
     return {

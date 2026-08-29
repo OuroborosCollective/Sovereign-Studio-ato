@@ -20,7 +20,6 @@ import {
   summarizeSovereignAgentJob,
   type SovereignAgentJobSnapshot,
 } from '../product/runtime/sovereignAgentRuntime';
-import { LoginModal } from '../user/components/LoginModal';
 import { GitHubAccessCard } from '../product/components/GitHubAccessCard';
 import {
   completeGitHubAccessValidation,
@@ -119,8 +118,7 @@ function Bubble({ entry }: { readonly entry: ChatEntry }) {
 }
 
 export function PlayReleaseChat() {
-  const { user, refreshUser, logout, loginWithGitHub } = useUserStore();
-  const [showLogin, setShowLogin] = useState(false);
+  const { user, ensureGuestSession, refreshUser, logout, loginWithGitHub } = useUserStore();
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [routes, setRoutes] = useState<readonly SovereignLlmRouteOption[]>([]);
@@ -147,8 +145,8 @@ export function PlayReleaseChat() {
   }), []);
 
   useEffect(() => {
-    void refreshUser();
-  }, [refreshUser]);
+    void ensureGuestSession();
+  }, [ensureGuestSession]);
 
   useEffect(() => {
     if (!user) {
@@ -207,7 +205,6 @@ export function PlayReleaseChat() {
     window.setTimeout(() => {
       if (menu === 'chat') composerRef.current?.focus();
       if (menu === 'models') routeSelectRef.current?.focus();
-      if (menu === 'account' && !user) setShowLogin(true);
     }, 0);
   };
 
@@ -349,10 +346,6 @@ export function PlayReleaseChat() {
   };
 
   const connectGitHub = async (): Promise<void> => {
-    if (!user) {
-      setShowLogin(true);
-      return;
-    }
     setGitHubConnectionState('connecting');
     setGitHubConnectionError(null);
     try {
@@ -447,7 +440,7 @@ export function PlayReleaseChat() {
     const text = (override ?? draft).trim();
     if (!text || busy) return;
     if (!user) {
-      setShowLogin(true);
+      addMessage('system', 'Die pseudonyme Gast-Sitzung wird noch vorbereitet. Bitte den Auftrag gleich erneut senden.');
       return;
     }
 
@@ -666,7 +659,7 @@ export function PlayReleaseChat() {
           >
             {guide.mood}
           </span>
-          {user ? (
+          {user && !user.isGuest ? (
             <button
               type="button"
               onClick={() => { void logout(); }}
@@ -677,13 +670,9 @@ export function PlayReleaseChat() {
               ↪
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={() => setShowLogin(true)}
-              style={{ minHeight: 44, padding: '0 14px', borderRadius: 9, border: `1px solid ${C.accent}66`, background: C.accent + '16', color: C.accent, fontWeight: 700, cursor: 'pointer' }}
-            >
-              Anmelden
-            </button>
+            <span style={{ minHeight: 38, display: 'inline-flex', alignItems: 'center', padding: '0 10px', borderRadius: 9, border: `1px solid ${C.green}44`, color: C.green, fontSize: 11, fontWeight: 700 }}>
+              Gastzugang
+            </span>
           )}
         </div>
       </header>
@@ -751,7 +740,7 @@ export function PlayReleaseChat() {
               fontSize: 11,
             }}
           >
-            <option value="">{user ? 'Auto · serverseitige Routenwahl' : 'Modelle · nach Anmeldung'}</option>
+            <option value="">{user ? 'Auto · serverseitige Routenwahl' : 'Modelle · Sitzung wird vorbereitet'}</option>
             {routes.map((route) => <option key={route.id} value={route.id}>{routeLabel(route)}</option>)}
           </select>
 
@@ -784,7 +773,7 @@ export function PlayReleaseChat() {
               </span>
             )}
             {activeMenu === 'models' && (activeRoute ? `Aktiv: ${routeLabel(activeRoute)}` : 'Automatische serverseitige Routenwahl. Eine manuell gewählte Route bleibt hart fixiert.')}
-            {activeMenu === 'account' && (user ? `${user.email} · ${user.credits} Credits` : 'Für Runtime- und GitHub-Aktionen bitte anmelden.')}
+            {activeMenu === 'account' && (user?.isGuest ? 'Gastmodus · Konto und Credit-Kauf werden erst nach ausdrücklicher Kontoübernahme freigeschaltet.' : user ? `${user.email} · ${user.credits} Credits` : 'Gast-Sitzung wird vorbereitet.')}
           </div>
         </div>
       )}
@@ -796,11 +785,7 @@ export function PlayReleaseChat() {
           style={{ flexShrink: 0, borderBottom: '1px solid #263244', background: C.bg }}
         >
           <div className="release-chat-shell" style={{ padding: '10px 12px', display: 'grid', gap: 8 }}>
-            {!user ? (
-              <button type="button" onClick={() => setShowLogin(true)} style={{ minHeight: 40, justifySelf: 'start', borderRadius: 8, border: '1px solid #58a6ff66', background: '#58a6ff16', color: C.accent, fontWeight: 700, cursor: 'pointer' }}>
-                Anmelden, um GitHub zu verbinden
-              </button>
-            ) : !githubConnected ? (
+            {!githubConnected ? (
               <div style={{ display: 'grid', gap: 9 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
                   <span style={{ color: C.sub, fontSize: 11, lineHeight: 1.45 }}>Bevorzugt wird die serverseitige OAuth-Verbindung. Falls sie nicht verfügbar ist, kann ein PAT ausschließlich im geschützten Eingabefeld für diese Browser-Sitzung hinterlegt werden; er gelangt nie in Chat, Verlauf oder Telemetrie.</span>
@@ -867,7 +852,7 @@ export function PlayReleaseChat() {
               <p style={{ color: C.sub, fontSize: 13, lineHeight: 1.6, margin: '10px auto 0' }}>
                 Sovereign nutzt den aktuellen serverseitigen LLM-Routenkatalog. Zugangsdaten bleiben außerhalb des Chats.
               </p>
-              {!user && <button type="button" onClick={() => setShowLogin(true)} style={{ marginTop: 18, minHeight: 44, padding: '0 18px', borderRadius: 10, border: 'none', background: C.accent, color: '#07111c', fontWeight: 800, cursor: 'pointer' }}>Mit E-Mail anmelden</button>}
+              {!user && <p role="status" style={{ marginTop: 18, color: C.amber, fontSize: 12 }}>Pseudonyme Gast-Sitzung wird vorbereitet…</p>}
             </div>
           </div>
         ) : messages.map((entry) => <Bubble key={entry.id} entry={entry} />)}
@@ -897,7 +882,7 @@ export function PlayReleaseChat() {
                 }
               }}
               disabled={busy}
-              placeholder={user ? 'Nachricht an Sovereign…' : 'Zum Chatten bitte anmelden…'}
+              placeholder={user ? 'Nachricht an Sovereign…' : 'Gast-Sitzung wird vorbereitet…'}
               rows={1}
               style={{
                 flex: 1,
@@ -925,13 +910,12 @@ export function PlayReleaseChat() {
             </button>
           </div>
           <div style={{ minHeight: 25, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, color: C.muted, fontSize: 9.5 }}>
-            <span>{user ? user.email : 'E-Mail/Passwort-Anmeldung erforderlich'}</span>
+            <span>{user?.isGuest ? 'Pseudonymer Gastmodus · keine manuelle Anmeldung' : user ? user.email : 'Gast-Sitzung wird vorbereitet'}</span>
             <span>{routeError ?? 'Enter sendet · Shift+Enter neue Zeile'}</span>
           </div>
         </div>
       </footer>
 
-      {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
     </main>
   );
 }
