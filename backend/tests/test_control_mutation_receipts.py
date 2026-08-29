@@ -546,3 +546,76 @@ class TestEdgeCases:
             verdict="MUTANT_SURVIVED",
         )
         assert receipt.observed_block_code is None
+
+
+# ---------------------------------------------------------------------------
+# Forbidden Value Tests (receipts)
+# ---------------------------------------------------------------------------
+
+class TestForbiddenReceiptValues:
+    """Test NaN, Infinity, float, and timestamp key rejection in receipt context.
+
+    The receipt builder takes scalar inputs, so these tests validate the
+    internal _reject_forbidden_contract_values function directly.
+    """
+
+    def test_nan_rejected(self):
+        """NaN values must be rejected in receipt data."""
+        from backend.agent_runtime.control_mutation_receipts import _reject_forbidden_contract_values
+        with pytest.raises(ControlMutationReceiptError) as exc_info:
+            _reject_forbidden_contract_values({"key": float("nan")})
+        assert "NaN" in str(exc_info.value)
+
+    def test_infinity_rejected(self):
+        """Infinity values must be rejected in receipt data."""
+        from backend.agent_runtime.control_mutation_receipts import _reject_forbidden_contract_values
+        with pytest.raises(ControlMutationReceiptError) as exc_info:
+            _reject_forbidden_contract_values({"key": float("inf")})
+        assert "Infinity" in str(exc_info.value)
+
+    def test_float_rejected(self):
+        """Regular float values must be rejected in receipt data."""
+        from backend.agent_runtime.control_mutation_receipts import _reject_forbidden_contract_values
+        with pytest.raises(ControlMutationReceiptError) as exc_info:
+            _reject_forbidden_contract_values({"score": 0.99})
+        assert "float" in str(exc_info.value)
+
+    def test_timestamp_key_rejected(self):
+        """Timestamp-shaped keys must be rejected in receipt data."""
+        from backend.agent_runtime.control_mutation_receipts import _reject_forbidden_contract_values
+        with pytest.raises(ControlMutationReceiptError) as exc_info:
+            _reject_forbidden_contract_values({"timestamp": "2024-01-01T00:00:00Z"})
+        assert "timestamp-shaped" in str(exc_info.value)
+
+    def test_created_at_key_rejected(self):
+        """'created_at' keys must be rejected in receipt data."""
+        from backend.agent_runtime.control_mutation_receipts import _reject_forbidden_contract_values
+        with pytest.raises(ControlMutationReceiptError) as exc_info:
+            _reject_forbidden_contract_values({"created_at": "2024-01-01"})
+        assert "timestamp-shaped" in str(exc_info.value)
+
+    def test_integer_values_accepted(self):
+        """Integer values are not rejected."""
+        from backend.agent_runtime.control_mutation_receipts import _reject_forbidden_contract_values
+        # Should not raise
+        _reject_forbidden_contract_values({"priority": 50, "count": 0})
+
+    def test_string_values_accepted(self):
+        """String values are not rejected."""
+        from backend.agent_runtime.control_mutation_receipts import _reject_forbidden_contract_values
+        # Should not raise
+        _reject_forbidden_contract_values({"revision": "abc123", "verdict": "MUTANT_KILLED"})
+
+    def test_nested_float_rejected(self):
+        """Float values nested in dict must be rejected."""
+        from backend.agent_runtime.control_mutation_receipts import _reject_forbidden_contract_values
+        with pytest.raises(ControlMutationReceiptError) as exc_info:
+            _reject_forbidden_contract_values({"nested": {"deep": {"val": 1.5}}})
+        assert "float" in str(exc_info.value)
+
+    def test_float_in_list_rejected(self):
+        """Float values in lists must be rejected."""
+        from backend.agent_runtime.control_mutation_receipts import _reject_forbidden_contract_values
+        with pytest.raises(ControlMutationReceiptError) as exc_info:
+            _reject_forbidden_contract_values({"tags": [1, 2, 3.0]})
+        assert "float" in str(exc_info.value)

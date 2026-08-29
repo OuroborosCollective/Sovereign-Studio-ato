@@ -60,6 +60,17 @@ _SECRET_KEY_MARKERS: Final[tuple[str, ...]] = (
     "auth",
 )
 
+# Timestamp-shaped key markers (implicit time identity is forbidden)
+_TIMESTAMP_KEY_MARKERS: Final[tuple[str, ...]] = (
+    "timestamp",
+    "created_at",
+    "updated_at",
+    "now",
+    "time",
+    "datetime",
+    "date",
+)
+
 
 class ControlMutationReceiptError(ValueError):
     """A receipt input violated a deterministic or invariant."""
@@ -117,6 +128,39 @@ def _reject_secret_shaped_field(value: Any, *, path: str = "$") -> None:
     elif isinstance(value, (list, tuple)):
         for idx, item in enumerate(value):
             _reject_secret_shaped_field(item, path=f"{path}[{idx}]")
+
+
+def _reject_forbidden_contract_values(value: Any, *, path: str = "$") -> None:
+    """Reject NaN, Infinity, floats, and timestamp-shaped keys from receipts.
+
+    The architecture specifies that receipts must not contain:
+    - Float values (NaN, Infinity, or any float)
+    - Timestamp-shaped keys (implicit time identity)
+    """
+    if isinstance(value, float):
+        if value != value:  # NaN check (NaN != NaN is True)
+            raise ControlMutationReceiptError(
+                f"NaN value is forbidden in receipt at {path}"
+            )
+        if value == float("inf") or value == float("-inf"):
+            raise ControlMutationReceiptError(
+                f"Infinity value is forbidden in receipt at {path}"
+            )
+        raise ControlMutationReceiptError(
+            f"float value is forbidden in receipt at {path}"
+        )
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if isinstance(key, str):
+                key_lower = key.lower()
+                if any(marker == key_lower for marker in _TIMESTAMP_KEY_MARKERS):
+                    raise ControlMutationReceiptError(
+                        f"timestamp-shaped field '{key}' is forbidden at {path}"
+                    )
+            _reject_forbidden_contract_values(item, path=f"{path}.{key}")
+    elif isinstance(value, (list, tuple)):
+        for idx, item in enumerate(value):
+            _reject_forbidden_contract_values(item, path=f"{path}[{idx}]")
 
 
 Verdict = Literal["MUTANT_KILLED", "MUTANT_SURVIVED", "UNVERIFIED", "CONTRADICTED"]
