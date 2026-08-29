@@ -125,6 +125,17 @@ _SECRET_KEY_MARKERS: Final[tuple[str, ...]] = (
     "auth",
 )
 
+# Timestamp-shaped key markers (implicit time identity is forbidden)
+_TIMESTAMP_KEY_MARKERS: Final[tuple[str, ...]] = (
+    "timestamp",
+    "created_at",
+    "updated_at",
+    "now",
+    "time",
+    "datetime",
+    "date",
+)
+
 
 def _normalize_sha40(value: str, *, label: str) -> str:
     """Validate and normalize a full Git SHA."""
@@ -172,6 +183,39 @@ def _reject_secret_shaped_field(value: Any, *, path: str = "$") -> None:
     elif isinstance(value, (list, tuple)):
         for idx, item in enumerate(value):
             _reject_secret_shaped_field(item, path=f"{path}[{idx}]")
+
+
+def _reject_forbidden_contract_values(value: Any, *, path: str = "$") -> None:
+    """Reject NaN, Infinity, floats, and timestamp-shaped keys from contracts.
+
+    The architecture specifies that contracts must not contain:
+    - Float values (NaN, Infinity, or any float)
+    - Timestamp-shaped keys (implicit time identity)
+    """
+    if isinstance(value, float):
+        if value != value:  # NaN check (NaN != NaN is True)
+            raise ControlMutationContractError(
+                f"NaN value is forbidden in contract at {path}"
+            )
+        if value == float("inf") or value == float("-inf"):
+            raise ControlMutationContractError(
+                f"Infinity value is forbidden in contract at {path}"
+            )
+        raise ControlMutationContractError(
+            f"float value is forbidden in contract at {path}"
+        )
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if isinstance(key, str):
+                key_lower = key.lower()
+                if any(marker == key_lower for marker in _TIMESTAMP_KEY_MARKERS):
+                    raise ControlMutationContractError(
+                        f"timestamp-shaped field '{key}' is forbidden at {path}"
+                    )
+            _reject_forbidden_contract_values(item, path=f"{path}.{key}")
+    elif isinstance(value, (list, tuple)):
+        for idx, item in enumerate(value):
+            _reject_forbidden_contract_values(item, path=f"{path}[{idx}]")
 
 
 def _canonical_sha256(value: Any) -> str:
@@ -374,6 +418,10 @@ def build_control_mutation_case(
     # Reject secret-shaped fields
     _reject_secret_shaped_field(baseline_contract, path="baseline_contract")
     _reject_secret_shaped_field(mutated_contract, path="mutated_contract")
+
+    # Reject forbidden contract values (NaN, Infinity, floats, timestamp keys)
+    _reject_forbidden_contract_values(baseline_contract, path="baseline_contract")
+    _reject_forbidden_contract_values(mutated_contract, path="mutated_contract")
 
     # Validate single-variable invariant
     valid, error = validate_single_variable_invariant(baseline_contract, mutated_contract, operator)

@@ -385,6 +385,177 @@ class TestSecretSafety:
 
 
 # ---------------------------------------------------------------------------
+# Forbidden Contract Value Tests
+# ---------------------------------------------------------------------------
+
+class TestForbiddenContractValues:
+    """Test NaN, Infinity, float, and timestamp key rejection."""
+
+    def test_nan_in_baseline_rejected(self):
+        """NaN values in baseline contract must be rejected."""
+        with pytest.raises(ControlMutationContractError) as exc_info:
+            build_control_mutation_case(
+                mutation_id="test-001",
+                operator=ControlMutationOperator.STALE_REVISION,
+                repository="test/repo",
+                repository_revision="0" * 40,
+                control_owner="test-owner",
+                baseline_contract={"revision": float("nan")},
+                mutated_contract={"revision": "def456"},
+                protected_operation_family="test_op",
+                operation_input_sha256="a" * 64,
+            )
+        assert "NaN" in str(exc_info.value)
+        assert "forbidden" in str(exc_info.value)
+
+    def test_nan_in_mutated_rejected(self):
+        """NaN values in mutated contract must be rejected."""
+        with pytest.raises(ControlMutationContractError) as exc_info:
+            build_control_mutation_case(
+                mutation_id="test-001",
+                operator=ControlMutationOperator.STALE_REVISION,
+                repository="test/repo",
+                repository_revision="0" * 40,
+                control_owner="test-owner",
+                baseline_contract={"revision": "abc123"},
+                mutated_contract={"revision": float("nan")},
+                protected_operation_family="test_op",
+                operation_input_sha256="a" * 64,
+            )
+        assert "NaN" in str(exc_info.value)
+
+    def test_infinity_in_baseline_rejected(self):
+        """Infinity values in baseline contract must be rejected."""
+        with pytest.raises(ControlMutationContractError) as exc_info:
+            build_control_mutation_case(
+                mutation_id="test-001",
+                operator=ControlMutationOperator.STALE_REVISION,
+                repository="test/repo",
+                repository_revision="0" * 40,
+                control_owner="test-owner",
+                baseline_contract={"revision": float("inf")},
+                mutated_contract={"revision": "def456"},
+                protected_operation_family="test_op",
+                operation_input_sha256="a" * 64,
+            )
+        assert "Infinity" in str(exc_info.value)
+        assert "forbidden" in str(exc_info.value)
+
+    def test_negative_infinity_in_mutated_rejected(self):
+        """Negative Infinity values in mutated contract must be rejected."""
+        with pytest.raises(ControlMutationContractError) as exc_info:
+            build_control_mutation_case(
+                mutation_id="test-001",
+                operator=ControlMutationOperator.STALE_REVISION,
+                repository="test/repo",
+                repository_revision="0" * 40,
+                control_owner="test-owner",
+                baseline_contract={"revision": "abc123"},
+                mutated_contract={"revision": float("-inf")},
+                protected_operation_family="test_op",
+                operation_input_sha256="a" * 64,
+            )
+        assert "Infinity" in str(exc_info.value)
+
+    def test_float_in_baseline_rejected(self):
+        """Any float value in baseline contract must be rejected."""
+        with pytest.raises(ControlMutationContractError) as exc_info:
+            build_control_mutation_case(
+                mutation_id="test-001",
+                operator=ControlMutationOperator.STALE_REVISION,
+                repository="test/repo",
+                repository_revision="0" * 40,
+                control_owner="test-owner",
+                baseline_contract={"revision": "abc123", "score": 0.5},
+                mutated_contract={"revision": "def456", "score": 0.5},
+                protected_operation_family="test_op",
+                operation_input_sha256="a" * 64,
+            )
+        assert "float" in str(exc_info.value)
+        assert "forbidden" in str(exc_info.value)
+
+    def test_float_in_nested_list_rejected(self):
+        """Float values nested in lists within contracts must be rejected."""
+        with pytest.raises(ControlMutationContractError) as exc_info:
+            build_control_mutation_case(
+                mutation_id="test-001",
+                operator=ControlMutationOperator.STALE_REVISION,
+                repository="test/repo",
+                repository_revision="0" * 40,
+                control_owner="test-owner",
+                baseline_contract={"revision": "abc123", "tags": [1.0, 2.0]},
+                mutated_contract={"revision": "def456", "tags": [1.0, 2.0]},
+                protected_operation_family="test_op",
+                operation_input_sha256="a" * 64,
+            )
+        assert "float" in str(exc_info.value)
+
+    def test_timestamp_key_in_baseline_rejected(self):
+        """Timestamp-shaped keys in baseline contract must be rejected."""
+        with pytest.raises(ControlMutationContractError) as exc_info:
+            build_control_mutation_case(
+                mutation_id="test-001",
+                operator=ControlMutationOperator.STALE_REVISION,
+                repository="test/repo",
+                repository_revision="0" * 40,
+                control_owner="test-owner",
+                baseline_contract={"revision": "abc123", "timestamp": "2024-01-01"},
+                mutated_contract={"revision": "def456"},
+                protected_operation_family="test_op",
+                operation_input_sha256="a" * 64,
+            )
+        assert "timestamp-shaped field" in str(exc_info.value)
+        assert "forbidden" in str(exc_info.value)
+
+    def test_created_at_key_in_mutated_rejected(self):
+        """'created_at' keys in mutated contract must be rejected."""
+        with pytest.raises(ControlMutationContractError) as exc_info:
+            build_control_mutation_case(
+                mutation_id="test-001",
+                operator=ControlMutationOperator.STALE_REVISION,
+                repository="test/repo",
+                repository_revision="0" * 40,
+                control_owner="test-owner",
+                baseline_contract={"revision": "abc123"},
+                mutated_contract={"revision": "def456", "created_at": "2024-01-01"},
+                protected_operation_family="test_op",
+                operation_input_sha256="a" * 64,
+            )
+        assert "timestamp-shaped field" in str(exc_info.value)
+
+    def test_updated_at_key_rejected(self):
+        """'updated_at' keys in contracts must be rejected."""
+        with pytest.raises(ControlMutationContractError) as exc_info:
+            build_control_mutation_case(
+                mutation_id="test-001",
+                operator=ControlMutationOperator.STALE_REVISION,
+                repository="test/repo",
+                repository_revision="0" * 40,
+                control_owner="test-owner",
+                baseline_contract={"revision": "abc123", "updated_at": "2024-01-01"},
+                mutated_contract={"revision": "def456"},
+                protected_operation_family="test_op",
+                operation_input_sha256="a" * 64,
+            )
+        assert "timestamp-shaped field" in str(exc_info.value)
+
+    def test_integer_values_accepted(self):
+        """Integer values in contracts are accepted (no float rejection)."""
+        case = build_control_mutation_case(
+            mutation_id="test-001",
+            operator=ControlMutationOperator.STALE_REVISION,
+            repository="test/repo",
+            repository_revision="0" * 40,
+            control_owner="test-owner",
+            baseline_contract={"revision": "abc123", "priority": 50},
+            mutated_contract={"revision": "def456", "priority": 50},
+            protected_operation_family="test_op",
+            operation_input_sha256="a" * 64,
+        )
+        assert case.baseline_contract_sha256  # no error raised
+
+
+# ---------------------------------------------------------------------------
 # Requirements Tests
 # ---------------------------------------------------------------------------
 
