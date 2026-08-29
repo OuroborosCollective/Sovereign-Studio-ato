@@ -1,6 +1,9 @@
 name: Sovereign PR Review Evidence
 
 on:
+  push:
+    branches:
+      - sovereign/owner-ready-pr-1748-1c3791f
   workflow_dispatch:
     inputs:
       pr_number:
@@ -46,8 +49,179 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  owner-ready-bootstrap:
+    name: Mark exact owner-approved PR ready
+    if: github.event_name == 'push' && github.ref == 'refs/heads/sovereign/owner-ready-pr-1748-1c3791f'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify exact control commit and mark PR ready
+        uses: actions/github-script@v7
+        env:
+          EXPECTED_ACTOR: OuroborosCollective
+          EXPECTED_CONTROL_PARENT: de16bb619e6b1af5e18cad17dfcb28f545ac4d4c
+          TARGET_PR_NUMBER: '1748'
+          EXPECTED_PR_HEAD: 1c3791f7006add0d76c79f4c9cb84376da810f95
+          EXPECTED_PR_BRANCH: fix/traefik-public-route-recovery
+        with:
+          script: |
+            const expectedActor = String(process.env.EXPECTED_ACTOR || '');
+            const expectedControlParent = String(process.env.EXPECTED_CONTROL_PARENT || '').toLowerCase();
+            const expectedHead = String(process.env.EXPECTED_PR_HEAD || '').toLowerCase();
+            const expectedBranch = String(process.env.EXPECTED_PR_BRANCH || '');
+            const pullNumber = Number(process.env.TARGET_PR_NUMBER || 0);
+            const repositoryFullName = `${context.repo.owner}/${context.repo.repo}`;
+            const workflowPath = '.github/workflows/sovereign-pr-review-evidence.yml';
+
+            if (context.actor !== expectedActor) {
+              core.setFailed('OWNER_ACTOR_MISMATCH');
+              return;
+            }
+            if (!/^[0-9a-f]{40}$/.test(expectedControlParent) || !/^[0-9a-f]{40}$/.test(expectedHead)) {
+              core.setFailed('EXPECTED_REVISION_INVALID');
+              return;
+            }
+            if (!Number.isInteger(pullNumber) || pullNumber < 1) {
+              core.setFailed('PR_NUMBER_INVALID');
+              return;
+            }
+
+            const controlCommit = (await github.rest.repos.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha,
+            })).data;
+            const parents = controlCommit.parents || [];
+            const files = controlCommit.files || [];
+            if (parents.length !== 1 || String(parents[0]?.sha || '').toLowerCase() !== expectedControlParent) {
+              core.setFailed('CONTROL_COMMIT_PARENT_MISMATCH');
+              return;
+            }
+            if (files.length !== 1 || files[0]?.filename !== workflowPath || files[0]?.status !== 'modified') {
+              core.setFailed('CONTROL_COMMIT_SCOPE_MISMATCH');
+              return;
+            }
+
+            const mainRef = (await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'heads/main',
+            })).data;
+            if (String(mainRef.object?.sha || '').toLowerCase() !== expectedControlParent) {
+              core.setFailed('MAIN_REVISION_CHANGED');
+              return;
+            }
+
+            const identity = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            };
+            const pull = (await github.rest.pulls.get(identity)).data;
+            if (
+              pull.state !== 'open'
+              || pull.draft !== true
+              || pull.base?.ref !== 'main'
+              || pull.head?.ref !== expectedBranch
+              || pull.head?.repo?.full_name !== repositoryFullName
+              || String(pull.head?.sha || '').toLowerCase() !== expectedHead
+            ) {
+              core.setFailed('PULL_REQUEST_IDENTITY_MISMATCH');
+              return;
+            }
+
+            const requiredWorkflows = new Set([
+              'Integration Plan Lane Gate',
+              'Boundary Ledger Drift',
+              'Sovereign Continuity Evidence',
+              'Sovereign Agent Backend',
+              'Release Verification',
+            ]);
+            const workflowRuns = await github.paginate(
+              github.rest.actions.listWorkflowRunsForRepo,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head_sha: expectedHead,
+                per_page: 100,
+              },
+            );
+            const latestRequired = new Map();
+            for (const run of workflowRuns) {
+              if (!requiredWorkflows.has(run.name) || String(run.head_sha || '').toLowerCase() !== expectedHead) continue;
+              const current = latestRequired.get(run.name);
+              if (!current || Number(run.id || 0) > Number(current.id || 0)) latestRequired.set(run.name, run);
+            }
+            const invalidRequired = [...requiredWorkflows].filter((name) => {
+              const run = latestRequired.get(name);
+              return !run || run.status !== 'completed' || run.conclusion !== 'success';
+            });
+            if (invalidRequired.length > 0) {
+              core.setFailed(`REQUIRED_GATES_NOT_GREEN:${invalidRequired.join(',')}`);
+              return;
+            }
+
+            const reviewQuery = `query($owner:String!,$repo:String!,$number:Int!){
+              repository(owner:$owner,name:$repo){
+                pullRequest(number:$number){
+                  id
+                  headRefOid
+                  isDraft
+                  reviewThreads(first:100){totalCount nodes{isResolved}}
+                }
+              }
+            }`;
+            const reviewData = await github.graphql(reviewQuery, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              number: pullNumber,
+            });
+            const reviewPull = reviewData.repository?.pullRequest;
+            const reviewThreads = reviewPull?.reviewThreads;
+            if (
+              !reviewPull
+              || reviewPull.isDraft !== true
+              || String(reviewPull.headRefOid || '').toLowerCase() !== expectedHead
+              || Number(reviewThreads?.totalCount || 0) > 100
+              || (reviewThreads?.nodes || []).some((thread) => thread?.isResolved !== true)
+            ) {
+              core.setFailed('REVIEW_EVIDENCE_NOT_READY');
+              return;
+            }
+
+            const mutation = `mutation($pullRequestId:ID!){
+              markPullRequestReadyForReview(input:{pullRequestId:$pullRequestId}){
+                pullRequest{id number isDraft headRefOid}
+              }
+            }`;
+            const mutationData = await github.graphql(mutation, {pullRequestId: reviewPull.id});
+            const updated = mutationData.markPullRequestReadyForReview?.pullRequest;
+            if (
+              !updated
+              || Number(updated.number) !== pullNumber
+              || updated.isDraft !== false
+              || String(updated.headRefOid || '').toLowerCase() !== expectedHead
+            ) {
+              core.setFailed('READY_MUTATION_NOT_CONFIRMED');
+              return;
+            }
+
+            const readback = (await github.rest.pulls.get(identity)).data;
+            if (readback.draft !== false || String(readback.head?.sha || '').toLowerCase() !== expectedHead) {
+              core.setFailed('READY_REST_READBACK_MISMATCH');
+              return;
+            }
+            core.info(JSON.stringify({
+              status: 'EXACT_OWNER_APPROVED_PR_READY',
+              prNumber: pullNumber,
+              headSha: expectedHead,
+              controlRevision: context.sha,
+              secretValuesReturned: false,
+            }));
+
   review-evidence:
     name: Read exact PR review conversations
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
