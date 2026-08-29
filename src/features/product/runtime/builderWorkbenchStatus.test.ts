@@ -134,7 +134,7 @@ describe('builderWorkbenchStatus', () => {
     expect(errors.some((e) => e.includes('boom'))).toBe(true);
   });
 
-  it('keeps warning and error text in Logs and counts only structured failed events', () => {
+  it('keeps warning and error text in Logs and counts both failed and blocked action events', () => {
     const input = baseInput({
       logs: [
         { ts: '10:00:00', level: 'warn', msg: 'GitHub access missing', tabId: 'router' },
@@ -165,6 +165,7 @@ describe('builderWorkbenchStatus', () => {
     ]);
     expect(deriveErrorEntries(input)).toEqual([
       'Direct Patch fehlgeschlagen · Patch rejected',
+      'Patch wartet',
     ]);
   });
 
@@ -210,5 +211,44 @@ describe('builderWorkbenchStatus', () => {
       baseInput({ chatRepoError: 'boom' }),
     ).find((s) => s.id === 'errors')!;
     expect(dirty.tone).toBe('error');
+  });
+
+  it('Issue #1567 B1: never shows Errors 0 while a blocked action event is active', () => {
+    const input = baseInput({
+      actionEvents: [
+        actionEvent({
+          id: 'blocked-intent',
+          kind: 'patch_blocked',
+          route: 'github-patch',
+          label: 'GitHub Access fehlt',
+          state: 'blocked',
+        }),
+      ],
+    });
+    const errors = deriveErrorEntries(input);
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.some((e) => e.includes('GitHub Access fehlt'))).toBe(true);
+
+    const slot = deriveWorkbenchStatusSlots(input).find((s) => s.id === 'errors')!;
+    expect(slot.value).not.toBe('0');
+    expect(slot.tone).toBe('error');
+  });
+
+  it('Issue #1567 B1: blocked agent-job action event deduplicates against canonical blocked agent job', () => {
+    const input = baseInput({
+      agentJob: { status: 'blocked', changedFiles: [], events: [], lastError: 'GitHub Access' },
+      actionEvents: [
+        actionEvent({
+          id: 'agent-blocked',
+          kind: 'agent_result_blocked',
+          route: 'agent-job',
+          label: 'Agent Job blockiert',
+          detail: 'GitHub Access',
+          state: 'blocked',
+        }),
+      ],
+    });
+    const errors = deriveErrorEntries(input);
+    expect(errors).toEqual(['Sovereign Agent Job blockiert · GitHub Access']);
   });
 });
