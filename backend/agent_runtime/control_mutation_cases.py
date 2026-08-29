@@ -12,28 +12,33 @@ Design constraints:
 - Single-variable invariant: exactly one security dimension may drift.
 - Baseline and mutant must share operation identity.
 - Secret-shaped raw fields are never stored in contracts.
+- Reuses canonical_sha256 and secret markers from agent_run_receipts.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
-import json
+from enum import StrEnum
 import re
-from enum import Enum
 from typing import Any, Final, Literal, Mapping, Optional, Tuple
+
+from .agent_run_receipts import (
+    ReceiptContractError,
+    canonical_sha256,
+    canonical_value,
+)
 
 # Schema version
 SCHEMA_VERSION: Final[str] = "sovereign.control-mutation-case.v1"
 
-# Validation patterns
+# Validation patterns (ACSA-specific, not duplicated from proof core)
 _SHA40: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{40}$")
 _SHA64: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{64}$")
 _IMAGE_DIGEST: Final[re.Pattern[str]] = re.compile(r"^sha256:[0-9a-f]{64}$")
 _IDENTIFIER: Final[re.Pattern[str]] = re.compile(r"^[a-z][a-z0-9_.:/@-]{1,119}$")
 
 # Security dimension constants (for single-variable invariant)
-class SecurityDimension(str, Enum):
+class SecurityDimension(StrEnum):
     REVISION = "revision"
     IMAGE_DIGEST = "image_digest"
     TOOL_BINDING = "tool_binding"
@@ -46,7 +51,7 @@ class SecurityDimension(str, Enum):
     RUNTIME_EVIDENCE = "runtime_evidence"
 
 
-class ControlMutationOperator(str, Enum):
+class ControlMutationOperator(StrEnum):
     """Static V1 operator allowlist. Unknown operators trigger ContractError."""
 
     STALE_REVISION = "stale_revision"
@@ -102,29 +107,6 @@ _REQUIRES_TARGET_READBACK: frozenset[ControlMutationOperator] = frozenset({
 class ControlMutationContractError(ValueError):
     """A control mutation input violated a deterministic or invariant."""
 
-    pass
-
-
-# Secret-shaped key markers (from agent_run_receipts)
-_SECRET_KEY_MARKERS: Final[tuple[str, ...]] = (
-    "password",
-    "passwd",
-    "secret",
-    "token",
-    "authorization",
-    "api_key",
-    "apikey",
-    "private_key",
-    "client_secret",
-    "cookie",
-    "raw_prompt",
-    "prompt_text",
-    "file_content",
-    "database_row",
-    "credential",
-    "auth",
-)
-
 
 def _normalize_sha40(value: str, *, label: str) -> str:
     """Validate and normalize a full Git SHA."""
@@ -159,25 +141,20 @@ def _normalize_identifier(value: str, *, label: str) -> str:
 
 
 def _reject_secret_shaped_field(value: Any, *, path: str = "$") -> None:
-    """Reject secret-shaped raw fields from contracts."""
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if isinstance(key, str):
-                key_lower = key.lower()
-                if any(marker in key_lower for marker in _SECRET_KEY_MARKERS):
-                    raise ControlMutationContractError(
-                        f"secret-shaped field '{key}' is forbidden at {path}"
-                    )
-                _reject_secret_shaped_field(item, path=f"{path}.{key}")
-    elif isinstance(value, (list, tuple)):
-        for idx, item in enumerate(value):
-            _reject_secret_shaped_field(item, path=f"{path}[{idx}]")
+    """Reject secret-shaped raw fields from contracts.
+
+    Delegates to the canonical secret detection from agent_run_receipts
+    and wraps any ReceiptContractError as ControlMutationContractError.
+    """
+    try:
+        canonical_value(value, path=path)
+    except ReceiptContractError as exc:
+        raise ControlMutationContractError(str(exc)) from exc
 
 
 def _canonical_sha256(value: Any) -> str:
-    """Compute deterministic SHA-256 for canonical JSON."""
-    s = json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
-    return hashlib.sha256(s.encode()).hexdigest()
+    """Compute deterministic SHA-256 using the proof-core canonicalizer."""
+    return canonical_sha256(value)
 
 
 def get_allowed_dimension(operator: ControlMutationOperator) -> SecurityDimension:

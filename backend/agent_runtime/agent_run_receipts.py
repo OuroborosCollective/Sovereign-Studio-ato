@@ -41,6 +41,7 @@ _SECRET_KEY_MARKERS: Final[tuple[str, ...]] = (
     "prompt_text",
     "file_content",
     "database_row",
+    "credential",
 )
 _SECRET_SAFE_BOOLEAN_KEYS: Final[frozenset[str]] = frozenset({
     "secretvaluesreturned",
