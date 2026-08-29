@@ -4373,6 +4373,10 @@ def _github_oauth_credential_contract() -> dict:
 _DEFAULT_GITHUB_OAUTH_OPENER_ORIGINS = {
     "https://chat.arelorian.de",
     "https://arelorian.de",
+    # The immutable backend image serves the canonical user-facing Vite app at
+    # /app/.  Its same-origin OAuth popup must be allowed to receive the fixed
+    # chat.arelorian.de callback without relying on mutable host configuration.
+    "https://sovereign-backend.arelorian.de",
     "http://localhost",
     "https://localhost",
     "capacitor://localhost",

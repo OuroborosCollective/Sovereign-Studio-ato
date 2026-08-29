@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 from pathlib import Path
 import subprocess
+import sys
 
 
 MCP_ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +53,14 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
     assert '--env "SOVEREIGN_IMAGE_DIGEST=$DIGEST"' in rollback
     assert '--env "SOVEREIGN_SOURCE_REVISION=$REVISION"' in rollback
     assert 'ENTERPRISE_ADMIN_LIVE_CANARY_VERIFIED' in deploy
+    assert 'ENTERPRISE_ADMIN_LIVE_CANARY_LLM_DEGRADED' in deploy
+    assert 'FREELLM_ROUTE_READINESS_DEGRADED' in deploy
+    assert 'ROUTE_READINESS_DEGRADED' in deploy
+    assert 'llmRouteReadiness' in deploy
+    assert 'class FreeLlmReadinessDegraded' in deploy
+    assert 'def bootstrap_freellm_readiness()' in deploy
+    assert 'raise RuntimeError("no revision-bound FreeLLM v3 chat-evidence receipt became ready")' not in deploy
+    assert 'raise RuntimeError("readiness is not green")' not in deploy
     assert '/api/admin/platform/v1/identity' in deploy
     assert '/api/admin/platform/v1/overview' in deploy
     assert '/api/admin/platform/v1/integrations' in deploy
@@ -94,12 +106,15 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
     assert 'secretValuesReturned' in deploy
 
     for script in (deploy, rollback):
-        assert "for network in supabase_default sovereign-private" in script
+        assert 'TRAEFIK_DOCKER_NETWORK="${SOVEREIGN_TRAEFIK_DOCKER_NETWORK:-traefik-public}"' in script
+        assert "Traefik Docker network name is invalid" in script
+        assert 'for network in supabase_default sovereign-private "$TRAEFIK_DOCKER_NETWORK"' in script
         assert 'required docker network missing: $network' in script
         assert 'docker network inspect areloria_arelorian-network' in script
         assert 'docker network connect areloria_arelorian-network "$CONTAINER"' in script
         assert '--label "traefik.enable=true"' in script
-        assert '--label "traefik.docker.network=sovereign-private"' in script
+        assert '--label "traefik.docker.network=$TRAEFIK_DOCKER_NETWORK"' in script
+        assert 'docker network connect "$TRAEFIK_DOCKER_NETWORK" "$CONTAINER"' in script
         assert "traefik.http.routers.sovereign-backend.rule=Host(`sovereign-backend.arelorian.de`)" in script
         assert '--label "traefik.http.routers.sovereign-backend.entrypoints=websecure"' in script
         assert '--label "traefik.http.routers.sovereign-backend.tls=true"' in script
@@ -114,14 +129,103 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
         assert "traefik-proxy" not in script
 
     # The isolated candidate stays unregistered with Traefik; production and
-    # rollback advertise only Sovereign's own bridge to the host-network proxy.
-    assert deploy.count('--label "traefik.docker.network=sovereign-private"') == 1
+    # rollback advertise and attach the backend to Traefik's actual shared bridge.
+    assert deploy.count('--label "traefik.docker.network=$TRAEFIK_DOCKER_NETWORK"') == 1
     for script in (deploy, rollback):
         assert "https://sovereign-backend.arelorian.de/owner-approvals" in script
         assert "<title>Sovereign Owner-Freigaben</title>" in script
         assert '"status": "PUBLIC_OWNER_INGRESS_VERIFIED" if ok else "PUBLIC_OWNER_INGRESS_CONTRADICTED"' in script
         assert '"secretValuesReturned": False' in script
         assert '"publicIngress"' in script
+
+
+def test_admin_canary_keeps_live_deployment_when_freellm_is_temporarily_degraded(
+    monkeypatch,
+) -> None:
+    """Exercise the embedded production canary through its real Python source.
+
+    The fake HTTP adapter is an external-boundary mock only: it proves that a
+    missing revision-bound FreeLLM receipt produces a degraded receipt while
+    the revision-bound backend/admin identity can still complete deployment.
+    """
+
+    deploy = (MCP_ROOT / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
+    admin_start = deploy.index('STAGE="admin_canary"')
+    source_start = deploy.index("import hashlib\n", admin_start)
+    source_end = deploy.index("\nPY\n)", source_start)
+    canary_source = deploy[source_start:source_end]
+    revision = "a" * 40
+    digest = "sha256:" + "b" * 64
+
+    adapter = r'''
+class _Headers(dict):
+    pass
+
+class _Response:
+    def __init__(self, url, payload, headers=None):
+        self.status = 200
+        self.code = 200
+        self._url = url
+        self.headers = _Headers(headers or {})
+        self._body = json.dumps(payload, sort_keys=True).encode("utf-8")
+    def read(self, _limit=-1):
+        return self._body
+    def geturl(self):
+        return self._url
+    def __enter__(self):
+        return self
+    def __exit__(self, *_args):
+        return False
+
+def _fake_urlopen(request, timeout=0):
+    url = request.full_url
+    revision = "a" * 40
+    digest = "sha256:" + "b" * 64
+    headers = {"X-Request-ID": "test"}
+    if url.endswith("/health"):
+        return _Response(url, {"ok": True, "sourceRevision": revision, "imageDigest": digest}, headers)
+    if url.endswith("/health/ready"):
+        return _Response(url, {"ok": False}, headers)
+    if url.endswith("/api/internal/llm/freellm/providers"):
+        return _Response(url, {"ok": True, "minimumReadyRoutes": 1, "providers": []}, headers)
+    if url.endswith("/admin"):
+        response = _Response(url + "/", {"unused": True}, {"X-Sovereign-Admin-Producer": "CANONICAL_REACT_ADMIN"})
+        response._body = b'<div id="root"></div>'
+        return response
+    if url.endswith("/api/admin/platform/v1/identity"):
+        return _Response(url, {"ok": True, "runtime": {"sourceRevision": revision, "imageDigest": digest, "sourceRevisionVerified": True, "imageDigestVerified": True}}, headers)
+    if url.endswith("/api/admin/platform/v1/overview"):
+        return _Response(url, {"ok": True, "status": "verified", "integrations": [{"required": True, "status": "verified"}]}, headers)
+    if url.endswith("/api/admin/platform/v1/integrations"):
+        return _Response(url, {"ok": True, "integrations": [{"required": True, "status": "verified"}]}, headers)
+    if url.endswith("/api/admin/platform/v1/evidence?limit=30"):
+        return _Response(url, {"ok": True, "count": 0, "evidence": []}, headers)
+    raise AssertionError(url)
+
+urllib.request.urlopen = _fake_urlopen
+'''
+    canary_source = canary_source.replace(
+        "import urllib.request\n",
+        "import urllib.request\n" + adapter + "\n",
+        1,
+    )
+    monkeypatch.setenv("ADMIN_API_KEY", "synthetic-admin-key")
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "synthetic-owner-key")
+    original_argv = sys.argv[:]
+    stdout = io.StringIO()
+    try:
+        sys.argv = ["canary", revision, digest]
+        with contextlib.redirect_stdout(stdout):
+            exec(compile(canary_source, "deploy-admin-canary.py", "exec"), {})
+    finally:
+        sys.argv = original_argv
+
+    receipt = json.loads(stdout.getvalue().strip().splitlines()[-1])
+    assert receipt["ok"] is True
+    assert receipt["status"] == "ENTERPRISE_ADMIN_LIVE_CANARY_LLM_DEGRADED"
+    assert receipt["freellmBootstrap"]["status"] == "FREELLM_ROUTE_READINESS_DEGRADED"
+    assert receipt["readiness"]["status"] == "ROUTE_READINESS_DEGRADED"
+    assert receipt["llmRouteReadiness"] == {"ok": False, "status": "DEGRADED"}
 
 
 def test_operator_deployment_path_has_no_curl_dependency() -> None:

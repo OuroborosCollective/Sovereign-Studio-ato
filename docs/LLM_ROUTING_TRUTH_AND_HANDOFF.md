@@ -299,6 +299,13 @@ Bei jeder zukünftigen LLM-Routenänderung sind folgende Werkzeuge zu verwenden:
 6. immutable Backend-Image-Digest
 7. `/health/live` und `/health/ready` nach Deployment
 
+Für Docker-Provider-Traefik ist zusätzlich die Routing-Grenze explizit zu
+belegen: Das Backend trägt `traefik.docker.network` für das gemeinsame
+`traefik-public`-Netz und ist nach jedem Deploy oder Rollback wieder daran
+angebunden. `sovereign-private` bleibt ausschließlich das private Daten- und
+Provider-Netz; ein gesundes Backend nur in diesem Netz ist kein Traefik-
+Routenbeweis.
+
 PatchMon darf nicht durch UI-Anzeigen ersetzt werden. Eine grüne Lampe ist keine Runtime-Evidence.
 
 ## 11. Revisions- und Deploymentvertrag

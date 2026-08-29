@@ -127,6 +127,10 @@ def test_backend_deploy_contract_keeps_private_network_without_legacy_litellm_wi
     installer = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "install-on-vps.sh").read_text("utf-8")
     assert "docker network connect sovereign-private" in deploy
     assert "docker network connect sovereign-private" in rollback
+    assert 'TRAEFIK_DOCKER_NETWORK="${SOVEREIGN_TRAEFIK_DOCKER_NETWORK:-traefik-public}"' in deploy
+    assert 'TRAEFIK_DOCKER_NETWORK="${SOVEREIGN_TRAEFIK_DOCKER_NETWORK:-traefik-public}"' in rollback
+    assert 'docker network connect "$TRAEFIK_DOCKER_NETWORK" "$CONTAINER"' in deploy
+    assert 'docker network connect "$TRAEFIK_DOCKER_NETWORK" "$CONTAINER"' in rollback
     assert "LITELLM_BASE_URL=" not in installer
     assert "LITELLM_MASTER_KEY_FILE=" not in installer
     assert "litellm_master_key.txt" not in installer

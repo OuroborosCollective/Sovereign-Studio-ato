@@ -20,6 +20,10 @@ def test_backend_fails_closed_without_default_jwt_secret() -> None:
 def test_github_oauth_requires_state_pkce_and_real_callback() -> None:
     source = _backend_source()
     assert 'https://chat.arelorian.de/auth/github/callback.html' in source
+    opener_start = source.index('_DEFAULT_GITHUB_OAUTH_OPENER_ORIGINS = {')
+    opener_end = source.index('\n}', opener_start)
+    opener_origins = source[opener_start:opener_end]
+    assert '"https://sovereign-backend.arelorian.de"' in opener_origins
     assert 'if not state or not code_verifier:' in source
     assert 'GitHub OAuth benötigt State und PKCE-Verifier' in source
     assert 'if not _validate_pkce(code_verifier, stored_challenge):' in source
