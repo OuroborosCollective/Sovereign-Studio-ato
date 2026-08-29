@@ -105,8 +105,11 @@ export function deriveLogEntries(input: WorkbenchStatusInput): string[] {
 
 /**
  * Errors: current canonical blockers, failed/blocked Agent state and structured
- * failed Action-Stream events. Text logs remain exclusively in Logs so one runtime
+ * failed/blocked Action-Stream events. Text logs remain exclusively in Logs so one runtime
  * failure cannot inflate Errors through a second mirrored log line.
+ *
+ * Issue #1567 B1: blocked Action-Stream events are included so that "Errors 0" is never
+ * shown while the user's current intent is visibly blocked.
  */
 export function deriveErrorEntries(input: WorkbenchStatusInput): string[] {
   const entries: string[] = [];
@@ -135,10 +138,11 @@ export function deriveErrorEntries(input: WorkbenchStatusInput): string[] {
     addUniqueEntry(`Sovereign Agent Job blockiert${input.agentJob.lastError ? ` · ${input.agentJob.lastError}` : ''}`);
   }
   for (const event of input.actionEvents ?? []) {
-    if (event.state !== 'failed') continue;
+    if (event.state !== 'failed' && event.state !== 'blocked') continue;
     if (event.route === 'worker' && input.workerBlocker) continue;
     if (event.route === 'repo' && input.chatRepoError) continue;
     if (event.route === 'agent-job' && input.agentJob?.status === 'failed') continue;
+    if (event.route === 'agent-job' && input.agentJob?.status === 'blocked') continue;
     const key = [event.route, event.kind, event.sourceId ?? '', event.target ?? '', event.label].join(':');
     if (seenActionFailures.has(key)) continue;
     seenActionFailures.add(key);
