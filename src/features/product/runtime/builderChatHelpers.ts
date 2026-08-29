@@ -367,13 +367,17 @@ export function phaseFromSignalAndConditions(
   return "idle";
 }
 
+// Optimization: Compare key lengths and perform direct property lookups to avoid array spread and Set allocations in render loops
 export function sameRecord<T extends string>(
   a: Record<string, T>,
   b: Record<string, T>,
 ): boolean {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-  for (const key of keys) {
-    if (a[key] !== b[key]) return false;
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (let i = 0; i < keysA.length; i++) {
+    const k = keysA[i];
+    if (a[k] !== b[k]) return false;
   }
   return true;
 }
