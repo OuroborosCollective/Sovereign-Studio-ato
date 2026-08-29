@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import time
+import urllib.parse
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -20,7 +21,7 @@ import os
 import requests
 import jwt
 
-from flask import jsonify, request, Response
+from flask import jsonify, request, redirect, Response
 
 
 # ── Configuration ──────────────────────────────────────────────────────────────
@@ -30,6 +31,13 @@ GITHUB_APP_CLIENT_ID = os.getenv("GITHUB_APP_CLIENT_ID", "")
 GITHUB_APP_CLIENT_SECRET = os.getenv("GITHUB_APP_CLIENT_SECRET", "")
 GITHUB_APP_WEBHOOK_SECRET = os.getenv("GITHUB_APP_WEBHOOK_SECRET", "")
 GITHUB_APP_PRIVATE_KEY_B64 = os.getenv("GITHUB_APP_PRIVATE_KEY", "")
+GITHUB_APP_LOGIN_FORWARD_URI = os.getenv(
+    "GITHUB_APP_LOGIN_FORWARD_URI",
+    os.getenv(
+        "GITHUB_OAUTH_REDIRECT_URI",
+        "https://chat.arelorian.de/auth/github/callback.html",
+    ),
+).strip()
 
 
 # ── Private Key Management ────────────────────────────────────────────────────
@@ -171,6 +179,77 @@ def get_installation_token(installation_id: int) -> str | None:
         return response.json().get("token")
     except Exception:
         return None
+
+
+def github_app_identity_evidence() -> dict[str, Any]:
+    """Verify configured GitHub App id/client-id against GitHub without returning secrets."""
+    jwt_token = _create_jwt()
+    if not jwt_token:
+        return {
+            "ok": False,
+            "blocker": "github_app_jwt_unavailable",
+            "appIdConfigured": bool(GITHUB_APP_ID),
+            "clientIdConfigured": bool(GITHUB_APP_CLIENT_ID),
+            "privateKeyConfigured": bool(GITHUB_APP_PRIVATE_KEY_B64),
+            "rawCredentialReturned": False,
+        }
+    try:
+        response = requests.get(
+            "https://api.github.com/app",
+            headers={
+                "Authorization": f"Bearer {jwt_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            timeout=15,
+        )
+        if not response.ok:
+            return {
+                "ok": False,
+                "blocker": "github_app_identity_read_failed",
+                "httpStatus": response.status_code,
+                "rawCredentialReturned": False,
+            }
+        payload = response.json()
+        actual_app_id = str(payload.get("id") or "").strip()
+        actual_client_id = str(payload.get("client_id") or "").strip()
+        app_id_matches = bool(
+            GITHUB_APP_ID and actual_app_id
+            and hmac.compare_digest(GITHUB_APP_ID, actual_app_id)
+        )
+        client_id_matches = bool(
+            GITHUB_APP_CLIENT_ID and actual_client_id
+            and hmac.compare_digest(GITHUB_APP_CLIENT_ID, actual_client_id)
+        )
+        return {
+            "ok": bool(app_id_matches and client_id_matches),
+            "blocker": None if app_id_matches and client_id_matches else "github_app_identity_mismatch",
+            "appIdMatches": app_id_matches,
+            "clientIdMatches": client_id_matches,
+            "configuredClientIdFingerprint": (
+                hashlib.sha256(GITHUB_APP_CLIENT_ID.encode("utf-8")).hexdigest()[:16]
+                if GITHUB_APP_CLIENT_ID else None
+            ),
+            "actualClientIdFingerprint": (
+                hashlib.sha256(actual_client_id.encode("utf-8")).hexdigest()[:16]
+                if actual_client_id else None
+            ),
+            "slug": str(payload.get("slug") or "")[:120] or None,
+            "httpStatus": response.status_code,
+            "rawCredentialReturned": False,
+        }
+    except requests.RequestException:
+        return {
+            "ok": False,
+            "blocker": "github_app_identity_transport_failed",
+            "rawCredentialReturned": False,
+        }
+    except ValueError:
+        return {
+            "ok": False,
+            "blocker": "github_app_identity_response_invalid",
+            "rawCredentialReturned": False,
+        }
 
 
 def list_installations() -> list[Installation]:
@@ -715,7 +794,8 @@ def register_github_app_routes(
     @app.route("/api/auth/github-app/callback", methods=["GET"])
     def github_app_oauth_callback():
         """OAuth callback for GitHub App installation."""
-        code = request.args.get("code", "")
+        code = str(request.args.get("code") or "").strip()
+        state = str(request.args.get("state") or "").strip()
         installation_id = request.args.get("installation_id", "")
         setup_action = request.args.get("setup_action", "")
         
@@ -739,12 +819,40 @@ def register_github_app_routes(
                 "redirect_url": "https://chat.arelorian.de/?github_app_installed=pending",
             })
         if code:
-            return jsonify({
-                "ok": False,
-                "error": "GitHub App OAuth code exchange is not implemented on this route",
-                "blocker": "github_app_oauth_exchange_unavailable",
-                "authenticationEstablished": False,
-            }), 501
+            if not state:
+                return jsonify({
+                    "ok": False,
+                    "error": "GitHub App OAuth callback requires state",
+                    "blocker": "github_app_oauth_state_missing",
+                    "authenticationEstablished": False,
+                }), 400
+            # User-login OAuth remains owned by /api/auth/github where the stored
+            # state and client-held PKCE verifier are validated. This route is
+            # only a fixed same-product bridge when the GitHub App callback is
+            # registered on the backend instead of the static browser page.
+            parsed_forward = urllib.parse.urlsplit(GITHUB_APP_LOGIN_FORWARD_URI)
+            if (
+                parsed_forward.scheme != "https"
+                or parsed_forward.hostname not in {"chat.arelorian.de", "arelorian.de"}
+                or parsed_forward.username
+                or parsed_forward.password
+                or parsed_forward.fragment
+            ):
+                return jsonify({
+                    "ok": False,
+                    "error": "GitHub App login callback target is not approved",
+                    "blocker": "github_app_oauth_forward_target_invalid",
+                    "authenticationEstablished": False,
+                }), 503
+            separator = "&" if parsed_forward.query else "?"
+            target = (
+                GITHUB_APP_LOGIN_FORWARD_URI
+                + separator
+                + urllib.parse.urlencode({"code": code, "state": state})
+            )
+            response = redirect(target, code=302)
+            response.headers["Cache-Control"] = "no-store"
+            return response
         return jsonify({
             "ok": False,
             "error": "GitHub App callback has no verifiable installation action",

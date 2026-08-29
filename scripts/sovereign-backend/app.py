@@ -4300,6 +4300,35 @@ GITHUB_OAUTH_REDIRECT_URI = os.getenv(
     "GITHUB_OAUTH_REDIRECT_URI",
     "https://chat.arelorian.de/auth/github/callback.html",
 ).strip()
+GITHUB_APP_OAUTH_REDIRECT_URI = os.getenv(
+    "GITHUB_APP_OAUTH_REDIRECT_URI",
+    "https://sovereign-backend.arelorian.de/api/auth/github-app/callback",
+).strip()
+
+
+def _is_valid_github_app_oauth_redirect_uri(value: str) -> bool:
+    """Accept only the fixed production bridge registered on the GitHub App."""
+    try:
+        parsed = urllib.parse.urlsplit(str(value or "").strip())
+    except ValueError:
+        return False
+    return bool(
+        parsed.scheme == "https"
+        and parsed.hostname == "sovereign-backend.arelorian.de"
+        and parsed.path == "/api/auth/github-app/callback"
+        and not parsed.username
+        and not parsed.password
+        and not parsed.query
+        and not parsed.fragment
+    )
+
+
+def _github_oauth_authorize_redirect_uri(source: str | None) -> str:
+    return (
+        GITHUB_APP_OAUTH_REDIRECT_URI
+        if source == "github-app"
+        else GITHUB_OAUTH_REDIRECT_URI
+    )
 
 
 def _github_oauth_credential_contract() -> dict:
@@ -4340,7 +4369,9 @@ def _github_oauth_credential_contract() -> dict:
     identity_evidence = None
     identity_blocker = None
     if source == "github-app":
-        if not callable(github_app_identity_evidence):
+        if not _is_valid_github_app_oauth_redirect_uri(GITHUB_APP_OAUTH_REDIRECT_URI):
+            identity_blocker = "github_app_oauth_redirect_uri_invalid"
+        elif not callable(github_app_identity_evidence):
             identity_blocker = "github_app_identity_verifier_unavailable"
         else:
             identity_evidence = github_app_identity_evidence()
@@ -4855,7 +4886,9 @@ def auth_github_configured():
         "identityVerified": bool(contract.get("identity_verified")),
         "identityEvidence": contract.get("identity_evidence"),
         "blocker": contract["blocker"],
-        "redirectUri": GITHUB_OAUTH_REDIRECT_URI,
+        "redirectUri": _github_oauth_authorize_redirect_uri(contract["source"]),
+        "authorizeRedirectUri": _github_oauth_authorize_redirect_uri(contract["source"]),
+        "loginForwardUri": GITHUB_OAUTH_REDIRECT_URI,
         "callbackOrigin": _github_oauth_callback_origin(),
         "rawCredentialReturned": False,
     }), 200 if contract["configured"] else 503
@@ -4883,7 +4916,9 @@ def auth_github_init():
                 "blocker": oauth_contract["blocker"],
                 "credentialSource": oauth_contract["source"],
                 "clientIdFingerprint": oauth_contract["client_id_fingerprint"],
-                "redirectUri": GITHUB_OAUTH_REDIRECT_URI,
+                "redirectUri": _github_oauth_authorize_redirect_uri(oauth_contract["source"]),
+                "authorizeRedirectUri": _github_oauth_authorize_redirect_uri(oauth_contract["source"]),
+                "loginForwardUri": GITHUB_OAUTH_REDIRECT_URI,
             }), 503
 
         body = request.get_json(force=True) or {}
@@ -4898,10 +4933,10 @@ def auth_github_init():
             requested_opener_origin = f"{parsed_requested_redirect.scheme}://{parsed_requested_redirect.netloc}"
         opener_origin = _normalize_oauth_origin(requested_opener_origin)
 
-        # Bind every OAuth family to the explicit canonical callback. GitHub Apps
-        # can have multiple callback URLs; sending redirect_uri makes the selected
-        # return path deterministic and the token exchange reuses the same value.
-        redirect_uri = GITHUB_OAUTH_REDIRECT_URI
+        # GitHub App login first returns to the fixed backend bridge that is
+        # registered on the app. The bridge then forwards code/state to the static
+        # browser callback. Legacy OAuth Apps keep the direct browser callback.
+        redirect_uri = _github_oauth_authorize_redirect_uri(oauth_contract["source"])
         client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
         if "," in client_ip:
             client_ip = client_ip.split(",")[0].strip()
@@ -4916,7 +4951,7 @@ def auth_github_init():
                 "error": "GitHub OAuth Rückkanal-Origin ist nicht erlaubt",
                 "blocker": "github_oauth_opener_origin_not_allowed",
             }), 400
-        if requested_redirect_uri and requested_redirect_uri != GITHUB_OAUTH_REDIRECT_URI:
+        if requested_redirect_uri and requested_redirect_uri != redirect_uri:
             _audit_event(
                 "GITHUB_OAUTH_REDIRECT_IGNORED",
                 False,
@@ -4947,9 +4982,8 @@ def auth_github_init():
             "opener_origin": opener_origin,
         })
 
-        # GitHub Auth URL is always bound to the canonical callback. If the
-        # external GitHub App registration does not allow it, GitHub must fail
-        # visibly instead of selecting a different callback implicitly.
+        # GitHub receives the callback registered for the selected credential
+        # family, and the token exchange reuses that exact state-bound value.
         auth_params = {
             "client_id": oauth_contract["client_id"],
             "state": state,
@@ -4967,6 +5001,7 @@ def auth_github_init():
             "state": state,
             "codeChallenge": code_challenge,
             "codeVerifier": code_verifier,  # Client braucht das für Token-Request
+            "authorizeRedirectUri": redirect_uri,
             "callbackOrigin": _github_oauth_callback_origin(),
             "openerOrigin": opener_origin,
             "credentialSource": oauth_contract["source"],

@@ -62,7 +62,7 @@ const LOAD_REPO_TOKENS = [
 ];
 
 const DIRECT_PATCH_TOKENS = [
-  'readme', 'dokumentation', 'docs', 'changelog', 'history', 'titel',
+  'readme', 'doku', 'dokumentation', 'docs', 'changelog', 'history', 'titel',
   'title', 'überschrift', 'heading', 'inhalt', 'content',
   'füge hinzu', 'hinzufügen', 'add', 'ergänze', 'änder', 'aktualisier',
   'changelog', 'zum changelog', 'in changelog', 'history', 'zur history',

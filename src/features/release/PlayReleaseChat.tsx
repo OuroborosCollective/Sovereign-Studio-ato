@@ -10,6 +10,7 @@ import {
   type SovereignLlmRouteOption,
 } from '../product/runtime/devChatWorkerBridge';
 import { evaluateInputPolicy } from '../product/runtime/secureInputGuard';
+import { deriveRepositoryActionFallback } from '../product/runtime/repositoryActionFallback';
 import { deriveReleaseGuideState } from '../product/runtime/sovereignReleaseGuide';
 import { fetchSovereignDirectLlmInterpretation } from '../product/runtime/sovereignDirectLlmIntentRuntime';
 import { createSovereignAgentClient } from '../product/runtime/sovereignAgentClient';
@@ -20,6 +21,14 @@ import {
   type SovereignAgentJobSnapshot,
 } from '../product/runtime/sovereignAgentRuntime';
 import { LoginModal } from '../user/components/LoginModal';
+import { GitHubAccessCard } from '../product/components/GitHubAccessCard';
+import {
+  completeGitHubAccessValidation,
+  createGitHubAccessSnapshot,
+  maskGitHubToken,
+  requestGitHubAccess,
+  type GitHubAccessSnapshot,
+} from '../product/runtime/githubAccessRuntime';
 import { initiateGitHubOAuth } from '../github/githubOAuthLogin';
 import { useUserStore } from '../user/useUserStore';
 
@@ -127,6 +136,8 @@ export function PlayReleaseChat() {
   const [pendingRepositoryAction, setPendingRepositoryAction] = useState<PendingRepositoryAction | null>(null);
   const [githubConnectionState, setGitHubConnectionState] = useState<'idle' | 'connecting' | 'failed'>('idle');
   const [githubConnectionError, setGitHubConnectionError] = useState<string | null>(null);
+  const [githubAccessState, setGitHubAccessState] = useState<GitHubAccessSnapshot>(() => createGitHubAccessSnapshot());
+  const githubTokenRef = useRef<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const routeSelectRef = useRef<HTMLSelectElement>(null);
@@ -234,7 +245,13 @@ export function PlayReleaseChat() {
       addMessage('system', `Änderungen liegen im Runtime-Workspace, aber Draft PR ist blockiert: ${blocker}`);
       return;
     }
-    const created = await agentClient.createDraftPr(snapshot.jobId);
+    const githubAccessToken = githubTokenRef.current;
+    const created = githubAccessToken
+      ? await agentClient.createDraftPr(snapshot.jobId, githubAccessToken)
+      : await agentClient.createDraftPr(snapshot.jobId);
+    if (githubAccessToken && githubAccessState.maskedToken) {
+      setGitHubAccessState(completeGitHubAccessValidation(githubAccessState.maskedToken));
+    }
     setAgentJob({ ...snapshot, draftPrUrl: created.draftPrCreate.prUrl });
     addMessage(
       'assistant',
@@ -250,15 +267,25 @@ export function PlayReleaseChat() {
   }): Promise<void> => {
     setActiveMenu('github');
     addMessage('system', `GitHub-Auftrag erkannt · ${args.target.label} · Start nur über die revisionsgebundene Agent-Runtime.`);
+    const githubAccessToken = githubTokenRef.current;
     let snapshot = await agentClient.startRepositoryExecution({
       repoUrl: args.target.repoUrl,
       branch: args.target.branch,
       mission: args.actionTitle || args.text,
       evidenceText: args.text,
+      ...(githubAccessToken ? { githubAccessToken } : {}),
     });
     setAgentJob(snapshot);
     snapshot = await waitForRepositoryJob(snapshot);
     setAgentJob(snapshot);
+    if (
+      githubAccessToken
+      && githubAccessState.maskedToken
+      && ['completed', 'cleaned'].includes(snapshot.status)
+      && snapshot.changedFiles.length > 0
+    ) {
+      setGitHubAccessState(completeGitHubAccessValidation(githubAccessState.maskedToken));
+    }
 
     if (snapshot.status === 'waiting-for-user') {
       addMessage('system', 'GitHub-Ausführung wartet auf eine Nutzerentscheidung. Es wurde kein Erfolg behauptet.');
@@ -341,6 +368,8 @@ export function PlayReleaseChat() {
         codeVerifier: result.codeVerifier,
       });
       await refreshUser();
+      githubTokenRef.current = null;
+      setGitHubAccessState(createGitHubAccessSnapshot());
       setGitHubConnectionState('idle');
     } catch (error) {
       setGitHubConnectionState('failed');
@@ -533,6 +562,23 @@ export function PlayReleaseChat() {
           return;
         }
 
+        const degradedAction = deriveRepositoryActionFallback(text);
+        if (degradedAction) {
+          setRuntimeState('degraded');
+          setPendingRepositoryAction({
+            kind: 'repository-execution',
+            text,
+            actionTitle: degradedAction.actionTitle,
+            intent: degradedAction.intent,
+            target: nextRepoTarget,
+          });
+          setActiveMenu('github');
+          addMessage(
+            'system',
+            'Die Online-LLM-Antwort war kein gültiger Aktionsvertrag. Sovereign hat nur deinen eigenen Änderungsauftrag als degradierte Vorschau übernommen; Modellprosa wurde verworfen. Es wurde noch nichts ausgeführt.',
+          );
+          return;
+        }
         if (interpreted.rawContent) {
           addMessage('system', 'Die LLM-Antwort war kein gültiger Aktionsvertrag. Sie wurde nicht zur GitHub-Ausführung verwendet.');
         }
@@ -568,7 +614,9 @@ export function PlayReleaseChat() {
   const runtimeColor = runtimeState === 'ready' ? C.green : runtimeState === 'degraded' ? C.rose : C.amber;
   const runtimeLabel = runtimeState === 'ready' ? 'LLM bereit' : runtimeState === 'degraded' ? 'LLM eingeschränkt' : 'LLM wird geprüft';
   const sessionColor = user ? C.green : C.amber;
-  const githubColor = githubConnected ? C.green : user ? C.amber : C.muted;
+  const githubColor = githubConnected || githubAccessState.state === 'ready'
+    ? C.green
+    : user ? C.amber : C.muted;
 
   return (
     <main
@@ -753,17 +801,28 @@ export function PlayReleaseChat() {
                 Anmelden, um GitHub zu verbinden
               </button>
             ) : !githubConnected ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-                <span style={{ color: C.sub, fontSize: 11, lineHeight: 1.45 }}>GitHub wird erst nach deiner Zustimmung per OAuth serverseitig verbunden. Kein PAT wird in diesem Client eingegeben oder gespeichert.</span>
-                <button
-                  type="button"
-                  onClick={() => { void connectGitHub(); }}
-                  disabled={githubConnectionState === 'connecting'}
-                  style={{ minHeight: 40, padding: '0 12px', borderRadius: 8, border: '1px solid #58a6ff66', background: '#58a6ff16', color: C.accent, fontWeight: 700, cursor: githubConnectionState === 'connecting' ? 'wait' : 'pointer' }}
-                >
-                  {githubConnectionState === 'connecting' ? 'GitHub wird verbunden…' : 'GitHub sicher verbinden'}
-                </button>
-                {githubConnectionError && <span role="alert" style={{ color: C.rose, fontSize: 11 }}>{githubConnectionError}</span>}
+              <div style={{ display: 'grid', gap: 9 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+                  <span style={{ color: C.sub, fontSize: 11, lineHeight: 1.45 }}>Bevorzugt wird die serverseitige OAuth-Verbindung. Falls sie nicht verfügbar ist, kann ein PAT ausschließlich im geschützten Eingabefeld für diese Browser-Sitzung hinterlegt werden; er gelangt nie in Chat, Verlauf oder Telemetrie.</span>
+                  <button
+                    type="button"
+                    onClick={() => { void connectGitHub(); }}
+                    disabled={githubConnectionState === 'connecting'}
+                    style={{ minHeight: 40, padding: '0 12px', borderRadius: 8, border: '1px solid #58a6ff66', background: '#58a6ff16', color: C.accent, fontWeight: 700, cursor: githubConnectionState === 'connecting' ? 'wait' : 'pointer' }}
+                  >
+                    {githubConnectionState === 'connecting' ? 'GitHub wird verbunden…' : 'GitHub sicher verbinden'}
+                  </button>
+                  {githubConnectionError && <span role="alert" style={{ color: C.rose, fontSize: 11 }}>{githubConnectionError}</span>}
+                </div>
+                <GitHubAccessCard
+                  snapshot={githubAccessState}
+                  onProvideToken={(token) => {
+                    const normalizedToken = token.trim();
+                    githubTokenRef.current = normalizedToken;
+                    setGitHubAccessState(requestGitHubAccess(maskGitHubToken(normalizedToken)));
+                    setGitHubConnectionError(null);
+                  }}
+                />
               </div>
             ) : (
               <span style={{ color: C.green, fontSize: 11 }}>GitHub-Verbindung ist serverseitig bestätigt; Zugangsdaten bleiben außerhalb des Chats.</span>

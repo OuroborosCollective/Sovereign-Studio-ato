@@ -32,8 +32,11 @@ GITHUB_APP_CLIENT_SECRET = os.getenv("GITHUB_APP_CLIENT_SECRET", "")
 GITHUB_APP_WEBHOOK_SECRET = os.getenv("GITHUB_APP_WEBHOOK_SECRET", "")
 GITHUB_APP_PRIVATE_KEY_B64 = os.getenv("GITHUB_APP_PRIVATE_KEY", "")
 GITHUB_APP_LOGIN_FORWARD_URI = os.getenv(
-    "GITHUB_OAUTH_REDIRECT_URI",
-    "https://chat.arelorian.de/auth/github/callback.html",
+    "GITHUB_APP_LOGIN_FORWARD_URI",
+    os.getenv(
+        "GITHUB_OAUTH_REDIRECT_URI",
+        "https://chat.arelorian.de/auth/github/callback.html",
+    ),
 ).strip()
 
 

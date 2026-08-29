@@ -19,6 +19,7 @@ interface GitHubOAuthInitResult {
   authUrl: string;
   state: string;
   codeVerifier: string;
+  authorizeRedirectUri: string;
   callbackOrigin: string;
   openerOrigin: string;
 }
@@ -47,16 +48,34 @@ function validateGitHubAuthorizeUrl(initialized: GitHubOAuthInitResult): void {
     throw new Error('GitHub OAuth Authorize-URL ist nicht an den gestarteten State gebunden.');
   }
   const redirectUri = parsed.searchParams.get('redirect_uri');
-  if (redirectUri) {
-    let redirectOrigin = '';
-    try {
-      redirectOrigin = new URL(redirectUri).origin;
-    } catch {
-      throw new Error('GitHub OAuth Redirect-URI ist ungültig.');
-    }
-    if (redirectOrigin !== initialized.callbackOrigin) {
-      throw new Error('GitHub OAuth Redirect-URI stimmt nicht mit dem bestätigten Callback-Origin überein.');
-    }
+  if (!redirectUri) {
+    throw new Error('GitHub OAuth Authorize-URL enthält keine revisionsgebundene Redirect-URI.');
+  }
+  let parsedRedirect: URL;
+  let parsedCallbackOrigin: URL;
+  try {
+    parsedRedirect = new URL(redirectUri);
+    parsedCallbackOrigin = new URL(initialized.callbackOrigin);
+  } catch {
+    throw new Error('GitHub OAuth Rückkanal-Konfiguration ist ungültig.');
+  }
+  if (
+    parsedRedirect.protocol !== 'https:'
+    || parsedRedirect.username
+    || parsedRedirect.password
+    || parsedRedirect.hash
+    || redirectUri !== initialized.authorizeRedirectUri
+  ) {
+    throw new Error('GitHub OAuth Redirect-URI stimmt nicht mit der bestätigten Authorize-Bindung überein.');
+  }
+  if (
+    parsedCallbackOrigin.protocol !== 'https:'
+    || parsedCallbackOrigin.origin !== initialized.callbackOrigin
+    || parsedCallbackOrigin.pathname !== '/'
+    || parsedCallbackOrigin.search
+    || parsedCallbackOrigin.hash
+  ) {
+    throw new Error('GitHub OAuth Callback-Origin ist nicht als reiner HTTPS-Origin gebunden.');
   }
 }
 
@@ -78,6 +97,7 @@ async function initializeGitHubOAuth(
     !payload.authUrl
     || !payload.state
     || !payload.codeVerifier
+    || !payload.authorizeRedirectUri
     || !payload.callbackOrigin
     || !payload.openerOrigin
   ) {

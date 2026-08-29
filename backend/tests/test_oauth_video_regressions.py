@@ -54,10 +54,12 @@ def test_github_authorize_url_and_redirect_are_fail_closed() -> None:
     assert "parsed.searchParams.get('client_id')" in github
     assert "validateOAuthState(parsed.searchParams.get('state'), initialized.state)" in github
     assert "globalThis.fetch.bind(globalThis)" in github
-    assert "redirect_uri = GITHUB_OAUTH_REDIRECT_URI" in backend
+    assert "authorizeRedirectUri: string" in github
+    assert "redirectUri !== initialized.authorizeRedirectUri" in github
+    assert 'redirect_uri = _github_oauth_authorize_redirect_uri(oauth_contract["source"])' in backend
     assert 'auth_params["redirect_uri"] = redirect_uri' in backend
-    init_block = backend.split("def auth_github_init():", 1)[1].split("params = urllib.parse.urlencode", 1)[0]
-    assert 'redirect_uri = (\n            ""\n            if oauth_contract["source"] == "github-app"' not in init_block
+    assert '"authorizeRedirectUri": redirect_uri' in backend
+    assert '"https://sovereign-backend.arelorian.de/api/auth/github-app/callback"' in backend
 
 
 def test_capacitor_session_cookie_and_origin_contract_support_verified_readback() -> None:
