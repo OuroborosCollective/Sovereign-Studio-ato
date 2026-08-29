@@ -149,6 +149,40 @@ describe('SovereignActionStreamPanel', () => {
     expect(screen.getAllByText(/free-chat/i).length).toBeGreaterThanOrEqual(1);
   });
 
+  it('Issue #1567 B2: free-chat fallback after blocked effect route shows "not executed", not "fertig"', () => {
+    // Scenario: user asks for a code change, intent is detected as code-llm,
+    // but the route is blocked (schema violation / worker blocked), and the
+    // system falls back to a free-chat answer. The panel must NOT show a
+    // green "fertig" — the original intent was never executed.
+    const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
+      buildInputReceivedEvent('Erstelle einen Draft PR für Issue #1234'),
+      buildRouteSelectionEvent({ route: 'code-llm', reason: 'Code-Auftrag erkannt.', state: 'blocked' }),
+      buildRouteSelectionEvent({ route: 'free-chat', reason: 'Fallback auf Freitext.', state: 'done' }),
+    ]);
+
+    render(<SovereignActionStreamPanel stream={stream} />);
+
+    // Title must NOT say "Arbeitsschritt protokolliert" (which implies success)
+    expect(screen.queryByText(/Arbeitsschritt protokolliert/i)).toBeNull();
+
+    // Title MUST say the original intent was not executed
+    expect(screen.getByText(/ursprünglicher Auftrag nicht ausgeführt/i)).toBeTruthy();
+  });
+
+  it('Issue #1567 B2: pure free-chat without prior blocked effect shows normal "protokolliert"', () => {
+    // Scenario: user asks a simple question, free-chat route is selected normally.
+    // No blocked effect route → normal done semantics.
+    const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
+      buildInputReceivedEvent('Was ist der Unterschied zwischen React und Vue?'),
+      buildRouteSelectionEvent({ route: 'free-chat', reason: 'Chat-Frage erkannt.', state: 'done' }),
+    ]);
+
+    render(<SovereignActionStreamPanel stream={stream} />);
+
+    // Title says normal "protokolliert" — no blocked effect route in the cycle
+    expect(screen.getByText(/Arbeitsschritt protokolliert/i)).toBeTruthy();
+  });
+
   it('expanded view caps at maxEvents and does not overflow', () => {
     const base = createSovereignActionStreamState();
     const stream = appendSovereignActionEvents(base, [
