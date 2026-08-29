@@ -59,14 +59,17 @@ jobs:
         uses: actions/github-script@v7
         env:
           EXPECTED_ACTOR: OuroborosCollective
-          EXPECTED_CONTROL_PARENT: de16bb619e6b1af5e18cad17dfcb28f545ac4d4c
+          EXPECTED_CONTROL_PARENT: 8cf1df0a943c912bd4dd123a5c288975766cdb0a
+          EXPECTED_MAIN: de16bb619e6b1af5e18cad17dfcb28f545ac4d4c
           TARGET_PR_NUMBER: '1748'
           EXPECTED_PR_HEAD: 1c3791f7006add0d76c79f4c9cb84376da810f95
           EXPECTED_PR_BRANCH: fix/traefik-public-route-recovery
         with:
+          github-token: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
           script: |
             const expectedActor = String(process.env.EXPECTED_ACTOR || '');
             const expectedControlParent = String(process.env.EXPECTED_CONTROL_PARENT || '').toLowerCase();
+            const expectedMain = String(process.env.EXPECTED_MAIN || '').toLowerCase();
             const expectedHead = String(process.env.EXPECTED_PR_HEAD || '').toLowerCase();
             const expectedBranch = String(process.env.EXPECTED_PR_BRANCH || '');
             const pullNumber = Number(process.env.TARGET_PR_NUMBER || 0);
@@ -77,7 +80,11 @@ jobs:
               core.setFailed('OWNER_ACTOR_MISMATCH');
               return;
             }
-            if (!/^[0-9a-f]{40}$/.test(expectedControlParent) || !/^[0-9a-f]{40}$/.test(expectedHead)) {
+            if (
+              !/^[0-9a-f]{40}$/.test(expectedControlParent)
+              || !/^[0-9a-f]{40}$/.test(expectedMain)
+              || !/^[0-9a-f]{40}$/.test(expectedHead)
+            ) {
               core.setFailed('EXPECTED_REVISION_INVALID');
               return;
             }
@@ -107,7 +114,7 @@ jobs:
               repo: context.repo.repo,
               ref: 'heads/main',
             })).data;
-            if (String(mainRef.object?.sha || '').toLowerCase() !== expectedControlParent) {
+            if (String(mainRef.object?.sha || '').toLowerCase() !== expectedMain) {
               core.setFailed('MAIN_REVISION_CHANGED');
               return;
             }
