@@ -5576,9 +5576,11 @@ Das echte Repo-Setup wurde geöffnet.`);
       evidenceAnchors={scopedAgentEvidenceAnchors}
       onCancel={onCancelAgent}
       onOpenDraftPr={
-        (scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)
-          ? () => window.open((scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)!, '_blank')
-          : undefined
+        (() => {
+          const rawUrl = scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl;
+          const safeUrl = rawUrl ? safeHttpsUrl(rawUrl) : null;
+          return safeUrl ? () => window.open(safeUrl, '_blank', 'noopener,noreferrer') : undefined;
+        })()
       }
       onOpenFile={openRepoExplorerFromFileBadge}
       primaryMonitor={liveMonitorPrimary}
