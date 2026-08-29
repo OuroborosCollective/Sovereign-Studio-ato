@@ -28,9 +28,10 @@ def test_backend_deploy_bootstraps_revision_bound_v3_chat_receipts_before_readin
     ast.parse(embedded_canary)
 
     health_index = deploy.index('stage = "health"')
-    bootstrap_index = deploy.index('stage = "freellm_bootstrap_status"')
+    bootstrap_index = deploy.index("freellm_bootstrap = bootstrap_freellm_readiness()")
     readiness_index = deploy.index('stage = "readiness"')
     assert health_index < bootstrap_index < readiness_index
+    assert 'stage = "freellm_bootstrap_status"' in deploy
 
     assert 'os.environ.get("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()' in deploy
     assert '"X-Sovereign-Owner-Request-Key": owner_request_key' in deploy
@@ -39,10 +40,11 @@ def test_backend_deploy_bootstraps_revision_bound_v3_chat_receipts_before_readin
     assert 'f"/api/internal/llm/freellm/providers/{encoded_source_id}/discover"' in deploy
     assert 'minimum_ready_routes = int(provider_status.get("minimumReadyRoutes") or 0)' in deploy
     assert "minimum_ready_routes = 7" not in deploy
-    assert 'raise RuntimeError("FreeLLM provider status did not expose its canonical minimum-ready contract")' in deploy
-    assert "if len(verified_receipts) < minimum_ready_routes:" in deploy
+    assert 'raise FreeLlmReadinessDegraded("FreeLLM provider status did not expose its canonical minimum-ready contract")' in deploy
+    minimum_guard = "if len(verified_receipts) < minimum_ready_routes:"
+    assert deploy.count(minimum_guard) >= 2
     assert '"minimumReadyRoutes": minimum_ready_routes' in deploy
-    assert '"minimumReadySatisfied": len(verified_receipts) >= minimum_ready_routes' in deploy
+    assert deploy.rindex(minimum_guard) < deploy.index('"minimumReadySatisfied": True')
     assert 'status_code not in {200, 409}' in deploy
     assert 'except urllib.error.HTTPError as exc:' in deploy
     assert 'timeout_seconds: int = 120' in deploy
@@ -63,7 +65,7 @@ def test_backend_deploy_bootstraps_revision_bound_v3_chat_receipts_before_readin
     assert 'runtime.get("imageDigest") == expected_digest' in deploy
     assert 'runtime.get("sourceRevisionVerified") is True' in deploy
     assert 'runtime.get("imageDigestVerified") is True' in deploy
-    assert 'raise RuntimeError("no revision-bound FreeLLM v3 chat-evidence receipt became ready")' in deploy
+    assert 'raise FreeLlmReadinessDegraded("no revision-bound FreeLLM v3 chat-evidence receipt became ready")' in deploy
     assert '"freellmBootstrap": freellm_bootstrap' in deploy
     assert '"protectedValuesReturned": False' in deploy
 
