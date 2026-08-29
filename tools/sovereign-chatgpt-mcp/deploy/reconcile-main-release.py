@@ -88,10 +88,6 @@ BACKEND_DEPLOY = os.getenv(
     "SOVEREIGN_MCP_DEPLOY_SCRIPT",
     "/opt/sovereign-chatgpt-tools/bin/deploy-sovereign-backend",
 )
-BACKEND_ROLLBACK = os.getenv(
-    "SOVEREIGN_MCP_ROLLBACK_SCRIPT",
-    "/opt/sovereign-chatgpt-tools/bin/rollback-sovereign-backend",
-)
 MCP_INSTALLER = os.getenv(
     "SOVEREIGN_MCP_INSTALLER",
     "/opt/sovereign-operator-source/tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh",
@@ -956,23 +952,26 @@ def reconcile() -> dict[str, Any]:
                 "mutationPerformed": True,
             }
     except ReconcileError as exc:
-        rollback: dict[str, Any] = {"attempted": False}
-        previous_digest = str(previous_backend.get("digest") or "")
-        if backend_changed and DIGEST_RE.fullmatch(previous_digest):
-            try:
-                rollback_result = _command_json(
-                    [BACKEND_ROLLBACK, previous_digest],
-                    timeout=900,
-                    stage="backend_rollback_after_mcp_failure",
-                )
-                rollback = {"attempted": True, "ok": True, **rollback_result}
-            except ReconcileError as rollback_exc:
-                rollback = {
-                    "attempted": True,
-                    "ok": False,
-                    "failureStage": rollback_exc.stage,
-                    "failureSha256": hashlib.sha256(rollback_exc.detail.encode()).hexdigest(),
-                }
+        try:
+            preserved_backend = _container_identity("sovereign-backend", BACKEND_REPOSITORY)
+        except ReconcileError as readback_exc:
+            preserved_backend = {
+                "present": "UNKNOWN",
+                "failureStage": readback_exc.stage,
+                "failureSha256": hashlib.sha256(readback_exc.detail.encode()).hexdigest(),
+            }
+        preserved_backend_health = _backend_health_identity()
+        backend_identity_preserved = bool(
+            preserved_backend.get("running") is True
+            and preserved_backend.get("revision") == revision
+            and preserved_backend.get("digest") == backend_image["digest"]
+        )
+        backend_health_preserved = bool(
+            preserved_backend_health.get("ok") is True
+            and preserved_backend_health.get("sourceRevision") == revision
+            and preserved_backend_health.get("imageDigest") == backend_image["digest"]
+        )
+        backend_preserved = backend_identity_preserved and backend_health_preserved
         try:
             failed_mcp_runtime = _container_identity("sovereign-chatgpt-mcp", MCP_REPOSITORY)
         except ReconcileError as readback_exc:
@@ -1010,20 +1009,38 @@ def reconcile() -> dict[str, Any]:
             "backendImage": backend_image,
             "mcpImage": mcp_image,
             "previousBackend": previous_backend,
+            "currentBackend": preserved_backend,
+            "backendHealth": preserved_backend_health,
             "previousMcp": current_mcp,
             "currentMcp": failed_mcp_runtime,
             "backendDeploy": backend_deploy,
             "mcpUpdate": mcp_failure,
-            "rollback": rollback,
+            "backendPreservation": {
+                "status": (
+                    "TARGET_BACKEND_PRESERVED"
+                    if backend_preserved
+                    else "TARGET_BACKEND_PRESERVATION_UNVERIFIED"
+                ),
+                "verified": backend_preserved,
+                "identityVerified": backend_identity_preserved,
+                "healthVerified": backend_health_preserved,
+                "rollbackPolicy": "NEVER_AFTER_MCP_FAILURE",
+                "rollbackAttempted": False,
+            },
             "mutationEvidenceStatus": mutation_status,
-            "retryable": False,
+            "retryable": backend_preserved,
+            "nextAction": (
+                "RETRY_MCP_ONLY"
+                if backend_preserved
+                else "VERIFY_BACKEND_THEN_RETRY_MCP"
+            ),
         }
         if mutation_performed is not None:
             failure_receipt["mutationPerformed"] = mutation_performed
         failure_status = (
-            "MCP_UPDATE_FAILED_BACKEND_ROLLBACK_ATTEMPTED"
-            if rollback.get("attempted") is True
-            else "MCP_UPDATE_FAILED"
+            "MCP_UPDATE_FAILED_BACKEND_PRESERVED"
+            if backend_preserved
+            else "MCP_UPDATE_FAILED_BACKEND_PRESERVATION_UNVERIFIED"
         )
         return _write_status(
             failure_status,

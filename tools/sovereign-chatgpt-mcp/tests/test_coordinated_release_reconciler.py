@@ -540,7 +540,7 @@ def test_mcp_failure_uses_observed_effect_instead_of_desired_drift(
 
     result = module.reconcile()
 
-    assert result["status"] == "MCP_UPDATE_FAILED"
+    assert result["status"] == "MCP_UPDATE_FAILED_BACKEND_PRESERVED"
     assert result["revision"] == scope["revision"]
     assert result["mutationEvidenceStatus"] == expected_status
     assert result["mcpUpdate"]["mutationEvidenceStatus"] == expected_status
@@ -550,15 +550,24 @@ def test_mcp_failure_uses_observed_effect_instead_of_desired_drift(
     else:
         assert result["mutationPerformed"] is expected_mutation
         assert result["mcpUpdate"]["mutationPerformed"] is expected_mutation
-    assert result["rollback"]["attempted"] is False
-    assert result["retryable"] is False
+    assert result["backendPreservation"] == {
+        "status": "TARGET_BACKEND_PRESERVED",
+        "verified": True,
+        "identityVerified": True,
+        "healthVerified": True,
+        "rollbackPolicy": "NEVER_AFTER_MCP_FAILURE",
+        "rollbackAttempted": False,
+    }
+    assert "rollback" not in result
+    assert result["retryable"] is True
+    assert result["nextAction"] == "RETRY_MCP_ONLY"
 
 
-def test_mcp_component_evidence_stays_unknown_when_only_backend_mutated(
+def test_mcp_failure_preserves_new_backend_and_never_invokes_backend_rollback(
     monkeypatch, tmp_path
 ) -> None:
     module, scope, _previous_backend, _current_backend = _scoped_reconcile_fixture(
-        monkeypatch, tmp_path
+        monkeypatch, tmp_path, restored=False
     )
     command_calls: list[str] = []
 
@@ -584,15 +593,69 @@ def test_mcp_component_evidence_stays_unknown_when_only_backend_mutated(
 
     result = module.reconcile()
 
-    assert result["status"] == "MCP_UPDATE_FAILED_BACKEND_ROLLBACK_ATTEMPTED"
+    assert result["status"] == "MCP_UPDATE_FAILED_BACKEND_PRESERVED"
     assert result["revision"] == scope["revision"]
     assert result["mutationEvidenceStatus"] == "PERFORMED"
     assert result["mutationPerformed"] is True
     assert result["backendDeploy"]["mutationPerformed"] is True
     assert result["mcpUpdate"]["mutationEvidenceStatus"] == "UNKNOWN"
     assert "mutationPerformed" not in result["mcpUpdate"]
-    assert result["rollback"]["attempted"] is True
-    assert len(command_calls) == 2
+    assert result["currentBackend"]["revision"] == scope["revision"]
+    assert result["currentBackend"]["digest"] == scope["backendDigest"]
+    assert result["backendPreservation"]["verified"] is True
+    assert result["backendPreservation"]["rollbackPolicy"] == "NEVER_AFTER_MCP_FAILURE"
+    assert result["backendPreservation"]["rollbackAttempted"] is False
+    assert result["nextAction"] == "RETRY_MCP_ONLY"
+    assert command_calls == [module.BACKEND_DEPLOY]
+    assert "rollback" not in result
+
+
+def test_mcp_failure_does_not_mutate_backend_when_preservation_is_unverified(
+    monkeypatch, tmp_path
+) -> None:
+    module, scope, _previous_backend, _current_backend = _scoped_reconcile_fixture(
+        monkeypatch, tmp_path
+    )
+    command_calls: list[str] = []
+
+    def successful_backend_command(argv, **_kwargs):
+        command_calls.append(str(argv[0]))
+        return {"receipt": {"ok": True}, "outputSha256": "a" * 64}
+
+    def failed_mcp_preflight(*_args, **_kwargs):
+        raise module.ReconcileError(
+            "mcp_deploy",
+            "exit=1;outputSha256=" + "b" * 64,
+            safe_evidence={
+                "outputSha256": "b" * 64,
+                "installerDiagnostic": {
+                    "stage": "preflight",
+                    "rollbackAttempted": False,
+                },
+            },
+        )
+
+    monkeypatch.setattr(module, "_command_json", successful_backend_command)
+    monkeypatch.setattr(module, "_deploy_mcp_from_ci_scope", failed_mcp_preflight)
+
+    result = module.reconcile()
+
+    assert result["status"] == "MCP_UPDATE_FAILED_BACKEND_PRESERVATION_UNVERIFIED"
+    assert result["revision"] == scope["revision"]
+    assert result["backendPreservation"]["verified"] is False
+    assert result["backendPreservation"]["rollbackPolicy"] == "NEVER_AFTER_MCP_FAILURE"
+    assert result["backendPreservation"]["rollbackAttempted"] is False
+    assert result["retryable"] is False
+    assert result["nextAction"] == "VERIFY_BACKEND_THEN_RETRY_MCP"
+    assert command_calls == [module.BACKEND_DEPLOY]
+    assert "rollback" not in result
+
+
+def test_reconciler_has_no_automatic_backend_rollback_after_mcp_failure() -> None:
+    source = SCRIPT.read_text("utf-8")
+    assert "BACKEND_ROLLBACK" not in source
+    assert "backend_rollback_after_mcp_failure" not in source
+    assert "MCP_UPDATE_FAILED_BACKEND_ROLLBACK_ATTEMPTED" not in source
 
 
 def test_command_failure_returns_only_bounded_diagnostics_and_output_hash(monkeypatch) -> None:
