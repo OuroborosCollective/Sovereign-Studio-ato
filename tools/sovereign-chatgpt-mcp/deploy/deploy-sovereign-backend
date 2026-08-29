@@ -49,10 +49,18 @@ ENV_FILE=""
 
 CONTAINER="sovereign-backend"
 CANDIDATE="sovereign-backend-candidate"
+LEGACY_PREDECESSOR="${CONTAINER}-unverified-predecessor"
 PREVIOUS_IMAGE=""
 PREVIOUS_REPO_DIGEST=""
 PREVIOUS_DIGEST=""
 PREVIOUS_REVISION=""
+PREVIOUS_CONTAINER_ID=""
+PREVIOUS_CONTAINER_ID_SHA256=""
+PREVIOUS_LOCAL_IMAGE_ID=""
+PREVIOUS_IDENTITY_VERIFIED=false
+LEGACY_PREDECESSOR_PRESERVED=false
+LEGACY_PREDECESSOR_RENAMED_BACK=false
+LEGACY_PREDECESSOR_PRESTOP_HEALTH_VERIFIED=false
 NEW_IMAGE=""
 ADMIN_CANARY=""
 RUNTIME_EVIDENCE_ROOT="/opt/sovereign-chatgpt-tools/runtime-evidence"
@@ -204,10 +212,57 @@ STAGE="candidate_network"
 docker network connect areloria_arelorian-network "$CANDIDATE"
 docker network connect sovereign-private "$CANDIDATE"
 
-candidate_cleanup() {
-  docker rm -f "$CANDIDATE" >/dev/null 2>&1 || true
+wait_for_host_health() {
+  local health=""
+  local max_attempts="${1:-${SOVEREIGN_BACKEND_HEALTH_ATTEMPTS:-36}}"
+  [[ "$max_attempts" =~ ^[1-9][0-9]{0,2}$ ]] || max_attempts=36
+  for attempt in $(seq 1 "$max_attempts"); do
+    health="$(python3 -c 'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:8788/health/live", timeout=4).read().decode())' 2>/dev/null || true)"
+    if printf '%s' "$health" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+      printf '%s' "$health"
+      return 0
+    fi
+    sleep 5
+  done
+  printf '%s' "$health"
+  return 1
 }
-trap candidate_cleanup EXIT
+
+restore_preserved_legacy_predecessor() {
+  [[ "$LEGACY_PREDECESSOR_PRESERVED" == "true" ]] || return 1
+  if [[ "$LEGACY_PREDECESSOR_RENAMED_BACK" != "true" ]]; then
+    if ! docker inspect "$LEGACY_PREDECESSOR" >/dev/null 2>&1; then
+      return 1
+    fi
+    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+    if ! docker rename "$LEGACY_PREDECESSOR" "$CONTAINER" >/dev/null; then
+      return 1
+    fi
+    LEGACY_PREDECESSOR_RENAMED_BACK=true
+  fi
+  if ! docker start "$CONTAINER" >/dev/null; then
+    return 1
+  fi
+  if ! wait_for_host_health >/dev/null; then
+    return 1
+  fi
+  LEGACY_PREDECESSOR_PRESERVED=false
+  return 0
+}
+
+deploy_cleanup() {
+  local exit_code="$?"
+  trap - ERR
+  set +e
+  docker rm -f "$CANDIDATE" >/dev/null 2>&1 || true
+  if [[ "$exit_code" -ne 0 && "$LEGACY_PREDECESSOR_PRESERVED" == "true" ]]; then
+    if ! restore_preserved_legacy_predecessor; then
+      printf 'SOVEREIGN_DEPLOY_DIAGNOSTIC:legacy_predecessor_restore:ContractFailure\n' >&2
+    fi
+  fi
+  exit "$exit_code"
+}
+trap deploy_cleanup EXIT
 
 STAGE="candidate_health"
 HEALTH=""
@@ -241,15 +296,50 @@ printf '%s' "$HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
 STAGE="previous_identity"
 PREVIOUS_IMAGE="$(docker inspect --format '{{.Config.Image}}' "$CONTAINER" 2>/dev/null || true)"
 if [[ -n "$PREVIOUS_IMAGE" ]]; then
+  PREVIOUS_CONTAINER_ID="$(docker inspect --format '{{.Id}}' "$CONTAINER" 2>/dev/null || true)"
+  PREVIOUS_LOCAL_IMAGE_ID="$(docker inspect --format '{{.Image}}' "$CONTAINER" 2>/dev/null || true)"
+  PREVIOUS_RUNNING="$(docker inspect --format '{{.State.Running}}' "$CONTAINER" 2>/dev/null || true)"
+  if [[ ! "$PREVIOUS_CONTAINER_ID" =~ ^[0-9a-f]{64}$ ]]; then
+    fail "previous backend container has no valid local identity"
+  fi
+  if [[ ! "$PREVIOUS_LOCAL_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    fail "previous backend container has no valid local image identity"
+  fi
+  PREVIOUS_CONTAINER_ID_SHA256="$(printf '%s' "$PREVIOUS_CONTAINER_ID" | sha256sum | awk '{print $1}')"
   PREVIOUS_REPO_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$PREVIOUS_IMAGE" 2>/dev/null || true)"
   PREVIOUS_DIGEST="${PREVIOUS_REPO_DIGEST##*@}"
   PREVIOUS_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$PREVIOUS_IMAGE" 2>/dev/null || true)"
-  [[ "$PREVIOUS_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "previous backend image has no immutable digest"
-  [[ "$PREVIOUS_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "previous backend image has no valid revision label"
+  if [[ "$PREVIOUS_DIGEST" =~ ^sha256:[0-9a-f]{64}$ && "$PREVIOUS_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+    PREVIOUS_IDENTITY_VERIFIED=true
+  else
+    if [[ "$PREVIOUS_RUNNING" != "true" ]]; then
+      fail "unverified previous backend container is not running"
+    fi
+    if docker inspect "$LEGACY_PREDECESSOR" >/dev/null 2>&1; then
+      fail "legacy predecessor preservation target already exists"
+    fi
+    LEGACY_PREDECESSOR_HEALTH="$(wait_for_host_health 3 || true)"
+    if ! printf '%s' "$LEGACY_PREDECESSOR_HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+      fail "unverified previous backend liveness could not be proven"
+    fi
+    LEGACY_PREDECESSOR_PRESTOP_HEALTH_VERIFIED=true
+    unset LEGACY_PREDECESSOR_HEALTH
+  fi
 fi
 
 STAGE="production_start"
-docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+if [[ -n "$PREVIOUS_IMAGE" && "$PREVIOUS_IDENTITY_VERIFIED" != "true" ]]; then
+  docker rename "$CONTAINER" "$LEGACY_PREDECESSOR"
+  LEGACY_PREDECESSOR_PRESERVED=true
+  docker stop --time 30 "$LEGACY_PREDECESSOR" >/dev/null
+  LEGACY_PREDECESSOR_STATE="$(docker inspect --format '{{.State.Running}}|{{.Image}}' "$LEGACY_PREDECESSOR" 2>/dev/null || true)"
+  if [[ "$LEGACY_PREDECESSOR_STATE" != "false|$PREVIOUS_LOCAL_IMAGE_ID" ]]; then
+    fail "legacy predecessor preservation readback failed"
+  fi
+  unset LEGACY_PREDECESSOR_STATE
+else
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+fi
 
 start_production() {
   local image="$1"
@@ -306,36 +396,30 @@ start_production() {
 
 start_production "$NEW_IMAGE" "$EXPECTED_REVISION" "$DIGEST"
 
-wait_for_host_health() {
-  local health=""
-  local max_attempts="${SOVEREIGN_BACKEND_HEALTH_ATTEMPTS:-36}"
-  [[ "$max_attempts" =~ ^[1-9][0-9]{0,2}$ ]] || max_attempts=36
-  for attempt in $(seq 1 "$max_attempts"); do
-    health="$(python3 -c 'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:8788/health/live", timeout=4).read().decode())' 2>/dev/null || true)"
-    if printf '%s' "$health" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
-      printf '%s' "$health"
-      return 0
-    fi
-    sleep 5
-  done
-  printf '%s' "$health"
-  return 1
-}
-
 restore_previous() {
-  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-  if [[ -n "$PREVIOUS_IMAGE" && -n "$PREVIOUS_DIGEST" && -n "$PREVIOUS_REVISION" ]]; then
-    start_production "$PREVIOUS_IMAGE" "$PREVIOUS_REVISION" "$PREVIOUS_DIGEST"
-    wait_for_host_health >/dev/null || true
+  if [[ "$LEGACY_PREDECESSOR_PRESERVED" == "true" ]]; then
+    restore_preserved_legacy_predecessor
+    return $?
   fi
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  if [[ "$PREVIOUS_IDENTITY_VERIFIED" == "true" ]]; then
+    if ! start_production "$PREVIOUS_IMAGE" "$PREVIOUS_REVISION" "$PREVIOUS_DIGEST"; then
+      return 1
+    fi
+    wait_for_host_health >/dev/null
+    return $?
+  fi
+  return 1
 }
 
 STAGE="production_health"
 HOST_HEALTH="$(wait_for_host_health || true)"
 if ! printf '%s' "$HOST_HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
   docker logs "$CONTAINER" --tail 150 >&2 || true
-  restore_previous
-  fail "production health check failed; previous image restoration attempted"
+  if restore_previous; then
+    fail "production health check failed; previous backend restored"
+  fi
+  fail "production health check failed; previous backend restoration failed"
 fi
 
 STAGE="public_ingress_canary"
@@ -378,8 +462,10 @@ PY
   sleep 5
 done
 if ! printf '%s' "$PUBLIC_OWNER_INGRESS" | grep -q '"ok":true'; then
-  restore_previous
-  fail "public Traefik owner-approval ingress check failed; previous image restoration attempted"
+  if restore_previous; then
+    fail "public Traefik owner-approval ingress check failed; previous backend restored"
+  fi
+  fail "public Traefik owner-approval ingress check failed; previous backend restoration failed"
 fi
 
 STAGE="admin_canary"
@@ -766,25 +852,79 @@ print(json.dumps(result, sort_keys=True, separators=(",", ":")))
 PY
 )"; then
   docker logs "$CONTAINER" --tail 150 >&2 || true
-  restore_previous
-  fail "enterprise admin live canary failed; previous image restoration attempted"
+  if restore_previous; then
+    fail "enterprise admin live canary failed; previous backend restored"
+  fi
+  fail "enterprise admin live canary failed; previous backend restoration failed"
 fi
 
 STAGE="rollback_receipt"
 ADMIN_CANARY_SHA256="$(printf '%s' "$ADMIN_CANARY" | sha256sum | awk '{print $1}')"
-ROLLBACK_RECEIPT="$(python3 - "$PREVIOUS_DIGEST" "$PREVIOUS_REVISION" "$DIGEST" "$EXPECTED_REVISION" "$ADMIN_CANARY_SHA256" <<'PY'
+ROLLBACK_MODE="none"
+ROLLBACK_PREVIEW_VERIFIED=false
+LEGACY_RECOVERY_ANCHOR_VERIFIED=false
+LEGACY_PREDECESSOR_RECEIPT_NAME=""
+DEPLOY_STATUS="DEPLOYED_ADMIN_VERIFIED"
+if [[ "$PREVIOUS_IDENTITY_VERIFIED" == "true" ]]; then
+  ROLLBACK_MODE="immutable_image"
+  ROLLBACK_PREVIEW_VERIFIED=true
+elif [[ "$LEGACY_PREDECESSOR_PRESERVED" == "true" ]]; then
+  ROLLBACK_MODE="preserved_container"
+  LEGACY_RECOVERY_ANCHOR_VERIFIED=true
+  LEGACY_PREDECESSOR_RECEIPT_NAME="$LEGACY_PREDECESSOR"
+  DEPLOY_STATUS="DEPLOYED_ADMIN_VERIFIED_WITH_LEGACY_PREDECESSOR_PRESERVED"
+fi
+ROLLBACK_RECEIPT_ARGS=(
+  "$PREVIOUS_DIGEST"
+  "$PREVIOUS_REVISION"
+  "$PREVIOUS_LOCAL_IMAGE_ID"
+  "$PREVIOUS_CONTAINER_ID_SHA256"
+  "$DIGEST"
+  "$EXPECTED_REVISION"
+  "$ADMIN_CANARY_SHA256"
+  "$ROLLBACK_MODE"
+  "$ROLLBACK_PREVIEW_VERIFIED"
+  "$LEGACY_PREDECESSOR_PRESERVED"
+  "$LEGACY_PREDECESSOR_RECEIPT_NAME"
+  "$LEGACY_PREDECESSOR_PRESTOP_HEALTH_VERIFIED"
+  "$LEGACY_RECOVERY_ANCHOR_VERIFIED"
+)
+ROLLBACK_RECEIPT="$(python3 - "${ROLLBACK_RECEIPT_ARGS[@]}" <<'PY'
 import json
 import sys
 
-previous_digest, previous_revision, deployed_digest, deployed_revision, admin_sha256 = sys.argv[1:]
+(
+    previous_digest,
+    previous_revision,
+    previous_local_image_id,
+    previous_container_id_sha256,
+    deployed_digest,
+    deployed_revision,
+    admin_sha256,
+    rollback_mode,
+    rollback_preview_verified,
+    legacy_preserved,
+    legacy_name,
+    legacy_prestop_health_verified,
+    legacy_recovery_anchor_verified,
+) = sys.argv[1:]
 payload = {
-    "schemaVersion": "sovereign.backend-rollback-receipt.v1",
+    "schemaVersion": "sovereign.backend-rollback-receipt.v2",
     "previousImageDigest": previous_digest or None,
     "previousRevision": previous_revision or None,
+    "previousLocalImageId": previous_local_image_id or None,
+    "previousContainerIdSha256": previous_container_id_sha256 or None,
     "deployedImageDigest": deployed_digest,
     "deployedRevision": deployed_revision,
     "adminCanarySha256": admin_sha256,
-    "rollbackPreviewVerified": bool(previous_digest and previous_revision),
+    "rollbackMode": rollback_mode,
+    "rollbackPreviewVerified": rollback_preview_verified == "true",
+    "legacyPredecessor": {
+        "preserved": legacy_preserved == "true",
+        "name": legacy_name or None,
+        "preStopHealthVerified": legacy_prestop_health_verified == "true",
+        "recoveryAnchorVerified": legacy_recovery_anchor_verified == "true",
+    },
     "secretValuesReturned": False,
 }
 print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
@@ -798,6 +938,7 @@ chmod 0600 "$ROLLBACK_RECEIPT_TMP"
 mv -f "$ROLLBACK_RECEIPT_TMP" "$ROLLBACK_RECEIPT_FILE"
 
 STAGE="complete"
-printf '{"ok":true,"status":"DEPLOYED_ADMIN_VERIFIED","container":"%s","image":"%s","imageDigest":"%s","revision":"%s","health":%s,"publicIngress":%s,"adminCanary":%s,"rollback":{"previousImageDigest":"%s","previousRevision":"%s","previewVerified":%s,"receiptSha256":"%s"},"readbackVerified":true,"mutationPerformed":true,"secretValuesReturned":false}\n' \
-  "$CONTAINER" "$NEW_IMAGE" "$DIGEST" "$EXPECTED_REVISION" "$HOST_HEALTH" "$PUBLIC_OWNER_INGRESS" "$ADMIN_CANARY" \
-  "$PREVIOUS_DIGEST" "$PREVIOUS_REVISION" "$([[ -n "$PREVIOUS_DIGEST" && -n "$PREVIOUS_REVISION" ]] && printf true || printf false)" "$ROLLBACK_RECEIPT_SHA256"
+printf '{"ok":true,"status":"%s","container":"%s","image":"%s","imageDigest":"%s","revision":"%s","health":%s,"publicIngress":%s,"adminCanary":%s,"rollback":{"mode":"%s","previousImageDigest":"%s","previousRevision":"%s","previousLocalImageId":"%s","previousContainerIdSha256":"%s","previewVerified":%s,"legacyPredecessorPreserved":%s,"legacyPredecessorName":"%s","legacyRecoveryAnchorVerified":%s,"receiptSha256":"%s"},"readbackVerified":true,"mutationPerformed":true,"secretValuesReturned":false}\n' \
+  "$DEPLOY_STATUS" "$CONTAINER" "$NEW_IMAGE" "$DIGEST" "$EXPECTED_REVISION" "$HOST_HEALTH" "$PUBLIC_OWNER_INGRESS" "$ADMIN_CANARY" \
+  "$ROLLBACK_MODE" "$PREVIOUS_DIGEST" "$PREVIOUS_REVISION" "$PREVIOUS_LOCAL_IMAGE_ID" "$PREVIOUS_CONTAINER_ID_SHA256" \
+  "$ROLLBACK_PREVIEW_VERIFIED" "$LEGACY_PREDECESSOR_PRESERVED" "$LEGACY_PREDECESSOR_RECEIPT_NAME" "$LEGACY_RECOVERY_ANCHOR_VERIFIED" "$ROLLBACK_RECEIPT_SHA256"

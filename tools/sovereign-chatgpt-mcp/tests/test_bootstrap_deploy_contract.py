@@ -139,6 +139,90 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
         assert '"publicIngress"' in script
 
 
+def test_backend_deploy_preserves_unverified_predecessor_without_synthetic_identity() -> None:
+    deploy = (MCP_ROOT / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
+
+    assert 'LEGACY_PREDECESSOR="${CONTAINER}-unverified-predecessor"' in deploy
+    assert 'PREVIOUS_LOCAL_IMAGE_ID="$(docker inspect --format \'{{.Image}}\'' in deploy
+    assert 'PREVIOUS_CONTAINER_ID_SHA256=' in deploy
+    assert 'wait_for_host_health 3' in deploy
+    assert 'docker rename "$CONTAINER" "$LEGACY_PREDECESSOR"' in deploy
+    assert 'docker stop --time 30 "$LEGACY_PREDECESSOR"' in deploy
+    assert '"false|$PREVIOUS_LOCAL_IMAGE_ID"' in deploy
+    assert "restore_preserved_legacy_predecessor()" in deploy
+    assert 'if [[ "$exit_code" -ne 0 && "$LEGACY_PREDECESSOR_PRESERVED" == "true" ]]' in deploy
+    assert "trap deploy_cleanup EXIT" in deploy
+    restore_start = deploy.index("restore_preserved_legacy_predecessor()")
+    inspect_backup = deploy.index('docker inspect "$LEGACY_PREDECESSOR"', restore_start)
+    remove_target = deploy.index('docker rm -f "$CONTAINER"', restore_start)
+    rename_backup = deploy.index(
+        'docker rename "$LEGACY_PREDECESSOR" "$CONTAINER"', restore_start
+    )
+    assert inspect_backup < remove_target < rename_backup
+    assert "docker commit" not in deploy
+    assert "docker image tag" not in deploy
+    assert "previous backend image has no immutable digest" not in deploy
+    assert "previous backend image has no valid revision label" not in deploy
+    assert '"schemaVersion": "sovereign.backend-rollback-receipt.v2"' in deploy
+    assert '"rollbackMode": rollback_mode' in deploy
+    assert '"recoveryAnchorVerified": legacy_recovery_anchor_verified == "true"' in deploy
+    assert "DEPLOYED_ADMIN_VERIFIED_WITH_LEGACY_PREDECESSOR_PRESERVED" in deploy
+
+
+def test_legacy_predecessor_receipt_never_claims_immutable_rollback() -> None:
+    deploy = (MCP_ROOT / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
+    receipt_start = deploy.index('ROLLBACK_RECEIPT="$(python3 -')
+    source_start = deploy.index("import json\n", receipt_start)
+    source_end = deploy.index("\nPY\n)", source_start)
+    receipt_source = deploy[source_start:source_end]
+    deployed_digest = "sha256:" + "b" * 64
+    deployed_revision = "c" * 40
+    previous_local_image_id = "sha256:" + "d" * 64
+    previous_container_id_sha256 = "e" * 64
+    admin_canary_sha256 = "f" * 64
+    original_argv = sys.argv[:]
+    stdout = io.StringIO()
+    try:
+        sys.argv = [
+            "rollback-receipt",
+            "",
+            "",
+            previous_local_image_id,
+            previous_container_id_sha256,
+            deployed_digest,
+            deployed_revision,
+            admin_canary_sha256,
+            "preserved_container",
+            "false",
+            "true",
+            "sovereign-backend-unverified-predecessor",
+            "true",
+            "true",
+        ]
+        with contextlib.redirect_stdout(stdout):
+            exec(compile(receipt_source, "backend-rollback-receipt.py", "exec"), {})
+    finally:
+        sys.argv = original_argv
+
+    receipt = json.loads(stdout.getvalue())
+    assert receipt["schemaVersion"] == "sovereign.backend-rollback-receipt.v2"
+    assert receipt["previousImageDigest"] is None
+    assert receipt["previousRevision"] is None
+    assert receipt["previousLocalImageId"] == previous_local_image_id
+    assert receipt["previousContainerIdSha256"] == previous_container_id_sha256
+    assert receipt["deployedImageDigest"] == deployed_digest
+    assert receipt["deployedRevision"] == deployed_revision
+    assert receipt["rollbackMode"] == "preserved_container"
+    assert receipt["rollbackPreviewVerified"] is False
+    assert receipt["legacyPredecessor"] == {
+        "preserved": True,
+        "name": "sovereign-backend-unverified-predecessor",
+        "preStopHealthVerified": True,
+        "recoveryAnchorVerified": True,
+    }
+    assert receipt["secretValuesReturned"] is False
+
+
 def test_admin_canary_keeps_live_deployment_when_freellm_is_temporarily_degraded(
     monkeypatch,
 ) -> None:
