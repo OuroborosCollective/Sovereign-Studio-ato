@@ -211,6 +211,13 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     });
 
     await page.route('**/api/auth/me', route => fulfillJson(route, currentUser));
+    await page.route('**/api/billing', route => fulfillJson(route, {
+      subscription: null,
+      invoices: [],
+      availablePackages: [],
+      packages: [],
+    }));
+    await page.route('**/api/billing/payment-methods', route => fulfillJson(route, { methods: [] }));
     await page.route('**/api/llm/routes**', route => fulfillJson(route, { routes: [freeRoute] }));
     await page.route('**/api/user/agent/live-workspace/chat-session', async route => {
       const body = route.request().postDataJSON() as Record<string, unknown>;
