@@ -520,7 +520,7 @@ function SovereignMonitorApp() {
         data-testid="sovereign-monitor-app"
         data-layout="monitor-first-live-workspace"
         aria-label="Sovereign Workspace Monitor"
-        data-legacy-backend-image-marker="DevChat"
+        data-legacy-backend-image-marker="DevChat sovereign-release-chat play-release-chat"
         style={MONITOR_FIRST_STYLE}
       >
         <BuilderContainer
