@@ -22,6 +22,7 @@ import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
+import { MissionValidatorCard } from './MissionValidatorCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -811,13 +812,14 @@ describe('Palette Accessibility Enhancements', () => {
     });
 
     it('shows stateful submit button titles based on loading status', () => {
+      const onLoadMock = vi.fn();
       const { rerender } = render(
         <CompactRepoSetupSheet
           value=""
           busy={false}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoadMock}
           onClose={vi.fn()}
         />
       );
@@ -833,7 +835,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={false}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoadMock}
           onClose={vi.fn()}
         />
       );
@@ -849,7 +851,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={true}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoadMock}
           onClose={vi.fn()}
         />
       );
@@ -1101,6 +1103,54 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(watchBtn);
       expect(onWatchChecks).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('MissionValidatorCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders section with aria-label, score title tooltip, role="list" on questions, and styled action buttons with titles', () => {
+      const mockResult = {
+        score: 75,
+        status: 'ready' as const,
+        questions: ['Sind alle Komponenten abgedeckt?', 'Gibt es Unit-Tests?'],
+        resolvedTransport: 'groq',
+        modelUsed: 'llama-3.3-70b',
+      };
+
+      const onContinue = vi.fn();
+      const onEdit = vi.fn();
+
+      render(
+        <MissionValidatorCard
+          result={mockResult}
+          onContinue={onContinue}
+          onEdit={onEdit}
+        />
+      );
+
+      const section = screen.getByRole('region', { name: 'Pre-flight Mission Validator' });
+      expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', 'mission-validator-title');
+
+      const scoreBadge = screen.getByText('75/100');
+      expect(scoreBadge).toHaveAttribute('title', 'Bewertung: 75 von 100');
+      expect(scoreBadge).toHaveAttribute('aria-label', 'Bewertung: 75 von 100');
+
+      const list = screen.getByRole('list');
+      expect(list).toBeInTheDocument();
+
+      const editBtn = screen.getByRole('button', { name: 'Mission ergänzen' });
+      expect(editBtn).toHaveAttribute('title', 'Mission mit weiteren Details ergänzen');
+      expect(editBtn).toHaveClass('focus-visible:ring-2');
+
+      const continueBtn = screen.getByRole('button', { name: 'Trotzdem starten' });
+      expect(continueBtn).toHaveAttribute('title', 'Auftrag trotz Warnung unverändert starten');
+      expect(continueBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(editBtn);
+      expect(onEdit).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(continueBtn);
+      expect(onContinue).toHaveBeenCalledTimes(1);
     });
   });
 });
