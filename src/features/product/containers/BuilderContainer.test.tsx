@@ -1143,38 +1143,36 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     }
   });
 
-  it("keeps a pending learning side-channel from owning the next chat submit", async () => {
+  it("keeps consecutive strict-contract submits independent without offline learning", async () => {
     const restoreUser = setRuntimeTestUser();
-    let rejectFirstInference: ((reason?: unknown) => void) | null = null;
-    const inferenceSpy = vi.spyOn(areInferenceApi, 'evaluateAreInference')
-      .mockImplementationOnce(
-        () => new Promise<never>((_resolve, reject) => { rejectFirstInference = reject; }),
-      )
-      .mockImplementation((input) => Promise.resolve(localAreInferenceResult(input.onlineAvailable)));
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = requestUrl(input);
-      return runtimeSupportResponse(url, init)
-        ?? jsonResponse({ choices: [{ message: { content: 'Worker response must remain pending.' } }] });
-    }));
+    const inferenceSpy = vi.spyOn(areInferenceApi, 'evaluateAreInference');
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ choices: [{ message: { content: 'first strict reply' } }] }),
+      jsonResponse({ choices: [{ message: { content: 'second strict reply' } }] }),
+    );
+    const llmCalls = () => fetchMock.mock.calls.filter(([input]) => (
+      requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')
+    ));
 
     try {
       renderWithProviders(<BuilderContainer {...baseProps()} mission="" agentReady />);
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir die Runtime-Evidence.' } });
       fireEvent.click(sendButton());
-      await waitFor(() => expect(inferenceSpy).toHaveBeenCalledOnce());
+
+      await waitFor(() => expect(llmCalls()).toHaveLength(1));
+      await waitFor(() => expect(
+        screen.getAllByText('Welche konkrete Änderung soll ich umsetzen?').length,
+      ).toBeGreaterThan(0));
 
       const secondMessage = 'Diese zweite Nachricht darf nicht verloren gehen.';
       fireEvent.change(chatField(), { target: { value: secondMessage } });
       fireEvent.click(sendButton());
 
-      await waitFor(() => expect(inferenceSpy).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(llmCalls()).toHaveLength(2));
       expect(screen.getAllByText(secondMessage).length).toBeGreaterThanOrEqual(1);
       expect(chatField().value).toBe('');
+      expect(inferenceSpy).not.toHaveBeenCalled();
     } finally {
-      await act(async () => {
-        rejectFirstInference?.(new Error('Learning side-channel assertion completed.'));
-        await Promise.resolve();
-      });
       restoreUser();
     }
   });
@@ -2258,7 +2256,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await waitFor(() => expect(
       screen.getByRole('log', { name: 'Sovereign Action Stream' }),
-    ).toHaveTextContent('Online-Sprachdeutung nicht verfügbar'));
+    ).toHaveTextContent('Codeauftragsvertrag blockiert'));
+    await waitFor(() => expect(
+      screen.getAllByText('Die sichere Online-Aktionsroute ist blockiert. Soll ich denselben Auftrag mit Auto/Revolver erneut versuchen?').length,
+    ).toBeGreaterThan(0));
     expect(onStartAgent).not.toHaveBeenCalled();
     expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
     expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();

@@ -67,8 +67,8 @@ describe('App setup flow smoke', () => {
     await openMonitorWorkspace();
 
     expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
-    expect(screen.getByLabelText('Frage an Sovereign während Live Monitor')).toBeDefined();
-    expect(screen.getByPlaceholderText(/ohne den Monitor zu verlassen/i)).toBeDefined();
+    expect(screen.getByLabelText('Codeauftrag an Sovereign')).toBeDefined();
+    expect(screen.getByPlaceholderText(/Codeauftrag eingeben/i)).toBeDefined();
     expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
   });
 

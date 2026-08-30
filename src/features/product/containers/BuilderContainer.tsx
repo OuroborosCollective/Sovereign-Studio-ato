@@ -3832,6 +3832,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         expectedHeadSha: executionTarget.expectedHeadSha,
         githubAccessToken: githubTokenRef.current || undefined,
       });
+      appendRuntimeNotice('Start angefragt. Ergebnis bleibt Draft PR; kein Auto-Merge.');
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Sovereign Agent Start fehlgeschlagen.';
@@ -4491,6 +4492,17 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         status: diagnostic?.status,
         error: interpretationResult.error || diagnostic?.nextAction,
       };
+      const offlineMachineIntent = resolveOfflineMachineExecutorIntent(explicitRuntimeIntent);
+      if (offlineMachineIntent) {
+        setWorkerHealthEvidence(health);
+        addLog(
+          'warn',
+          'Online code-action contract unavailable; exact typed machine control routed to bounded executor.',
+          'router',
+        );
+        await startAgentFromText(submittedText, offlineMachineIntent);
+        return;
+      }
       setWorkerHealthEvidence(health);
       const blocker: WorkerRuntimeBlocker = {
         message: interpretationResult.error || 'Strukturierter Codeauftrag nicht verfügbar.',

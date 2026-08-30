@@ -48,7 +48,7 @@ describe('App', () => {
     expect(screen.getByTestId('live-workspace-monitor')).toBeDefined();
     expect(screen.getByTestId('live-workspace-monitor-desktop')).toBeDefined();
     expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
-    expect(screen.getByLabelText('Frage an Sovereign während Live Monitor')).toBeDefined();
+    expect(screen.getByLabelText('Codeauftrag an Sovereign')).toBeDefined();
     expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
     expect(screen.queryByTestId('chat-only-app')).toBeNull();
     expect(screen.queryByLabelText('Sovereign Rescue öffnen')).toBeNull();

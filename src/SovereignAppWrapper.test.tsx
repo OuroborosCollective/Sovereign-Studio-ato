@@ -51,7 +51,7 @@ describe('SovereignAppWrapper - Monitor-first UI Contract', () => {
 
     expect(screen.getByTestId('live-workspace-monitor-desktop')).toBeDefined();
     expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
-    expect(screen.getByLabelText('Frage an Sovereign während Live Monitor')).toBeDefined();
+    expect(screen.getByLabelText('Codeauftrag an Sovereign')).toBeDefined();
     expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
     expect(screen.getByLabelText('Sovereign Studio Tabs')).toBeDefined();
   });
