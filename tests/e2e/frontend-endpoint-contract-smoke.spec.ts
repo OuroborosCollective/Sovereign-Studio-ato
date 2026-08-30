@@ -212,6 +212,37 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
 
     await page.route('**/api/auth/me', route => fulfillJson(route, currentUser));
     await page.route('**/api/llm/routes**', route => fulfillJson(route, { routes: [freeRoute] }));
+    await page.route('**/api/user/agent/live-workspace/chat-session', async route => {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      await fulfillJson(route, {
+        session: {
+          schemaVersion: 'sovereign.live-workspace-chat-session.v1',
+          persistence: 'postgresql',
+          sessionId: 'livechat-0123456789abcdef01234567',
+          repositoryIdentity: typeof body.repositoryIdentity === 'string' ? body.repositoryIdentity : 'UNBOUND',
+          repositoryBranch: typeof body.repositoryBranch === 'string' ? body.repositoryBranch : 'main',
+          recordedAt: '2026-08-30T00:00:00.000Z',
+        },
+      });
+    });
+    await page.route('**/api/user/agent/live-workspace/chat-session/*/mission', async route => {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      await fulfillJson(route, {
+        bubble: {
+          schemaVersion: 'sovereign.live-workspace-chat-bubble.v1',
+          sessionId: 'livechat-0123456789abcdef01234567',
+          clientMessageId: typeof body.clientMessageId === 'string' ? body.clientMessageId : 'mission-endpoint-smoke',
+          bubbleKind: 'MISSION_INPUT',
+          sourceKind: 'USER_INPUT',
+          text: typeof body.text === 'string' ? body.text : '',
+          canonicalReferenceHashes: [],
+          workflowState: 'RECORDED',
+          bubbleHash: '1'.repeat(64),
+          recordedAt: '2026-08-30T00:00:01.000Z',
+          authoritative: false,
+        },
+      });
+    });
     await page.route('**/api/user/agent/jobs**', route => fulfillJson(route, { jobs: [] }));
     await page.route('**/api/toolchain/user-tools', route => fulfillJson(route, {
       tools: [],

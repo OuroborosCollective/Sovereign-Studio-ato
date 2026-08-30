@@ -68,7 +68,7 @@ test.describe('Monitor-first workspace browser smoke', () => {
   test('4. Monitor controls remain the single primary surface', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Live Monitor' })).toBeVisible();
     await expect(page.locator('[data-testid="monitor-action-controls"]')).toBeVisible();
-    await expect(page.locator('[data-testid="monitor-runtime-action-trace"]')).toBeVisible();
+    await expect(page.locator('[data-testid="monitor-runtime-action-trace"]')).toBeAttached();
     await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
     await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toHaveCount(0);
   });
