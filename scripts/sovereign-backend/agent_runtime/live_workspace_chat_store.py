@@ -389,7 +389,9 @@ def list_live_workspace_chat_bubbles(
             SELECT canonical_body, recorded_at
             FROM live_workspace_chat_bubbles
             WHERE session_id = %s AND user_id = %s::uuid
-            ORDER BY ordinal ASC
+            -- Fetch the authoritative newest bounded tail; reversing below preserves
+            -- chronological projection without deriving freshness from a truncated prefix.
+            ORDER BY ordinal DESC
             LIMIT %s
             """,
             (session.session_id, owner, bounded_limit),
@@ -407,6 +409,7 @@ def list_live_workspace_chat_bubbles(
         item = dict(body)
         item["recordedAt"] = _timestamp(row.get("recorded_at"))
         result.append(item)
+    result.reverse()
     return result
 
 
