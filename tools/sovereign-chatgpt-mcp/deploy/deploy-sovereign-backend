@@ -13,6 +13,10 @@ ALLOWED_BACKEND_ENV_PATHS=(
   "/run/secrets/sovereign-backend.env"
   "/opt/sovereign-backend/.env"
 )
+ALLOWED_BACKEND_MANAGED_ENV_PATHS=(
+  "/opt/sovereign-chatgpt-tools/runtime.env"
+  "/opt/sovereign-chatgpt-tools/backend-runtime.env"
+)
 
 # Try to read from managed runtime.env first
 resolve_backend_env_from_managed() {
@@ -79,6 +83,10 @@ BROKER_GID=""
 # intentionally separate from sovereign-private, which only carries backend
 # dependencies such as PostgreSQL and direct FreeLLM/OpenRouter transports.
 TRAEFIK_DOCKER_NETWORK="${SOVEREIGN_TRAEFIK_DOCKER_NETWORK:-traefik-public}"
+COMPOSE_TEMPLATE="${SOVEREIGN_BACKEND_COMPOSE_TEMPLATE:-/opt/sovereign-chatgpt-tools/templates/sovereign-backend/docker-compose.yml}"
+COMPOSE_PROJECT_DIR="/opt/sovereign-backend"
+COMPOSE_FILE="$COMPOSE_PROJECT_DIR/docker-compose.yml"
+COMPOSE_RUNTIME_ENV="$COMPOSE_PROJECT_DIR/compose-runtime.env"
 STAGE="preflight"
 
 on_error() {
@@ -120,7 +128,26 @@ else
 fi
 
 [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]] || fail "backend env file is missing"
-[[ -f "$MANAGED_ENV_FILE" ]] || fail "backend managed env file is missing"
+MANAGED_ENV_ALLOWED=false
+for allowed in "${ALLOWED_BACKEND_MANAGED_ENV_PATHS[@]}"; do
+  if [[ "$MANAGED_ENV_FILE" == "$allowed" ]]; then
+    MANAGED_ENV_ALLOWED=true
+    break
+  fi
+done
+[[ "$MANAGED_ENV_ALLOWED" == "true" && -f "$MANAGED_ENV_FILE" && ! -L "$MANAGED_ENV_FILE" ]] \
+  || fail "backend managed env file is missing or outside the allowlist"
+unset MANAGED_ENV_ALLOWED allowed
+[[ -f "$COMPOSE_TEMPLATE" && ! -L "$COMPOSE_TEMPLATE" ]] \
+  || fail "backend compose template is missing or invalid"
+docker compose version >/dev/null 2>&1 || fail "docker compose plugin is unavailable"
+if [[ -e "$COMPOSE_PROJECT_DIR" || -L "$COMPOSE_PROJECT_DIR" ]]; then
+  [[ -d "$COMPOSE_PROJECT_DIR" && ! -L "$COMPOSE_PROJECT_DIR" ]] \
+    || fail "backend compose project root is invalid"
+else
+  install -d -m 0750 "$COMPOSE_PROJECT_DIR"
+fi
+chmod 0750 "$COMPOSE_PROJECT_DIR"
 umask 077
 ROLLBACK_RECEIPT_DIR="$(dirname "$ROLLBACK_RECEIPT_FILE")"
 [[ "$ROLLBACK_RECEIPT_DIR" == "$RUNTIME_EVIDENCE_ROOT" ]] \
@@ -182,7 +209,7 @@ STAGE="network_preflight"
 # Traefik reads Docker labels but can only route to a container IP on a shared
 # Docker bridge. Production and rollback therefore require the configured
 # Traefik bridge as well as Sovereign's private dependency bridge.
-for network in supabase_default sovereign-private "$TRAEFIK_DOCKER_NETWORK"; do
+for network in supabase_default areloria_arelorian-network sovereign-private "$TRAEFIK_DOCKER_NETWORK"; do
   docker network inspect "$network" >/dev/null 2>&1 || fail "required docker network missing: $network"
 done
 
@@ -341,57 +368,61 @@ else
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 fi
 
+write_backend_compose_runtime() {
+  local image="$1"
+  local revision="$2"
+  local runtime_digest="$3"
+  local env_tmp=""
+  local compose_tmp=""
+
+  [[ "$image" =~ ^[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] \
+    || fail "backend compose image is not immutable"
+  [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || fail "backend compose revision is invalid"
+  [[ "$runtime_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "backend compose digest is invalid"
+
+  env_tmp="$(mktemp "$COMPOSE_PROJECT_DIR/.compose-runtime.env.XXXXXX")"
+  {
+    printf 'SOVEREIGN_BACKEND_IMAGE=%s\n' "$image"
+    printf 'SOVEREIGN_BACKEND_IMAGE_DIGEST=%s\n' "$runtime_digest"
+    printf 'SOVEREIGN_BACKEND_SOURCE_REVISION=%s\n' "$revision"
+    printf 'SOVEREIGN_BACKEND_ENV_FILE=%s\n' "$ENV_FILE"
+    printf 'SOVEREIGN_BACKEND_MANAGED_ENV_FILE=%s\n' "$MANAGED_ENV_FILE"
+    printf 'SOVEREIGN_MCP_BROKER_GID=%s\n' "$BROKER_GID"
+    printf 'SOVEREIGN_TRAEFIK_DOCKER_NETWORK=%s\n' "$TRAEFIK_DOCKER_NETWORK"
+  } > "$env_tmp"
+  chmod 0600 "$env_tmp"
+  mv -f "$env_tmp" "$COMPOSE_RUNTIME_ENV"
+
+  compose_tmp="$(mktemp "$COMPOSE_PROJECT_DIR/.docker-compose.yml.XXXXXX")"
+  install -m 0640 "$COMPOSE_TEMPLATE" "$compose_tmp"
+  mv -f "$compose_tmp" "$COMPOSE_FILE"
+}
+
+compose_backend() {
+  env \
+    -u SOVEREIGN_BACKEND_IMAGE \
+    -u SOVEREIGN_BACKEND_IMAGE_DIGEST \
+    -u SOVEREIGN_BACKEND_SOURCE_REVISION \
+    -u SOVEREIGN_BACKEND_ENV_FILE \
+    -u SOVEREIGN_BACKEND_MANAGED_ENV_FILE \
+    -u SOVEREIGN_MCP_BROKER_GID \
+    -u SOVEREIGN_TRAEFIK_DOCKER_NETWORK \
+    docker compose \
+      --project-name sovereign-backend \
+      --project-directory "$COMPOSE_PROJECT_DIR" \
+      --env-file "$COMPOSE_RUNTIME_ENV" \
+      --file "$COMPOSE_FILE" \
+      "$@"
+}
+
 start_production() {
   local image="$1"
   local revision="$2"
   local runtime_digest="$3"
-  docker run -d \
-    --name "$CONTAINER" \
-    --restart unless-stopped \
-    --env-file "$ENV_FILE" \
-    --env-file "$MANAGED_ENV_FILE" \
-    --env "SOVEREIGN_IMAGE_DIGEST=$runtime_digest" \
-    --env "SOVEREIGN_SOURCE_REVISION=$revision" \
-    --env "SOVEREIGN_MCP_BROKER_SOCKET=$BROKER_SOCKET" \
-    --env "SOVEREIGN_LLM_ROUTE_SCANNER_ENABLED=1" \
-    --env "SOVEREIGN_LLM_ROUTE_SCANNER_INTERVAL_SECONDS=3600" \
-    --env "SOVEREIGN_LLM_ROUTE_SCANNER_INITIAL_DELAY_SECONDS=30" \
-    --env "SOVEREIGN_LLM_ROUTE_SCANNER_MAX_CANDIDATES=24" \
-    --env "SOVEREIGN_LLM_ROUTE_SCANNER_MAX_WORKERS=4" \
-    --env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_ENABLED=1" \
-    --env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_INTERVAL_SECONDS=21600" \
-    --env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_INITIAL_DELAY_SECONDS=60" \
-    --env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_MODELS=12" \
-    --env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_ROUNDS=10" \
-    --env "SOVEREIGN_AGENT_WORKSPACE_ROOT=$WORKSPACE_CONTAINER_ROOT" \
-    --env "SOVEREIGN_AGENT_WORKSPACE_UID=$WORKSPACE_UID" \
-    --env "SOVEREIGN_AGENT_WORKSPACE_GID=$WORKSPACE_GID" \
-    --network supabase_default \
-    --volume /opt/secure:/opt/secure:ro \
-    --volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw" \
-    --volume "$WORKSPACE_HOST_ROOT:$WORKSPACE_CONTAINER_ROOT:rw" \
-    --volume "$BROKER_RUNTIME_DIR:$BROKER_RUNTIME_DIR:ro" \
-    --group-add "$BROKER_GID" \
-    --label "org.opencontainers.image.revision=$revision" \
-    --label "traefik.enable=true" \
-    --label "traefik.docker.network=$TRAEFIK_DOCKER_NETWORK" \
-    --label 'traefik.http.routers.sovereign-backend.rule=Host(`sovereign-backend.arelorian.de`)' \
-    --label "traefik.http.routers.sovereign-backend.entrypoints=websecure" \
-    --label "traefik.http.routers.sovereign-backend.tls=true" \
-    --label "traefik.http.routers.sovereign-backend.tls.certresolver=letsencrypt" \
-    --label "traefik.http.routers.sovereign-backend.service=sovereign-backend" \
-    --label "traefik.http.services.sovereign-backend.loadbalancer.server.port=8787" \
-    --label "traefik.http.services.sovereign-backend.loadbalancer.server.scheme=http" \
-    --label "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.path=/health/live" \
-    --label "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.interval=15s" \
-    --label "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.timeout=5s" \
-    -p 127.0.0.1:8788:8787 \
-    "$image" >/dev/null
-  if docker network inspect areloria_arelorian-network >/dev/null 2>&1; then
-    docker network connect areloria_arelorian-network "$CONTAINER"
-  fi
-  docker network connect sovereign-private "$CONTAINER"
-  docker network connect "$TRAEFIK_DOCKER_NETWORK" "$CONTAINER"
+
+  write_backend_compose_runtime "$image" "$revision" "$runtime_digest"
+  compose_backend config --quiet
+  compose_backend up -d --remove-orphans
 }
 
 start_production "$NEW_IMAGE" "$EXPECTED_REVISION" "$DIGEST"

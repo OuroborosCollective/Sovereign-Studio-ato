@@ -113,11 +113,18 @@ STACKS: dict[str, ManagedStack] = {
         allowed_services=("sovereign-backend",),
         deploy_root="/opt/sovereign-backend",
         template_name="sovereign-backend",
-        allowed_networks=("sovereign-private", "sovereign-desktop", "supabase_default"),
+        allowed_networks=(
+            "sovereign-private",
+            "sovereign-desktop",
+            "supabase_default",
+            "areloria_arelorian-network",
+            "traefik-public",
+        ),
         allowed_bind_roots=(
             "/opt/sovereign-backend",
             "/opt/secure",
             "/opt/sovereign-owner-managed",
+            "/run/sovereign-chatgpt-broker",
             BACKEND_WORKSPACE_HOST_ROOT,
         ),
         allowed_published_ports=("127.0.0.1:8788:8787",),
@@ -666,10 +673,17 @@ class ManagedComposeRuntime:
             for name, _ in files
             if name in {"docker-compose.yml", "compose.yml", "compose.yaml"}
         )
-        deploy_env = Path(stack.deploy_root) / ".env"
-        env_path = deploy_env if deploy_env.is_file() and not deploy_env.is_symlink() else root / ".env"
-        if env_path == root / ".env":
-            env_path.write_text("", encoding="utf-8")
+        deploy_env_name = "compose-runtime.env" if stack.stack_id == "sovereign-backend" else ".env"
+        deploy_env = Path(stack.deploy_root) / deploy_env_name
+        if stack.stack_id == "sovereign-backend":
+            if not deploy_env.is_file() or deploy_env.is_symlink():
+                temporary.cleanup()
+                raise RuntimeError("Backend Compose-Runtime-Env fehlt oder ist ungültig")
+            env_path = deploy_env
+        else:
+            env_path = deploy_env if deploy_env.is_file() and not deploy_env.is_symlink() else root / ".env"
+            if env_path == root / ".env":
+                env_path.write_text("", encoding="utf-8")
         result = self._run(
             [
                 "docker",
@@ -1890,6 +1904,81 @@ raise SystemExit(0 if verified is not None else 2)
         }
 
     @staticmethod
+    def _backend_transport_ready(state: dict[str, Any]) -> bool:
+        bindings = (state.get("publishedPorts") or {}).get("8787/tcp", [])
+        loopback_ready = any(
+            str(binding.get("HostIp") or "") == "127.0.0.1"
+            and str(binding.get("HostPort") or "") == "8788"
+            for binding in bindings
+            if isinstance(binding, dict)
+        )
+        required_networks = {
+            "supabase_default",
+            "areloria_arelorian-network",
+            "sovereign-private",
+            "traefik-public",
+        }
+        broker_mounts = [
+            item
+            for item in state.get("mounts") or []
+            if isinstance(item, dict)
+            and item.get("destination") == "/run/sovereign-chatgpt-broker"
+        ]
+        return bool(
+            state.get("present")
+            and state.get("running")
+            and state.get("project") == "sovereign-backend"
+            and state.get("service") == "sovereign-backend"
+            and required_networks.issubset(set(state.get("networks") or []))
+            and loopback_ready
+            and re.fullmatch(
+                r"[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}",
+                str(state.get("imageReference") or ""),
+            )
+            and len(broker_mounts) == 1
+            and broker_mounts[0].get("rw") is False
+            and state.get("privileged") is False
+        )
+
+    @staticmethod
+    def _backend_http_canary() -> dict[str, Any]:
+        last_error = ""
+        for _attempt in range(30):
+            connection: http.client.HTTPConnection | None = None
+            try:
+                connection = http.client.HTTPConnection("127.0.0.1", 8788, timeout=5)
+                connection.request("GET", "/health/live")
+                response = connection.getresponse()
+                status = int(response.status)
+                body = response.read(65_536)
+                payload = json.loads(body)
+                marker_verified = isinstance(payload, dict) and payload.get("ok") is True
+                if status == 200 and marker_verified:
+                    return {
+                        "ok": True,
+                        "status": "SOVEREIGN_BACKEND_HTTP_READY",
+                        "httpStatus": status,
+                        "responseSha256": _sha256(body),
+                        "markerVerified": True,
+                        "responseBodyReturned": False,
+                        "secretValuesReturned": False,
+                    }
+                last_error = f"HTTP {status}"
+            except (OSError, http.client.HTTPException, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                last_error = type(exc).__name__
+            finally:
+                if connection is not None:
+                    connection.close()
+            time.sleep(2)
+        return {
+            "ok": False,
+            "status": "SOVEREIGN_BACKEND_HTTP_UNAVAILABLE",
+            "errorFamily": last_error or "unknown",
+            "responseBodyReturned": False,
+            "secretValuesReturned": False,
+        }
+
+    @staticmethod
     def _patchmon_http_canary() -> dict[str, Any]:
         last_error = ""
         for _attempt in range(30):
@@ -2175,7 +2264,9 @@ const call = async (names, payload) => {
             "--project-directory",
             str(deploy_root),
         ]
-        env_path = deploy_root / ".env"
+        env_path = deploy_root / (
+            "compose-runtime.env" if stack.stack_id == "sovereign-backend" else ".env"
+        )
         if env_path.is_file() and not env_path.is_symlink():
             compose_argv.extend(["--env-file", str(env_path)])
         compose_argv.extend(["--file", str(deploy_root / compose_name)])
@@ -2228,7 +2319,9 @@ const call = async (names, payload) => {
                     }
 
         states = self._verify_expected(stack)
-        if stack.stack_id == "patchmon-sovereign":
+        if stack.stack_id == "sovereign-backend":
+            transport_verified = self._backend_transport_ready(states.get(stack.anchor_container, {}))
+        elif stack.stack_id == "patchmon-sovereign":
             transport_verified = self._patchmon_server_transport_ready(states.get(stack.anchor_container, {}))
         elif stack.stack_id == "code-server-46bq":
             transport_verified = self._code_server_transport_ready(states.get(stack.anchor_container, {}))
@@ -2239,7 +2332,9 @@ const call = async (names, payload) => {
         else:
             transport_verified = True
 
-        if stack.stack_id == "patchmon-sovereign":
+        if stack.stack_id == "sovereign-backend":
+            runtime_canary = self._backend_http_canary()
+        elif stack.stack_id == "patchmon-sovereign":
             runtime_canary = self._patchmon_http_canary()
         elif stack.stack_id == "sovereign-freellmapi":
             owner_key_sync = self._freellmapi_owner_key_sync()
