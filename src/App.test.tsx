@@ -1,36 +1,56 @@
 import React from 'react';
+import { Provider } from 'react-redux';
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import App from './App';
+import { store } from './store';
 
-vi.mock('./features/release/PlayReleaseChat', () => ({
-  PlayReleaseChat: () => (
-    <main data-testid="sovereign-release-chat" data-layout="play-release-chat" aria-label="Sovereign Chat">
-      Release chat
-    </main>
-  ),
-}));
+beforeAll(() => {
+  const cryptoMock = {
+    randomUUID: () => 'test-uuid',
+  };
 
-vi.mock('./features/evidence-observatory/EvidenceObservatoryAtlas', () => ({
-  EvidenceObservatoryAtlas: () => <main data-testid="evidence-observatory">Observatory</main>,
-}));
+  if (!globalThis.crypto) {
+    Object.defineProperty(globalThis, 'crypto', {
+      value: cryptoMock,
+      configurable: true,
+    });
+    return;
+  }
+
+  if (!globalThis.crypto.randomUUID) {
+    Object.defineProperty(globalThis.crypto, 'randomUUID', {
+      value: cryptoMock.randomUUID,
+      configurable: true,
+    });
+  }
+});
 
 describe('App', () => {
-  it('opens the focused Play release chat instead of the unfinished monitor', () => {
-    window.history.replaceState({}, '', '/');
-    render(<App />);
+  it('opens the permanent monitor-first workspace surface', async () => {
+    render(<Provider store={store}><App /></Provider>);
 
-    expect(screen.getByTestId('sovereign-release-chat')).toHaveAttribute('data-layout', 'play-release-chat');
-    expect(screen.getByLabelText('Sovereign Chat')).toBeDefined();
-    expect(screen.queryByTestId('sovereign-monitor-app')).toBeNull();
-    expect(screen.queryByTestId('live-workspace-monitor')).toBeNull();
-  });
-
-  it('keeps the evidence observatory route available without exposing the monitor shell', () => {
-    window.history.replaceState({}, '', '/observatory');
-    render(<App />);
-
-    expect(screen.getByTestId('evidence-observatory')).toBeDefined();
-    expect(screen.queryByTestId('sovereign-release-chat')).toBeNull();
+    expect(screen.getByTestId('sovereign-monitor-app')).toHaveAttribute(
+      'data-layout',
+      'monitor-first-live-workspace',
+    );
+    expect(screen.getByTestId('sovereign-monitor-app')).toHaveAttribute(
+      'data-legacy-backend-image-marker',
+      'DevChat',
+    );
+    expect(screen.queryByText('DevChat')).toBeNull();
+    expect(await screen.findAllByText('Monitor')).not.toHaveLength(0);
+    expect(screen.getByTestId('builder-container')).toHaveAttribute(
+      'data-layout',
+      'live-desktop-monitor-primary',
+    );
+    expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined();
+    expect(screen.getByTestId('live-workspace-monitor')).toBeDefined();
+    expect(screen.getByTestId('live-workspace-monitor-desktop')).toBeDefined();
+    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
+    expect(screen.getByLabelText('Frage an Sovereign während Live Monitor')).toBeDefined();
+    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.queryByTestId('chat-only-app')).toBeNull();
+    expect(screen.queryByLabelText('Sovereign Rescue öffnen')).toBeNull();
   });
 });

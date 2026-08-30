@@ -102,6 +102,7 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
   confirmBlocker,
 }) => {
   const { acted, act } = useActionLatch();
+  const accessRequestPendingRef = React.useRef(false);
 
   // Determine if we need GitHub access to proceed
   const needsGitHubAccess = gateSnapshot.repoReady && !gateSnapshot.githubWriteReady;
@@ -110,11 +111,16 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
   // Even without GitHub write, clicking it should lead to the access gate
   const einbauenEnabled = !acted && gateSnapshot.repoReady && (canConfirm || needsGitHubAccess);
 
-  // Handler for Einbauen - uses GitHub access flow if needed
+  // Opening the secure GitHub gate is not action approval. Keep the draft
+  // pending so the owner must confirm again after access becomes ready.
   const handleEinbauen = () => {
     if (needsGitHubAccess && onConfirmWithGitHubAccess) {
-      if (!act()) return;
+      if (accessRequestPendingRef.current) return;
+      accessRequestPendingRef.current = true;
       onConfirmWithGitHubAccess();
+      window.setTimeout(() => {
+        accessRequestPendingRef.current = false;
+      }, 0);
     } else if (canConfirm) {
       if (!act()) return;
       onConfirm();
@@ -145,7 +151,7 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
             <span className="text-cyan-400 text-xs">⬡</span>
           </div>
           <p className="text-xs text-cyan-300 font-medium">
-            Ich habe daraus diesen Integrationsauftrag erkannt:
+            Freigabe für exakt diesen Repository-Auftrag:
           </p>
         </div>
       </div>
@@ -162,15 +168,44 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
           </h4>
         </div>
 
-        {/* Goal */}
-        <div>
-          <span className="text-[10px] text-cyan-500 uppercase tracking-wider font-bold">
-            Ziel
-          </span>
-          <p className="text-xs text-slate-300 mt-0.5" data-testid="draft-goal">
-            {draft.goal}
-          </p>
-        </div>
+        {draft.intentSource === 'online_llm' ? (
+          <div>
+            <span className="text-[10px] text-cyan-500 uppercase tracking-wider font-bold">
+              Exakter Auftrag
+            </span>
+            <p
+              className="text-xs text-slate-200 mt-1 whitespace-pre-wrap break-words"
+              data-testid="draft-execution-mission"
+            >
+              {draft.executionMission}
+            </p>
+            {draft.executionTarget && (
+              <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-[10px]">
+                <dt className="text-slate-500">Repository</dt>
+                <dd className="text-slate-300 font-mono break-all" data-testid="draft-target-repo">
+                  {draft.executionTarget.repoUrl}
+                </dd>
+                <dt className="text-slate-500">Branch</dt>
+                <dd className="text-slate-300 font-mono break-all" data-testid="draft-target-branch">
+                  {draft.executionTarget.branch}
+                </dd>
+                <dt className="text-slate-500">HEAD</dt>
+                <dd className="text-slate-300 font-mono break-all" data-testid="draft-target-head">
+                  {draft.executionTarget.expectedHeadSha}
+                </dd>
+              </dl>
+            )}
+          </div>
+        ) : (
+          <div>
+            <span className="text-[10px] text-cyan-500 uppercase tracking-wider font-bold">
+              Ziel
+            </span>
+            <p className="text-xs text-slate-300 mt-0.5" data-testid="draft-goal">
+              {draft.goal}
+            </p>
+          </div>
+        )}
 
         {/* Scope */}
         {draft.scope.length > 0 && (
@@ -251,9 +286,9 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
                 : 'bg-slate-800 border border-slate-700 text-slate-500 cursor-not-allowed'
             }`}
             data-testid="btn-confirm"
-            aria-label="Integrationsauftrag einbauen"
+            aria-label={needsGitHubAccess ? 'Sicheren GitHub-Zugang öffnen' : 'Repository-Auftrag starten'}
           >
-            {needsGitHubAccess ? 'GitHub-Zugang benötigt' : 'Einbauen'}
+            {needsGitHubAccess ? 'GitHub-Zugang öffnen' : 'Auftrag starten'}
           </button>
 
           {/* Neu formulieren */}

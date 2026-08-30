@@ -31,8 +31,22 @@ def test_backend_serves_distinct_revision_bound_admin_and_user_app_routes() -> N
     assert "COPY admin-dist/ ./admin-dist/" in dockerfile
     assert "Build revision-bound React admin and user app" in workflow
     assert "Stage revision-bound shared web artifact for backend image" in workflow
-    assert "grep -Rqs 'sovereign-release-chat' scripts/sovereign-backend/admin-dist" in workflow
-    assert "grep -Rqs 'play-release-chat' scripts/sovereign-backend/admin-dist" in workflow
+    bundle_markers = (
+        "CANONICAL_REACT_ADMIN",
+        "sovereign-monitor-app",
+        "monitor-first-live-workspace",
+        "sovereign-live-monitor-primary",
+        "live-desktop-monitor-primary",
+        "monitor-communication-dock",
+        "sovereign-side-menu",
+        "evidence-observatory-atlas",
+        "Free Revolver",
+    )
+    for marker in bundle_markers:
+        assert f"grep -Rqs '{marker}' scripts/sovereign-backend/admin-dist" in workflow
+        assert f'assert "{marker}" in rendered' in workflow
+    assert "sovereign-release-chat" not in workflow
+    assert "play-release-chat" not in workflow
     assert "VITE_SOVEREIGN_SOURCE_REVISION: ${{ env.SOVEREIGN_REVISION }}" in workflow
     assert "corepack prepare pnpm@9.12.2 --activate" in workflow
     assert "cache: pnpm" not in workflow

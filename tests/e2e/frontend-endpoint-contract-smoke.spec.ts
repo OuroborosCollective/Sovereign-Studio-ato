@@ -157,9 +157,10 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     });
   });
 
-  test('the built Play surface executes authenticated FreeLLM chat wiring without an unconsented billing write', async ({ page }) => {
+  test('the built monitor-first surface executes the authenticated structured FreeLLM contract without an unconsented billing write', async ({ page }) => {
     const observed: Array<{ method: string; path: string }> = [];
     const unexpectedApiRequests: Array<{ method: string; path: string }> = [];
+    const llmChatBodies: Array<Record<string, unknown>> = [];
     const pageErrors: string[] = [];
     const currentUser = {
       id: '00000000-0000-4000-8000-000000000001',
@@ -175,11 +176,13 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
       id: '00000000-0000-4000-8000-000000000777',
       defaultModelId: 'free/test-model',
       label: 'Verified Free Test Route',
-      description: 'Play release browser smoke',
+      description: 'Monitor-first browser smoke',
       provider: 'freellm',
       billingCategory: 'free',
+      fundingMode: 'provider_free_quota',
       priority: 1,
       enabled: true,
+      capabilities: { codeActionContract: true },
     };
 
     await page.addInitScript((user) => {
@@ -208,19 +211,74 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     });
 
     await page.route('**/api/auth/me', route => fulfillJson(route, currentUser));
-    await page.route('**/api/llm/routes?purpose=picker', route => fulfillJson(route, { routes: [freeRoute] }));
-    await page.route('**/api/llm/routes', route => fulfillJson(route, { routes: [freeRoute] }));
-    await page.route('**/health/ready', route => fulfillJson(route, { ok: true, configured: true }));
-    await page.route('**/api/llm/chat', route => fulfillJson(route, {
-      content: 'Sovereign Browser-Smoke Antwort',
-      model: freeRoute.id,
+    await page.route('**/api/llm/routes**', route => fulfillJson(route, { routes: [freeRoute] }));
+    await page.route('**/api/user/agent/jobs**', route => fulfillJson(route, { jobs: [] }));
+    await page.route('**/api/toolchain/user-tools', route => fulfillJson(route, {
+      tools: [],
+      allowed_repos: [],
+      rules: {
+        auto_load: true,
+        github_read: 'after_login',
+        auto_write: false,
+        push_to_main: false,
+        pr_mode: 'draft_only',
+        confirm_required: true,
+        audit_log: true,
+      },
     }));
+    await page.route('**/api/toolchain/universal/manifest', route => fulfillJson(route, {
+      version: 'endpoint-smoke-v1',
+      runtime: 'browser',
+      tools: [],
+      policy: {
+        arbitraryShell: false,
+        directProductionRunner: false,
+      },
+    }));
+    await page.route('**/api/toolchain/skills/list', route => fulfillJson(route, { skills: [] }));
+    await page.route('**/health/ready', route => fulfillJson(route, { ok: true, configured: true }));
+    await page.route('**/api/llm/chat', async route => {
+      llmChatBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+      await fulfillJson(route, {
+        model: freeRoute.defaultModelId,
+        outputContract: {
+          id: 'sovereign-code-action-v1',
+          validated: true,
+        },
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              mode: 'clarify',
+              intent: 'unknown',
+              action_disposition: 'review',
+              clarification_code: 'repo_required',
+              is_startup: false,
+              confidence: 0.96,
+              language: 'de',
+            }),
+          },
+        }],
+      });
+    });
 
     await page.goto('/');
-    await expect(page.locator('[data-testid="sovereign-release-chat"]')).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator('[data-testid="sovereign-monitor-app"]')).toHaveCount(0);
-    await expect(page.getByLabel('LLM Route')).toBeVisible();
-    await expect(page.getByLabel('LLM Route')).toContainText('Verified Free Test Route');
+    const app = page.locator('[data-testid="sovereign-monitor-app"]');
+    await expect(app).toBeVisible({ timeout: 30_000 });
+    await expect(app).toHaveAttribute('data-layout', 'monitor-first-live-workspace');
+    await expect(page.locator('[data-layout="live-desktop-monitor-primary"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-live-monitor-primary"]')).toBeVisible();
+    await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toBeVisible();
+    await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Menü', exact: true })).toBeVisible();
+
+    const routeTrigger = page.locator('[data-testid="sovereign-llm-route-picker-trigger"]');
+    await expect(routeTrigger).toBeVisible();
+    await expect(routeTrigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByText('Verified Free Test Route')).toHaveCount(0);
+    await routeTrigger.click();
+    await expect(page.getByRole('dialog', { name: 'LLM-Modell auswählen' })).toBeVisible();
+    await expect(page.getByRole('option', { name: /Verified Free Test Route/ })).toBeVisible();
+    await page.keyboard.press('Escape');
 
     const coverageResponse = await page.request.get('/generated/test-coverage-map.json');
     expect(coverageResponse.status()).toBe(200);
@@ -246,14 +304,23 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
       expect(coveragePayload.testRoots?.[root]).toBeGreaterThan(0);
     }
 
-    const composer = page.getByLabel('Nachricht an Sovereign');
-    await composer.fill('Antworte mit dem Browser-Smoke.');
+    const composer = page.getByLabel('Codeauftrag an Sovereign');
+    await composer.fill('Bitte repariere den Build und führe noch nichts ohne Freigabe aus.');
     await composer.press('Enter');
-    await expect(page.getByText('Sovereign Browser-Smoke Antwort')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Welches Repository soll ich ändern?')).toBeVisible({ timeout: 10_000 });
 
     await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/auth/me')).toBe(true);
     await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/llm/routes')).toBe(true);
     await expect.poll(() => observed.some(item => item.method === 'POST' && item.path === '/api/llm/chat')).toBe(true);
+
+    expect(llmChatBodies).toHaveLength(1);
+    expect(llmChatBodies[0]).toMatchObject({
+      outputContractId: 'sovereign-code-action-v1',
+      routeSelectionMode: 'auto',
+      model: freeRoute.id,
+      stream: false,
+    });
+    expect(Array.isArray(llmChatBodies[0]?.messages)).toBe(true);
 
     const billingWrites = observed.filter(item => item.path.startsWith('/api/billing') && item.method !== 'GET');
     expect(billingWrites).toEqual([]);
