@@ -80,6 +80,15 @@ const MAX_TEXT = 800;
 const FREQUENTLY_USED_THRESHOLD = 3;
 
 const SENSITIVE_PATTERNS = [
+  /ghp_[A-Za-z0-9_]{8,}/,
+  /github_pat_[A-Za-z0-9_]+/,
+  /sk-[A-Za-z0-9_-]{12,}/,
+  /Bearer\s+[A-Za-z0-9._~+/=-]{10,}/i,
+  /password\s*[:=]\s*\S+/i,
+  /token\s*[:=]\s*\S+/i,
+];
+
+const SENSITIVE_REPLACE_PATTERNS = [
   /ghp_[A-Za-z0-9_]{8,}/g,
   /github_pat_[A-Za-z0-9_]+/g,
   /sk-[A-Za-z0-9_-]{12,}/g,
@@ -101,7 +110,7 @@ function stableHash(input: string): string {
 
 function sanitizeText(value: string): string {
   let out = value.trim().slice(0, MAX_TEXT);
-  for (const re of SENSITIVE_PATTERNS) {
+  for (const re of SENSITIVE_REPLACE_PATTERNS) {
     re.lastIndex = 0;
     out = out.replace(re, '<redacted>');
   }
@@ -109,10 +118,7 @@ function sanitizeText(value: string): string {
 }
 
 function hasSensitive(value: string): boolean {
-  return SENSITIVE_PATTERNS.some((re) => {
-    re.lastIndex = 0;
-    return re.test(value);
-  });
+  return SENSITIVE_PATTERNS.some((re) => re.test(value));
 }
 
 function normalizeTag(value: string): string {
@@ -262,13 +268,18 @@ export function verifyPatternEntry(store: PatternMemoryStore, entryId: string, l
 export function queryPatternEntries(store: PatternMemoryStore, query: PatternMemoryQuery = {}): LearnedPatternEntry[] {
   const limit = Math.max(1, Math.min(query.limit ?? 50, 200));
   const minReuse = query.minReuseCount ?? 0;
+  const normalizedTag = query.tag ? normalizeTag(query.tag) : null;
 
+  // ⚡ Bolt: Consolidated multi-pass filter predicate chain into a single O(N) filtering loop
   return store.entries
-    .filter((e) => !query.ownerScope || e.ownerScope === query.ownerScope)
-    .filter((e) => query.verified === undefined || e.verified === query.verified)
-    .filter((e) => query.localExecutable === undefined || e.localExecutable === query.localExecutable)
-    .filter((e) => !query.tag || e.tags.includes(normalizeTag(query.tag)))
-    .filter((e) => e.reuseCount >= minReuse)
+    .filter((e) => {
+      if (query.ownerScope && e.ownerScope !== query.ownerScope) return false;
+      if (query.verified !== undefined && e.verified !== query.verified) return false;
+      if (query.localExecutable !== undefined && e.localExecutable !== query.localExecutable) return false;
+      if (normalizedTag && !e.tags.includes(normalizedTag)) return false;
+      if (e.reuseCount < minReuse) return false;
+      return true;
+    })
     .sort((a, b) => b.reuseCount - a.reuseCount || (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0) || b.createdAt - a.createdAt)
     .slice(0, limit);
 }
@@ -291,22 +302,40 @@ export function eraseUserPatterns(store: PatternMemoryStore, now = Date.now()): 
 
 export function derivePatternMemoryCounters(store: PatternMemoryStore): PatternMemoryRuntimeCounters {
   const entries = store.entries;
-  const verifiedEntries = entries.filter((e) => e.verified);
-  const localExecutableEntries = entries.filter((e) => e.localExecutable);
-  const frequentlyUsed = entries.filter((e) => e.reuseCount >= FREQUENTLY_USED_THRESHOLD);
+  let verifiedCount = 0;
+  let localExecutableCount = 0;
+  let frequentlyUsedCount = 0;
+  let localUserCount = 0;
+  let remoteUserCount = 0;
+  let sharedDerivedCount = 0;
+  let lastSuccessfulReuseAt: number | null = null;
 
-  const allLastUsed = entries.map((e) => e.lastUsedAt).filter((t): t is number => t !== null);
-  const lastSuccessfulReuseAt = allLastUsed.length > 0 ? Math.max(...allLastUsed) : null;
+  // ⚡ Bolt: Consolidated 7 sequential O(N) array filter/map passes into a single O(N) loop with zero intermediate array allocations
+  for (const e of entries) {
+    if (e.verified) verifiedCount += 1;
+    if (e.localExecutable) localExecutableCount += 1;
+    if (e.reuseCount >= FREQUENTLY_USED_THRESHOLD) frequentlyUsedCount += 1;
+
+    if (e.ownerScope === 'local-user') localUserCount += 1;
+    else if (e.ownerScope === 'remote-user') remoteUserCount += 1;
+    else if (e.ownerScope === 'shared-derived') sharedDerivedCount += 1;
+
+    if (e.lastUsedAt !== null) {
+      if (lastSuccessfulReuseAt === null || e.lastUsedAt > lastSuccessfulReuseAt) {
+        lastSuccessfulReuseAt = e.lastUsedAt;
+      }
+    }
+  }
 
   return {
     totalStored: entries.length,
-    verifiedCount: verifiedEntries.length,
-    localExecutableCount: localExecutableEntries.length,
-    frequentlyUsedCount: frequentlyUsed.length,
+    verifiedCount,
+    localExecutableCount,
+    frequentlyUsedCount,
     lastSuccessfulReuseAt,
-    localUserCount: entries.filter((e) => e.ownerScope === 'local-user').length,
-    remoteUserCount: entries.filter((e) => e.ownerScope === 'remote-user').length,
-    sharedDerivedCount: entries.filter((e) => e.ownerScope === 'shared-derived').length,
+    localUserCount,
+    remoteUserCount,
+    sharedDerivedCount,
   };
 }
 
