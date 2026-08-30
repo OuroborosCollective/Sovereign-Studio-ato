@@ -16,15 +16,16 @@ describe('DevChat Draft PR execution contract', () => {
     expect(builder).toContain('Vorgemerktes Review-Preset wird direkt über den Repository-Executor wiederaufgenommen');
   });
 
-  it('preserves executable swarm, recovery, and publication behind the typed engine boundary while the Play root stays chat-only', () => {
+  it('preserves executable swarm, recovery, and publication behind the typed engine boundary in the monitor-first root', () => {
     const app = source('src/App.tsx');
     const boundary = source('src/features/product/runtime/sovereignEngineBoundary.ts');
     const client = source('src/features/product/runtime/sovereignAgentClient.ts');
     const runtime = source('src/features/product/runtime/sovereignAgentRuntime.ts');
 
-    expect(app).not.toContain("'START_REPOSITORY_EXECUTION'");
-    expect(app).not.toContain("'CREATE_DRAFT_PR'");
-    expect(app).not.toContain('executeSovereignEngineCommand');
+    expect(app).toContain('data-layout="monitor-first-live-workspace"');
+    expect(app).toContain("'START_REPOSITORY_EXECUTION'");
+    expect(app).toContain("'CREATE_DRAFT_PR'");
+    expect(app).toContain('executeSovereignEngineCommand');
     expect(boundary).toContain('await transport.startRepositoryExecution(command.payload.input)');
     expect(boundary).toContain('await transport.createDraftPr(command.payload.jobId, command.payload.githubAccessToken)');
     expect(boundary).toContain('await transport.getEvidenceAnchors(command.payload.jobId)');
@@ -46,12 +47,13 @@ describe('DevChat Draft PR execution contract', () => {
     expect(builder).toContain('githubAccessToken: githubTokenRef.current || undefined');
   });
 
-  it('keeps Rescue available as a deferred module without mounting it into the Play release root', () => {
+  it('keeps Rescue mounted behind the monitor-first root failure affordance', () => {
     const app = source('src/App.tsx');
     const rescue = source('src/features/rescue/RescuePanel.tsx');
 
-    expect(app).not.toContain('RescuePanel');
-    expect(app).not.toContain('Sovereign Rescue öffnen');
+    expect(app).toContain("import { RescuePanel } from './features/rescue/RescuePanel';");
+    expect(app).toContain('aria-label="Sovereign Rescue öffnen"');
+    expect(app).toContain('<RescuePanel');
     expect(rescue).toContain('RescuePanel');
   });
 

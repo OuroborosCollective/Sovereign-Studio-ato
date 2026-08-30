@@ -49,7 +49,7 @@ function baseProps() {
 }
 
 function chatField(): HTMLTextAreaElement {
-  return screen.getByLabelText('Frage an Sovereign während Live Monitor') as HTMLTextAreaElement;
+  return screen.getByLabelText('Codeauftrag an Sovereign') as HTMLTextAreaElement;
 }
 
 function sendButton(): HTMLButtonElement {
@@ -115,6 +115,7 @@ function liteLlmRouteCatalogResponse(): Response {
       provider: 'freellm',
       billingCategory: 'free',
       fundingMode: 'provider_free_quota',
+      capabilities: { codeActionContract: true },
     }],
   });
 }
@@ -132,18 +133,16 @@ function lastUserTextFromLiteLlmRequest(init?: RequestInit): string {
   }
 }
 
-function testIntentEnvelope(text: string, assistantText: string) {
+function testIntentEnvelope(text: string, _legacyAssistantText = '') {
   const lower = text.toLocaleLowerCase('de-DE');
-  const status = /arbeitet|fertig|status|schon|fortschritt|warum passiert nichts|wo steckt|executor|ausführung/.test(lower);
   const draftPr = /draft\s*pr|pull\s*request/.test(lower) && /mach|erstell|implement|reparier|fix|bring/.test(lower);
-  const write = draftPr || /implement|reparier|fix|änder|aktualisier|verbesser|bau\b|erzeug/.test(lower);
-  const execute = write && (draftPr || lower.includes('sovereign agent'));
+  const write = draftPr || /implement|reparier|fix|änder|aktualisier|verbesser|bau\b|erzeug|prüfe|teste/.test(lower);
   return {
-    mode: write ? 'action' : 'chat',
-    intent: status ? 'status' : draftPr ? 'draft_pr' : write ? 'code_execution' : 'free_chat',
-    action_disposition: execute ? 'execute' : 'review',
-    assistant_text: assistantText,
-    action_title: write ? text : '',
+    mode: write ? 'action' : 'clarify',
+    intent: draftPr ? 'draft_pr' : write ? 'code_execution' : 'unknown',
+    action_disposition: 'review',
+    clarification_code: write ? 'none' : 'change_required',
+    is_startup: false,
     confidence: 0.96,
     language: 'de',
   };
@@ -164,7 +163,7 @@ async function normalizeLiteLlmMockResponse(
   if (typeof content !== 'string') return response;
   try {
     const parsed = JSON.parse(content) as { readonly mode?: unknown };
-    if (parsed.mode === 'chat' || parsed.mode === 'action') return response;
+    if (parsed.mode === 'clarify' || parsed.mode === 'action') return response;
   } catch {
     // Legacy test replies are wrapped below into the strict Sovereign LLM intent envelope.
   }
@@ -512,45 +511,6 @@ async function validateGitHubAccessFromLauncher(): Promise<void> {
   );
 }
 
-async function driveRepoBlockedExecutionThroughGitHubAccess() {
-  const originalText = 'Sovereign Agent soll Feature X implementieren';
-  const onStartAgent = vi.fn();
-  mockFetchSequence(
-    jsonResponse({ choices: [{ message: { content: 'Ich habe den Ausführungsauftrag verstanden.' } }] }),
-    jsonResponse({ tree: [{ path: 'src/App.tsx', type: 'blob', size: 42 }], truncated: false }),
-    jsonResponse({ login: 'octo' }),
-    jsonResponse({ permissions: { push: true } }),
-  );
-  renderWithProviders(
-    <BuilderContainer
-      {...baseProps()}
-      mission=""
-      repoReady={false}
-      agentReady
-      agentJob={repoScopedJob({ status: 'completed' })}
-      onStartAgent={onStartAgent}
-    />,
-  );
-
-  fireEvent.change(chatField(), { target: { value: originalText } });
-  fireEvent.click(sendButton());
-  await waitFor(() => expect(screen.getByRole('dialog', { name: 'Repo Setup' })).toBeDefined());
-  expect(onStartAgent).not.toHaveBeenCalled();
-
-  fireEvent.change(screen.getByLabelText('GitHub Repository URL'), { target: { value: TEST_REPO_URL } });
-  fireEvent.click(screen.getByRole('button', { name: 'Repo-Snapshot laden' }));
-  await waitFor(() =>
-    expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(1),
-  );
-
-  const accessCard = await screen.findByTestId('github-access-card');
-  fireEvent.click(within(accessCard).getByRole('button', { name: 'Zugang eingeben' }));
-  const accessDialog = await screen.findByRole('dialog', { name: 'GitHub-Zugang' });
-  fireEvent.change(within(accessDialog).getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
-  fireEvent.click(within(accessDialog).getByRole('button', { name: 'Übernehmen' }));
-
-  return { originalText, onStartAgent };
-}
 
 beforeEach(() => {
   testChatBubbleSequence = 0;
@@ -598,15 +558,20 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByLabelText("Menü")).toBeDefined();
   });
 
-  it("loads the authenticated route/model picker from the canonical backend catalog", async () => {
+  it("loads the authenticated catalog into a compact, closed-by-default route picker", async () => {
     const fetchMock = mockFetchSequence();
     renderWithProviders(<BuilderContainer {...baseProps()} />);
 
-    const select = screen.getByTestId('sovereign-llm-route-select') as HTMLSelectElement;
-    expect(select.value).toBe('');
-    await waitFor(() => expect(screen.getByRole('option', {
-      name: /FREE · freellm · deepseek-r1 · deepseek-r1/i,
-    })).toBeDefined());
+    const trigger = screen.getByTestId('sovereign-llm-route-picker-trigger');
+    expect(trigger).toHaveTextContent('Auto · Backend/Revolver');
+    expect(screen.queryByRole('dialog', { name: 'LLM-Modell auswählen' })).toBeNull();
+
+    fireEvent.click(trigger);
+    const picker = await screen.findByRole('dialog', { name: 'LLM-Modell auswählen' });
+    expect(within(picker).getByLabelText('Modelle durchsuchen')).toBeDefined();
+    expect(within(picker).getByRole('option', {
+      name: /FREE.*freellm.*deepseek-r1/i,
+    })).toBeDefined();
     expect(fetchMock.mock.calls.some(([input]) => (
       isRoutePickerBootstrap(input as RequestInfo | URL)
     ))).toBe(true);
@@ -618,12 +583,13 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
     renderWithProviders(<BuilderContainer {...baseProps()} mission="" />);
 
-    const select = screen.getByTestId('sovereign-llm-route-select') as HTMLSelectElement;
-    await waitFor(() => expect(screen.getByRole('option', {
-      name: /FREE · freellm · deepseek-r1 · deepseek-r1/i,
-    })).toBeDefined());
-    fireEvent.change(select, { target: { value: 'test-chat-route' } });
-    expect(select.value).toBe('test-chat-route');
+    const trigger = screen.getByTestId('sovereign-llm-route-picker-trigger');
+    fireEvent.click(trigger);
+    const picker = await screen.findByRole('dialog', { name: 'LLM-Modell auswählen' });
+    fireEvent.click(within(picker).getByRole('option', {
+      name: /FREE.*freellm.*deepseek-r1/i,
+    }));
+    expect(trigger).toHaveTextContent(/FREE · freellm · deepseek-r1/i);
     expect(screen.getByText(/Fixiert auf Backend-Route test-chat-route/i)).toBeDefined();
 
     fireEvent.change(chatField(), { target: { value: 'Welche Route nutzt du?' } });
@@ -671,10 +637,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByLabelText(/Sovereign Chat Eingabe/i)).toBeNull();
   });
 
-  it("keeps questions and answers visible in the non-overlay monitor dock without reopening chat", async () => {
+  it("keeps a concise code-order clarification in the non-overlay monitor dock", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
-      jsonResponse({ choices: [{ message: { content: 'Der Agent arbeitet weiterhin im gebundenen Workspace.' } }] }),
+      jsonResponse({ choices: [{ message: { content: 'Provider prose must never reach the dock.' } }] }),
     );
     renderWithProviders(
       <BuilderContainer
@@ -691,15 +657,14 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
     await waitFor(() => expect(screen.getByTestId('monitor-communication-dock')).toBeDefined());
 
-    const monitorQuestion = screen.getByLabelText('Frage an Sovereign während Live Monitor');
-    fireEvent.change(monitorQuestion, { target: { value: 'arbeitet der Agent gerade?' } });
+    fireEvent.change(chatField(), { target: { value: 'Was kannst du?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Senden' }));
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3));
-    await waitFor(() => expect(screen.getByText('arbeitet der Agent gerade?')).toBeDefined());
+    await waitFor(() => expect(screen.getByText('Was kannst du?')).toBeDefined());
     expect(screen.getAllByText('RUNTIME').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Noch nicht. Sovereign Agent arbeitet noch.')).toBeDefined();
-    expect(screen.queryByText('Der Agent arbeitet weiterhin im gebundenen Workspace.')).toBeNull();
+    expect(screen.getByText('Welche konkrete Änderung soll ich umsetzen?')).toBeDefined();
+    expect(screen.queryByText('Provider prose must never reach the dock.')).toBeNull();
     expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined();
     expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
     expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-overlay', 'false');
@@ -859,8 +824,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       jsonResponse({ choices: [{ message: { content: JSON.stringify({
         mode: 'action',
         intent: 'code_execution',
-        assistant_text: 'Ich habe den Änderungsauftrag verstanden.',
-        action_title: 'Mobile UX und Runtime-Log verbessern',
+        action_disposition: 'review',
+        clarification_code: 'none',
+        is_startup: false,
         confidence: 0.95,
         language: 'de',
       }) } }], model: 'deepseek-r1' }),
@@ -877,11 +843,13 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       overflowY: 'auto',
       overflowX: 'hidden',
     });
-    // Draft card should show the title
-    expect(screen.getByText(/Ich habe daraus diesen Integrationsauftrag erkannt/)).toBeInTheDocument();
+    expect(screen.getByText('Freigabe für exakt diesen Repository-Auftrag:')).toBeInTheDocument();
+    expect(screen.getByTestId('draft-execution-mission')).toHaveTextContent(
+      'Bitte mobile UX verbessern und Log direkt sichtbar machen.',
+    );
   });
 
-  it("preserves the online-understood action as the mission used for execution and later PR-gated learning", async () => {
+  it("dispatches exactly the visible mission and revision only after a separate owner confirmation", async () => {
     const props = {
       ...baseProps(),
       agentReady: true,
@@ -890,34 +858,54 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     };
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
-      jsonResponse({ login: "octo" }),
-      jsonResponse({ permissions: { push: true } }),
       jsonResponse({ choices: [{ message: { content: JSON.stringify({
         mode: 'action',
         intent: 'code_execution',
-        assistant_text: 'Ich habe den Auftrag verstanden.',
-        action_title: 'Mobile Chat-UX verbessern',
+        action_disposition: 'review',
+        clarification_code: 'none',
+        is_startup: false,
         confidence: 0.96,
         language: 'de',
       }) } }], model: 'deepseek-r1' }),
+      jsonResponse({ login: "octo" }),
+      jsonResponse({ permissions: { push: true } }),
     );
 
     renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
     await loadRepoFromChat();
-    await validateGitHubAccessFromLauncher();
 
     const originalText = 'Verbessere die mobile Chat-UX und prüfe den Runtime-Pfad.';
     fireEvent.change(chatField(), { target: { value: originalText } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByTestId('integration-intent-draft-card')).toBeInTheDocument());
+    const draftCard = await screen.findByTestId('integration-intent-draft-card');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Integrationsauftrag einbauen' }));
+    expect(within(draftCard).getByTestId('draft-execution-mission').textContent).toBe(originalText);
+    expect(within(draftCard).getByTestId('draft-target-repo').textContent).toBe(TEST_REPO_URL);
+    expect(within(draftCard).getByTestId('draft-target-branch').textContent).toBe('main');
+    expect(within(draftCard).getByTestId('draft-target-head').textContent).toBe('c'.repeat(40));
+    expect(props.onStartAgent).not.toHaveBeenCalled();
 
+    fireEvent.click(within(draftCard).getByRole('button', { name: 'Sicheren GitHub-Zugang öffnen' }));
+    fireEvent.click(screen.getByText('Zugang eingeben'));
+    fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
+    fireEvent.click(screen.getByText('Übernehmen'));
+    await waitFor(() => expect(
+      screen.getByRole('log', { name: 'Sovereign Action Stream' }),
+    ).toHaveTextContent('GitHub-Zugang bereit'));
+
+    // Access capability is not consent to execute. The exact preview stays pending.
+    expect(props.onStartAgent).not.toHaveBeenCalled();
+    expect(screen.getByTestId('integration-intent-draft-card')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Repository-Auftrag starten' }));
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
-    expect(props.onMissionChange).toHaveBeenCalledOnce();
-    const learnedMission = props.onMissionChange.mock.calls[0][0] as string;
-    expect(learnedMission).toContain(originalText);
-    expect(learnedMission).toContain('Ideenfabrik Auftrag:');
+    expect(props.onMissionChange).toHaveBeenCalledWith(originalText);
+    expect(props.onStartAgent).toHaveBeenCalledWith(originalText, {
+      repoUrl: TEST_REPO_URL,
+      branch: 'main',
+      expectedHeadSha: 'c'.repeat(40),
+      githubAccessToken: fakeGitHubPat(),
+    });
   });
 
   it("syncs externally adopted insight missions only into an untouched empty composer", () => {
@@ -938,7 +926,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(chatField().value).toBe("Verbessere mobile UX und Log-Fenster.");
   });
 
-  it("does not duplicate an already analysed mission when Sovereign Agent execution is requested", async () => {
+  it("keeps the approved online mission byte-for-byte unchanged", async () => {
     const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
@@ -948,14 +936,21 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
     await loadRepoFromChat();
     await validateGitHubAccessFromLauncher();
-    fireEvent.change(chatField(), { target: { value: "Bitte Sovereign Agent: implementiere den mobilen Chat-Fix als Draft PR." } });
+
+    const originalText = "Bitte Sovereign Agent: implementiere den mobilen Chat-Fix als Draft PR.";
+    fireEvent.change(chatField(), { target: { value: originalText } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(props.onMissionChange).toHaveBeenCalled());
-    const emittedMission = props.onMissionChange.mock.calls[0][0] as string;
-    expect(emittedMission.match(/Ideenfabrik Auftrag:/g)).toHaveLength(1);
-    expect(emittedMission.match(/Repository-Kontext:/g)).toHaveLength(1);
-    expect(emittedMission).toContain("implementiere den mobilen Chat-Fix");
+
+    const draftCard = await screen.findByTestId('integration-intent-draft-card');
+    expect(within(draftCard).getByTestId('draft-execution-mission').textContent).toBe(originalText);
+    expect(props.onMissionChange).not.toHaveBeenCalled();
+    expect(props.onStartAgent).not.toHaveBeenCalled();
+
+    fireEvent.click(within(draftCard).getByRole('button', { name: 'Repository-Auftrag starten' }));
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
+    expect(props.onMissionChange).toHaveBeenCalledWith(originalText);
+    expect(props.onStartAgent.mock.calls[0][0]).toBe(originalText);
+    expect(props.onStartAgent.mock.calls[0][0]).not.toContain('Ideenfabrik Auftrag:');
   });
 
   it("opens the DevChat side menu without duplicating raw runtime endpoints", () => {
@@ -1148,107 +1143,40 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     }
   });
 
-  it("keeps a pending learning side-channel from owning the next chat submit", async () => {
+  it("keeps consecutive strict-contract submits independent without offline learning", async () => {
     const restoreUser = setRuntimeTestUser();
-    let rejectFirstInference: ((reason?: unknown) => void) | null = null;
-    const inferenceSpy = vi.spyOn(areInferenceApi, 'evaluateAreInference')
-      .mockImplementationOnce(
-        () => new Promise<never>((_resolve, reject) => { rejectFirstInference = reject; }),
-      )
-      .mockImplementation((input) => Promise.resolve(localAreInferenceResult(input.onlineAvailable)));
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = requestUrl(input);
-      return runtimeSupportResponse(url, init)
-        ?? jsonResponse({ choices: [{ message: { content: 'Worker response must remain pending.' } }] });
-    }));
+    const inferenceSpy = vi.spyOn(areInferenceApi, 'evaluateAreInference');
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ choices: [{ message: { content: 'first strict reply' } }] }),
+      jsonResponse({ choices: [{ message: { content: 'second strict reply' } }] }),
+    );
+    const llmCalls = () => fetchMock.mock.calls.filter(([input]) => (
+      requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')
+    ));
 
     try {
       renderWithProviders(<BuilderContainer {...baseProps()} mission="" agentReady />);
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir die Runtime-Evidence.' } });
       fireEvent.click(sendButton());
-      await waitFor(() => expect(inferenceSpy).toHaveBeenCalledOnce());
+
+      await waitFor(() => expect(llmCalls()).toHaveLength(1));
+      await waitFor(() => expect(
+        screen.getAllByText('Welche konkrete Änderung soll ich umsetzen?').length,
+      ).toBeGreaterThan(0));
 
       const secondMessage = 'Diese zweite Nachricht darf nicht verloren gehen.';
       fireEvent.change(chatField(), { target: { value: secondMessage } });
       fireEvent.click(sendButton());
 
-      await waitFor(() => expect(inferenceSpy).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(llmCalls()).toHaveLength(2));
       expect(screen.getAllByText(secondMessage).length).toBeGreaterThanOrEqual(1);
       expect(chatField().value).toBe('');
+      expect(inferenceSpy).not.toHaveBeenCalled();
     } finally {
-      await act(async () => {
-        rejectFirstInference?.(new Error('Learning side-channel assertion completed.'));
-        await Promise.resolve();
-      });
       restoreUser();
     }
   });
 
-  it("resumes a pending write intent without waiting for a learning side-channel", async () => {
-    const restoreUser = setRuntimeTestUser();
-    let resolveInference: ((result: AreInferenceResult) => void) | null = null;
-    const inferenceSpy = vi.spyOn(areInferenceApi, 'evaluateAreInference').mockImplementation(
-      () => new Promise<AreInferenceResult>((resolve) => { resolveInference = resolve; }),
-    );
-    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = requestUrl(input);
-      if (url.includes('/git/trees/')) {
-        return jsonResponse({ sha: 'a'.repeat(40), tree: [{ path: 'src/App.tsx', type: 'blob', size: 42 }] });
-      }
-      if (url.includes('/commits/')) return jsonResponse({ sha: 'c'.repeat(40) });
-      if (url === 'https://api.github.com/user') return jsonResponse({ login: 'octo' });
-      if (url === 'https://api.github.com/repos/OuroborosCollective/Sovereign-Studio-ato') {
-        return jsonResponse({ permissions: { push: true } });
-      }
-      if (url.includes('/api/user/agent/github-access/scope')) {
-        return jsonResponse({ ok: true, scope: 'v1.test-scope.signature' });
-      }
-      return runtimeSupportResponse(url, init)
-        ?? jsonResponse({ choices: [{ message: { content: 'Worker response.' } }] });
-    }));
-
-    try {
-      renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
-      await loadRepoFromChat();
-
-      const pendingMessage = 'Sovereign Agent soll Feature X implementieren';
-      fireEvent.change(chatField(), { target: { value: pendingMessage } });
-      fireEvent.click(sendButton());
-      await waitFor(() =>
-        expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(1),
-      );
-      expect(props.onStartAgent).not.toHaveBeenCalled();
-
-      // The gate UI is rendered before the originating serialized submit releases
-      // its ref lock. Yield one task so this test starts the competing inference
-      // submit intentionally instead of racing that first submit's finally block.
-      await act(async () => {
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      });
-
-      fireEvent.change(chatField(), { target: { value: 'Can you show me the README?' } });
-      fireEvent.click(sendButton());
-      await waitFor(() => expect(inferenceSpy).toHaveBeenCalledOnce());
-
-      fireEvent.click(screen.getAllByRole('button', { name: 'Zugang eingeben' })[0]);
-      fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
-      fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
-      await waitFor(() =>
-        expect(screen.getByRole('log', { name: 'Sovereign Action Stream' }))
-          .toHaveTextContent('GitHub-Zugang bereit'),
-      );
-      await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
-      expect(inferenceSpy).toHaveBeenCalledOnce();
-      expect(props.onStartAgent.mock.calls[0][0]).toContain(pendingMessage);
-    } finally {
-      await act(async () => {
-        resolveInference?.(localAreInferenceResult());
-        await Promise.resolve();
-      });
-      restoreUser();
-    }
-  });
 
   it("replaces successful direct LLM response evidence with the latest failed call", async () => {
     const restoreUser = setRuntimeTestUser();
@@ -1282,12 +1210,12 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den ersten Runtime-State.' } });
       fireEvent.click(sendButton());
       await waitFor(() => expect(chatCalls).toBe(1));
-      expect(await screen.findByText('Der erste Sovereign LLM-Aufruf war erfolgreich.')).toBeDefined();
+      expect((await screen.findAllByText('Welche konkrete Änderung soll ich umsetzen?')).length).toBeGreaterThanOrEqual(1);
 
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den neuen Runtime-State.' } });
       fireEvent.click(sendButton());
       await waitFor(() =>
-        expect(screen.getAllByText(/Worker ist offline|Worker Health|Online-Sprachdeutung/i).length).toBeGreaterThan(0),
+        expect(screen.getAllByText(/Codeauftragsvertrag blockiert|sichere Online-Aktionsroute ist blockiert/i).length).toBeGreaterThan(0),
       );
       expect(chatCalls).toBe(2);
 
@@ -1298,7 +1226,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     }
   });
 
-  it("starts the external agent only for explicit code or Draft-PR execution intent", async () => {
+  it("never starts a recognized code order before the visible review is confirmed", async () => {
     const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
@@ -1308,11 +1236,18 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
     await loadRepoFromChat();
     await validateGitHubAccessFromLauncher();
-    fireEvent.change(chatField(), { target: { value: "Bitte implementiere einen Chat-State-Fix als Draft PR." } });
+
+    const originalText = "Bitte implementiere einen Chat-State-Fix als Draft PR.";
+    fireEvent.change(chatField(), { target: { value: originalText } });
     fireEvent.click(sendButton());
+
+    const draftCard = await screen.findByTestId('integration-intent-draft-card');
+    expect(props.onStartAgent).not.toHaveBeenCalled();
+    expect(within(draftCard).getByTestId('draft-execution-mission').textContent).toBe(originalText);
+
+    fireEvent.click(within(draftCard).getByRole('button', { name: 'Repository-Auftrag starten' }));
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
-    expect(props.onStartAgent.mock.calls[0][0]).toContain("Ideenfabrik Auftrag");
-    expect(props.onStartAgent.mock.calls[0][1]).toEqual({
+    expect(props.onStartAgent).toHaveBeenCalledWith(originalText, {
       repoUrl: TEST_REPO_URL,
       branch: "main",
       expectedHeadSha: 'c'.repeat(40),
@@ -1321,7 +1256,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
   });
 
-  it("keeps a README content question on the advisory Worker route", async () => {
+  it("returns one fixed clarification instead of answering a README conversation", async () => {
     const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
     const fetchMock = mockFetchSequence(
       jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
@@ -1334,13 +1269,14 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3));
-    expect(await screen.findByText("README-Inhalt erklärt.")).toBeDefined();
+    expect((await screen.findAllByText("Welche konkrete Änderung soll ich umsetzen?")).length)
+      .toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("README-Inhalt erklärt.")).toBeNull();
     expect(props.onStartAgent).not.toHaveBeenCalled();
-    expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3);
+    expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
   });
 
-  it("keeps a Pull Request question advisory despite executor keywords", async () => {
+  it("does not treat a Pull Request explanation as an execution order", async () => {
     const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
     const fetchMock = mockFetchSequence(
       jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
@@ -1353,100 +1289,13 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3));
-    expect(await screen.findByText("Ein Pull Request ist eine prüfbare Änderung.")).toBeDefined();
+    expect((await screen.findAllByText("Welche konkrete Änderung soll ich umsetzen?")).length)
+      .toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("Ein Pull Request ist eine prüfbare Änderung.")).toBeNull();
     expect(props.onStartAgent).not.toHaveBeenCalled();
-    expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3);
+    expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
   });
 
-  it("resumes one blocked Sovereign Agent request after GitHub access becomes ready", async () => {
-    const originalText = "Sovereign Agent soll Feature X implementieren";
-    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
-    mockFetchSequence(
-      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
-      jsonResponse({ choices: [{ message: { content: 'Ich habe den Ausführungsauftrag verstanden.' } }] }),
-      jsonResponse({ login: "octo" }),
-      jsonResponse({ permissions: { push: true } }),
-    );
-    renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
-    await loadRepoFromChat();
-
-    fireEvent.change(chatField(), { target: { value: originalText } });
-    fireEvent.click(sendButton());
-    await waitFor(() =>
-      expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(1),
-    );
-    expect(props.onStartAgent).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getAllByRole('button', { name: 'Zugang eingeben' })[0]);
-    fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
-    fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
-
-    await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
-    expect(props.onStartAgent.mock.calls[0][0]).toContain(originalText);
-    expect(screen.getAllByText(originalText)).toHaveLength(1);
-  });
-
-  it('confirms repo-scoped GitHub access after loading the repository for a blocked execution', async () => {
-    await driveRepoBlockedExecutionThroughGitHubAccess();
-
-    await waitFor(() =>
-      expect(screen.getByRole('log', { name: 'Sovereign Action Stream' }))
-        .toHaveTextContent('GitHub-Zugang bereit'),
-      { timeout: 3000 },
-    );
-  });
-
-  it('emits the pending-execution resume receipt after repo-scoped GitHub access becomes ready', async () => {
-    const revealActionStreamHistory = () => {
-      const actionStream = screen.getByRole('log', { name: 'Sovereign Action Stream' });
-      const detailsButton = within(actionStream).queryByRole('button', { name: 'Details' });
-      if (detailsButton) fireEvent.click(detailsButton);
-      return actionStream;
-    };
-    await driveRepoBlockedExecutionThroughGitHubAccess();
-
-    await waitFor(() =>
-      expect(revealActionStreamHistory()).toHaveTextContent('Blockierter Auftrag wird wiederaufgenommen'),
-      { timeout: 3000 },
-    );
-  });
-
-  it("resumes one repo-blocked Agent request through repo load and GitHub validation", async () => {
-    const { originalText, onStartAgent } = await driveRepoBlockedExecutionThroughGitHubAccess();
-
-    await waitFor(() => expect(onStartAgent).toHaveBeenCalledOnce(), { timeout: 3000 });
-    expect(onStartAgent.mock.calls[0][0]).toContain(originalText);
-  });
-
-  it("preserves the original mission in monitor communication across the first repository binding", async () => {
-    const originalText = "Sovereign Agent soll Feature X implementieren";
-    mockFetchSequence(
-      jsonResponse({ choices: [{ message: { content: 'Ich habe den Ausführungsauftrag verstanden.' } }] }),
-      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
-    );
-    renderWithProviders(
-      <BuilderContainer
-        {...baseProps()}
-        mission=""
-        repoReady={false}
-        agentReady
-        agentJob={repoScopedJob({ status: 'completed' })}
-        onStartAgent={vi.fn()}
-      />,
-    );
-
-    fireEvent.change(chatField(), { target: { value: originalText } });
-    fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByRole("dialog", { name: "Repo Setup" })).toBeDefined());
-
-    fireEvent.change(screen.getByLabelText("GitHub Repository URL"), { target: { value: TEST_REPO_URL } });
-    fireEvent.click(screen.getByRole("button", { name: "Repo-Snapshot laden" }));
-
-    await waitFor(() => expect(screen.getByLabelText('Repo Inspector öffnen')).toBeDefined());
-    await waitFor(() => expect(screen.getAllByText(originalText).length).toBeGreaterThanOrEqual(1));
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
-  });
 
   it("does not call the protected direct LLM route for a guest session", async () => {
     const originalRefreshUser = useUserStore.getState().refreshUser;
@@ -1481,34 +1330,6 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     }
   });
 
-  it("shows repo status when not ready but does not block normal chat", async () => {
-    const props = baseProps();
-    renderWithProviders(<BuilderContainer {...props} repoReady={false} agentReady />);
-    expect(screen.getAllByText(/Repo fehlt/).length).toBeGreaterThanOrEqual(1);
-    expect(sendButton()).not.toBeDisabled();
-    fireEvent.change(chatField(), { target: { value: "Was brauchst du als nächstes?" } });
-    fireEvent.click(sendButton());
-    expect(chatField().value).toBe("");
-    await waitFor(() =>
-      expect(screen.getByText("Was brauchst du als nächstes?")).toBeDefined(),
-    );
-    expect(await screen.findByText("Worker Antwort aus Cloudflare Route.")).toBeDefined();
-    expect(props.onMissionChange).not.toHaveBeenCalled();
-  });
-
-  it("lets the online LLM answer unclear language instead of blocking on local keyword rules", async () => {
-    const fetchMock = mockFetchSequence(
-      jsonResponse({ choices: [{ message: { content: "Ich brauche noch etwas Kontext, um das sicher einzuordnen." } }] }),
-    );
-    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
-
-    fireEvent.change(chatField(), { target: { value: "Unklarer Kontext ohne Auftrag" } });
-    fireEvent.click(sendButton());
-
-    await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2));
-    expect(await screen.findByText("Ich brauche noch etwas Kontext, um das sicher einzuordnen.")).toBeDefined();
-    expect(screen.queryByText(/Route blockiert: Auftrag konnte nicht erkannt werden/i)).toBeNull();
-  });
 
   it("loads a GitHub repo as runtime context without writing analysis into the composer", async () => {
     const props = baseProps();
@@ -1527,36 +1348,6 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  it("routes normal text after repo load through the direct LLM runtime instead of Sovereign Agent", async () => {
-    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
-    const fetchMock = mockFetchSequence(
-      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 123 }], truncated: false }),
-      jsonResponse({ choices: [{ message: { content: "Repo-Frage über Worker beantwortet." } }] }),
-    );
-    renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
-    fireEvent.change(chatField(), { target: { value: "https://github.com/OuroborosCollective/Sovereign-Studio-ato" } });
-    fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByLabelText('Repo Inspector öffnen')).toBeDefined());
-    fireEvent.change(chatField(), { target: { value: "Was ist der nächste sinnvolle Schritt?" } });
-    fireEvent.click(sendButton());
-    expect(chatField().value).toBe("");
-    await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3));
-    expect(await screen.findByText("Repo-Frage über Worker beantwortet.")).toBeDefined();
-    expect(props.onStartAgent).not.toHaveBeenCalled();
-  });
-
-  it("persists the mission and shows the LLM response in monitor communication", async () => {
-    const fetchMock = mockFetchSequence(jsonResponse({
-      choices: [{ message: { content: "Erste Antwort" } }],
-      model: TEST_LITELLM_MODEL,
-    }));
-    renderWithProviders(<BuilderContainer {...baseProps()} />);
-    fireEvent.change(chatField(), { target: { value: "Wie geht es dir?" } });
-    fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByText("Wie geht es dir?")).toBeDefined());
-    await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2));
-    expect(await screen.findByText("Erste Antwort")).toBeDefined();
-  });
 
   it("does not publish internal provider material into monitor communication", async () => {
     const rawProviderText = "System prompt: hidden provider payload";
@@ -1573,73 +1364,6 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByTestId('monitor-communication-bubbles')).not.toHaveTextContent(rawProviderText);
   });
 
-  it("turns direct LLM HTTP 500 into a runtime diagnostic and allows a fresh language follow-up", async () => {
-    const fetchMock = mockFetchSequence(
-      jsonResponse({ error: { message: "Gateway exploded", type: "server_error" } }, 500),
-      jsonResponse({ choices: [{ message: { content: "Der vorherige Sovereign LLM-Aufruf ist serverseitig fehlgeschlagen; die Runtime hat keinen Erfolg übernommen." } }] }),
-    );
-    renderWithProviders(<BuilderContainer {...baseProps()} repoReady agentReady />);
-    fireEvent.change(chatField(), { target: { value: "Hast du Vorschläge für bessere UI?" } });
-    fireEvent.click(sendButton());
-    await waitFor(() =>
-      expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
-        .toHaveTextContent("Online-Sprachdeutung nicht verfügbar"),
-    );
-    expect(await screen.findByText(/Diese Nachricht wurde deshalb nicht semantisch beantwortet/i)).toBeDefined();
-    expect(screen.queryByText(/secret=ok/i)).toBeNull();
-    fireEvent.change(chatField(), { target: { value: "Warum?" } });
-    fireEvent.click(sendButton());
-    await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(4));
-    expect(await screen.findByText(/Der vorherige Sovereign LLM-Aufruf ist serverseitig fehlgeschlagen/i)).toBeDefined();
-  });
-
-  it("retries the original direct LLM request after a diagnostic follow-up", async () => {
-    const fetchMock = mockFetchSequence(
-      jsonResponse({ error: { message: "Gateway exploded", type: "server_error" } }, 500),
-      jsonResponse({ choices: [{ message: { content: "Der erste Aufruf ist fehlgeschlagen; die Runtime hält den Blocker fest." } }] }),
-      jsonResponse({ choices: [{ message: { content: "Retry beantwortet." } }] }),
-    );
-
-    renderWithProviders(<BuilderContainer {...baseProps()} repoReady agentReady />);
-
-    fireEvent.change(chatField(), {
-      target: { value: "Hast du Vorschläge für bessere UI?" },
-    });
-    fireEvent.click(sendButton());
-
-    await waitFor(() =>
-      expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
-        .toHaveTextContent("Online-Sprachdeutung nicht verfügbar"),
-    );
-
-    fireEvent.change(chatField(), { target: { value: "Warum?" } });
-    fireEvent.click(sendButton());
-
-    await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => (
-      requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')
-    ))).toHaveLength(2));
-    expect(await screen.findByText(/Der erste Aufruf ist fehlgeschlagen/i)).toBeDefined();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Retry Worker request' }));
-
-    await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => (
-      requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')
-    ))).toHaveLength(3));
-    expect(await screen.findByText("Retry beantwortet.")).toBeDefined();
-    const llmCalls = fetchMock.mock.calls.filter(([input]) => (
-      requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')
-    ));
-    const retriedCall = llmCalls.at(-1);
-    expect(lastUserTextFromLiteLlmRequest(retriedCall?.[1] as RequestInit | undefined))
-      .toBe("Hast du Vorschläge für bessere UI?");
-    expect(screen.queryByText(/Sovereign Agent für Code-Auftrag/i)).toBeNull();
-    expect(llmCalls).toHaveLength(3);
-    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
-    fireEvent.click(within(actionStream).getByRole("button", { name: "Details" }));
-    const retryEvent = Array.from(actionStream.querySelectorAll('[data-route="runtime"]'))
-      .find((node) => node.textContent?.includes("Retry gestartet"));
-    expect(retryEvent).toHaveAttribute("data-state", "done");
-  });
 
   it("keeps scoped Sovereign Agent output as plain hints and not result cards", async () => {
     mockFetchSequence(
@@ -1854,9 +1578,12 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await validateGitHubAccessFromLauncher();
     fireEvent.change(chatField(), { target: { value: "Implementiere den mobilen Chat-Fix als Draft PR." } });
     fireEvent.click(sendButton());
+    const draftCard = await screen.findByTestId('integration-intent-draft-card');
+    expect(props.onStartAgent).not.toHaveBeenCalled();
+    fireEvent.click(within(draftCard).getByRole('button', { name: 'Repository-Auftrag starten' }));
     await waitFor(() =>
       expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
-        .toHaveTextContent("Sovereign Agent Job angefragt"),
+        .toHaveTextContent("Freigegebener Repository-Auftrag angefragt"),
     );
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
     expect(screen.queryByText(/Sovereign Agent Runtime wird gestartet/i)).toBeNull();
@@ -1924,6 +1651,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await validateGitHubAccessFromLauncher();
     fireEvent.change(chatField(), { target: { value: "Implementiere den mobilen Chat-Fix als Draft PR." } });
     fireEvent.click(sendButton());
+    const draftCard = await screen.findByTestId('integration-intent-draft-card');
+    expect(props.onStartAgent).not.toHaveBeenCalled();
+    fireEvent.click(within(draftCard).getByRole('button', { name: 'Repository-Auftrag starten' }));
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
     const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
     await waitFor(() =>
@@ -1931,7 +1661,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
     fireEvent.click(within(actionStream).getByRole("button", { name: "Details" }));
     expect(actionStream).toHaveTextContent("Backend session missing");
-    await waitFor(() => expect(screen.getAllByText(/Sovereign Agent Runtime konnte nicht gestartet werden/i).length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText(/Start fehlgeschlagen: Backend session missing/i).length).toBeGreaterThan(0));
   });
 
   it("does not show Sovereign Agent as mandatory blocker when executor is not ready", async () => {
@@ -1947,82 +1677,6 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     });
   });
 
-  it("lets the LLM understand 'arbeitet er schon?' but answers only from the loaded repo job", async () => {
-    const fetchMock = mockFetchSequence(
-      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
-      jsonResponse({
-        choices: [{
-          message: {
-            content: JSON.stringify({
-              mode: "chat",
-              intent: "status",
-              action_disposition: "review",
-              assistant_text: "Ja, ich schaue nach dem Status.",
-              action_title: "",
-              is_startup: true,
-              confidence: 1.0,
-              language: "de",
-            }),
-          },
-        }],
-      }),
-    );
-    renderWithProviders(
-      <BuilderContainer
-        {...baseProps()}
-        mission=""
-        repoReady={false}
-        agentReady
-        agentJob={repoScopedJob({ changedFiles: ["src/App.tsx"] })}
-      />,
-    );
-    await loadRepoFromChat();
-    const callsBeforeStatus = nonAuthFetchCalls(fetchMock).length;
-    fireEvent.change(chatField(), { target: { value: "arbeitet er schon?" } });
-    fireEvent.click(sendButton());
-    await waitFor(() =>
-      expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
-        .toHaveTextContent("LLM-verstandene Status-Frage"),
-    );
-    await waitFor(() => expect(screen.getAllByText(/Ja, Sovereign Agent läuft/i).length).toBeGreaterThan(0));
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsBeforeStatus + 2);
-  });
-
-  it("lets the LLM understand executor status while runtime reports the idle state", async () => {
-    const fetchMock = mockFetchSequence(
-      jsonResponse({ choices: [{ message: { content: "Worker reply" } }] }),
-    );
-    // No workerBlocker → executor status question still answered locally (honest idle state)
-    renderWithProviders(<BuilderContainer {...baseProps()} agentReady />);
-    fireEvent.change(chatField(), { target: { value: "ist er fertig?" } });
-    fireEvent.click(sendButton());
-    await waitFor(() =>
-      expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
-        .toHaveTextContent("LLM-verstandene Status-Frage"),
-    );
-    await waitFor(() => expect(screen.getAllByText(/Nein/i).length).toBeGreaterThan(0));
-    // Language understanding still uses the direct LLM runtime; its raw answer is not a Primary-chat bubble.
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
-  });
-
-  it("Direct LLM HTTP 500 followed by 'Warum?' is interpreted by a fresh online call", async () => {
-    const fetchMock = mockFetchSequence(
-      jsonResponse({ error: { message: "Gateway exploded", type: "server_error" } }, 500),
-      jsonResponse({ choices: [{ message: { content: "Der vorherige Sovereign LLM-Aufruf ist serverseitig fehlgeschlagen; die Runtime hat keinen Erfolg übernommen." } }] }),
-    );
-    renderWithProviders(<BuilderContainer {...baseProps()} repoReady agentReady />);
-    fireEvent.change(chatField(), { target: { value: "Hast du Vorschläge?" } });
-    fireEvent.click(sendButton());
-    await waitFor(() =>
-      expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
-        .toHaveTextContent("Online-Sprachdeutung nicht verfügbar"),
-    );
-    const callsAfterBlock = nonAuthFetchCalls(fetchMock).length;
-    fireEvent.change(chatField(), { target: { value: "Warum?" } });
-    fireEvent.click(sendButton());
-    await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsAfterBlock + 2));
-    expect(await screen.findByText(/Der vorherige Sovereign LLM-Aufruf ist serverseitig fehlgeschlagen/i)).toBeDefined();
-  });
 
   it("SovereignToolLauncher github_access opens the secure GitHubAccessCard directly", async () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
@@ -2496,7 +2150,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(calls).toContain('https://agent.example.test/api/user/agent/github-access/validate');
   });
 
-  it("blocks a Draft-PR execution request when no product executor is connected", async () => {
+  it("keeps a valid Draft-PR order in review when no product executor is connected", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({ login: "octo" }),
@@ -2504,30 +2158,18 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
 
     renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentReady={false} agentJob={repoScopedJob({ status: 'completed' })} />);
-    fireEvent.change(chatField(), { target: { value: "https://github.com/OuroborosCollective/Sovereign-Studio-ato" } });
-    fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByLabelText('Repo Inspector öffnen')).toBeDefined());
-
-    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
-    fireEvent.click(screen.getByLabelText("GitHub Access"));
-    fireEvent.click(screen.getByText("Zugang eingeben"));
-    fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
-    fireEvent.click(screen.getByText("Übernehmen"));
-    await waitFor(() =>
-      expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
-        .toHaveTextContent("GitHub-Zugang bereit"),
-    );
+    await loadRepoFromChat();
+    await validateGitHubAccessFromLauncher();
 
     fireEvent.change(chatField(), { target: { value: "Erstelle einen Draft PR für README und Docs." } });
     fireEvent.click(sendButton());
 
-    await waitFor(() =>
-      expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
-        .toHaveTextContent("Executor-Start blockiert"),
-    );
-    await waitFor(() => expect(screen.getAllByText(/Ausführungsauftrag kann nicht ausgeführt werden/i).length).toBeGreaterThan(0));
-    expect(screen.queryByText(/Route gewählt: Patch\/Draft-PR Runtime/i)).toBeNull();
-    expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
+    const draftCard = await screen.findByTestId('integration-intent-draft-card');
+    expect(within(draftCard).getByTestId('confirm-blocker'))
+      .toHaveTextContent('Backend-Workspace-Executor ist nicht verbunden.');
+    expect(within(draftCard).getByRole('button', { name: 'Repository-Auftrag starten' })).toBeDisabled();
+    expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
+      .not.toHaveTextContent("Freigegebener Repository-Auftrag angefragt");
     expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3);
   });
 
@@ -2614,7 +2256,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await waitFor(() => expect(
       screen.getByRole('log', { name: 'Sovereign Action Stream' }),
-    ).toHaveTextContent('Online-Sprachdeutung nicht verfügbar'));
+    ).toHaveTextContent('Codeauftragsvertrag blockiert'));
+    await waitFor(() => expect(
+      screen.getAllByText('Die sichere Online-Aktionsroute ist blockiert. Soll ich denselben Auftrag mit Auto/Revolver erneut versuchen?').length,
+    ).toBeGreaterThan(0));
     expect(onStartAgent).not.toHaveBeenCalled();
     expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
     expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
@@ -2623,8 +2268,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(fetchMock.mock.calls.some(([input]) => requestUrl(input as RequestInfo | URL).includes('/api/llm/chat'))).toBe(true);
   });
 
-  it("never wakes a pending write intent from an unrelated LLM conversation fallback", async () => {
+  it("rejects unrelated provider prose and never wakes a pending write intent", async () => {
     const onStartAgent = vi.fn();
+    const rawProviderText = 'Die LICENSE beschreibt die Nutzungsbedingungen des Repositorys.';
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
       if (isAuthBootstrapRequest(input)) return authBootstrapResponse();
@@ -2636,7 +2282,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       if (url.includes('/api/llm/chat')) {
         return jsonResponse({
           model: TEST_LITELLM_MODEL,
-          choices: [{ message: { content: 'Die LICENSE beschreibt die Nutzungsbedingungen des Repositorys.' } }],
+          choices: [{ message: { content: rawProviderText } }],
         });
       }
       return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
@@ -2655,19 +2301,15 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
     await loadRepoFromChat();
 
-    const repairPreset = screen.getByRole('button', { name: /Fehler suchen & als Draft PR reparieren/i });
-    fireEvent.click(repairPreset);
-    await waitFor(() => expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(1));
-    expect(onStartAgent).not.toHaveBeenCalled();
-
     fireEvent.change(chatField(), { target: { value: 'Erkläre mir LICENSE und was dort geregelt ist.' } });
     fireEvent.click(sendButton());
 
-    await waitFor(() => expect(screen.getByText(/LICENSE beschreibt die Nutzungsbedingungen/i)).toBeDefined());
-    expect(onStartAgent).not.toHaveBeenCalled();
     const actionStream = screen.getByRole('log', { name: 'Sovereign Action Stream' });
-    expect(actionStream).toHaveTextContent('Freitext-Antwort ohne Aktionsschema übernommen');
-    expect(actionStream).not.toHaveTextContent('Blockierter Auftrag wird wiederaufgenommen');
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    await waitFor(() => expect(actionStream).toHaveTextContent('Codeauftragsvertrag blockiert'));
+    expect(screen.queryByText(rawProviderText)).toBeNull();
+    expect(onStartAgent).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
+    expect(actionStream).not.toHaveTextContent('Freitext-Antwort ohne Aktionsschema übernommen');
   });
+
 });

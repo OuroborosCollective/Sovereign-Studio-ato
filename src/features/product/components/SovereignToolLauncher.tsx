@@ -156,8 +156,8 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
         aria-haspopup="true"
         onClick={() => setOpen((v) => !v)}
         style={{
-          width: 36,
-          height: 36,
+          width: 44,
+          height: 44,
           borderRadius: 10,
           background: open ? `${C.accent}20` : C.surface,
           border: `1px solid ${open ? C.accent : C.border}`,
@@ -295,6 +295,20 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
               </button>
             );
           })}
+          <div
+            role="note"
+            data-testid="sovereign-optional-tools-status"
+            style={{
+              marginTop: 4,
+              padding: '9px 14px',
+              borderTop: `1px solid ${C.border}`,
+              color: C.textSub,
+              font: '9px/1.4 monospace',
+            }}
+          >
+            VPS · optional · nicht verbunden<br />
+            Weitere Tools erscheinen hier erst nach registrierter Freigabe.
+          </div>
         </div>
       )}
     </div>

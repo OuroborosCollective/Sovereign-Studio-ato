@@ -88,6 +88,7 @@ from agent_runtime.desktop_activation import DesktopActivationIssuerV1
 from agent_runtime.desktop_control import DesktopControlGatewayV1
 from agent_runtime.desktop_projection import DesktopFrameProxyV1
 from agent_runtime.live_workspace_context import build_live_workspace_context_resolver
+from agent_runtime.contracts import sanitize_agent_text
 from agent_runtime.routes import register_sovereign_agent_routes
 from agent_runtime.skills.routes import register_progressive_skill_routes
 from are_inference import register_are_inference_routes
@@ -4008,6 +4009,176 @@ def user_purchase():
 
 # ── Public LLM Route endpoints (Issue #461) ──────────────────────────────────
 
+_SOVEREIGN_CODE_ACTION_CONTRACT_ID = "sovereign-code-action-v1"
+_SOVEREIGN_CODE_ACTION_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "sovereign_code_action",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "mode": {"type": "string", "enum": ["action", "clarify"]},
+                "intent": {
+                    "type": "string",
+                    "enum": [
+                        "direct_patch",
+                        "code_execution",
+                        "draft_pr",
+                        "workflow_watch",
+                        "repair_workflow",
+                        "load_repo",
+                        "unknown",
+                    ],
+                },
+                "action_disposition": {
+                    "type": "string",
+                    "enum": ["review"],
+                },
+                "clarification_code": {
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "repo_required",
+                        "change_required",
+                        "expected_result_required",
+                    ],
+                },
+                "is_startup": {"type": "boolean"},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "language": {"type": "string", "maxLength": 16},
+            },
+            "required": [
+                "mode",
+                "intent",
+                "action_disposition",
+                "clarification_code",
+                "is_startup",
+                "confidence",
+                "language",
+            ],
+        },
+    },
+}
+
+
+def _llm_route_config(route: dict) -> dict:
+    config = (route or {}).get("config")
+    if isinstance(config, dict):
+        return config
+    if isinstance(config, str):
+        try:
+            parsed = _json.loads(config)
+        except (TypeError, ValueError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _code_action_contract_mode(route: dict) -> str | None:
+    supported = {
+        str(value).strip()
+        for value in (_llm_route_config(route).get("supportedParameters") or [])
+        if str(value).strip()
+    }
+    if supported.intersection({"response_format", "structured_outputs"}):
+        return "provider-structured"
+    # FreeLLM models remain usable through a stricter server boundary: the
+    # provider receives a JSON-only prompt, and any non-contract output is
+    # discarded before it can reach the browser.
+    if route_transport(dict(route)) == "freellm":
+        return "server-validated-json"
+    return None
+
+
+def _route_supports_code_action_contract(route: dict) -> bool:
+    return _code_action_contract_mode(route) is not None
+
+
+_CODE_ACTION_CONTRACT_KEYS = {
+    "mode",
+    "intent",
+    "action_disposition",
+    "clarification_code",
+    "is_startup",
+    "confidence",
+    "language",
+}
+_CODE_ACTION_INTENTS = {
+    "direct_patch",
+    "code_execution",
+    "draft_pr",
+    "workflow_watch",
+    "repair_workflow",
+    "load_repo",
+}
+
+
+def _validate_code_action_contract(upstream_payload: dict) -> dict | None:
+    """Accept only the fixed action contract; never forward provider prose."""
+    if not isinstance(upstream_payload, dict):
+        return None
+    choices = upstream_payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    message = first.get("message") if isinstance(first, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, str) or not content.strip():
+        return None
+    try:
+        payload = _json.loads(content)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict) or set(payload) != _CODE_ACTION_CONTRACT_KEYS:
+        return None
+
+    mode = payload.get("mode")
+    intent = payload.get("intent")
+    disposition = payload.get("action_disposition")
+    clarification_code = payload.get("clarification_code")
+    is_startup = payload.get("is_startup")
+    confidence = payload.get("confidence")
+    language = payload.get("language")
+    if (
+        mode not in {"action", "clarify"}
+        or disposition != "review"
+        or clarification_code not in {
+            "none",
+            "repo_required",
+            "change_required",
+            "expected_result_required",
+        }
+        or not isinstance(is_startup, bool)
+        or isinstance(confidence, bool)
+        or not isinstance(confidence, (int, float))
+        or not 0 <= float(confidence) <= 1
+        or not isinstance(language, str)
+        or not 1 <= len(language.strip()) <= 16
+    ):
+        return None
+    if mode == "clarify":
+        if intent != "unknown" or clarification_code == "none":
+            return None
+    elif (
+        intent not in _CODE_ACTION_INTENTS
+        or clarification_code != "none"
+        or float(confidence) < 0.5
+    ):
+        return None
+
+    return {
+        "mode": mode,
+        "intent": intent,
+        "action_disposition": "review",
+        "clarification_code": clarification_code,
+        "is_startup": is_startup,
+        "confidence": float(confidence),
+        "language": language.strip(),
+    }
+
+
 def _is_runtime_selectable_llm_route(route: dict) -> bool:
     """Return only routes the direct executor can accept at this revision."""
     candidate = dict(route or {})
@@ -4052,12 +4223,23 @@ def _public_llm_route_payload(row) -> dict:
         "freeEligible": admin_payload["freeEligible"],
         "quotaContractVerified": admin_payload["quotaContractVerified"],
         "revolverEligible": admin_payload["revolverEligible"],
+        "capabilities": {
+            "codeActionContract": _route_supports_code_action_contract(dict(row)),
+            "codeActionContractMode": _code_action_contract_mode(dict(row)),
+        },
     }
 
 
 @app.route("/api/llm/routes")
 def public_llm_routes():
     """Expose safe direct OpenRouter/FreeLLM route metadata; never provider secrets."""
+    purpose = str(request.args.get("purpose") or "execution").strip().lower()
+    if purpose not in {"execution", "picker", "action-contract"}:
+        return jsonify({
+            "error": "Unbekannter LLM-Routenkatalog-Zweck",
+            "blocker": "llm_route_catalog_purpose_invalid",
+            "routes": [],
+        }), 400
     try:
         rows = query(
             """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
@@ -4076,8 +4258,14 @@ def public_llm_routes():
             for row in (rows or [])
             if _is_runtime_selectable_llm_route(dict(row))
         ]
+        if purpose == "action-contract":
+            selectable_routes = [
+                row for row in selectable_routes
+                if _route_supports_code_action_contract(row)
+            ]
         response = make_response(jsonify({
             "routes": [_public_llm_route_payload(row) for row in selectable_routes],
+            "purpose": purpose,
             "revolverPolicy": "free-first",
         }))
         response.headers["Cache-Control"] = "no-store, max-age=0"
@@ -7777,6 +7965,12 @@ def public_llm_chat():
 
     try:
         body = request.get_json(force=True) or {}
+        output_contract_id = str(body.get("outputContractId") or "").strip()
+        if output_contract_id and output_contract_id != _SOVEREIGN_CODE_ACTION_CONTRACT_ID:
+            return jsonify({
+                "error": "Unbekannter strukturierter Ausgabevertrag",
+                "blocker": "llm_output_contract_invalid",
+            }), 400
         if body.get("stream") is True:
             return jsonify({
                 "error": "Streaming ist bis zur partiellen Usage-Reconciliation deaktiviert",
@@ -7792,6 +7986,34 @@ def public_llm_chat():
 
         model = str(body.get("model") or "").strip()
         messages = body.get("messages", [])
+        route_selection_mode = str(body.get("routeSelectionMode") or "pinned").strip()
+        if output_contract_id and route_selection_mode not in {"auto", "pinned"}:
+            return jsonify({
+                "error": "routeSelectionMode muss auto oder pinned sein",
+                "blocker": "llm_route_selection_mode_invalid",
+            }), 400
+        for message in messages if isinstance(messages, list) else []:
+            if not isinstance(message, dict):
+                return jsonify({
+                    "error": "LLM-Nachrichten müssen Objekte sein",
+                    "blocker": "llm_message_invalid",
+                }), 400
+            content = message.get("content")
+            if output_contract_id and not isinstance(content, str):
+                return jsonify({
+                    "error": "Codeauftragsnachrichten müssen Text enthalten",
+                    "blocker": "llm_contract_message_invalid",
+                }), 400
+            if isinstance(content, str):
+                sanitized = sanitize_agent_text(
+                    content,
+                    max(4_000, len(content) + 1),
+                )
+                if sanitized != content.strip():
+                    return jsonify({
+                        "error": "Secret-ähnlicher Inhalt wurde vor dem Modellpfad blockiert",
+                        "blocker": "llm_input_secret_detected",
+                    }), 400
         try:
             max_tokens = int(body.get("max_tokens", 1000))
         except (TypeError, ValueError):
@@ -7807,6 +8029,20 @@ def public_llm_chat():
                 "error": "LLM Route nicht aktiv, nicht vorhanden oder nicht policy-verifiziert",
                 "blocker": "llm_route_not_enabled",
             }), 404
+        if (
+            output_contract_id
+            and route_selection_mode == "pinned"
+            and str(route.get("id") or "") != model
+        ):
+            return jsonify({
+                "error": "Fixierte Codeaufträge akzeptieren ausschließlich die exakte Route-ID",
+                "blocker": "llm_output_contract_route_alias_rejected",
+            }), 409
+        if output_contract_id and not _route_supports_code_action_contract(dict(route)):
+            return jsonify({
+                "error": "Die fixierte Route ist nicht für strukturierte Codeaufträge verifiziert",
+                "blocker": "llm_output_contract_not_supported",
+            }), 409
         try:
             policy = route_billing_policy(route)
         except BillingPolicyError as exc:
@@ -7814,11 +8050,26 @@ def public_llm_chat():
                 "error": str(exc),
                 "blocker": "llm_billing_policy_invalid",
             }), 409
-        candidate_routes = _load_llm_revolver_candidates(
-            route,
-            user_id=user_id,
-            request_id=request_id,
+        candidate_routes = (
+            [route]
+            if output_contract_id and route_selection_mode == "pinned"
+            else _load_llm_revolver_candidates(
+                route,
+                user_id=user_id,
+                request_id=request_id,
+            )
         )
+        if output_contract_id and route_selection_mode == "auto":
+            candidate_routes = [
+                candidate
+                for candidate in candidate_routes
+                if _route_supports_code_action_contract(dict(candidate))
+            ]
+            if not candidate_routes:
+                return jsonify({
+                    "error": "Keine verifizierte Route erfüllt den Codeauftragsvertrag",
+                    "blocker": "llm_output_contract_route_unavailable",
+                }), 409
         if policy["billingCategory"] == FREE_CATEGORY and not candidate_routes:
             return jsonify({
                 "error": "Alle unabhängigen Free-Routen sind blockiert oder in Abkühlung.",
@@ -7953,13 +8204,23 @@ def public_llm_chat():
         revolver_enabled = policy["billingCategory"] == FREE_CATEGORY
         resolver_enabled = len(candidate_routes) > 1
         resolver_mode = (
-            "free-revolver" if revolver_enabled else "paid-to-free-fallback"
+            "pinned"
+            if output_contract_id and route_selection_mode == "pinned"
+            else "free-revolver"
+            if revolver_enabled
+            else "paid-to-free-fallback"
         )
         for attempt_count, candidate_route in enumerate(candidate_routes, start=1):
             candidate_transport = route_transport(dict(candidate_route))
+            candidate_payload = dict(payload)
+            if (
+                output_contract_id
+                and _code_action_contract_mode(dict(candidate_route)) == "provider-structured"
+            ):
+                candidate_payload["response_format"] = _SOVEREIGN_CODE_ACTION_RESPONSE_FORMAT
             resp, err = fetch_direct_llm(
                 dict(candidate_route),
-                json_data=payload,
+                json_data=candidate_payload,
             )
             result = _safe_upstream_json(resp)
             evidence = (
@@ -8109,7 +8370,58 @@ def public_llm_chat():
                 "requestId": request_id,
             }), 500
 
-        response_payload = dict(result) if isinstance(result, dict) else {"result": result}
+        if output_contract_id:
+            validated_contract = _validate_code_action_contract(result)
+            if validated_contract is None:
+                return jsonify({
+                    "error": "Provider-Antwort verletzt den Codeauftragsvertrag",
+                    "blocker": "llm_output_contract_violation",
+                    "requestId": request_id,
+                    "sovereignBilling": billing,
+                }), 502
+            selected_route = fallback_route or route
+            normalized_contract_json = _json.dumps(
+                validated_contract,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            contract_schema_json = _json.dumps(
+                _SOVEREIGN_CODE_ACTION_RESPONSE_FORMAT,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            response_payload = {
+                "model": str(selected_route.get("model_id") or ""),
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": normalized_contract_json,
+                    },
+                    "finish_reason": "stop",
+                }],
+                "outputContract": {
+                    "id": _SOVEREIGN_CODE_ACTION_CONTRACT_ID,
+                    "validated": True,
+                    "contractSha256": hashlib.sha256(
+                        contract_schema_json.encode("utf-8")
+                    ).hexdigest(),
+                    "outputSha256": hashlib.sha256(
+                        normalized_contract_json.encode("utf-8")
+                    ).hexdigest(),
+                    "requestId": request_id,
+                    "routeId": str(selected_route.get("id") or ""),
+                    "selectedModelId": str(selected_route.get("model_id") or ""),
+                    "sourceRevision": (
+                        os.getenv("SOVEREIGN_SOURCE_REVISION", "").strip()
+                        or os.getenv("GIT_COMMIT", "").strip()
+                        or None
+                    ),
+                },
+            }
+        else:
+            response_payload = dict(result) if isinstance(result, dict) else {"result": result}
         response_payload["sovereignBilling"] = billing
         response_payload["sovereignRevolver"] = {
             "eligible": resolver_enabled,
@@ -8130,6 +8442,7 @@ def public_llm_chat():
                 if (fallback_route or route).get("config", {}).get("billingCategory") == FREE_CATEGORY
                 else 6
             ),
+            "routeSelectionMode": route_selection_mode if output_contract_id else "runtime",
         }
         return jsonify(response_payload)
     except Exception:

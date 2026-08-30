@@ -15,30 +15,28 @@ describe('main app entry', () => {
     expect(wrapper).toContain("import App from './App'");
     expect(wrapper).toContain('<App />');
     expect(main).not.toContain("import ProductMagicApp from './ProductMagicApp'");
+    expect(main).not.toContain('<ProductMagicApp />');
     expect(wrapper).not.toContain('ProductMagicApp');
   });
 
-  it('makes App.tsx the focused Play-release chat surface', () => {
+  it('makes App.tsx the monitor-first live surface', () => {
     const app = readSource('./App.tsx');
-    const chat = readSource('./features/release/PlayReleaseChat.tsx');
 
-    expect(app).toContain("import { PlayReleaseChat } from './features/release/PlayReleaseChat'");
-    expect(app).toContain('<PlayReleaseChat />');
-    expect(app).not.toContain('BuilderContainer');
-    expect(app).not.toContain('sovereign-monitor-app');
-    expect(app).not.toContain('monitor-first-live-workspace');
-    expect(chat).toContain('data-layout="play-release-chat"');
-    expect(chat).toContain('aria-label="Sovereign Chat"');
+    expect(app).toContain('BuilderContainer');
+    expect(app).toContain('data-testid="sovereign-monitor-app"');
+    expect(app).toContain('data-layout="monitor-first-live-workspace"');
+    expect(app).toContain('aria-label="Sovereign Workspace Monitor"');
+    expect(app).toContain('MONITOR_FIRST_STYLE');
+    expect(app).not.toContain('data-layout="chat-only-live-entry"');
   });
 
-  it('keeps the deferred monitor implementation out of the current release root', () => {
-    const app = readSource('./App.tsx');
+  it('keeps the unreachable legacy chat body and composer out of the live builder', () => {
     const builder = readSource('./features/product/containers/BuilderContainer.tsx');
 
     expect(builder).toContain('data-testid="sovereign-live-monitor-primary"');
     expect(builder).toContain('<MonitorCommunicationDock');
-    expect(app).not.toContain('BuilderContainer');
-    expect(app).not.toContain('getDesktopFrame');
+    expect(builder).not.toContain('data-testid="sovereign-chat-body-window"');
+    expect(builder).not.toContain('isChat && !liveMonitorPrimary');
   });
 
   it('keeps the old dashboard shell out of the live app entry', () => {
@@ -53,30 +51,22 @@ describe('main app entry', () => {
     expect(app).not.toContain('RepoInsightPanelBridge');
   });
 
-  it('uses the current LLM route bridge instead of runtime auto-routing or visible app tabs', () => {
+  it('keeps runtime auto-routing behind the monitor instead of driving visible app tabs', () => {
     const app = readSource('./App.tsx');
-    const chat = readSource('./features/release/PlayReleaseChat.tsx');
 
     expect(app).not.toContain('decideSovereignAutoView');
     expect(app).not.toContain('setActiveTab(decision.tab)');
-    expect(chat).toContain('fetchSovereignLlmRouteCatalog');
-    expect(chat).toContain('fetchDevChatWorkerReply');
-    expect(chat).toContain('DEV_CHAT_WORKER_DEFAULT_MODEL');
+    expect(app).not.toContain('workflowStatus: workflowReport?.status');
+    expect(app).toContain('onStartAgent={startMonitorTask}');
   });
 
-  it('keeps repository memory and monitor wiring outside App while restoring bounded GitHub execution in Play chat', () => {
+  it('feeds canonical reusable memory into normal agent starts without making recall a start blocker', () => {
     const app = readSource('./App.tsx');
-    const chat = readSource('./features/release/PlayReleaseChat.tsx');
 
-    expect(app).not.toContain('searchReusableMemory');
-    expect(app).not.toContain('startRepositoryExecution');
-    expect(chat).not.toContain('searchReusableMemory');
-    expect(chat).toContain('fetchSovereignDirectLlmInterpretation');
-    expect(chat).toContain('startRepositoryExecution');
-    expect(chat).toContain('prepareDraftPr');
-    expect(chat).toContain('createDraftPr');
-    expect(chat).toContain("interpretation.intent === 'draft_pr'");
-    expect(chat).not.toContain('getDesktopFrame');
+    expect(app).toContain('searchReusableMemory(query, 6)');
+    expect(app).toContain('reusableMemoryContext(memory)');
+    expect(app).toContain('evidenceText = await evidenceWithReusableMemory(nextMission)');
+    expect(app).toContain('return query;');
   });
 
   it('keeps the release shell styling contract in the Android web build', () => {

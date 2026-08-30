@@ -17,6 +17,7 @@ import { LAUNCHER_REGISTRY, type LauncherEntry } from '../launcherRegistry';
 
 export function LauncherMenu() {
   const { isMenuOpen, closeMenu, launchTool } = useLauncherStore();
+  const visibleEntries = LAUNCHER_REGISTRY.filter((entry) => !entry.disabled);
 
   // Document-level ESC-Handler — zuverlässig unabhängig vom Fokus
   useEffect(() => {
@@ -67,7 +68,7 @@ export function LauncherMenu() {
 
         {/* Icon Grid */}
         <div className="overflow-y-auto flex-1 p-4">
-          {LAUNCHER_REGISTRY.length === 0 ? (
+          {visibleEntries.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 gap-3">
               <span className="text-3xl opacity-20">⬡</span>
               <p className="text-white/30 text-xs text-center">
@@ -79,7 +80,7 @@ export function LauncherMenu() {
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-3">
-              {LAUNCHER_REGISTRY.map((entry) => (
+              {visibleEntries.map((entry) => (
                 <LauncherTile
                   key={entry.id}
                   entry={entry}

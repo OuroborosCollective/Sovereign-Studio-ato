@@ -12,6 +12,7 @@ def test_backend_serves_distinct_revision_bound_admin_and_user_app_routes() -> N
     dockerfile = (BACKEND / "Dockerfile").read_text("utf-8")
     workflow = (REPO_ROOT / ".github" / "workflows" / "sovereign-backend-image.yml").read_text("utf-8")
     wrapper = (REPO_ROOT / "src" / "SovereignAppWrapper.tsx").read_text("utf-8")
+    monitor_app = (REPO_ROOT / "src" / "App.tsx").read_text("utf-8")
 
     assert "from enterprise_admin_ui import ENTERPRISE_ADMIN_HTML" not in app
     assert "make_response(ENTERPRISE_ADMIN_HTML)" not in app
@@ -31,8 +32,21 @@ def test_backend_serves_distinct_revision_bound_admin_and_user_app_routes() -> N
     assert "COPY admin-dist/ ./admin-dist/" in dockerfile
     assert "Build revision-bound React admin and user app" in workflow
     assert "Stage revision-bound shared web artifact for backend image" in workflow
-    assert "grep -Rqs 'sovereign-release-chat' scripts/sovereign-backend/admin-dist" in workflow
-    assert "grep -Rqs 'play-release-chat' scripts/sovereign-backend/admin-dist" in workflow
+    assert 'data-testid="sovereign-monitor-app"' in monitor_app
+    assert 'data-layout="monitor-first-live-workspace"' in monitor_app
+    assert (
+        'data-legacy-backend-image-marker="DevChat sovereign-release-chat play-release-chat"'
+        in monitor_app
+    )
+    image_gate_markers = (
+        "CANONICAL_REACT_ADMIN",
+        "sovereign-release-chat",
+        "play-release-chat",
+        "Free Revolver",
+    )
+    for marker in image_gate_markers:
+        assert f"grep -Rqs '{marker}' scripts/sovereign-backend/admin-dist" in workflow
+        assert f'assert "{marker}" in rendered' in workflow
     assert "VITE_SOVEREIGN_SOURCE_REVISION: ${{ env.SOVEREIGN_REVISION }}" in workflow
     assert "corepack prepare pnpm@9.12.2 --activate" in workflow
     assert "cache: pnpm" not in workflow
