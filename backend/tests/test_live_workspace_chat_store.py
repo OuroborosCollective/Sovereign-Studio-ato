@@ -13,6 +13,7 @@ from agent_runtime.live_workspace_chat_store import (  # noqa: E402
     LiveWorkspaceChatSessionV1,
     LiveWorkspaceChatStoreError,
     build_persistable_chat_bubble,
+    list_live_workspace_chat_bubbles,
     normalize_chat_branch,
     normalize_chat_repository_identity,
 )
@@ -180,3 +181,55 @@ def test_store_and_migration_are_byte_identical_in_deployment_mirrors() -> None:
     assert "reject_live_workspace_chat_bubbles_delete" in sql
     assert "source_kind = 'CONSENT_CONTRACT'" in sql
     assert "workflow_state = 'VERIFIED'" in sql
+
+
+class _BubbleListCursor:
+    def __init__(self, rows):
+        self.rows = rows
+        self.query = ""
+        self.params = ()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, query, params):
+        self.query = query
+        self.params = params
+
+    def fetchall(self):
+        return self.rows
+
+
+class _BubbleListConnection:
+    def __init__(self, rows):
+        self.cursor_instance = _BubbleListCursor(rows)
+
+    def cursor(self):
+        return self.cursor_instance
+
+
+def test_list_bubbles_returns_newest_bounded_tail_in_chronological_order() -> None:
+    connection = _BubbleListConnection([
+        {
+            "canonical_body": {"clientMessageId": "latest"},
+            "recorded_at": "2026-08-30T00:00:02+00:00",
+        },
+        {
+            "canonical_body": {"clientMessageId": "older"},
+            "recorded_at": "2026-08-30T00:00:01+00:00",
+        },
+    ])
+
+    bubbles = list_live_workspace_chat_bubbles(
+        connection,
+        session=SESSION,
+        user_id=SESSION.user_id,
+        limit=2,
+    )
+
+    assert [bubble["clientMessageId"] for bubble in bubbles] == ["older", "latest"]
+    assert "ORDER BY ordinal DESC" in connection.cursor_instance.query
+    assert connection.cursor_instance.params == (SESSION.session_id, SESSION.user_id, 2)

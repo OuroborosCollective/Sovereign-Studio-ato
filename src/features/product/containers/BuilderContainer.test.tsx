@@ -2312,4 +2312,88 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(actionStream).not.toHaveTextContent('Freitext-Antwort ohne Aktionsschema übernommen');
   });
 
+
+  it("does not claim that a newly created empty PostgreSQL session was restored", async () => {
+    testChatSession = {
+      ...testChatSession,
+      recordedAt: new Date().toISOString(),
+    };
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }] }),
+    );
+
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
+    await loadRepoFromChat();
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => (
+      requestUrl(input as RequestInfo | URL).endsWith("/bubbles")
+    ))).toBe(true));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText(/Session erfolgreich wiederhergestellt/i)).toBeNull();
+    expect(screen.queryByText(/wiederhergestellte Session ist älter/i)).toBeNull();
+  });
+
+  it("retains the restoration notice when hydration completes outside the monitor tab", async () => {
+    let resolveRepository: ((response: Response) => void) | null = null;
+    const repositoryResponse = new Promise<Response>((resolve) => {
+      resolveRepository = resolve;
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (isAuthBootstrapRequest(input)) return authBootstrapResponse();
+      const url = requestUrl(input);
+      if (isToolchainBootstrapRequest(input)) {
+        return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
+      }
+      if (url.includes("/api/llm/routes")) return liteLlmRouteCatalogResponse();
+      if (isGitHubApiRequest(input)) {
+        if (url.includes("/commits/")) return jsonResponse({ sha: "c".repeat(40) });
+        return repositoryResponse;
+      }
+      if (url.endsWith("/bubbles")) {
+        return jsonResponse({
+          session: testChatSession,
+          bubbles: [testMissionBubble({
+            body: JSON.stringify({
+              text: "Wiederhergestellte Mission",
+              clientMessageId: "restored-mission",
+            }),
+          })],
+        });
+      }
+      return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
+    fireEvent.change(chatField(), { target: { value: TEST_REPO_URL } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => (
+      isGitHubApiRequest(input as RequestInfo | URL)
+      && !requestUrl(input as RequestInfo | URL).includes("/commits/")
+    ))).toBe(true));
+
+    fireEvent.click(screen.getByText("INSPECTOR"));
+    fireEvent.click(screen.getByLabelText("init"));
+    expect(screen.getByTestId("builder-container")).toHaveAttribute(
+      "data-layout",
+      "monitor-inspector-modules",
+    );
+
+    await act(async () => {
+      resolveRepository?.(jsonResponse({
+        sha: "c".repeat(40),
+        tree: [{ path: "src/App.tsx", type: "blob", size: 42 }],
+      }));
+      await repositoryResponse;
+    });
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => (
+      requestUrl(input as RequestInfo | URL).endsWith("/bubbles")
+    ))).toBe(true));
+
+    fireEvent.click(screen.getByRole("button", { name: "Live Monitor" }));
+    expect(await screen.findByText(/wiederhergestellte Session ist älter als 3 Tage/i)).toBeDefined();
+  });
 });

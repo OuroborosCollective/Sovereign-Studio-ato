@@ -104,6 +104,7 @@ import {
 import {
   appendMissionInput,
   downloadSessionMarkdown,
+  formatPersistedSessionAge,
   getOrCreateCurrentSession,
   loadSession,
   sessionMessageToChatLine,
@@ -3003,7 +3004,7 @@ export function BuilderContainer({
       };
       const committed = projectSituationalChatLine(candidate);
       const monitorLine = projectMonitorCommunicationLine(candidate);
-      if (liveMonitorPrimary && monitorLine) {
+      if (monitorLine) {
         appendMonitorCommunication(
           monitorLine.role === 'user'
             ? 'user'
@@ -3017,7 +3018,7 @@ export function BuilderContainer({
       if (!committed) return;
       setChatHistory((previous) => [...previous, committed]);
     },
-    [appendMonitorCommunication, liveMonitorPrimary],
+    [appendMonitorCommunication],
   );
 
   const appendRuntimeNotice = useCallback((text: string) => {
@@ -3236,6 +3237,14 @@ export function BuilderContainer({
           `PostgreSQL bubble session restored: ${session.messageCount} message(s)`,
           'sys',
         );
+        if (session.messageCount > 0) {
+          const age = formatPersistedSessionAge(session);
+          if (age.isStale) {
+            appendRuntimeNotice(`Warnung: Die wiederhergestellte Session ist älter als 3 Tage (Alter: ${age.text}) und möglicherweise nicht mehr mit dem aktuellen Codebase-Stand synchron.`);
+          } else {
+            appendRuntimeNotice(`Session erfolgreich wiederhergestellt (Alter: ${age.text}).`);
+          }
+        }
       } catch {
         if (cancelled) return;
         persistedSessionRef.current = null;
