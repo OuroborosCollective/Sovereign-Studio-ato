@@ -1,37 +1,58 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { Provider } from 'react-redux';
+import { render, screen, waitFor } from '@testing-library/react';
+import { beforeAll, describe, expect, it } from 'vitest';
 import SovereignAppWrapper from './SovereignAppWrapper';
+import { store } from './store';
 
-vi.mock('./features/release/PlayReleaseChat', () => ({
-  PlayReleaseChat: () => (
-    <main data-testid="sovereign-release-chat" data-layout="play-release-chat" aria-label="Sovereign Chat">
-      Release chat
-    </main>
-  ),
-}));
+beforeAll(() => {
+  const cryptoMock = {
+    randomUUID: () => 'test-uuid',
+  };
 
-vi.mock('./features/evidence-observatory/EvidenceObservatoryAtlas', () => ({
-  EvidenceObservatoryAtlas: () => <main data-testid="evidence-observatory">Observatory</main>,
-}));
+  if (!globalThis.crypto) {
+    Object.defineProperty(globalThis, 'crypto', {
+      value: cryptoMock,
+      configurable: true,
+    });
+    return;
+  }
 
-describe('SovereignAppWrapper - Play release chat contract', () => {
-  it('forwards directly into App without an extra wrapper shell', () => {
-    window.history.replaceState({}, '', '/');
-    render(<SovereignAppWrapper />);
+  if (!globalThis.crypto.randomUUID) {
+    Object.defineProperty(globalThis.crypto, 'randomUUID', {
+      value: cryptoMock.randomUUID,
+      configurable: true,
+    });
+  }
+});
 
-    expect(screen.getByTestId('sovereign-release-chat')).toHaveAttribute('data-layout', 'play-release-chat');
+describe('SovereignAppWrapper - Monitor-first UI Contract', () => {
+  it('forwards directly into the App without a wrapper lamp shell', async () => {
+    render(<Provider store={store}><SovereignAppWrapper /></Provider>);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('builder-container')).toHaveAttribute(
+        'data-layout',
+        'live-desktop-monitor-primary',
+      );
+    });
+
     expect(screen.queryByTestId('sovereign-app-wrapper')).toBeNull();
     expect(screen.queryByTestId('sovereign-minimal-lamp-bar')).toBeNull();
     expect(screen.queryByTestId('sovereign-shell-content')).toBeNull();
   });
 
-  it('does not remount the deferred monitor surface', () => {
-    window.history.replaceState({}, '', '/');
-    render(<SovereignAppWrapper />);
+  it('keeps the workspace monitor and embedded LLM dock as the visible product surface', async () => {
+    render(<Provider store={store}><SovereignAppWrapper /></Provider>);
 
-    expect(screen.getByLabelText('Sovereign Chat')).toBeDefined();
-    expect(screen.queryByTestId('live-workspace-monitor')).toBeNull();
-    expect(screen.queryByTestId('sovereign-monitor-app')).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByTestId('live-workspace-monitor')).toBeDefined();
+    });
+
+    expect(screen.getByTestId('live-workspace-monitor-desktop')).toBeDefined();
+    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
+    expect(screen.getByLabelText('Codeauftrag an Sovereign')).toBeDefined();
+    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.getByLabelText('Sovereign Studio Tabs')).toBeDefined();
   });
 });

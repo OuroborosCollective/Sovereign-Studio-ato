@@ -11,6 +11,9 @@ MCP_ROOT = Path(__file__).resolve().parents[1]
 def test_backend_deploy_bootstraps_revision_bound_v3_chat_receipts_before_readiness() -> None:
     deploy_path = MCP_ROOT / "deploy" / "deploy-sovereign-backend"
     deploy = deploy_path.read_text("utf-8")
+    compose = (
+        MCP_ROOT / "templates" / "sovereign-backend" / "docker-compose.yml"
+    ).read_text("utf-8")
 
     syntax = subprocess.run(
         ["bash", "-n", str(deploy_path)],
@@ -51,11 +54,11 @@ def test_backend_deploy_bootstraps_revision_bound_v3_chat_receipts_before_readin
     assert 'timeout_seconds=45' in deploy
     assert 'except (TimeoutError, urllib.error.URLError, OSError) as exc:' in deploy
     assert '"blocker": "provider_request_timeout_or_network_error"' in deploy
-    assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_ENABLED=1"' in deploy
-    assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_INTERVAL_SECONDS=21600"' in deploy
-    assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_INITIAL_DELAY_SECONDS=60"' in deploy
-    assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_MODELS=12"' in deploy
-    assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_ROUNDS=10"' in deploy
+    assert 'SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_ENABLED: "1"' in compose
+    assert 'SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_INTERVAL_SECONDS: "21600"' in compose
+    assert 'SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_INITIAL_DELAY_SECONDS: "60"' in compose
+    assert 'SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_MODELS: "12"' in compose
+    assert 'SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_ROUNDS: "10"' in compose
     assert 'SOVEREIGN_BACKEND_HEALTH_ATTEMPTS:-36' in deploy
     assert 'for attempt in $(seq 1 "$max_attempts"); do' in deploy
 

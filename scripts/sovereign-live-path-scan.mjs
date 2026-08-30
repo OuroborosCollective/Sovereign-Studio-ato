@@ -176,27 +176,58 @@ function scanMainBootPath() {
 
 function scanRuntimeContracts() {
   const app = read('src/App.tsx');
-  const releaseChat = read('src/features/release/PlayReleaseChat.tsx');
   const builder = read('src/features/product/containers/BuilderContainer.tsx');
+  const dock = read('src/features/product/components/MonitorCommunicationDock.tsx');
   const monitor = read('src/global-runtime-monitor.tsx');
 
-  if (/PlayReleaseChat/.test(app) && /fetchDevChatWorkerReply/.test(releaseChat) && /startRepositoryExecution/.test(releaseChat) && /pendingRepositoryAction/.test(releaseChat)) {
-    pass('app:release-chat-live-path', 'App routes live work through the server-owned Play release chat and its consent-gated repository runtime.');
+  if (
+    /BuilderContainer/.test(app)
+    && /data-testid="sovereign-monitor-app"/.test(app)
+    && /data-layout="monitor-first-live-workspace"/.test(app)
+    && /onStartAgent=\{startMonitorTask\}/.test(app)
+    && /EvidenceObservatoryAtlas/.test(app)
+    && /window\.location\.pathname === '\/observatory'/.test(app)
+  ) {
+    pass('app:monitor-first-live-path', 'App routes live work through the canonical monitor Builder while preserving the evidence observatory.');
   } else {
-    fail('app:release-chat-live-path', 'App must route the Play client through the server-owned chat and consent-gated repository runtime.');
+    fail('app:monitor-first-live-path', 'App must route the default client through the canonical monitor Builder and preserve the observatory route.');
   }
 
-  if (/evaluateInputPolicy\(text\)/.test(releaseChat) && /initiateGitHubOAuth/.test(releaseChat) && /loginWithGitHub/.test(releaseChat)) {
-    pass('release-chat:input-and-oauth-boundary', 'Play release chat guards secret-shaped input and uses the explicit server-held GitHub OAuth path.');
+  if (
+    /fetchSovereignDirectLlmInterpretation/.test(builder)
+    && /createStructuredIntegrationIntentDraft/.test(builder)
+    && /onConfirm=\{\(\) => \{[\s\S]{0,500}startAgentFromApprovedDraft/.test(builder)
+  ) {
+    pass('builder:structured-action-live-path', 'Builder turns structured LLM evidence into a visible review-gated action before any Agent start.');
   } else {
-    fail('release-chat:input-and-oauth-boundary', 'Play release chat must guard secret-shaped input and use the explicit server-held GitHub OAuth path.');
+    fail('builder:structured-action-live-path', 'Builder must keep the LLM action contract and explicit draft confirmation on the live path.');
+  }
+
+  if (
+    /evaluateInputPolicy\(submittedText\)/.test(builder)
+    && /setShowGitHubAccessOverride\(true\)/.test(builder)
+    && /Repository-Auftrag bleibt unbestätigt/.test(builder)
+  ) {
+    pass('builder:input-and-access-boundary', 'Monitor input is secret-guarded and opening GitHub access does not confirm the action.');
+  } else {
+    fail('builder:input-and-access-boundary', 'Monitor input must be guarded and GitHub access must remain separate from action consent.');
+  }
+
+  if (
+    /sovereign-llm-route-picker-trigger/.test(dock)
+    && /aria-label="Modelle durchsuchen"/.test(dock)
+    && /aria-label="Verfügbare LLM-Routen"/.test(dock)
+  ) {
+    pass('builder:compact-route-picker', 'The complete LLM catalog stays behind a compact searchable monitor control.');
+  } else {
+    fail('builder:compact-route-picker', 'The monitor must not expand the complete LLM catalog into the default surface.');
   }
 
   if (/appendActionEvent|SovereignActionStreamPanel/.test(builder)) pass('builder:action-stream-runtime', 'Builder publishes route/action state through the action stream.');
   else fail('builder:action-stream-runtime', 'Builder must publish route/action state through the action stream.');
 
-  if (/addLog|appendChatLine|buildLocalExecutorStatusAnswer/.test(builder)) pass('builder:runtime-feedback', 'Builder keeps runtime feedback visible in chat.');
-  else fail('builder:runtime-feedback', 'Builder must keep runtime feedback visible in chat.');
+  if (/addLog|appendRuntimeNotice|buildLocalExecutorStatusAnswer/.test(builder)) pass('builder:runtime-feedback', 'Builder keeps runtime feedback visible in the monitor.');
+  else fail('builder:runtime-feedback', 'Builder must keep runtime feedback visible in the monitor.');
 
   if (/stripTokenFromText|stripSecrets|validateGitHubTokenForRepo|validateGitHubTokenFormat/.test(builder)) pass('builder:redaction-and-access-validation', 'Builder validates/redacts visible runtime access values.');
   else fail('builder:redaction-and-access-validation', 'Builder must validate/redact visible runtime access values.');

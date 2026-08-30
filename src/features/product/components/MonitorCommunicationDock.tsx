@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { maskSecrets } from '../../../shared/utils/crypto';
 import { C } from './builderConstants';
 import type { SovereignLlmRouteOption } from '../runtime/devChatWorkerBridge';
 
 export type MonitorCommunicationKind = 'user' | 'communicate' | 'runtime';
+export type MonitorToolchainState = 'checking' | 'ready' | 'blocked' | 'unavailable';
 
 export interface MonitorCommunicationEntry {
   readonly id: string;
@@ -25,9 +26,17 @@ export interface MonitorCommunicationDockProps {
   readonly onRouteChange?: (routeId: string) => void;
   readonly routeCatalogError?: string | null;
   readonly routeHint?: string;
+  readonly runtimeMood?: string;
+  readonly onOpenFlow?: () => void;
+  readonly onRequestIdea?: () => void;
+  readonly onOpenToolchain?: () => void;
+  readonly toolchainState?: MonitorToolchainState;
+  readonly toolsLauncher?: React.ReactNode;
   readonly onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
   readonly slashMenu?: React.ReactNode;
 }
+
+const MAX_VISIBLE_ROUTE_RESULTS = 24;
 
 function safeText(value: string, max = 900): string {
   const masked = maskSecrets(value.trim());
@@ -39,6 +48,31 @@ function entryLabel(kind: MonitorCommunicationKind): string {
   if (kind === 'user') return 'YOU';
   if (kind === 'runtime') return 'RUNTIME';
   return 'COMMUNICATE';
+}
+
+function routeSearchText(route: SovereignLlmRouteOption): string {
+  return [route.id, route.label, route.provider, route.defaultModelId]
+    .join(' ')
+    .toLocaleLowerCase();
+}
+
+function routeBillingLabel(route: SovereignLlmRouteOption): string {
+  return route.billingCategory === 'free' ? 'FREE' : 'PAID · Bestätigung vor Nutzung';
+}
+
+function railButtonStyle(active = false): React.CSSProperties {
+  return {
+    minWidth: 44,
+    minHeight: 36,
+    padding: '0 9px',
+    borderRadius: 9,
+    border: `1px solid ${active ? C.sky : C.border}`,
+    background: active ? `${C.sky}18` : C.surface,
+    color: active ? C.sky : C.textSub,
+    cursor: 'pointer',
+    font: '700 9px/1 monospace',
+    letterSpacing: '.06em',
+  };
 }
 
 export function MonitorCommunicationDock({
@@ -54,9 +88,17 @@ export function MonitorCommunicationDock({
   onRouteChange,
   routeCatalogError,
   routeHint,
+  runtimeMood = '😊✨',
+  onOpenFlow,
+  onRequestIdea,
+  onOpenToolchain,
+  toolchainState = 'unavailable',
+  toolsLauncher,
   onKeyDown,
   slashMenu,
 }: MonitorCommunicationDockProps) {
+  const [routePickerOpen, setRoutePickerOpen] = useState(false);
+  const [routeQuery, setRouteQuery] = useState('');
   const visibleEntryIds = new Set(entries.slice(-4).map((entry) => entry.id));
   entries
     .filter((entry) => entry.kind === 'user')
@@ -65,6 +107,26 @@ export function MonitorCommunicationDock({
   const visibleEntries = entries.filter((entry) => visibleEntryIds.has(entry.id)).slice(-6);
   const status = safeText(runtimeStatus, 240) || 'Runtimestatus nicht verfügbar';
   const visibleRouteHint = safeText(routeHint ?? '', 240);
+  const selectedRoute = routeOptions.find((route) => route.id === selectedRouteId);
+  const query = routeQuery.trim().toLocaleLowerCase();
+  const matchingRoutes = useMemo(
+    () => routeOptions.filter((route) => !query || routeSearchText(route).includes(query)),
+    [query, routeOptions],
+  );
+  const visibleRoutes = matchingRoutes.slice(0, MAX_VISIBLE_ROUTE_RESULTS);
+  const hiddenRouteCount = Math.max(0, matchingRoutes.length - visibleRoutes.length);
+  const pickerLabel = selectedRoute
+    ? `${routeBillingLabel(selectedRoute).split(' · ')[0]} · ${selectedRoute.provider} · ${selectedRoute.label}`
+    : selectedRouteId
+      ? `Fixierte Route nicht verfügbar · ${selectedRouteId}`
+      : 'Auto · Backend/Revolver';
+  const toolchainLabel = toolchainState === 'ready'
+    ? 'bereit'
+    : toolchainState === 'checking'
+      ? 'prüft'
+      : toolchainState === 'blocked'
+        ? 'blockiert'
+        : 'nicht verbunden';
 
   return (
     <section
@@ -79,25 +141,68 @@ export function MonitorCommunicationDock({
       }}
     >
       <div
-        role="status"
-        aria-live="polite"
-        title="Beobachtbarer Runtime-Status; keine verborgene Modell-Gedankenkette."
+        data-testid="monitor-status-rail"
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 7,
-          minHeight: 32,
+          gap: 6,
+          minHeight: 46,
           padding: '5px 10px',
-          borderBottom: visibleEntries.length ? `1px solid ${C.border}` : undefined,
-          color: C.textSub,
-          font: '10px/1.35 monospace',
+          borderBottom: `1px solid ${C.border}`,
+          flexWrap: 'wrap',
         }}
       >
-        <strong style={{ color: C.violet, letterSpacing: '.08em' }}>THINK</strong>
-        <span aria-hidden="true" style={{ color: C.textMuted }}>·</span>
-        <span data-testid="monitor-runtime-status" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {status}
+        <span
+          title="Beobachtbarer Runtime-Status; keine verborgene Modell-Gedankenkette."
+          style={{ ...railButtonStyle(busy), display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          THINK
         </span>
+        <button type="button" onClick={onOpenFlow} disabled={!onOpenFlow} style={railButtonStyle(false)}>
+          FLOW
+        </button>
+        <button
+          type="button"
+          onClick={onRequestIdea}
+          disabled={!onRequestIdea || busy}
+          style={{ ...railButtonStyle(false), opacity: !onRequestIdea || busy ? 0.5 : 1 }}
+        >
+          IDEA
+        </button>
+        <span
+          aria-label={busy ? 'Sovereign arbeitet' : 'Sovereign bereit'}
+          title={busy ? 'Runtime arbeitet' : 'Runtime wartet auf Auftrag'}
+          style={{ minWidth: 44, textAlign: 'center', fontSize: 17 }}
+        >
+          {runtimeMood}
+        </span>
+        <button
+          type="button"
+          onClick={onOpenToolchain}
+          disabled={!onOpenToolchain}
+          title={`Toolchain: ${toolchainLabel}`}
+          style={railButtonStyle(toolchainState === 'ready')}
+        >
+          TOOLCHAIN
+        </button>
+        {toolsLauncher}
+      </div>
+
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid="monitor-runtime-status"
+        style={{
+          minHeight: 27,
+          padding: '5px 10px',
+          color: C.textSub,
+          font: '10px/1.35 monospace',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {status}
       </div>
 
       {visibleEntries.length > 0 && (
@@ -111,6 +216,7 @@ export function MonitorCommunicationDock({
             display: 'flex',
             gap: 7,
             overflowX: 'auto',
+            borderTop: `1px solid ${C.border}`,
             borderBottom: `1px solid ${C.border}`,
           }}
         >
@@ -148,65 +254,138 @@ export function MonitorCommunicationDock({
       {onRouteChange && (
         <div
           data-testid="monitor-llm-route-picker"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '7px 10px 0',
-            borderTop: visibleEntries.length > 0 ? undefined : `1px solid ${C.border}`,
+          style={{ position: 'relative', padding: '7px 10px 0' }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              setRoutePickerOpen(false);
+              setRouteQuery('');
+            }
           }}
         >
-          <label htmlFor="monitor-llm-route-select" style={{ color: C.textMuted, font: '9px/1 monospace', flexShrink: 0 }}>
-            LLM
-          </label>
-          <select
-            id="monitor-llm-route-select"
-            data-testid="sovereign-llm-route-select"
-            aria-label="Monitor LLM Route und Modell auswählen"
-            value={selectedRouteId}
-            onChange={(event) => onRouteChange(event.target.value)}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              height: 34,
-              borderRadius: 8,
-              border: `1px solid ${routeCatalogError ? C.amber : C.border}`,
-              background: '#080c11',
-              color: C.text,
-              font: '10px/1 monospace',
-              padding: '0 8px',
-            }}
-          >
-            <option value="">Auto · Backend/PAL</option>
-            {selectedRouteId && !routeOptions.some((route) => route.id === selectedRouteId) && (
-              <option value={selectedRouteId} disabled>Route nicht mehr verfügbar · {selectedRouteId}</option>
-            )}
-            {routeOptions.map((route) => (
-              <option key={route.id} value={route.id}>
-                {route.billingCategory === 'free' ? 'FREE' : 'PAID'} · {route.provider} · {route.label} · {route.defaultModelId}
-              </option>
-            ))}
-          </select>
-          {selectedRouteId && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span style={{ color: C.textMuted, font: '9px/1 monospace' }}>LLM</span>
             <button
               type="button"
-              onClick={() => onRouteChange('')}
-              aria-label="Monitor LLM Route auf Auto zurücksetzen"
+              data-testid="sovereign-llm-route-picker-trigger"
+              aria-haspopup="dialog"
+              aria-expanded={routePickerOpen}
+              onClick={() => setRoutePickerOpen((open) => !open)}
               style={{
-                minWidth: 44,
-                minHeight: 34,
-                borderRadius: 8,
-                border: `1px solid ${C.border}`,
-                background: C.surface,
-                color: C.textSub,
-                font: '9px/1 monospace',
+                flex: 1,
+                minWidth: 0,
+                minHeight: 38,
+                padding: '7px 10px',
+                borderRadius: 9,
+                border: `1px solid ${routeCatalogError ? C.amber : selectedRouteId ? C.sky : C.border}`,
+                background: '#080c11',
+                color: selectedRouteId ? C.sky : C.text,
+                textAlign: 'left',
+                font: '10px/1.3 monospace',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
               }}
             >
-              AUTO
+              {pickerLabel}
             </button>
+            {selectedRouteId && (
+              <button
+                type="button"
+                onClick={() => onRouteChange('')}
+                aria-label="Monitor LLM Route auf Auto zurücksetzen"
+                style={railButtonStyle(false)}
+              >
+                AUTO
+              </button>
+            )}
+          </div>
+
+          {routePickerOpen && (
+            <div
+              role="dialog"
+              aria-label="LLM-Modell auswählen"
+              style={{
+                marginTop: 6,
+                padding: 8,
+                borderRadius: 11,
+                border: `1px solid ${C.border}`,
+                background: C.surface,
+                boxShadow: '0 12px 30px rgba(0,0,0,.35)',
+              }}
+            >
+              <input
+                autoFocus
+                aria-label="Modelle durchsuchen"
+                value={routeQuery}
+                onChange={(event) => setRouteQuery(event.target.value)}
+                placeholder="Provider, Modell oder Route suchen"
+                style={{
+                  boxSizing: 'border-box',
+                  width: '100%',
+                  minHeight: 40,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  border: `1px solid ${C.border}`,
+                  background: '#080c11',
+                  color: C.text,
+                }}
+              />
+              <div
+                role="listbox"
+                aria-label="Verfügbare LLM-Routen"
+                style={{ marginTop: 6, maxHeight: 260, overflowY: 'auto', display: 'grid', gap: 4 }}
+              >
+                {visibleRoutes.map((route) => {
+                  const paid = route.billingCategory !== 'free';
+                  return (
+                    <button
+                      key={route.id}
+                      type="button"
+                      role="option"
+                      aria-selected={route.id === selectedRouteId}
+                      onClick={() => {
+                        onRouteChange(route.id);
+                        setRoutePickerOpen(false);
+                        setRouteQuery('');
+                      }}
+                      style={{
+                        minHeight: 44,
+                        padding: '7px 9px',
+                        borderRadius: 8,
+                        border: `1px solid ${route.id === selectedRouteId ? C.sky : C.border}`,
+                        background: route.id === selectedRouteId ? `${C.sky}12` : '#0b1016',
+                        color: C.text,
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ display: 'block', color: paid ? C.amber : C.green, font: '700 9px/1.2 monospace' }}>
+                        {routeBillingLabel(route)}
+                      </span>
+                      <span style={{ display: 'block', marginTop: 3, fontSize: 11 }}>
+                        {route.provider} · {route.label}
+                      </span>
+                      <span style={{ display: 'block', marginTop: 2, color: C.textMuted, font: '9px/1.2 monospace' }}>
+                        {route.defaultModelId}
+                      </span>
+                    </button>
+                  );
+                })}
+                {visibleRoutes.length === 0 && (
+                  <p role="status" style={{ margin: 6, color: C.textMuted, fontSize: 10 }}>
+                    Keine passende verifizierte Route.
+                  </p>
+                )}
+              </div>
+              {hiddenRouteCount > 0 && (
+                <p style={{ margin: '7px 2px 0', color: C.textMuted, font: '9px/1.2 monospace' }}>
+                  {hiddenRouteCount} weitere Treffer · Suche verfeinern
+                </p>
+              )}
+            </div>
           )}
         </div>
       )}
+
       {visibleRouteHint && !routeCatalogError && (
         <div data-testid="monitor-route-hint" style={{ padding: '4px 10px 0', color: C.textMuted, font: '9px/1.3 monospace' }}>
           {visibleRouteHint}
@@ -232,7 +411,7 @@ export function MonitorCommunicationDock({
         }}
       >
         <textarea
-          aria-label="Frage an Sovereign während Live Monitor"
+          aria-label="Codeauftrag an Sovereign"
           value={value}
           rows={1}
           onChange={(event) => onChange(event.target.value)}
@@ -243,7 +422,7 @@ export function MonitorCommunicationDock({
               if (!disabled && !busy && value.trim()) onSubmit();
             }
           }}
-          placeholder="Frage stellen, ohne den Monitor zu verlassen…"
+          placeholder="Codeauftrag eingeben · Enter sendet · Shift+Enter neue Zeile"
           style={{
             flex: 1,
             minWidth: 0,

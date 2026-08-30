@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   createIntegrationIntentDraft,
+  createStructuredIntegrationIntentDraft,
   formatIntegrationIntentDraft,
   canConfirmIntegrationIntentDraft,
   reduceIntegrationIntentDraftAction,
@@ -172,6 +173,85 @@ describe('integrationIntentDraftRuntime', () => {
       const input = 'Verbesser die UI Komponenten';
       const draft = createIntegrationIntentDraft(input, repoFiles, { now: 1700000000000, idSeed: 'limit-test' });
       expect(draft?.affectedFiles.length).toBeLessThanOrEqual(5);
+    });
+  });
+
+  describe('createStructuredIntegrationIntentDraft', () => {
+    const mission = 'Repariere den Produktions-Build und verifiziere den betroffenen Workflow.';
+    const target = {
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      branch: 'main',
+      expectedHeadSha: 'abcdef0123456789abcdef0123456789abcdef01',
+    };
+    const evidence = {
+      intentKind: 'code_execution' as const,
+      confidence: 0.93,
+      model: 'provider/structured-action',
+      actionTitle: 'Produktions-Build reparieren',
+    };
+
+    it('binds the preview to the exact mission and non-secret execution target', () => {
+      const mutableTarget = {
+        repoUrl: ` ${target.repoUrl} `,
+        branch: ' main ',
+        expectedHeadSha: target.expectedHeadSha.toUpperCase(),
+      };
+
+      const draft = createStructuredIntegrationIntentDraft(
+        `  ${mission}  `,
+        evidence,
+        mutableTarget,
+        { now: 1700000000000, idSeed: 'structured-review' },
+      );
+
+      expect(draft).toEqual(expect.objectContaining({
+        id: 'draft_structured-review',
+        originalText: mission,
+        executionMission: mission,
+        executionTarget: target,
+        title: 'Produktions-Build reparieren',
+        goal: mission,
+        scope: [],
+        affectedFiles: [],
+        rephrasedText: mission,
+        intentKind: 'code_execution',
+        intentSource: 'online_llm',
+        intentConfidence: 0.93,
+        intentModel: 'provider/structured-action',
+      }));
+
+      mutableTarget.repoUrl = 'https://github.com/attacker/other-repo';
+      mutableTarget.branch = 'other';
+      mutableTarget.expectedHeadSha = '0'.repeat(40);
+      expect(draft?.executionTarget).toEqual(target);
+    });
+
+    it('fails closed instead of deriving an offline action from incomplete contract evidence', () => {
+      expect(createStructuredIntegrationIntentDraft(
+        mission,
+        { ...evidence, intentKind: 'free_chat' },
+        target,
+      )).toBeNull();
+      expect(createStructuredIntegrationIntentDraft(
+        mission,
+        { ...evidence, confidence: 0.49 },
+        target,
+      )).toBeNull();
+      expect(createStructuredIntegrationIntentDraft(
+        mission,
+        { ...evidence, actionTitle: '   ' },
+        target,
+      )).toBeNull();
+      expect(createStructuredIntegrationIntentDraft(
+        mission,
+        evidence,
+        { ...target, expectedHeadSha: 'not-a-revision' },
+      )).toBeNull();
+      expect(createStructuredIntegrationIntentDraft(
+        mission,
+        evidence,
+        { ...target, repoUrl: '   ' },
+      )).toBeNull();
     });
   });
 

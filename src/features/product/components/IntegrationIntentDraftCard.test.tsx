@@ -12,6 +12,7 @@ describe('IntegrationIntentDraftCard', () => {
   const createMockDraft = (overrides?: Partial<IntegrationIntentDraft>): IntegrationIntentDraft => ({
     id: 'draft_123',
     originalText: 'Der Bot soll jede Eingabe als Integrationsauftrag verstehen',
+    executionMission: 'Der Bot soll jede Eingabe als Integrationsauftrag verstehen',
     title: 'Der Bot soll jede Eingabe als Integrationsauftrag verstehen',
     goal: 'Neue Funktionalität implementieren',
     scope: ['UI/Komponenten', 'Runtime/Routing'],
@@ -106,7 +107,7 @@ describe('IntegrationIntentDraftCard', () => {
       expect(screen.getByTestId('draft-gates')).toBeInTheDocument();
     });
 
-    it('shows "Ich habe daraus diesen Integrationsauftrag erkannt" header', () => {
+    it('labels the card as approval for the exact repository task', () => {
       const draft = createMockDraft();
       const gates = createMockGates();
 
@@ -120,7 +121,60 @@ describe('IntegrationIntentDraftCard', () => {
         />
       );
 
-      expect(screen.getByText('Ich habe daraus diesen Integrationsauftrag erkannt:')).toBeInTheDocument();
+      expect(screen.getByText('Freigabe für exakt diesen Repository-Auftrag:')).toBeInTheDocument();
+    });
+
+    it('shows the exact structured mission and target that the confirm callback will use', () => {
+      const mission = 'Repariere den Build exakt so und führe den Workflow-Test aus.';
+      const executionTarget = {
+        repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+        branch: 'main',
+        expectedHeadSha: 'abcdef0123456789abcdef0123456789abcdef01',
+      };
+      const draft = createMockDraft({
+        originalText: mission,
+        executionMission: mission,
+        executionTarget,
+        title: 'Build reparieren',
+        goal: 'Provider-Zusammenfassung darf nicht die Freigabe ersetzen',
+        scope: [],
+        affectedFiles: [],
+        rephrasedText: 'Offline umformulierter Auftrag darf nicht erscheinen',
+        intentKind: 'code_execution',
+        intentSource: 'online_llm',
+        intentConfidence: 0.97,
+        intentModel: 'provider/structured-action',
+      });
+      const approvedPayload = vi.fn();
+      const onConfirm = () => approvedPayload({
+        executionMission: draft.executionMission,
+        executionTarget: draft.executionTarget,
+      });
+
+      render(
+        <IntegrationIntentDraftCard
+          draft={draft}
+          gateSnapshot={createMockGates()}
+          onConfirm={onConfirm}
+          onRephrase={vi.fn()}
+          onReject={vi.fn()}
+        />
+      );
+
+      expect(screen.getByTestId('draft-execution-mission').textContent).toBe(mission);
+      expect(screen.getByTestId('draft-target-repo').textContent).toBe(executionTarget.repoUrl);
+      expect(screen.getByTestId('draft-target-branch').textContent).toBe(executionTarget.branch);
+      expect(screen.getByTestId('draft-target-head').textContent).toBe(executionTarget.expectedHeadSha);
+      expect(screen.queryByTestId('draft-goal')).not.toBeInTheDocument();
+      expect(screen.queryByText('Provider-Zusammenfassung darf nicht die Freigabe ersetzen')).not.toBeInTheDocument();
+      expect(screen.queryByText('Offline umformulierter Auftrag darf nicht erscheinen')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Repository-Auftrag starten' }));
+      expect(approvedPayload).toHaveBeenCalledOnce();
+      expect(approvedPayload).toHaveBeenCalledWith({
+        executionMission: mission,
+        executionTarget,
+      });
     });
   });
 
@@ -162,12 +216,12 @@ describe('IntegrationIntentDraftCard', () => {
         />
       );
 
-      expect(screen.getByTestId('btn-confirm').textContent).toBe('Einbauen');
+      expect(screen.getByTestId('btn-confirm').textContent).toBe('Auftrag starten');
       expect(screen.getByTestId('btn-rephrase').textContent).toBe('Neu formulieren');
       expect(screen.getByTestId('btn-reject').textContent).toBe('Ablehnen');
     });
 
-    it('calls onConfirm when Einbauen is clicked', () => {
+    it('calls onConfirm when Auftrag starten is clicked', () => {
       const onConfirm = vi.fn();
       const draft = createMockDraft();
       const gates = createMockGates();
@@ -224,7 +278,7 @@ describe('IntegrationIntentDraftCard', () => {
       expect(onReject).toHaveBeenCalledTimes(1);
     });
 
-    it('disables Einbauen button when repo is not ready', () => {
+    it('disables Auftrag starten when the repo is not ready', () => {
       const draft = createMockDraft();
       const gates = createMockGates({ repoReady: false });
 
@@ -242,7 +296,7 @@ describe('IntegrationIntentDraftCard', () => {
       expect(screen.getByTestId('btn-confirm')).toBeDisabled();
     });
 
-    it('enables button with GitHub-Zugang benötigt label when repo ready but no GitHub write', () => {
+    it('offers GitHub-Zugang öffnen when the repo is ready but write access is missing', () => {
       const draft = createMockDraft();
       const gates = createMockGates({
         repoReady: true,
@@ -263,7 +317,7 @@ describe('IntegrationIntentDraftCard', () => {
       );
 
       expect(screen.getByTestId('btn-confirm')).not.toBeDisabled();
-      expect(screen.getByTestId('btn-confirm').textContent).toBe('GitHub-Zugang benötigt');
+      expect(screen.getByTestId('btn-confirm').textContent).toBe('GitHub-Zugang öffnen');
     });
 
     it('keeps the GitHub access action available when the agent is configured but write access is missing', () => {
@@ -288,7 +342,7 @@ describe('IntegrationIntentDraftCard', () => {
       );
 
       expect(screen.getByTestId('btn-confirm')).not.toBeDisabled();
-      expect(screen.getByTestId('btn-confirm').textContent).toBe('GitHub-Zugang benötigt');
+      expect(screen.getByTestId('btn-confirm').textContent).toBe('GitHub-Zugang öffnen');
     });
 
     it('calls onConfirmWithGitHubAccess when button clicked with GitHub access needed', () => {
@@ -524,27 +578,40 @@ describe('IntegrationIntentDraftCard', () => {
       expect(onReject).toHaveBeenCalledTimes(1);
     });
 
-    it('fires the GitHub access action exactly once on a fast double click', () => {
-      // Arrange
+    it('deduplicates a fast access double click without consuming later task approval', () => {
+      const onConfirm = vi.fn();
       const onConfirmWithGitHubAccess = vi.fn();
-      render(
+      const draft = createMockDraft();
+      const { rerender } = render(
         <IntegrationIntentDraftCard
-          draft={createMockDraft()}
+          draft={draft}
           gateSnapshot={createMockGates({ githubWriteReady: false })}
-          onConfirm={vi.fn()}
+          onConfirm={onConfirm}
           onConfirmWithGitHubAccess={onConfirmWithGitHubAccess}
           onRephrase={vi.fn()}
           onReject={vi.fn()}
         />
       );
 
-      // Act
       const button = screen.getByTestId('btn-confirm');
       fireEvent.click(button);
       fireEvent.click(button);
-
-      // Assert
       expect(onConfirmWithGitHubAccess).toHaveBeenCalledTimes(1);
+      expect(onConfirm).not.toHaveBeenCalled();
+
+      rerender(
+        <IntegrationIntentDraftCard
+          draft={draft}
+          gateSnapshot={createMockGates({ githubWriteReady: true })}
+          onConfirm={onConfirm}
+          onConfirmWithGitHubAccess={onConfirmWithGitHubAccess}
+          onRephrase={vi.fn()}
+          onReject={vi.fn()}
+        />
+      );
+      fireEvent.click(screen.getByTestId('btn-confirm'));
+
+      expect(onConfirm).toHaveBeenCalledTimes(1);
     });
   });
 

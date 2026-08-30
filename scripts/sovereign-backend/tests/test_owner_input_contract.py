@@ -83,6 +83,14 @@ def test_backend_registers_owner_routes_and_supports_separate_owner_managed_keys
 def test_broker_deploy_keeps_secure_mounts_bounded_and_ci_stays_queue_only() -> None:
     repository_root = ROOT.parent.parent
     deploy = (repository_root / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
+    compose = (
+        repository_root
+        / "tools"
+        / "sovereign-chatgpt-mcp"
+        / "templates"
+        / "sovereign-backend"
+        / "docker-compose.yml"
+    ).read_text("utf-8")
     workflow = (repository_root / ".github" / "workflows" / "sovereign-agent-supplemental.yml").read_text("utf-8")
 
     assert 'OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"' in deploy
@@ -92,8 +100,10 @@ def test_broker_deploy_keeps_secure_mounts_bounded_and_ci_stays_queue_only() -> 
     assert '[[ -d "$OWNER_INPUT_HOST_ROOT" && ! -L "$OWNER_INPUT_HOST_ROOT" ]]' in deploy
     assert '[[ -w "$OWNER_INPUT_HOST_ROOT" && -x "$OWNER_INPUT_HOST_ROOT" ]]' in deploy
     assert 'install -d -m 0700 "$OWNER_INPUT_HOST_ROOT"' not in deploy
-    assert deploy.count("--volume /opt/secure:/opt/secure:ro") == 2
-    assert deploy.count('--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"') == 2
+    assert deploy.count("--volume /opt/secure:/opt/secure:ro") == 1
+    assert deploy.count('--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"') == 1
+    assert compose.count("/opt/secure:/opt/secure:ro") == 1
+    assert compose.count("/opt/sovereign-owner-managed:/opt/sovereign-owner-managed:rw") == 1
     assert ':/opt/secure/owner-managed:rw' not in deploy
     assert "--volume /opt/secure:/opt/secure:rw" not in deploy
     assert "openhands-enterprise_default" not in deploy

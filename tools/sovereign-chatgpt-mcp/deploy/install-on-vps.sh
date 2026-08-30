@@ -25,6 +25,8 @@ FREELLMAPI_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-freellmapi"
 FREELLMAPI_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-freellmapi"
 OMNIROUTE_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-omniroute"
 OMNIROUTE_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-omniroute"
+BACKEND_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-backend"
+BACKEND_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-backend"
 DOCKER_AUTH_DIR="$INSTALL_ROOT/docker-auth"
 WORKSPACE_DIR="$INSTALL_ROOT/workspaces"
 COMMAND_QUEUE_DIR="$INSTALL_ROOT/command-queue"
@@ -1021,6 +1023,7 @@ docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not ins
 [[ -f "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "FreeLLM API compose template is missing"
 [[ -f "$FREELLMAPI_TEMPLATE_SOURCE/sovereign-freellm-bootstrap.mjs" ]] || fail "FreeLLM API bootstrap template is missing"
 [[ -f "$OMNIROUTE_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "OmniRoute compose template is missing"
+[[ -f "$BACKEND_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "Sovereign backend compose template is missing"
 [[ -f "$SOURCE_DIR/skills/sovereign-operational-governance/SKILL.md" ]] || fail "operational governance skill manifest is missing"
 [[ -f "$SOURCE_DIR/skills/sovereign-operational-assurance/SKILL.md" ]] || fail "operational assurance skill manifest is missing"
 [[ -f "$SOURCE_DIR/skills/sovereign-mcp-optimal-operation/SKILL.md" ]] || fail "optimal operation skill manifest is missing"
@@ -1043,7 +1046,7 @@ python3 -m py_compile "$SOURCE_DIR/deploy/run-coordinated-release-readback.py" \
   || fail "coordinated release reconciler timer is missing"
 
 getent group sovereign-mcp >/dev/null 2>&1 || groupadd --system sovereign-mcp
-install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$PGBACKWEB_TEMPLATE_DIR" "$PATCHMON_TEMPLATE_DIR" "$CODE_SERVER_TEMPLATE_DIR" "$MILVUS_TEMPLATE_DIR" "$FREELLMAPI_TEMPLATE_DIR" "$OMNIROUTE_TEMPLATE_DIR" "$INSTALL_ROOT/continuity-data" "$INSTALL_ROOT/tool-routing-state"
+install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$PGBACKWEB_TEMPLATE_DIR" "$PATCHMON_TEMPLATE_DIR" "$CODE_SERVER_TEMPLATE_DIR" "$MILVUS_TEMPLATE_DIR" "$FREELLMAPI_TEMPLATE_DIR" "$OMNIROUTE_TEMPLATE_DIR" "$BACKEND_TEMPLATE_DIR" "$INSTALL_ROOT/continuity-data" "$INSTALL_ROOT/tool-routing-state"
 for MANAGED_COMPOSE_ROOT in /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r /opt/patchmon-sovereign /opt/milvus-sovereign /opt/sovereign-freellmapi /opt/sovereign-omniroute /opt/sovereign-bytebase /opt/sovereign-metamcp; do
   if [[ -e "$MANAGED_COMPOSE_ROOT" || -L "$MANAGED_COMPOSE_ROOT" ]]; then
     [[ -d "$MANAGED_COMPOSE_ROOT" && ! -L "$MANAGED_COMPOSE_ROOT" ]] \
@@ -1149,6 +1152,7 @@ backup_managed_control_plane_file "$MILVUS_TEMPLATE_DIR/docker-compose.yml" "tem
 backup_managed_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmapi/docker-compose.yml"
 backup_managed_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs" "templates/sovereign-freellmapi/sovereign-freellm-bootstrap.mjs"
 backup_managed_control_plane_file "$OMNIROUTE_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-omniroute/docker-compose.yml"
+backup_managed_control_plane_file "$BACKEND_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-backend/docker-compose.yml"
 for file in deploy-sovereign-backend rollback-sovereign-backend bootstrap-database install-secure-tunnel validate-tunnel-doctor-report reconcile-main-release run-coordinated-release-readback; do
   backup_managed_control_plane_file "$BIN_DIR/$file" "bin/$file"
 done
@@ -1171,6 +1175,7 @@ install_managed_control_plane_file 0640 "$MILVUS_TEMPLATE_SOURCE/docker-compose.
 install_managed_control_plane_file 0640 "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmapi/docker-compose.yml"
 install_managed_control_plane_file 0640 "$FREELLMAPI_TEMPLATE_SOURCE/sovereign-freellm-bootstrap.mjs" "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs" "templates/sovereign-freellmapi/sovereign-freellm-bootstrap.mjs"
 install_managed_control_plane_file 0640 "$OMNIROUTE_TEMPLATE_SOURCE/docker-compose.yml" "$OMNIROUTE_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-omniroute/docker-compose.yml"
+install_managed_control_plane_file 0640 "$BACKEND_TEMPLATE_SOURCE/docker-compose.yml" "$BACKEND_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-backend/docker-compose.yml"
 install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/deploy-sovereign-backend" "$BIN_DIR/deploy-sovereign-backend" "bin/deploy-sovereign-backend"
 install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/rollback-sovereign-backend" "$BIN_DIR/rollback-sovereign-backend" "bin/rollback-sovereign-backend"
 install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/bootstrap-database.sh" "$BIN_DIR/bootstrap-database" "bin/bootstrap-database"
@@ -1202,6 +1207,7 @@ set_managed_control_plane_directory_ownership "$CODE_SERVER_TEMPLATE_DIR" "templ
 set_managed_control_plane_directory_ownership "$MILVUS_TEMPLATE_DIR" "templates/milvus-sovereign"
 set_managed_control_plane_directory_ownership "$FREELLMAPI_TEMPLATE_DIR" "templates/sovereign-freellmapi"
 set_managed_control_plane_directory_ownership "$OMNIROUTE_TEMPLATE_DIR" "templates/sovereign-omniroute"
+set_managed_control_plane_directory_ownership "$BACKEND_TEMPLATE_DIR" "templates/sovereign-backend"
 
 INSTALL_STAGE="prepare_private_environment_files"
 if [[ ! -f "$ENV_FILE" ]]; then

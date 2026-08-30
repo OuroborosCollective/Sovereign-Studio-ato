@@ -15,7 +15,9 @@ const BACKEND_BASE = (
 ).replace(/\/$/, '');
 
 export const SOVEREIGN_DIRECT_LLM_ROUTES = `${BACKEND_BASE}/api/llm/routes` as const;
+export const SOVEREIGN_CODE_ACTION_ROUTES = `${SOVEREIGN_DIRECT_LLM_ROUTES}?purpose=action-contract` as const;
 export const SOVEREIGN_DIRECT_LLM_CHAT = `${BACKEND_BASE}/api/llm/chat` as const;
+export const SOVEREIGN_CODE_ACTION_CONTRACT_ID = 'sovereign-code-action-v1' as const;
 /** @deprecated Compatibility alias. Productive transport: direct OpenRouter/FreeLLM. */
 export const SOVEREIGN_LITELLM_ROUTES = SOVEREIGN_DIRECT_LLM_ROUTES;
 /** @deprecated Compatibility alias. Productive transport: direct OpenRouter/FreeLLM. */
@@ -29,6 +31,11 @@ interface DirectLlmRouteDescriptor {
   readonly provider?: unknown;
   readonly billingCategory?: unknown;
   readonly fundingMode?: unknown;
+  readonly capabilities?: unknown;
+}
+
+interface DirectLlmRouteCapabilities {
+  readonly codeActionContract?: unknown;
 }
 
 interface DirectLlmRouteCatalog {
@@ -39,8 +46,7 @@ interface SovereignIntentEnvelope {
   readonly mode?: unknown;
   readonly intent?: unknown;
   readonly action_disposition?: unknown;
-  readonly assistant_text?: unknown;
-  readonly action_title?: unknown;
+  readonly clarification_code?: unknown;
   readonly is_startup?: unknown;
   readonly confidence?: unknown;
   readonly language?: unknown;
@@ -71,6 +77,31 @@ const ALLOWED_INTENTS: readonly DevChatWorkerIntentKind[] = [
   'load_repo',
   'unknown',
 ];
+
+const CLARIFICATION_TEXT: Readonly<Record<string, string>> = {
+  repo_required: 'Welches Repository soll ich ändern?',
+  change_required: 'Welche konkrete Änderung soll ich umsetzen?',
+  expected_result_required: 'Welches überprüfbare Ergebnis soll nach der Änderung gelten?',
+};
+
+const ACTION_TITLE_BY_INTENT: Readonly<Partial<Record<DevChatWorkerIntentKind, string>>> = {
+  direct_patch: 'Codeänderung vorbereiten',
+  code_execution: 'Repository-Auftrag ausführen',
+  draft_pr: 'Draft PR vorbereiten',
+  workflow_watch: 'Workflow prüfen',
+  repair_workflow: 'Workflow reparieren',
+  load_repo: 'Repository laden',
+};
+
+const CODE_ACTION_WIRE_KEYS = new Set([
+  'mode',
+  'intent',
+  'action_disposition',
+  'clarification_code',
+  'is_startup',
+  'confidence',
+  'language',
+]);
 
 function boundedSnippet(value: string): string | undefined {
   const clean = value.replace(/\s+/g, ' ').trim();
@@ -118,37 +149,62 @@ function parseIntentEnvelope(
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/i, '');
   const payload = readJsonObject(clean) as SovereignIntentEnvelope | null;
-  if (!payload) return null;
-
-  const mode = payload.mode;
-  const intent = payload.intent;
-  if (mode !== 'chat' && mode !== 'action') return null;
-  if (typeof intent !== 'string' || !ALLOWED_INTENTS.includes(intent as DevChatWorkerIntentKind)) {
+  if (
+    !payload
+    || Object.keys(payload).length !== CODE_ACTION_WIRE_KEYS.size
+    || Object.keys(payload).some((key) => !CODE_ACTION_WIRE_KEYS.has(key))
+  ) {
     return null;
   }
 
-  const actionDisposition = payload.action_disposition === 'execute'
-    ? 'execute'
-    : 'review';
-  const assistantText = typeof payload.assistant_text === 'string'
-    ? payload.assistant_text.trim()
-    : '';
-  const actionTitle = typeof payload.action_title === 'string'
-    ? payload.action_title.trim()
-    : '';
-  const isStartup = payload.is_startup === true;
-  const confidenceValue = typeof payload.confidence === 'number'
-    ? payload.confidence
-    : Number(payload.confidence);
-  const confidence = Number.isFinite(confidenceValue)
-    ? Math.max(0, Math.min(1, confidenceValue))
-    : 0;
-  const language = typeof payload.language === 'string' && payload.language.trim()
-    ? payload.language.trim()
-    : 'und';
+  const wireMode = payload.mode;
+  const mode = wireMode === 'clarify' ? 'chat' : wireMode;
+  const intent = payload.intent;
+  if (mode !== 'chat' && mode !== 'action') return null;
+  if (
+    payload.action_disposition !== 'review'
+    || typeof intent !== 'string'
+    || !ALLOWED_INTENTS.includes(intent as DevChatWorkerIntentKind)
+  ) {
+    return null;
+  }
 
-  if (mode === 'chat' && !assistantText) return null;
-  if (mode === 'action' && (!actionTitle || confidence < 0.5)) return null;
+  // The compiler can describe an action but can never authorize it.
+  // Every write remains review-gated until the owner confirms the visible draft.
+  const actionDisposition = 'review' as const;
+  const clarificationCode = typeof payload.clarification_code === 'string'
+    ? payload.clarification_code
+    : '';
+  const assistantText = CLARIFICATION_TEXT[clarificationCode] ?? '';
+  const actionTitle = typeof intent === 'string'
+    ? ACTION_TITLE_BY_INTENT[intent as DevChatWorkerIntentKind] ?? ''
+    : '';
+  if (typeof payload.is_startup !== 'boolean') return null;
+  const isStartup = payload.is_startup;
+  const confidence = typeof payload.confidence === 'number'
+    && Number.isFinite(payload.confidence)
+    && payload.confidence >= 0
+    && payload.confidence <= 1
+    ? payload.confidence
+    : -1;
+  const language = typeof payload.language === 'string'
+    ? payload.language.trim()
+    : '';
+
+  if (confidence < 0 || !language || language.length > 16) return null;
+  if (mode === 'chat' && (
+    !assistantText
+    || intent !== 'unknown'
+    || clarificationCode === 'none'
+  )) return null;
+  if (mode === 'action' && (
+    !actionTitle
+    || clarificationCode !== 'none'
+    || confidence < 0.5
+    || intent === 'free_chat'
+    || intent === 'unknown'
+    || intent === 'status'
+  )) return null;
 
   return {
     mode,
@@ -237,7 +293,7 @@ function createDiagnostic(args: {
       bodySnippet: boundedSnippet(body),
       scope: 'upstream_provider',
       canClientFix: false,
-      nextAction: 'OpenRouter-/FreeLLM-Route und Rate-Limit prüfen; lokal nur den Offline-Fallback verwenden.',
+      nextAction: 'OpenRouter-/FreeLLM-Route und Rate-Limit prüfen; keine lokale Sprachdeutung starten.',
     };
   }
   if (status && status >= 500) {
@@ -262,7 +318,7 @@ function createDiagnostic(args: {
     bodySnippet: boundedSnippet(body),
     scope: 'network',
     canClientFix: false,
-    nextAction: 'Backend-Erreichbarkeit, CORS oder Netzwerk prüfen; lokal nur den Offline-Fallback verwenden.',
+    nextAction: 'Backend-Erreichbarkeit, CORS oder Netzwerk prüfen; keine lokale Sprachdeutung starten.',
   };
 }
 
@@ -290,6 +346,7 @@ function chooseRoute(
   readonly routeId: string;
   readonly modelId: string;
   readonly resolvedTransportClass: Exclude<ResolvedTransportClass, 'UNRESOLVED'>;
+  readonly billingCategory: 'free' | 'standard' | 'premium';
   readonly pricingDisplay: string;
 } | null {
   if (!Array.isArray(payload.routes)) return null;
@@ -301,21 +358,24 @@ function chooseRoute(
     if (!classification) return [];
     const routeId = typeof route.id === 'string' ? route.id.trim() : '';
     const modelId = typeof route.defaultModelId === 'string' ? route.defaultModelId.trim() : '';
-    return routeId && modelId ? [{
+    const capabilities = route.capabilities && typeof route.capabilities === 'object'
+      ? route.capabilities as DirectLlmRouteCapabilities
+      : null;
+    return routeId && modelId && capabilities?.codeActionContract === true ? [{
       routeId,
       modelId,
       resolvedTransportClass: classification.resolvedTransportClass,
+      billingCategory: classification.billingCategory,
       pricingDisplay: classification.pricingDisplay,
     }] : [];
   });
   if (enabled.length === 0) return null;
   const cleanPreferred = preferredModel?.trim();
   if (!cleanPreferred || isAbstractSovereignRouteAlias(cleanPreferred)) {
-    // `sovereign-fast` / `sovereign-balanced` are PAL routing aliases, not
-    // persisted route IDs. They intentionally delegate concrete selection to
-    // the current backend catalog. Only an explicit concrete user pin below is
-    // a hard exact-match contract.
-    return enabled[0];
+    // Auto may use only a verified zero-cost structured route. Selecting a paid
+    // compiler here would create spend without the owner's explicit route pin
+    // and step-up approval.
+    return enabled.find((route) => route.billingCategory === 'free') ?? null;
   }
 
   // A manual concrete route/model pin is a hard user-visible contract. If it
@@ -328,28 +388,21 @@ function chooseRoute(
 
 function buildMessages(args: SovereignDirectLlmIntentRequest): readonly DevChatWorkerMessage[] {
   const systemPrompt = [
-    'Du bist ausschließlich der Natural-Language-Interpreter von Sovereign Studio.',
-    'Verstehe Sprache, Absicht, Kontext und implizite Verweise des Users.',
-    'Du führst selbst keine Aktion aus und behauptest niemals Erfolg.',
-    'Die Runtime entscheidet separat über Repo-, GitHub-, Workspace-, Tool-, Test- und Draft-PR-Gates.',
-    'Antworte ausschließlich als einzelnes JSON-Objekt ohne Markdown.',
-    'Schema:',
-    '{"mode":"chat|action","intent":"free_chat|status|direct_patch|code_execution|draft_pr|workflow_watch|repair_workflow|load_repo|unknown","action_disposition":"review|execute","assistant_text":"Antwort in Sprache des Users oder kurze Verständnisbestätigung","action_title":"konkreter Aktionsauftrag oder leer","is_startup":false,"confidence":0.0,"language":"de|en|..."}',
-    'Nutze mode=action nur, wenn der User tatsächlich etwas verändern, ausführen, reparieren, erstellen, prüfen oder als Draft PR vorbereiten lassen will.',
-    'Nutze action_disposition=execute nur bei einem ausdrücklichen sofortigen Ausführungsauftrag. Nutze review, wenn der erkannte Änderungsauftrag zuerst als Integrationsentwurf bestätigt werden soll.',
-    'Nutze mode=chat für Fragen, Erklärungen, Diskussionen und Beratung.',
-    'Bei intent=status setze is_startup=true nur wenn gefragt wird, ob eine Ausführung begonnen hat oder aktuell läuft; für fertig/abgeschlossen/Fortschritt bleibt is_startup=false.',
-    'Bei Unsicherheit: mode=chat, intent=unknown, is_startup=false, keine erfundene Aktion.',
-    'Bewerte die Gesamtbedeutung, nicht einzelne Schlüsselwörter.',
+    'Du bist ausschließlich der strukturierte Codeauftrags-Compiler von Sovereign Studio.',
+    'Kein Smalltalk, keine Erzählung, keine Ratschläge und keine Erfolgsbehauptung.',
+    'Du führst selbst nichts aus. Die Runtime prüft Repo, GitHub-Zugang, Workspace, Tests, Freigabe und Draft-PR-Evidence.',
+    'Antworte ausschließlich im serverseitig erzwungenen JSON-Schema.',
+    'mode=action gilt für konkrete Code-, Repository-, Test-, Workflow- oder Draft-PR-Aufträge.',
+    'Jede Aktion bleibt action_disposition=review, damit vor jeder schreibenden Ausführung eine sichtbare Freigabe erfolgt.',
+    'mode=clarify ist ausschließlich für genau eine Gegenfrage erlaubt; intent ist dann unknown.',
+    'Nutze nur clarification_code: repo_required, change_required oder expected_result_required.',
+    'Bei mode=action ist clarification_code=none. Nie freie Antworttexte oder allgemeine Unterhaltung.',
+    'Bewerte nur den aktuellen Auftrag, nicht frühere Chatnachrichten und nicht einzelne Schlüsselwörter.',
     args.repoContext ? `Runtime-Repo-Kontext: ${args.repoContext}` : 'Runtime-Repo-Kontext: nicht geladen.',
     args.runtimeContext ? `Belegte Runtime-Fakten (nur Fakten, keine Sprachdeutung):\n${args.runtimeContext}` : 'Belegte Runtime-Fakten (nur Fakten, keine Sprachdeutung): keine zusätzlichen Fakten.',
   ].join('\n');
-  const recentMessages = (args.recentMessages ?? [])
-    .filter((message) => message.role === 'user' || message.role === 'assistant')
-    .slice(-6);
   return [
     { role: 'system', content: systemPrompt },
-    ...recentMessages,
     { role: 'user', content: args.text },
   ];
 }
@@ -367,7 +420,7 @@ export async function fetchSovereignDirectLlmInterpretation(
   const fallbackModel = args.preferredModel?.trim() || 'route-catalog';
 
   try {
-    const routeResponse = await fetchImpl(SOVEREIGN_LITELLM_ROUTES, {
+    const routeResponse = await fetchImpl(SOVEREIGN_CODE_ACTION_ROUTES, {
       method: 'GET',
       credentials: 'include',
       headers: { Accept: 'application/json' },
@@ -394,7 +447,7 @@ export async function fetchSovereignDirectLlmInterpretation(
     if (!selected) {
       return {
         ok: false,
-        error: 'Keine aktivierte OpenRouter- oder FreeLLM-Route mit Default-Modell gefunden.',
+        error: 'Keine explizit freigegebene Route erfüllt den strukturierten Codeauftragsvertrag.',
         diagnostic: {
           route: SOVEREIGN_LITELLM_ROUTES,
           model: fallbackModel,
@@ -423,6 +476,10 @@ export async function fetchSovereignDirectLlmInterpretation(
       };
     }
 
+    const routeSelectionMode = !args.preferredModel?.trim()
+      || isAbstractSovereignRouteAlias(args.preferredModel)
+      ? 'auto'
+      : 'pinned';
     const chatResponse = await fetchImpl(SOVEREIGN_LITELLM_CHAT, {
       method: 'POST',
       credentials: 'include',
@@ -432,6 +489,8 @@ export async function fetchSovereignDirectLlmInterpretation(
       },
       body: JSON.stringify({
         requestId,
+        outputContractId: SOVEREIGN_CODE_ACTION_CONTRACT_ID,
+        routeSelectionMode,
         // Send the immutable route UUID to the backend. `defaultModelId` is
         // provider-facing metadata and can become stale after a verified
         // FreeLLM catalog refresh; the backend resolves the current provider
@@ -488,18 +547,16 @@ export async function fetchSovereignDirectLlmInterpretation(
     if (!interpretation) {
       return {
         ok: false,
-        error: 'Die Sovereign LLM-Intent-Antwort verletzte das erlaubte Schema.',
-        rawContent: content,
+        error: 'Der strukturierte Codeauftragsvertrag wurde verletzt.',
         diagnostic: {
           route: SOVEREIGN_LITELLM_CHAT,
           model: actualModel,
           messageCount: messages.length,
           status: chatResponse.status,
           statusText: chatResponse.statusText,
-          bodySnippet: boundedSnippet(content),
           scope: 'worker_runtime',
           canClientFix: false,
-          nextAction: 'Ungültige Intent-Evidence verwerfen und ausschließlich den Offline-Fallback verwenden.',
+          nextAction: 'Modellantwort verwerfen und eine knappe konkrete Gegenfrage anzeigen; keine Offline-Deutung starten.',
         },
       };
     }

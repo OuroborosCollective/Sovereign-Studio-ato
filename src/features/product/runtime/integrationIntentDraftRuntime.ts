@@ -24,6 +24,10 @@ export interface IntegrationIntentDraft {
   readonly id: string;
   /** Original user input text */
   readonly originalText: string;
+  /** Immutable mission shown in preview and passed byte-for-byte to the executor. */
+  readonly executionMission: string;
+  /** Immutable non-secret repository target shown before approval. */
+  readonly executionTarget?: IntegrationIntentExecutionTarget;
   /** Extracted/improved title for the integration task */
   readonly title: string;
   /** Core goal/objective of the integration */
@@ -374,6 +378,7 @@ export function createIntegrationIntentDraft(
   return {
     id: generateId(clean, timestamp, options?.idSeed),
     originalText: clean,
+    executionMission: clean,
     title: options?.interpretation?.actionTitle?.trim() || extractTitle(clean),
     goal: extractGoal(clean),
     scope: extractScopeKeywords(clean),
@@ -386,6 +391,78 @@ export function createIntegrationIntentDraft(
     intentModel: options?.interpretation?.model,
   };
 }
+
+export interface IntegrationIntentExecutionTarget {
+  readonly repoUrl: string;
+  readonly branch: string;
+  readonly expectedHeadSha: string;
+}
+
+export interface StructuredIntegrationIntentEvidence {
+  readonly intentKind: DevChatWorkerIntentKind;
+  readonly confidence: number;
+  readonly model?: string;
+  readonly actionTitle: string;
+}
+
+const STRUCTURED_EXECUTION_INTENTS: readonly DevChatWorkerIntentKind[] = [
+  'direct_patch',
+  'code_execution',
+  'draft_pr',
+  'workflow_watch',
+  'repair_workflow',
+  'load_repo',
+];
+
+/**
+ * Build the consent preview directly from the validated online contract.
+ * This path performs no keyword parsing, scope guessing, file guessing, or
+ * mission rephrasing. The previewed executionMission is the executor input.
+ */
+export function createStructuredIntegrationIntentDraft(
+  input: string,
+  evidence: StructuredIntegrationIntentEvidence,
+  executionTarget: IntegrationIntentExecutionTarget,
+  options?: Pick<CreateDraftOptions, 'now' | 'idSeed'>,
+): IntegrationIntentDraft | null {
+  const executionMission = input.trim();
+  const actionTitle = evidence.actionTitle.trim();
+  if (
+    executionMission.length < 4
+    || !actionTitle
+    || !STRUCTURED_EXECUTION_INTENTS.includes(evidence.intentKind)
+    || !Number.isFinite(evidence.confidence)
+    || evidence.confidence < 0.5
+    || evidence.confidence > 1
+    || !executionTarget.repoUrl.trim()
+    || !executionTarget.branch.trim()
+    || !/^[0-9a-f]{40}$/i.test(executionTarget.expectedHeadSha.trim())
+  ) {
+    return null;
+  }
+  const timestamp = options?.now ?? Date.now();
+  return {
+    id: generateId(executionMission, timestamp, options?.idSeed),
+    originalText: executionMission,
+    executionMission,
+    executionTarget: {
+      repoUrl: executionTarget.repoUrl.trim(),
+      branch: executionTarget.branch.trim(),
+      expectedHeadSha: executionTarget.expectedHeadSha.trim().toLowerCase(),
+    },
+    title: actionTitle.slice(0, 240),
+    goal: executionMission,
+    scope: [],
+    affectedFiles: [],
+    createdAt: timestamp,
+    rephrasedText: executionMission,
+    intentKind: evidence.intentKind,
+    intentSource: 'online_llm',
+    intentConfidence: evidence.confidence,
+    intentModel: evidence.model,
+  };
+}
+
 
 /**
  * Format a draft for display in the UI card.

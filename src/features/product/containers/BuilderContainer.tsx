@@ -209,7 +209,7 @@ import {
 } from "../runtime/sovereignActionStreamRuntime";
 import {
   createInitialDraftState,
-  createIntegrationIntentDraft,
+  createStructuredIntegrationIntentDraft,
   buildDraftCreatedEvent,
   buildDraftConfirmedEvent,
   buildDraftRejectedEvent,
@@ -2287,7 +2287,13 @@ export function BuilderContainer({
   }, [authUser?.id]);
 
   // ── Sovereign App Toolchain — auto-load after login
-  const { loadTools: loadToolchain, getToolContext, loaded: toolchainLoaded } = useToolchainStore();
+  const {
+    loadTools: loadToolchain,
+    getToolContext,
+    loaded: toolchainLoaded,
+    loading: toolchainLoading,
+    error: toolchainError,
+  } = useToolchainStore();
   useEffect(() => {
     if (authUser && !toolchainLoaded) { loadToolchain(); }
   }, [authUser, toolchainLoaded, loadToolchain]);
@@ -3753,6 +3759,107 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     }
   };
 
+  const startAgentFromApprovedDraft = async (
+    draft: IntegrationIntentDraft,
+    interpretedIntent: 'code_execution' | 'draft_pr',
+  ): Promise<boolean> => {
+    const executionMission = draft.executionMission;
+    const executionTarget = draft.executionTarget;
+    if (
+      draft.intentSource !== 'online_llm'
+      || !executionMission
+      || executionMission !== draft.originalText.trim()
+      || !executionTarget
+    ) {
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'agent-job',
+        label: 'Freigabevertrag ungültig',
+        detail: 'Vorschau und Executor-Auftrag sind nicht identisch.',
+        kind: 'blocked',
+      }));
+      appendRuntimeNotice('Start blockiert: Der freigegebene Auftrag ist nicht unverändert ausführbar.');
+      return false;
+    }
+    if (!effectiveRepoReady || !chatRepoSnapshot) {
+      setShowRepoSetup(true);
+      appendRuntimeNotice('Start blockiert: Repository-Snapshot fehlt. Der Auftrag bleibt zur Freigabe sichtbar.');
+      return false;
+    }
+    const targetStillMatches = (
+      executionTarget.repoUrl === chatRepoSnapshot.repoUrl
+      && executionTarget.branch === chatRepoSnapshot.branch
+      && executionTarget.expectedHeadSha === chatRepoSnapshot.headSha.toLowerCase()
+    );
+    if (!targetStillMatches) {
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'repo',
+        label: 'Freigabe durch Repository-Drift abgelaufen',
+        detail: 'Repository, Branch oder HEAD unterscheiden sich von der sichtbaren Vorschau.',
+        kind: 'blocked',
+      }));
+      appendRuntimeNotice('Start blockiert: Repository-Stand hat sich geändert. Auftrag bitte erneut prüfen und freigeben.');
+      return false;
+    }
+    if (!(githubWriteAllowed || hasCurrentGitHubWriteEvidence())) {
+      setShowGitHubAccessOverride(true);
+      appendActionEvent({
+        kind: 'github_access_required',
+        route: 'github-access',
+        label: 'GitHub-Zugang erforderlich',
+        detail: 'Zugang öffnen ist keine Aktionsfreigabe; der Auftrag bleibt ausstehend.',
+        state: 'blocked',
+      });
+      return false;
+    }
+    if (!onStartAgent) {
+      appendRuntimeNotice('Start blockiert: Kein bestätigter Workspace-Executor ist verbunden.');
+      return false;
+    }
+    if (startAgentInFlightRef.current) {
+      addLog('info', 'Approved draft start ignored while another start is in flight', 'router');
+      return false;
+    }
+
+    setMissionValidationPending(null);
+    if (lastMissionRef.current !== executionMission) {
+      emitMissionChange(executionMission);
+    }
+    startAgentInFlightRef.current = true;
+    clearPatchEvidence();
+    appendActionEvent({
+      kind: 'agent_job_requested',
+      route: 'agent-job',
+      label: 'Freigegebener Repository-Auftrag angefragt',
+      detail: `Exakter Vorschautext wird an ${executionTarget.repoUrl}#${executionTarget.branch}@${executionTarget.expectedHeadSha} übergeben.`,
+      state: 'queued',
+    });
+
+    try {
+      await onStartAgent(executionMission, {
+        repoUrl: executionTarget.repoUrl,
+        branch: executionTarget.branch,
+        expectedHeadSha: executionTarget.expectedHeadSha,
+        githubAccessToken: githubTokenRef.current || undefined,
+      });
+      appendRuntimeNotice('Start angefragt. Ergebnis bleibt Draft PR; kein Auto-Merge.');
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Sovereign Agent Start fehlgeschlagen.';
+      appendActionEvent({
+        kind: 'failed',
+        route: 'agent-job',
+        label: 'Sovereign Agent Start fehlgeschlagen',
+        detail: message,
+        state: 'failed',
+      });
+      appendRuntimeNotice(`Start fehlgeschlagen: ${message}`);
+      return false;
+    } finally {
+      startAgentInFlightRef.current = false;
+    }
+  };
+
+
   const publishConfirmedDraftPr = async (): Promise<void> => {
     if (publishDraftPrInFlightRef.current) {
       addLog('info', 'Draft-PR publish ignored while another publish is in flight', 'router');
@@ -4288,19 +4395,12 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
             `patch_confirmed=${patchConfirmed}`,
             `worker_health=${onlineHealth?.ok === true ? 'ready' : onlineHealth?.ok === false ? 'blocked' : 'unknown'}`,
           ].join('\n'),
-          recentMessages: chatHistory
-            .filter((line) => line.role === 'user' || line.role === 'assistant')
-            .slice(-6)
-            .map((line) => ({
-              role: line.role === 'user' ? 'user' as const : 'assistant' as const,
-              content: line.text,
-            })),
         });
         setChatResponseBusy(false);
       } else {
         interpretationResult = {
           ok: false,
-          error: onlineHealth?.error || 'Worker ist offline; lokaler Sprach-Fallback wird verwendet.',
+          error: onlineHealth?.error || 'Strukturierte Online-Aktionsroute ist nicht erreichbar.',
           diagnostic: {
             route: SOVEREIGN_WORKER_CHAT,
             model: requestedInterpretationModel,
@@ -4308,48 +4408,11 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
             status: onlineHealth?.status,
             scope: 'network',
             canClientFix: false,
-            nextAction: 'Offline-Fallback nutzen; keine Online-Antwort oder Aktions-Evidence vortäuschen.',
+            nextAction: 'Online-Aktionsroute prüfen; keine lokale Sprachdeutung oder Ausführung starten.',
           },
         };
       }
 
-      const quarantineOnlineObservation = async (responseText: string, modelId: string) => {
-        const inferenceEvidence = onlineAreInference;
-        if (!inferenceEvidence || !authUser || !responseText.trim()) return;
-        try {
-          const quarantine = await quarantineAreResponse({
-            prompt: submittedText,
-            response: responseText,
-            stateHash: inferenceEvidence.stateHash,
-            adapter: inferenceEvidence.adapter,
-            modelId,
-            metadata: {
-              repository: currentRepositoryTargetKey,
-              intentOnly: true,
-              knowledgeIds: inferenceEvidence.selectedKnowledgeIds,
-              patternIds: inferenceEvidence.selectedPatternIds,
-            },
-          });
-          appendActionEvent({
-            kind: 'context_collected',
-            route: 'runtime',
-            label: quarantine.duplicate ? 'Online-Beobachtung bereits quarantänisiert' : 'Online-Beobachtung quarantänisiert',
-            detail: quarantine.learningState === 'pending_evidence'
-              ? 'DB bestätigt: Kandidat wartet auf echte Runtime-Evidence und ist noch kein gelerntes Muster.'
-              : `DB bestätigt bestehenden Lernzustand: ${quarantine.candidate.status}.`,
-            state: 'done',
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          addLog('warn', `ARE-Quarantäne nicht verfügbar: ${message}`, 'pattern');
-          appendActionEvent(buildBlockedActionEvent({
-            route: 'runtime',
-            label: 'Online-Beobachtung nicht gespeichert',
-            detail: message,
-            kind: 'failed',
-          }));
-        }
-      };
       if (interpretationResult.ok && interpretationResult.interpretation) {
         const interpretation = interpretationResult.interpretation;
         // A successful advisory/status interpretation does not prove that the
@@ -4368,277 +4431,123 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           state: 'done',
         });
 
-        await quarantineOnlineObservation(
-          interpretation.mode === 'action'
-            ? JSON.stringify({
-                mode: interpretation.mode,
-                intent: interpretation.intent,
-                actionTitle: interpretation.actionTitle,
-                assistantText: interpretation.assistantText,
-                confidence: interpretation.confidence,
-              })
-            : interpretation.assistantText,
-          interpretation.model,
-        );
-
         const actionableIntent = mapInterpretedIntentToExecutorIntent(interpretation.intent);
         const isAction = interpretation.mode === 'action'
           && actionableIntent !== null
           && actionableIntent !== 'question'
           && actionableIntent !== 'status';
 
-        if (interpretation.intent === 'status') {
-          const statusAnswer = buildLocalStatusAnswer({
-            githubWriteAllowed,
-            githubAccessState: effectiveGitHubAccessState,
-            writeIntentBlockedByRepo: !effectiveRepoReady,
-            agentRunning: scopedAgentJob?.status === 'running',
-            draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-            hasPatch: Boolean(scopedAgentJob?.changedFiles?.length),
-            patchPreviewReady,
-            patchConfirmed,
-            hasWorkerResponse: hasScopedWorkerResponse,
-            workerBlocker: routingWorkerBlocker,
-            buildWorkerBlockerAnswer: routingWorkerBlocker
-              ? () => buildWorkerBlockerAnswer({
-                  blocker: routingWorkerBlocker,
-                  repoReady: effectiveRepoReady,
-                  chatRepoSnapshot,
-                  agentReady,
-                })
-              : undefined,
-            questionText: submittedText,
-            isStartup: interpretation.isStartup,
-          });
-          appendRuntimeNotice(statusAnswer);
-          setLastAnswerWasLocal(true);
-          appendActionEvent(buildLocalRuntimeResultEvent({
-            label: 'LLM-verstandene Status-Frage',
-            detail: 'Antwort ausschließlich aus aktuellem Runtime-State; keine Statusbehauptung des LLM übernommen.',
-          }));
-          return;
-        }
-
         if (!isAction) {
-          const assistantResponse = interpretation.assistantText
-            || 'Ich habe die Eingabe verstanden, aber keinen ausführbaren Änderungsauftrag erkannt.';
-          appendGuardedWorkerText(assistantResponse);
-          setLastAnswerWasLocal(false);
-          // Learning is a quarantined side-channel. It records its own evidence
-          // and errors, but must never hold the chat/action serialization lock or
-          // delay the next user request.
-          void recordOnlineLanguageObservation({
-            prompt: submittedText,
-            response: assistantResponse,
-            modelId: interpretation.model,
-            intent: interpretation.intent,
+          appendRuntimeNotice(interpretation.assistantText);
+          appendActionEvent({
+            kind: 'capability_checked',
+            route: 'runtime',
+            label: 'Gegenfrage erforderlich',
+            detail: 'Der strukturierte Codeauftragsvertrag enthält noch keinen ausführbaren Auftrag.',
+            state: 'blocked',
           });
           return;
         }
 
-        const executeWithoutReview = interpretation.actionDisposition === 'execute';
-        if (
-          executeWithoutReview
-          && (actionableIntent === 'code_execution' || actionableIntent === 'draft_pr')
-        ) {
-          if (!effectiveRepoReady || !githubWriteAllowed) {
-            pendingOnlineExecutionRef.current = {
-              text: submittedText,
-              intent: actionableIntent,
-            };
-          } else {
-            pendingOnlineExecutionRef.current = null;
-          }
-          const started = await startAgentFromText(submittedText, actionableIntent);
-          if (started && sovereignAgentStartAvailable) {
-            appendRuntimeNotice('Die Runtime hat den Job-Start angefragt. Ein laufender oder erfolgreicher Job gilt erst nach bestätigter Runtime-Evidence. Ergebnis bleibt Draft PR, kein Auto-Merge.');
-          }
-          if (started || (effectiveRepoReady && githubWriteAllowed)) {
-            pendingOnlineExecutionRef.current = null;
-          }
-          return;
-        }
-        const repoFiles = chatRepoSnapshot?.filePaths?.map((path) => ({
-          path,
-          type: 'blob' as const,
-          size: 0,
-          sha: '',
-        })) ?? [];
-        const draft = createIntegrationIntentDraft(submittedText, repoFiles, {
-          interpretation: {
-            intentKind: interpretation.intent,
-            source: 'online_llm',
-            confidence: interpretation.confidence,
-            model: interpretation.model,
-            actionTitle: interpretation.actionTitle,
-            targetFiles: interpretation.targetFiles,
-          },
-        });
+        const draft = chatRepoSnapshot
+          ? createStructuredIntegrationIntentDraft(
+              submittedText,
+              {
+                intentKind: interpretation.intent,
+                confidence: interpretation.confidence,
+                model: interpretation.model,
+                actionTitle: interpretation.actionTitle,
+              },
+              {
+                repoUrl: chatRepoSnapshot.repoUrl,
+                branch: chatRepoSnapshot.branch,
+                expectedHeadSha: chatRepoSnapshot.headSha,
+              },
+            )
+          : null;
         if (!draft) {
-          appendGuardedWorkerText(
-            interpretation.assistantText || 'Die Online-Deutung war nicht konkret genug für einen ausführbaren Auftrag.',
-          );
+          const clarification = effectiveRepoReady && chatRepoSnapshot
+            ? `Welche konkrete Änderung soll ich in ${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo} vorbereiten, und welches Ergebnis soll ich danach prüfen?`
+            : 'Welches Repository soll ich ändern, und was soll danach konkret anders sein?';
+          appendRuntimeNotice(clarification);
+          appendActionEvent({
+            kind: 'blocked',
+            route: 'runtime',
+            label: 'Codeauftrag unvollständig',
+            detail: 'Keine Ausführung; konkrete Gegenfrage angezeigt.',
+            state: 'blocked',
+          });
           return;
         }
 
         appendActionEvent(buildDraftCreatedEvent(draft));
         setIntentDraftState({ status: 'pending', draft });
-        if (interpretation.assistantText) {
-          appendGuardedWorkerText(interpretation.assistantText);
-        }
-        addLog('info', `Sovereign LLM intent accepted as draft evidence: ${draft.title} · model=${interpretation.model}`, 'router');
+        appendRuntimeNotice(`Freigabe erforderlich: ${draft.title}`);
+        addLog('info', `Structured code action ready for review: ${draft.title} · model=${interpretation.model}`, 'router');
         return;
       }
 
-      // A provider response that failed the action schema is still allowed to be
-      // conversation text. It is NEVER reinterpreted by browser heuristics and
-      // can never authorize an executor or GitHub-write path.
-      if (interpretationResult.rawContent) {
-        await quarantineOnlineObservation(interpretationResult.rawContent, requestedInterpretationModel);
-        appendGuardedWorkerText(interpretationResult.rawContent);
-        appendActionEvent({
-          kind: 'llm_response_received',
-          route: 'worker',
-          label: 'Freitext-Antwort ohne Aktionsschema übernommen',
-          detail: 'Ungültiges Aktionsschema; Providertext wurde ausschließlich als LLM-Kommunikation akzeptiert.',
-          state: 'done',
-        });
-        return;
-      }
-
-      // Preserve only a genuinely failed request as retry target. The degraded
-      // runtime may classify exact machine controls such as /status or /agent;
-      // free user language stays unknown and is never interpreted locally.
       if (!routingWorkerBlocker || options.ignoreExistingWorkerBlocker) {
         setLastWorkerRequestMessage(submittedText);
       }
-      const offlineIntent = explicitRuntimeIntent;
-      const offlineFallbackEvidence = offlineIntent === 'unknown'
-        ? 'free_language_not_safely_classifiable'
-        : offlineIntent;
+      const diagnostic = interpretationResult.diagnostic;
+      if (diagnostic?.scope === 'authentication' && diagnostic.status === 401) {
+        await refreshUser();
+        setShowLogin(true);
+      }
+      const health: DevChatWorkerHealthResult = onlineHealth ?? {
+        ok: false,
+        route: SOVEREIGN_WORKER_HEALTH,
+        status: diagnostic?.status,
+        error: interpretationResult.error || diagnostic?.nextAction,
+      };
+      const offlineMachineIntent = resolveOfflineMachineExecutorIntent(explicitRuntimeIntent);
+      if (offlineMachineIntent) {
+        setWorkerHealthEvidence(health);
+        addLog(
+          'warn',
+          'Online code-action contract unavailable; exact typed machine control routed to bounded executor.',
+          'router',
+        );
+        await startAgentFromText(submittedText, offlineMachineIntent);
+        return;
+      }
+      setWorkerHealthEvidence(health);
+      const blocker: WorkerRuntimeBlocker = {
+        message: interpretationResult.error || 'Strukturierter Codeauftrag nicht verfügbar.',
+        diagnostic: diagnostic ?? {
+          route: SOVEREIGN_WORKER_CHAT,
+          model: requestedInterpretationModel,
+          messageCount: 0,
+          scope: 'worker_runtime',
+          canClientFix: false,
+          nextAction: 'Strukturierte Aktionsroute prüfen.',
+        },
+        health,
+        createdAt: Date.now(),
+      };
+      setWorkerBlocker(blocker);
+      const diagnosticText = [
+        interpretationResult.error,
+        diagnostic?.bodySnippet,
+        diagnostic?.nextAction,
+      ].filter(Boolean).join(' ');
+      const clarification = !effectiveRepoReady
+        ? 'Welches Repository soll ich ändern?'
+        : diagnostic?.status === 428
+          ? 'Die gewählte Route benötigt eine Kostenfreigabe. Soll ich die Freigabevorschau öffnen?'
+          : selectedLlmRouteId && /nicht.*(vertrag|route)|not_supported|keine explizit freigegebene route/i.test(diagnosticText)
+            ? 'Die fixierte Route unterstützt sichere Codeaufträge nicht. Welche verifizierte Route soll ich verwenden?'
+            : 'Die sichere Online-Aktionsroute ist blockiert. Soll ich denselben Auftrag mit Auto/Revolver erneut versuchen?';
+      appendRuntimeNotice(clarification);
       appendActionEvent({
         kind: 'blocked',
         route: 'worker',
-        label: 'Online-Sprachdeutung nicht verfügbar',
-        detail: `${interpretationResult.error ?? 'Unbekannter Fehler'} · Offline-Fallback=${offlineFallbackEvidence}`,
+        label: 'Codeauftragsvertrag blockiert',
+        detail: interpretationResult.error || 'Keine gültige strukturierte Aktionsantwort.',
         state: 'blocked',
       });
-      addLog('warn', `Online intent unavailable; offline fallback=${offlineFallbackEvidence}`, 'router');
-
-      // Offline language handling is fail-closed and may only read current
-      // runtime state or prepare a gated action. It never falls through to a
-      // second online language endpoint.
-      if (offlineIntent === 'status') {
-        const statusAnswer = buildLocalStatusAnswer({
-          githubWriteAllowed,
-          githubAccessState: effectiveGitHubAccessState,
-          writeIntentBlockedByRepo: !effectiveRepoReady,
-          agentRunning: scopedAgentJob?.status === 'running',
-          draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-          hasPatch: Boolean(scopedAgentJob?.changedFiles?.length),
-          patchPreviewReady,
-          patchConfirmed,
-          hasWorkerResponse: hasScopedWorkerResponse,
-          workerBlocker: routingWorkerBlocker,
-          buildWorkerBlockerAnswer: routingWorkerBlocker
-            ? () => buildWorkerBlockerAnswer({
-                blocker: routingWorkerBlocker,
-                repoReady: effectiveRepoReady,
-                chatRepoSnapshot,
-                agentReady,
-              })
-            : undefined,
-          questionText: submittedText,
-        });
-        appendRuntimeNotice(statusAnswer);
-        setLastAnswerWasLocal(true);
-        appendActionEvent(buildLocalRuntimeResultEvent({
-          label: 'Offline-Status-Fallback',
-          detail: 'Online-Deutung fehlgeschlagen; Status ausschließlich aus Runtime-State beantwortet.',
-        }));
-        return;
-      }
-
-      if (isExactRetryControl && routingWorkerBlocker) {
-        setWorkerBlocker(null);
-        if (lastWorkerRequestMessage) {
-          appendActionEvent(buildLocalRuntimeResultEvent({
-            label: 'Offline-Retry gestartet',
-            detail: 'Der letzte korrelierte Request wird erneut durch die vollständige Pipeline geschickt.',
-          }));
-          await _processSubmit(lastWorkerRequestMessage, {
-            ignoreExistingWorkerBlocker: true,
-            inputAlreadyRecorded: true,
-          });
-        } else {
-          appendRuntimeNotice('Der Blocker wurde zurückgesetzt. Es gibt keinen vorherigen korrelierten Request zum Wiederholen.');
-        }
-        return;
-      }
-
-      if (offlineIntent === 'status') {
-        appendRuntimeNotice(buildExecutorStatusAnswer({
-            agentState: agentWorkSnapshot.state,
-            agentStatus: scopedAgentJob?.status,
-            changedFiles: scopedAgentJob?.changedFiles?.length ?? 0,
-            draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-            blockerReason: agentWorkSnapshot.blockerReason,
-          }));
-        return;
-      }
-
-      const offlineExecutorIntent = resolveOfflineMachineExecutorIntent(offlineIntent);
-      if (offlineExecutorIntent) {
-        const started = await startAgentFromText(submittedText, offlineExecutorIntent);
-        if (started) {
-          appendRuntimeNotice('Online-Sprachdeutung war nicht verfügbar. Nur der explizite Maschinenbefehl wurde an die Runtime übergeben; Erfolg bleibt bis zu echter Runtime-Evidence offen.');
-        }
-        return;
-      }
-
-      if (interpretationResult.rawContent && (offlineIntent === 'question' || offlineIntent === 'unknown')) {
-        await quarantineOnlineObservation(interpretationResult.rawContent, requestedInterpretationModel);
-        appendGuardedWorkerText(interpretationResult.rawContent);
-        appendActionEvent({
-          kind: 'llm_response_received',
-          route: 'worker',
-          label: 'Freitext-Antwort als Chat-Fallback übernommen',
-          detail: 'Kein Aktionsschema vorhanden; Freitext wurde ausschließlich als Gesprächsantwort akzeptiert.',
-          state: 'done',
-        });
-        return;
-      }
-
-      const diagnostic = interpretationResult.diagnostic;
-      if (diagnostic) {
-        if (diagnostic.scope === 'authentication' && diagnostic.status === 401) {
-          await refreshUser();
-          setShowLogin(true);
-        }
-        const health: DevChatWorkerHealthResult = onlineHealth ?? {
-          ok: false,
-          route: SOVEREIGN_WORKER_HEALTH,
-          status: diagnostic.status,
-          error: interpretationResult.error || diagnostic.nextAction,
-          bodySnippet: diagnostic.bodySnippet,
-        };
-        setWorkerHealthEvidence(health);
-        const blocker: WorkerRuntimeBlocker = {
-          message: interpretationResult.error || 'Online-Sprachdeutung fehlgeschlagen.',
-          diagnostic,
-          health,
-          createdAt: Date.now(),
-        };
-        setWorkerBlocker(blocker);
-        appendRuntimeNotice(buildWorkerBlockerAnswer({
-            blocker,
-            repoReady: effectiveRepoReady,
-            chatRepoSnapshot,
-            agentReady,
-          }));
-      } else {
-        appendRuntimeNotice('Online-Sprachdeutung ist nicht verfügbar und der lokale Offline-Fallback hat keinen sicheren Aktionspfad erkannt.');
-      }
+      addLog('warn', 'Structured code action unavailable; no provider prose or offline interpretation accepted.', 'router');
       return;
     }
 
@@ -5794,27 +5703,6 @@ Das echte Repo-Setup wurde geöffnet.`);
                 background: C.surface,
               }}
             >
-              <SovereignToolLauncher
-                runtimeContext={{
-                  repoReady: effectiveRepoReady,
-                  repoFileCount: effectiveRepoReady && chatRepoSnapshot
-                    ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
-                    : 0,
-                  hasDiffEvidence: Boolean(
-                    patchDiffReport ||
-                    (scopedAgentJob?.changedFiles?.length ?? 0) > 0,
-                  ),
-                  githubAccessState: effectiveGitHubAccessState,
-                  executorAvailable: sovereignAgentStartAvailable,
-                  executorActive: scopedAgentIsRunning,
-                  hasExecutorMission: Boolean(wishText.trim()),
-                  executorIntent,
-                  runtimeLogCount: runtimeEvidenceLog.length,
-                }}
-                onSelect={handleCompactToolSelect}
-                onBlockedSelect={handleCompactToolSelect}
-                onOpenLauncher={useLauncherStore.getState().openMenu}
-              />
               <ActionSuggestionStrip
                 actions={SOVEREIGN_PRESET_ACTIONS}
                 repoReady={effectiveRepoReady}
@@ -5884,17 +5772,18 @@ Das echte Repo-Setup wurde geöffnet.`);
                   onConfirm={() => {
                     appendActionEvent(buildDraftConfirmedEvent(draft));
                     setIntentDraftState({ status: 'confirmed', draft });
-                    void startAgentFromText(draft.originalText, executionIntent);
-                    window.setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
+                    void startAgentFromApprovedDraft(draft, executionIntent)
+                      .finally(() => setIntentDraftState({ status: 'idle' }));
                   }}
                   onConfirmWithGitHubAccess={() => {
-                    appendActionEvent(buildDraftConfirmedEvent(draft));
-                    pendingOnlineExecutionRef.current = {
-                      text: draft.originalText,
-                      intent: executionIntent,
-                    };
                     setShowGitHubAccessOverride(true);
-                    setIntentDraftState({ status: 'idle' });
+                    appendActionEvent({
+                      kind: 'github_access_required',
+                      route: 'github-access',
+                      label: 'GitHub-Zugang geöffnet',
+                      detail: 'Nur der Zugang wird geprüft; der Repository-Auftrag bleibt unbestätigt.',
+                      state: 'blocked',
+                    });
                   }}
                   onRephrase={() => {
                     appendActionEvent(buildDraftRephrasedEvent(draft));
@@ -5928,6 +5817,51 @@ Das echte Repo-Setup wurde geöffnet.`);
                 );
               }}
               routeCatalogError={llmRouteCatalogError}
+              runtimeMood={agentStatus === 'error' ? '🛟⚠️' : runtimeThinkingActive ? '🤖💭' : '😊✨'}
+              onOpenFlow={() => handleCompactToolSelect('runtime_logs')}
+              onRequestIdea={() => {
+                triggerHaptic('light');
+                onGenerateIdeas();
+              }}
+              onOpenToolchain={() => {
+                appendActionEvent(buildLocalRuntimeResultEvent({
+                  label: 'Toolchain geöffnet',
+                  detail: 'Registriertes Toolchain-Panel geöffnet; kein Tool automatisch ausgeführt.',
+                }));
+                useLauncherStore.getState().launchTool('sovereign-toolchain');
+              }}
+              toolchainState={!authUser
+                ? 'unavailable'
+                : toolchainLoading
+                  ? 'checking'
+                  : toolchainLoaded
+                    ? 'ready'
+                    : toolchainError
+                      ? 'blocked'
+                      : 'unavailable'}
+              toolsLauncher={(
+                <SovereignToolLauncher
+                  runtimeContext={{
+                    repoReady: effectiveRepoReady,
+                    repoFileCount: effectiveRepoReady && chatRepoSnapshot
+                      ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
+                      : 0,
+                    hasDiffEvidence: Boolean(
+                      patchDiffReport ||
+                      (scopedAgentJob?.changedFiles?.length ?? 0) > 0,
+                    ),
+                    githubAccessState: effectiveGitHubAccessState,
+                    executorAvailable: sovereignAgentStartAvailable,
+                    executorActive: scopedAgentIsRunning,
+                    hasExecutorMission: Boolean(wishText.trim()),
+                    executorIntent,
+                    runtimeLogCount: runtimeEvidenceLog.length,
+                  }}
+                  onSelect={handleCompactToolSelect}
+                  onBlockedSelect={handleCompactToolSelect}
+                  onOpenLauncher={useLauncherStore.getState().openMenu}
+                />
+              )}
               routeHint={selectedLlmRouteId
                 ? `Fixiert auf Backend-Route ${selectedLlmRouteId} · kein stiller Modell-Fallback`
                 : composerRouteHint({

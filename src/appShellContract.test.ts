@@ -3,10 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 const MAIN_PATH = 'src/main.tsx';
 const APP_PATH = 'src/App.tsx';
-const RELEASE_CHAT_PATH = 'src/features/release/PlayReleaseChat.tsx';
-const LOGIN_PATH = 'src/features/user/components/LoginModal.tsx';
 const WRAPPER_PATH = 'src/SovereignAppWrapper.tsx';
 const CSS_PATH = 'src/index.css';
+const WORKSPACE_COMMAND_PATH = 'src/features/product/runtime/sovereignWorkspaceCommand.ts';
 
 const DOM_INSTALLER_TOKENS = [
   'installMobileAgentMonitor',
@@ -17,6 +16,20 @@ const DOM_INSTALLER_TOKENS = [
   'installGlobalRuntimeMonitor',
 ];
 
+const REMOVED_VISIBLE_SHELL_TOKENS = [
+  'RepoInsightPanelBridge',
+  'RepoSnapshotContainer',
+  'WorkflowContainer',
+  'TelemetryContainer',
+  'PatternMemoryContainer',
+  'SettingsModal',
+  'Sovereign Canvas Tool',
+  'automation__panel',
+  'tabbar__root',
+  'operator-monitor',
+  'Sovereign Arbeitsfläche öffnen',
+];
+
 const REMOVED_WRAPPER_NAV_TOKENS = [
   'WorkspaceMenu',
   'publishWorkspaceCommand',
@@ -24,9 +37,13 @@ const REMOVED_WRAPPER_NAV_TOKENS = [
   'SOVEREIGN_WORKSPACE_COMMAND_EVENT',
   'createSovereignWorkspaceCommand',
   'sovereign-wrapper-workspace-menu',
+  'sovereign-wrapper-menu__${item.id}',
   'composition-wrapper-around-existing-app',
   'MinimalAppShell',
   'MinimalLampBar',
+  'minimal-app-shell',
+  'sovereign-minimal-lamp-bar',
+  'sovereign-shell-content',
 ];
 
 function read(path: string): string {
@@ -35,23 +52,30 @@ function read(path: string): string {
 }
 
 function expectContainsAll(source: string, tokens: string[]): void {
-  for (const token of tokens) expect(source, `expected source to contain: ${token}`).toContain(token);
+  for (const token of tokens) {
+    expect(source, `expected source to contain: ${token}`).toContain(token);
+  }
 }
 
 function expectContainsNone(source: string, tokens: string[]): void {
-  for (const token of tokens) expect(source, `expected source not to contain: ${token}`).not.toContain(token);
+  for (const token of tokens) {
+    expect(source, `expected source not to contain: ${token}`).not.toContain(token);
+  }
 }
 
-describe('Play release rescue app shell contract', () => {
+describe('current Sovereign app shell contract', () => {
   it('keeps required shell source files present', () => {
-    for (const path of [MAIN_PATH, APP_PATH, RELEASE_CHAT_PATH, LOGIN_PATH, WRAPPER_PATH, CSS_PATH]) {
-      expect(existsSync(path), `${path} must exist`).toBe(true);
-    }
+    expect(existsSync(MAIN_PATH)).toBe(true);
+    expect(existsSync(APP_PATH)).toBe(true);
+    expect(existsSync(WRAPPER_PATH)).toBe(true);
+    expect(existsSync(CSS_PATH)).toBe(true);
+    expect(existsSync(WORKSPACE_COMMAND_PATH)).toBe(true);
   });
 
-  it('boots the stable React wrapper and Android runtime helpers without global DOM chrome', () => {
+  it('boots the React wrapper and stable Android runtime helpers without global coach chrome', () => {
     const main = read(MAIN_PATH);
     const wrapper = read(WRAPPER_PATH);
+
     expectContainsAll(main, [
       "import App from './SovereignAppWrapper'",
       '<ErrorBoundary>',
@@ -63,70 +87,52 @@ describe('Play release rescue app shell contract', () => {
       'installCodeWorkspacePersistenceRuntime();',
       'bootApp();',
     ]);
-    expectContainsAll(wrapper, ["import App from './App'", '<App />', 'export default function SovereignAppWrapper']);
+
+    expectContainsAll(wrapper, [
+      "import App from './App'",
+      '<App />',
+      'export default function SovereignAppWrapper',
+    ]);
+
     expectContainsNone(wrapper, REMOVED_WRAPPER_NAV_TOKENS);
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
-  it('makes the focused guest-capable chat the primary Play surface and excludes the unfinished monitor transport', () => {
+  it('makes App.tsx a monitor-first live surface instead of a legacy workspace dashboard', () => {
     const app = read(APP_PATH);
-    const chat = read(RELEASE_CHAT_PATH);
 
     expectContainsAll(app, [
-      "import { PlayReleaseChat } from './features/release/PlayReleaseChat'",
-      '<PlayReleaseChat />',
-    ]);
-    expectContainsNone(app, [
       'BuilderContainer',
-      'sovereign-monitor-app',
-      'monitor-first-live-workspace',
-      'getDesktopFrame',
-      'LiveWorkspaceMonitor',
+      'data-testid="sovereign-monitor-app"',
+      'data-layout="monitor-first-live-workspace"',
+      'aria-label="Sovereign Workspace Monitor"',
+      'MONITOR_FIRST_STYLE',
+      'getDesktopFrame(jobId)',
     ]);
+    expect(app).not.toContain('data-layout="chat-only-live-entry"');
 
-    expectContainsAll(chat, [
-      'data-testid="sovereign-release-chat"',
-      'data-layout="play-release-chat"',
-      'aria-label="Sovereign Chat"',
-      'fetchSovereignLlmRouteCatalog',
-      'fetchDevChatWorkerReply',
-      'DEV_CHAT_WORKER_DEFAULT_MODEL',
-      'evaluateInputPolicy',
-      'ensureGuestSession',
+    expectContainsNone(app, REMOVED_VISIBLE_SHELL_TOKENS);
+    expectContainsAll(app, [
+      'repoReady={repoReady}',
+      'repoBusy={repoBusy}',
+      'runtimeBusy={agentIsRunning}',
+      'sovereignSummary={runtimeSummary}',
+      'onPublishDraftPr={publishDraftPr}',
+      "setJanitorPreview('')",
     ]);
-    expectContainsNone(chat, [
-      '<LoginModal',
-      'setShowLogin',
-      'getDesktopFrame',
-      'desktopFrame',
-      'VncScreen',
-      'websockify',
-    ]);
-  });
-
-  it('exposes only email/password auth in the release login modal', () => {
-    const login = read(LOGIN_PATH);
-    expectContainsAll(login, [
-      "type=\"email\"",
-      "type=\"password\"",
-      'login(email.trim(), password)',
-      'register(email.trim(), password, displayName.trim())',
-    ]);
-    expectContainsNone(login, [
-      'GoogleSignInButton',
-      'GithubSignInButton',
-      'loginWithGoogle',
-      'loginWithGitHub',
-      'loginWithPasskey',
-      'loginWithAccountKey',
-      'Passkey',
-      'Account-Key',
-    ]);
+    expect(app).not.toContain('repoReady={false}');
+    expect(app).not.toContain('runtimeBusy={false}');
+    expect(app).not.toContain("onPublishDraftPr={() => setMission('Draft PR')}");
   });
 
   it('keeps the wrapper free of visible chrome and navigation state', () => {
     const wrapper = read(WRAPPER_PATH);
-    expectContainsAll(wrapper, ["import App from './App'", 'return <App />']);
+
+    expectContainsAll(wrapper, [
+      "import App from './App'",
+      'return <App />',
+    ]);
+
     expectContainsNone(wrapper, REMOVED_WRAPPER_NAV_TOKENS);
     expect(wrapper).not.toContain('querySelector');
     expect(wrapper).not.toContain('localStorage');

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-08-29T21:30:50.101Z",
+  "generatedAt": "2026-08-27T22:12:58.100Z",
   "discovery": {
     "scope": "tracked repository test conventions",
     "excludedDirectories": [
@@ -31,21 +31,20 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 731,
+  "totalTestFiles": 727,
   "testRoots": {
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
     "backend": 1,
-    "backend/tests": 161,
+    "backend/tests": 160,
     "backend/tests/e2e": 1,
     "integrations/openhands/sovereign-mcp-toolset-plugin/tests": 1,
     "research": 1,
     "scripts": 11,
-    "scripts/sovereign-backend/tests": 74,
+    "scripts/sovereign-backend/tests": 73,
     "scripts/tests": 3,
     "sovereign-studio-rn/e2e": 7,
-    "src": 357,
-    "tests": 1,
+    "src": 356,
     "tests/e2e": 5,
     "tools": 3,
     "tools/sovereign-chatgpt-mcp/tests": 97,
@@ -592,14 +591,6 @@
     },
     {
       "file": "backend/tests/test_dynamic_janitor_tool.py",
-      "language": "python",
-      "testRoot": "backend/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": "backend/tests/test_effect_surface.py",
       "language": "python",
       "testRoot": "backend/tests",
       "gates": [],
@@ -1701,16 +1692,6 @@
     },
     {
       "file": "scripts/sovereign-backend/tests/test_draft_pr_create_gate_readback.py",
-      "language": "python",
-      "testRoot": "scripts/sovereign-backend/tests",
-      "gates": [],
-      "ciWorkflows": [
-        "sovereign-agent-backend.yml"
-      ],
-      "category": "python-suite"
-    },
-    {
-      "file": "scripts/sovereign-backend/tests/test_effect_surface.py",
       "language": "python",
       "testRoot": "scripts/sovereign-backend/tests",
       "gates": [],
@@ -6171,25 +6152,6 @@
       "category": "release-gate"
     },
     {
-      "file": "src/features/product/runtime/repositoryActionFallback.test.ts",
-      "language": "javascript-typescript",
-      "testRoot": "src",
-      "gates": [
-        "test:smoke",
-        "test:all",
-        "test:release-gate",
-        "verify"
-      ],
-      "ciWorkflows": [
-        "android-release.yml",
-        "android.yml",
-        "ci.yml",
-        "release-verification.yml",
-        "sovereign-validation.yml"
-      ],
-      "category": "release-gate"
-    },
-    {
       "file": "src/features/product/runtime/responsePacingRuntime.test.ts",
       "language": "javascript-typescript",
       "testRoot": "src",
@@ -9300,14 +9262,6 @@
         "release-verification.yml"
       ],
       "category": "e2e"
-    },
-    {
-      "file": "tests/test_guest_auth_contract.py",
-      "language": "python",
-      "testRoot": "tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
     },
     {
       "file": "tools/sovereign-chatgpt-mcp/test_cognitive_architecture_status.py",
