@@ -115,6 +115,9 @@ def test_private_owner_mode_remains_bound_through_github_app_verification() -> N
 
 def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> None:
     deploy = (ROOT / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
+    compose = (
+        ROOT / "templates" / "sovereign-backend" / "docker-compose.yml"
+    ).read_text("utf-8")
 
     assert 'OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"' in deploy
     assert 'OWNER_INPUT_CONTAINER_ROOT="/opt/sovereign-owner-managed"' in deploy
@@ -125,15 +128,19 @@ def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> Non
     assert '[[ -d "$OWNER_INPUT_HOST_ROOT" && ! -L "$OWNER_INPUT_HOST_ROOT" ]]' in deploy
     assert '[[ -w "$OWNER_INPUT_HOST_ROOT" && -x "$OWNER_INPUT_HOST_ROOT" ]]' in deploy
     assert 'install -d -m 0700 "$OWNER_INPUT_HOST_ROOT"' not in deploy
-    assert deploy.count("--volume /opt/secure:/opt/secure:ro") == 2
-    assert deploy.count('--env-file "$MANAGED_ENV_FILE"') == 2
-    assert deploy.count('--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"') == 2
+    assert deploy.count("--volume /opt/secure:/opt/secure:ro") == 1
+    assert deploy.count('--env-file "$MANAGED_ENV_FILE"') == 1
+    assert deploy.count('--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"') == 1
+    assert compose.count("/opt/secure:/opt/secure:ro") == 1
+    assert compose.count("/opt/sovereign-owner-managed:/opt/sovereign-owner-managed:rw") == 1
     assert 'WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"' in deploy
     assert 'WORKSPACE_CONTAINER_ROOT="/var/lib/sovereign-agent/workspaces"' in deploy
     assert 'chown "$WORKSPACE_UID:$WORKSPACE_GID" "$WORKSPACE_HOST_ROOT"' in deploy
     assert 'chmod 0770 "$WORKSPACE_HOST_ROOT"' in deploy
-    assert deploy.count('--volume "$WORKSPACE_HOST_ROOT:$WORKSPACE_CONTAINER_ROOT:rw"') == 2
-    assert deploy.count('--env "SOVEREIGN_AGENT_WORKSPACE_ROOT=$WORKSPACE_CONTAINER_ROOT"') == 2
+    assert deploy.count('--volume "$WORKSPACE_HOST_ROOT:$WORKSPACE_CONTAINER_ROOT:rw"') == 1
+    assert deploy.count('--env "SOVEREIGN_AGENT_WORKSPACE_ROOT=$WORKSPACE_CONTAINER_ROOT"') == 1
+    assert compose.count("/opt/sovereign-agent-workspaces:/var/lib/sovereign-agent/workspaces:rw") == 1
+    assert "SOVEREIGN_AGENT_WORKSPACE_ROOT: /var/lib/sovereign-agent/workspaces" in compose
     assert "install -d -m 0700 /opt/secure/owner-managed" not in deploy
     assert ':/opt/secure/owner-managed:rw' not in deploy
     assert "--volume /opt/secure:/opt/secure:rw" not in deploy
@@ -153,17 +160,22 @@ def test_backend_compose_wires_wolfram_cag_only_through_owner_managed_file() -> 
 
 def test_backend_rollback_preserves_owner_managed_openai_key_mount() -> None:
     rollback = (ROOT / "deploy" / "rollback-sovereign-backend").read_text("utf-8")
+    compose = (
+        ROOT / "templates" / "sovereign-backend" / "docker-compose.yml"
+    ).read_text("utf-8")
 
     assert 'OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"' in rollback
     assert 'OWNER_INPUT_CONTAINER_ROOT="/opt/sovereign-owner-managed"' in rollback
     assert 'mkdir -p "$OWNER_INPUT_HOST_ROOT"' in rollback
     assert 'chmod 0700 "$OWNER_INPUT_HOST_ROOT"' in rollback
-    assert '--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"' in rollback
+    assert "/opt/sovereign-owner-managed:/opt/sovereign-owner-managed:rw" in compose
     assert 'WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"' in rollback
     assert 'WORKSPACE_CONTAINER_ROOT="/var/lib/sovereign-agent/workspaces"' in rollback
-    assert '--volume "$WORKSPACE_HOST_ROOT:$WORKSPACE_CONTAINER_ROOT:rw"' in rollback
-    assert '--env "SOVEREIGN_AGENT_WORKSPACE_ROOT=$WORKSPACE_CONTAINER_ROOT"' in rollback
-    assert '--env-file "$MANAGED_ENV_FILE"' in rollback
+    assert "/opt/sovereign-agent-workspaces:/var/lib/sovereign-agent/workspaces:rw" in compose
+    assert "SOVEREIGN_AGENT_WORKSPACE_ROOT: /var/lib/sovereign-agent/workspaces" in compose
+    assert '--env-file "$COMPOSE_RUNTIME_ENV"' in rollback
+    assert "--project-name sovereign-backend" in rollback
+    assert "compose_backend up -d --remove-orphans" in rollback
     assert "openhands-enterprise_default" not in rollback
 
 

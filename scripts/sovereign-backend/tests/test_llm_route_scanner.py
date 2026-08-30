@@ -301,6 +301,14 @@ def test_scanner_schema_and_deployment_are_candidate_only() -> None:
     compose = COMPOSE.read_text("utf-8")
     deploy = DEPLOY.read_text("utf-8")
     rollback = ROLLBACK.read_text("utf-8")
+    managed_compose = (
+        ROOT
+        / "tools"
+        / "sovereign-chatgpt-mcp"
+        / "templates"
+        / "sovereign-backend"
+        / "docker-compose.yml"
+    ).read_text("utf-8")
     app = APP.read_text("utf-8")
 
     assert "CREATE TABLE IF NOT EXISTS llm_route_scanner_runtime" in migration
@@ -318,5 +326,6 @@ def test_scanner_schema_and_deployment_are_candidate_only() -> None:
     assert '"pricingFieldsParsed": False' in source_contracts
     assert 'SOVEREIGN_LLM_ROUTE_SCANNER_ENABLED: "1"' in compose
     assert '--env "SOVEREIGN_LLM_ROUTE_SCANNER_ENABLED=0"' in deploy
-    assert '--env "SOVEREIGN_LLM_ROUTE_SCANNER_ENABLED=1"' in deploy
-    assert '--env "SOVEREIGN_LLM_ROUTE_SCANNER_ENABLED=1"' in rollback
+    assert 'SOVEREIGN_LLM_ROUTE_SCANNER_ENABLED: "1"' in managed_compose
+    assert "--project-name sovereign-backend" in deploy
+    assert "--project-name sovereign-backend" in rollback

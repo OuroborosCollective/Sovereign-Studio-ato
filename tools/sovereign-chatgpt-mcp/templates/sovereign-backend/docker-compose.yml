@@ -1,0 +1,77 @@
+services:
+  sovereign-backend:
+    image: "${SOVEREIGN_BACKEND_IMAGE:?immutable backend image is required}"
+    container_name: sovereign-backend
+    restart: unless-stopped
+    env_file:
+      - "${SOVEREIGN_BACKEND_ENV_FILE:?backend env file is required}"
+      - "${SOVEREIGN_BACKEND_MANAGED_ENV_FILE:?managed backend env file is required}"
+    environment:
+      SOVEREIGN_IMAGE_DIGEST: "${SOVEREIGN_BACKEND_IMAGE_DIGEST:?backend digest is required}"
+      SOVEREIGN_SOURCE_REVISION: "${SOVEREIGN_BACKEND_SOURCE_REVISION:?backend revision is required}"
+      SOVEREIGN_MCP_BROKER_SOCKET: /run/sovereign-chatgpt-broker/operator.sock
+      SOVEREIGN_LLM_ROUTE_SCANNER_ENABLED: "1"
+      SOVEREIGN_LLM_ROUTE_SCANNER_INTERVAL_SECONDS: "3600"
+      SOVEREIGN_LLM_ROUTE_SCANNER_INITIAL_DELAY_SECONDS: "30"
+      SOVEREIGN_LLM_ROUTE_SCANNER_MAX_CANDIDATES: "24"
+      SOVEREIGN_LLM_ROUTE_SCANNER_MAX_WORKERS: "4"
+      SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_ENABLED: "1"
+      SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_INTERVAL_SECONDS: "21600"
+      SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_INITIAL_DELAY_SECONDS: "60"
+      SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_MODELS: "12"
+      SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_ROUNDS: "10"
+      SOVEREIGN_AGENT_WORKSPACE_ROOT: /var/lib/sovereign-agent/workspaces
+      SOVEREIGN_AGENT_WORKSPACE_UID: "10001"
+      SOVEREIGN_AGENT_WORKSPACE_GID: "10001"
+    group_add:
+      - "${SOVEREIGN_MCP_BROKER_GID:?broker group is required}"
+    volumes:
+      - /opt/secure:/opt/secure:ro
+      - /opt/sovereign-owner-managed:/opt/sovereign-owner-managed:rw
+      - /opt/sovereign-agent-workspaces:/var/lib/sovereign-agent/workspaces:rw
+      - /run/sovereign-chatgpt-broker:/run/sovereign-chatgpt-broker:ro
+    ports:
+      - 127.0.0.1:8788:8787
+    labels:
+      org.opencontainers.image.revision: "${SOVEREIGN_BACKEND_SOURCE_REVISION:?backend revision is required}"
+      traefik.enable: "true"
+      traefik.docker.network: "${SOVEREIGN_TRAEFIK_DOCKER_NETWORK:-traefik-public}"
+      traefik.http.routers.sovereign-backend.rule: "Host(`sovereign-backend.arelorian.de`)"
+      traefik.http.routers.sovereign-backend.entrypoints: websecure
+      traefik.http.routers.sovereign-backend.tls: "true"
+      traefik.http.routers.sovereign-backend.tls.certresolver: letsencrypt
+      traefik.http.routers.sovereign-backend.service: sovereign-backend
+      traefik.http.services.sovereign-backend.loadbalancer.server.port: "8787"
+      traefik.http.services.sovereign-backend.loadbalancer.server.scheme: http
+      traefik.http.services.sovereign-backend.loadbalancer.healthcheck.path: /health/live
+      traefik.http.services.sovereign-backend.loadbalancer.healthcheck.interval: 15s
+      traefik.http.services.sovereign-backend.loadbalancer.healthcheck.timeout: 5s
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - >-
+          import json,urllib.request;
+          payload=json.load(urllib.request.urlopen("http://127.0.0.1:8787/health/live",timeout=4));
+          raise SystemExit(0 if payload.get("ok") is True else 1)
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - supabase_default
+      - areloria_arelorian-network
+      - sovereign-private
+      - traefik-public
+
+networks:
+  supabase_default:
+    external: true
+  areloria_arelorian-network:
+    external: true
+  sovereign-private:
+    external: true
+  traefik-public:
+    name: "${SOVEREIGN_TRAEFIK_DOCKER_NETWORK:-traefik-public}"
+    external: true

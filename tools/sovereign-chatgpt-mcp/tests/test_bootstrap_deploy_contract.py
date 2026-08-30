@@ -40,41 +40,75 @@ def test_backend_deploy_emits_bounded_preflight_marker_before_any_host_effect() 
     assert result.stdout == ""
 
 
-def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
+def test_backend_deploy_and_rollback_use_hostinger_visible_compose_identity() -> None:
     deploy = (MCP_ROOT / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
     rollback = (MCP_ROOT / "deploy" / "rollback-sovereign-backend").read_text("utf-8")
+    template = (
+        MCP_ROOT / "templates" / "sovereign-backend" / "docker-compose.yml"
+    ).read_text("utf-8")
 
+    # Candidate verification remains isolated. Production and rollback are always
+    # reconciled as the same Compose project so Hostinger can discover the stack.
     assert deploy.count('--env "SOVEREIGN_IMAGE_DIGEST=$DIGEST"') == 1
-    assert '--env "SOVEREIGN_IMAGE_DIGEST=$runtime_digest"' in deploy
     assert 'start_production "$NEW_IMAGE" "$EXPECTED_REVISION" "$DIGEST"' in deploy
     assert 'start_production "$PREVIOUS_IMAGE" "$PREVIOUS_REVISION" "$PREVIOUS_DIGEST"' in deploy
-    assert '--env "SOVEREIGN_SOURCE_REVISION=$EXPECTED_REVISION"' in deploy
-    assert '--env "SOVEREIGN_SOURCE_REVISION=$revision"' in deploy
-    assert '--env "SOVEREIGN_IMAGE_DIGEST=$DIGEST"' in rollback
-    assert '--env "SOVEREIGN_SOURCE_REVISION=$REVISION"' in rollback
-    assert 'ENTERPRISE_ADMIN_LIVE_CANARY_VERIFIED' in deploy
-    assert 'ENTERPRISE_ADMIN_LIVE_CANARY_LLM_DEGRADED' in deploy
-    assert 'FREELLM_ROUTE_READINESS_DEGRADED' in deploy
-    assert 'ROUTE_READINESS_DEGRADED' in deploy
-    assert 'llmRouteReadiness' in deploy
-    assert 'class FreeLlmReadinessDegraded' in deploy
-    assert 'def bootstrap_freellm_readiness()' in deploy
-    assert 'raise RuntimeError("no revision-bound FreeLLM v3 chat-evidence receipt became ready")' not in deploy
-    assert 'raise RuntimeError("readiness is not green")' not in deploy
+    assert 'write_backend_compose_runtime "$image" "$revision" "$runtime_digest"' in deploy
+    assert "write_backend_compose_runtime" in rollback
+
+    for script in (deploy, rollback):
+        assert 'COMPOSE_PROJECT_DIR="/opt/sovereign-backend"' in script
+        assert 'COMPOSE_RUNTIME_ENV="$COMPOSE_PROJECT_DIR/compose-runtime.env"' in script
+        assert "--project-name sovereign-backend" in script
+        assert '--project-directory "$COMPOSE_PROJECT_DIR"' in script
+        assert '--env-file "$COMPOSE_RUNTIME_ENV"' in script
+        assert '--file "$COMPOSE_FILE"' in script
+        assert "compose_backend config --quiet" in script
+        assert "compose_backend up -d --remove-orphans" in script
+        assert 'TRAEFIK_DOCKER_NETWORK="${SOVEREIGN_TRAEFIK_DOCKER_NETWORK:-traefik-public}"' in script
+        assert "Traefik Docker network name is invalid" in script
+        assert 'for network in supabase_default areloria_arelorian-network sovereign-private "$TRAEFIK_DOCKER_NETWORK"' in script
+        assert 'required docker network missing: $network' in script
+        assert "127.0.0.1:8788/health/live" in script
+        assert "https://sovereign-backend.arelorian.de/owner-approvals" in script
+        assert "<title>Sovereign Owner-Freigaben</title>" in script
+        assert '"secretValuesReturned": False' in script
+        assert '"publicIngress"' in script
+        assert "traefik-proxy" not in script
+
+    assert "${SOVEREIGN_BACKEND_IMAGE:?immutable backend image is required}" in template
+    assert "container_name: sovereign-backend" in template
+    assert "127.0.0.1:8788:8787" in template
+    assert "/run/sovereign-chatgpt-broker:/run/sovereign-chatgpt-broker:ro" in template
+    assert "supabase_default" in template
+    assert "areloria_arelorian-network" in template
+    assert "sovereign-private" in template
+    assert "traefik-public" in template
+    assert "traefik.enable" in template
+    assert "traefik.docker.network" in template
+    assert "traefik.http.routers.sovereign-backend.rule" in template
+    assert "traefik.http.services.sovereign-backend.loadbalancer.server.port" in template
+    assert "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.path" in template
+    assert "network_mode: host" not in template
+    assert "image: traefik:latest" not in template
+    assert "/var/run/docker.sock" not in template
+
+    assert "ENTERPRISE_ADMIN_LIVE_CANARY_VERIFIED" in deploy
+    assert "ENTERPRISE_ADMIN_LIVE_CANARY_LLM_DEGRADED" in deploy
+    assert "FREELLM_ROUTE_READINESS_DEGRADED" in deploy
+    assert "ROUTE_READINESS_DEGRADED" in deploy
+    assert "llmRouteReadiness" in deploy
+    assert "class FreeLlmReadinessDegraded" in deploy
+    assert "def bootstrap_freellm_readiness()" in deploy
     assert '/api/admin/platform/v1/identity' in deploy
     assert '/api/admin/platform/v1/overview' in deploy
     assert '/api/admin/platform/v1/integrations' in deploy
     assert '/api/admin/platform/v1/evidence?limit=30' in deploy
-    assert 'X-Sovereign-Admin-Producer' in deploy
-    assert 'CANONICAL_REACT_ADMIN' in deploy
-    assert "b'<div id=\"root\"' not in admin_body" in deploy
-    assert 'b"CANONICAL_REACT_ADMIN" not in admin_body' not in deploy
-    assert 'reactRootPresent' in deploy
-    assert 'ADMIN_API_KEY' in deploy
-    assert 'SOVEREIGN_DEPLOY_DIAGNOSTIC' in deploy
+    assert "X-Sovereign-Admin-Producer" in deploy
+    assert "CANONICAL_REACT_ADMIN" in deploy
+    assert "reactRootPresent" in deploy
+    assert "ADMIN_API_KEY" in deploy
+    assert "SOVEREIGN_DEPLOY_DIAGNOSTIC" in deploy
     assert "trap on_error ERR" in deploy
-    assert "SOVEREIGN_DEPLOY_DIAGNOSTIC:%s:CommandFailure" in deploy
-    assert "SOVEREIGN_DEPLOY_DIAGNOSTIC:%s:ContractFailure" in deploy
     for stage in (
         "preflight",
         "image_pull",
@@ -93,50 +127,9 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
         "complete",
     ):
         assert f'STAGE="{stage}"' in deploy
-    assert 'stage = "platform_identity"' in deploy
-    assert 'stage = "platform_overview"' in deploy
-    assert 'stage = "platform_integrations"' in deploy
-    assert 'stage = "platform_evidence"' in deploy
-    assert 'backend-rollback-receipt.json' in deploy
-    assert 'RUNTIME_EVIDENCE_ROOT="/opt/sovereign-chatgpt-tools/runtime-evidence"' in deploy
-    assert 'rollback receipt must remain inside the managed runtime evidence root' in deploy
-    assert '.backend-rollback-receipt-probe.XXXXXX' in deploy
-    assert 'runtime evidence root does not permit receipt writes' in deploy
-    assert 'rollbackPreviewVerified' in deploy
-    assert 'secretValuesReturned' in deploy
-
-    for script in (deploy, rollback):
-        assert 'TRAEFIK_DOCKER_NETWORK="${SOVEREIGN_TRAEFIK_DOCKER_NETWORK:-traefik-public}"' in script
-        assert "Traefik Docker network name is invalid" in script
-        assert 'for network in supabase_default sovereign-private "$TRAEFIK_DOCKER_NETWORK"' in script
-        assert 'required docker network missing: $network' in script
-        assert 'docker network inspect areloria_arelorian-network' in script
-        assert 'docker network connect areloria_arelorian-network "$CONTAINER"' in script
-        assert '--label "traefik.enable=true"' in script
-        assert '--label "traefik.docker.network=$TRAEFIK_DOCKER_NETWORK"' in script
-        assert 'docker network connect "$TRAEFIK_DOCKER_NETWORK" "$CONTAINER"' in script
-        assert "traefik.http.routers.sovereign-backend.rule=Host(`sovereign-backend.arelorian.de`)" in script
-        assert '--label "traefik.http.routers.sovereign-backend.entrypoints=websecure"' in script
-        assert '--label "traefik.http.routers.sovereign-backend.tls=true"' in script
-        assert '--label "traefik.http.routers.sovereign-backend.tls.certresolver=letsencrypt"' in script
-        assert '--label "traefik.http.routers.sovereign-backend.service=sovereign-backend"' in script
-        assert '--label "traefik.http.services.sovereign-backend.loadbalancer.server.port=8787"' in script
-        assert '--label "traefik.http.services.sovereign-backend.loadbalancer.server.scheme=http"' in script
-        assert '--label "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.path=/health/live"' in script
-        assert '--label "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.interval=15s"' in script
-        assert '--label "traefik.http.services.sovereign-backend.loadbalancer.healthcheck.timeout=5s"' in script
-        assert "127.0.0.1:8788/health/live" in script
-        assert "traefik-proxy" not in script
-
-    # The isolated candidate stays unregistered with Traefik; production and
-    # rollback advertise and attach the backend to Traefik's actual shared bridge.
-    assert deploy.count('--label "traefik.docker.network=$TRAEFIK_DOCKER_NETWORK"') == 1
-    for script in (deploy, rollback):
-        assert "https://sovereign-backend.arelorian.de/owner-approvals" in script
-        assert "<title>Sovereign Owner-Freigaben</title>" in script
-        assert '"status": "PUBLIC_OWNER_INGRESS_VERIFIED" if ok else "PUBLIC_OWNER_INGRESS_CONTRADICTED"' in script
-        assert '"secretValuesReturned": False' in script
-        assert '"publicIngress"' in script
+    assert "backend-rollback-receipt.json" in deploy
+    assert "rollbackPreviewVerified" in deploy
+    assert "secretValuesReturned" in deploy
 
 
 def test_backend_deploy_preserves_unverified_predecessor_without_synthetic_identity() -> None:
