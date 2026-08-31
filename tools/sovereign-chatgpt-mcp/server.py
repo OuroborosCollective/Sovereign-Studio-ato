@@ -1410,44 +1410,6 @@ def fleet_filebrowser_retirement_apply(
 
 
 @mcp.tool(annotations=READ_ONLY)
-def docker_cache_cleanup_plan() -> dict[str, Any]:
-    """Plan bounded Docker build-cache and dangling-image cleanup without volumes or running containers."""
-    return broker.call("docker_cache_cleanup_plan", {}, timeout=120)
-
-
-@mcp.tool(annotations=EXTERNAL_WRITE)
-def docker_cache_cleanup_apply(
-    confirmation_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
-    owner_approved: bool = False,
-) -> dict[str, Any]:
-    """Prune only confirmed build cache older than 24h and dangling images; preserve volumes and running containers."""
-    return broker.call(
-        "docker_cache_cleanup_apply",
-        {"confirmation_sha256": confirmation_sha256, "owner_approved": owner_approved},
-        timeout=1200,
-    )
-
-
-@mcp.tool(annotations=READ_ONLY)
-def n8n_host_stage1_plan() -> dict[str, Any]:
-    """Bind Hostinger n8n runtime, rotated secret metadata and immutable image identities before recreation."""
-    return broker.call("n8n_host_stage1_plan", {}, timeout=180)
-
-
-@mcp.tool(annotations=EXTERNAL_WRITE)
-def n8n_host_stage1_apply(
-    confirmation_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
-    owner_approved: bool = False,
-) -> dict[str, Any]:
-    """Recreate only the fixed Hostinger n8n stack from a generated immutable Stage-1 Compose and verify runtime readback."""
-    return broker.call(
-        "n8n_host_stage1_apply",
-        {"confirmation_sha256": confirmation_sha256, "owner_approved": owner_approved},
-        timeout=1200,
-    )
-
-
-@mcp.tool(annotations=READ_ONLY)
 def host_postgres_backup_restore_plan(
     patch_run_id: Annotated[str, Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")],
 ) -> dict[str, Any]:

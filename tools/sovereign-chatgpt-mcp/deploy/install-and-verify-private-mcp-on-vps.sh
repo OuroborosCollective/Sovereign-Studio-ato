@@ -244,17 +244,10 @@ expected_tools = {
     'teaching_lesson_simulate',
     'teaching_package_assess',
 }
-expected_n8n_tools = {
-    'docker_cache_cleanup_apply',
-    'docker_cache_cleanup_plan',
-    'n8n_host_stage1_apply',
-    'n8n_host_stage1_plan',
-}
 tool_names = {tool.name for tool in launcher.mcp._tool_manager.list_tools()}
-assert len(tool_names) == 253, len(tool_names)
+assert len(tool_names) == 249, len(tool_names)
 assert expected_tools <= tool_names, sorted(expected_tools - tool_names)
-assert expected_n8n_tools <= tool_names, sorted(expected_n8n_tools - tool_names)
-assert len(tool_names - expected_tools) == 248, len(tool_names - expected_tools)
+assert len(tool_names - expected_tools) == 244, len(tool_names - expected_tools)
 revision = os.environ.get('SOVEREIGN_SOURCE_REVISION', '')
 assert len(revision) == 40 and all(character in '0123456789abcdef' for character in revision), revision
 assert revision == os.environ.get('SOVEREIGN_EXPECTED_WORKFLOW_REVISION'), revision
@@ -264,7 +257,7 @@ assert os.environ.get('SOVEREIGN_NEURO_POLICY_SHA256') == embedded_policy_sha256
 status = neuro_teaching_tools.neuro_runtime_contract_status()
 assert status.ok is True, status
 assert status.status == 'NEURO_RUNTIME_CONTRACT_READY', status
-assert status.evidence['toolCount'] == 253, status
+assert status.evidence['toolCount'] == 249, status
 assert status.data['ledger']['integrityStatus'] in {'NOT_INITIALIZED', 'VERIFIED'}, status
 assert status.data['foundationLedger']['integrityStatus'] in {'NOT_INITIALIZED', 'VERIFIED'}, status
 assert status.data['admissions']['pending'] == 0, status

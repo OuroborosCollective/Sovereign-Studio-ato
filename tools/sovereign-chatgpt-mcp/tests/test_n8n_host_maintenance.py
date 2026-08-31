@@ -18,11 +18,13 @@ def _result(stdout: str = "", *, ok: bool = True, exit_code: int = 0) -> dict:
     return {"ok": ok, "exitCode": exit_code, "stdout": stdout, "stderr": ""}
 
 
-def test_cleanup_actions_are_queue_mutations_only() -> None:
-    assert is_mutating_action("docker_cache_cleanup_apply")
-    assert is_mutating_action("n8n_host_stage1_apply")
-    assert not is_mutating_action("docker_cache_cleanup_plan")
-    assert not is_mutating_action("n8n_host_stage1_plan")
+def test_n8n_maintenance_reuses_existing_queue_mutation_surfaces() -> None:
+    assert is_mutating_action("patchmon_patch_action_apply")
+    assert is_mutating_action("deploy_managed_compose_stack")
+    assert not is_mutating_action("patchmon_patch_action_plan")
+    assert not is_mutating_action("managed_compose_stack_plan")
+    assert not is_mutating_action("docker_cache_cleanup_apply")
+    assert not is_mutating_action("n8n_host_stage1_apply")
 
 
 def test_cleanup_apply_never_prunes_volumes_containers_or_tagged_images(monkeypatch) -> None:
