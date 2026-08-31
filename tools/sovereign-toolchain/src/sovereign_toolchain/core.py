@@ -19,6 +19,8 @@ from typing import Any, Literal
 
 from github_app_auth import GitHubAppInstallationAuth, GitHubAppInstallationConfig
 
+from .ci_evidence import build_ci_evidence_receipt, build_revision_guardian_receipt
+
 DEFAULT_WORKER_URL = "https://sovereign-studio-worker.projectouroboroscollective.workers.dev/git/patch"
 DEFAULT_REPO = "OuroborosCollective/Sovereign-Studio-ato"
 DEFAULT_TARGET_PATH = "scripts/sovereign-backend/app.py"
@@ -109,6 +111,64 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "owner": {"type": "string"}, "repo": {"type": "string"}, "path": {"type": "string"},
                 "message": {"type": "string"}, "blocks": {"type": "array"},
                 "expected_sha": {"type": "string"}, "dry_run": {"type": "boolean", "default": False}
+            }
+        },
+    },
+    {
+        "name": "sovereign_ci_evidence_receipt",
+        "description": "Normalize one GitHub Actions observation into deterministic observation-only evidence for n8n delivery de-duplication. Never creates VERIFIED truth.",
+        "write_action": False,
+        "input_schema": {
+            "type": "object",
+            "required": ["repository", "run_id", "head_sha", "status", "jobs"],
+            "properties": {
+                "repository": {"type": "string"},
+                "run_id": {"type": "integer", "minimum": 1},
+                "head_sha": {"type": "string"},
+                "expected_head_sha": {"type": "string"},
+                "status": {"type": "string"},
+                "conclusion": {"type": ["string", "null"]},
+                "jobs": {"type": "array"},
+                "previous_fingerprint": {"type": "string"}
+            }
+        },
+    },
+    {
+        "name": "sovereign_revision_guardian_receipt",
+        "description": "Compare Git/build/deploy/health/image/schema identities into deterministic observation-only PASS/DRIFT evidence. Never creates VERIFIED truth.",
+        "write_action": False,
+        "input_schema": {
+            "type": "object",
+            "required": ["repository", "expected_revision", "git_revision", "build_revision", "deploy_revision", "health_revision", "expected_image_digest", "image_digest", "health_status", "schema_readback"],
+            "properties": {
+                "repository": {"type": "string"},
+                "expected_revision": {"type": "string"},
+                "git_revision": {"type": "string"},
+                "build_revision": {"type": "string"},
+                "deploy_revision": {"type": "string"},
+                "health_revision": {"type": "string"},
+                "expected_image_digest": {"type": "string"},
+                "image_digest": {"type": "string"},
+                "health_status": {"type": "string"},
+                "schema_readback": {"type": "string"},
+                "previous_fingerprint": {"type": "string"}
+            }
+        },
+    },
+    {
+        "name": "github_actions_run_evidence",
+        "description": "Read one exact or latest GitHub Actions run through the scoped GitHub App and normalize run/job/step evidence for n8n. Read-only.",
+        "write_action": False,
+        "input_schema": {
+            "type": "object",
+            "required": ["owner", "repo"],
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "branch": {"type": "string", "default": "main"},
+                "run_id": {"type": "integer", "minimum": 1},
+                "expected_head_sha": {"type": "string"},
+                "previous_fingerprint": {"type": "string"}
             }
         },
     },
@@ -480,6 +540,46 @@ def github_read_file(owner: str, repo: str, path: str, ref: str | None = None, m
     content, truncated = truncate(data.content, max_chars)
     return {"owner": owner, "repo": repo, "path": safe_rel(path), "ref": ref, "sha": data.sha, "html_url": data.html_url, "bytes": data.size, "truncated": truncated, "content": content}
 
+
+def github_actions_run_evidence(
+    owner: str,
+    repo: str,
+    branch: str = "main",
+    run_id: int | None = None,
+    expected_head_sha: str | None = None,
+    previous_fingerprint: str | None = None,
+) -> dict[str, Any]:
+    allowed_repo(owner, repo)
+    gh = GitHubClient()
+    if run_id is None:
+        branch_q = urllib.parse.quote((branch or "main").strip(), safe="")
+        latest = gh._request("GET", f"/repos/{owner}/{repo}/actions/runs?branch={branch_q}&per_page=1")
+        runs = latest.get("workflow_runs") or []
+        if not runs:
+            raise RuntimeError("No GitHub Actions run found for requested branch")
+        run = runs[0]
+    else:
+        if isinstance(run_id, bool) or int(run_id) <= 0:
+            raise ValueError("run_id must be a positive integer")
+        run = gh._request("GET", f"/repos/{owner}/{repo}/actions/runs/{int(run_id)}")
+    resolved_run_id = int(run.get("id") or 0)
+    if resolved_run_id <= 0:
+        raise RuntimeError("GitHub Actions run response has no valid id")
+    jobs_response = gh._request("GET", f"/repos/{owner}/{repo}/actions/runs/{resolved_run_id}/jobs?per_page=100")
+    observation: dict[str, Any] = {
+        "repository": f"{owner}/{repo}",
+        "run_id": resolved_run_id,
+        "head_sha": run.get("head_sha"),
+        "status": run.get("status"),
+        "conclusion": run.get("conclusion"),
+        "jobs": jobs_response.get("jobs") or [],
+    }
+    if expected_head_sha:
+        observation["expected_head_sha"] = expected_head_sha
+    if previous_fingerprint:
+        observation["previous_fingerprint"] = previous_fingerprint
+    return build_ci_evidence_receipt(observation)
+
 def github_apply_search_replace_pr(owner: str, repo: str, path: str, message: str, blocks: list[dict[str, str]], branch_name: str | None = None, title: str | None = None, body: str | None = None, base_branch: str | None = None, expected_sha: str | None = None, confirm: bool = False) -> dict[str, Any]:
     allowed_repo(owner, repo)
     base_branch = base_branch or os.getenv("BASE_BRANCH", "main")
@@ -577,6 +677,16 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         "list_archive_files": lambda: archive_reader.list_files(args.get("source", "studio"), args.get("prefix", ""), args.get("glob", "*"), int(args.get("limit", 100))),
         "read_archive_text": lambda: archive_reader.read_text(args["source"], args["path"], int(args.get("max_chars", 20000))),
         "plan_sandbox_commands": lambda: plan_sandbox_commands(args.get("goal", "verify")),
+        "sovereign_ci_evidence_receipt": lambda: build_ci_evidence_receipt(args),
+        "sovereign_revision_guardian_receipt": lambda: build_revision_guardian_receipt(args),
+        "github_actions_run_evidence": lambda: github_actions_run_evidence(
+            args["owner"],
+            args["repo"],
+            args.get("branch", "main"),
+            args.get("run_id"),
+            args.get("expected_head_sha"),
+            args.get("previous_fingerprint"),
+        ),
         "preview_search_replace": lambda: preview_search_replace(args["path"], args["content"], args["blocks"]),
         "make_patch_payload": lambda: make_patch_payload(args["owner"], args["repo"], args["path"], args["message"], args["blocks"], args.get("expected_sha") or args.get("expectedSha"), bool(args.get("dry_run", False))),
         "github_read_file": lambda: github_read_file(args["owner"], args["repo"], args["path"], args.get("ref"), int(args.get("max_chars", 60000))),

@@ -22,6 +22,7 @@ from github_knowledge_canary import GitHubKnowledgeCanaryRuntime
 from issue_closure_canary import IssueClosureCanaryRuntime
 from programming_language_catalog_runtime import ProgrammingLanguageCatalogRuntime
 from managed_compose import ManagedComposeRuntime
+from n8n_host_maintenance import N8NHostMaintenanceRuntime
 from operations import OperationsRuntime
 from patchmon_fleet import PatchmonFleetRuntime
 from patchmon_operator import PatchmonOperatorRuntime
@@ -55,6 +56,7 @@ class BrokerRuntime:
         self.issue_closure = IssueClosureCanaryRuntime()
         self.programming_language_catalog = ProgrammingLanguageCatalogRuntime()
         self.managed_compose = ManagedComposeRuntime()
+        self.n8n_host_maintenance = N8NHostMaintenanceRuntime()
         self.desktop_worker = DesktopWorkerRuntime()
         self.patchmon = PatchmonOperatorRuntime()
         self.patchmon_fleet = PatchmonFleetRuntime(self.patchmon)
@@ -378,8 +380,10 @@ class BrokerRuntime:
         }
 
     def patchmon_action_plan(self, values: dict[str, Any]) -> dict[str, Any]:
-        """Route the fixed bootstrap compatibility action through the existing plan tool."""
+        """Route fixed host-maintenance compatibility actions through the existing plan tool."""
         action = str(values.get("action") or "").strip()
+        if action == "docker_cache_cleanup":
+            return self.n8n_host_maintenance.docker_cache_cleanup_plan()
         if action == "bootstrap_local_fleet":
             return self.patchmon_fleet.bootstrap_plan(friendly_name="sovereign-vps")
         return self.patchmon.patch_action_plan(
@@ -392,8 +396,13 @@ class BrokerRuntime:
         )
 
     def patchmon_action_apply(self, values: dict[str, Any]) -> dict[str, Any]:
-        """Route the confirmed bootstrap compatibility action through the host worker."""
+        """Route confirmed host-maintenance compatibility actions through the host worker."""
         action = str(values.get("action") or "").strip()
+        if action == "docker_cache_cleanup":
+            return self.n8n_host_maintenance.docker_cache_cleanup_apply(
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=self.private_owner_mode,
+            )
         if action == "bootstrap_local_fleet":
             return self.patchmon_fleet.bootstrap_apply(
                 confirmation_sha256=str(values.get("confirmation_sha256") or ""),
@@ -408,6 +417,26 @@ class BrokerRuntime:
             patch_type=str(values.get("patch_type") or "patch_all"),
             package_names=values.get("package_names") if isinstance(values.get("package_names"), list) else [],
             schedule_override=str(values.get("schedule_override") or ""),
+        )
+
+    def managed_compose_plan(self, values: dict[str, Any]) -> dict[str, Any]:
+        """Route the fixed n8n host stage through the existing managed-compose plan surface."""
+        stack_id = str(values.get("stack_id") or "").strip()
+        if stack_id == "n8n-host-stage1":
+            return self.n8n_host_maintenance.stage1_plan()
+        return self.managed_compose.plan(stack_id=stack_id)
+
+    def managed_compose_apply(self, values: dict[str, Any]) -> dict[str, Any]:
+        """Route the fixed n8n host stage through the existing managed-compose apply surface."""
+        stack_id = str(values.get("stack_id") or "").strip()
+        if stack_id == "n8n-host-stage1":
+            return self.n8n_host_maintenance.stage1_apply(
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=self.private_owner_mode,
+            )
+        return self.managed_compose.deploy(
+            stack_id=stack_id,
+            confirmation_sha256=str(values.get("confirmation_sha256") or ""),
         )
 
     def dispatch(
@@ -595,9 +624,7 @@ class BrokerRuntime:
                 target_image_digest=str(values.get("target_image_digest") or ""),
                 confirmation_digest=str(values.get("confirmation_digest") or ""),
             ),
-            "managed_compose_stack_plan": lambda values: self.managed_compose.plan(
-                stack_id=str(values.get("stack_id") or ""),
-            ),
+            "managed_compose_stack_plan": self.managed_compose_plan,
             "memory_gateway_collection_canary": lambda _values: self.managed_compose.memory_gateway_collection_canary(),
             "litellm_provider_model_inventory": lambda _values: self.managed_compose.litellm_provider_model_inventory(),
             "openai_project_runtime_evidence": lambda _values: self.managed_compose.openai_project_runtime_evidence(),
@@ -606,10 +633,7 @@ class BrokerRuntime:
                 balanced_provider_model=str(values.get("balanced_provider_model") or ""),
                 confirmation_inventory_sha256=str(values.get("confirmation_inventory_sha256") or ""),
             ),
-            "deploy_managed_compose_stack": lambda values: self.managed_compose.deploy(
-                stack_id=str(values.get("stack_id") or ""),
-                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
-            ),
+            "deploy_managed_compose_stack": self.managed_compose_apply,
             "desktop_worker_plan": lambda values: self.desktop_worker.plan(
                 activation_id=str(values.get("activation_id") or ""),
             ),

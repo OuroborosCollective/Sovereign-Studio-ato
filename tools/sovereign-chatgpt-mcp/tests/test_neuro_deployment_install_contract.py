@@ -145,6 +145,7 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
     assert 'chmod 0700 "$NEURO_RUNTIME_STATE_HOST_DIR"' in script
     assert 'set_value "$MANAGED_ENV" SOVEREIGN_SOURCE_REVISION "$EXPECTED_REVISION"' in script
     assert 'set_value "$MANAGED_ENV" SOVEREIGN_NEURO_POLICY_SHA256 "$NEURO_POLICY_SHA256"' in script
+    assert "managed_compose.py n8n_host_maintenance.py patchmon_operator.py" in script
     assert script.index('set_value "$MANAGED_ENV" SOVEREIGN_SOURCE_REVISION') < script.index(
         'docker compose up -d --no-build --force-recreate --remove-orphans'
     )
@@ -971,6 +972,8 @@ def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Pa
     remote_install = REMOTE_INSTALL.read_text("utf-8")
     deployment_surface = workflow + "\n" + remote_install
 
+    assert "n8n_host_maintenance.py" in remote_install
+    assert "managed_compose.py n8n_host_maintenance.py patchmon_operator.py" in INSTALLER.read_text("utf-8")
     for path in (
         "neuro_architecture_contract.py",
         "neuromorphic_runtime.py",

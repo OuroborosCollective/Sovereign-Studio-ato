@@ -1,0 +1,154 @@
+{
+  "name": "Sovereign CI Evidence Watch",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-820, 0],
+      "id": "7ab2f961-9494-4cde-a976-df568b860001",
+      "name": "Every 5 Minutes"
+    },
+    {
+      "parameters": {
+        "url": "={{'https://api.github.com/repos/' + $env.SOVEREIGN_N8N_REPOSITORY + '/actions/runs?per_page=10'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-600, 0],
+      "id": "7ab2f961-9494-4cde-a976-df568b860002",
+      "name": "List Recent GitHub Runs"
+    },
+    {
+      "parameters": {
+        "jsCode": "const repository = $env.SOVEREIGN_N8N_REPOSITORY;\nconst expectedHead = $env.SOVEREIGN_N8N_EXPECTED_HEAD_SHA || null;\nconst runs = Array.isArray($json.workflow_runs) ? $json.workflow_runs : [];\nreturn runs.map((run) => ({\n  json: {\n    repository,\n    run_id: run.id,\n    head_sha: run.head_sha,\n    expected_head_sha: expectedHead,\n    status: run.status,\n    conclusion: run.conclusion ?? null\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-360, 0],
+      "id": "7ab2f961-9494-4cde-a976-df568b860003",
+      "name": "Emit Run Observations"
+    },
+    {
+      "parameters": {
+        "url": "={{'https://api.github.com/repos/' + $json.repository + '/actions/runs/' + $json.run_id + '/jobs?per_page=100'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-120, 0],
+      "id": "7ab2f961-9494-4cde-a976-df568b860004",
+      "name": "Read Run Jobs"
+    },
+    {
+      "parameters": {
+        "jsCode": "const run = $('Emit Run Observations').item.json;\nconst jobs = Array.isArray($json.jobs) ? $json.jobs : [];\nconst cursor = $getWorkflowStaticData('global');\nconst cursorKey = `${run.repository}#${run.run_id}`;\nconst normalizedJobs = jobs.map((job) => ({\n  id: job.id,\n  name: job.name,\n  status: job.status,\n  conclusion: job.conclusion ?? null,\n  steps: Array.isArray(job.steps) ? job.steps.map((step) => ({\n    number: step.number,\n    name: step.name,\n    status: step.status,\n    conclusion: step.conclusion ?? null\n  })) : []\n}));\nreturn [{\n  json: {\n    ...run,\n    jobs: normalizedJobs,\n    previous_fingerprint: cursor[cursorKey] || null\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [120, 0],
+      "id": "7ab2f961-9494-4cde-a976-df568b860005",
+      "name": "Build Evidence Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SOVEREIGN_TOOLCHAIN_BASE_URL + '/api/v1/tools/sovereign_ci_evidence_receipt'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Toolchain-Key",
+              "value": "={{$env.SOVEREIGN_TOOLCHAIN_API_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { args: $json } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [360, 0],
+      "id": "7ab2f961-9494-4cde-a976-df568b860006",
+      "name": "Sovereign Evidence Receipt"
+    },
+    {
+      "parameters": {
+        "jsCode": "if (!$json || $json.ok !== true || !$json.result) {\n  throw new Error('Sovereign evidence receipt was not accepted');\n}\nconst receipt = $json.result;\nconst cursor = $getWorkflowStaticData('global');\nconst cursorKey = `${receipt.repository}#${receipt.runId}`;\ncursor[cursorKey] = receipt.stateFingerprint;\nif (!receipt.shouldNotify) {\n  return [];\n}\nreturn [{ json: receipt }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 0],
+      "id": "7ab2f961-9494-4cde-a976-df568b860007",
+      "name": "Update Delivery Cursor"
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [[{"node": "List Recent GitHub Runs", "type": "main", "index": 0}]]
+    },
+    "List Recent GitHub Runs": {
+      "main": [[{"node": "Emit Run Observations", "type": "main", "index": 0}]]
+    },
+    "Emit Run Observations": {
+      "main": [[{"node": "Read Run Jobs", "type": "main", "index": 0}]]
+    },
+    "Read Run Jobs": {
+      "main": [[{"node": "Build Evidence Request", "type": "main", "index": 0}]]
+    },
+    "Build Evidence Request": {
+      "main": [[{"node": "Sovereign Evidence Receipt", "type": "main", "index": 0}]]
+    },
+    "Sovereign Evidence Receipt": {
+      "main": [[{"node": "Update Delivery Cursor", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c451a2b6-5f74-43cb-a083-a6d98d7bd50e",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
