@@ -580,6 +580,55 @@ def test_free_single_agent_normalizes_plain_text_without_structured_output(monke
     assert "Validated mission mode: read_only_analysis" in str(captured["prompt"])
 
 
+def test_free_single_agent_injects_agent_zero_capability_tool_without_replacing_repository_tools(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    repository_marker = object()
+    capability_marker = object()
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.model = kwargs["model"]
+
+    class FakeRunner:
+        @staticmethod
+        async def run(agent, prompt, *, run_config, max_turns):
+            return SimpleNamespace(final_output="Capability-aware answer.")
+
+    monkeypatch.setattr(swarm_module, "_require_agents_sdk", lambda: (FakeAgent, FakeRunner))
+    monkeypatch.setattr(
+        swarm_module,
+        "build_route_run_config",
+        lambda route, output_token_limit: SimpleNamespace(
+            model="auto",
+            transport="freellm",
+            run_config=object(),
+        ),
+    )
+    intent = MissionIntent(
+        mode="read_only_analysis",
+        normalized_goal="Inspect a rendered page using the capability boundary.",
+        requires_online_tools=True,
+        requires_repository_workspace=False,
+        learning_scope=[],
+        confidence=1.0,
+    )
+
+    result = asyncio.run(run_free_single_agent(
+        "Inspect a rendered page using the capability boundary.",
+        model="auto",
+        intent=intent,
+        route={"id": "free-auto"},
+        repository_tool_factory=lambda role: [repository_marker] if role == "free_single_agent" else [],
+        capability_tool_factory=lambda role: [capability_marker] if role == "free_single_agent" else [],
+    ))
+
+    assert result["ok"] is True
+    assert captured["tools"] == [repository_marker, capability_marker]
+    assert "Agent Zero capability tools" in str(captured["instructions"])
+    assert "non-authoritative external evidence" in str(captured["instructions"])
+
+
 def test_free_single_agent_rejects_empty_plain_text(monkeypatch) -> None:
     class FakeAgent:
         def __init__(self, **kwargs):

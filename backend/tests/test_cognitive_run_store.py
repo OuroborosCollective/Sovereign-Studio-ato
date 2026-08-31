@@ -268,6 +268,41 @@ def test_external_action_event_is_owner_scoped_idempotent_and_state_neutral() ->
     assert not any(call[0].startswith("UPDATE") for call in duplicate.calls)
 
 
+def test_agent_zero_external_event_is_evidence_only_and_state_neutral() -> None:
+    conn = FakeConnection()
+    conn.fetchone_rows = [
+        _external_run_row(),
+        {"evidence_id": "created"},
+        {"event_id": "created"},
+    ]
+
+    state = record_external_action_event(
+        conn,
+        user_id=USER_ID,
+        run_id="run-test",
+        source="agent-zero",
+        external_identity="a0-browser-evidence-001",
+        event_type="agent_zero_playwright",
+        summary="Agent Zero returned verified browser tool evidence.",
+        payload={
+            "capability": "playwright",
+            "expectedToolEvidenceMet": True,
+            "artifactSha256": "d" * 64,
+            "authoritative": False,
+            "runStateMutationAllowed": False,
+        },
+    )
+
+    assert state["created"] is True
+    assert state["runStatus"] == "BLOCKED"
+    assert state["runStateChanged"] is False
+    assert state["taskStateChanged"] is False
+    assert state["activeBlockerChanged"] is False
+    assert not any(sql.startswith("UPDATE") for sql, _ in conn.calls)
+    assert "agent-zero" in repr(conn.calls)
+    assert "agent_zero_playwright" in repr(conn.calls)
+
+
 def test_external_action_event_rejects_non_external_source_before_database_access() -> None:
     conn = FakeConnection()
 

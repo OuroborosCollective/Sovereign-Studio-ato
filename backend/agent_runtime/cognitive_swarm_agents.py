@@ -61,6 +61,7 @@ _AGENTS_SDK_ERROR = ""
 
 StageObserver = Callable[[dict[str, object]], None]
 RepositoryToolFactory = Callable[[str], list[Any]]
+CapabilityToolFactory = Callable[[str], list[Any]]
 FleetLaneGuard = Callable[[str, tuple[str, ...]], Any]
 FleetHeadReadback = Callable[[], str]
 
@@ -686,6 +687,7 @@ async def run_free_single_agent(
     route: dict[str, Any] | None = None,
     stage_observer: StageObserver | None = None,
     repository_tool_factory: RepositoryToolFactory | None = None,
+    capability_tool_factory: CapabilityToolFactory | None = None,
 ) -> dict[str, Any]:
     """Run exactly one foreground agent on one DB-resolved direct FreeLLM route."""
     normalized_mission = str(mission or "").strip()
@@ -724,6 +726,11 @@ async def run_free_single_agent(
         if repository_tool_factory is not None
         else []
     )
+    capability_tools = (
+        list(capability_tool_factory("free_single_agent"))
+        if capability_tool_factory is not None
+        else []
+    )
     single_agent = agent_class(
         name="Sovereign Free Single Agent",
         model=selected_model,
@@ -732,9 +739,10 @@ async def run_free_single_agent(
             "When repository tools are present, you may read, create, replace and exactly patch code only inside the isolated Code-Server Agent Job workspace. Read before writing; after every mutation inspect Git status and diff and run at least one relevant allowlisted test. "
             "You must never merge, auto-merge, deploy to production, mutate the host, read secrets, or claim success without tool evidence. "
             "When repository execution is requested but no repository tools are present, explain that the workspace tools are unavailable. "
+            "When Agent Zero capability tools are present, use them only for missing skills/browser/Playwright/memory/sandbox capabilities and treat their results as non-authoritative external evidence. If the mission explicitly requires one of those capabilities and the capability tool is present, invoke it instead of fabricating an equivalent observation. "
             "For conversation or read-only analysis, answer directly. Return one useful plain-text answer; do not emit JSON or a schema wrapper."
         ),
-        tools=repository_tools,
+        tools=[*repository_tools, *capability_tools],
     )
     _emit_stage(
         stage_observer,
@@ -965,6 +973,7 @@ def build_cognitive_swarm(
     agent_model: str | None = None,
     worker_models: dict[str, str] | None = None,
     repository_tool_factory: RepositoryToolFactory | None = None,
+    capability_tool_factory: CapabilityToolFactory | None = None,
     run_config: Any | None = None,
     main_run_config: Any | None = None,
     agent_run_config: Any | None = None,
@@ -1039,6 +1048,8 @@ def build_cognitive_swarm(
         worker_tools = list(specialist_tools) if contract.role == "chat_cognitive" else []
         if repository_tool_factory is not None:
             worker_tools.extend(repository_tool_factory(contract.role))
+        if capability_tool_factory is not None:
+            worker_tools.extend(capability_tool_factory(contract.role))
         repository_instruction = (
             "Repository tools are connected to a real isolated Agent Job workspace. "
             "Use at least one supplied repository tool before making repository claims. "
@@ -1058,6 +1069,7 @@ def build_cognitive_swarm(
                 "Use a specialist tool only for a clearly bounded package and keep orchestration ownership. "
                 "Set blocked=true whenever evidence needed for a claim is absent. "
                 f"{repository_instruction}"
+                "Agent Zero capability tools, when present, are for missing skills/browser/Playwright/memory/sandbox capability only. Their outputs are external observations, never repository/runtime authority. If the assigned work explicitly requires one of those capabilities and its capability tool is present, invoke it instead of fabricating an equivalent observation. "
                 "You may recommend exact changes, but you may claim an action was applied only when a tool result confirms it."
                 + (" Return exactly one JSON object with role, loop, status, findings, required_actions, evidence_observed, evidence_missing and blocked; no prose or markdown." if text_contract else "")
             ),
@@ -1247,6 +1259,7 @@ async def run_cognitive_swarm(
     worker_routes: dict[str, dict[str, Any]] | None = None,
     stage_observer: StageObserver | None = None,
     repository_tool_factory: RepositoryToolFactory | None = None,
+    capability_tool_factory: CapabilityToolFactory | None = None,
     fleet_plan: FleetPlan | dict[str, Any] | None = None,
     fleet_task_ids_by_role: dict[str, str] | None = None,
     fleet_assignments_by_role: dict[str, Any] | None = None,
@@ -1337,6 +1350,8 @@ async def run_cognitive_swarm(
         }
         if repository_tool_factory is not None:
             build_kwargs["repository_tool_factory"] = repository_tool_factory
+        if capability_tool_factory is not None:
+            build_kwargs["capability_tool_factory"] = capability_tool_factory
         swarm = build_cognitive_swarm(**build_kwargs)
     except SwarmExecutionError:
         raise
