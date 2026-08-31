@@ -5,6 +5,7 @@ from pathlib import Path
 
 from command_contract import is_mutating_action
 from n8n_host_maintenance import (
+    AURION_BUILDKIT_CONTAINER,
     N8N_CONTAINER,
     N8N_PROJECT,
     N8N_SANDBOX_API_CONTAINER,
@@ -49,6 +50,10 @@ def test_cleanup_apply_never_prunes_volumes_containers_or_tagged_images(monkeypa
             "runningContainers": running,
             "volumes": volumes,
             "builders": ["aurion-isolated"],
+            "buildkitEndpoint": {
+                "container": AURION_BUILDKIT_CONTAINER,
+                "pruneHelpSha256": "3" * 64,
+            },
         },
     )
 
@@ -69,8 +74,17 @@ def test_cleanup_apply_never_prunes_volumes_containers_or_tagged_images(monkeypa
     assert result["runningContainersRemoved"] is False
     assert result["taggedImagesExplicitlyRemoved"] is False
     assert ["docker", "image", "prune", "--force"] in calls
+    assert [
+        "docker",
+        "exec",
+        AURION_BUILDKIT_CONTAINER,
+        "buildctl",
+        "prune",
+        "--all",
+        "--keep-duration=24h",
+    ] in calls
     assert not any(call[:3] == ["docker", "builder", "prune"] for call in calls)
-    assert any(call[:3] == ["docker", "buildx", "prune"] for call in calls)
+    assert not any(call[:3] == ["docker", "buildx", "prune"] for call in calls)
     rendered = "\n".join(" ".join(call) for call in calls)
     assert "volume prune" not in rendered
     assert "container prune" not in rendered
@@ -91,11 +105,19 @@ def test_cleanup_confirmation_ignores_volatile_disk_usage(monkeypatch) -> None:
     monkeypatch.setattr(runtime, "_running_container_identity", lambda: dict(running))
     monkeypatch.setattr(runtime, "_volume_identity", lambda: dict(volumes))
     monkeypatch.setattr(runtime, "_disk", lambda: dict(next(disks)))
-    monkeypatch.setattr(
-        runtime,
-        "_run",
-        lambda argv, timeout=120: _result("0B\n" if argv[:3] == ["docker", "system", "df"] else ""),
-    )
+    def run(argv, timeout=120):
+        if argv[:4] == [
+            "docker",
+            "ps",
+            "--filter",
+            "name=buildx_buildkit_aurion-isolated0",
+        ]:
+            return _result("buildx_buildkit_aurion-isolated0\n")
+        if argv == ["docker", "exec", AURION_BUILDKIT_CONTAINER, "buildctl", "prune", "--help"]:
+            return _result("--keep-duration duration\n")
+        return _result("0B\n" if argv[:3] == ["docker", "system", "df"] else "")
+
+    monkeypatch.setattr(runtime, "_run", run)
 
     first = runtime.docker_cache_cleanup_plan()
     second = runtime.docker_cache_cleanup_plan()
@@ -106,7 +128,7 @@ def test_cleanup_confirmation_ignores_volatile_disk_usage(monkeypatch) -> None:
     assert first["volumes"] == second["volumes"]
 
 
-def test_cleanup_plan_discovers_live_aurion_buildx_when_formatted_listing_is_unavailable(monkeypatch) -> None:
+def test_cleanup_plan_binds_direct_buildkit_endpoint(monkeypatch) -> None:
     runtime = N8NHostMaintenanceRuntime()
     running = {"count": 4, "sha256": "1" * 64}
     volumes = {"count": 2, "sha256": "2" * 64}
@@ -119,18 +141,13 @@ def test_cleanup_plan_discovers_live_aurion_buildx_when_formatted_listing_is_una
     def run(argv, timeout=120):
         if argv[:4] == [
             "docker",
-            "buildx",
-            "ls",
-            "--format",
-        ]:
-            return _result(ok=False, exit_code=1)
-        if argv[:4] == [
-            "docker",
             "ps",
             "--filter",
             "name=buildx_buildkit_aurion-isolated0",
         ]:
             return _result("buildx_buildkit_aurion-isolated0\n")
+        if argv == ["docker", "exec", AURION_BUILDKIT_CONTAINER, "buildctl", "prune", "--help"]:
+            return _result("--keep-duration duration\n")
         return _result()
 
     monkeypatch.setattr(runtime, "_run", run)
@@ -138,8 +155,41 @@ def test_cleanup_plan_discovers_live_aurion_buildx_when_formatted_listing_is_una
     result = runtime.docker_cache_cleanup_plan()
 
     assert result["ok"] is True
-    assert result["scope"] == ["buildx-cache-older-than-24h", "dangling-images"]
+    assert result["scope"] == ["buildkit-cache-not-used-last-24h", "dangling-images"]
     assert result["builders"] == ["aurion-isolated"]
+    assert result["buildkitEndpoint"]["container"] == AURION_BUILDKIT_CONTAINER
+    assert len(result["buildkitEndpoint"]["pruneHelpSha256"]) == 64
+
+
+def test_cleanup_plan_blocks_without_direct_buildkit_keep_duration_support(monkeypatch) -> None:
+    runtime = N8NHostMaintenanceRuntime()
+    monkeypatch.setattr(runtime, "_running_container_identity", lambda: {"count": 4, "sha256": "1" * 64})
+    monkeypatch.setattr(runtime, "_volume_identity", lambda: {"count": 2, "sha256": "2" * 64})
+    monkeypatch.setattr(
+        runtime,
+        "_disk",
+        lambda: {"totalBytes": 1000, "usedBytes": 900, "freeBytes": 100, "usedPpm": 900000},
+    )
+
+    def run(argv, timeout=120):
+        if argv[:4] == [
+            "docker",
+            "ps",
+            "--filter",
+            "name=buildx_buildkit_aurion-isolated0",
+        ]:
+            return _result("buildx_buildkit_aurion-isolated0\n")
+        if argv == ["docker", "exec", AURION_BUILDKIT_CONTAINER, "buildctl", "prune", "--help"]:
+            return _result("--all\n")
+        return _result()
+
+    monkeypatch.setattr(runtime, "_run", run)
+
+    result = runtime.docker_cache_cleanup_plan()
+
+    assert result["ok"] is False
+    assert result["failureFamily"] == "BUILDKIT_PRUNE_UNAVAILABLE"
+    assert result["secretValuesReturned"] is False
 
 
 def _inspect(name: str, service: str, image: str, image_id: str, working_dir: str) -> dict:
