@@ -138,13 +138,13 @@ def test_stage1_plan_detects_rotated_host_values_without_returning_them(monkeypa
     working.mkdir()
     (working / "docker-compose.yml").write_text("services:\n  n8n:\n    image: placeholder\n", encoding="utf-8")
     env = working / ".env"
+    runtime_nexos = "runtime-" + "x" * 40
     env.write_text(
         "\n".join(
             [
                 "TZ=Europe/Berlin",
                 "TRAEFIK_HOST=example.invalid",
                 "N8N_INSTANCE_AI_MODEL=model",
-                "NEXOS_API_KEY=" + "x" * 40,
                 "SANDBOX_API_KEY=" + "a" * 40,
                 "SANDBOX_RUNNER_API_KEY=" + "b" * 40,
                 "SANDBOX_RUNNER_REGISTRATION_TOKEN=" + "c" * 40,
@@ -164,7 +164,11 @@ def test_stage1_plan_detects_rotated_host_values_without_returning_them(monkeypa
         runtime,
         "_container_env",
         lambda name: {
-            N8N_CONTAINER: {"N8N_SANDBOX_SERVICE_API_KEY": "old-a"},
+            N8N_CONTAINER: {
+                "N8N_SANDBOX_SERVICE_API_KEY": "old-a",
+                "N8N_INSTANCE_AI_MODEL_API_KEY": runtime_nexos,
+                "N8N_INSTANCE_AI_MODEL": "model",
+            },
             N8N_SANDBOX_API_CONTAINER: {
                 "SANDBOX_API_KEYS": "old-a",
                 "SANDBOX_API_RUNNER_API_KEY": "old-b",
@@ -199,6 +203,14 @@ def test_stage1_plan_detects_rotated_host_values_without_returning_them(monkeypa
 
     assert result["status"] == "N8N_STAGE1_PLAN_READY"
     assert result["instanceAiEnabled"] is True
+    assert result["instanceAiCredential"] == {
+        "source": "existing-runtime",
+        "hostPresent": False,
+        "runtimePresent": True,
+        "modelHostPresent": True,
+        "modelRuntimePresent": True,
+        "secretValuesReturned": False,
+    }
     assert result["rotationPendingRecreate"] is True
     assert result["runtimeMatchesHostSecrets"] is False
     assert result["hostSecretValuesPresent"] is True
@@ -207,6 +219,7 @@ def test_stage1_plan_detects_rotated_host_values_without_returning_them(monkeypa
     assert "old-a" not in payload
     assert "old-b" not in payload
     assert "old-c" not in payload
+    assert runtime_nexos not in payload
     assert "a" * 40 not in payload
     assert ":latest" not in result["images"]["n8n"]
 
@@ -268,9 +281,11 @@ def test_failed_stage1_can_restore_original_compose_with_rotated_bindings(monkey
         N8N_SANDBOX_API_CONTAINER: "sandbox-api",
         N8N_SANDBOX_RUNNER_CONTAINER: "sandbox-runner-1",
     }
+    seen_override_keys: list[set[str]] = []
 
-    def run(argv, timeout=120):
+    def run(argv, timeout=120, env_overrides=None):
         calls.append(argv)
+        seen_override_keys.append(set((env_overrides or {}).keys()))
         return _result()
 
     monkeypatch.setattr(runtime, "_run", run)
