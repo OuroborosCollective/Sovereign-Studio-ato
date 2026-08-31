@@ -61,12 +61,18 @@ function GateIndicator({
   label: string;
   ready: boolean;
 }) {
+  const statusText = ready ? 'Bereit' : 'Nicht bereit';
   return (
-    <div className="flex items-center gap-1.5">
+    <div
+      className="flex items-center gap-1.5"
+      title={`Gate ${label}: ${statusText}`}
+      aria-label={`Gate ${label}: ${statusText}`}
+    >
       <span
         className={`w-2 h-2 rounded-full ${
           ready ? 'bg-emerald-400' : 'bg-slate-600'
         }`}
+        aria-hidden="true"
       />
       <span
         className={`text-[10px] ${
@@ -137,8 +143,16 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
     onReject();
   };
 
+  const confirmTooltip = !einbauenEnabled
+    ? confirmBlocker || 'Repository noch nicht bereit'
+    : needsGitHubAccess
+      ? 'Öffnet das GitHub Gate für den erforderlichen Schreibzugriff'
+      : 'Repository-Auftrag bestätigen und Ausführung starten';
+
   return (
     <div
+      role="region"
+      aria-label="Integrationsauftrag Freigabe"
       className="mx-3 my-2 rounded-xl border border-cyan-500/30 bg-slate-900/80 backdrop-blur-sm overflow-hidden"
       data-testid="integration-intent-draft-card"
       data-draft-id={draft.id}
@@ -148,7 +162,7 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
       <div className="px-4 py-3 border-b border-cyan-500/20 bg-gradient-to-r from-cyan-500/10 to-transparent">
         <div className="flex items-center gap-2">
           <div className="w-5 h-5 rounded-lg bg-cyan-500/20 flex items-center justify-center">
-            <span className="text-cyan-400 text-xs">⬡</span>
+            <span className="text-cyan-400 text-xs" aria-hidden="true">⬡</span>
           </div>
           <p className="text-xs text-cyan-300 font-medium">
             Freigabe für exakt diesen Repository-Auftrag:
@@ -278,7 +292,8 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
             type="button"
             onClick={handleEinbauen}
             disabled={!einbauenEnabled}
-            className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+            title={confirmTooltip}
+            className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none ${
               einbauenEnabled
                 ? needsGitHubAccess
                   ? 'bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 active:scale-[0.98]'
@@ -296,7 +311,8 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
             type="button"
             onClick={handleRephrase}
             disabled={acted}
-            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Ziel und Rahmenbedingungen des Integrationsauftrags anpassen"
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 active:scale-[0.98] transition-all focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
             data-testid="btn-rephrase"
             aria-label="Integrationsauftrag neu formulieren"
           >
@@ -308,7 +324,8 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
             type="button"
             onClick={handleReject}
             disabled={acted}
-            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800/50 border border-slate-700/50 text-slate-500 hover:bg-slate-700/50 hover:text-slate-400 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Integrationsauftrag verwürfen und Karte schließen"
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800/50 border border-slate-700/50 text-slate-500 hover:bg-slate-700/50 hover:text-slate-400 active:scale-[0.98] transition-all focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
             data-testid="btn-reject"
             aria-label="Integrationsauftrag ablehnen"
           >

@@ -22,6 +22,7 @@ import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
+import { IntegrationIntentDraftCard } from './IntegrationIntentDraftCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1101,6 +1102,86 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(watchBtn);
       expect(onWatchChecks).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('IntegrationIntentDraftCard Accessibility Enhancements', () => {
+    const mockDraft = {
+      id: 'draft_456',
+      originalText: 'Integrationsauftrag fuer Test',
+      executionMission: 'Integrationsauftrag fuer Test',
+      title: 'Integrationsauftrag Test Title',
+      goal: 'Test Ziel',
+      scope: ['Frontend'],
+      affectedFiles: ['src/App.tsx'],
+      createdAt: Date.now(),
+      rephrasedText: 'Test',
+    };
+
+    const mockGates = {
+      repoReady: true,
+      githubWriteReady: true,
+      directPatchReady: true,
+      agentReady: true,
+    };
+
+    it('renders region landmark with aria-label', () => {
+      render(
+        <IntegrationIntentDraftCard
+          draft={mockDraft}
+          gateSnapshot={mockGates}
+          onConfirm={vi.fn()}
+          onRephrase={vi.fn()}
+          onReject={vi.fn()}
+        />
+      );
+
+      const region = screen.getByRole('region', { name: 'Integrationsauftrag Freigabe' });
+      expect(region).toBeInTheDocument();
+    });
+
+    it('has title tooltips and focus-visible classes on action buttons', () => {
+      render(
+        <IntegrationIntentDraftCard
+          draft={mockDraft}
+          gateSnapshot={mockGates}
+          onConfirm={vi.fn()}
+          onRephrase={vi.fn()}
+          onReject={vi.fn()}
+        />
+      );
+
+      const confirmBtn = screen.getByTestId('btn-confirm');
+      expect(confirmBtn).toHaveAttribute('title', 'Repository-Auftrag bestätigen und Ausführung starten');
+      expect(confirmBtn.className).toContain('focus-visible:ring-2');
+
+      const rephraseBtn = screen.getByTestId('btn-rephrase');
+      expect(rephraseBtn).toHaveAttribute('title', 'Ziel und Rahmenbedingungen des Integrationsauftrags anpassen');
+      expect(rephraseBtn.className).toContain('focus-visible:ring-2');
+
+      const rejectBtn = screen.getByTestId('btn-reject');
+      expect(rejectBtn).toHaveAttribute('title', 'Integrationsauftrag verwürfen und Karte schließen');
+      expect(rejectBtn.className).toContain('focus-visible:ring-2');
+    });
+
+    it('provides accessible titles for gate indicators', () => {
+      render(
+        <IntegrationIntentDraftCard
+          draft={mockDraft}
+          gateSnapshot={{ ...mockGates, githubWriteReady: false }}
+          onConfirm={vi.fn()}
+          onRephrase={vi.fn()}
+          onReject={vi.fn()}
+        />
+      );
+
+      const repoReadyGate = screen.getByLabelText('Gate Repo ready: Bereit');
+      expect(repoReadyGate).toBeInTheDocument();
+      expect(repoReadyGate).toHaveAttribute('title', 'Gate Repo ready: Bereit');
+
+      const githubWriteGate = screen.getByLabelText('Gate GitHub Write: Nicht bereit');
+      expect(githubWriteGate).toBeInTheDocument();
+      expect(githubWriteGate).toHaveAttribute('title', 'Gate GitHub Write: Nicht bereit');
     });
   });
 });
