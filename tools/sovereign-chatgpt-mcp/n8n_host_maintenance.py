@@ -324,6 +324,26 @@ class N8NHostMaintenanceRuntime:
                 for line in str(builders.get("stdout") or "").splitlines()
                 if _SAFE_BUILDER_RE.fullmatch(line.strip().rstrip("*"))
             }) if builders.get("ok") else []
+            if not builder_names:
+                known_builder = "aurion-isolated"
+                expected_container = f"buildx_buildkit_{known_builder}0"
+                builder_container = self._run(
+                    [
+                        "docker",
+                        "ps",
+                        "--filter",
+                        f"name={expected_container}",
+                        "--format",
+                        "{{.Names}}",
+                    ],
+                    timeout=60,
+                )
+                if builder_container.get("ok") and expected_container in {
+                    line.strip()
+                    for line in str(builder_container.get("stdout") or "").splitlines()
+                    if line.strip()
+                }:
+                    builder_names = [known_builder]
         except RuntimeError as exc:
             return self._failure("DOCKER_CACHE_CLEANUP_PLAN_BLOCKED", "DOCKER_INVENTORY_UNAVAILABLE", str(exc))
         # Confirmation binds stable mutation scope and object identities only.
@@ -332,7 +352,7 @@ class N8NHostMaintenanceRuntime:
         # must not create an unresolvable confirmation race.
         state = {
             "schemaVersion": "sovereign.docker-cache-cleanup.v1",
-            "action": "prune_build_cache_older_than_24h_and_dangling_images_only",
+            "action": "prune_buildx_cache_older_than_24h_and_dangling_images_only",
             "runningContainers": running,
             "volumes": volumes,
             "builders": builder_names,
@@ -340,7 +360,7 @@ class N8NHostMaintenanceRuntime:
         return {
             "ok": True,
             "status": "DOCKER_CACHE_CLEANUP_PLAN_READY",
-            "scope": ["build-cache-older-than-24h", "dangling-images"],
+            "scope": ["buildx-cache-older-than-24h", "dangling-images"],
             "excluded": ["volumes", "running-containers", "tagged-images"],
             "disk": disk,
             "systemDfSha256": _fingerprint(str(system_df.get("stdout") or "")),
@@ -374,13 +394,12 @@ class N8NHostMaintenanceRuntime:
         before_volumes = dict(plan["volumes"])
         steps: list[dict[str, Any]] = []
         commands = [
-            ["docker", "builder", "prune", "--all", "--force", "--filter", "until=24h"],
+            ["docker", "image", "prune", "--force"],
         ]
         if "aurion-isolated" in set(plan.get("builders") or []):
             commands.append([
                 "docker", "buildx", "prune", "--builder", "aurion-isolated", "--all", "--force", "--filter", "until=24h"
             ])
-        commands.append(["docker", "image", "prune", "--force"])
         for argv in commands:
             result = self._run(argv, timeout=900)
             steps.append({"argv": argv, "ok": bool(result.get("ok")), "exitCode": result.get("exitCode")})
