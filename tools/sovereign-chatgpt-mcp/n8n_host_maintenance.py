@@ -27,7 +27,6 @@ N8N_REQUIRED_HOST_ENV_KEYS = {
     "TZ",
     "TRAEFIK_HOST",
     "N8N_INSTANCE_AI_MODEL",
-    "NEXOS_API_KEY",
     "SANDBOX_API_KEY",
     "SANDBOX_RUNNER_API_KEY",
     "SANDBOX_RUNNER_REGISTRATION_TOKEN",
@@ -68,7 +67,13 @@ class N8NHostMaintenanceRuntime:
             or os.getenv("SOVEREIGN_MCP_N8N_MAINTENANCE_ROOT", DEFAULT_MAINTENANCE_ROOT)
         )
 
-    def _run(self, argv: list[str], *, timeout: int = 120) -> dict[str, Any]:
+    def _run(
+        self,
+        argv: list[str],
+        *,
+        timeout: int = 120,
+        env_overrides: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         try:
             completed = self._runner(
                 argv,
@@ -84,6 +89,7 @@ class N8NHostMaintenanceRuntime:
                         "PATH",
                         "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                     ),
+                    **(env_overrides or {}),
                 },
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
@@ -539,6 +545,13 @@ volumes:
                 N8N_SANDBOX_API_CONTAINER: self._container_env(N8N_SANDBOX_API_CONTAINER),
                 N8N_SANDBOX_RUNNER_CONTAINER: self._container_env(N8N_SANDBOX_RUNNER_CONTAINER),
             }
+            runtime_nexos_api_key = str(
+                runtime_env[N8N_CONTAINER].get("N8N_INSTANCE_AI_MODEL_API_KEY") or ""
+            )
+            nexos_api_key = str(host_env.get("NEXOS_API_KEY") or runtime_nexos_api_key)
+            if not nexos_api_key:
+                raise RuntimeError("Nexos API credential is unavailable from Hostinger env and current n8n runtime")
+            nexos_source = "host-env" if host_env.get("NEXOS_API_KEY") else "existing-runtime"
             secret_bindings = {
                 "sandboxApiKey": {
                     "hostPresent": bool(host_env.get("SANDBOX_API_KEY")),
@@ -586,6 +599,7 @@ volumes:
                 "composeSha256": _fingerprint(compose),
                 "originalComposeEvidence": original_compose_evidence,
                 "diskFloorBytes": N8N_MIN_FREE_BYTES,
+                "nexosCredentialSha256": _fingerprint(nexos_api_key),
             }
             return {
                 "ok": True,
@@ -601,6 +615,12 @@ volumes:
                 "hostSecretValuesPresent": host_values_present,
                 "runtimeMatchesHostSecrets": runtime_matches_host,
                 "rotationPendingRecreate": host_values_present and not runtime_matches_host,
+                "instanceAiCredential": {
+                    "source": nexos_source,
+                    "hostPresent": bool(host_env.get("NEXOS_API_KEY")),
+                    "runtimePresent": bool(runtime_nexos_api_key),
+                    "secretValuesReturned": False,
+                },
                 "images": images,
                 "containers": summaries,
                 "disk": disk,
@@ -680,13 +700,14 @@ volumes:
         env_path: Path,
         compose_files: list[Path],
         host_env: dict[str, str],
+        env_overrides: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         argv = self._original_compose_argv(
             working_dir=working_dir,
             env_path=env_path,
             compose_files=compose_files,
         )
-        rendered = self._run([*argv, "config"], timeout=120)
+        rendered = self._run([*argv, "config"], timeout=120, env_overrides=env_overrides)
         if not rendered.get("ok"):
             return {
                 "attempted": False,
@@ -696,6 +717,7 @@ volumes:
         restored = self._run(
             [*argv, "up", "-d", "--force-recreate", "--remove-orphans", "--pull", "never"],
             timeout=900,
+            env_overrides=env_overrides,
         )
         if not restored.get("ok"):
             return {
@@ -763,6 +785,19 @@ volumes:
         working_dir = Path(str(plan.get("workingDirectory") or ""))
         env_path = Path(str(plan.get("hostEnvironment", {}).get("path") or ""))
         host_env = self._read_host_env(env_path)
+        current_n8n_env = self._container_env(N8N_CONTAINER)
+        nexos_api_key = str(
+            host_env.get("NEXOS_API_KEY")
+            or current_n8n_env.get("N8N_INSTANCE_AI_MODEL_API_KEY")
+            or ""
+        )
+        if not nexos_api_key:
+            return self._failure(
+                "N8N_STAGE1_BLOCKED",
+                "INSTANCE_AI_CREDENTIAL_MISSING",
+                "Nexos API credential is unavailable from Hostinger env and current n8n runtime",
+            )
+        compose_env_overrides = {"NEXOS_API_KEY": nexos_api_key}
         anchor = plan.get("containers", {}).get(N8N_CONTAINER, {})
         original_compose_files = self._original_compose_files(
             str(anchor.get("configFiles") or ""),
@@ -800,7 +835,11 @@ volumes:
             "--file",
             str(compose_path),
         ]
-        rendered = self._run([*compose_argv, "config"], timeout=120)
+        rendered = self._run(
+            [*compose_argv, "config"],
+            timeout=120,
+            env_overrides=compose_env_overrides,
+        )
         if not rendered.get("ok"):
             return self._failure("N8N_STAGE1_BLOCKED", "COMPOSE_RENDER_FAILED", "Generated n8n stage1 Compose did not render")
 
@@ -811,6 +850,7 @@ volumes:
         deployed = self._run(
             [*compose_argv, "up", "-d", "--force-recreate", "--remove-orphans", "--pull", "never"],
             timeout=900,
+            env_overrides=compose_env_overrides,
         )
         if not deployed.get("ok"):
             rollback = self._rollback_original_compose(
@@ -818,6 +858,7 @@ volumes:
                 env_path=env_path,
                 compose_files=original_compose_files,
                 host_env=host_env,
+                env_overrides=compose_env_overrides,
             )
             return {
                 **self._failure(
@@ -867,6 +908,9 @@ volumes:
         )
         secret_bindings_match = self._runtime_secret_matches(host_env)
         n8n_env = self._container_env(N8N_CONTAINER)
+        instance_ai_credential_preserved = bool(
+            n8n_env.get("N8N_INSTANCE_AI_MODEL_API_KEY") == nexos_api_key
+        )
         proxy_contract = bool(
             n8n_env.get("N8N_PROXY_HOPS") == "1"
             and n8n_env.get("N8N_SECURE_COOKIE") == "true"
@@ -889,6 +933,7 @@ volumes:
             and loopback_only
             and images_match
             and secret_bindings_match
+            and instance_ai_credential_preserved
             and proxy_contract
             and local_health
             and sandbox_api_health
@@ -905,6 +950,7 @@ volumes:
                 env_path=env_path,
                 compose_files=original_compose_files,
                 host_env=host_env,
+                env_overrides=compose_env_overrides,
             )
         )
         return {
@@ -922,6 +968,7 @@ volumes:
             "loopbackPortVerified": loopback_only,
             "immutableImagesVerified": images_match,
             "rotatedSecretBindingsMatchHost": secret_bindings_match,
+            "instanceAiCredentialPreserved": instance_ai_credential_preserved,
             "proxyContractVerified": proxy_contract,
             "n8nHealthVerified": local_health,
             "sandboxApiHealthVerified": sandbox_api_health,
