@@ -321,13 +321,15 @@ class N8NHostMaintenanceRuntime:
             }) if builders.get("ok") else []
         except RuntimeError as exc:
             return self._failure("DOCKER_CACHE_CLEANUP_PLAN_BLOCKED", "DOCKER_INVENTORY_UNAVAILABLE", str(exc))
+        # Confirmation binds stable mutation scope and object identities only.
+        # Disk usage and docker system-df output are intentionally evidence-only:
+        # they can change between plan/apply from normal log or layer writes and
+        # must not create an unresolvable confirmation race.
         state = {
             "schemaVersion": "sovereign.docker-cache-cleanup.v1",
             "action": "prune_build_cache_older_than_24h_and_dangling_images_only",
             "runningContainers": running,
             "volumes": volumes,
-            "disk": disk,
-            "systemDfSha256": _fingerprint(str(system_df.get("stdout") or "")),
             "builders": builder_names,
         }
         return {
@@ -336,6 +338,7 @@ class N8NHostMaintenanceRuntime:
             "scope": ["build-cache-older-than-24h", "dangling-images"],
             "excluded": ["volumes", "running-containers", "tagged-images"],
             "disk": disk,
+            "systemDfSha256": _fingerprint(str(system_df.get("stdout") or "")),
             "builders": builder_names,
             "runningContainers": running,
             "volumes": volumes,
