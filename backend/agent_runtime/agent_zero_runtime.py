@@ -15,7 +15,6 @@ import base64
 from dataclasses import dataclass, field
 import hashlib
 import hmac
-import importlib
 import json
 import os
 from pathlib import Path
@@ -27,6 +26,7 @@ import uuid
 
 import requests
 
+from .cognitive_repository_tools import _require_function_tool
 from .cognitive_run_store import record_external_action_event
 from .contracts import sanitize_agent_text
 
@@ -783,10 +783,7 @@ class BoundAgentZeroCapabilityToolset:
         allowed = frozenset(self.allowed_capabilities(role))
         if not allowed:
             return []
-        module = importlib.import_module("agents")
-        function_tool = getattr(module, "function_tool", None)
-        if not callable(function_tool):
-            raise RuntimeError("OpenAI Agents SDK function_tool API is unavailable")
+        function_tool = _require_function_tool()
 
         def use_agent_zero_capability(capability: str, instruction: str) -> str:
             """Use one owner-scoped Agent Zero skill/browser/memory/sandbox capability as non-authoritative evidence."""
