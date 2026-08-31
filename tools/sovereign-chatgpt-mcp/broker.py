@@ -22,6 +22,7 @@ from github_knowledge_canary import GitHubKnowledgeCanaryRuntime
 from issue_closure_canary import IssueClosureCanaryRuntime
 from programming_language_catalog_runtime import ProgrammingLanguageCatalogRuntime
 from managed_compose import ManagedComposeRuntime
+from n8n_host_maintenance import N8NHostMaintenanceRuntime
 from operations import OperationsRuntime
 from patchmon_fleet import PatchmonFleetRuntime
 from patchmon_operator import PatchmonOperatorRuntime
@@ -55,6 +56,7 @@ class BrokerRuntime:
         self.issue_closure = IssueClosureCanaryRuntime()
         self.programming_language_catalog = ProgrammingLanguageCatalogRuntime()
         self.managed_compose = ManagedComposeRuntime()
+        self.n8n_host_maintenance = N8NHostMaintenanceRuntime()
         self.desktop_worker = DesktopWorkerRuntime()
         self.patchmon = PatchmonOperatorRuntime()
         self.patchmon_fleet = PatchmonFleetRuntime(self.patchmon)
@@ -436,6 +438,16 @@ class BrokerRuntime:
             "container_logs": self.container_logs,
             "fleet_filebrowser_retirement_plan": lambda _values: self.fleet_maintenance.filebrowser_retirement_plan(),
             "fleet_filebrowser_retirement_apply": lambda values: self.fleet_maintenance.filebrowser_retirement_apply(
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=bool(values.get("owner_approved")),
+            ),
+            "docker_cache_cleanup_plan": lambda _values: self.n8n_host_maintenance.docker_cache_cleanup_plan(),
+            "docker_cache_cleanup_apply": lambda values: self.n8n_host_maintenance.docker_cache_cleanup_apply(
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=bool(values.get("owner_approved")),
+            ),
+            "n8n_host_stage1_plan": lambda _values: self.n8n_host_maintenance.stage1_plan(),
+            "n8n_host_stage1_apply": lambda values: self.n8n_host_maintenance.stage1_apply(
                 confirmation_sha256=str(values.get("confirmation_sha256") or ""),
                 owner_approved=bool(values.get("owner_approved")),
             ),
