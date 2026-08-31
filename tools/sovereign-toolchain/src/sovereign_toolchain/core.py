@@ -19,6 +19,8 @@ from typing import Any, Literal
 
 from github_app_auth import GitHubAppInstallationAuth, GitHubAppInstallationConfig
 
+from .ci_evidence import build_ci_evidence_receipt, build_revision_guardian_receipt
+
 DEFAULT_WORKER_URL = "https://sovereign-studio-worker.projectouroboroscollective.workers.dev/git/patch"
 DEFAULT_REPO = "OuroborosCollective/Sovereign-Studio-ato"
 DEFAULT_TARGET_PATH = "scripts/sovereign-backend/app.py"
@@ -109,6 +111,47 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "owner": {"type": "string"}, "repo": {"type": "string"}, "path": {"type": "string"},
                 "message": {"type": "string"}, "blocks": {"type": "array"},
                 "expected_sha": {"type": "string"}, "dry_run": {"type": "boolean", "default": False}
+            }
+        },
+    },
+    {
+        "name": "sovereign_ci_evidence_receipt",
+        "description": "Normalize one GitHub Actions observation into deterministic observation-only evidence for n8n delivery de-duplication. Never creates VERIFIED truth.",
+        "write_action": False,
+        "input_schema": {
+            "type": "object",
+            "required": ["repository", "run_id", "head_sha", "status", "jobs"],
+            "properties": {
+                "repository": {"type": "string"},
+                "run_id": {"type": "integer", "minimum": 1},
+                "head_sha": {"type": "string"},
+                "expected_head_sha": {"type": "string"},
+                "status": {"type": "string"},
+                "conclusion": {"type": ["string", "null"]},
+                "jobs": {"type": "array"},
+                "previous_fingerprint": {"type": "string"}
+            }
+        },
+    },
+    {
+        "name": "sovereign_revision_guardian_receipt",
+        "description": "Compare Git/build/deploy/health/image/schema identities into deterministic observation-only PASS/DRIFT evidence. Never creates VERIFIED truth.",
+        "write_action": False,
+        "input_schema": {
+            "type": "object",
+            "required": ["repository", "expected_revision", "git_revision", "build_revision", "deploy_revision", "health_revision", "expected_image_digest", "image_digest", "health_status", "schema_readback"],
+            "properties": {
+                "repository": {"type": "string"},
+                "expected_revision": {"type": "string"},
+                "git_revision": {"type": "string"},
+                "build_revision": {"type": "string"},
+                "deploy_revision": {"type": "string"},
+                "health_revision": {"type": "string"},
+                "expected_image_digest": {"type": "string"},
+                "image_digest": {"type": "string"},
+                "health_status": {"type": "string"},
+                "schema_readback": {"type": "string"},
+                "previous_fingerprint": {"type": "string"}
             }
         },
     },
@@ -577,6 +620,8 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         "list_archive_files": lambda: archive_reader.list_files(args.get("source", "studio"), args.get("prefix", ""), args.get("glob", "*"), int(args.get("limit", 100))),
         "read_archive_text": lambda: archive_reader.read_text(args["source"], args["path"], int(args.get("max_chars", 20000))),
         "plan_sandbox_commands": lambda: plan_sandbox_commands(args.get("goal", "verify")),
+        "sovereign_ci_evidence_receipt": lambda: build_ci_evidence_receipt(args),
+        "sovereign_revision_guardian_receipt": lambda: build_revision_guardian_receipt(args),
         "preview_search_replace": lambda: preview_search_replace(args["path"], args["content"], args["blocks"]),
         "make_patch_payload": lambda: make_patch_payload(args["owner"], args["repo"], args["path"], args["message"], args["blocks"], args.get("expected_sha") or args.get("expectedSha"), bool(args.get("dry_run", False))),
         "github_read_file": lambda: github_read_file(args["owner"], args["repo"], args["path"], args.get("ref"), int(args.get("max_chars", 60000))),
