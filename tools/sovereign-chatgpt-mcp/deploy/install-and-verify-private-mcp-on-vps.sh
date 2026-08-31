@@ -82,7 +82,7 @@ install -d -m 0700 "$WORK_DIR"
 tar -xzf "$ARCHIVE" -C "$WORK_DIR"
 
 SOURCE_DIR="$WORK_DIR/tools/sovereign-chatgpt-mcp"
-for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py github_knowledge_mcp_client.py owner_input_widget.py enterprise_backend_tools.py freemium_product_architect_tools.py continuity.py validate_continuity.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py config/sovereign-mcp-operating-profile.json config/sovereign-continuity-policy.json continuity-data/CONTEXT.md continuity-data/LEDGER.jsonl skills/sovereign-mcp-optimal-operation/SKILL.md skills/sovereign-operational-governance/SKILL.md skills/sovereign-operational-assurance/SKILL.md skills/sovereign-neuro-teaching-runtime/SKILL.md launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py managed_compose.py patchmon_operator.py templates/pgbackweb-wq5r/docker-compose.yml templates/patchmon-sovereign/docker-compose.yml templates/code-server-46bq/docker-compose.yml deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service deploy/reconcile-main-release.py deploy/sovereign-release-reconciler.service deploy/sovereign-release-reconciler.timer; do
+for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py github_knowledge_mcp_client.py owner_input_widget.py enterprise_backend_tools.py freemium_product_architect_tools.py continuity.py validate_continuity.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py config/sovereign-mcp-operating-profile.json config/sovereign-continuity-policy.json continuity-data/CONTEXT.md continuity-data/LEDGER.jsonl skills/sovereign-mcp-optimal-operation/SKILL.md skills/sovereign-operational-governance/SKILL.md skills/sovereign-operational-assurance/SKILL.md skills/sovereign-neuro-teaching-runtime/SKILL.md launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py managed_compose.py n8n_host_maintenance.py patchmon_operator.py templates/pgbackweb-wq5r/docker-compose.yml templates/patchmon-sovereign/docker-compose.yml templates/code-server-46bq/docker-compose.yml deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service deploy/reconcile-main-release.py deploy/sovereign-release-reconciler.service deploy/sovereign-release-reconciler.timer; do
   test -f "$SOURCE_DIR/$required" || { echo "Required MCP release file is missing: $required" >&2; exit 1; }
 done
 bash -n "$SOURCE_DIR/deploy/install-on-vps.sh"
@@ -244,10 +244,17 @@ expected_tools = {
     'teaching_lesson_simulate',
     'teaching_package_assess',
 }
+expected_n8n_tools = {
+    'docker_cache_cleanup_apply',
+    'docker_cache_cleanup_plan',
+    'n8n_host_stage1_apply',
+    'n8n_host_stage1_plan',
+}
 tool_names = {tool.name for tool in launcher.mcp._tool_manager.list_tools()}
-assert len(tool_names) == 249, len(tool_names)
+assert len(tool_names) == 253, len(tool_names)
 assert expected_tools <= tool_names, sorted(expected_tools - tool_names)
-assert len(tool_names - expected_tools) == 244, len(tool_names - expected_tools)
+assert expected_n8n_tools <= tool_names, sorted(expected_n8n_tools - tool_names)
+assert len(tool_names - expected_tools) == 248, len(tool_names - expected_tools)
 revision = os.environ.get('SOVEREIGN_SOURCE_REVISION', '')
 assert len(revision) == 40 and all(character in '0123456789abcdef' for character in revision), revision
 assert revision == os.environ.get('SOVEREIGN_EXPECTED_WORKFLOW_REVISION'), revision
@@ -257,7 +264,7 @@ assert os.environ.get('SOVEREIGN_NEURO_POLICY_SHA256') == embedded_policy_sha256
 status = neuro_teaching_tools.neuro_runtime_contract_status()
 assert status.ok is True, status
 assert status.status == 'NEURO_RUNTIME_CONTRACT_READY', status
-assert status.evidence['toolCount'] == 249, status
+assert status.evidence['toolCount'] == 253, status
 assert status.data['ledger']['integrityStatus'] in {'NOT_INITIALIZED', 'VERIFIED'}, status
 assert status.data['foundationLedger']['integrityStatus'] in {'NOT_INITIALIZED', 'VERIFIED'}, status
 assert status.data['admissions']['pending'] == 0, status

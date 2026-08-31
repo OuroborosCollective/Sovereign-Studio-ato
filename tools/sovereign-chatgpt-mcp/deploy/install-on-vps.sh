@@ -62,7 +62,7 @@ MCP_UID="10001"
 MCP_GID="10001"
 MCP_HOST_PORT="8090"
 NEURO_RUNTIME_STATE_HOST_DIR="$INSTALL_ROOT/tool-routing-state/neuro-runtime"
-EXPECTED_MCP_TOOL_COUNT="249"
+EXPECTED_MCP_TOOL_COUNT="253"
 MCP_IMAGE_REPOSITORY="${SOVEREIGN_MCP_IMAGE_REPOSITORY:-ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp}"
 EXPECTED_REVISION="${SOVEREIGN_MCP_EXPECTED_REVISION:-}"
 EXPECTED_MCP_DIGEST="${SOVEREIGN_MCP_EXPECTED_DIGEST:-}"
@@ -1135,7 +1135,7 @@ done
 install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/CONTEXT.md" "$INSTALL_ROOT/continuity-data/CONTEXT.md" "continuity-data/CONTEXT.md"
 install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/LEDGER.jsonl" "$INSTALL_ROOT/continuity-data/LEDGER.jsonl" "continuity-data/LEDGER.jsonl"
 
-for file in broker.py desktop_worker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_installation_auth.py ci_repair_tools.py llm_boundary_ledger.py llm_boundary_contract.py self_update.py policy.py self_heal.py managed_compose.py patchmon_operator.py patchmon_fleet.py fleet_maintenance.py; do
+for file in broker.py desktop_worker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_installation_auth.py ci_repair_tools.py llm_boundary_ledger.py llm_boundary_contract.py self_update.py policy.py self_heal.py managed_compose.py n8n_host_maintenance.py patchmon_operator.py patchmon_fleet.py fleet_maintenance.py; do
   install_managed_control_plane_file 0640 "$SOURCE_DIR/$file" "$BROKER_DIR/$file" "broker/$file"
 done
 install_managed_control_plane_file 0640 "$SOURCE_DIR/config/sovereign-governance-mode.json" "$BROKER_GOVERNANCE_MODE" "broker/sovereign-governance-mode.json"
@@ -1987,7 +1987,7 @@ neuro_tools = {
 }
 missing_tools = sorted(required_tools - tool_names)
 assert not missing_tools, {"missingRequiredTools": missing_tools, "toolCount": len(tool_names)}
-assert len(tool_names) == 249, {"expectedToolCount": 249, "actualToolCount": len(tool_names)}
+assert len(tool_names) == 253, {"expectedToolCount": 253, "actualToolCount": len(tool_names)}
 assert neuro_tools <= tool_names, sorted(neuro_tools - tool_names)
 registry = server._live_mcp_registry_evidence()
 assert registry.get("registry_runtime_verified") is True, registry
@@ -2063,6 +2063,10 @@ expected_count = int(sys.argv[2])
 value = json.loads(path.read_text("utf-8"))
 tools = value.get("tools") if isinstance(value, dict) else None
 required_additions = {
+    "docker_cache_cleanup_apply",
+    "docker_cache_cleanup_plan",
+    "n8n_host_stage1_apply",
+    "n8n_host_stage1_plan",
     "neuro_event_commit",
     "neuro_event_route_preview",
     "neuro_runtime_contract_status",
@@ -2106,13 +2110,20 @@ previous_path = Path(sys.argv[1])
 new_path = Path(sys.argv[2])
 predecessor_captured = sys.argv[3] == "1"
 expected_count = int(sys.argv[4])
-expected_additions = {
+expected_neuro_additions = {
     "neuro_event_commit",
     "neuro_event_route_preview",
     "neuro_runtime_contract_status",
     "teaching_lesson_simulate",
     "teaching_package_assess",
 }
+expected_n8n_additions = {
+    "docker_cache_cleanup_apply",
+    "docker_cache_cleanup_plan",
+    "n8n_host_stage1_apply",
+    "n8n_host_stage1_plan",
+}
+approved_additions = expected_neuro_additions | expected_n8n_additions
 
 
 def canonical(value: Any) -> str:
@@ -2530,8 +2541,8 @@ if len(new_names) != expected_count:
     raise SystemExit(
         f"replacement MCP tool surface is not the exact expected {expected_count}-tool registry"
     )
-if not expected_additions.issubset(new_names):
-    raise SystemExit("replacement MCP is missing one or more neuro/teaching tools")
+if not approved_additions.issubset(new_names):
+    raise SystemExit("replacement MCP is missing one or more approved additive tools")
 
 previous_count = 0
 additions = []
@@ -2547,9 +2558,19 @@ if predecessor_captured:
     if removed:
         raise SystemExit("replacement MCP removed predecessor tools: " + ",".join(removed))
     additions = sorted(set(new_by_name) - set(previous_by_name))
-    if len(previous_names) == 244 and expected_additions.isdisjoint(previous_names):
-        if set(additions) != expected_additions:
-            raise SystemExit("244-tool predecessor did not receive exactly the five approved additions")
+    unexpected_additions = sorted(set(additions) - approved_additions)
+    if unexpected_additions:
+        raise SystemExit("replacement MCP contains unapproved additive tools: " + ",".join(unexpected_additions))
+    if len(previous_names) == 244 and approved_additions.isdisjoint(previous_names):
+        if set(additions) != approved_additions:
+            raise SystemExit("244-tool predecessor did not receive exactly the nine approved additions")
+    elif (
+        len(previous_names) == 249
+        and expected_neuro_additions <= set(previous_names)
+        and expected_n8n_additions.isdisjoint(previous_names)
+    ):
+        if set(additions) != expected_n8n_additions:
+            raise SystemExit("249-tool predecessor did not receive exactly the four approved n8n additions")
     for name in previous_names:
         old = previous_by_name[name]
         new = new_by_name[name]
@@ -2714,7 +2735,7 @@ with tempfile.TemporaryDirectory(
     assert getattr(commit_tool.fn, "__sovereign_operating_profile_wrapped__", False)
 
     registered_tools = list(launcher.mcp._tool_manager.list_tools())
-    assert len({tool.name for tool in registered_tools}) == 249
+    assert len({tool.name for tool in registered_tools}) == 253
 
     def call_registered(tool_name: str, arguments: dict[str, object]):
         return asyncio.run(tool_manager.call_tool(tool_name, arguments, convert_result=False))
@@ -2722,11 +2743,11 @@ with tempfile.TemporaryDirectory(
     empty_status = call_registered("neuro_runtime_contract_status", {})
     assert empty_status.ok is True, empty_status
     assert empty_status.status == "NEURO_RUNTIME_CONTRACT_READY", empty_status
-    assert empty_status.evidence["toolCount"] == 249, empty_status
+    assert empty_status.evidence["toolCount"] == 253, empty_status
     assert empty_status.data["stateInitializedByThisCall"] is False, empty_status
     assert not isolated_state.exists(), "read-only status initialized isolated state"
     # Continuity is advisory provenance and intentionally not required for this
-    # deployment canary. Guard every one of the 244 predecessor tools
+    # deployment canary. Guard every one of the 248 non-Neuro/Teaching tools
     # for the remainder of the canary while leaving only the five additive
     # Neuro/Teacher wrapper chains callable.
     guarded_tool_calls: list[str] = []
@@ -2742,7 +2763,7 @@ with tempfile.TemporaryDirectory(
 
         registered_tool.fn = forbidden_selected_tool_call
         guarded_tool_names.append(tool_name)
-    assert len(set(guarded_tool_names)) == 244, len(set(guarded_tool_names))
+    assert len(set(guarded_tool_names)) == 248, len(set(guarded_tool_names))
 
     now = datetime.now(timezone.utc)
     now = now.replace(microsecond=(now.microsecond // 1000) * 1000)
@@ -3093,8 +3114,8 @@ print(
     json.dumps(
         {
             "status": "NEURO_DEPLOYMENT_CANARY_VERIFIED",
-            "registryToolCount": 249,
-            "guardedPredecessorToolCount": 244,
+            "registryToolCount": 253,
+            "guardedPredecessorToolCount": 248,
             "quarantineNoMutation": True,
             "previewProposalOnly": True,
             "selectedToolsExecuted": False,
