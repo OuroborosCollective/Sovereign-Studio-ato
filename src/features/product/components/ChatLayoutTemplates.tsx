@@ -113,7 +113,7 @@ const TerminalChatLayout: React.FC<{
           <span className="text-slate-300">{msg.content}</span>
           {msg.role === 'assistant' && msg.metadata?.modelId && msg.metadata.modelId !== selectedModel && (
             <div className="text-[10px] text-slate-500 mt-1 pl-4 opacity-70">
-              # Fallback: {msg.metadata.modelId as string}
+              <span title={`Modell-Fallback: ${msg.metadata.modelId as string}`}> (Fallback)</span>
             </div>
           )}
         </div>
@@ -281,7 +281,7 @@ const FloatingChatLayout: React.FC<{
               {msg.role === 'assistant' && msg.metadata?.modelId && msg.metadata.modelId !== selectedModel && (
                 <div className="text-[10px] text-slate-500 px-2 flex items-center gap-1">
                   <AlertTriangle size={10} className="text-amber-500/70" />
-                  Fallback: {msg.metadata.modelId as string}
+                  <span title={`Modell-Fallback: ${msg.metadata.modelId as string}`}> (Fallback)</span>
                 </div>
               )}
             </div>
@@ -405,7 +405,7 @@ const SplitViewLayout: React.FC<{
               {msg.role === 'assistant' && msg.metadata?.modelId && msg.metadata.modelId !== selectedModel && (
                 <div className="text-[10px] text-amber-500/70 mt-0.5 ml-6 flex items-center gap-1">
                   <AlertTriangle size={10} />
-                  Fallback: {msg.metadata.modelId as string}
+                  <span title={`Modell-Fallback: ${msg.metadata.modelId as string}`}> (Fallback)</span>
                 </div>
               )}
             </div>
