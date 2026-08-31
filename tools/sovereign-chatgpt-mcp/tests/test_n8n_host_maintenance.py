@@ -78,6 +78,34 @@ def test_cleanup_apply_never_prunes_volumes_containers_or_tagged_images(monkeypa
     assert "image prune --all" not in rendered
 
 
+def test_cleanup_confirmation_ignores_volatile_disk_usage(monkeypatch) -> None:
+    runtime = N8NHostMaintenanceRuntime()
+    running = {"count": 4, "sha256": "1" * 64}
+    volumes = {"count": 2, "sha256": "2" * 64}
+    disks = iter(
+        (
+            {"totalBytes": 1000, "usedBytes": 900, "freeBytes": 100, "usedPpm": 900000},
+            {"totalBytes": 1000, "usedBytes": 901, "freeBytes": 99, "usedPpm": 901000},
+        )
+    )
+    monkeypatch.setattr(runtime, "_running_container_identity", lambda: dict(running))
+    monkeypatch.setattr(runtime, "_volume_identity", lambda: dict(volumes))
+    monkeypatch.setattr(runtime, "_disk", lambda: dict(next(disks)))
+    monkeypatch.setattr(
+        runtime,
+        "_run",
+        lambda argv, timeout=120: _result("0B\n" if argv[:3] == ["docker", "system", "df"] else ""),
+    )
+
+    first = runtime.docker_cache_cleanup_plan()
+    second = runtime.docker_cache_cleanup_plan()
+
+    assert first["confirmationSha256"] == second["confirmationSha256"]
+    assert first["disk"] != second["disk"]
+    assert first["runningContainers"] == second["runningContainers"]
+    assert first["volumes"] == second["volumes"]
+
+
 def _inspect(name: str, service: str, image: str, image_id: str, working_dir: str) -> dict:
     state = {
         "Status": "exited" if service == "sandbox-certs" else "running",
