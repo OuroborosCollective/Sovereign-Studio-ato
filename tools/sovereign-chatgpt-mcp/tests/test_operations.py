@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from operations import OperationsRuntime
+from operations import OperationsRuntime, _normalize_pg_dump_for_server
 
 
 DIGEST = "sha256:" + "a" * 64
@@ -330,6 +330,18 @@ def test_destructive_delete_remains_separately_blocked(tmp_path, monkeypatch) ->
     assert result["destructive_actions"] == ["delete_rows"]
 
 
+def test_pg17_transaction_timeout_is_removed_only_for_pre17_server() -> None:
+    dump = "SET transaction_timeout = 0;\nCREATE TABLE public.example(id integer);\n"
+    pg15, repairs15 = _normalize_pg_dump_for_server(dump, 150001)
+    pg17, repairs17 = _normalize_pg_dump_for_server(dump, 170002)
+
+    assert "transaction_timeout" not in pg15
+    assert "CREATE TABLE public.example" in pg15
+    assert repairs15 == ("remove_pg17_transaction_timeout_for_pre17_server",)
+    assert pg17 == dump
+    assert repairs17 == ()
+
+
 def test_preview_hydrates_real_schema_without_copying_rows(tmp_path, monkeypatch) -> None:
     sql = "ALTER TABLE agent_events DROP CONSTRAINT IF EXISTS agent_events_source_check;\n"
     workspace_id, relative_path, checksum = _migration_workspace(tmp_path, sql)
@@ -350,10 +362,15 @@ def test_preview_hydrates_real_schema_without_copying_rows(tmp_path, monkeypatch
     runtime = OperationsRuntime()
     calls = []
     dump_calls = []
-    schema_sql = "CREATE TABLE public.agent_events(event_id text PRIMARY KEY, source text NOT NULL);\n"
+    schema_sql = (
+        "SET transaction_timeout = 0;\n"
+        "CREATE TABLE public.agent_events(event_id text PRIMARY KEY, source text NOT NULL);\n"
+    )
 
     def fake_run_input(argv, input_text, *, password, timeout):
         calls.append({"argv": argv, "input": input_text, "password": password, "timeout": timeout})
+        if "SHOW server_version_num" in input_text:
+            return {"ok": True, "exit_code": 0, "stdout": " 150001\n", "stderr": ""}
         return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
 
     def fake_run_capture(argv, *, password, timeout, max_stdout_bytes):
@@ -387,6 +404,10 @@ def test_preview_hydrates_real_schema_without_copying_rows(tmp_path, monkeypatch
     assert result["schema_hydrated"] is True
     assert result["schema_source"] == "production-target-pre-data"
     assert result["preview_tables"] == ["public.agent_events"]
+    assert result["server_version_num"] == 150001
+    assert result["schema_compatibility_repairs"] == [
+        "remove_pg17_transaction_timeout_for_pre17_server"
+    ]
     assert result["production_rows_copied"] is False
     assert result["production_write_performed"] is False
     assert result["preview_cleanup_verified"] is True
@@ -398,13 +419,15 @@ def test_preview_hydrates_real_schema_without_copying_rows(tmp_path, monkeypatch
     assert "--strict-names" in dump_calls[0]["argv"]
     assert "--table=public.agent_events" in dump_calls[0]["argv"]
     assert dump_calls[0]["argv"][-1] == "postgres"
-    assert len(calls) == 4
+    assert len(calls) == 5
     assert 'DROP DATABASE IF EXISTS "sovereign_migration_preview" WITH (FORCE);' in calls[0]["input"]
     assert 'CREATE DATABASE "sovereign_migration_preview"' in calls[0]["input"]
-    assert calls[1]["input"] == schema_sql
-    assert "ALTER TABLE agent_events" in calls[2]["input"]
-    assert "ROLLBACK;" in calls[2]["input"]
-    assert calls[3]["input"] == calls[0]["input"]
+    assert calls[1]["input"] == "SHOW server_version_num;\n"
+    assert "transaction_timeout" not in calls[2]["input"]
+    assert "CREATE TABLE public.agent_events" in calls[2]["input"]
+    assert "ALTER TABLE agent_events" in calls[3]["input"]
+    assert "ROLLBACK;" in calls[3]["input"]
+    assert calls[4]["input"] == calls[0]["input"]
 
 
 def test_preview_target_discovery_excludes_tables_created_by_same_migration(tmp_path, monkeypatch) -> None:

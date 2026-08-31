@@ -44,6 +44,9 @@ PSQL_META_COMMAND = re.compile(r"(?m)^\s*\\")
 MAX_MIGRATION_BYTES = 500_000
 MAX_PREVIEW_SCHEMA_BYTES = 16_000_000
 SCHEMA_DUMP_ROW_DATA = re.compile(r"(?im)^\s*(?:COPY\s+|INSERT\s+INTO\s+)")
+_PG17_TRANSACTION_TIMEOUT_SET = re.compile(
+    r"(?m)^SET transaction_timeout = 0;(?:\r?\n|$)"
+)
 _SQL_RELATION = r'(?:public\.)?[A-Za-z_][A-Za-z0-9_]*'
 _PREVIEW_CREATED_TABLE_RE = re.compile(
     rf"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?({_SQL_RELATION})",
@@ -85,6 +88,22 @@ def _migration_preview_tables(sql: str) -> tuple[str, ...]:
             for match in pattern.finditer(sql)
         )
     return tuple(sorted(existing - created))
+
+
+def _normalize_pg_dump_for_server(sql: str, server_version_num: int) -> tuple[str, tuple[str, ...]]:
+    """Remove only proven client-newer-than-server session directives.
+
+    PostgreSQL 17 pg_dump emits transaction_timeout, while PostgreSQL 15 rejects
+    that setting before any structural DDL is restored. The repair is deliberately
+    limited to that exact session SET and never rewrites schema objects.
+    """
+    normalized = str(sql)
+    repairs: list[str] = []
+    if int(server_version_num) < 170000:
+        normalized, count = _PG17_TRANSACTION_TIMEOUT_SET.subn("", normalized)
+        if count:
+            repairs.append("remove_pg17_transaction_timeout_for_pre17_server")
+    return normalized, tuple(repairs)
 
 
 def _read_env_value(path: Path, key: str) -> str:
@@ -401,6 +420,32 @@ class OperationsRuntime:
         if not reset.get("ok"):
             return self._sanitized_command_failure("reset", reset, checksum)
 
+        version_probe = self._run_input(
+            self._psql_argv(admin_host, admin_port, admin_db, admin_user),
+            "SHOW server_version_num;\n",
+            password=admin_password,
+            timeout=30,
+        )
+        if not version_probe.get("ok"):
+            return self._sanitized_command_failure("server_version", version_probe, checksum)
+        version_match = re.search(
+            r"(?m)^\s*([0-9]{5,6})\s*$",
+            str(version_probe.get("stdout") or ""),
+        )
+        if version_match is None:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "PostgreSQL-Serverversion konnte nicht deterministisch gelesen werden",
+                "failure_family": "PREVIEW_SERVER_VERSION_INVALID",
+                "sha256": checksum,
+                "rolled_back": False,
+                "database_scope": "preview",
+                "production_write_performed": False,
+                "secretValuesReturned": False,
+            }
+        server_version_num = int(version_match.group(1))
+
         preview_tables = tuple(migration.get("preview_tables") or ())
         schema_dump = {
             "ok": True,
@@ -424,6 +469,10 @@ class OperationsRuntime:
             if not schema_dump.get("ok"):
                 return self._sanitized_command_failure("schema_dump", schema_dump, checksum)
             schema_sql = str(schema_dump.get("stdout") or "")
+            schema_sql, compatibility_repairs = _normalize_pg_dump_for_server(
+                schema_sql,
+                server_version_num,
+            )
             if SCHEMA_DUMP_ROW_DATA.search(schema_sql):
                 return {
                     "ok": False,
@@ -457,6 +506,9 @@ class OperationsRuntime:
                     "preview_tables": list(preview_tables),
                     "preview_cleanup_verified": bool(cleanup.get("ok")),
                 }
+
+        if not preview_tables:
+            compatibility_repairs = ()
 
         preview_sql = (
             "BEGIN;\n"
@@ -522,6 +574,8 @@ class OperationsRuntime:
             "schema_dump_sha256": str(schema_dump.get("stdout_sha256") or ""),
             "schema_dump_bytes": int(schema_dump.get("stdout_bytes") or 0),
             "preview_tables": list(preview_tables),
+            "server_version_num": server_version_num,
+            "schema_compatibility_repairs": list(compatibility_repairs),
             "production_rows_copied": False,
             "production_write_performed": False,
             "preview_cleanup_verified": True,
