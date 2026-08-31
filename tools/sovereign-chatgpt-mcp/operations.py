@@ -44,7 +44,47 @@ PSQL_META_COMMAND = re.compile(r"(?m)^\s*\\")
 MAX_MIGRATION_BYTES = 500_000
 MAX_PREVIEW_SCHEMA_BYTES = 16_000_000
 SCHEMA_DUMP_ROW_DATA = re.compile(r"(?im)^\s*(?:COPY\s+|INSERT\s+INTO\s+)")
+_SQL_RELATION = r'(?:public\.)?[A-Za-z_][A-Za-z0-9_]*'
+_PREVIEW_CREATED_TABLE_RE = re.compile(
+    rf"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?({_SQL_RELATION})",
+    re.IGNORECASE,
+)
+_PREVIEW_EXISTING_TABLE_PATTERNS = (
+    re.compile(rf"\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?({_SQL_RELATION})", re.IGNORECASE),
+    re.compile(rf"\bUPDATE\s+({_SQL_RELATION})\s+SET\b", re.IGNORECASE),
+    re.compile(rf"\bINSERT\s+INTO\s+({_SQL_RELATION})\b", re.IGNORECASE),
+    re.compile(rf"\bDELETE\s+FROM\s+({_SQL_RELATION})\b", re.IGNORECASE),
+    re.compile(rf"\bREFERENCES\s+({_SQL_RELATION})\b", re.IGNORECASE),
+    re.compile(rf"\bCREATE\s+(?:UNIQUE\s+)?INDEX\b[^;]*?\bON\s+({_SQL_RELATION})\b", re.IGNORECASE),
+)
 BLOCKED_PATH_PARTS = {".git", ".env", ".ssh", "node_modules", "secrets", "credentials"}
+
+
+def _canonical_preview_relation(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        raise ValueError("Leere Preview-Relation")
+    return normalized if "." in normalized else f"public.{normalized}"
+
+
+def _migration_preview_tables(sql: str) -> tuple[str, ...]:
+    """Return existing relation targets required to validate one migration.
+
+    The preview intentionally hydrates only real production relations touched by
+    the migration. Newly created tables are excluded because they must be proven
+    by the migration itself inside the fresh preview database.
+    """
+    created = {
+        _canonical_preview_relation(match.group(1))
+        for match in _PREVIEW_CREATED_TABLE_RE.finditer(sql)
+    }
+    existing: set[str] = set()
+    for pattern in _PREVIEW_EXISTING_TABLE_PATTERNS:
+        existing.update(
+            _canonical_preview_relation(match.group(1))
+            for match in pattern.finditer(sql)
+        )
+    return tuple(sorted(existing - created))
 
 
 def _read_env_value(path: Path, key: str) -> str:
@@ -191,6 +231,7 @@ class OperationsRuntime:
             "path": migration,
             "sql": sql,
             "preview_sql": normalization["sql"],
+            "preview_tables": _migration_preview_tables(sql),
             "policy_repair": normalization["repair"],
             "sha256": hashlib.sha256(data).hexdigest(),
             "destructive_actions": destructive,
@@ -234,10 +275,18 @@ class OperationsRuntime:
             database,
         ]
 
-    def _pg_dump_argv(self, host: str, port: str, database: str, user: str) -> list[str]:
+    def _pg_dump_argv(
+        self,
+        host: str,
+        port: str,
+        database: str,
+        user: str,
+        *,
+        tables: tuple[str, ...] = (),
+    ) -> list[str]:
         if not SAFE_CONTAINER_RE.fullmatch(self.backend_container):
             raise ValueError("Backend-Containername ist ungültig")
-        return [
+        argv = [
             "docker",
             "exec",
             "-i",
@@ -249,6 +298,11 @@ class OperationsRuntime:
             "--no-owner",
             "--no-privileges",
             "--no-comments",
+        ]
+        if tables:
+            argv.extend(("--section=pre-data", "--strict-names"))
+            argv.extend(f"--table={table}" for table in tables)
+        argv.extend((
             "-h",
             host,
             "-p",
@@ -257,7 +311,8 @@ class OperationsRuntime:
             user,
             "-d",
             database,
-        ]
+        ))
+        return argv
 
     def _admin_connection_values(self) -> tuple[str, str, str, str, str]:
         host = _read_env_value(self.backend_env_file, "POSTGRES_HOST") or "db"
@@ -346,46 +401,62 @@ class OperationsRuntime:
         if not reset.get("ok"):
             return self._sanitized_command_failure("reset", reset, checksum)
 
-        schema_dump = self._run_capture(
-            self._pg_dump_argv(admin_host, admin_port, admin_db, admin_user),
-            password=admin_password,
-            timeout=120,
-            max_stdout_bytes=MAX_PREVIEW_SCHEMA_BYTES,
-        )
-        if not schema_dump.get("ok"):
-            return self._sanitized_command_failure("schema_dump", schema_dump, checksum)
-        schema_sql = str(schema_dump.get("stdout") or "")
-        if SCHEMA_DUMP_ROW_DATA.search(schema_sql):
-            return {
-                "ok": False,
-                "status": "BLOCKED",
-                "blocker": "Schema-only Preview-Dump enthielt unerwartete Row-Data-Anweisungen",
-                "failure_family": "PREVIEW_SCHEMA_DUMP_ROW_DATA_DETECTED",
-                "sha256": checksum,
-                "rolled_back": True,
-                "database_scope": "preview",
-                "production_write_performed": False,
-                "schema_dump_sha256": str(schema_dump.get("stdout_sha256") or ""),
-                "secretValuesReturned": False,
-            }
-
-        restore = self._run_input(
-            self._psql_argv(preview_host, preview_port, preview_db, admin_user),
-            schema_sql,
-            password=admin_password,
-            timeout=180,
-        )
-        if not restore.get("ok"):
-            cleanup = self._run_input(
-                self._psql_argv(admin_host, admin_port, admin_db, admin_user),
-                reset_sql,
+        preview_tables = tuple(migration.get("preview_tables") or ())
+        schema_dump = {
+            "ok": True,
+            "stdout": "",
+            "stdout_bytes": 0,
+            "stdout_sha256": hashlib.sha256(b"").hexdigest(),
+        }
+        if preview_tables:
+            schema_dump = self._run_capture(
+                self._pg_dump_argv(
+                    admin_host,
+                    admin_port,
+                    admin_db,
+                    admin_user,
+                    tables=preview_tables,
+                ),
                 password=admin_password,
-                timeout=90,
+                timeout=120,
+                max_stdout_bytes=MAX_PREVIEW_SCHEMA_BYTES,
             )
-            return {
-                **self._sanitized_command_failure("restore", restore, checksum),
-                "preview_cleanup_verified": bool(cleanup.get("ok")),
-            }
+            if not schema_dump.get("ok"):
+                return self._sanitized_command_failure("schema_dump", schema_dump, checksum)
+            schema_sql = str(schema_dump.get("stdout") or "")
+            if SCHEMA_DUMP_ROW_DATA.search(schema_sql):
+                return {
+                    "ok": False,
+                    "status": "BLOCKED",
+                    "blocker": "Schema-only Preview-Dump enthielt unerwartete Row-Data-Anweisungen",
+                    "failure_family": "PREVIEW_SCHEMA_DUMP_ROW_DATA_DETECTED",
+                    "sha256": checksum,
+                    "rolled_back": True,
+                    "database_scope": "preview",
+                    "production_write_performed": False,
+                    "schema_dump_sha256": str(schema_dump.get("stdout_sha256") or ""),
+                    "preview_tables": list(preview_tables),
+                    "secretValuesReturned": False,
+                }
+
+            restore = self._run_input(
+                self._psql_argv(preview_host, preview_port, preview_db, admin_user),
+                schema_sql,
+                password=admin_password,
+                timeout=180,
+            )
+            if not restore.get("ok"):
+                cleanup = self._run_input(
+                    self._psql_argv(admin_host, admin_port, admin_db, admin_user),
+                    reset_sql,
+                    password=admin_password,
+                    timeout=90,
+                )
+                return {
+                    **self._sanitized_command_failure("restore", restore, checksum),
+                    "preview_tables": list(preview_tables),
+                    "preview_cleanup_verified": bool(cleanup.get("ok")),
+                }
 
         preview_sql = (
             "BEGIN;\n"
@@ -409,9 +480,10 @@ class OperationsRuntime:
             )
             return {
                 **self._sanitized_command_failure("migration", preview, checksum),
-                "schema_hydrated": True,
+                "schema_hydrated": bool(preview_tables),
                 "schema_dump_sha256": str(schema_dump.get("stdout_sha256") or ""),
                 "schema_dump_bytes": int(schema_dump.get("stdout_bytes") or 0),
+                "preview_tables": list(preview_tables),
                 "production_rows_copied": False,
                 "preview_cleanup_verified": bool(cleanup.get("ok")),
                 "policy_repair": migration["policy_repair"],
@@ -427,9 +499,10 @@ class OperationsRuntime:
             return {
                 **self._sanitized_command_failure("cleanup", cleanup, checksum),
                 "rolled_back": True,
-                "schema_hydrated": True,
+                "schema_hydrated": bool(preview_tables),
                 "schema_dump_sha256": str(schema_dump.get("stdout_sha256") or ""),
                 "schema_dump_bytes": int(schema_dump.get("stdout_bytes") or 0),
+                "preview_tables": list(preview_tables),
                 "production_rows_copied": False,
                 "preview_cleanup_verified": False,
                 "policy_repair": migration["policy_repair"],
@@ -440,10 +513,15 @@ class OperationsRuntime:
             "rolled_back": True,
             "sha256": checksum,
             "database_scope": "preview",
-            "schema_hydrated": True,
-            "schema_source": "production-schema-only",
+            "schema_hydrated": bool(preview_tables),
+            "schema_source": (
+                "production-target-pre-data"
+                if preview_tables
+                else "fresh-preview-no-existing-target"
+            ),
             "schema_dump_sha256": str(schema_dump.get("stdout_sha256") or ""),
             "schema_dump_bytes": int(schema_dump.get("stdout_bytes") or 0),
+            "preview_tables": list(preview_tables),
             "production_rows_copied": False,
             "production_write_performed": False,
             "preview_cleanup_verified": True,

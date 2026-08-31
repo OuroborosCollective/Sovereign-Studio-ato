@@ -385,7 +385,8 @@ def test_preview_hydrates_real_schema_without_copying_rows(tmp_path, monkeypatch
     assert result["status"] == "PREVIEW_VERIFIED"
     assert result["rolled_back"] is True
     assert result["schema_hydrated"] is True
-    assert result["schema_source"] == "production-schema-only"
+    assert result["schema_source"] == "production-target-pre-data"
+    assert result["preview_tables"] == ["public.agent_events"]
     assert result["production_rows_copied"] is False
     assert result["production_write_performed"] is False
     assert result["preview_cleanup_verified"] is True
@@ -393,6 +394,9 @@ def test_preview_hydrates_real_schema_without_copying_rows(tmp_path, monkeypatch
     assert "--schema-only" in dump_calls[0]["argv"]
     assert "--no-owner" in dump_calls[0]["argv"]
     assert "--no-privileges" in dump_calls[0]["argv"]
+    assert "--section=pre-data" in dump_calls[0]["argv"]
+    assert "--strict-names" in dump_calls[0]["argv"]
+    assert "--table=public.agent_events" in dump_calls[0]["argv"]
     assert dump_calls[0]["argv"][-1] == "postgres"
     assert len(calls) == 4
     assert 'DROP DATABASE IF EXISTS "sovereign_migration_preview" WITH (FORCE);' in calls[0]["input"]
@@ -401,6 +405,23 @@ def test_preview_hydrates_real_schema_without_copying_rows(tmp_path, monkeypatch
     assert "ALTER TABLE agent_events" in calls[2]["input"]
     assert "ROLLBACK;" in calls[2]["input"]
     assert calls[3]["input"] == calls[0]["input"]
+
+
+def test_preview_target_discovery_excludes_tables_created_by_same_migration(tmp_path, monkeypatch) -> None:
+    sql = """
+CREATE TABLE IF NOT EXISTS child_events(id text PRIMARY KEY, run_id text REFERENCES agent_runs(run_id));
+ALTER TABLE agent_evidence ADD COLUMN IF NOT EXISTS external_ref text;
+"""
+    workspace_id, relative_path, _checksum = _migration_workspace(tmp_path, sql)
+    monkeypatch.setenv("SOVEREIGN_MCP_WORKSPACE_ROOT", str(tmp_path))
+    runtime = OperationsRuntime()
+    migration = runtime._migration(workspace_id, relative_path)
+
+    assert migration["preview_tables"] == (
+        "public.agent_evidence",
+        "public.agent_runs",
+    )
+    assert "public.child_events" not in migration["preview_tables"]
 
 
 def test_preview_database_can_never_equal_production_database(tmp_path, monkeypatch) -> None:
