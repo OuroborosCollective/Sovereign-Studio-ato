@@ -66,7 +66,13 @@ class N8NHostMaintenanceRuntime:
             or os.getenv("SOVEREIGN_MCP_N8N_MAINTENANCE_ROOT", DEFAULT_MAINTENANCE_ROOT)
         )
 
-    def _run(self, argv: list[str], *, timeout: int = 120) -> dict[str, Any]:
+    def _run(
+        self,
+        argv: list[str],
+        *,
+        timeout: int = 120,
+        env_overrides: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         try:
             completed = self._runner(
                 argv,
@@ -82,6 +88,7 @@ class N8NHostMaintenanceRuntime:
                         "PATH",
                         "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                     ),
+                    **(env_overrides or {}),
                 },
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
@@ -562,6 +569,25 @@ volumes:
                 all(bool(value) for key, value in item.items() if key != "hostPresent")
                 for item in secret_bindings.values()
             )
+            runtime_n8n_env = runtime_env[N8N_CONTAINER]
+            runtime_nexos_api_key = str(
+                runtime_n8n_env.get("N8N_INSTANCE_AI_MODEL_API_KEY") or ""
+            )
+            runtime_instance_ai_model = str(
+                runtime_n8n_env.get("N8N_INSTANCE_AI_MODEL") or ""
+            )
+            host_nexos_api_key = str(host_env.get("NEXOS_API_KEY") or "")
+            host_instance_ai_model = str(host_env.get("N8N_INSTANCE_AI_MODEL") or "")
+            effective_nexos_api_key = host_nexos_api_key or runtime_nexos_api_key
+            effective_instance_ai_model = host_instance_ai_model or runtime_instance_ai_model
+            instance_ai_enabled = bool(effective_nexos_api_key and effective_instance_ai_model)
+            instance_ai_source = (
+                "host-env"
+                if host_nexos_api_key
+                else "existing-runtime"
+                if runtime_nexos_api_key
+                else "disabled"
+            )
             images = {
                 "n8n": self._repo_digest(str(anchor.get("imageId") or ""), str(anchor.get("image") or "")),
                 "sandboxApi": self._repo_digest(
@@ -574,9 +600,6 @@ volumes:
                 ),
                 "innerSandbox": self._inner_sandbox_digest(),
             }
-            instance_ai_enabled = bool(
-                host_env.get("NEXOS_API_KEY") and host_env.get("N8N_INSTANCE_AI_MODEL")
-            )
             compose = self._stage1_compose(images, instance_ai_enabled=instance_ai_enabled)
             disk = self._disk()
             if disk["freeBytes"] < N8N_MIN_FREE_BYTES:
@@ -587,6 +610,12 @@ volumes:
                 "containerIds": {name: row["id"] for name, row in summaries.items()},
                 "hostEnvSha256": _fingerprint(env_path.read_text("utf-8")),
                 "instanceAiEnabled": instance_ai_enabled,
+                "instanceAiCredentialSha256": (
+                    _fingerprint(effective_nexos_api_key) if instance_ai_enabled else ""
+                ),
+                "instanceAiModelSha256": (
+                    _fingerprint(effective_instance_ai_model) if instance_ai_enabled else ""
+                ),
                 "images": images,
                 "composeSha256": _fingerprint(compose),
                 "originalComposeEvidence": original_compose_evidence,
@@ -607,6 +636,14 @@ volumes:
                 "runtimeMatchesHostSecrets": runtime_matches_host,
                 "rotationPendingRecreate": host_values_present and not runtime_matches_host,
                 "instanceAiEnabled": instance_ai_enabled,
+                "instanceAiCredential": {
+                    "source": instance_ai_source,
+                    "hostPresent": bool(host_nexos_api_key),
+                    "runtimePresent": bool(runtime_nexos_api_key),
+                    "modelHostPresent": bool(host_instance_ai_model),
+                    "modelRuntimePresent": bool(runtime_instance_ai_model),
+                    "secretValuesReturned": False,
+                },
                 "images": images,
                 "containers": summaries,
                 "disk": disk,
@@ -686,13 +723,16 @@ volumes:
         env_path: Path,
         compose_files: list[Path],
         host_env: dict[str, str],
+        env_overrides: dict[str, str] | None = None,
+        expected_instance_ai_model: str = "",
+        expected_instance_ai_key: str = "",
     ) -> dict[str, Any]:
         argv = self._original_compose_argv(
             working_dir=working_dir,
             env_path=env_path,
             compose_files=compose_files,
         )
-        rendered = self._run([*argv, "config"], timeout=120)
+        rendered = self._run([*argv, "config"], timeout=120, env_overrides=env_overrides)
         if not rendered.get("ok"):
             return {
                 "attempted": False,
@@ -702,6 +742,7 @@ volumes:
         restored = self._run(
             [*argv, "up", "-d", "--force-recreate", "--remove-orphans", "--pull", "never"],
             timeout=900,
+            env_overrides=env_overrides,
         )
         if not restored.get("ok"):
             return {
@@ -728,20 +769,30 @@ volumes:
             time.sleep(2)
         try:
             rotated_bindings_active = self._runtime_secret_matches(host_env)
+            instance_ai_restored = True
+            if expected_instance_ai_key:
+                restored_n8n_env = self._container_env(N8N_CONTAINER)
+                instance_ai_restored = bool(
+                    restored_n8n_env.get("N8N_INSTANCE_AI_MODEL_API_KEY") == expected_instance_ai_key
+                    and restored_n8n_env.get("N8N_INSTANCE_AI_MODEL") == expected_instance_ai_model
+                )
         except RuntimeError:
             rotated_bindings_active = False
+            instance_ai_restored = False
         verified = bool(
             summaries.get(N8N_CONTAINER, {}).get("running")
             and summaries.get(N8N_SANDBOX_API_CONTAINER, {}).get("running")
             and summaries.get(N8N_SANDBOX_RUNNER_CONTAINER, {}).get("running")
             and summaries.get(N8N_SANDBOX_CERTS_CONTAINER, {}).get("exitCode") == 0
             and rotated_bindings_active
+            and instance_ai_restored
         )
         return {
             "attempted": True,
             "verified": verified,
             "failureFamily": None if verified else "ORIGINAL_COMPOSE_READBACK_INCOMPLETE",
             "rotatedSecretBindingsActive": rotated_bindings_active,
+            "instanceAiRestored": instance_ai_restored,
             "containers": summaries,
             "secretValuesReturned": False,
         }
@@ -769,6 +820,32 @@ volumes:
         working_dir = Path(str(plan.get("workingDirectory") or ""))
         env_path = Path(str(plan.get("hostEnvironment", {}).get("path") or ""))
         host_env = self._read_host_env(env_path)
+        current_n8n_env = self._container_env(N8N_CONTAINER)
+        effective_nexos_api_key = str(
+            host_env.get("NEXOS_API_KEY")
+            or current_n8n_env.get("N8N_INSTANCE_AI_MODEL_API_KEY")
+            or ""
+        )
+        effective_instance_ai_model = str(
+            host_env.get("N8N_INSTANCE_AI_MODEL")
+            or current_n8n_env.get("N8N_INSTANCE_AI_MODEL")
+            or ""
+        )
+        instance_ai_enabled = bool(plan.get("instanceAiEnabled"))
+        if instance_ai_enabled and not (effective_nexos_api_key and effective_instance_ai_model):
+            return self._failure(
+                "N8N_STAGE1_BLOCKED",
+                "INSTANCE_AI_BINDING_DRIFT",
+                "Instance AI was enabled in the plan but its runtime binding is no longer available",
+            )
+        compose_env_overrides = (
+            {
+                "NEXOS_API_KEY": effective_nexos_api_key,
+                "N8N_INSTANCE_AI_MODEL": effective_instance_ai_model,
+            }
+            if instance_ai_enabled
+            else {}
+        )
         anchor = plan.get("containers", {}).get(N8N_CONTAINER, {})
         original_compose_files = self._original_compose_files(
             str(anchor.get("configFiles") or ""),
@@ -783,7 +860,7 @@ volumes:
         images = dict(plan.get("images") or {})
         compose = self._stage1_compose(
             images,
-            instance_ai_enabled=bool(plan.get("instanceAiEnabled")),
+            instance_ai_enabled=instance_ai_enabled,
         )
         self.maintenance_root.mkdir(parents=True, exist_ok=True, mode=0o700)
         if self.maintenance_root.is_symlink():
@@ -809,7 +886,11 @@ volumes:
             "--file",
             str(compose_path),
         ]
-        rendered = self._run([*compose_argv, "config"], timeout=120)
+        rendered = self._run(
+            [*compose_argv, "config"],
+            timeout=120,
+            env_overrides=compose_env_overrides,
+        )
         if not rendered.get("ok"):
             return self._failure("N8N_STAGE1_BLOCKED", "COMPOSE_RENDER_FAILED", "Generated n8n stage1 Compose did not render")
 
@@ -820,6 +901,7 @@ volumes:
         deployed = self._run(
             [*compose_argv, "up", "-d", "--force-recreate", "--remove-orphans", "--pull", "never"],
             timeout=900,
+            env_overrides=compose_env_overrides,
         )
         if not deployed.get("ok"):
             rollback = self._rollback_original_compose(
@@ -827,6 +909,9 @@ volumes:
                 env_path=env_path,
                 compose_files=original_compose_files,
                 host_env=host_env,
+                env_overrides=compose_env_overrides,
+                expected_instance_ai_model=effective_instance_ai_model if instance_ai_enabled else "",
+                expected_instance_ai_key=effective_nexos_api_key if instance_ai_enabled else "",
             )
             return {
                 **self._failure(
@@ -876,6 +961,14 @@ volumes:
         )
         secret_bindings_match = self._runtime_secret_matches(host_env)
         n8n_env = self._container_env(N8N_CONTAINER)
+        instance_ai_preserved = bool(
+            not instance_ai_enabled
+            or (
+                n8n_env.get("N8N_INSTANCE_AI_MODEL_API_KEY") == effective_nexos_api_key
+                and n8n_env.get("N8N_INSTANCE_AI_MODEL") == effective_instance_ai_model
+                and "instance-ai" in str(n8n_env.get("N8N_ENABLED_MODULES") or "")
+            )
+        )
         proxy_contract = bool(
             n8n_env.get("N8N_PROXY_HOPS") == "1"
             and n8n_env.get("N8N_SECURE_COOKIE") == "true"
@@ -898,6 +991,7 @@ volumes:
             and loopback_only
             and images_match
             and secret_bindings_match
+            and instance_ai_preserved
             and proxy_contract
             and local_health
             and sandbox_api_health
@@ -914,6 +1008,9 @@ volumes:
                 env_path=env_path,
                 compose_files=original_compose_files,
                 host_env=host_env,
+                env_overrides=compose_env_overrides,
+                expected_instance_ai_model=effective_instance_ai_model if instance_ai_enabled else "",
+                expected_instance_ai_key=effective_nexos_api_key if instance_ai_enabled else "",
             )
         )
         return {
@@ -931,6 +1028,7 @@ volumes:
             "loopbackPortVerified": loopback_only,
             "immutableImagesVerified": images_match,
             "rotatedSecretBindingsMatchHost": secret_bindings_match,
+            "instanceAiPreserved": instance_ai_preserved,
             "proxyContractVerified": proxy_contract,
             "n8nHealthVerified": local_health,
             "sandboxApiHealthVerified": sandbox_api_health,
