@@ -388,17 +388,19 @@ def test_preview_hydrates_real_schema_without_copying_rows(tmp_path, monkeypatch
     assert result["schema_source"] == "production-schema-only"
     assert result["production_rows_copied"] is False
     assert result["production_write_performed"] is False
+    assert result["preview_cleanup_verified"] is True
     assert len(dump_calls) == 1
     assert "--schema-only" in dump_calls[0]["argv"]
     assert "--no-owner" in dump_calls[0]["argv"]
     assert "--no-privileges" in dump_calls[0]["argv"]
     assert dump_calls[0]["argv"][-1] == "postgres"
-    assert len(calls) == 3
+    assert len(calls) == 4
     assert 'DROP DATABASE IF EXISTS "sovereign_migration_preview" WITH (FORCE);' in calls[0]["input"]
     assert 'CREATE DATABASE "sovereign_migration_preview"' in calls[0]["input"]
     assert calls[1]["input"] == schema_sql
     assert "ALTER TABLE agent_events" in calls[2]["input"]
     assert "ROLLBACK;" in calls[2]["input"]
+    assert calls[3]["input"] == calls[0]["input"]
 
 
 def test_preview_database_can_never_equal_production_database(tmp_path, monkeypatch) -> None:

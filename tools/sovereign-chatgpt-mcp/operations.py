@@ -376,7 +376,16 @@ class OperationsRuntime:
             timeout=180,
         )
         if not restore.get("ok"):
-            return self._sanitized_command_failure("restore", restore, checksum)
+            cleanup = self._run_input(
+                self._psql_argv(admin_host, admin_port, admin_db, admin_user),
+                reset_sql,
+                password=admin_password,
+                timeout=90,
+            )
+            return {
+                **self._sanitized_command_failure("restore", restore, checksum),
+                "preview_cleanup_verified": bool(cleanup.get("ok")),
+            }
 
         preview_sql = (
             "BEGIN;\n"
@@ -392,12 +401,37 @@ class OperationsRuntime:
             timeout=90,
         )
         if not preview.get("ok"):
+            cleanup = self._run_input(
+                self._psql_argv(admin_host, admin_port, admin_db, admin_user),
+                reset_sql,
+                password=admin_password,
+                timeout=90,
+            )
             return {
                 **self._sanitized_command_failure("migration", preview, checksum),
                 "schema_hydrated": True,
                 "schema_dump_sha256": str(schema_dump.get("stdout_sha256") or ""),
                 "schema_dump_bytes": int(schema_dump.get("stdout_bytes") or 0),
                 "production_rows_copied": False,
+                "preview_cleanup_verified": bool(cleanup.get("ok")),
+                "policy_repair": migration["policy_repair"],
+            }
+
+        cleanup = self._run_input(
+            self._psql_argv(admin_host, admin_port, admin_db, admin_user),
+            reset_sql,
+            password=admin_password,
+            timeout=90,
+        )
+        if not cleanup.get("ok"):
+            return {
+                **self._sanitized_command_failure("cleanup", cleanup, checksum),
+                "rolled_back": True,
+                "schema_hydrated": True,
+                "schema_dump_sha256": str(schema_dump.get("stdout_sha256") or ""),
+                "schema_dump_bytes": int(schema_dump.get("stdout_bytes") or 0),
+                "production_rows_copied": False,
+                "preview_cleanup_verified": False,
                 "policy_repair": migration["policy_repair"],
             }
         return {
@@ -412,6 +446,7 @@ class OperationsRuntime:
             "schema_dump_bytes": int(schema_dump.get("stdout_bytes") or 0),
             "production_rows_copied": False,
             "production_write_performed": False,
+            "preview_cleanup_verified": True,
             "destructive_actions": list(migration["destructive_actions"]),
             "data_backfill_actions": list(migration["data_backfill_actions"]),
             "policy_repair": migration["policy_repair"],
