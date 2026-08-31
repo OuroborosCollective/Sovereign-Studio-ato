@@ -198,6 +198,7 @@ def test_stage1_plan_detects_rotated_host_values_without_returning_them(monkeypa
     result = runtime.stage1_plan()
 
     assert result["status"] == "N8N_STAGE1_PLAN_READY"
+    assert result["instanceAiEnabled"] is True
     assert result["rotationPendingRecreate"] is True
     assert result["runtimeMatchesHostSecrets"] is False
     assert result["hostSecretValuesPresent"] is True
@@ -227,10 +228,29 @@ def test_stage1_compose_is_loopback_proxy_hardened_and_immutable(tmp_path) -> No
     assert "N8N_WEBHOOK_URL=https://" in compose
     assert "N8N_EDITOR_BASE_URL=https://" in compose
     assert "N8N_RUNNERS_ENABLED=" not in compose
+    assert "N8N_ENABLED_MODULES=instance-ai" not in compose
+    assert "NEXOS_API_KEY" not in compose
     assert "WEBHOOK_URL=" not in compose.replace("N8N_WEBHOOK_URL=", "")
     assert ":latest" not in compose
     assert "privileged: true" in compose
     assert "ports:" not in compose.split("sandbox-api:", 1)[1].split("sandbox-runner-1:", 1)[0]
+
+
+def test_stage1_compose_can_optionally_enable_instance_ai(tmp_path) -> None:
+    runtime = N8NHostMaintenanceRuntime(maintenance_root=str(tmp_path))
+    compose = runtime._stage1_compose(
+        {
+            "n8n": "docker.n8n.io/n8nio/n8n@sha256:" + "1" * 64,
+            "sandboxApi": "n8nio/n8n-sandbox-service-api@sha256:" + "2" * 64,
+            "sandboxRunner": "n8nio/n8n-sandbox-service-runner-dind@sha256:" + "3" * 64,
+            "innerSandbox": "n8nio/n8n-sandbox-service-sandbox@sha256:" + "4" * 64,
+        },
+        instance_ai_enabled=True,
+    )
+
+    assert "N8N_ENABLED_MODULES=instance-ai" in compose
+    assert "N8N_INSTANCE_AI_MODEL=${N8N_INSTANCE_AI_MODEL}" in compose
+    assert "N8N_INSTANCE_AI_MODEL_API_KEY=${NEXOS_API_KEY}" in compose
 
 
 def test_failed_stage1_can_restore_original_compose_with_rotated_bindings(monkeypatch, tmp_path) -> None:

@@ -26,8 +26,6 @@ N8N_EXPECTED_SERVICES = {
 N8N_REQUIRED_HOST_ENV_KEYS = {
     "TZ",
     "TRAEFIK_HOST",
-    "N8N_INSTANCE_AI_MODEL",
-    "NEXOS_API_KEY",
     "SANDBOX_API_KEY",
     "SANDBOX_RUNNER_API_KEY",
     "SANDBOX_RUNNER_REGISTRATION_TOKEN",
@@ -404,7 +402,14 @@ class N8NHostMaintenanceRuntime:
             "secretValuesReturned": False,
         }
 
-    def _stage1_compose(self, images: dict[str, str]) -> str:
+    def _stage1_compose(self, images: dict[str, str], *, instance_ai_enabled: bool = False) -> str:
+        instance_ai_env = ""
+        if instance_ai_enabled:
+            instance_ai_env = """      - N8N_ENABLED_MODULES=instance-ai
+      - N8N_INSTANCE_AI_MODEL_URL=https://api.nexos.ai/v1
+      - N8N_INSTANCE_AI_MODEL=${N8N_INSTANCE_AI_MODEL}
+      - N8N_INSTANCE_AI_MODEL_API_KEY=${NEXOS_API_KEY}
+"""
         return f"""services:
   n8n:
     image: {images['n8n']}
@@ -430,11 +435,7 @@ class N8NHostMaintenanceRuntime:
       - NODE_ENV=production
       - GENERIC_TIMEZONE=${{TZ}}
       - TZ=${{TZ}}
-      - N8N_ENABLED_MODULES=instance-ai
-      - N8N_INSTANCE_AI_MODEL_URL=https://api.nexos.ai/v1
-      - N8N_INSTANCE_AI_MODEL=${{N8N_INSTANCE_AI_MODEL}}
-      - N8N_INSTANCE_AI_MODEL_API_KEY=${{NEXOS_API_KEY}}
-      - N8N_INSTANCE_AI_SANDBOX_ENABLED=true
+{instance_ai_env}      - N8N_INSTANCE_AI_SANDBOX_ENABLED=true
       - N8N_INSTANCE_AI_SANDBOX_PROVIDER=n8n-sandbox
       - N8N_SANDBOX_SERVICE_URL=http://sandbox-api:8080
       - N8N_SANDBOX_SERVICE_API_KEY=${{SANDBOX_API_KEY}}
@@ -573,7 +574,10 @@ volumes:
                 ),
                 "innerSandbox": self._inner_sandbox_digest(),
             }
-            compose = self._stage1_compose(images)
+            instance_ai_enabled = bool(
+                host_env.get("NEXOS_API_KEY") and host_env.get("N8N_INSTANCE_AI_MODEL")
+            )
+            compose = self._stage1_compose(images, instance_ai_enabled=instance_ai_enabled)
             disk = self._disk()
             if disk["freeBytes"] < N8N_MIN_FREE_BYTES:
                 raise RuntimeError("n8n stage1 requires at least 8 GiB free disk")
@@ -582,6 +586,7 @@ volumes:
                 "project": N8N_PROJECT,
                 "containerIds": {name: row["id"] for name, row in summaries.items()},
                 "hostEnvSha256": _fingerprint(env_path.read_text("utf-8")),
+                "instanceAiEnabled": instance_ai_enabled,
                 "images": images,
                 "composeSha256": _fingerprint(compose),
                 "originalComposeEvidence": original_compose_evidence,
@@ -601,6 +606,7 @@ volumes:
                 "hostSecretValuesPresent": host_values_present,
                 "runtimeMatchesHostSecrets": runtime_matches_host,
                 "rotationPendingRecreate": host_values_present and not runtime_matches_host,
+                "instanceAiEnabled": instance_ai_enabled,
                 "images": images,
                 "containers": summaries,
                 "disk": disk,
@@ -775,7 +781,10 @@ volumes:
                 "Hostinger Compose source changed after the confirmation plan was created",
             )
         images = dict(plan.get("images") or {})
-        compose = self._stage1_compose(images)
+        compose = self._stage1_compose(
+            images,
+            instance_ai_enabled=bool(plan.get("instanceAiEnabled")),
+        )
         self.maintenance_root.mkdir(parents=True, exist_ok=True, mode=0o700)
         if self.maintenance_root.is_symlink():
             return self._failure("N8N_STAGE1_BLOCKED", "MAINTENANCE_PATH_INVALID", "n8n maintenance root must not be a symlink")
