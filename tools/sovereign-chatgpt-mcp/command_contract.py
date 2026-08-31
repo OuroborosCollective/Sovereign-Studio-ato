@@ -4,6 +4,7 @@ MUTATING_ACTIONS = frozenset(
     {
         "host_worker_canary",
         "resolve_backend_image",
+        "preview_verified_migration",
         "apply_verified_migration",
         "postgres_admin_sql",
         "git_push_main",

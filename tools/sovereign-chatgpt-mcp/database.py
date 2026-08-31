@@ -268,39 +268,30 @@ class DatabaseRuntime:
         return migration, sql, hashlib.sha256(data).hexdigest(), destructive, data_backfills
 
     def preview_migration(self, workspace_id: str, path: str) -> dict[str, Any]:
-        _, sql, checksum, destructive, data_backfills = self._migration(workspace_id, path)
-        normalization = _preview_normalization(sql)
-        conn = self._connection("SOVEREIGN_MCP_PREVIEW_POSTGRES")
-        try:
-            conn.autocommit = False
-            with conn.cursor() as cur:
-                cur.execute("SET LOCAL statement_timeout = '60s'")
-                cur.execute("SET LOCAL lock_timeout = '5s'")
-                cur.execute(str(normalization["sql"]))
-            conn.rollback()
-            return {
-                "ok": True,
-                "rolled_back": True,
-                "sha256": checksum,
-                "database_scope": "preview",
-                "destructive_actions": list(destructive),
-                "data_backfill_actions": list(data_backfills),
-                "policy_repair": normalization["repair"],
-            }
-        except Exception as exc:
-            conn.rollback()
+        _, _sql, checksum, _destructive, _data_backfills = self._migration(workspace_id, path)
+        result = self.broker.call(
+            "preview_verified_migration",
+            {
+                "workspace_id": workspace_id,
+                "path": path,
+                "expected_sha256": checksum,
+            },
+            timeout=300,
+        )
+        observed_sha = str(result.get("sha256") or "").strip().lower()
+        if observed_sha and observed_sha != checksum:
             return {
                 "ok": False,
-                "rolled_back": True,
+                "status": "BLOCKED",
+                "blocker": "Host-Preview lieferte eine andere Migrationsidentität",
                 "sha256": checksum,
+                "observed_sha256": observed_sha,
+                "rolled_back": True,
                 "database_scope": "preview",
-                "destructive_actions": list(destructive),
-                "data_backfill_actions": list(data_backfills),
-                "policy_repair": normalization["repair"],
-                "error": str(exc)[:2000],
+                "production_write_performed": False,
+                "secretValuesReturned": False,
             }
-        finally:
-            conn.close()
+        return result
 
     def apply_migration(self, workspace_id: str, path: str, confirmation_sha256: str) -> dict[str, Any]:
         if os.getenv("SOVEREIGN_MCP_ENABLE_DB_WRITES", "0") != "1":
