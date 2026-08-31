@@ -42,6 +42,8 @@ DATA_BACKFILL_SQL_PATTERNS = {
 }
 PSQL_META_COMMAND = re.compile(r"(?m)^\s*\\")
 MAX_MIGRATION_BYTES = 500_000
+MAX_PREVIEW_SCHEMA_BYTES = 16_000_000
+SCHEMA_DUMP_ROW_DATA = re.compile(r"(?im)^\s*(?:COPY\s+|INSERT\s+INTO\s+)")
 BLOCKED_PATH_PARTS = {".git", ".env", ".ssh", "node_modules", "secrets", "credentials"}
 
 
@@ -106,6 +108,59 @@ class OperationsRuntime:
             "exit_code": completed.returncode,
             "stdout": completed.stdout[-12000:],
             "stderr": completed.stderr[-12000:],
+        }
+
+    @staticmethod
+    def _run_capture(
+        argv: list[str],
+        *,
+        password: str,
+        timeout: int,
+        max_stdout_bytes: int,
+    ) -> dict[str, Any]:
+        completed = subprocess.run(
+            argv,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+            env={
+                **os.environ,
+                "PATH": os.environ.get("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"),
+                "PGPASSWORD": password,
+            },
+        )
+        stdout = bytes(completed.stdout or b"")
+        stderr = bytes(completed.stderr or b"")
+        if len(stdout) > max_stdout_bytes:
+            return {
+                "ok": False,
+                "exit_code": completed.returncode,
+                "stdout": "",
+                "stdout_bytes": len(stdout),
+                "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+                "stderr_sha256": hashlib.sha256(stderr).hexdigest(),
+                "failure_family": "PREVIEW_SCHEMA_DUMP_TOO_LARGE",
+            }
+        try:
+            decoded = stdout.decode("utf-8")
+        except UnicodeDecodeError:
+            return {
+                "ok": False,
+                "exit_code": completed.returncode,
+                "stdout": "",
+                "stdout_bytes": len(stdout),
+                "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+                "stderr_sha256": hashlib.sha256(stderr).hexdigest(),
+                "failure_family": "PREVIEW_SCHEMA_DUMP_NOT_UTF8",
+            }
+        return {
+            "ok": completed.returncode == 0,
+            "exit_code": completed.returncode,
+            "stdout": decoded,
+            "stdout_bytes": len(stdout),
+            "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+            "stderr_sha256": hashlib.sha256(stderr).hexdigest(),
+            "failure_family": None if completed.returncode == 0 else "PREVIEW_SCHEMA_DUMP_FAILED",
         }
 
     def _migration(self, workspace_id: str, relative_path: str) -> dict[str, Any]:
@@ -179,6 +234,225 @@ class OperationsRuntime:
             database,
         ]
 
+    def _pg_dump_argv(self, host: str, port: str, database: str, user: str) -> list[str]:
+        if not SAFE_CONTAINER_RE.fullmatch(self.backend_container):
+            raise ValueError("Backend-Containername ist ungültig")
+        return [
+            "docker",
+            "exec",
+            "-i",
+            "-e",
+            "PGPASSWORD",
+            self.backend_container,
+            "/usr/bin/pg_dump",
+            "--schema-only",
+            "--no-owner",
+            "--no-privileges",
+            "--no-comments",
+            "-h",
+            host,
+            "-p",
+            port,
+            "-U",
+            user,
+            "-d",
+            database,
+        ]
+
+    def _admin_connection_values(self) -> tuple[str, str, str, str, str]:
+        host = _read_env_value(self.backend_env_file, "POSTGRES_HOST") or "db"
+        port = _read_env_value(self.backend_env_file, "POSTGRES_PORT") or "5432"
+        database = _read_env_value(self.backend_env_file, "POSTGRES_DB") or "postgres"
+        user = _read_env_value(self.backend_env_file, "POSTGRES_USER")
+        password = _read_env_value(self.backend_env_file, "POSTGRES_PASSWORD")
+        self._validate_connection(host, port, database, user, password, "POSTGRES_ADMIN")
+        return host, port, database, user, password
+
+    def _preview_connection_values(self, *, admin_host: str, admin_port: str, admin_db: str) -> tuple[str, str, str]:
+        host = os.getenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST", "").strip()
+        port = os.getenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT", "5432").strip()
+        database = os.getenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_DB", "").strip()
+        if not SAFE_HOST_RE.fullmatch(host):
+            raise ValueError("SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST ist ungültig")
+        if not port.isdigit() or not 1 <= int(port) <= 65535:
+            raise ValueError("SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT ist ungültig")
+        if not SAFE_DB_NAME_RE.fullmatch(database):
+            raise ValueError("SOVEREIGN_MCP_PREVIEW_POSTGRES_DB ist ungültig")
+        if host != admin_host or port != admin_port:
+            raise ValueError("Preview-DB muss für schema-only Hydration im selben PostgreSQL-Cluster liegen")
+        if database == admin_db:
+            raise ValueError("Preview-DB darf niemals die Produktionsdatenbank sein")
+        return host, port, database
+
+    @staticmethod
+    def _sanitized_command_failure(stage: str, result: dict[str, Any], checksum: str) -> dict[str, Any]:
+        stderr = str(result.get("stderr") or "").encode("utf-8")
+        return {
+            "ok": False,
+            "status": "BLOCKED",
+            "blocker": f"Migration-Preview scheiterte in Stufe {stage}",
+            "failure_family": f"PREVIEW_{stage.upper()}_FAILED",
+            "sha256": checksum,
+            "failure_stage": stage,
+            "exit_code": int(result.get("exit_code") or 0),
+            "stderr_sha256": (
+                str(result.get("stderr_sha256") or "")
+                or hashlib.sha256(stderr).hexdigest()
+            ),
+            "rolled_back": stage == "migration",
+            "database_scope": "preview",
+            "production_write_performed": False,
+            "secretValuesReturned": False,
+        }
+
+    def preview_verified_migration(
+        self,
+        *,
+        workspace_id: str,
+        path: str,
+        expected_sha256: str = "",
+    ) -> dict[str, Any]:
+        migration = self._migration(workspace_id, path)
+        checksum = str(migration["sha256"])
+        expected = str(expected_sha256 or "").strip().lower()
+        if expected and expected != checksum:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "Preview-Hash stimmt nicht mit der Workspace-Migration überein",
+                "sha256": checksum,
+                "rolled_back": True,
+                "database_scope": "preview",
+                "production_write_performed": False,
+                "secretValuesReturned": False,
+            }
+
+        admin_host, admin_port, admin_db, admin_user, admin_password = self._admin_connection_values()
+        preview_host, preview_port, preview_db = self._preview_connection_values(
+            admin_host=admin_host,
+            admin_port=admin_port,
+            admin_db=admin_db,
+        )
+        reset_sql = (
+            f'DROP DATABASE IF EXISTS "{preview_db}" WITH (FORCE);\n'
+            f'CREATE DATABASE "{preview_db}" WITH OWNER "{admin_user}" TEMPLATE template0;\n'
+        )
+        reset = self._run_input(
+            self._psql_argv(admin_host, admin_port, admin_db, admin_user),
+            reset_sql,
+            password=admin_password,
+            timeout=90,
+        )
+        if not reset.get("ok"):
+            return self._sanitized_command_failure("reset", reset, checksum)
+
+        schema_dump = self._run_capture(
+            self._pg_dump_argv(admin_host, admin_port, admin_db, admin_user),
+            password=admin_password,
+            timeout=120,
+            max_stdout_bytes=MAX_PREVIEW_SCHEMA_BYTES,
+        )
+        if not schema_dump.get("ok"):
+            return self._sanitized_command_failure("schema_dump", schema_dump, checksum)
+        schema_sql = str(schema_dump.get("stdout") or "")
+        if SCHEMA_DUMP_ROW_DATA.search(schema_sql):
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "Schema-only Preview-Dump enthielt unerwartete Row-Data-Anweisungen",
+                "failure_family": "PREVIEW_SCHEMA_DUMP_ROW_DATA_DETECTED",
+                "sha256": checksum,
+                "rolled_back": True,
+                "database_scope": "preview",
+                "production_write_performed": False,
+                "schema_dump_sha256": str(schema_dump.get("stdout_sha256") or ""),
+                "secretValuesReturned": False,
+            }
+
+        restore = self._run_input(
+            self._psql_argv(preview_host, preview_port, preview_db, admin_user),
+            schema_sql,
+            password=admin_password,
+            timeout=180,
+        )
+        if not restore.get("ok"):
+            cleanup = self._run_input(
+                self._psql_argv(admin_host, admin_port, admin_db, admin_user),
+                reset_sql,
+                password=admin_password,
+                timeout=90,
+            )
+            return {
+                **self._sanitized_command_failure("restore", restore, checksum),
+                "preview_cleanup_verified": bool(cleanup.get("ok")),
+            }
+
+        preview_sql = (
+            "BEGIN;\n"
+            "SET LOCAL statement_timeout = '60s';\n"
+            "SET LOCAL lock_timeout = '5s';\n"
+            f"{migration['preview_sql']}\n"
+            "ROLLBACK;\n"
+        )
+        preview = self._run_input(
+            self._psql_argv(preview_host, preview_port, preview_db, admin_user),
+            preview_sql,
+            password=admin_password,
+            timeout=90,
+        )
+        if not preview.get("ok"):
+            cleanup = self._run_input(
+                self._psql_argv(admin_host, admin_port, admin_db, admin_user),
+                reset_sql,
+                password=admin_password,
+                timeout=90,
+            )
+            return {
+                **self._sanitized_command_failure("migration", preview, checksum),
+                "schema_hydrated": True,
+                "schema_dump_sha256": str(schema_dump.get("stdout_sha256") or ""),
+                "schema_dump_bytes": int(schema_dump.get("stdout_bytes") or 0),
+                "production_rows_copied": False,
+                "preview_cleanup_verified": bool(cleanup.get("ok")),
+                "policy_repair": migration["policy_repair"],
+            }
+
+        cleanup = self._run_input(
+            self._psql_argv(admin_host, admin_port, admin_db, admin_user),
+            reset_sql,
+            password=admin_password,
+            timeout=90,
+        )
+        if not cleanup.get("ok"):
+            return {
+                **self._sanitized_command_failure("cleanup", cleanup, checksum),
+                "rolled_back": True,
+                "schema_hydrated": True,
+                "schema_dump_sha256": str(schema_dump.get("stdout_sha256") or ""),
+                "schema_dump_bytes": int(schema_dump.get("stdout_bytes") or 0),
+                "production_rows_copied": False,
+                "preview_cleanup_verified": False,
+                "policy_repair": migration["policy_repair"],
+            }
+        return {
+            "ok": True,
+            "status": "PREVIEW_VERIFIED",
+            "rolled_back": True,
+            "sha256": checksum,
+            "database_scope": "preview",
+            "schema_hydrated": True,
+            "schema_source": "production-schema-only",
+            "schema_dump_sha256": str(schema_dump.get("stdout_sha256") or ""),
+            "schema_dump_bytes": int(schema_dump.get("stdout_bytes") or 0),
+            "production_rows_copied": False,
+            "production_write_performed": False,
+            "preview_cleanup_verified": True,
+            "destructive_actions": list(migration["destructive_actions"]),
+            "data_backfill_actions": list(migration["data_backfill_actions"]),
+            "policy_repair": migration["policy_repair"],
+            "secretValuesReturned": False,
+        }
+
     def apply_verified_migration(self, *, workspace_id: str, path: str, confirmation_sha256: str) -> dict[str, Any]:
         if os.getenv("SOVEREIGN_MCP_ENABLE_DB_WRITES", "0") != "1":
             return {"ok": False, "status": "BLOCKED", "blocker": "Produktive DB-Writes sind nicht aktiviert"}
@@ -205,26 +479,12 @@ class OperationsRuntime:
                 "data_backfill_actions": list(data_backfills),
             }
 
-        preview_host = os.getenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST", "").strip()
-        preview_port = os.getenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT", "5432").strip()
-        preview_db = os.getenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_DB", "").strip()
-        preview_user = os.getenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_USER", "").strip()
-        preview_password = os.getenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD", "")
-        self._validate_connection(preview_host, preview_port, preview_db, preview_user, preview_password, "SOVEREIGN_MCP_PREVIEW_POSTGRES")
-        preview_sql = (
-            "BEGIN;\n"
-            "SET LOCAL statement_timeout = '60s';\n"
-            "SET LOCAL lock_timeout = '5s';\n"
-            f"{migration['preview_sql']}\n"
-            "ROLLBACK;\n"
+        preview = self.preview_verified_migration(
+            workspace_id=workspace_id,
+            path=path,
+            expected_sha256=checksum,
         )
-        preview = self._run_input(
-            self._psql_argv(preview_host, preview_port, preview_db, preview_user),
-            preview_sql,
-            password=preview_password,
-            timeout=90,
-        )
-        if not preview["ok"]:
+        if not preview.get("ok"):
             return {
                 "ok": False,
                 "status": "BLOCKED",
@@ -234,12 +494,7 @@ class OperationsRuntime:
                 "policy_repair": migration["policy_repair"],
             }
 
-        admin_host = _read_env_value(self.backend_env_file, "POSTGRES_HOST") or "db"
-        admin_port = _read_env_value(self.backend_env_file, "POSTGRES_PORT") or "5432"
-        admin_db = _read_env_value(self.backend_env_file, "POSTGRES_DB") or "postgres"
-        admin_user = _read_env_value(self.backend_env_file, "POSTGRES_USER")
-        admin_password = _read_env_value(self.backend_env_file, "POSTGRES_PASSWORD")
-        self._validate_connection(admin_host, admin_port, admin_db, admin_user, admin_password, "POSTGRES_ADMIN")
+        admin_host, admin_port, admin_db, admin_user, admin_password = self._admin_connection_values()
         applied = self._run_input(
             self._psql_argv(admin_host, admin_port, admin_db, admin_user),
             migration["sql"],
@@ -253,7 +508,7 @@ class OperationsRuntime:
                 "sha256": checksum,
                 "destructive_actions": list(destructive),
                 "data_backfill_actions": list(data_backfills),
-                "preview": {"ok": True, "rolled_back": True},
+                "preview": preview,
                 "policy_repair": migration["policy_repair"],
                 "error": applied["stderr"],
             }
@@ -263,7 +518,7 @@ class OperationsRuntime:
             "sha256": checksum,
             "destructive_actions": list(destructive),
             "data_backfill_actions": list(data_backfills),
-            "preview": {"ok": True, "rolled_back": True},
+            "preview": preview,
             "policy_repair": migration["policy_repair"],
             "production_database": admin_db,
         }

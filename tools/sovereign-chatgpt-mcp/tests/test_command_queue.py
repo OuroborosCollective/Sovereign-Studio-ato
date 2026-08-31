@@ -8,6 +8,7 @@ import pytest
 
 from broker import BrokerRuntime
 from broker_client import HostBrokerClient
+from command_contract import is_mutating_action
 from command_queue import HostCommandQueueClient
 from command_worker import HostCommandWorker
 
@@ -44,6 +45,20 @@ def test_direct_inbound_mutation_is_blocked_but_host_worker_origin_is_allowed() 
     assert allowed["ok"] is True
     assert allowed["status"] == "HOST_WORKER_READY"
     assert allowed["execution_origin"] == "host_worker"
+
+
+def test_preview_schema_hydration_is_host_worker_only() -> None:
+    assert is_mutating_action("preview_verified_migration") is True
+    blocked = BrokerRuntime().dispatch(
+        "preview_verified_migration",
+        {
+            "workspace_id": "job-123456abcdef",
+            "path": "migrations/054.sql",
+            "expected_sha256": "a" * 64,
+        },
+    )
+    assert blocked["status"] == "BLOCKED"
+    assert blocked["failure_family"] == "INBOUND_MUTATION_FORBIDDEN"
 
 
 def test_mutation_roundtrip_is_claimed_and_executed_by_host_worker(tmp_path: Path) -> None:

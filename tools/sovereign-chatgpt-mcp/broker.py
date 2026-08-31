@@ -485,6 +485,11 @@ class BrokerRuntime:
                 owner_approved=bool(values.get("owner_approved", False)),
             ),
             "resolve_backend_image": self.resolve_backend_image,
+            "preview_verified_migration": lambda values: self.operations.preview_verified_migration(
+                workspace_id=str(values.get("workspace_id") or ""),
+                path=str(values.get("path") or ""),
+                expected_sha256=str(values.get("expected_sha256") or ""),
+            ),
             "apply_verified_migration": lambda values: self.admin.apply_verified_migration_with_self_heal(
                 workspace_id=str(values.get("workspace_id") or ""),
                 path=str(values.get("path") or ""),
