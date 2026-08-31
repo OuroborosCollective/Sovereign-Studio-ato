@@ -72,6 +72,13 @@ DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
         "maxBytes": 8192,
         "kind": "management_credential",
     },
+    "agent_zero_api_key": {
+        "label": "Agent Zero External API für Sovereign Capability Expansion",
+        "fieldLabel": "Agent Zero API-Key",
+        "path": "/opt/sovereign-owner-managed/agent_zero_api_key.txt",
+        "maxBytes": 8192,
+        "kind": "credential",
+    },
     "revolver_provider_key": {
         "label": "Einmaliger Free-Revolver Provider-Zugang",
         "fieldLabel": "Free-Provider API-Key",
@@ -141,6 +148,7 @@ def _target_map() -> dict[str, dict[str, Any]]:
     targets["openrouter_management_api_key"]["path"] = str(
         _root() / "openrouter_management_api_key.txt"
     )
+    targets["agent_zero_api_key"]["path"] = str(_root() / "agent_zero_api_key.txt")
     targets["revolver_provider_key"]["path"] = str(_root() / "revolver_provider_key.txt")
     targets["notion_integration_token"]["path"] = str(_root() / "notion_integration_token.txt")
     targets["wolfram_cag_api_key"]["path"] = str(_root() / "wolfram_cag_api_key.txt")

@@ -2467,7 +2467,19 @@ def health_ready():
                        WHERE table_schema=current_schema()
                          AND table_name='credit_receipts'
                          AND column_name='request_fingerprint'
-                   ) AS receipt_fingerprints""",
+                   ) AS receipt_fingerprints,
+                   (
+                       EXISTS (
+                           SELECT 1 FROM pg_constraint
+                           WHERE conname='agent_events_source_check'
+                             AND pg_get_constraintdef(oid) LIKE '%agent-zero%'
+                       )
+                       AND EXISTS (
+                           SELECT 1 FROM pg_constraint
+                           WHERE conname='agent_evidence_source_check'
+                             AND pg_get_constraintdef(oid) LIKE '%agent-zero%'
+                       )
+                   ) AS agent_zero_evidence_source""",
             one=True,
         ) or {}
         routes = query(
@@ -2507,6 +2519,7 @@ def health_ready():
             "evidence_observatory_arena_runs",
             "transaction_receipts",
             "receipt_fingerprints",
+            "agent_zero_evidence_source",
         ))
         components["database"] = {
             "ok": schema_ready,
@@ -2532,8 +2545,10 @@ def health_ready():
                 "045_sovereign_rescue.sql",
                 "051_openrouter_free_revolver_management.sql",
                 "053_evidence_observatory_atlas.sql",
+                "054_agent_zero_capability_evidence.sql",
             ],
             "schemaContractsVerified": schema_ready,
+            "agentZeroEvidenceSourceVerified": bool(schema.get("agent_zero_evidence_source")),
             "activeRoutes": len(routes or []),
             "invalidDirectRoutes": invalid_routes,
             "llmRoutingStatus": "ready" if routes else "not_configured",

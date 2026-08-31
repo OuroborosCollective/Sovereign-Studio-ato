@@ -46,6 +46,7 @@ EVIDENCE_SOURCES: Final[frozenset[str]] = frozenset({
     "tika",
     "gotenberg",
     "database",
+    "agent-zero",
 })
 
 TERMINAL_RUN_STATUSES: Final[frozenset[str]] = frozenset({
@@ -618,6 +619,7 @@ EXTERNAL_ACTION_SOURCES: Final[frozenset[str]] = frozenset({
     "tika",
     "gotenberg",
     "database",
+    "agent-zero",
 })
 
 

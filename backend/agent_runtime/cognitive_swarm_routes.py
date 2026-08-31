@@ -33,6 +33,7 @@ from .cognitive_run_store import (
     transition_agent_run,
 )
 from .cognitive_swarm_agents import (
+    CapabilityToolFactory,
     MissionIntent,
     RepositoryToolFactory,
     SwarmExecutionError,
@@ -41,6 +42,7 @@ from .cognitive_swarm_agents import (
     run_cognitive_swarm,
     run_free_single_agent,
 )
+from .agent_zero_runtime import BoundAgentZeroCapabilityToolset
 from .cognitive_repository_tools import (
     BoundRepositoryToolset,
     FleetAttemptSnapshot,
@@ -347,6 +349,8 @@ def execute_persisted_swarm(
     response_context: dict[str, object] | None = None,
     repository_tool_factory: RepositoryToolFactory | None = None,
     repository_tool_summary: Callable[[], dict[str, Any]] | None = None,
+    capability_tool_factory: CapabilityToolFactory | None = None,
+    capability_tool_summary: Callable[[], dict[str, object]] | None = None,
     repository_toolset: BoundRepositoryToolset | None = None,
     job_id: str | None = None,
     task_ids_by_agent: dict[str, str] | None = None,
@@ -516,6 +520,7 @@ def execute_persisted_swarm(
                 worker_routes=worker_routes,
                 stage_observer=persist_stage_event,
                 repository_tool_factory=repository_tool_factory,
+                capability_tool_factory=capability_tool_factory,
                 fleet_plan=fleet_bindings.plan if fleet_bindings else None,
                 fleet_task_ids_by_role=fleet_bindings.task_ids_by_role if fleet_bindings else None,
                 fleet_assignments_by_role=fleet_bindings.assignments_by_role if fleet_bindings else None,
@@ -525,6 +530,7 @@ def execute_persisted_swarm(
             )
         )
         repository_summary = repository_tool_summary() if callable(repository_tool_summary) else {}
+        capability_summary = capability_tool_summary() if callable(capability_tool_summary) else {}
         job_evidence: dict[str, object] = {}
         learning_evidence: dict[str, object] = {
             "state": "NOT_REQUESTED" if not job_id else "PENDING_EVIDENCE",
@@ -613,6 +619,7 @@ def execute_persisted_swarm(
             result["status"] = final_status
             result["blocker"] = execution_gate.reason if execution_gate else "Repository execution evidence is unavailable."
         result["repositoryTools"] = repository_summary
+        result["agentZeroCapabilities"] = capability_summary
         if fleet_bindings is not None:
             result["fleetPlan"] = fleet_bindings.plan.to_dict()
             result["fleetPlanHash"] = fleet_bindings.plan.plan_hash
@@ -666,6 +673,7 @@ def execute_persisted_swarm(
             "finalVerdictDigest": _digest_json(final_verdict),
             "releaseHunt": release_hunt,
             "repositoryTools": repository_summary,
+            "agentZeroCapabilities": capability_summary,
             "fleetPlanHash": fleet_bindings.plan.plan_hash if fleet_bindings else None,
             "fleetPlan": fleet_bindings.plan.to_dict() if fleet_bindings else None,
             "fleetTaskIdsByRole": dict(fleet_bindings.task_ids_by_role) if fleet_bindings else {},
@@ -1310,6 +1318,12 @@ def start_cognitive_swarm_run(
             "nextAction": state["nextAction"],
         }, 503
 
+    capability_toolset = BoundAgentZeroCapabilityToolset.from_env_if_ready(
+        get_connection=get_connection,
+        user_id=user_id,
+        run_id=resolved_run_id,
+    )
+
     if execution_resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:
         implementation_job = _free_implementation_job
         repository_toolset = _free_repository_toolset
@@ -1394,6 +1408,9 @@ def start_cognitive_swarm_run(
                 repository_tool_factory=(
                     repository_toolset.tools_for_role if repository_toolset else None
                 ),
+                capability_tool_factory=(
+                    capability_toolset.tools_for_role if capability_toolset else None
+                ),
             ))
             single_payload = (
                 single_result.get("result")
@@ -1401,6 +1418,7 @@ def start_cognitive_swarm_run(
                 else {}
             )
             repository_summary = repository_toolset.summary() if repository_toolset else {}
+            capability_summary = capability_toolset.summary() if capability_toolset else {}
             job_evidence: dict[str, object] = {}
             execution_gate = None
             if implementation_job is not None:
@@ -1505,6 +1523,7 @@ def start_cognitive_swarm_run(
                         "backgroundAgentsStarted": 0,
                         "freeRouteRotationRecorded": rotation_recorded,
                         "repositoryTools": repository_summary,
+                        "agentZeroCapabilities": capability_summary,
                         "jobEvidence": job_evidence,
                         "rawModelOutputPersisted": False,
                     },
@@ -1536,6 +1555,7 @@ def start_cognitive_swarm_run(
                 ),
                 "codeServerWorkspace": job_evidence.get("codeServerWorkspace"),
                 "repositoryTools": repository_summary,
+                "agentZeroCapabilities": capability_summary,
                 "jobEvidence": job_evidence,
                 "repositoryExecutionPerformed": bool(
                     repository_requested and workspace_evidence_ready
@@ -1979,6 +1999,8 @@ def start_cognitive_swarm_run(
         agent_route=execution_resolution.agent_route,
         repository_tool_factory=(repository_toolset.tools_for_role if repository_toolset else None),
         repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
+        capability_tool_factory=(capability_toolset.tools_for_role if capability_toolset else None),
+        capability_tool_summary=(capability_toolset.summary if capability_toolset else None),
         repository_toolset=repository_toolset,
         job_id=implementation_job.job_id if implementation_job else None,
         task_id=task_ids_by_agent.get("judge"),
@@ -2423,6 +2445,11 @@ def resume_cognitive_swarm_run(
             "requiredCredits": exc.required_credits,
             "availableProviderFundedCredits": exc.available_credits,
         }, exc.status_code
+    resume_capability_toolset = BoundAgentZeroCapabilityToolset.from_env_if_ready(
+        get_connection=get_connection,
+        user_id=user_id,
+        run_id=claim.run.run_id,
+    )
     return execute_persisted_swarm(
         get_connection=get_connection,
         user_id=user_id,
@@ -2437,6 +2464,12 @@ def resume_cognitive_swarm_run(
         lease_token=claim.lease_token,
         repository_tool_factory=(repository_toolset.tools_for_role if repository_toolset else None),
         repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
+        capability_tool_factory=(
+            resume_capability_toolset.tools_for_role if resume_capability_toolset else None
+        ),
+        capability_tool_summary=(
+            resume_capability_toolset.summary if resume_capability_toolset else None
+        ),
         repository_toolset=repository_toolset,
         job_id=claim.run.job_id,
         task_ids_by_agent=task_ids_by_agent,
