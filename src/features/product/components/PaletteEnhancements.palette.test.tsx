@@ -23,6 +23,8 @@ import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
 import { PaywallModal } from '../../billing/PaywallModal';
+import { WorkbenchStatusChips } from './WorkbenchStatusChips';
+import { WorkbenchSlotDrawer } from './WorkbenchSlotDrawer';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -1101,6 +1103,77 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(watchBtn);
       expect(onWatchChecks).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('WorkbenchStatusChips and WorkbenchSlotDrawer Accessibility Enhancements', () => {
+    it('WorkbenchStatusChips renders region landmark and accessible chip buttons', () => {
+      const slots = [
+        {
+          id: 'draftPr' as const,
+          tone: 'positive' as const,
+          label: 'Draft PR',
+          value: '#123',
+          emptyLabel: 'Kein Draft PR',
+          items: ['https://github.com/owner/repo/pull/123'],
+        },
+      ];
+      const onSlotClick = vi.fn();
+
+      render(<WorkbenchStatusChips slots={slots} onSlotClick={onSlotClick} />);
+
+      const region = screen.getByRole('region', { name: 'Werkbank Status' });
+      expect(region).toBeInTheDocument();
+
+      const chipBtn = screen.getByRole('button', { name: 'Draft PR: #123' });
+      expect(chipBtn).toHaveAttribute('title', 'Draft PR: #123');
+      expect(chipBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(chipBtn);
+      expect(onSlotClick).toHaveBeenCalledWith('draftPr');
+    });
+
+    it('WorkbenchSlotDrawer renders dialog landmark, supports Escape key closing, and aria attributes', () => {
+      const slot = {
+        id: 'draftPr' as const,
+        tone: 'positive' as const,
+        label: 'Draft PR',
+        value: '#123',
+        emptyLabel: 'Kein Draft PR',
+        items: ['https://github.com/owner/repo/pull/123'],
+      };
+      const onClose = vi.fn();
+      const onOpenDraftPr = vi.fn();
+
+      render(
+        <WorkbenchSlotDrawer
+          slot={slot}
+          onClose={onClose}
+          onOpenDraftPr={onOpenDraftPr}
+        />
+      );
+
+      const dialog = screen.getByRole('dialog', { name: 'Draft PR' });
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
+
+      const closeBtn = screen.getByRole('button', { name: 'Schließen' });
+      expect(closeBtn).toHaveAttribute('title', 'Werkbank-Details schließen');
+      expect(closeBtn).toHaveClass('focus-visible:ring-2');
+
+      const list = screen.getByRole('list', { name: 'Draft PR Liste' });
+      expect(list).toBeInTheDocument();
+
+      const openPrBtn = screen.getByRole('button', { name: 'Draft PR öffnen: https://github.com/owner/repo/pull/123' });
+      expect(openPrBtn).toHaveAttribute('title', 'Draft PR öffnen: https://github.com/owner/repo/pull/123');
+      expect(openPrBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(openPrBtn);
+      expect(onOpenDraftPr).toHaveBeenCalledWith('https://github.com/owner/repo/pull/123');
+
+      // Test Escape key press to close drawer
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
 });

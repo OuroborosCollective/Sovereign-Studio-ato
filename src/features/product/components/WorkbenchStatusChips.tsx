@@ -24,7 +24,7 @@ export function WorkbenchStatusChips({
 }: WorkbenchStatusChipsProps) {
   return (
     <div
-      role="tablist"
+      role="region"
       aria-label="Werkbank Status"
       title="Werkbank Status"
       style={{
@@ -45,6 +45,7 @@ export function WorkbenchStatusChips({
             onClick={() => onSlotClick(slot.id)}
             aria-label={`${slot.label}: ${slot.value}`}
             title={`${slot.label}: ${slot.value}`}
+            className="focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
             style={{
               display: "flex",
               alignItems: "center",
@@ -63,6 +64,7 @@ export function WorkbenchStatusChips({
             }}
           >
             <span
+              aria-hidden="true"
               style={{
                 width: 6,
                 height: 6,

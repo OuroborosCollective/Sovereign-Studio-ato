@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { C } from "./builderConstants";
 import type { WorkbenchStatusSlot } from "../runtime/builderWorkbenchStatus";
 
@@ -13,8 +13,21 @@ export function WorkbenchSlotDrawer({
   onClose,
   onOpenDraftPr,
 }: WorkbenchSlotDrawerProps) {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="workbench-slot-drawer-title"
       onClick={onClose}
       style={{
         position: "fixed",
@@ -43,17 +56,21 @@ export function WorkbenchSlotDrawer({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: C.text }}>
+          <span
+            id="workbench-slot-drawer-title"
+            style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: C.text }}
+          >
             {slot.label}
           </span>
           <button
             type="button"
             onClick={onClose}
             aria-label="Schließen"
-            title="Schließen"
+            title="Werkbank-Details schließen"
+            className="focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
             style={{ background: "transparent", border: "none", color: C.textMuted, fontSize: 16, cursor: "pointer" }}
           >
-            ×
+            <span aria-hidden="true">×</span>
           </button>
         </div>
         {slot.items.length === 0 ? (
@@ -61,7 +78,11 @@ export function WorkbenchSlotDrawer({
             {slot.emptyLabel}
           </div>
         ) : (
-          <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+          <ul
+            role="list"
+            aria-label={`${slot.label} Liste`}
+            style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 }}
+          >
             {slot.items.map((item, index) => (
               <li
                 key={`${slot.id}-${index}`}
@@ -85,6 +106,9 @@ export function WorkbenchSlotDrawer({
           <button
             type="button"
             onClick={() => onOpenDraftPr(slot.items[0])}
+            aria-label={`Draft PR öffnen: ${slot.items[0]}`}
+            title={`Draft PR öffnen: ${slot.items[0]}`}
+            className="focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
             style={{
               marginTop: 12,
               width: "100%",
