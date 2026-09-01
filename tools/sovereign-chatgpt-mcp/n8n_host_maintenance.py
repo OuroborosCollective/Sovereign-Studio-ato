@@ -244,6 +244,23 @@ class N8NHostMaintenanceRuntime:
             })
         return evidence
 
+    def _managed_stage1_config_path(self, config_files: str) -> Path | None:
+        """Return only the exact generated Stage-1 file; never widen source trust."""
+        if self.maintenance_root.is_symlink():
+            return None
+        raw_paths = [item.strip() for item in str(config_files or "").split(",") if item.strip()]
+        if len(raw_paths) != 1:
+            return None
+        candidate = Path(raw_paths[0])
+        if not candidate.is_absolute() or candidate.is_symlink() or not candidate.is_file():
+            return None
+        try:
+            expected = (self.maintenance_root / "compose.stage1.yml").resolve()
+            resolved = candidate.resolve()
+        except OSError:
+            return None
+        return resolved if resolved == expected else None
+
     def _repo_digest(self, image_id: str, image_hint: str) -> str:
         result = self._run(
             ["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", image_id],
@@ -569,6 +586,125 @@ volumes:
   n8n_data:
   sandbox-tls:
 """
+
+    def _stage1_already_deployed_readback(
+        self,
+        *,
+        managed_stage1_path: Path,
+        summaries: dict[str, Any],
+        inspections: dict[str, Any],
+        runtime_env: dict[str, dict[str, str]],
+        host_values_present: bool,
+        runtime_matches_host: bool,
+        secret_bindings: dict[str, Any],
+        images: dict[str, str],
+        compose: str,
+        instance_ai_enabled: bool,
+    ) -> dict[str, Any]:
+        """Verify a current generated Stage-1 stack without guessing an original Compose source."""
+        runtime_compose_evidence = self._compose_file_evidence([managed_stage1_path])
+        expected_payload = compose.encode("utf-8")
+        expected_compose_evidence = [{
+            "name": managed_stage1_path.name,
+            "sha256": hashlib.sha256(expected_payload).hexdigest(),
+            "bytes": len(expected_payload),
+        }]
+        managed_compose_matches_target = runtime_compose_evidence == expected_compose_evidence
+        port_bindings = summaries.get(N8N_CONTAINER, {}).get("ports") or []
+        loopback_only = bool(port_bindings) and all(
+            item.get("hostIp") in {"127.0.0.1", "::1"}
+            for item in port_bindings
+            if item.get("hostPort")
+        ) and any(
+            item.get("containerPort") == "5678/tcp"
+            and item.get("hostIp") == "127.0.0.1"
+            and item.get("hostPort") == "5678"
+            for item in port_bindings
+        )
+        images_match = bool(
+            summaries.get(N8N_CONTAINER, {}).get("image") == images.get("n8n")
+            and summaries.get(N8N_SANDBOX_API_CONTAINER, {}).get("image") == images.get("sandboxApi")
+            and summaries.get(N8N_SANDBOX_RUNNER_CONTAINER, {}).get("image") == images.get("sandboxRunner")
+        )
+        n8n_env = runtime_env[N8N_CONTAINER]
+        instance_ai_preserved = bool(
+            not instance_ai_enabled
+            or (
+                n8n_env.get("N8N_INSTANCE_AI_MODEL_API_KEY")
+                and n8n_env.get("N8N_INSTANCE_AI_MODEL")
+                and "instance-ai" in str(n8n_env.get("N8N_ENABLED_MODULES") or "")
+            )
+        )
+        proxy_contract = bool(
+            n8n_env.get("N8N_PROXY_HOPS") == "1"
+            and n8n_env.get("N8N_SECURE_COOKIE") == "true"
+            and n8n_env.get("N8N_WEBHOOK_URL", "").startswith("https://")
+            and "WEBHOOK_URL" not in n8n_env
+            and "N8N_RUNNERS_ENABLED" not in n8n_env
+        )
+        (
+            local_health,
+            sandbox_api_health,
+            sandbox_runner_health,
+        ) = self._wait_for_stage1_health(inspections, attempts=3, delay_seconds=1)
+        logs = self._run(["docker", "logs", "--since", "5m", N8N_CONTAINER], timeout=60)
+        combined_logs = str(logs.get("stdout") or "") + "\n" + str(logs.get("stderr") or "")
+        proxy_error_absent = bool(logs.get("ok")) and "ERR_ERL_UNEXPECTED_X_FORWARDED_FOR" not in combined_logs
+        deprecated_webhook_absent = bool(logs.get("ok")) and "WEBHOOK_URL -> Use N8N_WEBHOOK_URL" not in combined_logs
+        certs_completed = bool(
+            summaries.get(N8N_SANDBOX_CERTS_CONTAINER, {}).get("status") == "exited"
+            and summaries.get(N8N_SANDBOX_CERTS_CONTAINER, {}).get("exitCode") == 0
+        )
+        verified = bool(
+            managed_compose_matches_target
+            and loopback_only
+            and images_match
+            and host_values_present
+            and runtime_matches_host
+            and instance_ai_preserved
+            and proxy_contract
+            and local_health
+            and sandbox_api_health
+            and sandbox_runner_health
+            and proxy_error_absent
+            and deprecated_webhook_absent
+            and certs_completed
+        )
+        return {
+            "ok": verified,
+            "status": (
+                "N8N_STAGE1_ALREADY_VERIFIED"
+                if verified
+                else "N8N_STAGE1_ALREADY_UNVERIFIED"
+            ),
+            "failureFamily": None if verified else "N8N_STAGE1_RUNTIME_DRIFT",
+            "blocker": None if verified else "Current generated Stage-1 runtime no longer matches its verified contract",
+            "project": N8N_PROJECT,
+            "containers": summaries,
+            "alreadyDeployed": True,
+            "runtimeComposeEvidence": runtime_compose_evidence,
+            "targetComposeSha256": hashlib.sha256(expected_payload).hexdigest(),
+            "managedComposeMatchesTarget": managed_compose_matches_target,
+            "hostSecretValuesPresent": host_values_present,
+            "secretBindings": secret_bindings,
+            "runtimeMatchesHostSecrets": runtime_matches_host,
+            "immutableImagesVerified": images_match,
+            "loopbackPortVerified": loopback_only,
+            "instanceAiPreserved": instance_ai_preserved,
+            "proxyContractVerified": proxy_contract,
+            "n8nHealthVerified": local_health,
+            "sandboxApiHealthVerified": sandbox_api_health,
+            "sandboxRunnerHealthVerified": sandbox_runner_health,
+            "proxyForwardedForErrorAbsent": proxy_error_absent,
+            "deprecatedWebhookWarningAbsent": deprecated_webhook_absent,
+            "sandboxCertsCompleted": certs_completed,
+            "disk": self._disk(),
+            "originalHostingerComposeMutated": False,
+            "originalComposeRecoveryAvailable": False,
+            "readbackVerified": verified,
+            "mutationPerformed": False,
+            "secretValuesReturned": False,
+        }
 
     def _all_container_image_ids(self) -> set[str]:
         listed = self._run(
@@ -1229,11 +1365,17 @@ volumes:
             working_dir = Path(str(anchor.get("workingDir") or ""))
             if not working_dir.is_absolute() or not working_dir.is_dir() or working_dir.is_symlink():
                 raise RuntimeError("Hostinger Compose working directory is unavailable")
-            original_compose_files = self._original_compose_files(
-                str(anchor.get("configFiles") or ""),
-                working_dir,
+            managed_stage1_path = self._managed_stage1_config_path(
+                str(anchor.get("configFiles") or "")
             )
-            original_compose_evidence = self._compose_file_evidence(original_compose_files)
+            original_compose_files: list[Path] = []
+            original_compose_evidence: list[dict[str, Any]] = []
+            if managed_stage1_path is None:
+                original_compose_files = self._original_compose_files(
+                    str(anchor.get("configFiles") or ""),
+                    working_dir,
+                )
+                original_compose_evidence = self._compose_file_evidence(original_compose_files)
             env_path = working_dir / ".env"
             host_env = self._read_host_env(env_path)
             missing = sorted(N8N_REQUIRED_HOST_ENV_KEYS - set(host_env))
@@ -1298,6 +1440,19 @@ volumes:
                 "innerSandbox": self._inner_sandbox_digest(),
             }
             compose = self._stage1_compose(images, instance_ai_enabled=instance_ai_enabled)
+            if managed_stage1_path is not None:
+                return self._stage1_already_deployed_readback(
+                    managed_stage1_path=managed_stage1_path,
+                    summaries=summaries,
+                    inspections=inspected,
+                    runtime_env=runtime_env,
+                    host_values_present=host_values_present,
+                    runtime_matches_host=runtime_matches_host,
+                    secret_bindings=secret_bindings,
+                    images=images,
+                    compose=compose,
+                    instance_ai_enabled=instance_ai_enabled,
+                )
             disk = self._disk()
             if disk["freeBytes"] < N8N_MIN_FREE_BYTES:
                 raise RuntimeError("n8n stage1 requires at least 8 GiB free disk")
@@ -1529,6 +1684,12 @@ volumes:
         plan = self.stage1_plan()
         if not plan.get("ok"):
             return plan
+        if plan.get("alreadyDeployed"):
+            return self._failure(
+                "N8N_STAGE1_BLOCKED",
+                "N8N_STAGE1_ALREADY_DEPLOYED",
+                "n8n already matches the verified Stage-1 runtime; no recreate is necessary",
+            )
         expected = str(plan.get("confirmationSha256") or "")
         supplied = str(confirmation_sha256 or "").strip().lower()
         if not _SHA256_RE.fullmatch(supplied) or supplied != expected:

@@ -646,6 +646,95 @@ def test_stage1_plan_detects_rotated_host_values_without_returning_them(monkeypa
     assert ":latest" not in result["images"]["n8n"]
 
 
+def test_stage1_plan_verifies_already_deployed_generated_compose(monkeypatch, tmp_path) -> None:
+    working = tmp_path / "hostinger"
+    working.mkdir()
+    env = working / ".env"
+    api_key = "a" * 40
+    runner_key = "b" * 40
+    registration_token = "c" * 40
+    env.write_text(
+        "\n".join(
+            [
+                "TZ=Europe/Berlin",
+                "TRAEFIK_HOST=example.invalid",
+                "SANDBOX_API_KEY=" + api_key,
+                "SANDBOX_RUNNER_API_KEY=" + runner_key,
+                "SANDBOX_RUNNER_REGISTRATION_TOKEN=" + registration_token,
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    maintenance = tmp_path / "maintenance"
+    runtime = N8NHostMaintenanceRuntime(maintenance_root=str(maintenance))
+    images = {
+        "n8n": "docker.n8n.io/n8nio/n8n@sha256:" + "1" * 64,
+        "sandboxApi": "n8nio/n8n-sandbox-service-api@sha256:" + "2" * 64,
+        "sandboxRunner": "n8nio/n8n-sandbox-service-runner-dind@sha256:" + "3" * 64,
+        "innerSandbox": "n8nio/n8n-sandbox-service-sandbox@sha256:" + "4" * 64,
+    }
+    maintenance.mkdir()
+    stage1_path = maintenance / "compose.stage1.yml"
+    stage1_path.write_text(runtime._stage1_compose(images), encoding="utf-8")
+    inspections = {
+        N8N_CONTAINER: _inspect(N8N_CONTAINER, "n8n", images["n8n"], "sha256:" + "1" * 64, str(working)),
+        N8N_SANDBOX_CERTS_CONTAINER: _inspect(N8N_SANDBOX_CERTS_CONTAINER, "sandbox-certs", images["sandboxApi"], "sha256:" + "2" * 64, str(working)),
+        N8N_SANDBOX_API_CONTAINER: _inspect(N8N_SANDBOX_API_CONTAINER, "sandbox-api", images["sandboxApi"], "sha256:" + "2" * 64, str(working)),
+        N8N_SANDBOX_RUNNER_CONTAINER: _inspect(N8N_SANDBOX_RUNNER_CONTAINER, "sandbox-runner-1", images["sandboxRunner"], "sha256:" + "3" * 64, str(working)),
+    }
+    for inspect in inspections.values():
+        inspect["Config"]["Labels"]["com.docker.compose.project.config_files"] = str(stage1_path)
+    inspections[N8N_CONTAINER]["NetworkSettings"]["Ports"] = {
+        "5678/tcp": [{"HostIp": "127.0.0.1", "HostPort": "5678"}]
+    }
+    monkeypatch.setattr(runtime, "_inspect", lambda name: inspections[name])
+    monkeypatch.setattr(
+        runtime,
+        "_container_env",
+        lambda name: {
+            N8N_CONTAINER: {
+                "N8N_SANDBOX_SERVICE_API_KEY": api_key,
+                "N8N_PROXY_HOPS": "1",
+                "N8N_SECURE_COOKIE": "true",
+                "N8N_WEBHOOK_URL": "https://n8n.example.invalid/",
+            },
+            N8N_SANDBOX_API_CONTAINER: {
+                "SANDBOX_API_KEYS": api_key,
+                "SANDBOX_API_RUNNER_API_KEY": runner_key,
+                "SANDBOX_API_RUNNER_REGISTRATION_TOKEN": registration_token,
+            },
+            N8N_SANDBOX_RUNNER_CONTAINER: {
+                "SANDBOX_RUNNER_API_KEYS": runner_key,
+                "SANDBOX_RUNNER_REGISTRATION_TOKEN": registration_token,
+            },
+        }[name],
+    )
+    digests = iter((images["n8n"], images["sandboxApi"], images["sandboxRunner"]))
+    monkeypatch.setattr(runtime, "_repo_digest", lambda *_args: next(digests))
+    monkeypatch.setattr(runtime, "_inner_sandbox_digest", lambda: images["innerSandbox"])
+    monkeypatch.setattr(runtime, "_wait_for_stage1_health", lambda *_args, **_kwargs: (True, True, True))
+    monkeypatch.setattr(runtime, "_run", lambda *_args, **_kwargs: _result())
+    monkeypatch.setattr(
+        runtime,
+        "_disk",
+        lambda: {"totalBytes": 100 * 1024**3, "usedBytes": 80 * 1024**3, "freeBytes": 20 * 1024**3, "usedPpm": 800000},
+    )
+
+    result = runtime.stage1_plan()
+
+    assert result["ok"] is True
+    assert result["status"] == "N8N_STAGE1_ALREADY_VERIFIED"
+    assert result["alreadyDeployed"] is True
+    assert result["managedComposeMatchesTarget"] is True
+    assert result["originalComposeRecoveryAvailable"] is False
+    assert result["mutationPerformed"] is False
+    payload = json.dumps(result, sort_keys=True)
+    assert api_key not in payload
+    assert runner_key not in payload
+    assert registration_token not in payload
+
+
 def test_stage1_compose_is_loopback_proxy_hardened_and_immutable(tmp_path) -> None:
     runtime = N8NHostMaintenanceRuntime(maintenance_root=str(tmp_path))
     compose = runtime._stage1_compose(
@@ -776,6 +865,19 @@ def test_failed_stage1_can_restore_original_compose_with_rotated_bindings(monkey
     assert len(up_calls) == 1
     assert str(original) in up_calls[0]
     assert "--pull" in up_calls[0] and "never" in up_calls[0]
+
+
+def test_stage1_apply_refuses_an_already_verified_runtime(monkeypatch) -> None:
+    runtime = N8NHostMaintenanceRuntime()
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE", "1")
+    monkeypatch.setattr(runtime, "stage1_plan", lambda: {"ok": True, "alreadyDeployed": True})
+
+    result = runtime.stage1_apply(confirmation_sha256="a" * 64, owner_approved=True)
+
+    assert result["status"] == "N8N_STAGE1_BLOCKED"
+    assert result["failureFamily"] == "N8N_STAGE1_ALREADY_DEPLOYED"
+    assert result["mutationPerformed"] is False
 
 
 def test_stage1_mutations_require_owner_and_compose_write(monkeypatch) -> None:
