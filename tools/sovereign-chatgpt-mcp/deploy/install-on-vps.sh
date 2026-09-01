@@ -2643,9 +2643,11 @@ rm -f "$MCP_SURFACE_ADVISORY_FILE"
 unset MCP_SURFACE_ADVISORY_FILE MCP_SURFACE_ADVISORY_SHA256 MCP_SURFACE_COMPARE_RC
 
 INSTALL_STAGE="verify_isolated_neuro_runtime_canary"
+set +e
+CANARY_OUTPUT="$(
 docker exec -i \
   -e SOVEREIGN_EXPECTED_CANARY_REVISION="$EXPECTED_REVISION" \
-  sovereign-chatgpt-mcp python - <<'PY'
+  sovereign-chatgpt-mcp python - 2>&1 <<'PY'
 import asyncio
 from datetime import datetime, timezone
 import hashlib
@@ -2653,8 +2655,32 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import sys
 import tempfile
 
+
+canary_phase = "bootstrap"
+
+
+def _safe_canary_exception_hook(error_type, _error, _traceback) -> None:
+    error_name = str(getattr(error_type, "__name__", "UnknownError"))
+    if not error_name.isidentifier() or len(error_name) > 80:
+        error_name = "UnknownError"
+    print(
+        json.dumps(
+            {
+                "status": "NEURO_DEPLOYMENT_CANARY_FAILED",
+                "phase": canary_phase,
+                "errorType": error_name,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        flush=True,
+    )
+
+
+sys.excepthook = _safe_canary_exception_hook
 
 temporary_root = None
 workspace_temporary_root = None
@@ -2681,6 +2707,7 @@ with tempfile.TemporaryDirectory(
     assert tracking_contract["telemetryScope"] == "mutable-tool-outcomes-only", tracking_contract
     assert tracking_contract["readOnlyCallsPersisted"] is False, tracking_contract
 
+    canary_phase = "environment_binding"
     expected_revision = os.environ["SOVEREIGN_EXPECTED_CANARY_REVISION"]
     assert os.environ.get("SOVEREIGN_SOURCE_REVISION") == expected_revision
     policy_path = Path(neuro_teaching_tools.__file__).resolve().parent / "config" / "sovereign-continuity-policy.json"
@@ -2691,6 +2718,7 @@ with tempfile.TemporaryDirectory(
     # Pydantic arguments/results, the operating-profile gate and success
     # tracking stay in the exercised path.  Only the expected routed target is
     # replaced with a fail-closed guard; previews must never execute it.
+    canary_phase = "registry_surface"
     tool_manager = launcher.mcp._tool_manager
     canary_tool_names = {
         "neuro_event_commit",
@@ -2719,6 +2747,7 @@ with tempfile.TemporaryDirectory(
     def call_registered(tool_name: str, arguments: dict[str, object]):
         return asyncio.run(tool_manager.call_tool(tool_name, arguments, convert_result=False))
 
+    canary_phase = "contract_status"
     empty_status = call_registered("neuro_runtime_contract_status", {})
     assert empty_status.ok is True, empty_status
     assert empty_status.status == "NEURO_RUNTIME_CONTRACT_READY", empty_status
@@ -2780,6 +2809,7 @@ with tempfile.TemporaryDirectory(
         "max_tools": 3,
     }
 
+    canary_phase = "quarantine_preview"
     quarantined = call_registered(
         "neuro_event_route_preview",
         {"foundation_event_kind": "unknown_canary_kind", **preview_arguments},
@@ -2791,6 +2821,7 @@ with tempfile.TemporaryDirectory(
     assert quarantined.data["previewArtifact"]["proposal"]["mayExecute"] is False, quarantined
     assert not isolated_state.exists(), "quarantine initialized isolated state"
 
+    canary_phase = "route_preview"
     preview = call_registered(
         "neuro_event_route_preview",
         {"foundation_event_kind": "work_request", **preview_arguments},
@@ -2809,6 +2840,7 @@ with tempfile.TemporaryDirectory(
     assert artifact["proposal"]["externalEffects"] == [], artifact
     assert guarded_tool_calls == [], guarded_tool_calls
 
+    canary_phase = "teaching_simulation"
     workspace_parent = Path(os.environ["SOVEREIGN_MCP_WORKSPACE_ROOT"])
     workspace_context = None
     for _workspace_attempt in range(32):
@@ -3008,6 +3040,7 @@ with tempfile.TemporaryDirectory(
 
     assert workspace_temporary_root is not None and not workspace_temporary_root.exists()
 
+    canary_phase = "commit_replay"
     committed = call_registered(
         "neuro_event_commit",
         {
@@ -3057,6 +3090,7 @@ with tempfile.TemporaryDirectory(
     assert rejected_tamper.status == "NEURO_EVENT_COMMIT_REJECTED", rejected_tamper
     assert rejected_tamper.mutationPerformed is False, rejected_tamper
 
+    canary_phase = "integrity_tamper"
     readback = call_registered("neuro_runtime_contract_status", {})
     assert readback.ok is True, readback
     assert readback.data["ledger"]["eventCount"] == 1, readback
@@ -3078,6 +3112,7 @@ with tempfile.TemporaryDirectory(
     assert tamper_readback.data["ledger"]["integrityVerified"] is False, tamper_readback
     assert tamper_readback.data["ledger"]["failureFamily"] == "ChainIntegrityError", tamper_readback
     assert guarded_tool_calls == [], guarded_tool_calls
+    canary_phase = "telemetry_scope"
     tracking_events = [
         json.loads(line)
         for line in (isolated_ranking_state / "tool-events.jsonl").read_text("utf-8").splitlines()
@@ -3116,6 +3151,46 @@ print(
     )
 )
 PY
+)"
+CANARY_EXIT_CODE=$?
+set -e
+
+if (( CANARY_EXIT_CODE != 0 )); then
+  CANARY_DIAGNOSTIC="$(
+    printf '%s\n' "$CANARY_OUTPUT" | python3 -c '
+import json
+import re
+import sys
+
+phase_pattern = re.compile(r"^[a-z][a-z0-9_-]{0,79}$")
+error_pattern = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,79}$")
+for raw_line in reversed(sys.stdin.read().splitlines()):
+    try:
+        payload = json.loads(raw_line)
+    except (TypeError, ValueError):
+        continue
+    if not isinstance(payload, dict):
+        continue
+    phase = payload.get("phase")
+    error_type = payload.get("errorType")
+    if (
+        payload.get("status") == "NEURO_DEPLOYMENT_CANARY_FAILED"
+        and isinstance(phase, str)
+        and isinstance(error_type, str)
+        and phase_pattern.fullmatch(phase)
+        and error_pattern.fullmatch(error_type)
+    ):
+        print(f"phase={phase};error={error_type}")
+        break
+'
+  )"
+  unset CANARY_OUTPUT
+  if [[ ! "$CANARY_DIAGNOSTIC" =~ ^phase=[a-z][a-z0-9_-]{0,79}\;error=[A-Za-z_][A-Za-z0-9_]{0,79}$ ]]; then
+    CANARY_DIAGNOSTIC="phase=unclassified;error=UnknownError"
+  fi
+  fail "isolated neuro runtime canary failed: $CANARY_DIAGNOSTIC"
+fi
+unset CANARY_OUTPUT CANARY_EXIT_CODE
 
 INSTALL_STAGE="verify_operating_profile_canaries"
 docker exec -i sovereign-chatgpt-mcp python - <<'PY'
