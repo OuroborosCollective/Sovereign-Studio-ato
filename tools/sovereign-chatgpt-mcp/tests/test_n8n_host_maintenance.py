@@ -92,6 +92,141 @@ def test_cleanup_apply_never_prunes_volumes_containers_or_tagged_images(monkeypa
     assert "image prune --all" not in rendered
 
 
+def test_retired_document_image_cleanup_plan_selects_only_unreferenced_explicitly_retired_images(
+    monkeypatch,
+) -> None:
+    runtime = N8NHostMaintenanceRuntime()
+    retired = "sha256:" + "1" * 64
+    referenced = "sha256:" + "2" * 64
+    unrelated = "sha256:" + "3" * 64
+    monkeypatch.setattr(runtime, "_all_container_image_ids", lambda: {referenced})
+    monkeypatch.setattr(
+        runtime,
+        "_disk",
+        lambda: {
+            "totalBytes": 1000,
+            "usedBytes": 900,
+            "freeBytes": 100,
+            "usedPpm": 900000,
+        },
+    )
+
+    def run(argv, timeout=120):
+        if argv == ["docker", "image", "ls", "--no-trunc", "--format", "{{.ID}}"]:
+            return _result("\n".join([retired, referenced, unrelated]) + "\n")
+        if argv[:3] == ["docker", "image", "inspect"]:
+            assert argv[3:] == [retired, referenced, unrelated]
+            return _result(
+                json.dumps(
+                    [
+                        {
+                            "Id": retired,
+                            "RepoTags": ["gotenberg/gotenberg:8.11"],
+                            "Size": 11,
+                        },
+                        {
+                            "Id": referenced,
+                            "RepoTags": ["apache/tika:3.0"],
+                            "Size": 13,
+                        },
+                        {
+                            "Id": unrelated,
+                            "RepoTags": ["ghcr.io/example/unrelated:1"],
+                            "Size": 17,
+                        },
+                    ]
+                )
+            )
+        raise AssertionError(argv)
+
+    monkeypatch.setattr(runtime, "_run", run)
+
+    result = runtime.retired_document_image_cleanup_plan()
+
+    assert result["status"] == "RETIRED_DOCUMENT_IMAGE_CLEANUP_PLAN_READY"
+    assert result["scope"] == ["unreferenced-gotenberg-and-tika-images-only"]
+    assert result["candidateCount"] == 1
+    assert result["estimatedReclaimableBytes"] == 11
+    assert result["candidates"] == [
+        {
+            "imageId": retired,
+            "repositories": ["gotenberg/gotenberg"],
+            "repoTags": ["gotenberg/gotenberg:8.11"],
+            "sizeBytes": 11,
+        }
+    ]
+    assert "volumes" in result["excluded"]
+    assert "running-container-images" in result["excluded"]
+    assert "non-retired-images" in result["excluded"]
+
+
+def test_retired_document_image_cleanup_apply_uses_exact_ids_without_force(
+    monkeypatch,
+) -> None:
+    runtime = N8NHostMaintenanceRuntime()
+    image_id = "sha256:" + "4" * 64
+    confirmation = "b" * 64
+    calls: list[list[str]] = []
+    before_disk = {
+        "totalBytes": 1000,
+        "usedBytes": 900,
+        "freeBytes": 100,
+        "usedPpm": 900000,
+    }
+    after_disk = {
+        "totalBytes": 1000,
+        "usedBytes": 700,
+        "freeBytes": 300,
+        "usedPpm": 700000,
+    }
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE", "1")
+    monkeypatch.setattr(
+        runtime,
+        "retired_document_image_cleanup_plan",
+        lambda: {
+            "ok": True,
+            "confirmationSha256": confirmation,
+            "disk": before_disk,
+            "estimatedReclaimableBytes": 250,
+            "candidates": [
+                {
+                    "imageId": image_id,
+                    "repositories": ["apache/tika"],
+                    "repoTags": ["apache/tika:3.0"],
+                    "sizeBytes": 250,
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(runtime, "_retired_document_image_candidates", lambda: [])
+    monkeypatch.setattr(runtime, "_disk", lambda: dict(after_disk))
+
+    def run(argv, timeout=120):
+        calls.append(argv)
+        return _result()
+
+    monkeypatch.setattr(runtime, "_run", run)
+
+    result = runtime.retired_document_image_cleanup_apply(
+        confirmation_sha256=confirmation,
+        owner_approved=True,
+    )
+
+    assert result["status"] == "RETIRED_DOCUMENT_IMAGE_CLEANUP_VERIFIED"
+    assert result["reclaimedBytes"] == 200
+    assert result["candidatesRemaining"] == []
+    assert result["volumesRemoved"] is False
+    assert result["runningContainersRemoved"] is False
+    assert result["nonRetiredImagesExplicitlyRemoved"] is False
+    assert calls == [["docker", "image", "rm", "--no-prune", image_id]]
+    rendered = " ".join(calls[0])
+    assert "--force" not in rendered
+    assert "image prune" not in rendered
+    assert "container" not in rendered
+    assert "volume" not in rendered
+
+
 def test_cleanup_confirmation_ignores_volatile_disk_usage(monkeypatch) -> None:
     runtime = N8NHostMaintenanceRuntime()
     running = {"count": 4, "sha256": "1" * 64}

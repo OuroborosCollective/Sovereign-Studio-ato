@@ -314,6 +314,65 @@ def test_docker_cache_cleanup_reuses_patchmon_plan_and_apply_surfaces(monkeypatc
     assert observed == {"confirmation_sha256": "a" * 64, "owner_approved": True}
 
 
+def test_retired_document_image_cleanup_reuses_patchmon_plan_and_apply_surfaces(
+    monkeypatch,
+) -> None:
+    runtime = BrokerRuntime()
+    runtime.private_owner_mode = True
+    observed = {}
+
+    monkeypatch.setattr(
+        runtime.n8n_host_maintenance,
+        "retired_document_image_cleanup_plan",
+        lambda: {
+            "ok": True,
+            "status": "RETIRED_DOCUMENT_IMAGE_CLEANUP_PLAN_READY",
+            "confirmationSha256": "d" * 64,
+        },
+    )
+
+    def cleanup_apply(*, confirmation_sha256, owner_approved):
+        observed.update(
+            confirmation_sha256=confirmation_sha256,
+            owner_approved=owner_approved,
+        )
+        return {"ok": True, "status": "RETIRED_DOCUMENT_IMAGE_CLEANUP_VERIFIED"}
+
+    monkeypatch.setattr(
+        runtime.n8n_host_maintenance,
+        "retired_document_image_cleanup_apply",
+        cleanup_apply,
+    )
+    monkeypatch.setattr(
+        runtime.patchmon,
+        "patch_action_plan",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("PatchMon plan must not execute")
+        ),
+    )
+    monkeypatch.setattr(
+        runtime.patchmon,
+        "patch_action_apply",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("PatchMon apply must not execute")
+        ),
+    )
+
+    plan = runtime.patchmon_action_plan(
+        {"action": "retired_document_image_cleanup"}
+    )
+    applied = runtime.patchmon_action_apply(
+        {
+            "action": "retired_document_image_cleanup",
+            "confirmation_sha256": "d" * 64,
+        }
+    )
+
+    assert plan["status"] == "RETIRED_DOCUMENT_IMAGE_CLEANUP_PLAN_READY"
+    assert applied["status"] == "RETIRED_DOCUMENT_IMAGE_CLEANUP_VERIFIED"
+    assert observed == {"confirmation_sha256": "d" * 64, "owner_approved": True}
+
+
 def test_n8n_stage1_reuses_managed_compose_plan_and_apply_surfaces(monkeypatch) -> None:
     runtime = BrokerRuntime()
     runtime.private_owner_mode = True
