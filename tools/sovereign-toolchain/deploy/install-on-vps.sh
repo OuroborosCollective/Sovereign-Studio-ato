@@ -110,8 +110,7 @@ chmod 0644 "$TEMP/sovereign-toolchain/$REVISION_MARKER_NAME"
 rm -rf "$TEMP/sovereign-toolchain/.venv"
 (
   cd "$TEMP/sovereign-toolchain"
-  uv lock --check
-  uv sync --frozen --no-dev --no-install-project
+  env -u UV_FROZEN -u UV_LOCKED uv sync --locked --no-dev --no-install-project
   PYTHONPATH="$TEMP/sovereign-toolchain/src:$TEMP/sovereign-legacy-mcp-common" \
     .venv/bin/python -c 'import sovereign_toolchain.n8n_evidence_app, uvicorn'
 )
