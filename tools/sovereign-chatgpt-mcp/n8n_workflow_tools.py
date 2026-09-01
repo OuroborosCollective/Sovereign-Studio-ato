@@ -68,7 +68,12 @@ def n8n_workflow_apply(
     workflow_id: str | None = None,
     spec: CIEvidenceWatchSpec | None = None,
 ) -> dict[str, Any]:
-    """Apply one confirmed n8n plan through the owner-gated host command queue."""
+    """Apply one confirmed n8n plan under standing private-owner delegation.
+
+    ``owner_approved`` is the authenticated MCP caller's explicit attestation,
+    not an independently issued or one-time approval receipt. The host broker
+    additionally requires private-owner mode and its separate write gate.
+    """
     if _BROKER is None:
         raise RuntimeError("n8n workflow tools are not registered")
     return _BROKER.call(

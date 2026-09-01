@@ -13,7 +13,7 @@ from sovereign_toolchain.ci_evidence import (
     build_ci_evidence_receipt,
     build_revision_guardian_receipt,
 )
-from sovereign_toolchain.core import dispatch_tool
+from sovereign_toolchain.core import TOOL_DEFINITIONS, dispatch_tool
 
 
 HEAD = "a" * 40
@@ -135,6 +135,30 @@ def test_toolchain_dispatch_exposes_read_only_ci_receipt() -> None:
     assert response["ok"] is True
     assert response["tool"] == "sovereign_ci_evidence_receipt"
     assert response["result"]["receiptSha256"]
+
+
+def test_public_ci_evidence_manifest_schema_matches_runtime_contract() -> None:
+    tool = next(
+        definition
+        for definition in TOOL_DEFINITIONS
+        if definition["name"] == "sovereign_ci_evidence_receipt"
+    )
+    schema = tool["input_schema"]
+    required = {
+        "repository",
+        "workflow_id",
+        "workflow_name",
+        "workflow_selector",
+        "branch",
+        "branch_head_sha",
+        "run_id",
+        "head_sha",
+        "status",
+        "jobs",
+    }
+
+    assert set(schema["required"]) == required
+    assert required <= set(schema["properties"])
 
 
 def test_secret_shaped_job_name_is_rejected() -> None:

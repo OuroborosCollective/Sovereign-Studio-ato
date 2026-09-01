@@ -266,16 +266,67 @@ def verify_effective_units(full_active: bool, evidence_active: bool) -> None:
             raise RollbackError("evidence service has writable filesystem paths")
 
 
-def verify_service_states(services: list[dict[str, Any]]) -> None:
+def verify_service_activation_states(services: list[dict[str, Any]]) -> None:
     for entry in services:
         if is_active(entry["name"]) is not entry["active"]:
             raise RollbackError("service active-state readback failed")
         if is_enabled(entry["name"]) is not entry["enabled"]:
             raise RollbackError("service enable-state readback failed")
+
+
+def verify_service_states(services: list[dict[str, Any]]) -> None:
+    verify_service_activation_states(services)
     full_active = services[0]["active"]
     evidence_active = services[1]["active"]
     verify_effective_units(full_active, evidence_active)
     verify_socket_boundary(full_active, evidence_active)
+
+
+def is_managed_snapshot(path: Path) -> bool:
+    if path.parent != BACKUP_ROOT:
+        return False
+    basenames = tuple(basename for _target, basename in DIRECTORIES) + tuple(
+        basename for _target, basename, _mode in FILES
+    )
+    for basename in basenames:
+        prefix = f"{basename}."
+        if path.name.startswith(prefix) and STAMP.fullmatch(path.name[len(prefix) :]):
+            return True
+    for _target, basename in DIRECTORIES:
+        prefix = f"failed-{basename}."
+        if path.name.startswith(prefix) and STAMP.fullmatch(path.name[len(prefix) :]):
+            return True
+    return False
+
+
+def retire_superseded_snapshots(retained_payload: dict[str, Any]) -> None:
+    retained = {
+        Path(entry["backup"])
+        for group in (retained_payload["directories"], retained_payload["files"])
+        for entry in group
+    }
+    retained.update(
+        BACKUP_ROOT / f"failed-{Path(entry['target']).name}.{retained_payload['stamp']}"
+        for entry in retained_payload["directories"]
+    )
+    changed = False
+    for candidate in BACKUP_ROOT.iterdir():
+        if candidate in retained or not is_managed_snapshot(candidate):
+            continue
+        metadata = candidate.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or stat.S_ISREG(metadata.st_mode):
+            candidate.unlink()
+        elif stat.S_ISDIR(metadata.st_mode):
+            shutil.rmtree(candidate)
+        else:
+            raise RollbackError("superseded snapshot type is invalid")
+        changed = True
+    if changed:
+        directory = os.open(BACKUP_ROOT, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
 
 
 def copy_snapshot(source: Path, target: Path, metadata: os.stat_result) -> None:
@@ -375,7 +426,7 @@ def prepare(expected_revision: str, stamp: str) -> None:
         {"name": service, "active": is_active(service), "enabled": is_enabled(service)}
         for service in SERVICES
     ]
-    verify_service_states(services)
+    verify_service_activation_states(services)
     atomic_json_write(
         {
             "schemaVersion": SCHEMA,
@@ -388,6 +439,10 @@ def prepare(expected_revision: str, stamp: str) -> None:
             "services": services,
         }
     )
+    # The new pending manifest is fsynced and read back before any snapshot
+    # generation becomes unreachable. A bounded scan also repairs leftovers
+    # from an interrupted retirement on the next prepare.
+    retire_superseded_snapshots(read_manifest())
 
 
 def restore_file(entry: dict[str, Any]) -> None:
@@ -506,7 +561,9 @@ def restore(payload: dict[str, Any], expected_revision: str) -> None:
         if entry["active"] and run_systemctl("start", entry["name"]).returncode != 0:
             raise RollbackError("service restart rollback failed")
     verify_restored_snapshots(payload)
-    verify_service_states(payload["services"])
+    # A predecessor can legitimately implement an older listener boundary.
+    # Its exact unit files and activation flags were already snapshotted.
+    verify_service_activation_states(payload["services"])
     payload["state"] = "rolled_back"
     atomic_json_write(payload)
 
@@ -561,7 +618,8 @@ def main() -> int:
                 "rollbackVerified": arguments.operation == "rollback",
                 "servicesReadback": True,
                 "revisionReadback": True,
-                "socketBoundaryReadback": True,
+                "socketBoundaryReadback": arguments.operation == "commit",
+                "predecessorBoundaryPreserved": arguments.operation == "rollback",
                 "secretValuesReturned": False,
             },
             sort_keys=True,

@@ -1,3 +1,4 @@
+import importlib.util
 import subprocess
 from pathlib import Path
 
@@ -133,14 +134,106 @@ def test_rollback_helper_verifies_revision_files_services_and_sockets() -> None:
     assert '"O_NOFOLLOW"' in helper
     assert "os.replace(backup, target)" in helper
     assert "verify_restored_snapshots" in helper
+    assert "verify_service_activation_states" in helper
     assert "verify_service_states" in helper
     assert "verify_socket_boundary" in helper
+    prepare = helper.split("def prepare", 1)[1].split("def restore_file", 1)[0]
+    restore = helper.split("def restore(payload", 1)[1].split("def commit(payload", 1)[0]
+    commit = helper.split("def commit(payload", 1)[1].split("def main", 1)[0]
+    assert "verify_service_activation_states(services)" in prepare
+    assert "verify_service_states(services)" not in prepare
+    assert 'verify_service_activation_states(payload["services"])' in restore
+    assert 'verify_service_states(payload["services"])' not in restore
+    assert "verify_service_states(desired)" in commit
+    assert prepare.index("atomic_json_write(") < prepare.index("retire_superseded_snapshots(read_manifest())")
     assert '"state": "pending"' in helper
     assert 'payload["state"] = "committed"' in helper
     assert 'payload["state"] = "rolled_back"' in helper
     assert "rollback expected revision mismatch" in helper
     assert "rollbackVerified" in helper
+    assert '"socketBoundaryReadback": arguments.operation == "commit"' in helper
+    assert '"predecessorBoundaryPreserved": arguments.operation == "rollback"' in helper
     assert "except: pass" not in helper
+
+
+def load_rollback_helper():
+    spec = importlib.util.spec_from_file_location("sovereign_rollback_helper", ROLLBACK_HELPER)
+    assert spec is not None and spec.loader is not None
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    return helper
+
+
+def test_snapshot_retirement_is_bounded_and_preserves_the_current_generation(tmp_path: Path) -> None:
+    helper = load_rollback_helper()
+    helper.BACKUP_ROOT = tmp_path
+    helper.DIRECTORIES = ((tmp_path / "toolchain", "toolchain"),)
+    helper.FILES = ((tmp_path / "runtime.env", "runtime.env", 0o600),)
+
+    current = "20260901T120000Z.101"
+    stale = "20260831T120000Z.99"
+    stale_link_stamp = "20260830T120000Z.98"
+    current_tree = tmp_path / f"toolchain.{current}"
+    current_tree.mkdir()
+    current_file = tmp_path / f"runtime.env.{current}"
+    current_file.write_text("current", encoding="utf-8")
+    current_quarantine = tmp_path / f"failed-toolchain.{current}"
+    current_quarantine.mkdir()
+
+    stale_tree = tmp_path / f"toolchain.{stale}"
+    stale_tree.mkdir()
+    (stale_tree / "large-runtime").write_text("stale", encoding="utf-8")
+    stale_file = tmp_path / f"runtime.env.{stale}"
+    stale_file.write_text("stale", encoding="utf-8")
+    stale_quarantine = tmp_path / f"failed-toolchain.{stale}"
+    stale_quarantine.mkdir()
+    unmanaged = tmp_path / "operator-note"
+    unmanaged.write_text("keep", encoding="utf-8")
+    stale_link = tmp_path / f"runtime.env.{stale_link_stamp}"
+    stale_link.symlink_to(unmanaged)
+
+    helper.retire_superseded_snapshots(
+        {
+            "stamp": current,
+            "directories": [
+                {"target": str(tmp_path / "toolchain"), "backup": str(current_tree)}
+            ],
+            "files": [
+                {"target": str(tmp_path / "runtime.env"), "backup": str(current_file)}
+            ],
+        }
+    )
+
+    assert current_tree.is_dir()
+    assert current_file.is_file()
+    assert current_quarantine.is_dir()
+    assert not stale_tree.exists()
+    assert not stale_file.exists()
+    assert not stale_quarantine.exists()
+    assert not stale_link.exists()
+    assert unmanaged.read_text("utf-8") == "keep"
+
+
+def test_predecessor_activation_readback_does_not_apply_the_new_listener_policy() -> None:
+    helper = load_rollback_helper()
+    services = [
+        {"name": helper.SERVICES[0], "active": True, "enabled": True},
+        {"name": helper.SERVICES[1], "active": False, "enabled": False},
+    ]
+    helper.is_active = lambda service: service == helper.SERVICES[0]
+    helper.is_enabled = lambda service: service == helper.SERVICES[0]
+    boundary_calls = []
+    helper.verify_effective_units = lambda *states: boundary_calls.append(("unit", states))
+    helper.verify_socket_boundary = lambda *states: boundary_calls.append(("socket", states))
+
+    helper.verify_service_activation_states(services)
+    assert boundary_calls == []
+
+    helper.verify_service_states(services)
+    assert boundary_calls == [
+        ("unit", (True, False)),
+        ("socket", (True, False)),
+    ]
 
 
 def test_installer_is_valid_bash() -> None:

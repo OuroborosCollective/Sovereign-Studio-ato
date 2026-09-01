@@ -7,6 +7,7 @@ from typing import Any, get_args, get_type_hints
 import pytest
 
 import n8n_workflow_tools as workflow_tools
+from command_contract import standing_owner_delegation_approved
 from n8n_workflow_runtime import CIEvidenceWatchSpec
 
 
@@ -118,6 +119,28 @@ def test_public_schema_is_lane_operation_and_spec_allowlisted() -> None:
         "workflow_id",
         "spec",
     }
+
+
+def test_apply_description_declares_standing_delegation_not_one_time_receipt() -> None:
+    description = inspect.getdoc(workflow_tools.n8n_workflow_apply) or ""
+
+    assert "standing private-owner delegation" in description
+    assert "not an independently issued or one-time approval receipt" in description
+
+
+def test_standing_owner_delegation_intersects_server_mode_and_caller_attestation() -> None:
+    assert standing_owner_delegation_approved(
+        private_owner_mode=False,
+        caller_attestation=True,
+    ) is False
+    assert standing_owner_delegation_approved(
+        private_owner_mode=True,
+        caller_attestation=False,
+    ) is False
+    assert standing_owner_delegation_approved(
+        private_owner_mode=True,
+        caller_attestation=True,
+    ) is True
 
 
 def test_plan_forwards_exact_typed_payload_to_read_action(

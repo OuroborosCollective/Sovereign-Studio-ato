@@ -58,10 +58,10 @@ curl -X POST http://127.0.0.1:8000/api/v1/tools/plan_sandbox_commands \
   -d '{"args":{"goal":"verify"}}'
 ```
 
-With API key, from the host or a trusted local proxy:
+On the deployed host, or through a trusted loopback proxy, use the authenticated full-app listener:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/v1/tools/github_read_file \
+curl -X POST http://127.0.0.1:8001/api/v1/tools/github_read_file \
   -H "Content-Type: application/json" \
   -H "X-Toolchain-Key: $TOOLCHAIN_API_KEY" \
   -d '{"args":{"owner":"OuroborosCollective","repo":"Sovereign-Studio-ato","path":"README.md","ref":"main"}}'

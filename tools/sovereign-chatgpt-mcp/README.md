@@ -42,7 +42,8 @@ Privater Operator für `OuroborosCollective/Sovereign-Studio-ato`. Er macht die 
 Zwei zusätzliche Werkzeuge steuern ausschließlich den fest kompilierten CI-Evidence-Workflowtyp für die Lanes `sovereign` (`OuroborosCollective/Sovereign-Studio-ato`) und `aurion` (`OuroborosCollective/Echoes_of_Aurion`):
 
 - `n8n_workflow_plan` inventarisiert oder plant `create_draft`, `update_draft`, `activate` und `pause` ohne Schreibeffekt.
-- `n8n_workflow_apply` führt nur einen frisch bestätigten Plan mit `owner_approved=true`, exaktem Bestätigungs-SHA und dem ausschließlich im Host-Broker gesetzten Gate `SOVEREIGN_MCP_ENABLE_N8N_WORKFLOW_WRITE=1` aus.
+- `n8n_workflow_apply` führt nur einen exakt hash-bestätigten Plan mit `owner_approved=true`, aktivem privaten Owner-Modus und dem ausschließlich im Host-Broker gesetzten Gate `SOVEREIGN_MCP_ENABLE_N8N_WORKFLOW_WRITE=1` aus.
+- Das Autorisierungsmodell ist eine stehende Delegation an den privaten Einzel-Owner-MCP: `owner_approved` ist die ausdrückliche Attestierung des authentifizierten MCP-Aufrufers, kein unabhängig ausgestelltes oder einmalig konsumiertes Freigabe-Receipt. Der Broker verknüpft diese Attestierung serverseitig mit dem privaten Owner-Modus; das Deaktivieren eines der beiden Host-Gates blockiert weitere Schreibvorgänge.
 - Beide Lanes sind in der Community-Edition exakt an das Projekt `Personal` gebunden. Freie Projekte, URLs, Nodes, Workflowtypen, Delete, Archive und beliebige bestehende Workflows sind nicht unterstützt.
 - Die n8n-Public-API-Schlüssel werden getrennt über die sicheren Owner-Input-Ziele `n8n_sovereign_api_key` und `n8n_aurion_api_key` in root-eigenen Dateien gespeichert. Sie werden weder in den MCP-Container noch in Chat, Git, Logs oder Toolantworten transportiert.
 - Der Schlüssel benötigt minimal `project:list`, `credential:list/create` sowie `workflow:list/read/create/update/activate/deactivate`.

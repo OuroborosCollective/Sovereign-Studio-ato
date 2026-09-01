@@ -13,7 +13,10 @@ from typing import Any
 
 from admin_mode import PrivateAdminRuntime
 from browserless_reader import BrowserlessReplayReader
-from command_contract import is_mutating_action
+from command_contract import (
+    is_mutating_action,
+    standing_owner_delegation_approved,
+)
 from desktop_worker import DesktopWorkerRuntime
 from document_pipeline import DocumentPipelineRuntime
 from fleet_maintenance import FleetMaintenanceRuntime
@@ -653,7 +656,12 @@ class BrokerRuntime:
                 workflow_id=str(values.get("workflow_id") or ""),
                 spec=values.get("spec") if isinstance(values.get("spec"), dict) else None,
                 confirmation_sha256=str(values.get("confirmation_sha256") or ""),
-                owner_approved=bool(values.get("owner_approved", False)),
+                owner_approved=standing_owner_delegation_approved(
+                    private_owner_mode=self.private_owner_mode,
+                    caller_attestation=bool(
+                        values.get("owner_approved", False)
+                    ),
+                ),
             ),
             "memory_gateway_collection_canary": lambda _values: self.managed_compose.memory_gateway_collection_canary(),
             "litellm_provider_model_inventory": lambda _values: self.managed_compose.litellm_provider_model_inventory(),

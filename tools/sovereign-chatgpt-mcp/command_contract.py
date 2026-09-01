@@ -42,3 +42,12 @@ MUTATING_ACTIONS = frozenset(
 
 def is_mutating_action(action: str) -> bool:
     return str(action or "").strip() in MUTATING_ACTIONS
+
+
+def standing_owner_delegation_approved(
+    *,
+    private_owner_mode: bool,
+    caller_attestation: bool,
+) -> bool:
+    """Intersect caller intent with the server-controlled standing delegation."""
+    return bool(private_owner_mode and caller_attestation)
