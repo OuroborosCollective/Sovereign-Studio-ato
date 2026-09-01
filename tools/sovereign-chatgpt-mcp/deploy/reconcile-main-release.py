@@ -52,6 +52,7 @@ MUTATION_PROVEN_DEPLOY_STAGES = frozenset(
         "admin_canary",
         "rollback_receipt",
         "complete",
+        # These bounded inner-canary stages can only run after production_start.
         "admin_key",
         "health",
         "freellm_bootstrap",
@@ -297,6 +298,8 @@ def _release_gate(revision: str, *, expected_runtime_readback_run_id: int | None
     if run["conclusion"] != "success":
         return {"ready": False, "status": "RELEASE_GATE_FAILED", **run}
     return {"ready": True, "status": "RELEASE_GATE_VERIFIED", **run}
+
+
 
 
 def _run(
@@ -820,6 +823,7 @@ TOOLCHAIN_EVIDENCE_SERVICE = "sovereign-toolchain-n8n-evidence.service"
 
 
 def _toolchain_identity(revision: str) -> dict[str, Any]:
+    """Read the on-host toolchain revision marker and service active states."""
     result: dict[str, Any] = {"revision": None, "serviceActive": False, "evidenceServiceActive": False}
     try:
         meta = TOOLCHAIN_REVISION_MARKER.lstat()
@@ -1236,7 +1240,7 @@ def main() -> int:
                 retryable=False,
             )
             return 1
-        except Exception as exc:
+        except Exception as exc:  # fail closed without returning raw values
             _write_status(
                 "RECONCILIATION_FAILED",
                 ok=False,
