@@ -3485,8 +3485,15 @@ if [[ "$DEPLOYMENT_SOURCE_SCOPE" == "full-repository" ]]; then
   TOOLCHAIN_INSTALL_LOG="$(mktemp)"
   if ! SOVEREIGN_TOOLCHAIN_EXPECTED_REVISION="$EXPECTED_REVISION" \
     bash "$TOOLCHAIN_INSTALLER" "$TOOLCHAIN_SOURCE" >"$TOOLCHAIN_INSTALL_LOG" 2>&1; then
+    TOOLCHAIN_FAILURE_DIAGNOSTIC="$(
+      grep -E '^SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE stage=[a-z][a-z0-9_-]{0,79} reason_sha256=[0-9a-f]{64} rollback=(not-required|verified|failed)$' \
+        "$TOOLCHAIN_INSTALL_LOG" | tail -n 1 | tr -d '\r\n' | cut -c1-512 || true
+    )"
     TOOLCHAIN_FAILURE_SHA256="$(sha256sum "$TOOLCHAIN_INSTALL_LOG" | awk '{print $1}')"
     rm -f "$TOOLCHAIN_INSTALL_LOG"
+    if [[ -n "$TOOLCHAIN_FAILURE_DIAGNOSTIC" ]]; then
+      fail "revision-bound toolchain installer failed: $TOOLCHAIN_FAILURE_DIAGNOSTIC output_sha256=$TOOLCHAIN_FAILURE_SHA256"
+    fi
     fail "revision-bound toolchain installer failed: output_sha256=$TOOLCHAIN_FAILURE_SHA256"
   fi
   TOOLCHAIN_ROLLBACK_ARMED=1
