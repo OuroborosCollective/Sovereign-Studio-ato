@@ -65,6 +65,28 @@ test('coordinated release waits for the full producer critical path and accepts 
   assert.match(workflow, /Downstream publisher jobs are absent until prerequisite completes/);
 });
 
+test('coordinated release waits for exact readback bootstrap only on control-plane changes', () => {
+  assert.match(workflow, /Checkout exact main revision[\s\S]*fetch-depth: 2/);
+  assert.match(workflow, /Determine exact-revision readback control-plane bootstrap requirement/);
+  assert.match(workflow, /readback_bootstrap_scope/);
+  assert.match(workflow, /run-coordinated-release-readback\.py/);
+  assert.match(workflow, /reconcile-main-release\.py/);
+  assert.match(workflow, /sovereign-release-readback-bootstrap\.yml/);
+  assert.match(workflow, /git diff --quiet "\$PARENT_REVISION" "\$EXPECTED_REVISION"/);
+  assert.match(workflow, /required=false/);
+  assert.match(workflow, /required=true/);
+  assert.match(workflow, /Wait for exact-revision readback control-plane bootstrap/);
+  assert.match(workflow, /if: steps\.readback_bootstrap_scope\.outputs\.required == 'true'/);
+  assert.match(workflow, /workflow_id: 'sovereign-release-readback-bootstrap\.yml'/);
+  assert.match(workflow, /Bootstrap forced runtime readback control plane/);
+  assert.match(workflow, /EXACT_REVISION_READBACK_BOOTSTRAP_VERIFIED/);
+  assert.match(workflow, /READBACK_BOOTSTRAP_FAILED/);
+  assert.match(workflow, /EXACT_REVISION_READBACK_BOOTSTRAP_TIMEOUT/);
+  const bootstrapWait = workflow.indexOf('Wait for exact-revision readback control-plane bootstrap');
+  const imageWait = workflow.indexOf('Wait for exact-revision image workflows');
+  assert.ok(bootstrapWait >= 0 && imageWait > bootstrapWait);
+});
+
 test('backend producer exposes an explicit publish-only evidence job', () => {
   assert.match(backendImageWorkflow, /publish-evidence:/);
   assert.match(backendImageWorkflow, /name: Publish immutable backend image evidence/);
