@@ -91,6 +91,10 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
             "ghcr.io/ouroboroscollective/sovereign-backend",
         )
         self.assertRegex(module.BACKEND_IMAGE_REPOSITORY, module.IMAGE_REPOSITORY_RE)
+        self.assertEqual(
+            module.RECONCILER,
+            Path("/opt/sovereign-chatgpt-tools/bin/reconcile-main-release-readback"),
+        )
         self.assertIn(
             '"SOVEREIGN_BACKEND_IMAGE_REPOSITORY": BACKEND_IMAGE_REPOSITORY',
             source,
@@ -174,6 +178,7 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
         self.assertIn("workflow_dispatch:", workflow)
         self.assertNotIn("pull_request:", workflow)
         self.assertIn("tools/sovereign-chatgpt-mcp/deploy/run-coordinated-release-readback.py", workflow)
+        self.assertIn("tools/sovereign-chatgpt-mcp/deploy/reconcile-main-release.py", workflow)
         self.assertIn(".github/workflows/sovereign-release-readback-bootstrap.yml", workflow)
         self.assertIn(
             "EXPECTED_REVISION: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_revision || github.sha }}",
@@ -186,8 +191,12 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
         self.assertIn('PARENT2_REVISION="$(git rev-parse "${EXPECTED_REVISION}^^")"', workflow)
         self.assertIn('git cat-file -e "$PARENT1_REVISION:$READBACK_SOURCE"', workflow)
         self.assertIn('git cat-file -e "$PARENT2_REVISION:$READBACK_SOURCE"', workflow)
+        self.assertIn('git cat-file -e "$PARENT1_REVISION:$RECONCILER_SOURCE"', workflow)
+        self.assertIn('git cat-file -e "$PARENT2_REVISION:$RECONCILER_SOURCE"', workflow)
         self.assertIn('PARENT1_SHA256="$(git show "$PARENT1_REVISION:$READBACK_SOURCE"', workflow)
         self.assertIn('PARENT2_SHA256="$(git show "$PARENT2_REVISION:$READBACK_SOURCE"', workflow)
+        self.assertIn('RECONCILER_PARENT1_SHA256="$(git show "$PARENT1_REVISION:$RECONCILER_SOURCE"', workflow)
+        self.assertIn('RECONCILER_PARENT2_SHA256="$(git show "$PARENT2_REVISION:$RECONCILER_SOURCE"', workflow)
         self.assertIn('"$EXPECTED_PARENT1_SHA256") MATCHED_LINEAGE=parent1', workflow)
         self.assertIn('"$EXPECTED_PARENT2_SHA256") MATCHED_LINEAGE=parent2', workflow)
         self.assertIn("'allowedPredecessorDepth': 2", workflow)
@@ -214,13 +223,24 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
     def test_control_plane_bootstrap_remains_container_free_and_marked_hex_receipted(self) -> None:
         workflow = BOOTSTRAP_WORKFLOW.read_text("utf-8")
         self.assertIn("UNEXPECTED_READBACK_ENTRYPOINT_HASH", workflow)
+        self.assertIn("UNEXPECTED_READBACK_RECONCILER_HASH", workflow)
         self.assertIn("/opt/sovereign-chatgpt-tools/bin/run-coordinated-release-readback", workflow)
+        self.assertIn("/opt/sovereign-chatgpt-tools/bin/reconcile-main-release-readback", workflow)
+        self.assertLess(
+            workflow.index("Install exact readback-scoped reconciler with bounded lineage preconditions"),
+            workflow.index("Install only the forced readback entrypoint with bounded lineage preconditions"),
+        )
         self.assertIn("containersChanged': False", workflow)
         self.assertIn("servicesRestarted': False", workflow)
         self.assertIn("authorizedKeysChanged': False", workflow)
         self.assertIn("capture_stdout: true", workflow)
         self.assertIn("RECEIPT_STDOUT: ${{ steps.receipt.outputs.stdout }}", workflow)
         self.assertIn("SOVEREIGN_BOOTSTRAP_RECEIPT_HEX=", workflow)
+        self.assertIn("SOVEREIGN_RECONCILER_BOOTSTRAP_RECEIPT_HEX=", workflow)
+        self.assertIn("sovereign.release-readback-reconciler-bootstrap-receipt.v1", workflow)
+        self.assertIn("matchedLineage') in {'missing', 'current', 'parent1', 'parent2'}", workflow)
+        self.assertIn("0:0:750", workflow)
+        self.assertIn("trap 'run_root rm -f \"$TEMP_TARGET\"", workflow)
         self.assertIn("len(matches) != 1", workflow)
         self.assertIn("raw = bytes.fromhex(encoded)", workflow)
         self.assertNotIn("RECEIPT_BASE64:", workflow)
