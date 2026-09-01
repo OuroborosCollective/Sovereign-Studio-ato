@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import subprocess
 from pathlib import Path
@@ -246,6 +247,37 @@ def test_installer_is_valid_bash() -> None:
 
     assert result.returncode == 0, result.stderr
     assert helper.returncode == 0, helper.stderr
+
+
+def test_pre_activation_unhandled_error_emits_only_bounded_hashed_diagnostic(tmp_path: Path) -> None:
+    installer = INSTALLER.read_text("utf-8")
+    assert 'trap \'on_unhandled_error "$LINENO"\' ERR' in installer
+    assert installer.index('trap \'on_unhandled_error "$LINENO"\' ERR') < installer.index("STAGE=preflight")
+    assert installer.index("MUTATION_STARTED=1") < installer.index("trap on_activation_error ERR")
+
+    marker = "STAGE=preflight\n"
+    injected = installer.replace(marker, marker + "false\n", 1)
+    injected_path = tmp_path / "install-on-vps.sh"
+    injected_path.write_text(injected, encoding="utf-8")
+
+    false_line = injected.splitlines().index("false") + 1
+    expected_reason = hashlib.sha256(
+        f"unhandled command failure line={false_line}".encode("utf-8")
+    ).hexdigest()
+    completed = subprocess.run(
+        ["bash", str(injected_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert completed.stdout == ""
+    assert completed.stderr.splitlines() == [
+        "SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE "
+        f"stage=preflight reason_sha256={expected_reason} rollback=not-required"
+    ]
+    assert "unhandled command failure" not in completed.stderr
 
 
 def test_metadata_reader_ignores_unrelated_non_shellsafe_dotenv_line(tmp_path: Path) -> None:
