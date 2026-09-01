@@ -76,3 +76,24 @@ def test_installer_diagnostic_accepts_only_bounded_toolchain_rollback_states(
         module._command_json(["install"], timeout=10, stage="mcp_deploy")
 
     assert caught.value.safe_evidence["installerDiagnostic"]["toolchainRollback"] == rollback_state
+
+
+def test_installer_diagnostic_rejects_unknown_toolchain_rollback_state(
+    monkeypatch,
+) -> None:
+    module = _load()
+    completed = subprocess.CompletedProcess(
+        ["install"],
+        1,
+        "",
+        (
+            "install blocked: stage=replace_mcp_container exit=1 "
+            "reason=bounded-detail rollback_attempted=1 toolchain_rollback=unknown\n"
+        ),
+    )
+    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: completed)
+
+    with pytest.raises(module.ReconcileError) as caught:
+        module._command_json(["install"], timeout=10, stage="mcp_deploy")
+
+    assert "installerDiagnostic" not in caught.value.safe_evidence
