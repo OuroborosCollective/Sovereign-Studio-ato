@@ -1,3 +1,4 @@
+import stat
 import subprocess
 from pathlib import Path
 
@@ -51,6 +52,10 @@ def _tracked_install_dirty(repo: Path) -> str:
         "--",
         *INSTALL_PATHS,
     ).stdout
+
+
+def test_revision_bound_toolchain_installer_is_tracked_executable() -> None:
+    assert INSTALLER.stat().st_mode & stat.S_IXUSR
 
 
 def test_installer_contract_scopes_tracked_dirty_check_to_materialized_sources() -> None:
