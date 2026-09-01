@@ -259,6 +259,175 @@ def test_retired_document_image_cleanup_apply_uses_exact_ids_without_force(
     assert "volume" not in rendered
 
 
+def test_tagged_image_retention_plan_protects_container_images_and_two_newest_per_repository(
+    monkeypatch,
+) -> None:
+    runtime = N8NHostMaintenanceRuntime()
+    active = "sha256:" + "1" * 64
+    app_latest = "sha256:" + "2" * 64
+    app_rollback = "sha256:" + "3" * 64
+    app_old = "sha256:" + "4" * 64
+    other_latest = "sha256:" + "5" * 64
+    other_rollback = "sha256:" + "6" * 64
+    shared_old = "sha256:" + "7" * 64
+    calls: list[list[str]] = []
+    metadata = {
+        app_latest: '["ghcr.io/example/app:latest"]|2026-09-01T00:00:00Z|21',
+        app_rollback: '["ghcr.io/example/app:rollback-1"]|2026-08-31T00:00:00Z|19',
+        app_old: '["ghcr.io/example/app:old"]|2026-08-30T00:00:00Z|17',
+        other_latest: '["ghcr.io/example/other:latest"]|2026-09-01T00:00:00Z|15',
+        other_rollback: '["ghcr.io/example/other:rollback-1"]|2026-08-31T00:00:00Z|13',
+        shared_old: '["ghcr.io/example/app:legacy", "ghcr.io/example/other:legacy"]|2026-08-29T00:00:00Z|11',
+    }
+    monkeypatch.setattr(runtime, "_all_container_image_ids", lambda: {active})
+    monkeypatch.setattr(
+        runtime,
+        "_disk",
+        lambda: {
+            "totalBytes": 1000,
+            "usedBytes": 900,
+            "freeBytes": 100,
+            "usedPpm": 900000,
+        },
+    )
+
+    def run(argv, timeout=120):
+        calls.append(argv)
+        if argv == [
+            "docker",
+            "image",
+            "ls",
+            "--no-trunc",
+            "--filter",
+            "dangling=false",
+            "--format",
+            "{{.ID}}",
+        ]:
+            return _result(
+                "\n".join(
+                    [
+                        active,
+                        app_latest,
+                        app_rollback,
+                        app_old,
+                        other_latest,
+                        other_rollback,
+                        shared_old,
+                        app_old,
+                    ]
+                )
+                + "\n"
+            )
+        if argv[:5] == [
+            "docker",
+            "image",
+            "inspect",
+            "--format",
+            "{{json .RepoTags}}|{{.Created}}|{{.Size}}",
+        ]:
+            return _result(metadata[argv[-1]])
+        raise AssertionError(argv)
+
+    monkeypatch.setattr(runtime, "_run", run)
+
+    result = runtime.tagged_image_retention_cleanup_plan()
+
+    assert result["status"] == "TAGGED_IMAGE_RETENTION_CLEANUP_PLAN_READY"
+    assert result["taggedImageCount"] == 7
+    assert result["unreferencedTaggedImageCount"] == 6
+    assert result["protection"]["activeContainerImageCount"] == 1
+    assert {
+        (item["repository"], item["imageId"])
+        for item in result["protection"]["rollbackReservations"]
+    } == {
+        ("ghcr.io/example/app", app_latest),
+        ("ghcr.io/example/app", app_rollback),
+        ("ghcr.io/example/other", other_latest),
+        ("ghcr.io/example/other", other_rollback),
+    }
+    assert [item["imageId"] for item in result["candidates"]] == [
+        app_old,
+        shared_old,
+    ]
+    assert result["estimatedReclaimableBytes"] == 28
+    assert "stopped-container-images" in result["excluded"]
+    assert "two-newest-unreferenced-tagged-images-per-repository" in result["excluded"]
+    assert not any(active in call for call in calls)
+
+
+def test_tagged_image_retention_cleanup_apply_uses_exact_candidate_ids_without_force(
+    monkeypatch,
+) -> None:
+    runtime = N8NHostMaintenanceRuntime()
+    image_id = "sha256:" + "8" * 64
+    confirmation = "c" * 64
+    calls: list[list[str]] = []
+    before_disk = {
+        "totalBytes": 1000,
+        "usedBytes": 900,
+        "freeBytes": 100,
+        "usedPpm": 900000,
+    }
+    after_disk = {
+        "totalBytes": 1000,
+        "usedBytes": 700,
+        "freeBytes": 300,
+        "usedPpm": 700000,
+    }
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE", "1")
+    monkeypatch.setattr(
+        runtime,
+        "tagged_image_retention_cleanup_plan",
+        lambda: {
+            "ok": True,
+            "confirmationSha256": confirmation,
+            "disk": before_disk,
+            "estimatedReclaimableBytes": 250,
+            "candidates": [
+                {
+                    "imageId": image_id,
+                    "repositories": ["ghcr.io/example/app"],
+                    "repoTags": ["ghcr.io/example/app:old"],
+                    "createdAt": "2026-08-30T00:00:00Z",
+                    "sizeBytes": 250,
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_tagged_image_retention_data",
+        lambda: {"candidates": []},
+    )
+    monkeypatch.setattr(runtime, "_disk", lambda: dict(after_disk))
+
+    def run(argv, timeout=120):
+        calls.append(argv)
+        return _result()
+
+    monkeypatch.setattr(runtime, "_run", run)
+
+    result = runtime.tagged_image_retention_cleanup_apply(
+        confirmation_sha256=confirmation,
+        owner_approved=True,
+    )
+
+    assert result["status"] == "TAGGED_IMAGE_RETENTION_CLEANUP_VERIFIED"
+    assert result["reclaimedBytes"] == 200
+    assert result["candidatesRemaining"] == []
+    assert result["volumesRemoved"] is False
+    assert result["runningContainersRemoved"] is False
+    assert result["containerReferencedImagesExplicitlyRemoved"] is False
+    assert result["rollbackReservedImagesExplicitlyRemoved"] is False
+    assert calls == [["docker", "image", "rm", "--no-prune", image_id]]
+    rendered = " ".join(calls[0])
+    assert "--force" not in rendered
+    assert "image prune" not in rendered
+    assert "container" not in rendered
+    assert "volume" not in rendered
+
+
 def test_cleanup_confirmation_ignores_volatile_disk_usage(monkeypatch) -> None:
     runtime = N8NHostMaintenanceRuntime()
     running = {"count": 4, "sha256": "1" * 64}

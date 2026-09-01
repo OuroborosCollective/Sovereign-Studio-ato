@@ -386,6 +386,8 @@ class BrokerRuntime:
             return self.n8n_host_maintenance.docker_cache_cleanup_plan()
         if action == "retired_document_image_cleanup":
             return self.n8n_host_maintenance.retired_document_image_cleanup_plan()
+        if action == "tagged_image_retention_cleanup":
+            return self.n8n_host_maintenance.tagged_image_retention_cleanup_plan()
         if action == "bootstrap_local_fleet":
             return self.patchmon_fleet.bootstrap_plan(friendly_name="sovereign-vps")
         return self.patchmon.patch_action_plan(
@@ -407,6 +409,11 @@ class BrokerRuntime:
             )
         if action == "retired_document_image_cleanup":
             return self.n8n_host_maintenance.retired_document_image_cleanup_apply(
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=self.private_owner_mode,
+            )
+        if action == "tagged_image_retention_cleanup":
+            return self.n8n_host_maintenance.tagged_image_retention_cleanup_apply(
                 confirmation_sha256=str(values.get("confirmation_sha256") or ""),
                 owner_approved=self.private_owner_mode,
             )

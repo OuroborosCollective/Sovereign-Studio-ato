@@ -857,6 +857,364 @@ volumes:
             "secretValuesReturned": False,
         }
 
+    @staticmethod
+    def _tagged_image_repository(tag: str) -> str:
+        rendered = str(tag or "").strip()
+        if not rendered or rendered == "<none>:<none>" or "@" in rendered:
+            return ""
+        repository, separator, selected_tag = rendered.rpartition(":")
+        if not separator or not repository or not selected_tag:
+            return ""
+        return repository
+
+    def _unreferenced_tagged_image_inventory(
+        self,
+        protected_image_ids: set[str],
+    ) -> tuple[int, list[dict[str, Any]]]:
+        listed = self._run(
+            [
+                "docker",
+                "image",
+                "ls",
+                "--no-trunc",
+                "--filter",
+                "dangling=false",
+                "--format",
+                "{{.ID}}",
+            ],
+            timeout=90,
+        )
+        rendered_ids = str(listed.get("stdout") or "")
+        if not listed.get("ok"):
+            raise RuntimeError("Tagged Docker image inventory unavailable")
+        if len(rendered_ids.encode("utf-8")) >= 48_000:
+            raise RuntimeError("Tagged Docker image inventory exceeded bounded output")
+        image_ids = sorted(
+            {
+                line.strip()
+                for line in rendered_ids.splitlines()
+                if line.strip()
+            }
+        )
+        if len(image_ids) > 256:
+            raise RuntimeError("Tagged Docker image inventory exceeded bounded limit")
+        if any(not _IMAGE_ID_RE.fullmatch(image_id) for image_id in image_ids):
+            raise RuntimeError("Tagged Docker image inventory record invalid")
+
+        inventory: list[dict[str, Any]] = []
+        for image_id in image_ids:
+            if image_id in protected_image_ids:
+                continue
+            inspected = self._run(
+                [
+                    "docker",
+                    "image",
+                    "inspect",
+                    "--format",
+                    "{{json .RepoTags}}|{{.Created}}|{{.Size}}",
+                    image_id,
+                ],
+                timeout=60,
+            )
+            rendered = str(inspected.get("stdout") or "").strip()
+            metadata_raw, separator, size_raw = rendered.rpartition("|")
+            repo_tags_raw, metadata_separator, created_at = metadata_raw.rpartition("|")
+            if (
+                not inspected.get("ok")
+                or not separator
+                or not metadata_separator
+                or "\n" in rendered
+                or len(rendered.encode("utf-8")) >= 48_000
+            ):
+                raise RuntimeError("Tagged Docker image metadata invalid")
+            try:
+                repo_tags_value = json.loads(repo_tags_raw)
+                size_bytes = int(size_raw)
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                raise RuntimeError("Tagged Docker image metadata invalid") from exc
+            repo_tags = (
+                sorted(
+                    {
+                        str(item).strip()
+                        for item in repo_tags_value
+                        if isinstance(item, str) and str(item).strip()
+                    }
+                )
+                if isinstance(repo_tags_value, list)
+                else []
+            )
+            repositories = sorted(
+                {
+                    self._tagged_image_repository(tag)
+                    for tag in repo_tags
+                    if self._tagged_image_repository(tag)
+                }
+            )
+            if (
+                not repo_tags
+                or not repositories
+                or size_bytes < 0
+                or not re.fullmatch(
+                    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z",
+                    created_at,
+                )
+            ):
+                raise RuntimeError("Tagged Docker image metadata contract invalid")
+            inventory.append(
+                {
+                    "imageId": image_id,
+                    "repositories": repositories,
+                    "repoTags": repo_tags,
+                    "createdAt": created_at,
+                    "sizeBytes": size_bytes,
+                }
+            )
+        return len(image_ids), inventory
+
+    def _tagged_image_retention_data(self) -> dict[str, Any]:
+        protected_image_ids = self._all_container_image_ids()
+        tagged_image_count, unreferenced_images = self._unreferenced_tagged_image_inventory(
+            protected_image_ids
+        )
+        by_repository: dict[str, list[dict[str, Any]]] = {}
+        for image in unreferenced_images:
+            for repository in image["repositories"]:
+                by_repository.setdefault(str(repository), []).append(image)
+
+        reserved_image_ids: set[str] = set()
+        rollback_reservations: list[dict[str, Any]] = []
+        for repository in sorted(by_repository):
+            ordered = sorted(
+                by_repository[repository],
+                key=lambda item: (
+                    str(item["createdAt"]),
+                    str(item["imageId"]),
+                ),
+                reverse=True,
+            )
+            for image in ordered[:2]:
+                image_id = str(image["imageId"])
+                reserved_image_ids.add(image_id)
+                rollback_reservations.append(
+                    {
+                        "repository": repository,
+                        "imageId": image_id,
+                        "repoTags": list(image["repoTags"]),
+                        "createdAt": str(image["createdAt"]),
+                        "sizeBytes": int(image["sizeBytes"]),
+                        "basis": "two-newest-unreferenced-tagged-images-by-docker-created-metadata",
+                    }
+                )
+
+        candidates = sorted(
+            (
+                image
+                for image in unreferenced_images
+                if str(image["imageId"]) not in reserved_image_ids
+            ),
+            key=lambda item: str(item["imageId"]),
+        )
+        return {
+            "protectedContainerImageIds": sorted(protected_image_ids),
+            "taggedImageCount": tagged_image_count,
+            "unreferencedTaggedImageCount": len(unreferenced_images),
+            "rollbackReservations": rollback_reservations,
+            "candidates": candidates,
+        }
+
+    def tagged_image_retention_cleanup_plan(self) -> dict[str, Any]:
+        try:
+            retention = self._tagged_image_retention_data()
+            disk = self._disk()
+        except RuntimeError as exc:
+            return self._failure(
+                "TAGGED_IMAGE_RETENTION_CLEANUP_PLAN_BLOCKED",
+                "DOCKER_IMAGE_INVENTORY_UNAVAILABLE",
+                str(exc),
+            )
+
+        policy = {
+            "containerReferencedImagesProtected": True,
+            "rollbackReservationsPerRepository": 2,
+            "rollbackReservationBasis": "two-newest-unreferenced-tagged-images-by-docker-created-metadata",
+        }
+        state = {
+            "schemaVersion": "sovereign.tagged-image-retention-cleanup.v1",
+            "action": "remove_unreferenced_tagged_images_except_two_rollback_reservations_per_repository",
+            "policy": policy,
+            "protectedContainerImageIds": retention["protectedContainerImageIds"],
+            "rollbackReservations": retention["rollbackReservations"],
+            "candidates": retention["candidates"],
+        }
+        candidates = list(retention["candidates"])
+        return {
+            "ok": True,
+            "status": "TAGGED_IMAGE_RETENTION_CLEANUP_PLAN_READY",
+            "scope": [
+                "unreferenced-tagged-images-only",
+                "two-newest-unreferenced-rollback-reservations-per-repository",
+            ],
+            "excluded": [
+                "volumes",
+                "containers",
+                "running-container-images",
+                "stopped-container-images",
+                "untagged-images",
+                "two-newest-unreferenced-tagged-images-per-repository",
+            ],
+            "policy": policy,
+            "protection": {
+                "activeContainerImageCount": len(retention["protectedContainerImageIds"]),
+                "activeContainerImageIdsSha256": _canonical_sha256(
+                    retention["protectedContainerImageIds"]
+                ),
+                "rollbackReservations": retention["rollbackReservations"],
+            },
+            "taggedImageCount": int(retention["taggedImageCount"]),
+            "unreferencedTaggedImageCount": int(
+                retention["unreferencedTaggedImageCount"]
+            ),
+            "candidates": candidates,
+            "candidateCount": len(candidates),
+            "estimatedReclaimableBytes": sum(
+                int(item["sizeBytes"]) for item in candidates
+            ),
+            "disk": disk,
+            "confirmationSha256": _canonical_sha256(state),
+            "mutationPerformed": False,
+            "secretValuesReturned": False,
+        }
+
+    def tagged_image_retention_cleanup_apply(
+        self,
+        *,
+        confirmation_sha256: str,
+        owner_approved: bool,
+    ) -> dict[str, Any]:
+        if not owner_approved:
+            return self._failure(
+                "TAGGED_IMAGE_RETENTION_CLEANUP_BLOCKED",
+                "OWNER_APPROVAL_REQUIRED",
+                "owner_approved=true is required",
+            )
+        if not self._write_enabled():
+            return self._failure(
+                "TAGGED_IMAGE_RETENTION_CLEANUP_BLOCKED",
+                "HOST_MAINTENANCE_WRITE_DISABLED",
+                "Allowlisted Compose/host writes are disabled",
+            )
+        plan = self.tagged_image_retention_cleanup_plan()
+        if not plan.get("ok"):
+            return plan
+        expected = str(plan.get("confirmationSha256") or "")
+        supplied = str(confirmation_sha256 or "").strip().lower()
+        if not _SHA256_RE.fullmatch(supplied) or supplied != expected:
+            return self._failure(
+                "TAGGED_IMAGE_RETENTION_CLEANUP_BLOCKED",
+                "CONFIRMATION_MISMATCH",
+                "Tagged-image retention confirmation no longer matches the protected and candidate image sets",
+                expectedConfirmationSha256=expected,
+            )
+
+        candidates = list(plan.get("candidates") or [])
+        before_disk = dict(plan["disk"])
+        if not candidates:
+            return {
+                "ok": True,
+                "status": "TAGGED_IMAGE_RETENTION_CLEANUP_NOT_NEEDED",
+                "beforeDisk": before_disk,
+                "afterDisk": before_disk,
+                "estimatedReclaimableBytes": 0,
+                "reclaimedBytes": 0,
+                "steps": [],
+                "volumesRemoved": False,
+                "runningContainersRemoved": False,
+                "containerReferencedImagesExplicitlyRemoved": False,
+                "rollbackReservedImagesExplicitlyRemoved": False,
+                "mutationPerformed": False,
+                "secretValuesReturned": False,
+            }
+
+        steps: list[dict[str, Any]] = []
+        for candidate in candidates:
+            image_id = str(candidate.get("imageId") or "")
+            if not _IMAGE_ID_RE.fullmatch(image_id):
+                return self._failure(
+                    "TAGGED_IMAGE_RETENTION_CLEANUP_BLOCKED",
+                    "IMAGE_CANDIDATE_INVALID",
+                    "Retention plan contained an invalid image identity",
+                )
+            result = self._run(
+                ["docker", "image", "rm", "--no-prune", image_id],
+                timeout=300,
+            )
+            step = {
+                "imageId": image_id,
+                "ok": bool(result.get("ok")),
+                "exitCode": result.get("exitCode"),
+            }
+            if not result.get("ok"):
+                stderr = str(result.get("stderr") or "")
+                step["stderrSha256"] = _fingerprint(stderr)
+                step["stderrBytes"] = len(stderr.encode("utf-8"))
+            steps.append(step)
+            if not result.get("ok"):
+                break
+
+        try:
+            remaining_data = self._tagged_image_retention_data()
+            remaining_candidates = list(remaining_data.get("candidates") or [])
+        except RuntimeError:
+            remaining_candidates = None
+        after_disk = self._disk()
+        original_ids = {str(item.get("imageId") or "") for item in candidates}
+        remaining_ids = (
+            sorted(
+                original_ids
+                & {
+                    str(item.get("imageId") or "")
+                    for item in remaining_candidates
+                }
+            )
+            if remaining_candidates is not None
+            else sorted(original_ids)
+        )
+        verified = bool(steps) and all(
+            bool(step.get("ok")) for step in steps
+        ) and not remaining_ids
+        return {
+            "ok": verified,
+            "status": (
+                "TAGGED_IMAGE_RETENTION_CLEANUP_VERIFIED"
+                if verified
+                else "TAGGED_IMAGE_RETENTION_CLEANUP_INCOMPLETE"
+            ),
+            "beforeDisk": before_disk,
+            "afterDisk": after_disk,
+            "estimatedReclaimableBytes": int(
+                plan.get("estimatedReclaimableBytes") or 0
+            ),
+            "reclaimedBytes": max(
+                0,
+                int(before_disk.get("usedBytes") or 0)
+                - int(after_disk.get("usedBytes") or 0),
+            ),
+            "steps": steps,
+            "candidatesRemoved": sorted(
+                str(step.get("imageId") or "")
+                for step in steps
+                if bool(step.get("ok"))
+                and str(step.get("imageId") or "") not in remaining_ids
+            ),
+            "candidatesRemaining": remaining_ids,
+            "volumesRemoved": False,
+            "runningContainersRemoved": False,
+            "containerReferencedImagesExplicitlyRemoved": False,
+            "rollbackReservedImagesExplicitlyRemoved": False,
+            "mutationPerformed": bool(steps),
+            "secretValuesReturned": False,
+        }
+
     def stage1_plan(self) -> dict[str, Any]:
         try:
             inspected = {name: self._inspect(name) for name in N8N_EXPECTED_SERVICES}
