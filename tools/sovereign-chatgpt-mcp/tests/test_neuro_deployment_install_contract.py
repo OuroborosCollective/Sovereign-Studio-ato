@@ -902,7 +902,7 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
     section = script.split('INSTALL_STAGE="verify_isolated_neuro_runtime_canary"', 1)[1].split(
         'INSTALL_STAGE="verify_operating_profile_canaries"', 1
     )[0]
-    marker = 'sovereign-chatgpt-mcp python - <<\'PY\'\n'
+    marker = 'sovereign-chatgpt-mcp python - 2>&1 <<\'PY\'\n'
     embedded = section.split(marker, 1)[1].rsplit("\nPY", 1)[0]
     embedded = embedded.replace(
         'dir="/var/lib/sovereign-tool-routing"',
@@ -965,6 +965,34 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
     }
     assert list(canary_parent.iterdir()) == []
     assert list((tmp_path / "workspaces").iterdir()) == []
+
+    failed_parent = tmp_path / "failed-mounted-routing-state"
+    failed_parent.mkdir(mode=0o700)
+    failed_workspaces = tmp_path / "failed-workspaces"
+    failed_workspaces.mkdir(mode=0o700)
+    failed_environment = {
+        **environment,
+        "SOVEREIGN_CANARY_TEST_PARENT": str(failed_parent),
+        "SOVEREIGN_NEURO_POLICY_SHA256": "0" * 64,
+        "SOVEREIGN_MCP_WORKSPACE_ROOT": str(failed_workspaces),
+    }
+    failed = subprocess.run(
+        [sys.executable, "-c", embedded],
+        cwd=ROOT,
+        env=failed_environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert failed.returncode != 0
+    assert json.loads(failed.stdout.strip().splitlines()[-1]) == {
+        "errorType": "AssertionError",
+        "phase": "environment_binding",
+        "status": "NEURO_DEPLOYMENT_CANARY_FAILED",
+    }
+    assert "Traceback" not in (failed.stdout + failed.stderr)
 
 
 def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Path) -> None:
