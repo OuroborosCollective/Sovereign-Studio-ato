@@ -112,13 +112,6 @@ jobs:
                     && run.event === 'workflow_dispatch'
                     && jobByName('Build immutable backend image')?.conclusion === 'success'
                   );
-                  // publish-mcp-image and verify-published-mcp-image are conditioned on
-                  // `github.event_name == 'push'`, so any workflow_dispatch run for the
-                  // MCP workflow will always produce a skipped publisher regardless of
-                  // dispatch mode (including update_pr_branch=true PR-branch updates and
-                  // plain validation dispatches). Continue past all such dispatch runs to
-                  // find the canonical push-to-main run where the publisher actually
-                  // executes and must succeed.
                   const isMcpNonPublishingDispatch = (
                     requirement.workflow === 'sovereign-chatgpt-mcp.yml'
                     && run.event === 'workflow_dispatch'
