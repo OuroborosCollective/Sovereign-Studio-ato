@@ -38,7 +38,9 @@ N8N_SECRET_HOST_KEYS = (
 N8N_MIN_FREE_BYTES = 8 * 1024 * 1024 * 1024
 DEFAULT_MAINTENANCE_ROOT = "/opt/sovereign-chatgpt-tools/maintenance/n8n-stage1"
 AURION_BUILDKIT_CONTAINER = "buildx_buildkit_aurion-isolated0"
+RETIRED_DOCUMENT_IMAGE_REPOSITORIES = frozenset({"apache/tika", "gotenberg/gotenberg"})
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_IMAGE_ID_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _IMAGE_DIGEST_RE = re.compile(r"^[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$")
 
 
@@ -567,6 +569,288 @@ volumes:
   n8n_data:
   sandbox-tls:
 """
+
+    @staticmethod
+    def _image_repository(tag: str) -> str:
+        rendered = str(tag or "").strip()
+        if not rendered or rendered == "<none>:<none>" or "@" in rendered:
+            return ""
+        repository, separator, selected_tag = rendered.rpartition(":")
+        if not separator or not repository or not selected_tag:
+            return ""
+        return repository
+
+    def _all_container_image_ids(self) -> set[str]:
+        listed = self._run(
+            ["docker", "ps", "--all", "--no-trunc", "--format", "{{.Names}}"],
+            timeout=60,
+        )
+        if not listed.get("ok"):
+            raise RuntimeError("Docker container inventory unavailable")
+        names = sorted(
+            line.strip()
+            for line in str(listed.get("stdout") or "").splitlines()
+            if line.strip()
+        )
+        if len(names) > 300:
+            raise RuntimeError("Docker container inventory exceeded bounded limit")
+        if not names:
+            return set()
+        inspected = self._run(
+            ["docker", "inspect", "--format", "{{.Image}}", *names],
+            timeout=90,
+        )
+        image_ids = [
+            line.strip()
+            for line in str(inspected.get("stdout") or "").splitlines()
+            if line.strip()
+        ]
+        if (
+            not inspected.get("ok")
+            or len(image_ids) != len(names)
+            or any(not _IMAGE_ID_RE.fullmatch(image_id) for image_id in image_ids)
+        ):
+            raise RuntimeError("Docker container image references unavailable")
+        return set(image_ids)
+
+    def _retired_document_image_candidates(self) -> list[dict[str, Any]]:
+        referenced_image_ids = self._all_container_image_ids()
+        listed = self._run(
+            ["docker", "image", "ls", "--no-trunc", "--format", "{{.ID}}"],
+            timeout=60,
+        )
+        if not listed.get("ok"):
+            raise RuntimeError("Docker image inventory unavailable")
+        requested_ids = sorted(
+            {
+                line.strip()
+                for line in str(listed.get("stdout") or "").splitlines()
+                if _IMAGE_ID_RE.fullmatch(line.strip())
+            }
+        )
+        if len(requested_ids) > 500:
+            raise RuntimeError("Docker image inventory exceeded bounded limit")
+        if not requested_ids:
+            return []
+        inspected = self._run(
+            ["docker", "image", "inspect", *requested_ids],
+            timeout=120,
+        )
+        if not inspected.get("ok"):
+            raise RuntimeError("Docker image metadata unavailable")
+        try:
+            metadata = json.loads(str(inspected.get("stdout") or ""))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Docker image metadata invalid") from exc
+        if not isinstance(metadata, list) or len(metadata) != len(requested_ids):
+            raise RuntimeError("Docker image metadata cardinality mismatch")
+
+        candidates: list[dict[str, Any]] = []
+        for row in metadata:
+            if not isinstance(row, dict):
+                raise RuntimeError("Docker image metadata row invalid")
+            image_id = str(row.get("Id") or "").strip()
+            repo_tags = sorted(
+                {
+                    str(item).strip()
+                    for item in (row.get("RepoTags") or [])
+                    if isinstance(item, str) and str(item).strip()
+                }
+            )
+            repositories = sorted(
+                {
+                    self._image_repository(tag)
+                    for tag in repo_tags
+                    if self._image_repository(tag)
+                }
+            )
+            try:
+                size_bytes = int(row.get("Size") or 0)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError("Docker image size metadata invalid") from exc
+            if (
+                not _IMAGE_ID_RE.fullmatch(image_id)
+                or image_id in referenced_image_ids
+                or not repo_tags
+                or not repositories
+                or size_bytes < 0
+                or not set(repositories).issubset(RETIRED_DOCUMENT_IMAGE_REPOSITORIES)
+            ):
+                continue
+            candidates.append(
+                {
+                    "imageId": image_id,
+                    "repositories": repositories,
+                    "repoTags": repo_tags,
+                    "sizeBytes": size_bytes,
+                }
+            )
+        return sorted(candidates, key=lambda item: str(item["imageId"]))
+
+    def retired_document_image_cleanup_plan(self) -> dict[str, Any]:
+        try:
+            candidates = self._retired_document_image_candidates()
+            disk = self._disk()
+        except RuntimeError as exc:
+            return self._failure(
+                "RETIRED_DOCUMENT_IMAGE_CLEANUP_PLAN_BLOCKED",
+                "DOCKER_IMAGE_INVENTORY_UNAVAILABLE",
+                str(exc),
+            )
+        state = {
+            "schemaVersion": "sovereign.retired-document-image-cleanup.v1",
+            "action": "remove_unreferenced_gotenberg_and_tika_images_only",
+            "candidates": candidates,
+        }
+        return {
+            "ok": True,
+            "status": "RETIRED_DOCUMENT_IMAGE_CLEANUP_PLAN_READY",
+            "scope": ["unreferenced-gotenberg-and-tika-images-only"],
+            "excluded": [
+                "volumes",
+                "containers",
+                "running-container-images",
+                "stopped-container-images",
+                "non-retired-images",
+                "all-other-tagged-images",
+            ],
+            "candidates": candidates,
+            "candidateCount": len(candidates),
+            "estimatedReclaimableBytes": sum(
+                int(item["sizeBytes"]) for item in candidates
+            ),
+            "disk": disk,
+            "confirmationSha256": _canonical_sha256(state),
+            "mutationPerformed": False,
+            "secretValuesReturned": False,
+        }
+
+    def retired_document_image_cleanup_apply(
+        self,
+        *,
+        confirmation_sha256: str,
+        owner_approved: bool,
+    ) -> dict[str, Any]:
+        if not owner_approved:
+            return self._failure(
+                "RETIRED_DOCUMENT_IMAGE_CLEANUP_BLOCKED",
+                "OWNER_APPROVAL_REQUIRED",
+                "owner_approved=true is required",
+            )
+        if not self._write_enabled():
+            return self._failure(
+                "RETIRED_DOCUMENT_IMAGE_CLEANUP_BLOCKED",
+                "HOST_MAINTENANCE_WRITE_DISABLED",
+                "Allowlisted Compose/host writes are disabled",
+            )
+        plan = self.retired_document_image_cleanup_plan()
+        if not plan.get("ok"):
+            return plan
+        expected = str(plan.get("confirmationSha256") or "")
+        supplied = str(confirmation_sha256 or "").strip().lower()
+        if not _SHA256_RE.fullmatch(supplied) or supplied != expected:
+            return self._failure(
+                "RETIRED_DOCUMENT_IMAGE_CLEANUP_BLOCKED",
+                "CONFIRMATION_MISMATCH",
+                "Retired-document image cleanup confirmation no longer matches the candidate set",
+                expectedConfirmationSha256=expected,
+            )
+
+        candidates = list(plan.get("candidates") or [])
+        before_disk = dict(plan["disk"])
+        if not candidates:
+            return {
+                "ok": True,
+                "status": "RETIRED_DOCUMENT_IMAGE_CLEANUP_NOT_NEEDED",
+                "beforeDisk": before_disk,
+                "afterDisk": before_disk,
+                "estimatedReclaimableBytes": 0,
+                "reclaimedBytes": 0,
+                "steps": [],
+                "volumesRemoved": False,
+                "runningContainersRemoved": False,
+                "nonRetiredImagesExplicitlyRemoved": False,
+                "mutationPerformed": False,
+                "secretValuesReturned": False,
+            }
+
+        steps: list[dict[str, Any]] = []
+        for candidate in candidates:
+            image_id = str(candidate.get("imageId") or "")
+            if not _IMAGE_ID_RE.fullmatch(image_id):
+                return self._failure(
+                    "RETIRED_DOCUMENT_IMAGE_CLEANUP_BLOCKED",
+                    "IMAGE_CANDIDATE_INVALID",
+                    "Cleanup plan contained an invalid image identity",
+                )
+            result = self._run(
+                ["docker", "image", "rm", "--no-prune", image_id],
+                timeout=300,
+            )
+            step = {
+                "imageId": image_id,
+                "ok": bool(result.get("ok")),
+                "exitCode": result.get("exitCode"),
+            }
+            if not result.get("ok"):
+                stderr = str(result.get("stderr") or "")
+                step["stderrSha256"] = _fingerprint(stderr)
+                step["stderrBytes"] = len(stderr.encode("utf-8"))
+            steps.append(step)
+            if not result.get("ok"):
+                break
+
+        try:
+            remaining_candidates = self._retired_document_image_candidates()
+        except RuntimeError:
+            remaining_candidates = None
+        after_disk = self._disk()
+        original_ids = {str(item.get("imageId") or "") for item in candidates}
+        remaining_ids = (
+            sorted(
+                original_ids
+                & {
+                    str(item.get("imageId") or "")
+                    for item in remaining_candidates
+                }
+            )
+            if remaining_candidates is not None
+            else sorted(original_ids)
+        )
+        verified = bool(steps) and all(
+            bool(step.get("ok")) for step in steps
+        ) and not remaining_ids
+        return {
+            "ok": verified,
+            "status": (
+                "RETIRED_DOCUMENT_IMAGE_CLEANUP_VERIFIED"
+                if verified
+                else "RETIRED_DOCUMENT_IMAGE_CLEANUP_INCOMPLETE"
+            ),
+            "beforeDisk": before_disk,
+            "afterDisk": after_disk,
+            "estimatedReclaimableBytes": int(
+                plan.get("estimatedReclaimableBytes") or 0
+            ),
+            "reclaimedBytes": max(
+                0,
+                int(before_disk.get("usedBytes") or 0)
+                - int(after_disk.get("usedBytes") or 0),
+            ),
+            "steps": steps,
+            "candidatesRemoved": sorted(
+                str(step.get("imageId") or "")
+                for step in steps
+                if bool(step.get("ok"))
+                and str(step.get("imageId") or "") not in remaining_ids
+            ),
+            "candidatesRemaining": remaining_ids,
+            "volumesRemoved": False,
+            "runningContainersRemoved": False,
+            "nonRetiredImagesExplicitlyRemoved": False,
+            "mutationPerformed": bool(steps),
+            "secretValuesReturned": False,
+        }
 
     def stage1_plan(self) -> dict[str, Any]:
         try:
