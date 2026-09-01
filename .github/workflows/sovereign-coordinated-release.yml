@@ -112,14 +112,14 @@ jobs:
                     && run.event === 'workflow_dispatch'
                     && jobByName('Build immutable backend image')?.conclusion === 'success'
                   );
-                  const isMcpBranchUpdate = (
+                  const isMcpNonPublishingDispatch = (
                     requirement.workflow === 'sovereign-chatgpt-mcp.yml'
                     && run.event === 'workflow_dispatch'
                     && jobByName('Boundary ledger drift preflight')?.conclusion === 'skipped'
                     && jobByName('Validate MCP operator')?.conclusion === 'skipped'
                   );
                   if (publisher.conclusion === 'skipped') {
-                    if (isBackendPrValidation || isMcpBranchUpdate) {
+                    if (isBackendPrValidation || isMcpNonPublishingDispatch) {
                       // Only explicitly non-producing dispatch modes may be bypassed.
                       continue;
                     }

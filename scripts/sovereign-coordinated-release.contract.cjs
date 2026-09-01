@@ -51,7 +51,7 @@ test('coordinated release waits for the full producer critical path and accepts 
   assert.match(workflow, /publisher\.conclusion === 'skipped'/);
   assert.match(workflow, /LATEST_EXACT_REVISION_PUBLISHER_SKIPPED_UNEXPECTEDLY/);
   assert.match(workflow, /isBackendPrValidation/);
-  assert.match(workflow, /isMcpBranchUpdate/);
+  assert.match(workflow, /isMcpNonPublishingDispatch/);
   assert.match(workflow, /Build immutable backend image/);
   assert.match(workflow, /Boundary ledger drift preflight/);
   assert.match(workflow, /Validate MCP operator/);
