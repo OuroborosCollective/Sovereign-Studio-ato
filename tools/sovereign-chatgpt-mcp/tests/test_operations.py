@@ -403,6 +403,62 @@ def test_preview_hydrates_real_schema_without_copying_rows(tmp_path, monkeypatch
     assert calls[3]["input"] == calls[0]["input"]
 
 
+def test_preview_cleanup_failure_never_returns_green(tmp_path, monkeypatch) -> None:
+    sql = "ALTER TABLE agent_events DROP CONSTRAINT IF EXISTS agent_events_source_check;\n"
+    workspace_id, relative_path, checksum = _migration_workspace(tmp_path, sql)
+    backend_env = tmp_path / "backend.env"
+    backend_env.write_text(
+        "POSTGRES_HOST=db\nPOSTGRES_PORT=5432\nPOSTGRES_DB=postgres\n"
+        "POSTGRES_USER=postgres\nPOSTGRES_PASSWORD=admin-secret\n",
+        "utf-8",
+    )
+    monkeypatch.setenv("SOVEREIGN_MCP_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setenv("SOVEREIGN_BACKEND_ENV_FILE", str(backend_env))
+    monkeypatch.setenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST", "db")
+    monkeypatch.setenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT", "5432")
+    monkeypatch.setenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_DB", "sovereign_migration_preview")
+    runtime = OperationsRuntime()
+    calls = []
+    schema_sql = "CREATE TABLE public.agent_events(event_id text PRIMARY KEY, source text NOT NULL);\n"
+
+    def fake_run_input(argv, input_text, *, password, timeout):
+        calls.append({"argv": argv, "input": input_text, "password": password, "timeout": timeout})
+        if len(calls) == 4:
+            return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "cleanup failed"}
+        return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
+
+    monkeypatch.setattr(runtime, "_run_input", fake_run_input)
+    monkeypatch.setattr(
+        runtime,
+        "_run_capture",
+        lambda *_args, **_kwargs: {
+            "ok": True,
+            "exit_code": 0,
+            "stdout": schema_sql,
+            "stdout_bytes": len(schema_sql.encode()),
+            "stdout_sha256": hashlib.sha256(schema_sql.encode()).hexdigest(),
+            "stderr_sha256": hashlib.sha256(b"").hexdigest(),
+            "failure_family": None,
+        },
+    )
+
+    result = runtime.preview_verified_migration(
+        workspace_id=workspace_id,
+        path=relative_path,
+        expected_sha256=checksum,
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "BLOCKED"
+    assert result["failure_family"] == "PREVIEW_CLEANUP_FAILED"
+    assert result["rolled_back"] is True
+    assert result["schema_hydrated"] is True
+    assert result["production_rows_copied"] is False
+    assert result["production_write_performed"] is False
+    assert result["preview_cleanup_verified"] is False
+    assert len(calls) == 4
+
+
 def test_preview_database_can_never_equal_production_database(tmp_path, monkeypatch) -> None:
     sql = "ALTER TABLE agent_events DROP CONSTRAINT IF EXISTS agent_events_source_check;\n"
     workspace_id, relative_path, checksum = _migration_workspace(tmp_path, sql)
