@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, field_validator
 
 from .core import dispatch_tool
@@ -257,6 +258,18 @@ def healthz() -> dict[str, Any]:
     }
 
 
+def evidence_dispatch_failure_response() -> JSONResponse:
+    """Return a constant, secret-safe failure contract for the HTTP adapter."""
+    return JSONResponse(
+        status_code=502,
+        content={
+            "ok": False,
+            "tool": "github_actions_run_evidence",
+            "error": "CI evidence acquisition failed",
+        },
+    )
+
+
 @app.post(EVIDENCE_ROUTE)
 def n8n_ci_evidence(
     call: N8NCIEvidenceArgs,
@@ -264,9 +277,15 @@ def n8n_ci_evidence(
         default=None,
         alias="X-Sovereign-Evidence-Capability",
     ),
-) -> dict[str, Any]:
+) -> Any:
     check_lane_capability(call, x_sovereign_evidence_capability)
-    return dispatch_tool(
-        "github_actions_run_evidence",
-        call.model_dump(exclude_none=True),
-    )
+    try:
+        outcome = dispatch_tool(
+            "github_actions_run_evidence",
+            call.model_dump(exclude_none=True),
+        )
+    except Exception:
+        return evidence_dispatch_failure_response()
+    if not isinstance(outcome, dict) or outcome.get("ok") is not True:
+        return evidence_dispatch_failure_response()
+    return outcome

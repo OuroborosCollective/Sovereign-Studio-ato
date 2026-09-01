@@ -134,7 +134,7 @@ if ! run_root env \
   echo 'MCP installer failed before producing verified evidence.' >&2
   exit 1
 fi
-python3 - "$INSTALL_OUTPUT" "$INSTALL_RECEIPT_FILE" "$PREDECESSOR_CONTAINER_PRESENT" <<'PY'
+python3 - "$INSTALL_OUTPUT" "$INSTALL_RECEIPT_FILE" "$PREDECESSOR_CONTAINER_PRESENT" "$EXPECTED_REVISION" <<'PY'
 from pathlib import Path
 import json
 import os
@@ -143,6 +143,7 @@ import sys
 output_path = Path(sys.argv[1])
 receipt_path = Path(sys.argv[2])
 predecessor_observed = sys.argv[3] == 'true'
+expected_revision = sys.argv[4]
 receipt = None
 for line in reversed(output_path.read_text('utf-8').splitlines()):
     try:
@@ -188,6 +189,24 @@ if receipt.get('tool_outcome_telemetry_scope') != 'mutable-tool-outcomes-only':
     raise SystemExit('installer telemetry scope is not the verified mutable-only contract')
 if receipt.get('read_only_tool_calls_persisted') is not False:
     raise SystemExit('installer receipt claims read-only tool outcome persistence')
+toolchain_expected = {
+    'deployment_source_scope': 'mcp-release-archive',
+    'toolchain_install_required': False,
+    'toolchain_revision': expected_revision,
+    'toolchain_revision_verified': True,
+    'toolchain_health_readback': True,
+    'toolchain_n8n_evidence_auth_canary': True,
+    'toolchain_rollback_capable': True,
+}
+toolchain_mismatches = {
+    field: {'expected': value, 'actual': receipt.get(field)}
+    for field, value in toolchain_expected.items()
+    if receipt.get(field) != value
+}
+if toolchain_mismatches:
+    raise SystemExit(
+        f'installer did not prove the exact matching toolchain: {toolchain_mismatches}'
+    )
 temporary = receipt_path.with_suffix('.tmp')
 temporary.write_text(
     json.dumps(receipt, sort_keys=True, separators=(',', ':')) + '\n',

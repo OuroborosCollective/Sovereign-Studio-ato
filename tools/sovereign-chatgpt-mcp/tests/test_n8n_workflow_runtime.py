@@ -582,12 +582,31 @@ def test_publish_and_unpublish_use_n8n_2369_endpoints(
         owner_approved=True,
     )
 
-    assert applied["ok"] is True
     assert applied["readback"]["active"] is expected_active
     assert any(
         call["method"] == "POST" and call["path"] == endpoint
         for call in session.calls
     )
+    if operation == "activate":
+        assert applied["ok"] is False
+        assert applied["status"] == (
+            "N8N_WORKFLOW_ACTIVATION_PENDING_EXECUTION_EVIDENCE"
+        )
+        assert applied["failureFamily"] == (
+            "N8N_ACTIVATION_EXECUTION_EVIDENCE_PENDING"
+        )
+        assert applied["readbackVerified"] is False
+        assert applied["mutationPerformed"] is True
+        assert applied["mutationAttempted"] is True
+        assert applied["mutationPossible"] is False
+        assert applied["evidence"]["structuralReadbackVerified"] is True
+        assert applied["evidence"]["executionEvidenceVerified"] is False
+        assert applied["nextAction"] == (
+            "run_and_verify_exact_lane_execution_canary"
+        )
+    else:
+        assert applied["ok"] is True
+        assert applied["readbackVerified"] is True
     assert not any(
         call["path"].endswith("/activate")
         or call["path"].endswith("/deactivate")
@@ -667,10 +686,22 @@ def test_already_reached_publish_state_is_verified_noop(
         owner_approved=True,
     )
 
-    assert applied["ok"] is True
-    assert applied["status"] == "N8N_WORKFLOW_ALREADY_IN_DESIRED_STATE"
+    if operation == "activate":
+        assert applied["ok"] is False
+        assert applied["status"] == (
+            "N8N_WORKFLOW_ACTIVATION_PENDING_EXECUTION_EVIDENCE"
+        )
+        assert applied["failureFamily"] == (
+            "N8N_ACTIVATION_EXECUTION_EVIDENCE_PENDING"
+        )
+        assert applied["readbackVerified"] is False
+        assert applied["evidence"]["structuralReadbackVerified"] is True
+        assert applied["evidence"]["executionEvidenceVerified"] is False
+    else:
+        assert applied["ok"] is True
+        assert applied["status"] == "N8N_WORKFLOW_ALREADY_IN_DESIRED_STATE"
+        assert applied["readbackVerified"] is True
     assert applied["mutationPerformed"] is False
-    assert applied["readbackVerified"] is True
     assert not any(
         call["method"] != "GET"
         for call in session.calls[calls_before_apply:]
@@ -1056,7 +1087,7 @@ def test_create_commit_then_transport_error_is_reconciled_by_exact_lane_inventor
     ) == 1
 
 
-def test_activate_commit_then_transport_error_is_verified_by_exact_readback() -> None:
+def test_activate_commit_then_transport_error_stays_pending_canary() -> None:
     session = AmbiguousWriteSession(
         "sovereign",
         target_path="/workflows/workflow-1/publish",
@@ -1078,14 +1109,23 @@ def test_activate_commit_then_transport_error_is_verified_by_exact_readback() ->
         owner_approved=True,
     )
 
-    assert applied["ok"] is True
+    assert applied["ok"] is False
     assert applied["status"] == (
-        "N8N_WORKFLOW_APPLIED_VERIFIED_AFTER_AMBIGUOUS_RESPONSE"
+        "N8N_WORKFLOW_ACTIVATION_PENDING_EXECUTION_EVIDENCE"
+    )
+    assert applied["failureFamily"] == (
+        "N8N_ACTIVATION_EXECUTION_EVIDENCE_PENDING"
     )
     assert applied["readback"]["active"] is True
-    assert applied["readbackVerified"] is True
+    assert applied["readbackVerified"] is False
+    assert applied["mutationPerformed"] is True
+    assert applied["mutationAttempted"] is True
+    assert applied["mutationPossible"] is False
+    assert applied["reconciledAfterAmbiguousResponse"] is True
     assert applied["evidence"]["definitionVerified"] is True
     assert applied["evidence"]["projectBound"] is True
+    assert applied["evidence"]["structuralReadbackVerified"] is True
+    assert applied["evidence"]["executionEvidenceVerified"] is False
 
 
 def test_unverified_transport_write_is_reported_as_outcome_uncertain() -> None:
@@ -1121,7 +1161,7 @@ def test_unverified_transport_write_is_reported_as_outcome_uncertain() -> None:
     assert applied["readbackVerified"] is False
 
 
-def test_committed_workflow_returning_http_503_is_reconciled() -> None:
+def test_committed_activation_http_503_is_reconciled_but_pending_canary() -> None:
     session = AmbiguousWriteSession(
         "sovereign",
         target_path="/workflows/workflow-1/publish",
@@ -1144,12 +1184,21 @@ def test_committed_workflow_returning_http_503_is_reconciled() -> None:
         owner_approved=True,
     )
 
-    assert applied["ok"] is True
+    assert applied["ok"] is False
     assert applied["status"] == (
-        "N8N_WORKFLOW_APPLIED_VERIFIED_AFTER_AMBIGUOUS_RESPONSE"
+        "N8N_WORKFLOW_ACTIVATION_PENDING_EXECUTION_EVIDENCE"
+    )
+    assert applied["failureFamily"] == (
+        "N8N_ACTIVATION_EXECUTION_EVIDENCE_PENDING"
     )
     assert applied["evidence"]["originalFailureFamily"] == "N8N_API_HTTP_503"
+    assert applied["evidence"]["structuralReadbackVerified"] is True
+    assert applied["evidence"]["executionEvidenceVerified"] is False
     assert applied["readback"]["active"] is True
+    assert applied["readbackVerified"] is False
+    assert applied["mutationPerformed"] is True
+    assert applied["mutationAttempted"] is True
+    assert applied["mutationPossible"] is False
 
 
 def test_http_4xx_write_rejection_is_not_reported_as_possible_mutation() -> None:

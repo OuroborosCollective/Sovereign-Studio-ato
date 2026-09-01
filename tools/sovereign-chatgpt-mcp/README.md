@@ -48,7 +48,8 @@ Zwei zusätzliche Werkzeuge steuern ausschließlich den fest kompilierten CI-Evi
 - Die n8n-Public-API-Schlüssel werden getrennt über die sicheren Owner-Input-Ziele `n8n_sovereign_api_key` und `n8n_aurion_api_key` in root-eigenen Dateien gespeichert. Sie werden weder in den MCP-Container noch in Chat, Git, Logs oder Toolantworten transportiert.
 - Der Schlüssel benötigt minimal `project:list`, `credential:list/create` sowie `workflow:list/read/create/update/activate/deactivate`.
 - Der Evidence-Master verbleibt root-only auf dem Host. Der Broker erzeugt daraus je Lane eine andere HMAC-Fähigkeit für den Header `X-Sovereign-Evidence-Capability`; n8n erhält niemals den Master.
-- Die Repository-Templates bleiben `active:false`. Aktivierung erfolgt erst nach Deployment, exakter Credential-/Projektbindung, manueller Ausführung und serverseitigem Readback.
+- Die festen Zwei-Node-Workflows besitzen absichtlich keinen schreibenden State-Node. Ohne zurückgesendeten Fingerprint behauptet ein Receipt deshalb weder Änderung noch Benachrichtigungsbedarf: `deliveryCursorPresent=false`, `stateChanged=false`, `shouldNotify=false`.
+- Die Repository-Templates bleiben `active:false`. Ein erfolgreicher `activate`-Write belegt zunächst nur Definition, Projekt und Aktivstatus. `n8n_workflow_apply` meldet bis zu einem unabhängig geprüften exakten Lane-Ausführungs-Canary `N8N_WORKFLOW_ACTIVATION_PENDING_EXECUTION_EVIDENCE` mit `ok=false`; auch »bereits aktiv« oder ein nach Timeout strukturell reconcilter Publish darf die fehlende Ausführungsevidence nicht umgehen.
 
 ## Neuro-/Foundation- und Teaching-Lane
 

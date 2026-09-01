@@ -186,8 +186,10 @@ def build_ci_evidence_receipt(observation: Mapping[str, Any]) -> dict[str, Any]:
     """Normalize one workflow-bound GitHub Actions observation into deterministic evidence.
 
     The receipt deliberately contains no wall-clock time and cannot claim runtime truth. n8n may
-    retain stateFingerprint solely as a delivery cursor. Sovereign must perform an independent
-    repository/runtime readback before any external effect can transition to VERIFIED.
+    retain stateFingerprint solely as a delivery cursor. Without a supplied cursor, the receipt
+    records the current fingerprint but cannot claim that state changed or that a notification is
+    due. Sovereign must perform an independent repository/runtime readback before any external
+    effect can transition to VERIFIED.
     """
 
     if not isinstance(observation, Mapping):
@@ -237,7 +239,10 @@ def build_ci_evidence_receipt(observation: Mapping[str, Any]) -> dict[str, Any]:
     state_fingerprint = _canonical_sha256(normalized_observation)
     previous_raw = observation.get("previous_fingerprint")
     previous_fingerprint = _sha64(previous_raw, "previous_fingerprint") if previous_raw else None
-    changed = previous_fingerprint != state_fingerprint
+    delivery_cursor_present = previous_fingerprint is not None
+    changed = bool(
+        delivery_cursor_present and previous_fingerprint != state_fingerprint
+    )
     revision_matches = (
         expected_head_sha == branch_head_sha
         and head_sha == branch_head_sha
@@ -265,6 +270,7 @@ def build_ci_evidence_receipt(observation: Mapping[str, Any]) -> dict[str, Any]:
         "verdict": verdict,
         "stateFingerprint": state_fingerprint,
         "previousFingerprint": previous_fingerprint,
+        "deliveryCursorPresent": delivery_cursor_present,
         "stateChanged": changed,
         "shouldNotify": should_notify,
         "requiresIndependentReadback": True,
@@ -315,7 +321,10 @@ def build_revision_guardian_receipt(observation: Mapping[str, Any]) -> dict[str,
     state_fingerprint = _canonical_sha256(normalized_observation)
     previous_raw = observation.get("previous_fingerprint")
     previous_fingerprint = _sha64(previous_raw, "previous_fingerprint") if previous_raw else None
-    changed = previous_fingerprint != state_fingerprint
+    delivery_cursor_present = previous_fingerprint is not None
+    changed = bool(
+        delivery_cursor_present and previous_fingerprint != state_fingerprint
+    )
     verdict = "PASS" if not drift else "DRIFT"
     body = {
         "schemaVersion": "sovereign.revision-guardian-observation.v1",
@@ -331,6 +340,7 @@ def build_revision_guardian_receipt(observation: Mapping[str, Any]) -> dict[str,
         "verdict": verdict,
         "stateFingerprint": state_fingerprint,
         "previousFingerprint": previous_fingerprint,
+        "deliveryCursorPresent": delivery_cursor_present,
         "stateChanged": changed,
         "shouldNotify": changed,
         "requiresIndependentReadback": True,

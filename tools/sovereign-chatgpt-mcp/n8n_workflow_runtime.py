@@ -27,6 +27,19 @@ EVIDENCE_CAPABILITY_CONTEXT = "sovereign.n8n-ci-evidence-capability.v1"
 DEFAULT_LOCK_ROOT = Path("/run/sovereign-chatgpt-broker/n8n-workflows")
 MAX_WORKFLOW_NODES = 32
 MIN_SCHEDULE_MINUTES = 15
+ACTIVATION_PENDING_STATUS = (
+    "N8N_WORKFLOW_ACTIVATION_PENDING_EXECUTION_EVIDENCE"
+)
+ACTIVATION_PENDING_FAMILY = (
+    "N8N_ACTIVATION_EXECUTION_EVIDENCE_PENDING"
+)
+ACTIVATION_PENDING_BLOCKER = (
+    "workflow is structurally active, but no successful exact-lane execution "
+    "receipt has been observed"
+)
+ACTIVATION_PENDING_NEXT_ACTION = (
+    "run_and_verify_exact_lane_execution_canary"
+)
 _MAX_API_PAGES = 10
 _MAX_KEY_BYTES = 4096
 _WORKFLOW_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,160}$")
@@ -1566,12 +1579,25 @@ class N8NWorkflowAutomationRuntime:
         ):
             current_state = dict(plan.get("currentState") or {})
             resolved_workflow_id = str(plan.get("workflowId") or "")
+            activation_pending = operation == "activate"
             return {
                 "schemaVersion": "sovereign.n8n-workflow-apply.v1",
-                "ok": True,
-                "status": "N8N_WORKFLOW_ALREADY_IN_DESIRED_STATE",
-                "failureFamily": None,
-                "blocker": None,
+                "ok": not activation_pending,
+                "status": (
+                    ACTIVATION_PENDING_STATUS
+                    if activation_pending
+                    else "N8N_WORKFLOW_ALREADY_IN_DESIRED_STATE"
+                ),
+                "failureFamily": (
+                    ACTIVATION_PENDING_FAMILY
+                    if activation_pending
+                    else None
+                ),
+                "blocker": (
+                    ACTIVATION_PENDING_BLOCKER
+                    if activation_pending
+                    else None
+                ),
                 "lane": plan.get("lane"),
                 "repository": plan.get("repository"),
                 "projectId": plan.get("projectId"),
@@ -1580,19 +1606,35 @@ class N8NWorkflowAutomationRuntime:
                 "workflowId": resolved_workflow_id,
                 "operationId": resolved_workflow_id,
                 "requestedEffect": operation,
-                "observedEffect": "already-in-desired-state",
+                "observedEffect": (
+                    "active-pending-execution-evidence"
+                    if activation_pending
+                    else "already-in-desired-state"
+                ),
                 "ownerApproved": True,
                 "expectedRevision": expected_revision,
                 "actualRevision": current_state.get("versionId") or None,
                 "readback": current_state,
-                "readbackVerified": True,
+                "readbackVerified": not activation_pending,
                 "mutationPerformed": False,
                 "credentialBootstrapped": False,
-                "nextAction": None,
+                "nextAction": (
+                    ACTIVATION_PENDING_NEXT_ACTION
+                    if activation_pending
+                    else None
+                ),
                 "evidence": {
                     "confirmationSha256": expected,
                     "projectBound": True,
+                    "definitionVerified": True,
                     "activeStateVerified": True,
+                    "archivedStateVerified": (
+                        current_state.get("archived") is False
+                    ),
+                    "structuralReadbackVerified": True,
+                    "executionEvidenceVerified": (
+                        False if activation_pending else None
+                    ),
                 },
                 "data": {},
                 "secretValuesReturned": False,
@@ -1828,20 +1870,35 @@ class N8NWorkflowAutomationRuntime:
             desired_definition_sha = verification[
                 "desiredDefinitionSha256"
             ]
+            configuration_verified = verified
+            activation_pending = bool(
+                operation == "activate" and configuration_verified
+            )
+            fully_verified = bool(
+                configuration_verified and not activation_pending
+            )
             return {
                 "schemaVersion": "sovereign.n8n-workflow-apply.v1",
-                "ok": verified,
+                "ok": fully_verified,
                 "status": (
-                    "N8N_WORKFLOW_APPLIED_VERIFIED"
-                    if verified
+                    ACTIVATION_PENDING_STATUS
+                    if activation_pending
+                    else "N8N_WORKFLOW_APPLIED_VERIFIED"
+                    if fully_verified
                     else "N8N_WORKFLOW_APPLIED_UNVERIFIED"
                 ),
                 "failureFamily": (
-                    None if verified else "N8N_READBACK_MISMATCH"
+                    ACTIVATION_PENDING_FAMILY
+                    if activation_pending
+                    else None
+                    if fully_verified
+                    else "N8N_READBACK_MISMATCH"
                 ),
                 "blocker": (
-                    None
-                    if verified
+                    ACTIVATION_PENDING_BLOCKER
+                    if activation_pending
+                    else None
+                    if fully_verified
                     else "n8n readback did not match the confirmed desired state"
                 ),
                 "lane": lane.lane_id,
@@ -1853,7 +1910,11 @@ class N8NWorkflowAutomationRuntime:
                 "operationId": workflow_id,
                 "requestedEffect": operation,
                 "observedEffect": (
-                    operation if verified else "unverified"
+                    "activated-pending-execution-evidence"
+                    if activation_pending
+                    else operation
+                    if fully_verified
+                    else "unverified"
                 ),
                 "ownerApproved": True,
                 "expectedRevision": expected_revision,
@@ -1861,7 +1922,7 @@ class N8NWorkflowAutomationRuntime:
                     readback.get("versionId") or None
                 ),
                 "readback": readback,
-                "readbackVerified": verified,
+                "readbackVerified": fully_verified,
                 "mutationPerformed": True,
                 "mutationAttempted": True,
                 "mutationPossible": False,
@@ -1869,8 +1930,10 @@ class N8NWorkflowAutomationRuntime:
                 "credentialWriteAttempted": credential_write_attempted,
                 "credentialBootstrapped": credential_mutated,
                 "nextAction": (
-                    None
-                    if verified
+                    ACTIVATION_PENDING_NEXT_ACTION
+                    if activation_pending
+                    else None
+                    if fully_verified
                     else "inspect_n8n_workflow_readback"
                 ),
                 "evidence": {
@@ -1879,6 +1942,10 @@ class N8NWorkflowAutomationRuntime:
                     "definitionVerified": definition_verified,
                     "activeStateVerified": active_verified,
                     "archivedStateVerified": archived_verified,
+                    "structuralReadbackVerified": configuration_verified,
+                    "executionEvidenceVerified": (
+                        False if activation_pending else None
+                    ),
                     "desiredDefinitionSha256": desired_definition_sha,
                 },
                 "data": {},
@@ -1919,12 +1986,25 @@ class N8NWorkflowAutomationRuntime:
                     pass
                 else:
                     if verification["verified"]:
+                        activation_pending = operation == "activate"
                         return {
                             "schemaVersion": "sovereign.n8n-workflow-apply.v1",
-                            "ok": True,
-                            "status": "N8N_WORKFLOW_APPLIED_VERIFIED_AFTER_AMBIGUOUS_RESPONSE",
-                            "failureFamily": None,
-                            "blocker": None,
+                            "ok": not activation_pending,
+                            "status": (
+                                ACTIVATION_PENDING_STATUS
+                                if activation_pending
+                                else "N8N_WORKFLOW_APPLIED_VERIFIED_AFTER_AMBIGUOUS_RESPONSE"
+                            ),
+                            "failureFamily": (
+                                ACTIVATION_PENDING_FAMILY
+                                if activation_pending
+                                else None
+                            ),
+                            "blocker": (
+                                ACTIVATION_PENDING_BLOCKER
+                                if activation_pending
+                                else None
+                            ),
                             "lane": lane.lane_id,
                             "repository": lane.repository,
                             "projectId": project["id"],
@@ -1933,12 +2013,16 @@ class N8NWorkflowAutomationRuntime:
                             "workflowId": workflow_id,
                             "operationId": workflow_id,
                             "requestedEffect": operation,
-                            "observedEffect": "verified-after-ambiguous-response",
+                            "observedEffect": (
+                                "activated-pending-execution-evidence"
+                                if activation_pending
+                                else "verified-after-ambiguous-response"
+                            ),
                             "ownerApproved": True,
                             "expectedRevision": expected_revision,
                             "actualRevision": readback.get("versionId") or None,
                             "readback": readback,
-                            "readbackVerified": True,
+                            "readbackVerified": not activation_pending,
                             "mutationPerformed": True,
                             "mutationAttempted": True,
                             "mutationPossible": False,
@@ -1946,7 +2030,11 @@ class N8NWorkflowAutomationRuntime:
                             "credentialWriteAttempted": credential_write_attempted,
                             "credentialBootstrapped": credential_mutated,
                             "reconciledAfterAmbiguousResponse": True,
-                            "nextAction": None,
+                            "nextAction": (
+                                ACTIVATION_PENDING_NEXT_ACTION
+                                if activation_pending
+                                else None
+                            ),
                             "evidence": {
                                 "confirmationSha256": expected,
                                 "originalFailureFamily": exc.failure_family,
@@ -1960,6 +2048,10 @@ class N8NWorkflowAutomationRuntime:
                                 "archivedStateVerified": verification[
                                     "archivedStateVerified"
                                 ],
+                                "structuralReadbackVerified": True,
+                                "executionEvidenceVerified": (
+                                    False if activation_pending else None
+                                ),
                                 "desiredDefinitionSha256": verification[
                                     "desiredDefinitionSha256"
                                 ],

@@ -66,6 +66,12 @@ class FakeResponse:
         await send({"type": "http.response.body", "body": b""})
 
 
+class FakeJSONResponse:
+    def __init__(self, *, status_code: int, content: dict) -> None:
+        self.status_code = status_code
+        self.content = content
+
+
 def parsed(path: Path) -> ast.Module:
     return ast.parse(path.read_text("utf-8"))
 
@@ -506,6 +512,109 @@ def test_real_listener_exact_route_auth_and_stream_limits(tmp_path, monkeypatch)
             content=b"x" * 4097,
             headers=valid_headers,
         ).status_code == 413
+
+
+def test_dispatch_failure_contract_is_non_2xx_bounded_and_safe() -> None:
+    namespace = {
+        "Any": object,
+        "JSONResponse": FakeJSONResponse,
+        "N8NCIEvidenceArgs": object,
+        "Header": lambda default=None, alias=None: default,
+        "check_lane_capability": lambda call, supplied: None,
+        "EVIDENCE_ROUTE": EVIDENCE_ROUTE,
+        "app": SimpleNamespace(post=lambda *args, **kwargs: lambda function: function),
+    }
+    compile_nodes(
+        EVIDENCE_APP,
+        ("evidence_dispatch_failure_response", "n8n_ci_evidence"),
+        namespace,
+    )
+    endpoint = namespace["n8n_ci_evidence"]
+    call = SimpleNamespace(model_dump=lambda **kwargs: {"owner": SOVEREIGN.owner})
+    private_detail = "private-upstream-detail-" + "x" * 8_000
+    safe_failure = {
+        "ok": False,
+        "tool": "github_actions_run_evidence",
+        "error": "CI evidence acquisition failed",
+    }
+
+    def failed_dispatch(tool, args):
+        return {"ok": False, "tool": tool, "error": private_detail}
+
+    def malformed_dispatch(tool, args):
+        return ["unexpected-dispatch-shape"]
+
+    def raising_dispatch(tool, args):
+        raise RuntimeError(private_detail)
+
+    for dispatcher in (failed_dispatch, malformed_dispatch, raising_dispatch):
+        namespace["dispatch_tool"] = dispatcher
+        response = endpoint(call, "b" * 64)
+
+        assert response.status_code == 502
+        assert response.content == safe_failure
+        assert private_detail not in repr(response.content)
+        assert len(repr(response.content)) < 256
+
+    success = {"ok": True, "tool": "github_actions_run_evidence", "result": {}}
+    namespace["dispatch_tool"] = lambda tool, args: success
+    assert endpoint(call, "b" * 64) is success
+
+
+def test_real_listener_dispatch_failures_are_non_2xx_and_safe(
+    tmp_path, monkeypatch
+) -> None:
+    evidence_app = import_real_evidence_app(monkeypatch)
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    credentials = tmp_path / "credentials"
+    credentials.mkdir()
+    credential = credentials / MASTER_CREDENTIAL_NAME
+    credential.write_text(MASTER + "\n", encoding="utf-8")
+    credential.chmod(0o600)
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(credentials))
+
+    payload = {
+        "owner": SOVEREIGN.owner,
+        "repo": SOVEREIGN.repo,
+        "workflow_id": SOVEREIGN.workflow_id,
+        "branch": SOVEREIGN.branch,
+    }
+    call = evidence_app.N8NCIEvidenceArgs(**payload)
+    valid_headers = {
+        "X-Sovereign-Evidence-Capability": evidence_app.derive_lane_capability(
+            MASTER, call
+        )
+    }
+    safe_failure = {
+        "ok": False,
+        "tool": "github_actions_run_evidence",
+        "error": "CI evidence acquisition failed",
+    }
+    private_detail = "private-upstream-detail-" + "x" * 8_000
+
+    def failed_dispatch(tool, args):
+        return {"ok": False, "tool": tool, "error": private_detail}
+
+    def malformed_dispatch(tool, args):
+        return "unexpected-dispatch-shape"
+
+    def raising_dispatch(tool, args):
+        raise RuntimeError(private_detail)
+
+    with testclient.TestClient(
+        evidence_app.app,
+        follow_redirects=False,
+        raise_server_exceptions=False,
+    ) as client:
+        for dispatcher in (failed_dispatch, malformed_dispatch, raising_dispatch):
+            monkeypatch.setattr(evidence_app, "dispatch_tool", dispatcher)
+            response = client.post(EVIDENCE_ROUTE, json=payload, headers=valid_headers)
+
+            assert response.status_code == 502
+            assert response.json() == safe_failure
+            assert private_detail not in response.text
+            assert len(response.content) < 256
 
 
 def test_listener_has_no_docs_mcp_or_general_routes() -> None:

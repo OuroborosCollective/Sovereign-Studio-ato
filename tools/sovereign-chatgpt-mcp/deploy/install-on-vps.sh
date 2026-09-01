@@ -71,6 +71,9 @@ TOOLCHAIN_SOURCE="$SOURCE_DIR/../sovereign-toolchain"
 TOOLCHAIN_INSTALLER="$TOOLCHAIN_SOURCE/deploy/install-on-vps.sh"
 TOOLCHAIN_COMMON_SOURCE="$SOURCE_DIR/../sovereign-legacy-mcp-common"
 TOOLCHAIN_REVISION_MARKER="/opt/sovereign-legacy-mcp/sovereign-toolchain/.sovereign-source-revision"
+TOOLCHAIN_ROLLBACK_ROOT="/opt/sovereign-legacy-mcp/.installer-backups"
+TOOLCHAIN_ROLLBACK_HELPER="$TOOLCHAIN_ROLLBACK_ROOT/rollback-last-install.py"
+TOOLCHAIN_ROLLBACK_MANIFEST="$TOOLCHAIN_ROLLBACK_ROOT/last-install.json"
 EXPECTED_CROSS_RUNTIME_PARITY="true"
 MCP_IMAGE_PULL_ATTEMPTS="${SOVEREIGN_MCP_IMAGE_PULL_ATTEMPTS:-36}"
 MCP_IMAGE_PULL_DELAY_SECONDS="${SOVEREIGN_MCP_IMAGE_PULL_DELAY_SECONDS:-10}"
@@ -89,6 +92,14 @@ PREVIOUS_MCP_REGISTRY_FILE=""
 PREVIOUS_MCP_TOOL_SURFACE_CAPTURED=0
 PREVIOUS_MCP_CONTAINER_PRESENT=0
 PREVIOUS_MCP_REGISTRY_CAPTURE_MODE="attested-first-install-no-predecessor"
+TOOLCHAIN_INSTALL_REQUIRED_JSON=false
+TOOLCHAIN_REVISION_VERIFIED_JSON=false
+TOOLCHAIN_HEALTH_READBACK_JSON=false
+TOOLCHAIN_AUTH_CANARY_JSON=false
+TOOLCHAIN_ROLLBACK_CAPABLE_JSON=false
+TOOLCHAIN_INSTALLED_REVISION=""
+TOOLCHAIN_ROLLBACK_ARMED=0
+TOOLCHAIN_ROLLBACK_COMPLETED=0
 
 fail() {
   INSTALL_FAILURE_REASON="$*"
@@ -920,6 +931,20 @@ restore_control_plane_files() {
   done < "$ROLLBACK_MANIFEST"
 }
 
+rollback_revision_bound_toolchain() {
+  [[ "$TOOLCHAIN_ROLLBACK_ARMED" == "1" ]] || return 0
+  [[ "$TOOLCHAIN_ROLLBACK_COMPLETED" != "1" ]] || return 0
+  [[ -f "$TOOLCHAIN_ROLLBACK_HELPER" && ! -L "$TOOLCHAIN_ROLLBACK_HELPER" ]] || return 1
+  [[ -f "$TOOLCHAIN_ROLLBACK_MANIFEST" && ! -L "$TOOLCHAIN_ROLLBACK_MANIFEST" ]] || return 1
+  if python3 "$TOOLCHAIN_ROLLBACK_HELPER" rollback \
+    --expected-installed-revision "$EXPECTED_REVISION" >/dev/null; then
+    TOOLCHAIN_ROLLBACK_COMPLETED=1
+    TOOLCHAIN_ROLLBACK_ARMED=0
+    return 0
+  fi
+  return 1
+}
+
 recover_previous_control_plane() {
   set +e
   restore_control_plane_files
@@ -952,15 +977,25 @@ on_installer_exit() {
   local exit_code="$?"
   local failed_stage="$INSTALL_STAGE"
   local failed_reason="$INSTALL_FAILURE_REASON"
+  local toolchain_rollback_state="not-required"
   trap - EXIT
   if [[ "$exit_code" -eq 0 && "$INSTALL_COMPLETED" == "1" ]]; then
+    [[ "$TOOLCHAIN_ROLLBACK_ARMED" != "1" ]] || exit 70
     [[ -z "$ROLLBACK_DIR" ]] || rm -rf "$ROLLBACK_DIR"
     exit 0
   fi
   [[ "$exit_code" -ne 0 ]] || exit_code=1
+  if [[ "$TOOLCHAIN_ROLLBACK_ARMED" == "1" ]]; then
+    if rollback_revision_bound_toolchain; then
+      toolchain_rollback_state="verified"
+    else
+      toolchain_rollback_state="failed"
+      exit_code=70
+    fi
+  fi
   recover_previous_control_plane
-  printf 'install blocked: stage=%s exit=%s reason=%s rollback_attempted=%s\n' \
-    "$failed_stage" "$exit_code" "${failed_reason:-unexpected command failure}" "$ROLLBACK_ARMED" >&2
+  printf 'install blocked: stage=%s exit=%s reason=%s rollback_attempted=%s toolchain_rollback=%s\n' \
+    "$failed_stage" "$exit_code" "${failed_reason:-unexpected command failure}" "$ROLLBACK_ARMED" "$toolchain_rollback_state" >&2
   [[ -z "$ROLLBACK_DIR" ]] || rm -rf "$ROLLBACK_DIR"
   exit "${exit_code:-1}"
 }
@@ -1000,6 +1035,74 @@ wait_for_broker_ready() {
   return 1
 }
 
+verify_revision_bound_toolchain_installation() {
+  [[ -f "$TOOLCHAIN_ROLLBACK_HELPER" && ! -L "$TOOLCHAIN_ROLLBACK_HELPER" ]] \
+    || fail "revision-bound toolchain rollback helper is unavailable"
+  [[ -f "$TOOLCHAIN_ROLLBACK_MANIFEST" && ! -L "$TOOLCHAIN_ROLLBACK_MANIFEST" ]] \
+    || fail "revision-bound toolchain rollback manifest is unavailable"
+  [[ -f "$TOOLCHAIN_REVISION_MARKER" && ! -L "$TOOLCHAIN_REVISION_MARKER" ]] \
+    || fail "revision-bound toolchain marker is unavailable"
+  TOOLCHAIN_INSTALLED_REVISION="$(tr -d '\r\n' < "$TOOLCHAIN_REVISION_MARKER")"
+  [[ "$TOOLCHAIN_INSTALLED_REVISION" == "$EXPECTED_REVISION" ]] \
+    || fail "revision-bound toolchain marker differs from the MCP revision"
+  python3 - "$TOOLCHAIN_ROLLBACK_MANIFEST" "$EXPECTED_REVISION" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+payload = json.loads(Path(sys.argv[1]).read_text("utf-8"))
+if payload.get("schemaVersion") != "sovereign.toolchain.rollback.v1":
+    raise SystemExit("toolchain rollback manifest schema is invalid")
+if payload.get("state") != "committed":
+    raise SystemExit("toolchain rollback manifest is not committed")
+if payload.get("installedRevision") != sys.argv[2]:
+    raise SystemExit("toolchain rollback manifest revision differs from the MCP revision")
+PY
+  systemctl is-active --quiet sovereign-toolchain.service \
+    || fail "revision-bound toolchain service is not active"
+  systemctl is-active --quiet sovereign-toolchain-n8n-evidence.service \
+    || fail "revision-bound n8n evidence service is not active"
+  python3 - <<'PY'
+import json
+import urllib.error
+import urllib.request
+
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+for url in ("http://127.0.0.1:8001/api/healthz", "http://127.0.0.1:8002/healthz"):
+    request = urllib.request.Request(url, method="GET")
+    with opener.open(request, timeout=5) as response:
+        if response.status != 200:
+            raise SystemExit("toolchain health readback failed")
+payload = json.dumps(
+    {
+        "owner": "OuroborosCollective",
+        "repo": "Sovereign-Studio-ato",
+        "workflow_id": "sovereign-coordinated-release.yml",
+        "branch": "main",
+    },
+    sort_keys=True,
+    separators=(",", ":"),
+).encode("utf-8")
+request = urllib.request.Request(
+    "http://127.0.0.1:8002/api/v1/n8n/ci-evidence",
+    data=payload,
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    opener.open(request, timeout=5)
+except urllib.error.HTTPError as exc:
+    if exc.code != 401:
+        raise
+else:
+    raise SystemExit("n8n evidence listener accepted an unauthenticated request")
+PY
+  TOOLCHAIN_REVISION_VERIFIED_JSON=true
+  TOOLCHAIN_HEALTH_READBACK_JSON=true
+  TOOLCHAIN_AUTH_CANARY_JSON=true
+  TOOLCHAIN_ROLLBACK_CAPABLE_JSON=true
+}
+
 INSTALL_STAGE="preflight"
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run as root on the VPS"
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "SOVEREIGN_MCP_EXPECTED_REVISION must be a full commit SHA"
@@ -1016,6 +1119,8 @@ if [[ "$DEPLOYMENT_SOURCE_SCOPE" == "full-repository" ]]; then
 else
   [[ ! -e "$SOURCE_DIR/../sovereign-toolchain" && ! -e "$SOURCE_DIR/../sovereign-legacy-mcp-common" ]] \
     || fail "MCP-only release archive unexpectedly contains sibling control-plane sources"
+  INSTALL_STAGE="verify_preinstalled_revision_bound_toolchain"
+  verify_revision_bound_toolchain_installation
 fi
 [[ -z "$EXPECTED_MCP_DIGEST" || "$EXPECTED_MCP_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] \
   || fail "SOVEREIGN_MCP_EXPECTED_DIGEST must be an immutable SHA-256 digest when set"
@@ -3370,12 +3475,6 @@ systemctl is-enabled --quiet sovereign-release-reconciler.timer \
 systemctl is-active --quiet sovereign-release-reconciler.timer \
   || fail "coordinated release reconciler timer is not active"
 
-TOOLCHAIN_INSTALL_REQUIRED_JSON=false
-TOOLCHAIN_REVISION_VERIFIED_JSON=false
-TOOLCHAIN_HEALTH_READBACK_JSON=false
-TOOLCHAIN_AUTH_CANARY_JSON=false
-TOOLCHAIN_ROLLBACK_CAPABLE_JSON=false
-TOOLCHAIN_INSTALLED_REVISION=""
 if [[ "$DEPLOYMENT_SOURCE_SCOPE" == "full-repository" ]]; then
   INSTALL_STAGE="install_revision_bound_toolchain"
   [[ -f "$TOOLCHAIN_INSTALLER" && ! -L "$TOOLCHAIN_INSTALLER" ]] \
@@ -3390,6 +3489,11 @@ if [[ "$DEPLOYMENT_SOURCE_SCOPE" == "full-repository" ]]; then
     rm -f "$TOOLCHAIN_INSTALL_LOG"
     fail "revision-bound toolchain installer failed: output_sha256=$TOOLCHAIN_FAILURE_SHA256"
   fi
+  TOOLCHAIN_ROLLBACK_ARMED=1
+  [[ -f "$TOOLCHAIN_ROLLBACK_HELPER" && ! -L "$TOOLCHAIN_ROLLBACK_HELPER" ]] \
+    || fail "nested toolchain rollback helper is unavailable after installer success"
+  [[ -f "$TOOLCHAIN_ROLLBACK_MANIFEST" && ! -L "$TOOLCHAIN_ROLLBACK_MANIFEST" ]] \
+    || fail "nested toolchain rollback manifest is unavailable after installer success"
   python3 - "$TOOLCHAIN_INSTALL_LOG" "$EXPECTED_REVISION" <<'PY'
 from pathlib import Path
 import json
@@ -3421,17 +3525,14 @@ for field, value in expected.items():
         raise SystemExit(f"toolchain installer receipt field mismatch: {field}")
 PY
   rm -f "$TOOLCHAIN_INSTALL_LOG"
-  systemctl is-active --quiet sovereign-toolchain.service \
-    || fail "revision-bound toolchain service is not active after installer success"
-  [[ -f "$TOOLCHAIN_REVISION_MARKER" && ! -L "$TOOLCHAIN_REVISION_MARKER" ]] \
-    || fail "revision-bound toolchain marker is unavailable after installer success"
-  TOOLCHAIN_INSTALLED_REVISION="$(tr -d '\r\n' < "$TOOLCHAIN_REVISION_MARKER")"
-  [[ "$TOOLCHAIN_INSTALLED_REVISION" == "$EXPECTED_REVISION" ]] \
-    || fail "revision-bound toolchain marker differs from the MCP revision"
-  TOOLCHAIN_REVISION_VERIFIED_JSON=true
-  TOOLCHAIN_HEALTH_READBACK_JSON=true
-  TOOLCHAIN_AUTH_CANARY_JSON=true
-  TOOLCHAIN_ROLLBACK_CAPABLE_JSON=true
+  verify_revision_bound_toolchain_installation
+else
+  [[ "$TOOLCHAIN_REVISION_VERIFIED_JSON" == "true" ]] \
+    || fail "MCP-only release lacks exact toolchain revision readback"
+  [[ "$TOOLCHAIN_HEALTH_READBACK_JSON" == "true" && "$TOOLCHAIN_AUTH_CANARY_JSON" == "true" ]] \
+    || fail "MCP-only release lacks live toolchain boundary readback"
+  [[ "$TOOLCHAIN_ROLLBACK_CAPABLE_JSON" == "true" ]] \
+    || fail "MCP-only release lacks committed toolchain rollback evidence"
 fi
 
 if [[ "$PREVIOUS_MCP_CONTAINER_PRESENT" == "1" ]]; then
@@ -3441,6 +3542,7 @@ else
   [[ "$PREVIOUS_MCP_TOOL_SURFACE_CAPTURED" == "0" ]] \
     || fail "first-install state conflicts with predecessor registry evidence"
 fi
+TOOLCHAIN_ROLLBACK_ARMED=0
 INSTALL_STAGE="completed"
 INSTALL_COMPLETED=1
 ROLLBACK_ARMED=0

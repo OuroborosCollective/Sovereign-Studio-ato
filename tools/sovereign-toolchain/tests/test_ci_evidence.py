@@ -75,7 +75,9 @@ def test_receipt_is_deterministic_and_normalizes_job_and_step_order() -> None:
         "conclusion": "failure",
     }
     assert receipt_a["verdict"] == "COMPLETED_NON_SUCCESS"
-    assert receipt_a["shouldNotify"] is True
+    assert receipt_a["deliveryCursorPresent"] is False
+    assert receipt_a["stateChanged"] is False
+    assert receipt_a["shouldNotify"] is False
 
 
 def test_previous_fingerprint_suppresses_duplicate_delivery_not_truth() -> None:
@@ -85,6 +87,7 @@ def test_previous_fingerprint_suppresses_duplicate_delivery_not_truth() -> None:
 
     duplicate = build_ci_evidence_receipt(repeated)
 
+    assert duplicate["deliveryCursorPresent"] is True
     assert duplicate["stateChanged"] is False
     assert duplicate["shouldNotify"] is False
     assert duplicate["verdict"] == "COMPLETED_NON_SUCCESS"
@@ -93,6 +96,7 @@ def test_previous_fingerprint_suppresses_duplicate_delivery_not_truth() -> None:
 
 def test_revision_drift_notifies_even_while_workflow_is_running() -> None:
     running = observation(head_sha=OTHER_HEAD, status="in_progress", conclusion=None)
+    running["previous_fingerprint"] = "c" * 64
     running["jobs"] = [
         {
             "id": 1,
@@ -107,7 +111,37 @@ def test_revision_drift_notifies_even_while_workflow_is_running() -> None:
 
     assert receipt["revisionMatches"] is False
     assert receipt["verdict"] == "REVISION_DRIFT"
+    assert receipt["deliveryCursorPresent"] is True
+    assert receipt["stateChanged"] is True
     assert receipt["shouldNotify"] is True
+
+
+def test_running_change_with_cursor_does_not_notify_without_revision_drift() -> None:
+    running = observation(status="in_progress", conclusion=None)
+    running["previous_fingerprint"] = "d" * 64
+    running["jobs"] = [
+        {
+            "id": 1,
+            "name": "backend",
+            "status": "in_progress",
+            "conclusion": None,
+            "steps": [
+                {
+                    "number": 1,
+                    "name": "Build",
+                    "status": "in_progress",
+                    "conclusion": None,
+                }
+            ],
+        }
+    ]
+
+    receipt = build_ci_evidence_receipt(running)
+
+    assert receipt["revisionMatches"] is True
+    assert receipt["deliveryCursorPresent"] is True
+    assert receipt["stateChanged"] is True
+    assert receipt["shouldNotify"] is False
 
 
 def test_completed_success_is_observed_but_still_not_verified_runtime_truth() -> None:
@@ -188,6 +222,9 @@ def test_revision_guardian_requires_all_bound_identities_to_match() -> None:
 
     assert receipt["verdict"] == "PASS"
     assert receipt["drift"] == []
+    assert receipt["deliveryCursorPresent"] is False
+    assert receipt["stateChanged"] is False
+    assert receipt["shouldNotify"] is False
     assert receipt["requiresIndependentReadback"] is True
 
 
@@ -206,6 +243,7 @@ def test_revision_guardian_reports_causal_drift_dimensions() -> None:
             "image_digest": observed_image,
             "health_status": "degraded",
             "schema_readback": "RECONCILIATION_REQUIRED",
+            "previous_fingerprint": "e" * 64,
         }
     )
 

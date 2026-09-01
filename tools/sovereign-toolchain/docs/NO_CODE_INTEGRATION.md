@@ -67,6 +67,13 @@ The toolchain reads GitHub through its scoped GitHub App, resolves the selected 
 branch head server-side, and returns deterministic workflow/run/job/step evidence. There is no
 repo-wide latest-run fallback and n8n cannot supply the expected branch SHA.
 
+The fixed two-node templates intentionally have no writable state node, so they submit no delivery
+cursor. A cursorless receipt still returns `stateFingerprint`, but explicitly reports
+`deliveryCursorPresent:false`, `stateChanged:false`, and `shouldNotify:false`; absence of a cursor
+must never be presented as a detected change. A separate bounded delivery system may persist and
+resubmit the last accepted fingerprint, but until then these workflows are polling evidence
+collectors, not change-notification workflows.
+
 The installer generates or preserves one high-entropy master key at
 `/etc/sovereign-toolchain/n8n-evidence.key` as `root:root` mode `0600`. The full Toolchain app does
 not receive it. The minimal evidence service runs as a systemd `DynamicUser` with a strict read-only
@@ -99,9 +106,15 @@ Activate each imported workflow only after:
 5. the returned workflow identity and server-resolved branch-head comparison match.
 
 A successful GitHub run remains observation evidence and still requires independent runtime
-readback before Sovereign may call it verified. These adapters contain no workflow dispatch, merge,
-deploy, VPS, database, Docker-socket, Linear, or PatchMon mutation node. Add effects only through
-separate permission-bound plan/apply/readback contracts.
+readback before Sovereign may call it verified. Likewise, `n8n_workflow_apply(operation="activate")`
+can verify only the definition, project, archive, and active-state readback. It deliberately returns
+`N8N_WORKFLOW_ACTIVATION_PENDING_EXECUTION_EVIDENCE` with `ok:false`,
+`structuralReadbackVerified:true`, and `executionEvidenceVerified:false` until an exact-lane manual
+execution canary and returned receipt have been independently checked. An already-active workflow
+and a publish reconciled after a timeout use the same pending contract; neither path upgrades
+activation to verified. These adapters contain no workflow dispatch, merge, deploy, VPS, database,
+Docker-socket, Linear, or PatchMon mutation node. Add effects only through separate permission-bound
+plan/apply/readback contracts.
 
 ## Make / Zapier-like tools
 

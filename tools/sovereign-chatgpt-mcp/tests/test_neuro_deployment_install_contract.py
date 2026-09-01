@@ -845,6 +845,128 @@ print(json.dumps({
     assert "description changed" in rejected_description_drift.stderr
 
 
+def test_mcp_archive_requires_exact_toolchain_and_nested_install_joins_outer_rollback(
+    tmp_path: Path,
+) -> None:
+    script = INSTALLER.read_text("utf-8")
+    remote_install = REMOTE_INSTALL.read_text("utf-8")
+    syntax = subprocess.run(
+        ["bash", "-n", str(INSTALLER)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    remote_syntax = subprocess.run(
+        ["bash", "-n", str(REMOTE_INSTALL)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert syntax.returncode == 0, syntax.stderr
+    assert remote_syntax.returncode == 0, remote_syntax.stderr
+
+    archive_preflight = script.split(
+        'if [[ "$DEPLOYMENT_SOURCE_SCOPE" == "full-repository" ]]; then',
+        1,
+    )[1].split('[[ -z "$EXPECTED_MCP_DIGEST"', 1)[0]
+    assert 'INSTALL_STAGE="verify_preinstalled_revision_bound_toolchain"' in archive_preflight
+    assert "verify_revision_bound_toolchain_installation" in archive_preflight
+    assert script.index('INSTALL_STAGE="verify_preinstalled_revision_bound_toolchain"') < script.index(
+        "ROLLBACK_ARMED=1"
+    )
+    verification = script.split(
+        "verify_revision_bound_toolchain_installation() {",
+        1,
+    )[1].split('\n}\n\nINSTALL_STAGE="preflight"', 1)[0]
+    assert 'payload.get("schemaVersion") != "sovereign.toolchain.rollback.v1"' in verification
+    assert 'payload.get("state") != "committed"' in verification
+    assert 'payload.get("installedRevision") != sys.argv[2]' in verification
+    assert "sovereign-toolchain-n8n-evidence.service" in verification
+    assert '"http://127.0.0.1:8001/api/healthz"' in verification
+    assert '"http://127.0.0.1:8002/healthz"' in verification
+    assert "if exc.code != 401" in verification
+    assert "n8n evidence listener accepted an unauthenticated request" in verification
+
+    nested_install = script.index(
+        'bash "$TOOLCHAIN_INSTALLER" "$TOOLCHAIN_SOURCE" >"$TOOLCHAIN_INSTALL_LOG" 2>&1'
+    )
+    nested_arm = script.index("TOOLCHAIN_ROLLBACK_ARMED=1", nested_install)
+    receipt_validation = script.index(
+        'python3 - "$TOOLCHAIN_INSTALL_LOG" "$EXPECTED_REVISION"',
+        nested_install,
+    )
+    assert nested_install < nested_arm < receipt_validation
+    outer_exit = script.split("on_installer_exit() {", 1)[1].split(
+        "\n}\ntrap on_installer_exit EXIT",
+        1,
+    )[0]
+    assert outer_exit.index("rollback_revision_bound_toolchain") < outer_exit.index(
+        "recover_previous_control_plane"
+    )
+    assert 'toolchain_rollback_state="failed"' in outer_exit
+    assert "exit_code=70" in outer_exit
+    final_disarm = script.rindex("TOOLCHAIN_ROLLBACK_ARMED=0")
+    predecessor_assertion = script.index(
+        'if [[ "$PREVIOUS_MCP_CONTAINER_PRESENT" == "1" ]]',
+        receipt_validation,
+    )
+    assert predecessor_assertion < final_disarm < script.rindex('INSTALL_STAGE="completed"')
+
+    for field in (
+        "'deployment_source_scope': 'mcp-release-archive'",
+        "'toolchain_install_required': False",
+        "'toolchain_revision': expected_revision",
+        "'toolchain_revision_verified': True",
+        "'toolchain_health_readback': True",
+        "'toolchain_n8n_evidence_auth_canary': True",
+        "'toolchain_rollback_capable': True",
+    ):
+        assert field in remote_install
+    assert "installer did not prove the exact matching toolchain" in remote_install
+
+    rollback_function = script.split(
+        "rollback_revision_bound_toolchain() {",
+        1,
+    )[1].split("\n}\n\nrecover_previous_control_plane", 1)[0]
+    helper = tmp_path / "rollback-last-install.py"
+    trace = tmp_path / "rollback-trace"
+    manifest = tmp_path / "last-install.json"
+    helper.write_text(
+        "from pathlib import Path\n"
+        "import os, sys\n"
+        "with Path(os.environ['TOOLCHAIN_ROLLBACK_TRACE']).open('a', encoding='utf-8') as out:\n"
+        "    out.write(' '.join(sys.argv[1:]) + '\\n')\n",
+        "utf-8",
+    )
+    manifest.write_text("{}\n", "utf-8")
+    harness = f"""
+set -Eeuo pipefail
+TOOLCHAIN_ROLLBACK_ARMED=1
+TOOLCHAIN_ROLLBACK_COMPLETED=0
+TOOLCHAIN_ROLLBACK_HELPER="$1"
+TOOLCHAIN_ROLLBACK_MANIFEST="$2"
+EXPECTED_REVISION="{'a' * 40}"
+rollback_revision_bound_toolchain() {{
+{rollback_function}
+}}
+rollback_revision_bound_toolchain
+rollback_revision_bound_toolchain
+printf '%s %s\n' "$TOOLCHAIN_ROLLBACK_ARMED" "$TOOLCHAIN_ROLLBACK_COMPLETED"
+"""
+    rolled_back = subprocess.run(
+        ["bash", "-c", harness, "rollback-harness", str(helper), str(manifest)],
+        env={**os.environ, "TOOLCHAIN_ROLLBACK_TRACE": str(trace)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rolled_back.returncode == 0, rolled_back.stderr
+    assert rolled_back.stdout.strip() == "0 1"
+    assert trace.read_text("utf-8").splitlines() == [
+        f"rollback --expected-installed-revision {'a' * 40}"
+    ]
+
+
 def test_installer_runs_a_clean_real_registry_neuro_canary_without_selected_tool_execution() -> None:
     script = INSTALLER.read_text("utf-8")
     canary = script.split('INSTALL_STAGE="verify_isolated_neuro_runtime_canary"', 1)[1].split(
