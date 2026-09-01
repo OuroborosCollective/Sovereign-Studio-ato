@@ -22,6 +22,8 @@ import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
+import { ActionSuggestionStrip } from './ActionSuggestionStrip';
+import { SOVEREIGN_PRESET_ACTIONS } from '../runtime/sovereignPresetActionRuntime';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1101,6 +1103,32 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(watchBtn);
       expect(onWatchChecks).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('ActionSuggestionStrip Accessibility and Micro-UX Enhancements', () => {
+    it('renders preset action buttons with aria-label, title, and focus-visible ring styles', () => {
+      const onSelect = vi.fn();
+      render(
+        <ActionSuggestionStrip
+          actions={SOVEREIGN_PRESET_ACTIONS}
+          repoReady={true}
+          githubWriteReady={true}
+          agentReady={true}
+          onSelect={onSelect}
+        />
+      );
+
+      const section = screen.getByTestId('sovereign-action-suggestion-strip');
+      expect(section).toBeInTheDocument();
+
+      const firstBtn = screen.getByRole('button', { name: /Feature-Vorschläge aus Architektur/i });
+      expect(firstBtn).toHaveAttribute('aria-label');
+      expect(firstBtn).toHaveAttribute('title');
+      expect(firstBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(firstBtn);
+      expect(onSelect).toHaveBeenCalledWith('architecture_feature_suggestions');
     });
   });
 });
