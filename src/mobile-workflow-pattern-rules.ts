@@ -588,15 +588,23 @@ function addSignals(source: string[], additions: string[] = []): string[] {
   return uniqueSignals([...source, ...additions]);
 }
 
+const NUMERIC_ONLY = /^\d+$/;
+
 function extractLearningTerms(visibleText: string): string[] {
   const normalized = normalizeMobileWorkflowText(visibleText);
   if (!normalized) return [];
 
-  const tokens = normalized
-    .split(' ')
-    .filter((token) => token.length >= 4)
-    .filter((token) => !LEARNING_STOP_WORDS.has(token))
-    .filter((token) => !/^\d+$/.test(token));
+  const rawTokens = normalized.split(' ');
+  const tokens: string[] = [];
+
+  // ⚡ Bolt: Single-pass loop optimization prevents O(N) array allocation overhead from chained .filter()
+  // and hoists regex to avoid recompilation
+  for (let i = 0; i < rawTokens.length; i++) {
+    const token = rawTokens[i];
+    if (token.length >= 4 && !LEARNING_STOP_WORDS.has(token) && !NUMERIC_ONLY.test(token)) {
+      tokens.push(token);
+    }
+  }
 
   const phrases: string[] = [];
 
