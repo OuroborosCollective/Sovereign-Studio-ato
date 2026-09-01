@@ -37,9 +37,9 @@ N8N_SECRET_HOST_KEYS = (
 )
 N8N_MIN_FREE_BYTES = 8 * 1024 * 1024 * 1024
 DEFAULT_MAINTENANCE_ROOT = "/opt/sovereign-chatgpt-tools/maintenance/n8n-stage1"
+AURION_BUILDKIT_CONTAINER = "buildx_buildkit_aurion-isolated0"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _IMAGE_DIGEST_RE = re.compile(r"^[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$")
-_SAFE_BUILDER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$")
 
 
 def _canonical_sha256(value: Any) -> str:
@@ -312,59 +312,72 @@ class N8NHostMaintenanceRuntime:
         rows = sorted(line.strip() for line in str(result.get("stdout") or "").splitlines() if line.strip())
         return {"count": len(rows), "sha256": _canonical_sha256(rows)}
 
+    def _buildkit_prune_endpoint(self) -> dict[str, str] | None:
+        observed = self._run(
+            [
+                "docker",
+                "ps",
+                "--filter",
+                f"name={AURION_BUILDKIT_CONTAINER}",
+                "--format",
+                "{{.Names}}",
+            ],
+            timeout=60,
+        )
+        names = {
+            line.strip()
+            for line in str(observed.get("stdout") or "").splitlines()
+            if line.strip()
+        }
+        if not observed.get("ok") or names != {AURION_BUILDKIT_CONTAINER}:
+            return None
+        help_result = self._run(
+            ["docker", "exec", AURION_BUILDKIT_CONTAINER, "buildctl", "prune", "--help"],
+            timeout=60,
+        )
+        help_text = str(help_result.get("stdout") or "") + "\n" + str(help_result.get("stderr") or "")
+        if not help_result.get("ok") or "--keep-duration" not in help_text:
+            return None
+        return {
+            "container": AURION_BUILDKIT_CONTAINER,
+            "pruneHelpSha256": _fingerprint(help_text),
+        }
+
     def docker_cache_cleanup_plan(self) -> dict[str, Any]:
         try:
             running = self._running_container_identity()
             volumes = self._volume_identity()
             disk = self._disk()
             system_df = self._run(["docker", "system", "df"], timeout=60)
-            builders = self._run(["docker", "buildx", "ls", "--format", "{{.Name}}"], timeout=60)
-            builder_names = sorted({
-                line.strip().rstrip("*")
-                for line in str(builders.get("stdout") or "").splitlines()
-                if _SAFE_BUILDER_RE.fullmatch(line.strip().rstrip("*"))
-            }) if builders.get("ok") else []
-            if not builder_names:
-                known_builder = "aurion-isolated"
-                expected_container = f"buildx_buildkit_{known_builder}0"
-                builder_container = self._run(
-                    [
-                        "docker",
-                        "ps",
-                        "--filter",
-                        f"name={expected_container}",
-                        "--format",
-                        "{{.Names}}",
-                    ],
-                    timeout=60,
-                )
-                if builder_container.get("ok") and expected_container in {
-                    line.strip()
-                    for line in str(builder_container.get("stdout") or "").splitlines()
-                    if line.strip()
-                }:
-                    builder_names = [known_builder]
+            endpoint = self._buildkit_prune_endpoint()
         except RuntimeError as exc:
             return self._failure("DOCKER_CACHE_CLEANUP_PLAN_BLOCKED", "DOCKER_INVENTORY_UNAVAILABLE", str(exc))
+        if endpoint is None:
+            return self._failure(
+                "DOCKER_CACHE_CLEANUP_PLAN_BLOCKED",
+                "BUILDKIT_PRUNE_UNAVAILABLE",
+                "Exact BuildKit endpoint cannot prove time-bounded cache pruning support",
+            )
         # Confirmation binds stable mutation scope and object identities only.
         # Disk usage and docker system-df output are intentionally evidence-only:
         # they can change between plan/apply from normal log or layer writes and
         # must not create an unresolvable confirmation race.
         state = {
             "schemaVersion": "sovereign.docker-cache-cleanup.v1",
-            "action": "prune_buildx_cache_older_than_24h_and_dangling_images_only",
+            "action": "prune_buildkit_cache_not_used_last_24h_and_dangling_images_only",
             "runningContainers": running,
             "volumes": volumes,
-            "builders": builder_names,
+            "buildkitEndpoint": endpoint,
         }
         return {
             "ok": True,
             "status": "DOCKER_CACHE_CLEANUP_PLAN_READY",
-            "scope": ["buildx-cache-older-than-24h", "dangling-images"],
+            "scope": ["buildkit-cache-not-used-last-24h", "dangling-images"],
             "excluded": ["volumes", "running-containers", "tagged-images"],
             "disk": disk,
             "systemDfSha256": _fingerprint(str(system_df.get("stdout") or "")),
-            "builders": builder_names,
+            "builders": ["aurion-isolated"],
+            "buildkitEndpoint": endpoint,
             "runningContainers": running,
             "volumes": volumes,
             "confirmationSha256": _canonical_sha256(state),
@@ -389,20 +402,38 @@ class N8NHostMaintenanceRuntime:
                 "Cleanup confirmation no longer matches current running-container, volume and disk state",
                 expectedConfirmationSha256=expected,
             )
+        endpoint = plan.get("buildkitEndpoint")
+        container = str(endpoint.get("container") or "") if isinstance(endpoint, dict) else ""
+        if container != AURION_BUILDKIT_CONTAINER:
+            return self._failure(
+                "DOCKER_CACHE_CLEANUP_BLOCKED",
+                "BUILDKIT_ENDPOINT_INVALID",
+                "Cleanup plan did not bind the expected BuildKit endpoint",
+            )
         before_disk = dict(plan["disk"])
         before_running = dict(plan["runningContainers"])
         before_volumes = dict(plan["volumes"])
         steps: list[dict[str, Any]] = []
         commands = [
             ["docker", "image", "prune", "--force"],
+            [
+                "docker",
+                "exec",
+                AURION_BUILDKIT_CONTAINER,
+                "buildctl",
+                "prune",
+                "--all",
+                "--keep-duration=24h",
+            ],
         ]
-        if "aurion-isolated" in set(plan.get("builders") or []):
-            commands.append([
-                "docker", "buildx", "prune", "--builder", "aurion-isolated", "--all", "--force", "--filter", "until=24h"
-            ])
         for argv in commands:
             result = self._run(argv, timeout=900)
-            steps.append({"argv": argv, "ok": bool(result.get("ok")), "exitCode": result.get("exitCode")})
+            step = {"argv": argv, "ok": bool(result.get("ok")), "exitCode": result.get("exitCode")}
+            if not result.get("ok"):
+                stderr = str(result.get("stderr") or "")
+                step["stderrSha256"] = _fingerprint(stderr)
+                step["stderrBytes"] = len(stderr.encode("utf-8"))
+            steps.append(step)
             if not result.get("ok"):
                 break
         after_running = self._running_container_identity()
