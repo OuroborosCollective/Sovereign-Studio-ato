@@ -30,6 +30,14 @@ MCP_INSTALL_FAILURE_RE = re.compile(
     r"exit=[1-9][0-9]{0,2} reason=(?P<reason>.*) rollback_attempted=(?P<rollback>[01])"
     r"(?: toolchain_rollback=(?P<toolchain_rollback>not-required|verified|failed))?$"
 )
+TOOLCHAIN_INSTALL_FAILURE_REASON_RE = re.compile(
+    r"^revision-bound toolchain installer failed: "
+    r"SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE "
+    r"stage=(?P<stage>[a-z][a-z0-9_-]{0,79}) "
+    r"reason_sha256=(?P<reason_sha256>[0-9a-f]{64}) "
+    r"rollback=(?P<rollback>not-required|verified|failed) "
+    r"output_sha256=(?P<output_sha256>[0-9a-f]{64})$"
+)
 MCP_NEURO_CANARY_FAILURE_RE = re.compile(
     r"^isolated neuro runtime canary failed: "
     r"phase=(?P<phase>[a-z][a-z0-9_-]{0,79});"
@@ -547,6 +555,14 @@ def _safe_mcp_install_diagnostic(output: str) -> dict[str, Any] | None:
             toolchain_rollback = match.group("toolchain_rollback")
             if toolchain_rollback is not None:
                 diagnostic["toolchainRollback"] = toolchain_rollback
+            toolchain_failure_match = TOOLCHAIN_INSTALL_FAILURE_REASON_RE.fullmatch(reason)
+            if toolchain_failure_match is not None:
+                diagnostic["toolchainFailure"] = {
+                    "stage": toolchain_failure_match.group("stage"),
+                    "failureReasonSha256": toolchain_failure_match.group("reason_sha256"),
+                    "rollback": toolchain_failure_match.group("rollback"),
+                    "outputSha256": toolchain_failure_match.group("output_sha256"),
+                }
             canary_match = MCP_NEURO_CANARY_FAILURE_RE.fullmatch(reason)
             if canary_match is not None:
                 diagnostic["neuroCanary"] = {
