@@ -56,7 +56,7 @@ class FakeGitHub:
                 "status": "completed",
                 "conclusion": "success",
             }
-        if path.endswith("/actions/runs/77/jobs?per_page=100"):
+        if "/actions/runs/77/jobs" in path:
             return {"jobs": []}
         raise AssertionError(path)
 
