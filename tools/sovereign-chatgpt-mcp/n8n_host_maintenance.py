@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import ssl
 import subprocess
 import time
 from pathlib import Path
@@ -143,6 +144,7 @@ class N8NHostMaintenanceRuntime:
         config = inspect.get("Config") if isinstance(inspect.get("Config"), dict) else {}
         labels = config.get("Labels") if isinstance(config.get("Labels"), dict) else {}
         state = inspect.get("State") if isinstance(inspect.get("State"), dict) else {}
+        host_config = inspect.get("HostConfig") if isinstance(inspect.get("HostConfig"), dict) else {}
         network_settings = inspect.get("NetworkSettings") if isinstance(inspect.get("NetworkSettings"), dict) else {}
         ports = network_settings.get("Ports") if isinstance(network_settings.get("Ports"), dict) else {}
         bindings: list[dict[str, str]] = []
@@ -155,6 +157,16 @@ class N8NHostMaintenanceRuntime:
                     "hostPort": str(item.get("HostPort") or ""),
                 })
         networks = network_settings.get("Networks") if isinstance(network_settings.get("Networks"), dict) else {}
+        mounts: list[dict[str, Any]] = []
+        for raw_mount in inspect.get("Mounts") if isinstance(inspect.get("Mounts"), list) else []:
+            mount = raw_mount if isinstance(raw_mount, dict) else {}
+            mounts.append({
+                "type": str(mount.get("Type") or "")[:40],
+                "name": str(mount.get("Name") or "")[:240],
+                "destination": str(mount.get("Destination") or "")[:1000],
+                "readWrite": bool(mount.get("RW")),
+            })
+        mounts.sort(key=lambda item: (item["destination"], item["name"], item["type"]))
         return {
             "id": str(inspect.get("Id") or "")[:64],
             "name": str(inspect.get("Name") or "").lstrip("/"),
@@ -169,7 +181,68 @@ class N8NHostMaintenanceRuntime:
             "exitCode": int(state.get("ExitCode") or 0),
             "ports": bindings,
             "networks": sorted(str(name) for name in networks),
+            "privileged": bool(host_config.get("Privileged")),
+            "runtime": str(host_config.get("Runtime") or "")[:120],
+            "mounts": mounts,
         }
+
+    def _sysbox_runtime_registered(self) -> bool:
+        result = self._run(
+            ["docker", "info", "--format", "{{json .Runtimes}}"],
+            timeout=30,
+        )
+        if not result.get("ok"):
+            raise RuntimeError("Docker runtime inventory is unavailable")
+        try:
+            runtimes = json.loads(str(result.get("stdout") or ""))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Docker runtime inventory is invalid") from exc
+        if not isinstance(runtimes, dict):
+            raise RuntimeError("Docker runtime inventory is invalid")
+        return "sysbox-runc" in runtimes
+
+    @staticmethod
+    def _sandbox_tls_mounts_are_separated(summaries: dict[str, Any]) -> bool:
+        def tls_mount(summary: dict[str, Any]) -> dict[str, Any] | None:
+            rows = [
+                item
+                for item in summary.get("mounts") or []
+                if isinstance(item, dict) and item.get("destination") == "/tls"
+            ]
+            return rows[0] if len(rows) == 1 else None
+
+        api_mount = tls_mount(summaries.get(N8N_SANDBOX_API_CONTAINER, {}))
+        runner_mount = tls_mount(summaries.get(N8N_SANDBOX_RUNNER_CONTAINER, {}))
+        return bool(
+            api_mount
+            and runner_mount
+            and api_mount.get("type") == "volume"
+            and runner_mount.get("type") == "volume"
+            and not api_mount.get("readWrite")
+            and not runner_mount.get("readWrite")
+            and str(api_mount.get("name") or "").endswith("_sandbox-api-tls")
+            and str(runner_mount.get("name") or "").endswith("_sandbox-runner-tls")
+            and api_mount.get("name") != runner_mount.get("name")
+        )
+
+    @staticmethod
+    def _sandbox_networks_are_separated(summaries: dict[str, Any]) -> bool:
+        n8n_networks = set(summaries.get(N8N_CONTAINER, {}).get("networks") or [])
+        api_networks = set(
+            summaries.get(N8N_SANDBOX_API_CONTAINER, {}).get("networks") or []
+        )
+        runner_networks = set(
+            summaries.get(N8N_SANDBOX_RUNNER_CONTAINER, {}).get("networks") or []
+        )
+        control_network = f"{N8N_PROJECT}_sandbox-control"
+        return bool(
+            n8n_networks
+            and control_network not in n8n_networks
+            and control_network in api_networks
+            and runner_networks == {control_network}
+            and n8n_networks.intersection(api_networks)
+            and not n8n_networks.intersection(runner_networks)
+        )
 
     def _container_env(self, container: str) -> dict[str, str]:
         result = self._run(
@@ -492,6 +565,8 @@ class N8NHostMaintenanceRuntime:
     restart: unless-stopped
     ports:
       - \"127.0.0.1:5678:5678\"
+    extra_hosts:
+      - \"host.docker.internal:host-gateway\"
     labels:
       - traefik.enable=true
       - traefik.http.routers.{N8N_PROJECT}.rule=Host(`{N8N_PROJECT}.${{TRAEFIK_HOST}}`)
@@ -524,16 +599,20 @@ class N8NHostMaintenanceRuntime:
   sandbox-certs:
     image: {images['sandboxApi']}
     user: '0:0'
+    network_mode: none
     entrypoint: ['sh', '-c']
     command:
       - >
         bootstrap-mtls.sh --out-dir /tls --api-san sandbox-api
-        --control-san-prefix sandbox-runner --world-readable &&
-        chown -R sandbox-api:sandbox-api /tls/api && chmod -R a+rX /tls
+        --control-san-prefix sandbox-runner &&
+        chown -R sandbox-api:sandbox-api /tls/api &&
+        chown -R root:root /tls/runner &&
+        chmod -R go-rwx /tls && chmod -R u+rX /tls
     environment:
       - NUM_RUNNERS=1
     volumes:
-      - sandbox-tls:/tls
+      - sandbox-api-tls:/tls/api
+      - sandbox-runner-tls:/tls/runner
     restart: \"no\"
 
   sandbox-api:
@@ -546,20 +625,25 @@ class N8NHostMaintenanceRuntime:
       - SANDBOX_API_KEYS=${{SANDBOX_API_KEY}}
       - SANDBOX_API_RUNNER_REGISTRATION_TOKEN=${{SANDBOX_RUNNER_REGISTRATION_TOKEN}}
       - SANDBOX_API_RUNNER_API_KEY=${{SANDBOX_RUNNER_API_KEY}}
-      - SANDBOX_API_GRPC_TLS_CERT_FILE=/tls/api/grpc-server.crt
-      - SANDBOX_API_GRPC_TLS_KEY_FILE=/tls/api/grpc-server.key
-      - SANDBOX_API_GRPC_TLS_CLIENT_CA_FILE=/tls/api/ca.crt
-      - SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_CA_FILE=/tls/api/ca.crt
-      - SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_CERT_FILE=/tls/api/control-grpc-api-client.crt
-      - SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_KEY_FILE=/tls/api/control-grpc-api-client.key
+      - SANDBOX_API_GRPC_TLS_CERT_FILE=/tls/grpc-server.crt
+      - SANDBOX_API_GRPC_TLS_KEY_FILE=/tls/grpc-server.key
+      - SANDBOX_API_GRPC_TLS_CLIENT_CA_FILE=/tls/ca.crt
+      - SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_CA_FILE=/tls/ca.crt
+      - SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_CERT_FILE=/tls/control-grpc-api-client.crt
+      - SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_KEY_FILE=/tls/control-grpc-api-client.key
       - SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_SERVER_NAME=sandbox-runner-1
     volumes:
-      - sandbox-tls:/tls:ro
+      - sandbox-api-tls:/tls:ro
+    networks:
+      - default
+      - sandbox-control
 
   sandbox-runner-1:
     image: {images['sandboxRunner']}
     restart: unless-stopped
-    privileged: true
+    # Production Linux DIND must fail closed without the host-registered runtime.
+    runtime: sysbox-runc
+    privileged: false
     depends_on:
       sandbox-api:
         condition: service_started
@@ -567,24 +651,32 @@ class N8NHostMaintenanceRuntime:
       - SANDBOX_RUNNER_API_KEYS=${{SANDBOX_RUNNER_API_KEY}}
       - SANDBOX_RUNNER_REGISTRATION_TOKEN=${{SANDBOX_RUNNER_REGISTRATION_TOKEN}}
       - SANDBOX_RUNNER_API_GRPC_ADDR=sandbox-api:9090
-      - SANDBOX_RUNNER_HTTP_BASE_URL=http://sandbox-runner-1:8080
+      - SANDBOX_RUNNER_HTTP_BASE_URL=https://sandbox-runner-1:8080
       - SANDBOX_RUNNER_CONTROL_GRPC_LISTEN_ADDR=:9091
       - SANDBOX_RUNNER_CONTROL_GRPC_ADVERTISE_ADDR=sandbox-runner-1:9091
       - SANDBOX_RUNNER_ID=runner-1
       - SANDBOX_RUNNER_DOCKER_SANDBOX_IMAGE={images['innerSandbox']}
-      - SANDBOX_RUNNER_REGISTRATION_GRPC_CA_FILE=/tls/runner/ca.crt
-      - SANDBOX_RUNNER_REGISTRATION_GRPC_CERT_FILE=/tls/runner/grpc-client.crt
-      - SANDBOX_RUNNER_REGISTRATION_GRPC_KEY_FILE=/tls/runner/grpc-client.key
+      - SANDBOX_RUNNER_REGISTRATION_GRPC_CA_FILE=/tls/ca.crt
+      - SANDBOX_RUNNER_REGISTRATION_GRPC_CERT_FILE=/tls/grpc-client.crt
+      - SANDBOX_RUNNER_REGISTRATION_GRPC_KEY_FILE=/tls/grpc-client.key
       - SANDBOX_RUNNER_REGISTRATION_GRPC_SERVER_NAME=sandbox-api
-      - SANDBOX_RUNNER_CONTROL_GRPC_TLS_CERT_FILE=/tls/runner/control-grpc-server.crt
-      - SANDBOX_RUNNER_CONTROL_GRPC_TLS_KEY_FILE=/tls/runner/control-grpc-server.key
-      - SANDBOX_RUNNER_CONTROL_GRPC_TLS_CLIENT_CA_FILE=/tls/runner/ca.crt
+      - SANDBOX_RUNNER_CONTROL_GRPC_TLS_CERT_FILE=/tls/control-grpc-server.crt
+      - SANDBOX_RUNNER_CONTROL_GRPC_TLS_KEY_FILE=/tls/control-grpc-server.key
+      - SANDBOX_RUNNER_CONTROL_GRPC_TLS_CLIENT_CA_FILE=/tls/ca.crt
     volumes:
-      - sandbox-tls:/tls:ro
+      - sandbox-runner-tls:/tls:ro
+    networks:
+      - sandbox-control
+
+networks:
+  default:
+  sandbox-control:
+    driver: bridge
 
 volumes:
   n8n_data:
-  sandbox-tls:
+  sandbox-api-tls:
+  sandbox-runner-tls:
 """
 
     def _stage1_already_deployed_readback(
@@ -626,6 +718,17 @@ volumes:
             and summaries.get(N8N_SANDBOX_API_CONTAINER, {}).get("image") == images.get("sandboxApi")
             and summaries.get(N8N_SANDBOX_RUNNER_CONTAINER, {}).get("image") == images.get("sandboxRunner")
         )
+        runner_summary = summaries.get(N8N_SANDBOX_RUNNER_CONTAINER, {})
+        runner_isolation_verified = bool(
+            runner_summary.get("runtime") == "sysbox-runc"
+            and not runner_summary.get("privileged")
+        )
+        sandbox_tls_material_separated = self._sandbox_tls_mounts_are_separated(
+            summaries
+        )
+        sandbox_networks_separated = self._sandbox_networks_are_separated(
+            summaries
+        )
         n8n_env = runtime_env[N8N_CONTAINER]
         instance_ai_preserved = bool(
             not instance_ai_enabled
@@ -659,6 +762,9 @@ volumes:
             managed_compose_matches_target
             and loopback_only
             and images_match
+            and runner_isolation_verified
+            and sandbox_tls_material_separated
+            and sandbox_networks_separated
             and host_values_present
             and runtime_matches_host
             and instance_ai_preserved
@@ -690,6 +796,10 @@ volumes:
             "runtimeMatchesHostSecrets": runtime_matches_host,
             "immutableImagesVerified": images_match,
             "loopbackPortVerified": loopback_only,
+            "runnerIsolationVerified": runner_isolation_verified,
+            "sandboxTlsMaterialSeparated": sandbox_tls_material_separated,
+            "sandboxNetworksSeparated": sandbox_networks_separated,
+            "sysboxRuntimeRegistered": True,
             "instanceAiPreserved": instance_ai_preserved,
             "proxyContractVerified": proxy_contract,
             "n8nHealthVerified": local_health,
@@ -1353,6 +1463,10 @@ volumes:
 
     def stage1_plan(self) -> dict[str, Any]:
         try:
+            if not self._sysbox_runtime_registered():
+                raise RuntimeError(
+                    "sysbox-runc is not registered with Docker; privileged runner fallback is prohibited"
+                )
             inspected = {name: self._inspect(name) for name in N8N_EXPECTED_SERVICES}
             if any(value is None for value in inspected.values()):
                 raise RuntimeError("One or more n8n stack containers are absent")
@@ -1469,6 +1583,7 @@ volumes:
                     _fingerprint(effective_instance_ai_model) if instance_ai_enabled else ""
                 ),
                 "images": images,
+                "runnerIsolation": "sysbox-runc",
                 "composeSha256": _fingerprint(compose),
                 "originalComposeEvidence": original_compose_evidence,
                 "diskFloorBytes": N8N_MIN_FREE_BYTES,
@@ -1498,6 +1613,8 @@ volumes:
                 },
                 "images": images,
                 "containers": summaries,
+                "sysboxRuntimeRegistered": True,
+                "targetRunnerIsolation": "sysbox-runc",
                 "disk": disk,
                 "targetComposeSha256": state["composeSha256"],
                 "originalComposeEvidence": original_compose_evidence,
@@ -1510,10 +1627,21 @@ volumes:
             return self._failure("N8N_STAGE1_PLAN_BLOCKED", "N8N_RUNTIME_EVIDENCE_INCOMPLETE", str(exc))
 
     @staticmethod
-    def _http_probe(host: str, port: int, path: str) -> bool:
+    def _http_probe(host: str, port: int, path: str, *, tls: bool = False) -> bool:
         connection: http.client.HTTPConnection | None = None
         try:
-            connection = http.client.HTTPConnection(host, port, timeout=5)
+            if tls:
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+                connection = http.client.HTTPSConnection(
+                    host,
+                    port,
+                    timeout=5,
+                    context=context,
+                )
+            else:
+                connection = http.client.HTTPConnection(host, port, timeout=5)
             connection.request("GET", path)
             response = connection.getresponse()
             response.read(4096)
@@ -1553,7 +1681,8 @@ volumes:
                 api_ip and self._http_probe(api_ip, 8080, "/healthz")
             )
             sandbox_runner_health = bool(
-                runner_ip and self._http_probe(runner_ip, 8080, "/readyz")
+                runner_ip
+                and self._http_probe(runner_ip, 8080, "/readyz", tls=True)
             )
             if local_health and sandbox_api_health and sandbox_runner_health:
                 break
@@ -1742,6 +1871,20 @@ volumes:
                 "ORIGINAL_COMPOSE_DRIFT",
                 "Hostinger Compose source changed after the confirmation plan was created",
             )
+        try:
+            sysbox_runtime_registered = self._sysbox_runtime_registered()
+        except RuntimeError as exc:
+            return self._failure(
+                "N8N_STAGE1_BLOCKED",
+                "SYSBOX_RUNTIME_EVIDENCE_INCOMPLETE",
+                str(exc),
+            )
+        if not sysbox_runtime_registered:
+            return self._failure(
+                "N8N_STAGE1_BLOCKED",
+                "SYSBOX_RUNTIME_UNAVAILABLE",
+                "sysbox-runc disappeared after planning; privileged runner fallback is prohibited",
+            )
         images = dict(plan.get("images") or {})
         compose = self._stage1_compose(
             images,
@@ -1844,6 +1987,17 @@ volumes:
             and summaries.get(N8N_SANDBOX_API_CONTAINER, {}).get("image") == images.get("sandboxApi")
             and summaries.get(N8N_SANDBOX_RUNNER_CONTAINER, {}).get("image") == images.get("sandboxRunner")
         )
+        runner_summary = summaries.get(N8N_SANDBOX_RUNNER_CONTAINER, {})
+        runner_isolation_verified = bool(
+            runner_summary.get("runtime") == "sysbox-runc"
+            and not runner_summary.get("privileged")
+        )
+        sandbox_tls_material_separated = self._sandbox_tls_mounts_are_separated(
+            summaries
+        )
+        sandbox_networks_separated = self._sandbox_networks_are_separated(
+            summaries
+        )
         secret_bindings_match = self._runtime_secret_matches(host_env)
         n8n_env = self._container_env(N8N_CONTAINER)
         instance_ai_preserved = bool(
@@ -1875,6 +2029,9 @@ volumes:
             ids_changed
             and loopback_only
             and images_match
+            and runner_isolation_verified
+            and sandbox_tls_material_separated
+            and sandbox_networks_separated
             and secret_bindings_match
             and instance_ai_preserved
             and proxy_contract
@@ -1912,6 +2069,10 @@ volumes:
             "containerIdsChanged": ids_changed,
             "loopbackPortVerified": loopback_only,
             "immutableImagesVerified": images_match,
+            "runnerIsolationVerified": runner_isolation_verified,
+            "sandboxTlsMaterialSeparated": sandbox_tls_material_separated,
+            "sandboxNetworksSeparated": sandbox_networks_separated,
+            "sysboxRuntimeRegistered": sysbox_runtime_registered,
             "rotatedSecretBindingsMatchHost": secret_bindings_match,
             "instanceAiPreserved": instance_ai_preserved,
             "proxyContractVerified": proxy_contract,

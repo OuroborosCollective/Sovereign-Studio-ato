@@ -26,6 +26,14 @@ def test_editor_port_is_not_published_on_all_interfaces() -> None:
     assert "0.0.0.0:5678" not in text
 
 
+def test_n8n_can_reach_host_toolchain_without_receiving_its_capability_key_as_env() -> None:
+    text = source()
+    capability_env_name = "N8N_EVIDENCE_" + "API" + "_KEY"
+
+    assert '"host.docker.internal:host-gateway"' in text
+    assert capability_env_name not in text
+
+
 def test_all_runtime_images_require_explicit_immutable_refs() -> None:
     text = source()
     assert ":latest" not in text
@@ -40,14 +48,40 @@ def test_sandbox_services_are_health_gated_and_not_host_published() -> None:
     assert "condition: service_completed_successfully" in text
     assert text.count("condition: service_healthy") >= 2
     assert "http://127.0.0.1:8080/healthz" in text
-    assert "http://127.0.0.1:8080/readyz" in text
+    assert "https://127.0.0.1:8080/readyz" in text
     assert "8080:8080" not in text
     assert "9090:9090" not in text
     assert "9091:9091" not in text
 
 
-def test_stage1_dind_boundary_is_explicitly_transitional() -> None:
+def test_stage1_dind_runner_uses_fail_closed_sysbox_isolation() -> None:
     text = source()
-    assert "privileged: true" in text
-    assert "Do not inject" in text
-    assert "Sysbox or Firecracker" in text
+    runner = text.split("  sandbox-runner-1:", 1)[1].split("\nvolumes:", 1)[0]
+
+    assert "runtime: sysbox-runc" in runner
+    assert "privileged: false" in runner
+    assert "privileged: true" not in text
+    assert "docker.sock" not in runner
+    assert "host.docker.internal" not in runner
+    assert "networks:\n      - sandbox-control" in runner
+    assert "      - default" not in runner
+    assert "fail closed" in runner
+
+
+def test_api_and_runner_tls_material_is_separated_and_read_only() -> None:
+    text = source()
+    certs = text.split("  sandbox-certs:", 1)[1].split("  sandbox-api:", 1)[0]
+    api = text.split("  sandbox-api:", 1)[1].split("  sandbox-runner-1:", 1)[0]
+    runner = text.split("  sandbox-runner-1:", 1)[1].split("\nnetworks:", 1)[0]
+
+    assert "network_mode: none" in certs
+    assert "--world-readable" not in text
+    assert "sandbox-api-tls:/tls:ro" in api
+    assert "      - default" in api
+    assert "      - sandbox-control" in api
+    assert "sandbox-runner-tls:/tls:ro" in runner
+    assert "sandbox-api-tls:/tls:ro" not in runner
+    assert "control-grpc-api-client.crt" not in runner
+    assert "SANDBOX_RUNNER_HTTP_BASE_URL=https://" in runner
+    assert "--no-check-certificate" in runner
+    assert "https://127.0.0.1:8080/readyz" in runner

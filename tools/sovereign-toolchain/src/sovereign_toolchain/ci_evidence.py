@@ -183,11 +183,13 @@ def _first_failure(jobs: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
 
 
 def build_ci_evidence_receipt(observation: Mapping[str, Any]) -> dict[str, Any]:
-    """Normalize one GitHub Actions observation into deterministic, non-authoritative evidence.
+    """Normalize one workflow-bound GitHub Actions observation into deterministic evidence.
 
     The receipt deliberately contains no wall-clock time and cannot claim runtime truth. n8n may
-    retain ``stateFingerprint`` solely as a delivery cursor. Sovereign must perform an independent
-    repository/runtime readback before any external effect can transition to VERIFIED.
+    retain stateFingerprint solely as a delivery cursor. Without a supplied cursor, the receipt
+    records the current fingerprint but cannot claim that state changed or that a notification is
+    due. Sovereign must perform an independent repository/runtime readback before any external
+    effect can transition to VERIFIED.
     """
 
     if not isinstance(observation, Mapping):
@@ -195,10 +197,23 @@ def build_ci_evidence_receipt(observation: Mapping[str, Any]) -> dict[str, Any]:
     repository = _safe_text(observation.get("repository"), "repository", max_length=200)
     if not _REPOSITORY.fullmatch(repository):
         raise CIEvidenceError("repository must use owner/name form")
+    workflow_id = _positive_int(observation.get("workflow_id"), "workflow_id")
+    workflow_name = _safe_text(observation.get("workflow_name"), "workflow_name")
+    workflow_selector = _safe_text(
+        observation.get("workflow_selector"),
+        "workflow_selector",
+        max_length=200,
+    )
+    branch = _safe_text(observation.get("branch"), "branch", max_length=255)
+    branch_head_sha = _sha40(observation.get("branch_head_sha"), "branch_head_sha")
     run_id = _positive_int(observation.get("run_id"), "run_id")
     head_sha = _sha40(observation.get("head_sha"), "head_sha")
     expected_head_raw = observation.get("expected_head_sha")
-    expected_head_sha = _sha40(expected_head_raw, "expected_head_sha") if expected_head_raw else None
+    expected_head_sha = (
+        _sha40(expected_head_raw, "expected_head_sha")
+        if expected_head_raw
+        else branch_head_sha
+    )
     status = _status(observation.get("status"), "workflow status")
     conclusion = _conclusion(observation.get("conclusion"), "workflow conclusion")
     if status == "completed" and conclusion is None:
@@ -209,6 +224,11 @@ def build_ci_evidence_receipt(observation: Mapping[str, Any]) -> dict[str, Any]:
 
     normalized_observation = {
         "repository": repository,
+        "workflowId": workflow_id,
+        "workflowName": workflow_name,
+        "workflowSelector": workflow_selector,
+        "branch": branch,
+        "branchHeadSha": branch_head_sha,
         "runId": run_id,
         "headSha": head_sha,
         "expectedHeadSha": expected_head_sha,
@@ -219,8 +239,14 @@ def build_ci_evidence_receipt(observation: Mapping[str, Any]) -> dict[str, Any]:
     state_fingerprint = _canonical_sha256(normalized_observation)
     previous_raw = observation.get("previous_fingerprint")
     previous_fingerprint = _sha64(previous_raw, "previous_fingerprint") if previous_raw else None
-    changed = previous_fingerprint != state_fingerprint
-    revision_matches = expected_head_sha is None or expected_head_sha == head_sha
+    delivery_cursor_present = previous_fingerprint is not None
+    changed = bool(
+        delivery_cursor_present and previous_fingerprint != state_fingerprint
+    )
+    revision_matches = (
+        expected_head_sha == branch_head_sha
+        and head_sha == branch_head_sha
+    )
 
     if not revision_matches:
         verdict = "REVISION_DRIFT"
@@ -238,24 +264,18 @@ def build_ci_evidence_receipt(observation: Mapping[str, Any]) -> dict[str, Any]:
         "authority": "OBSERVATION_ONLY",
         "source": "sovereign-toolchain",
         "observationTransport": "n8n",
-        "repository": repository,
-        "runId": run_id,
-        "headSha": head_sha,
-        "expectedHeadSha": expected_head_sha,
+        **normalized_observation,
         "revisionMatches": revision_matches,
-        "status": status,
-        "conclusion": conclusion,
-        "jobs": jobs,
         "firstFailure": first_failure,
         "verdict": verdict,
         "stateFingerprint": state_fingerprint,
         "previousFingerprint": previous_fingerprint,
+        "deliveryCursorPresent": delivery_cursor_present,
         "stateChanged": changed,
         "shouldNotify": should_notify,
         "requiresIndependentReadback": True,
     }
     return {**body, "receiptSha256": _canonical_sha256(body)}
-
 
 def build_revision_guardian_receipt(observation: Mapping[str, Any]) -> dict[str, Any]:
     """Compare independently supplied revision/runtime identities without promoting them to truth."""
@@ -301,7 +321,10 @@ def build_revision_guardian_receipt(observation: Mapping[str, Any]) -> dict[str,
     state_fingerprint = _canonical_sha256(normalized_observation)
     previous_raw = observation.get("previous_fingerprint")
     previous_fingerprint = _sha64(previous_raw, "previous_fingerprint") if previous_raw else None
-    changed = previous_fingerprint != state_fingerprint
+    delivery_cursor_present = previous_fingerprint is not None
+    changed = bool(
+        delivery_cursor_present and previous_fingerprint != state_fingerprint
+    )
     verdict = "PASS" if not drift else "DRIFT"
     body = {
         "schemaVersion": "sovereign.revision-guardian-observation.v1",
@@ -317,6 +340,7 @@ def build_revision_guardian_receipt(observation: Mapping[str, Any]) -> dict[str,
         "verdict": verdict,
         "stateFingerprint": state_fingerprint,
         "previousFingerprint": previous_fingerprint,
+        "deliveryCursorPresent": delivery_cursor_present,
         "stateChanged": changed,
         "shouldNotify": changed,
         "requiresIndependentReadback": True,

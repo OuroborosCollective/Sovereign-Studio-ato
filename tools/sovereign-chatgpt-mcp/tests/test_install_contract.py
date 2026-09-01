@@ -199,6 +199,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     script = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
     service = (ROOT / "deploy" / "sovereign-chatgpt-broker.service").read_text("utf-8")
     worker_service = (ROOT / "deploy" / "sovereign-chatgpt-command-worker.service").read_text("utf-8")
+    n8n_runtime = (ROOT / "n8n_workflow_runtime.py").read_text("utf-8")
     broker_copy_loop = script.split("for file in broker.py", 1)[1].split("\ndone", 1)[0]
 
     assert 'install_managed_control_plane_file 0640 "$SOURCE_DIR/$file" "$BROKER_DIR/$file" "broker/$file"' in broker_copy_loop
@@ -248,6 +249,8 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "sovereign-freellmpool" not in required_container_line
     assert "GITHUB_TOKEN" in script
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
+    assert 'DEFAULT_LOCK_ROOT = Path("/run/sovereign-chatgpt-broker/n8n-workflows")' in n8n_runtime
+    assert '/run/lock/sovereign-n8n-workflows' not in n8n_runtime
     assert "RuntimeDirectoryPreserve=yes" in service
     assert "command_worker.py" in broker_copy_loop
     assert 'install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-command-worker.service" "$COMMAND_WORKER_SERVICE" "systemd/sovereign-chatgpt-command-worker.service"' in script
@@ -275,6 +278,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert 'remove_managed_legacy_file "$BROKER_DIR/litellm_stack.py" "broker/litellm_stack.py"' in script
     assert 'rm -f "$BROKER_DIR/litellm_stack.py"' not in script
     assert "managed_compose.py" in broker_copy_loop
+    assert "n8n_workflow_runtime.py" in broker_copy_loop
     assert "patchmon_operator.py" in broker_copy_loop
     assert 'install -m 0640 "$LITELLM_TEMPLATE_SOURCE/' not in script
     assert 'remove_managed_legacy_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml" "templates/sovereign-litellm/docker-compose.yml"' in script

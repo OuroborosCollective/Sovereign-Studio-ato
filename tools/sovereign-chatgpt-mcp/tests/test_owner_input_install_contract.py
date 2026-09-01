@@ -71,6 +71,8 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_REFERENCE_ID "$OWNER_REFERENCE_ID"' in installer
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_ADMIN_EMAIL "$OWNER_ADMIN_EMAIL"' in installer
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_INPUT_ROOT "/opt/sovereign-owner-managed"' in installer
+    assert 'chown root:root "$OWNER_INPUT_HOST_ROOT"' in installer
+    assert """[[ "$(stat -c '%u:%g:%a' "$OWNER_INPUT_HOST_ROOT")" == "0:0:700" ]]""" in installer
     assert 'set_value "$BACKEND_MANAGED_ENV" WOLFRAM_CAG_API_KEY_FILE "/opt/sovereign-owner-managed/wolfram_cag_api_key.txt"' in installer
     assert 'RETIRED_OWNER_GITHUB_PAT_FILE="$OWNER_INPUT_HOST_ROOT/github_pat.txt"' in installer
     assert 'rm -f "$RETIRED_OWNER_GITHUB_PAT_FILE"' in installer
@@ -125,6 +127,8 @@ def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> Non
     assert 'umask 077' in deploy
     assert 'mkdir -p "$OWNER_INPUT_HOST_ROOT"' in deploy
     assert 'chmod 0700 "$OWNER_INPUT_HOST_ROOT"' in deploy
+    assert 'chown root:root "$OWNER_INPUT_HOST_ROOT"' in deploy
+    assert """[[ "$(stat -c '%u:%g:%a' "$OWNER_INPUT_HOST_ROOT")" == "0:0:700" ]]""" in deploy
     assert '[[ -d "$OWNER_INPUT_HOST_ROOT" && ! -L "$OWNER_INPUT_HOST_ROOT" ]]' in deploy
     assert '[[ -w "$OWNER_INPUT_HOST_ROOT" && -x "$OWNER_INPUT_HOST_ROOT" ]]' in deploy
     assert 'install -d -m 0700 "$OWNER_INPUT_HOST_ROOT"' not in deploy
@@ -168,6 +172,8 @@ def test_backend_rollback_preserves_owner_managed_openai_key_mount() -> None:
     assert 'OWNER_INPUT_CONTAINER_ROOT="/opt/sovereign-owner-managed"' in rollback
     assert 'mkdir -p "$OWNER_INPUT_HOST_ROOT"' in rollback
     assert 'chmod 0700 "$OWNER_INPUT_HOST_ROOT"' in rollback
+    assert 'chown root:root "$OWNER_INPUT_HOST_ROOT"' in rollback
+    assert """[[ "$(stat -c '%u:%g:%a' "$OWNER_INPUT_HOST_ROOT")" == "0:0:700" ]]""" in rollback
     assert "/opt/sovereign-owner-managed:/opt/sovereign-owner-managed:rw" in compose
     assert 'WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"' in rollback
     assert 'WORKSPACE_CONTAINER_ROOT="/var/lib/sovereign-agent/workspaces"' in rollback

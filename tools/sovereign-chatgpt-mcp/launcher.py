@@ -18,6 +18,7 @@ import skill_supply_chain_tools
 import toolchain_composition
 import tool_success_ranking
 import neuro_teaching_tools
+import n8n_workflow_tools
 import server
 import tool_extensions
 
@@ -34,6 +35,7 @@ skill_supply_chain_tools.register(server.mcp, server.runtime)
 openai_project_access_tools.register(server.mcp, server.broker, server.controller_runtime)
 operational_governance_tools.register(server.mcp, server.runtime, server.database, server.broker)
 neuro_teaching_tools.register(server.mcp, server.runtime)
+n8n_workflow_tools.register(server.mcp, server.broker)
 operational_assurance_tools.register(server.mcp, server.runtime, server.database, server.broker)
 proven_learning_tools.register(server.mcp, server.runtime, server.owner_input)
 toolchain_composition.register(server.mcp)

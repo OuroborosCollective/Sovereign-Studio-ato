@@ -469,6 +469,50 @@ def test_n8n_stage1_reuses_managed_compose_plan_and_apply_surfaces(monkeypatch) 
     assert observed == {"confirmation_sha256": "b" * 64, "owner_approved": True}
 
 
+def test_n8n_workflow_apply_intersects_caller_attestation_with_private_owner_mode(
+    monkeypatch,
+) -> None:
+    runtime = BrokerRuntime()
+    forwarded_owner_approvals = []
+
+    def apply(**kwargs):
+        forwarded_owner_approvals.append(kwargs["owner_approved"])
+        return {
+            "ok": kwargs["owner_approved"],
+            "status": (
+                "N8N_WORKFLOW_APPLIED"
+                if kwargs["owner_approved"]
+                else "N8N_WORKFLOW_APPLY_BLOCKED"
+            ),
+        }
+
+    monkeypatch.setattr(runtime.n8n_workflows, "apply", apply)
+    arguments = {
+        "lane_id": "sovereign",
+        "operation": "activate",
+        "workflow_id": "workflow-1",
+        "confirmation_sha256": "a" * 64,
+        "owner_approved": True,
+    }
+
+    runtime.private_owner_mode = False
+    blocked = runtime.dispatch(
+        "n8n_workflow_apply",
+        arguments,
+        execution_origin="host_worker",
+    )
+    runtime.private_owner_mode = True
+    accepted = runtime.dispatch(
+        "n8n_workflow_apply",
+        arguments,
+        execution_origin="host_worker",
+    )
+
+    assert blocked["status"] == "N8N_WORKFLOW_APPLY_BLOCKED"
+    assert accepted["status"] == "N8N_WORKFLOW_APPLIED"
+    assert forwarded_owner_approvals == [False, True]
+
+
 def test_patchmon_non_bootstrap_action_still_delegates_to_operator(monkeypatch) -> None:
     runtime = BrokerRuntime()
     observed = {}

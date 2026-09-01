@@ -28,6 +28,7 @@ ARCHIVE="$RELEASE_DIR/sovereign-chatgpt-mcp.tar.gz"
 REVISION_FILE="$RELEASE_DIR/sovereign-chatgpt-mcp.revision"
 IMAGE_DIGEST_FILE="$RELEASE_DIR/sovereign-chatgpt-mcp.image-digest"
 KAPPA_FILE="$RELEASE_DIR/sovereign-chatgpt-mcp.kappa-pos"
+BUNDLE_SCOPE_FILE="$RELEASE_DIR/sovereign-chatgpt-mcp.bundle-scope"
 CHECKSUM_FILE="$RELEASE_DIR/sovereign-chatgpt-mcp.sha256"
 WORK_DIR="$RELEASE_DIR/work"
 DOCKER_AUTH_DIR="$RELEASE_DIR/docker-auth"
@@ -47,7 +48,7 @@ esac
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid expected revision.' >&2; exit 1; }
 [[ "$EXPECTED_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Invalid expected image digest.' >&2; exit 1; }
 test "$KAPPA_POS" = '1000000' || { echo 'Invalid KAPPA_POS invariant.' >&2; exit 1; }
-for release_file in "$ARCHIVE" "$REVISION_FILE" "$IMAGE_DIGEST_FILE" "$KAPPA_FILE" "$CHECKSUM_FILE"; do
+for release_file in "$ARCHIVE" "$REVISION_FILE" "$IMAGE_DIGEST_FILE" "$KAPPA_FILE" "$BUNDLE_SCOPE_FILE" "$CHECKSUM_FILE"; do
   test -f "$release_file" || { echo "Release evidence file missing: $release_file" >&2; exit 1; }
 done
 (
@@ -57,6 +58,7 @@ done
 test "$(tr -d '\r\n' < "$REVISION_FILE")" = "$EXPECTED_REVISION"
 test "$(tr -d '\r\n' < "$IMAGE_DIGEST_FILE")" = "$EXPECTED_IMAGE_DIGEST"
 test "$(tr -d '\r\n' < "$KAPPA_FILE")" = "$KAPPA_POS"
+test "$(tr -d '\r\n' < "$BUNDLE_SCOPE_FILE")" = 'mcp-release-archive'
 ARCHIVE_SHA256="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
 [[ "$ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
 python3 - "$ARCHIVE" <<'PY'
@@ -75,6 +77,8 @@ with tarfile.open(archive, 'r:gz') as bundle:
             raise SystemExit(f'unsafe archive path: {member.name}')
         if member.issym() or member.islnk() or member.isdev():
             raise SystemExit(f'unsupported archive entry: {member.name}')
+        if path.parts[:2] != ('tools', 'sovereign-chatgpt-mcp'):
+            raise SystemExit(f'MCP-only archive contains an out-of-scope entry: {member.name}')
 PY
 tar -tzf "$ARCHIVE" >/dev/null
 rm -rf "$WORK_DIR"
@@ -82,7 +86,7 @@ install -d -m 0700 "$WORK_DIR"
 tar -xzf "$ARCHIVE" -C "$WORK_DIR"
 
 SOURCE_DIR="$WORK_DIR/tools/sovereign-chatgpt-mcp"
-for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py github_knowledge_mcp_client.py owner_input_widget.py enterprise_backend_tools.py freemium_product_architect_tools.py continuity.py validate_continuity.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py config/sovereign-mcp-operating-profile.json config/sovereign-continuity-policy.json continuity-data/CONTEXT.md continuity-data/LEDGER.jsonl skills/sovereign-mcp-optimal-operation/SKILL.md skills/sovereign-operational-governance/SKILL.md skills/sovereign-operational-assurance/SKILL.md skills/sovereign-neuro-teaching-runtime/SKILL.md launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py managed_compose.py n8n_host_maintenance.py patchmon_operator.py templates/pgbackweb-wq5r/docker-compose.yml templates/patchmon-sovereign/docker-compose.yml templates/code-server-46bq/docker-compose.yml deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service deploy/reconcile-main-release.py deploy/sovereign-release-reconciler.service deploy/sovereign-release-reconciler.timer; do
+for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py github_knowledge_mcp_client.py owner_input_widget.py enterprise_backend_tools.py freemium_product_architect_tools.py continuity.py validate_continuity.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py config/sovereign-mcp-operating-profile.json config/sovereign-continuity-policy.json continuity-data/CONTEXT.md continuity-data/LEDGER.jsonl skills/sovereign-mcp-optimal-operation/SKILL.md skills/sovereign-operational-governance/SKILL.md skills/sovereign-operational-assurance/SKILL.md skills/sovereign-neuro-teaching-runtime/SKILL.md launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py managed_compose.py n8n_host_maintenance.py n8n_workflow_runtime.py n8n_workflow_tools.py patchmon_operator.py templates/pgbackweb-wq5r/docker-compose.yml templates/patchmon-sovereign/docker-compose.yml templates/code-server-46bq/docker-compose.yml deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service deploy/reconcile-main-release.py deploy/sovereign-release-reconciler.service deploy/sovereign-release-reconciler.timer; do
   test -f "$SOURCE_DIR/$required" || { echo "Required MCP release file is missing: $required" >&2; exit 1; }
 done
 bash -n "$SOURCE_DIR/deploy/install-on-vps.sh"
@@ -123,13 +127,14 @@ INSTALL_RECEIPT_FILE="$RELEASE_DIR/mcp-install-receipt.json"
 if ! run_root env \
   DOCKER_CONFIG="$DOCKER_AUTH_DIR" \
   SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" \
+  SOVEREIGN_MCP_DEPLOYMENT_SOURCE_SCOPE=mcp-release-archive \
   SOVEREIGN_MCP_TUNNEL_MODE=disabled \
   SOVEREIGN_MCP_ALLOW_FIRST_INSTALL_WITHOUT_PREDECESSOR=0 \
   bash "$SOURCE_DIR/deploy/install-on-vps.sh" | tee "$INSTALL_OUTPUT"; then
   echo 'MCP installer failed before producing verified evidence.' >&2
   exit 1
 fi
-python3 - "$INSTALL_OUTPUT" "$INSTALL_RECEIPT_FILE" "$PREDECESSOR_CONTAINER_PRESENT" <<'PY'
+python3 - "$INSTALL_OUTPUT" "$INSTALL_RECEIPT_FILE" "$PREDECESSOR_CONTAINER_PRESENT" "$EXPECTED_REVISION" <<'PY'
 from pathlib import Path
 import json
 import os
@@ -138,6 +143,7 @@ import sys
 output_path = Path(sys.argv[1])
 receipt_path = Path(sys.argv[2])
 predecessor_observed = sys.argv[3] == 'true'
+expected_revision = sys.argv[4]
 receipt = None
 for line in reversed(output_path.read_text('utf-8').splitlines()):
     try:
@@ -183,6 +189,24 @@ if receipt.get('tool_outcome_telemetry_scope') != 'mutable-tool-outcomes-only':
     raise SystemExit('installer telemetry scope is not the verified mutable-only contract')
 if receipt.get('read_only_tool_calls_persisted') is not False:
     raise SystemExit('installer receipt claims read-only tool outcome persistence')
+toolchain_expected = {
+    'deployment_source_scope': 'mcp-release-archive',
+    'toolchain_install_required': False,
+    'toolchain_revision': expected_revision,
+    'toolchain_revision_verified': True,
+    'toolchain_health_readback': True,
+    'toolchain_n8n_evidence_auth_canary': True,
+    'toolchain_rollback_capable': True,
+}
+toolchain_mismatches = {
+    field: {'expected': value, 'actual': receipt.get(field)}
+    for field, value in toolchain_expected.items()
+    if receipt.get(field) != value
+}
+if toolchain_mismatches:
+    raise SystemExit(
+        f'installer did not prove the exact matching toolchain: {toolchain_mismatches}'
+    )
 temporary = receipt_path.with_suffix('.tmp')
 temporary.write_text(
     json.dumps(receipt, sort_keys=True, separators=(',', ':')) + '\n',
@@ -226,7 +250,7 @@ run_root docker exec sovereign-chatgpt-mcp test -f /app/config/sovereign-mcp-ope
 run_root docker exec sovereign-chatgpt-mcp test -f /app/config/sovereign-continuity-policy.json
 run_root docker exec sovereign-chatgpt-mcp test -f /app/continuity-data/CONTEXT.md
 run_root docker exec sovereign-chatgpt-mcp test -f /app/continuity-data/LEDGER.jsonl
-run_root docker exec sovereign-chatgpt-mcp python -c "import launcher; import server; import operating_profile; import operational_governance_tools; import operational_assurance_tools; import output_contracts; import toolchain_composition; assert launcher.mcp is server.mcp; assert callable(toolchain_composition.mcp_toolchain_compile); assert callable(toolchain_composition.mcp_toolchain_validate); assert callable(toolchain_composition.mcp_toolchain_next_step); assert output_contracts.ToolOutputEnvelope is not None; output_contract_report=launcher.OUTPUT_CONTRACT_INSTALLATION; assert output_contract_report.get('ok') is True, output_contract_report; assert output_contract_report.get('missingOutputSchemaCount') == 0, output_contract_report; operating_profile_report=launcher.OPERATING_PROFILE_ENFORCEMENT; assert operating_profile_report.ok is True, operating_profile_report; assert operating_profile_report.enforcedToolCount == operating_profile_report.mutableToolCount, operating_profile_report; profile_status=operating_profile.sovereign_operating_profile_status(); assert profile_status.status == 'OPERATING_PROFILE_ENFORCED', profile_status; names=('mcp_self_update_schedule','mcp_self_update_status','repository_pr_status','repository_merge_pr','repository_merge_pr_series','android_run_validation_suite','owner_approval_request_create','owner_approval_request_status','openrouter_provider_status','openrouter_provider_activate','openrouter_free_status','openrouter_free_activate','openrouter_free_key_rotate','litellm_provider_route_activate','owner_approval_widget_open','controller_run_start','controller_run_list','controller_run_status','controller_run_external_event','controller_run_resume','a2a_live_canary','managed_compose_stack_plan','deploy_managed_compose_stack'); missing=[name for name in names if not callable(getattr(server,name,None))]; assert not missing, missing; tool_names={tool.name for tool in server.mcp._tool_manager.list_tools()}; resource_uris={str(resource.uri) for resource in server.mcp._resource_manager.list_resources()}; assert 'sovereign_cognitive_architecture_status' in tool_names, tool_names; required_operational={'operational_skill_inventory','mcp_tool_contract_registry','tool_recommend_for_mission','mcp_registry_snapshot_verify','evidence_graph_build','runtime_runbook_generate','ownership_codeowners_guard','compliance_evidence_export','sovereign_operating_profile_status','sovereign_mission_preflight'}; assert required_operational.issubset(tool_names), sorted(required_operational-tool_names); required_assurance={'operational_assurance_skill_inventory','vps_capacity_resource_pressure_assess','runtime_dependency_health_matrix','outbox_queue_liveness_assess','scheduled_maintenance_coordinate','runtime_topology_change_audit','postgres_query_index_performance_assess','data_integrity_invariant_audit','data_repair_plan_build','vector_memory_consistency_assess','memory_poisoning_provenance_guard','learning_pattern_lifecycle_preview','data_retention_privacy_audit','multi_tenant_isolation_verify','mcp_schema_compatibility_audit','mcp_protocol_conformance_fuzz_plan','tool_permission_minimize','dynamic_execution_containment_audit','skill_capability_coverage_map','skill_lifecycle_deprecation_preview','skill_regression_benchmark','tool_idempotency_verify','owner_approval_policy_evaluate','secret_lifecycle_rotation_assess','secret_literal_triage','sbom_provenance_image_signing_verify','dependency_vulnerability_remediation_plan','authentication_chaos_negative_test_assess'}; assert required_assurance.issubset(tool_names), sorted(required_assurance-tool_names); assurance=operational_assurance_tools.operational_assurance_skill_inventory(); assert assurance.status == 'OPERATIONAL_ASSURANCE_SKILLS_READY', assurance; capacity=server.broker.call('runtime_capacity_snapshot', {}, timeout=90); assert capacity.get('status') in {'RUNTIME_CAPACITY_SNAPSHOT_READY','RUNTIME_CAPACITY_SNAPSHOT_DEGRADED'}, capacity; registry=operational_governance_tools.mcp_tool_contract_registry(include_schemas=False); assert registry.status == 'MCP_TOOL_REGISTRY_READY', registry; assert registry.toolCount == len(tool_names), (registry.toolCount,len(tool_names)); assert 'ui://sovereign/dev_dashboard.v2.html' in resource_uris, resource_uris; assert 'ui://sovereign/owner_input.html' in resource_uris, resource_uris; boundaries=server.mcp_runtime_boundaries(); assert boundaries.get('llm_can_receive_protected_values') is False, boundaries; canary=server.broker.call('host_worker_canary', {}, timeout=10); assert canary.get('status') == 'HOST_WORKER_READY', canary; assert canary.get('execution_origin') == 'host_worker', canary; print({'tool_contract': True, 'cognitive_widget': True, 'owner_input_widget': True, 'self_update': True, 'pr_lifecycle': True, 'owner_approval': True, 'host_worker_canary': True})"
+run_root docker exec sovereign-chatgpt-mcp python -c "import launcher; import server; import operating_profile; import operational_governance_tools; import operational_assurance_tools; import output_contracts; import toolchain_composition; import n8n_workflow_tools; assert launcher.mcp is server.mcp; assert callable(toolchain_composition.mcp_toolchain_compile); assert callable(toolchain_composition.mcp_toolchain_validate); assert callable(toolchain_composition.mcp_toolchain_next_step); assert output_contracts.ToolOutputEnvelope is not None; output_contract_report=launcher.OUTPUT_CONTRACT_INSTALLATION; assert output_contract_report.get('ok') is True, output_contract_report; assert output_contract_report.get('missingOutputSchemaCount') == 0, output_contract_report; operating_profile_report=launcher.OPERATING_PROFILE_ENFORCEMENT; assert operating_profile_report.ok is True, operating_profile_report; assert operating_profile_report.enforcedToolCount == operating_profile_report.mutableToolCount, operating_profile_report; profile_status=operating_profile.sovereign_operating_profile_status(); assert profile_status.status == 'OPERATING_PROFILE_ENFORCED', profile_status; names=('mcp_self_update_schedule','mcp_self_update_status','repository_pr_status','repository_merge_pr','repository_merge_pr_series','android_run_validation_suite','owner_approval_request_create','owner_approval_request_status','openrouter_provider_status','openrouter_provider_activate','openrouter_free_status','openrouter_free_activate','openrouter_free_key_rotate','litellm_provider_route_activate','owner_approval_widget_open','controller_run_start','controller_run_list','controller_run_status','controller_run_external_event','controller_run_resume','a2a_live_canary','managed_compose_stack_plan','deploy_managed_compose_stack'); missing=[name for name in names if not callable(getattr(server,name,None))]; assert not missing, missing; tool_names={tool.name for tool in server.mcp._tool_manager.list_tools()}; assert callable(n8n_workflow_tools.n8n_workflow_plan); assert callable(n8n_workflow_tools.n8n_workflow_apply); required_n8n_workflow_tools={'n8n_workflow_plan','n8n_workflow_apply'}; assert required_n8n_workflow_tools.issubset(tool_names), sorted(required_n8n_workflow_tools-tool_names); resource_uris={str(resource.uri) for resource in server.mcp._resource_manager.list_resources()}; assert 'sovereign_cognitive_architecture_status' in tool_names, tool_names; required_operational={'operational_skill_inventory','mcp_tool_contract_registry','tool_recommend_for_mission','mcp_registry_snapshot_verify','evidence_graph_build','runtime_runbook_generate','ownership_codeowners_guard','compliance_evidence_export','sovereign_operating_profile_status','sovereign_mission_preflight'}; assert required_operational.issubset(tool_names), sorted(required_operational-tool_names); required_assurance={'operational_assurance_skill_inventory','vps_capacity_resource_pressure_assess','runtime_dependency_health_matrix','outbox_queue_liveness_assess','scheduled_maintenance_coordinate','runtime_topology_change_audit','postgres_query_index_performance_assess','data_integrity_invariant_audit','data_repair_plan_build','vector_memory_consistency_assess','memory_poisoning_provenance_guard','learning_pattern_lifecycle_preview','data_retention_privacy_audit','multi_tenant_isolation_verify','mcp_schema_compatibility_audit','mcp_protocol_conformance_fuzz_plan','tool_permission_minimize','dynamic_execution_containment_audit','skill_capability_coverage_map','skill_lifecycle_deprecation_preview','skill_regression_benchmark','tool_idempotency_verify','owner_approval_policy_evaluate','secret_lifecycle_rotation_assess','secret_literal_triage','sbom_provenance_image_signing_verify','dependency_vulnerability_remediation_plan','authentication_chaos_negative_test_assess'}; assert required_assurance.issubset(tool_names), sorted(required_assurance-tool_names); assurance=operational_assurance_tools.operational_assurance_skill_inventory(); assert assurance.status == 'OPERATIONAL_ASSURANCE_SKILLS_READY', assurance; capacity=server.broker.call('runtime_capacity_snapshot', {}, timeout=90); assert capacity.get('status') in {'RUNTIME_CAPACITY_SNAPSHOT_READY','RUNTIME_CAPACITY_SNAPSHOT_DEGRADED'}, capacity; registry=operational_governance_tools.mcp_tool_contract_registry(include_schemas=False); assert registry.status == 'MCP_TOOL_REGISTRY_READY', registry; assert registry.toolCount == len(tool_names), (registry.toolCount,len(tool_names)); assert 'ui://sovereign/dev_dashboard.v2.html' in resource_uris, resource_uris; assert 'ui://sovereign/owner_input.html' in resource_uris, resource_uris; boundaries=server.mcp_runtime_boundaries(); assert boundaries.get('llm_can_receive_protected_values') is False, boundaries; canary=server.broker.call('host_worker_canary', {}, timeout=10); assert canary.get('status') == 'HOST_WORKER_READY', canary; assert canary.get('execution_origin') == 'host_worker', canary; print({'tool_contract': True, 'cognitive_widget': True, 'owner_input_widget': True, 'self_update': True, 'pr_lifecycle': True, 'owner_approval': True, 'host_worker_canary': True})"
 run_root docker exec \
   -e SOVEREIGN_EXPECTED_WORKFLOW_REVISION="$EXPECTED_REVISION" \
   -i sovereign-chatgpt-mcp python - <<'PY'
@@ -245,9 +269,9 @@ expected_tools = {
     'teaching_package_assess',
 }
 tool_names = {tool.name for tool in launcher.mcp._tool_manager.list_tools()}
-assert len(tool_names) == 249, len(tool_names)
+assert len(tool_names) == 251, len(tool_names)
 assert expected_tools <= tool_names, sorted(expected_tools - tool_names)
-assert len(tool_names - expected_tools) == 244, len(tool_names - expected_tools)
+assert len(tool_names - expected_tools) == 246, len(tool_names - expected_tools)
 revision = os.environ.get('SOVEREIGN_SOURCE_REVISION', '')
 assert len(revision) == 40 and all(character in '0123456789abcdef' for character in revision), revision
 assert revision == os.environ.get('SOVEREIGN_EXPECTED_WORKFLOW_REVISION'), revision
@@ -257,7 +281,7 @@ assert os.environ.get('SOVEREIGN_NEURO_POLICY_SHA256') == embedded_policy_sha256
 status = neuro_teaching_tools.neuro_runtime_contract_status()
 assert status.ok is True, status
 assert status.status == 'NEURO_RUNTIME_CONTRACT_READY', status
-assert status.evidence['toolCount'] == 249, status
+assert status.evidence['toolCount'] == 251, status
 assert status.data['ledger']['integrityStatus'] in {'NOT_INITIALIZED', 'VERIFIED'}, status
 assert status.data['foundationLedger']['integrityStatus'] in {'NOT_INITIALIZED', 'VERIFIED'}, status
 assert status.data['admissions']['pending'] == 0, status

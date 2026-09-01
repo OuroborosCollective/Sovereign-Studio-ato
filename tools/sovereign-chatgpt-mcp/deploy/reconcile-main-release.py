@@ -756,6 +756,7 @@ def _deploy_mcp_from_ci_scope(
         {
             "SOVEREIGN_MCP_EXPECTED_REVISION": revision,
             "SOVEREIGN_MCP_EXPECTED_DIGEST": mcp["digest"],
+            "SOVEREIGN_MCP_DEPLOYMENT_SOURCE_SCOPE": "full-repository",
         }
     )
     result = _command_json(
@@ -792,9 +793,45 @@ def _deploy_mcp_from_ci_scope(
     }
 
 
+TOOLCHAIN_REVISION_MARKER = Path(
+    os.getenv(
+        "SOVEREIGN_TOOLCHAIN_REVISION_MARKER",
+        "/opt/sovereign-legacy-mcp/sovereign-toolchain/.sovereign-source-revision",
+    )
+)
+TOOLCHAIN_SERVICE = "sovereign-toolchain.service"
+TOOLCHAIN_EVIDENCE_SERVICE = "sovereign-toolchain-n8n-evidence.service"
+
+
+def _toolchain_identity(revision: str) -> dict[str, Any]:
+    """Read the on-host toolchain revision marker and service active states."""
+    result: dict[str, Any] = {"revision": None, "serviceActive": False, "evidenceServiceActive": False}
+    try:
+        meta = TOOLCHAIN_REVISION_MARKER.lstat()
+        if stat.S_ISREG(meta.st_mode) and not TOOLCHAIN_REVISION_MARKER.is_symlink():
+            marker_text = TOOLCHAIN_REVISION_MARKER.read_text("ascii").strip()
+            if SHA_RE.fullmatch(marker_text):
+                result["revision"] = marker_text
+    except OSError:
+        pass
+    for service, key in (
+        (TOOLCHAIN_SERVICE, "serviceActive"),
+        (TOOLCHAIN_EVIDENCE_SERVICE, "evidenceServiceActive"),
+    ):
+        proc = _run(["systemctl", "is-active", "--quiet", service], timeout=10)
+        result[key] = proc.returncode == 0
+    result["current"] = bool(
+        result["revision"] == revision
+        and result["serviceActive"] is True
+        and result["evidenceServiceActive"] is True
+    )
+    return result
+
+
 def _runtime_readback(revision: str, backend: dict[str, str], mcp: dict[str, str]) -> dict[str, Any]:
     backend_runtime = _container_identity("sovereign-backend", BACKEND_REPOSITORY)
     mcp_runtime = _container_identity("sovereign-chatgpt-mcp", MCP_REPOSITORY)
+    toolchain_runtime = _toolchain_identity(revision)
     if not (
         backend_runtime.get("running") is True
         and backend_runtime.get("revision") == revision
@@ -808,6 +845,12 @@ def _runtime_readback(revision: str, backend: dict[str, str], mcp: dict[str, str
         and mcp_runtime.get("digest") == mcp["digest"]
     ):
         raise ReconcileError("runtime_readback", "MCP revision, digest or health parity failed")
+    if toolchain_runtime.get("current") is not True:
+        raise ReconcileError(
+            "runtime_readback",
+            "toolchain revision, service, or evidence-service parity failed",
+            safe_evidence={"toolchain": toolchain_runtime},
+        )
     broker = _broker_call("broker_health", {})
     if broker.get("status") != "BROKER_READY":
         raise ReconcileError("runtime_readback", "broker is not ready")
@@ -821,6 +864,7 @@ def _runtime_readback(revision: str, backend: dict[str, str], mcp: dict[str, str
     return {
         "backend": backend_runtime,
         "mcp": mcp_runtime,
+        "toolchain": toolchain_runtime,
         "broker": {
             "status": broker.get("status"),
             "pid": broker.get("pid"),
@@ -879,6 +923,7 @@ def reconcile() -> dict[str, Any]:
     _assert_expected_scope(scope, revision, gate, backend_image, mcp_image)
     previous_backend = _container_identity("sovereign-backend", BACKEND_REPOSITORY)
     current_mcp = _container_identity("sovereign-chatgpt-mcp", MCP_REPOSITORY)
+    current_toolchain = _toolchain_identity(revision)
     backend_changed = not (
         previous_backend.get("running") is True
         and previous_backend.get("revision") == revision
@@ -890,6 +935,7 @@ def reconcile() -> dict[str, Any]:
         and current_mcp.get("revision") == revision
         and current_mcp.get("digest") == mcp_image["digest"]
     )
+    toolchain_changed = current_toolchain.get("current") is not True
 
     backend_deploy: dict[str, Any] = {"status": "ALREADY_CURRENT", "mutationPerformed": False}
     if backend_changed:
@@ -959,7 +1005,7 @@ def reconcile() -> dict[str, Any]:
 
     mcp_update: dict[str, Any] = {"status": "ALREADY_CURRENT", "mutationPerformed": False}
     try:
-        if mcp_changed:
+        if mcp_changed or toolchain_changed:
             mcp_update = {
                 **_deploy_mcp_from_ci_scope(revision, mcp_image, operator_source),
                 "mutationPerformed": True,
