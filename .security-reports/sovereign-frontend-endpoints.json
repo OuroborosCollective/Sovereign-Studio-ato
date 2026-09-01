@@ -463,7 +463,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6653,
+      "line": 6742,
       "methods": [
         "GET"
       ],
@@ -472,7 +472,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6756,
+      "line": 6845,
       "methods": [
         "POST"
       ],
@@ -967,7 +967,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4673,
+      "line": 4750,
       "methods": [
         "POST"
       ],
@@ -976,7 +976,7 @@
     },
     {
       "file": "backend/github_app.py",
-      "line": 715,
+      "line": 794,
       "methods": [
         "GET"
       ],
@@ -985,7 +985,7 @@
     },
     {
       "file": "scripts/sovereign-backend/github_app.py",
-      "line": 791,
+      "line": 794,
       "methods": [
         "GET"
       ],
@@ -994,7 +994,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4653,
+      "line": 4730,
       "methods": [
         "GET"
       ],
@@ -1003,7 +1003,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4842,
+      "line": 4927,
       "methods": [
         "GET"
       ],
@@ -1012,7 +1012,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4860,
+      "line": 4947,
       "methods": [
         "POST"
       ],
@@ -1021,7 +1021,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4578,
+      "line": 4655,
       "methods": [
         "POST"
       ],
@@ -1030,7 +1030,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4569,
+      "line": 4646,
       "methods": [
         "GET"
       ],
@@ -1039,7 +1039,16 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4516,
+      "line": 4527,
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/auth/guest",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "scripts/sovereign-backend/app.py",
+      "line": 4593,
       "methods": [
         "POST"
       ],
@@ -1048,7 +1057,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4562,
+      "line": 4639,
       "methods": [
         "POST"
       ],
@@ -1057,7 +1066,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4547,
+      "line": 4624,
       "methods": [
         "GET"
       ],
@@ -1102,7 +1111,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4484,
+      "line": 4561,
       "methods": [
         "POST"
       ],
@@ -1327,7 +1336,7 @@
     },
     {
       "file": "backend/github_app.py",
-      "line": 755,
+      "line": 863,
       "methods": [
         "GET"
       ],
@@ -1336,7 +1345,7 @@
     },
     {
       "file": "scripts/sovereign-backend/github_app.py",
-      "line": 860,
+      "line": 863,
       "methods": [
         "GET"
       ],
@@ -1345,7 +1354,7 @@
     },
     {
       "file": "backend/github_app.py",
-      "line": 608,
+      "line": 687,
       "methods": [
         "GET"
       ],
@@ -1354,7 +1363,7 @@
     },
     {
       "file": "scripts/sovereign-backend/github_app.py",
-      "line": 684,
+      "line": 687,
       "methods": [
         "GET"
       ],
@@ -1363,7 +1372,7 @@
     },
     {
       "file": "backend/github_app.py",
-      "line": 626,
+      "line": 705,
       "methods": [
         "GET"
       ],
@@ -1372,7 +1381,7 @@
     },
     {
       "file": "scripts/sovereign-backend/github_app.py",
-      "line": 702,
+      "line": 705,
       "methods": [
         "GET"
       ],
@@ -1381,7 +1390,7 @@
     },
     {
       "file": "backend/github_app.py",
-      "line": 645,
+      "line": 724,
       "methods": [
         "GET"
       ],
@@ -1390,7 +1399,7 @@
     },
     {
       "file": "scripts/sovereign-backend/github_app.py",
-      "line": 721,
+      "line": 724,
       "methods": [
         "GET"
       ],
@@ -1399,7 +1408,7 @@
     },
     {
       "file": "backend/github_app.py",
-      "line": 669,
+      "line": 748,
       "methods": [
         "POST"
       ],
@@ -1408,7 +1417,7 @@
     },
     {
       "file": "scripts/sovereign-backend/github_app.py",
-      "line": 745,
+      "line": 748,
       "methods": [
         "POST"
       ],
@@ -1948,7 +1957,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6903,
+      "line": 6992,
       "methods": [
         "POST"
       ],
@@ -1957,7 +1966,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 7640,
+      "line": 7729,
       "methods": [
         "POST"
       ],
@@ -2317,7 +2326,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5639,
+      "line": 5728,
       "methods": [
         "POST"
       ],
@@ -2326,7 +2335,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5741,
+      "line": 5830,
       "methods": [
         "GET"
       ],
@@ -2335,7 +2344,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5567,
+      "line": 5656,
       "methods": [
         "POST"
       ],
@@ -2344,7 +2353,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5328,
+      "line": 5417,
       "methods": [
         "POST"
       ],
@@ -2353,7 +2362,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5296,
+      "line": 5385,
       "methods": [
         "POST"
       ],
@@ -2362,7 +2371,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5384,
+      "line": 5473,
       "methods": [
         "POST"
       ],
@@ -2371,7 +2380,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5264,
+      "line": 5353,
       "methods": [
         "POST"
       ],
@@ -2380,7 +2389,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5347,
+      "line": 5436,
       "methods": [
         "POST"
       ],
@@ -2389,7 +2398,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5525,
+      "line": 5614,
       "methods": [
         "POST"
       ],
@@ -2398,7 +2407,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5700,
+      "line": 5789,
       "methods": [
         "POST"
       ],
@@ -2407,7 +2416,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6208,
+      "line": 6297,
       "methods": [
         "DELETE"
       ],
@@ -2416,7 +2425,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6185,
+      "line": 6274,
       "methods": [
         "POST"
       ],
@@ -2425,7 +2434,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6025,
+      "line": 6114,
       "methods": [
         "POST"
       ],
@@ -2434,7 +2443,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6076,
+      "line": 6165,
       "methods": [
         "POST"
       ],
@@ -2443,7 +2452,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6165,
+      "line": 6254,
       "methods": [
         "GET"
       ],
@@ -2452,7 +2461,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5989,
+      "line": 6078,
       "methods": [
         "POST"
       ],
@@ -2461,7 +2470,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5944,
+      "line": 6033,
       "methods": [
         "POST"
       ],
@@ -2470,7 +2479,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6494,
+      "line": 6583,
       "methods": [
         "GET"
       ],
@@ -2479,7 +2488,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6500,
+      "line": 6589,
       "methods": [
         "POST"
       ],
@@ -2488,7 +2497,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6459,
+      "line": 6548,
       "methods": [
         "GET"
       ],
@@ -2497,7 +2506,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6444,
+      "line": 6533,
       "methods": [
         "GET"
       ],
@@ -2506,7 +2515,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5228,
+      "line": 5317,
       "methods": [
         "GET"
       ],
@@ -3496,7 +3505,7 @@
     },
     {
       "file": "backend/github_app.py",
-      "line": 573,
+      "line": 652,
       "methods": [
         "POST"
       ],
@@ -3505,7 +3514,7 @@
     },
     {
       "file": "scripts/sovereign-backend/github_app.py",
-      "line": 649,
+      "line": 652,
       "methods": [
         "POST"
       ],
@@ -5340,7 +5349,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4673,
+          "line": 4750,
           "methods": [
             "POST"
           ],
@@ -5352,7 +5361,7 @@
         "active_surface": true,
         "call_name": "authFetch",
         "file": "src/features/user/useUserStore.ts",
-        "line": 196,
+        "line": 199,
         "method": "POST",
         "path": "/api/auth/github",
         "source_kind": "request-call",
@@ -5362,19 +5371,22 @@
       "testReferences": {
         "backend": [
           "backend/tests/test_oauth_contract.py",
+          "backend/tests/test_oauth_video_regressions.py",
           "backend/tests/test_worker_embedding_oauth_return_contract.py",
           "scripts/sovereign-backend/tests/test_github_app_route_runtime.py",
           "scripts/sovereign-backend/tests/test_github_oauth_identity_source_contracts.py"
         ],
         "e2e": [],
-        "unit": []
+        "unit": [
+          "src/features/github/githubOAuthLogin.test.ts"
+        ]
       }
     },
     {
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4860,
+          "line": 4947,
           "methods": [
             "POST"
           ],
@@ -5386,7 +5398,7 @@
         "active_surface": true,
         "call_name": "boundFetch",
         "file": "src/features/github/githubOAuthLogin.ts",
-        "line": 67,
+        "line": 86,
         "method": "POST",
         "path": "/api/auth/github/init",
         "source_kind": "request-call",
@@ -5405,7 +5417,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4578,
+          "line": 4655,
           "methods": [
             "POST"
           ],
@@ -5417,7 +5429,7 @@
         "active_surface": true,
         "call_name": "authFetch",
         "file": "src/features/user/useUserStore.ts",
-        "line": 173,
+        "line": 176,
         "method": "POST",
         "path": "/api/auth/google",
         "source_kind": "request-call",
@@ -5440,7 +5452,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4569,
+          "line": 4646,
           "methods": [
             "GET"
           ],
@@ -5472,7 +5484,40 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4516,
+          "line": 4527,
+          "methods": [
+            "POST"
+          ],
+          "path": "/api/auth/guest",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
+        "call_name": "authFetch",
+        "file": "src/features/user/useUserStore.ts",
+        "line": 288,
+        "method": "POST",
+        "path": "/api/auth/guest",
+        "source_kind": "request-call",
+        "surface_status": "active"
+      },
+      "status": "BOUND",
+      "testReferences": {
+        "backend": [
+          "tests/test_guest_auth_contract.py"
+        ],
+        "e2e": [],
+        "unit": [
+          "src/features/user/useUserStore.oauth.test.ts"
+        ]
+      }
+    },
+    {
+      "backendRoutes": [
+        {
+          "file": "scripts/sovereign-backend/app.py",
+          "line": 4593,
           "methods": [
             "POST"
           ],
@@ -5484,7 +5529,7 @@
         "active_surface": true,
         "call_name": "authFetch",
         "file": "src/features/user/useUserStore.ts",
-        "line": 150,
+        "line": 153,
         "method": "POST",
         "path": "/api/auth/login",
         "source_kind": "request-call",
@@ -5505,9 +5550,9 @@
         "active_surface": true,
         "call_name": "persist",
         "file": "src/features/user/useUserStore.ts",
-        "line": 132,
+        "line": 135,
         "method": "UNKNOWN",
-        "path": "/api/auth/login<p>POST<p>Login fehlgeschlagen<p>Ungültige User-Antwort vom Server<p>Verbindungsfehler<p>/api/auth/google<p>POST<p>Google-Login fehlgeschlagen<p>Google-Session konnte nicht bestätigt werden.<p>/api/auth/github<p>POST<p>GitHub-Login fehlgeschlagen<p>GitHub-Session konnte nicht bestätigt werden.<p><p>Ungültige User-Antwort vom Server<p>Passkey-Login fehlgeschlagen<p>Ungültige User-Antwort vom Server<p>Account-Key-Login fehlgeschlagen<p>/api/auth/register<p>POST<p>Registrierung fehlgeschlagen<p>Ungültige User-Antwort vom Server<p>Verbindungsfehler<p>/api/auth/logout<p>POST<p>Logout HTTP <p><p>Logout konnte die Backend-Session nicht bestätigen.<p>/api/auth/me<p>Session nicht bestätigt (HTTP <p>).<p>Backend lieferte keine gültige Session-Evidence.<p>Session konnte wegen eines Verbindungsfehlers nicht bestätigt werden.<p>",
+        "path": "/api/auth/login<p>POST<p>Login fehlgeschlagen<p>Ungültige User-Antwort vom Server<p>Verbindungsfehler<p>/api/auth/google<p>POST<p>Google-Login fehlgeschlagen<p>Google-Session konnte nicht bestätigt werden.<p>/api/auth/github<p>POST<p>GitHub-Login fehlgeschlagen<p>GitHub-Session konnte nicht bestätigt werden.<p><p>Ungültige User-Antwort vom Server<p>Passkey-Login fehlgeschlagen<p>Ungültige User-Antwort vom Server<p>Account-Key-Login fehlgeschlagen<p>/api/auth/register<p>POST<p>Registrierung fehlgeschlagen<p>Ungültige User-Antwort vom Server<p>Verbindungsfehler<p>/api/auth/logout<p>POST<p>Logout HTTP <p><p>Logout konnte die Backend-Session nicht bestätigen.<p>/api/auth/me<p>GET<p>no-store<p>/api/auth/guest<p>POST<p>Gast-Sitzung nicht verfügbar (HTTP <p>).<p>Backend lieferte keine gültige Gast-Session-Evidence.<p>Gast-Sitzung konnte nicht bestätigt werden.<p>/api/auth/me<p>Session nicht bestätigt (HTTP <p>).<p>Backend lieferte keine gültige Session-Evidence.<p>Session konnte wegen eines Verbindungsfehlers nicht bestätigt werden.<p>",
         "source_kind": "route-call",
         "surface_status": "active"
       },
@@ -5524,7 +5569,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4562,
+          "line": 4639,
           "methods": [
             "POST"
           ],
@@ -5536,7 +5581,7 @@
         "active_surface": true,
         "call_name": "authFetch",
         "file": "src/features/user/useUserStore.ts",
-        "line": 268,
+        "line": 271,
         "method": "POST",
         "path": "/api/auth/logout",
         "source_kind": "request-call",
@@ -5555,7 +5600,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4547,
+          "line": 4624,
           "methods": [
             "GET"
           ],
@@ -5567,7 +5612,7 @@
         "active_surface": true,
         "call_name": "authFetch",
         "file": "src/features/user/useUserStore.ts",
-        "line": 96,
+        "line": 98,
         "method": "GET",
         "path": "/api/auth/me",
         "source_kind": "request-call",
@@ -5592,7 +5637,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4547,
+          "line": 4624,
           "methods": [
             "GET"
           ],
@@ -5604,7 +5649,7 @@
         "active_surface": true,
         "call_name": "authFetch",
         "file": "src/features/user/useUserStore.ts",
-        "line": 283,
+        "line": 286,
         "method": "GET",
         "path": "/api/auth/me",
         "source_kind": "request-call",
@@ -5629,7 +5674,44 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4547,
+          "line": 4624,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/auth/me",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
+        "call_name": "authFetch",
+        "file": "src/features/user/useUserStore.ts",
+        "line": 309,
+        "method": "GET",
+        "path": "/api/auth/me",
+        "source_kind": "request-call",
+        "surface_status": "active"
+      },
+      "status": "BOUND",
+      "testReferences": {
+        "backend": [
+          "scripts/sovereign-backend/tests/test_controller_board_contract.py"
+        ],
+        "e2e": [
+          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
+        ],
+        "unit": [
+          "src/features/product/containers/BuilderContainer.test.tsx",
+          "src/features/product/runtime/devChatWorkerBridge.test.ts",
+          "src/features/user/useUserStore.oauth.test.ts"
+        ]
+      }
+    },
+    {
+      "backendRoutes": [
+        {
+          "file": "scripts/sovereign-backend/app.py",
+          "line": 4624,
           "methods": [
             "GET"
           ],
@@ -5746,7 +5828,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4484,
+          "line": 4561,
           "methods": [
             "POST"
           ],
@@ -5758,7 +5840,7 @@
         "active_surface": true,
         "call_name": "authFetch",
         "file": "src/features/user/useUserStore.ts",
-        "line": 245,
+        "line": 248,
         "method": "POST",
         "path": "/api/auth/register",
         "source_kind": "request-call",
@@ -6987,7 +7069,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 7640,
+          "line": 7729,
           "methods": [
             "POST"
           ],
@@ -7031,7 +7113,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 7640,
+          "line": 7729,
           "methods": [
             "POST"
           ],
@@ -7075,7 +7157,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 7640,
+          "line": 7729,
           "methods": [
             "POST"
           ],
@@ -7119,7 +7201,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 7640,
+          "line": 7729,
           "methods": [
             "POST"
           ],
@@ -7163,7 +7245,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 7640,
+          "line": 7729,
           "methods": [
             "POST"
           ],
@@ -7207,7 +7289,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 7640,
+          "line": 7729,
           "methods": [
             "POST"
           ],
@@ -7251,7 +7333,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 7640,
+          "line": 7729,
           "methods": [
             "POST"
           ],
@@ -8266,7 +8348,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5639,
+          "line": 5728,
           "methods": [
             "POST"
           ],
@@ -8297,7 +8379,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5741,
+          "line": 5830,
           "methods": [
             "GET"
           ],
@@ -8328,7 +8410,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5567,
+          "line": 5656,
           "methods": [
             "POST"
           ],
@@ -8359,7 +8441,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5567,
+          "line": 5656,
           "methods": [
             "POST"
           ],
@@ -8390,7 +8472,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5567,
+          "line": 5656,
           "methods": [
             "POST"
           ],
@@ -8421,7 +8503,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5328,
+          "line": 5417,
           "methods": [
             "POST"
           ],
@@ -8452,7 +8534,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5296,
+          "line": 5385,
           "methods": [
             "POST"
           ],
@@ -8483,7 +8565,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5296,
+          "line": 5385,
           "methods": [
             "POST"
           ],
@@ -8514,7 +8596,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5296,
+          "line": 5385,
           "methods": [
             "POST"
           ],
@@ -8545,7 +8627,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5296,
+          "line": 5385,
           "methods": [
             "POST"
           ],
@@ -8576,7 +8658,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5384,
+          "line": 5473,
           "methods": [
             "POST"
           ],
@@ -8607,7 +8689,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5264,
+          "line": 5353,
           "methods": [
             "POST"
           ],
@@ -8638,7 +8720,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5264,
+          "line": 5353,
           "methods": [
             "POST"
           ],
@@ -8669,7 +8751,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5264,
+          "line": 5353,
           "methods": [
             "POST"
           ],
@@ -8700,7 +8782,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5347,
+          "line": 5436,
           "methods": [
             "POST"
           ],
@@ -8731,7 +8813,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5525,
+          "line": 5614,
           "methods": [
             "POST"
           ],
@@ -8762,7 +8844,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5525,
+          "line": 5614,
           "methods": [
             "POST"
           ],
@@ -8793,7 +8875,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5700,
+          "line": 5789,
           "methods": [
             "POST"
           ],
@@ -8824,7 +8906,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6208,
+          "line": 6297,
           "methods": [
             "DELETE"
           ],
@@ -8833,7 +8915,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6025,
+          "line": 6114,
           "methods": [
             "POST"
           ],
@@ -8842,7 +8924,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6076,
+          "line": 6165,
           "methods": [
             "POST"
           ],
@@ -8851,7 +8933,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6165,
+          "line": 6254,
           "methods": [
             "GET"
           ],
@@ -8860,7 +8942,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5989,
+          "line": 6078,
           "methods": [
             "POST"
           ],
@@ -8869,7 +8951,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5944,
+          "line": 6033,
           "methods": [
             "POST"
           ],
@@ -8901,7 +8983,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6185,
+          "line": 6274,
           "methods": [
             "POST"
           ],
@@ -8933,7 +9015,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6208,
+          "line": 6297,
           "methods": [
             "DELETE"
           ],
@@ -8942,7 +9024,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6025,
+          "line": 6114,
           "methods": [
             "POST"
           ],
@@ -8973,7 +9055,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6208,
+          "line": 6297,
           "methods": [
             "DELETE"
           ],
@@ -8982,7 +9064,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6076,
+          "line": 6165,
           "methods": [
             "POST"
           ],
@@ -9013,7 +9095,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6208,
+          "line": 6297,
           "methods": [
             "DELETE"
           ],
@@ -9022,7 +9104,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6165,
+          "line": 6254,
           "methods": [
             "GET"
           ],
@@ -9053,7 +9135,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6208,
+          "line": 6297,
           "methods": [
             "DELETE"
           ],
@@ -9062,7 +9144,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5989,
+          "line": 6078,
           "methods": [
             "POST"
           ],
@@ -9093,7 +9175,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6208,
+          "line": 6297,
           "methods": [
             "DELETE"
           ],
@@ -9102,7 +9184,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5944,
+          "line": 6033,
           "methods": [
             "POST"
           ],
@@ -9157,7 +9239,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6494,
+          "line": 6583,
           "methods": [
             "GET"
           ],
@@ -9186,7 +9268,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6500,
+          "line": 6589,
           "methods": [
             "POST"
           ],
@@ -9217,7 +9299,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6500,
+          "line": 6589,
           "methods": [
             "POST"
           ],
@@ -9248,7 +9330,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6459,
+          "line": 6548,
           "methods": [
             "GET"
           ],
@@ -9279,7 +9361,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6459,
+          "line": 6548,
           "methods": [
             "GET"
           ],
@@ -9310,7 +9392,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6444,
+          "line": 6533,
           "methods": [
             "GET"
           ],
@@ -9341,7 +9423,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5228,
+          "line": 5317,
           "methods": [
             "GET"
           ],
@@ -9672,7 +9754,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 757,
+        "line": 769,
         "method": "GET",
         "path": "/api/user/agent/jobs",
         "source_kind": "request-call",
@@ -9806,7 +9888,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 758,
+        "line": 770,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs",
         "source_kind": "route-call",
@@ -9904,7 +9986,7 @@
         "active_surface": true,
         "call_name": "requestSnapshot",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 872,
+        "line": 884,
         "method": "POST",
         "path": "/api/user/agent/jobs/<p>/cancel",
         "source_kind": "request-call",
@@ -9953,7 +10035,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 872,
+        "line": 884,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/cancel",
         "source_kind": "route-call",
@@ -10100,7 +10182,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 909,
+        "line": 921,
         "method": "POST",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "request-call",
@@ -10296,7 +10378,7 @@
         "active_surface": true,
         "call_name": "patternLearningEvidence",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 902,
+        "line": 914,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "route-call",
@@ -10345,7 +10427,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 910,
+        "line": 922,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "route-call",
@@ -10394,7 +10476,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 877,
+        "line": 889,
         "method": "POST",
         "path": "/api/user/agent/jobs/<p>/draft-pr/prepare",
         "source_kind": "request-call",
@@ -10443,7 +10525,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 878,
+        "line": 890,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/prepare",
         "source_kind": "route-call",
@@ -10492,7 +10574,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 837,
+        "line": 849,
         "method": "GET",
         "path": "/api/user/agent/jobs/<p>/evidence-anchors",
         "source_kind": "request-call",
@@ -10541,7 +10623,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 838,
+        "line": 850,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/evidence-anchors",
         "source_kind": "route-call",
@@ -10590,7 +10672,7 @@
         "active_surface": true,
         "call_name": "this.fetcher",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 803,
+        "line": 815,
         "method": "GET",
         "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
         "source_kind": "request-call",
@@ -10784,9 +10866,58 @@
       ],
       "call": {
         "active_surface": true,
+        "call_name": "readJson",
+        "file": "src/features/product/runtime/sovereignAgentClient.ts",
+        "line": 743,
+        "method": "UNKNOWN",
+        "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
+        "source_kind": "route-call",
+        "surface_status": "active"
+      },
+      "status": "PATH_BOUND_METHOD_UNKNOWN",
+      "testReferences": {
+        "backend": [
+          "backend/tests/test_agent_draft_pr_create_routes.py",
+          "backend/tests/test_agent_draft_pr_routes.py",
+          "backend/tests/test_agent_runtime_json_validation.py",
+          "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_auto_code_review.py",
+          "backend/tests/test_frontend_endpoint_assurance.py"
+        ],
+        "e2e": [
+          "tests/e2e/frontend-endpoint-runtime.spec.ts"
+        ],
+        "unit": [
+          "src/features/product/runtime/sovereignAgentClient.test.ts"
+        ]
+      }
+    },
+    {
+      "backendRoutes": [
+        {
+          "file": "backend/agent_runtime/routes.py",
+          "line": 1871,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/routes.py",
+          "line": 1871,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 804,
+        "line": 816,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
         "source_kind": "route-call",
@@ -10835,7 +10966,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 775,
+        "line": 787,
         "method": "GET",
         "path": "/api/user/agent/jobs/<p>/projections",
         "source_kind": "request-call",
@@ -10884,7 +11015,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 776,
+        "line": 788,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/projections",
         "source_kind": "route-call",
@@ -11031,7 +11162,7 @@
         "active_surface": true,
         "call_name": "requestJanitorTool",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 997,
+        "line": 1009,
         "method": "POST",
         "path": "/api/user/agent/jobs/<p>/tools/janitor",
         "source_kind": "request-call",
@@ -11080,7 +11211,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 998,
+        "line": 1010,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/tools/janitor",
         "source_kind": "route-call",
@@ -12254,7 +12385,7 @@
       ],
       "call": {
         "active_surface": true,
-        "call_name": "requestObject",
+        "call_name": "this.fetcher",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
         "line": 725,
         "method": "POST",
@@ -16946,6 +17077,14 @@
     },
     {
       "dynamic": false,
+      "line": 1,
+      "source": "src/features/product/runtime/repositoryActionFallback.ts",
+      "source_status": "active",
+      "target": "src/features/product/runtime/sovereignCapabilityRouter.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
       "line": 11,
       "source": "src/features/product/runtime/runtimeInspectorPanelRuntime.ts",
       "source_status": "active",
@@ -17506,10 +17645,18 @@
     },
     {
       "dynamic": false,
-      "line": 22,
+      "line": 31,
       "source": "src/features/release/PlayReleaseChat.tsx",
       "source_status": "active",
       "target": "src/features/github/githubOAuthLogin.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 23,
+      "source": "src/features/release/PlayReleaseChat.tsx",
+      "source_status": "active",
+      "target": "src/features/product/components/GitHubAccessCard.tsx",
       "target_status": "active"
     },
     {
@@ -17522,26 +17669,10 @@
     },
     {
       "dynamic": false,
-      "line": 11,
+      "line": 24,
       "source": "src/features/release/PlayReleaseChat.tsx",
       "source_status": "active",
-      "target": "src/features/product/runtime/secureInputGuard.ts",
-      "target_status": "active"
-    },
-    {
-      "dynamic": false,
-      "line": 14,
-      "source": "src/features/release/PlayReleaseChat.tsx",
-      "source_status": "active",
-      "target": "src/features/product/runtime/sovereignAgentClient.ts",
-      "target_status": "active"
-    },
-    {
-      "dynamic": false,
-      "line": 15,
-      "source": "src/features/release/PlayReleaseChat.tsx",
-      "source_status": "active",
-      "target": "src/features/product/runtime/sovereignAgentRuntime.ts",
+      "target": "src/features/product/runtime/githubAccessRuntime.ts",
       "target_status": "active"
     },
     {
@@ -17549,7 +17680,7 @@
       "line": 13,
       "source": "src/features/release/PlayReleaseChat.tsx",
       "source_status": "active",
-      "target": "src/features/product/runtime/sovereignDirectLlmIntentRuntime.ts",
+      "target": "src/features/product/runtime/repositoryActionFallback.ts",
       "target_status": "active"
     },
     {
@@ -17557,20 +17688,44 @@
       "line": 12,
       "source": "src/features/release/PlayReleaseChat.tsx",
       "source_status": "active",
+      "target": "src/features/product/runtime/secureInputGuard.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 16,
+      "source": "src/features/release/PlayReleaseChat.tsx",
+      "source_status": "active",
+      "target": "src/features/product/runtime/sovereignAgentClient.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 17,
+      "source": "src/features/release/PlayReleaseChat.tsx",
+      "source_status": "active",
+      "target": "src/features/product/runtime/sovereignAgentRuntime.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 15,
+      "source": "src/features/release/PlayReleaseChat.tsx",
+      "source_status": "active",
+      "target": "src/features/product/runtime/sovereignDirectLlmIntentRuntime.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 14,
+      "source": "src/features/release/PlayReleaseChat.tsx",
+      "source_status": "active",
       "target": "src/features/product/runtime/sovereignReleaseGuide.ts",
       "target_status": "active"
     },
     {
       "dynamic": false,
-      "line": 21,
-      "source": "src/features/release/PlayReleaseChat.tsx",
-      "source_status": "active",
-      "target": "src/features/user/components/LoginModal.tsx",
-      "target_status": "active"
-    },
-    {
-      "dynamic": false,
-      "line": 23,
+      "line": 32,
       "source": "src/features/release/PlayReleaseChat.tsx",
       "source_status": "active",
       "target": "src/features/user/useUserStore.ts",
@@ -18697,29 +18852,29 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "3e28ce247ce3c2b47a817d6ccaa5f6c385e850471441e8676e7c9d34740b5817",
-  "revision": "78c093e44c89f7f1e7784beddb787a25e796a774",
+  "reportSha256": "0951e01f46e7167311aa6f71947e8a15f7fb961adefd84573dabafd158afc6a5",
+  "revision": "1b4dd6ca6ed74a073c647c43f8771246bb3f02ab",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "3c0e7f7d3e9d2bc4af058d129acb43d8aa4322fad150d52c337c68dd114126bc",
+  "sourceTreeSha256": "0af29469539d1eadd1aed02b7dabc0b218598228d99795723ae2999b4540e1da",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
-    "activeMutationRequestCount": 63,
+    "activeMutationRequestCount": 64,
     "activeMutationWithoutTestEvidenceCount": 0,
-    "activeReadRequestCount": 22,
+    "activeReadRequestCount": 23,
     "activeReadWithoutTestEvidenceCount": 0,
-    "activeRequestCount": 85,
-    "backendRouteCount": 390,
-    "boundActiveRequestCount": 85,
+    "activeRequestCount": 87,
+    "backendRouteCount": 391,
+    "boundActiveRequestCount": 87,
     "externalMethodUnknownCount": 0,
     "externalRequestCount": 30,
-    "frontendCallCount": 256,
-    "frontendModuleCount": 529,
-    "importEdgeCount": 698,
+    "frontendCallCount": 259,
+    "frontendModuleCount": 530,
+    "importEdgeCount": 701,
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
-    "testFileCount": 739,
+    "testFileCount": 743,
     "unmatchedActiveRequestCount": 0
   },
   "truthBoundary": {
