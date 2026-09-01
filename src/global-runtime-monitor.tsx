@@ -85,9 +85,12 @@ function canAutoAdvanceGuide(coach: RuntimeCoachState, targetTab: ReleaseGuideTa
   return false;
 }
 
+// ⚡ Bolt: Hoist RegExp for 1-slot caching and regex caching
+const REPAIR_PANEL_PATTERN = /(health|guard|validation_failed|failed|blockiert)/;
+
 function showRepairPanel(coach: RuntimeCoachState): boolean {
-  const source = coachText(coach);
-  return coach.lamp === 'red' && ['health', 'guard', 'validation_failed', 'failed', 'blockiert'].some((token) => source.includes(token));
+  if (coach.lamp !== 'red') return false;
+  return REPAIR_PANEL_PATTERN.test(coachText(coach));
 }
 
 function compactTelemetry(event: SovereignTelemetryEvent): RuntimeCoachState {

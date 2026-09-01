@@ -273,7 +273,14 @@ export class RefactorEngine {
   }
 
   async analyzeRepo(repoUrl: string, files: RefactorFile[]): Promise<RefactorPlan> {
-    const fileList = files.filter(f => f.type === 'blob').map(f => f.path).join('\n');
+    // ⚡ Bolt: Single-pass loop optimization prevents multiple O(N) array allocation overhead from chained .filter().map()
+    const pathList: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].type === 'blob') {
+        pathList.push(files[i].path);
+      }
+    }
+    const fileList = pathList.join('\n');
     const prompt = `Analysiere dieses Repository und erstelle einen Refactor-Plan.
 
 REPOSITORY: ${repoUrl}
@@ -379,13 +386,27 @@ GENERIERE kompletten, produktionsreifen Code. Antworte mit Dateipfaden und Code.
   private extractTechList(analysis: string): string[] {
     const match = analysis.match(/TECHNOLOGIEN?[:\s]*([^\n]+(?:\n[^\n]+)*)/i);
     if (!match) return [];
-    return match[1].split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+    // ⚡ Bolt: Single-pass optimization avoids intermediate arrays from .map().filter()
+    const parts = match[1].split(/[,\n]/);
+    const tech: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      const trimmed = parts[i].trim();
+      if (trimmed) tech.push(trimmed);
+    }
+    return tech;
   }
 
   private extractGoals(analysis: string): string[] {
     const match = analysis.match(/REFACTOR_TASKS?[:\s]*([\s\S]*?)(?=#|$)/i);
     if (!match) return [];
-    return match[1].split(/[-•*]/).filter(s => s.trim()).map(s => s.trim()).filter(Boolean);
+    // ⚡ Bolt: Single-pass optimization avoids intermediate arrays from chained .filter().map().filter()
+    const parts = match[1].split(/[-•*]/);
+    const goals: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      const trimmed = parts[i].trim();
+      if (trimmed) goals.push(trimmed);
+    }
+    return goals;
   }
 
   private extractTasks(analysis: string): RefactorTask[] {

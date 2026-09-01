@@ -71,3 +71,7 @@
 ## 2026-08-26 - [Consolidating Multi-Pass Array Traversals in Summary Computations]
 **Learning:** Computing summary statistics and extracting unique tags using chained `.filter()`, `.reduce()`, and `[...new Set(filtered.map(...))]` methods incurs severe CPU and garbage collection pressure due to multiple $O(N)$ passes and continuous intermediate array allocations on every invocation. Replacing these method chains with a single-pass `for...of` loop completely avoids multiple traversals and eliminates intermediate arrays, keeping computations flat and extremely fast.
 **Action:** Always refactor sequential array method chains (like `.filter().reduce()` or `.filter().map()`) into a single-pass loop when dealing with frequent or large-scale data summary computations to avoid intermediate allocations and reduce iteration overhead.
+
+## 2026-08-27 - [Replacing Map/Filter Chains in Property Extractors]
+**Learning:** Sequential `.filter()`, `.map()`, or `.join()` passes (like those commonly applied to string splits in extraction methods) generate significant temporary array allocations. Converting these multi-pass chains into a single `for` loop that filters, trims, and accumulates items in one pass vastly reduces garbage collection overhead and iterations over short lists.
+**Action:** Always refactor sequential array method chains into single-pass loops when dealing with parsed structures (like matched RegExp strings or large tree arrays) to bypass intermediate object allocations.
