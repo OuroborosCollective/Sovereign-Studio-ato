@@ -570,16 +570,6 @@ volumes:
   sandbox-tls:
 """
 
-    @staticmethod
-    def _image_repository(tag: str) -> str:
-        rendered = str(tag or "").strip()
-        if not rendered or rendered == "<none>:<none>" or "@" in rendered:
-            return ""
-        repository, separator, selected_tag = rendered.rpartition(":")
-        if not separator or not repository or not selected_tag:
-            return ""
-        return repository
-
     def _all_container_image_ids(self) -> set[str]:
         listed = self._run(
             ["docker", "ps", "--all", "--no-trunc", "--format", "{{.Names}}"],
@@ -615,63 +605,78 @@ volumes:
 
     def _retired_document_image_candidates(self) -> list[dict[str, Any]]:
         referenced_image_ids = self._all_container_image_ids()
-        listed = self._run(
-            ["docker", "image", "ls", "--no-trunc", "--format", "{{.ID}}"],
-            timeout=60,
-        )
-        if not listed.get("ok"):
-            raise RuntimeError("Docker image inventory unavailable")
-        requested_ids = sorted(
-            {
+        candidate_ids: set[str] = set()
+        for repository in sorted(RETIRED_DOCUMENT_IMAGE_REPOSITORIES):
+            listed = self._run(
+                [
+                    "docker",
+                    "image",
+                    "ls",
+                    "--no-trunc",
+                    "--format",
+                    "{{.ID}}",
+                    repository,
+                ],
+                timeout=60,
+            )
+            if not listed.get("ok"):
+                raise RuntimeError("Docker image inventory unavailable")
+            rows = [
                 line.strip()
                 for line in str(listed.get("stdout") or "").splitlines()
-                if _IMAGE_ID_RE.fullmatch(line.strip())
-            }
-        )
-        if len(requested_ids) > 500:
-            raise RuntimeError("Docker image inventory exceeded bounded limit")
-        if not requested_ids:
-            return []
-        inspected = self._run(
-            ["docker", "image", "inspect", *requested_ids],
-            timeout=120,
-        )
-        if not inspected.get("ok"):
-            raise RuntimeError("Docker image metadata unavailable")
-        try:
-            metadata = json.loads(str(inspected.get("stdout") or ""))
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("Docker image metadata invalid") from exc
-        if not isinstance(metadata, list) or len(metadata) != len(requested_ids):
-            raise RuntimeError("Docker image metadata cardinality mismatch")
+                if line.strip()
+            ]
+            if any(not _IMAGE_ID_RE.fullmatch(image_id) for image_id in rows):
+                raise RuntimeError("Docker image inventory record invalid")
+            candidate_ids.update(rows)
+
+        if len(candidate_ids) > 64:
+            raise RuntimeError("Retired document image candidate limit exceeded")
 
         candidates: list[dict[str, Any]] = []
-        for row in metadata:
-            if not isinstance(row, dict):
-                raise RuntimeError("Docker image metadata row invalid")
-            image_id = str(row.get("Id") or "").strip()
-            repo_tags = sorted(
-                {
-                    str(item).strip()
-                    for item in (row.get("RepoTags") or [])
-                    if isinstance(item, str) and str(item).strip()
-                }
+        for image_id in sorted(candidate_ids):
+            if image_id in referenced_image_ids:
+                continue
+            inspected = self._run(
+                [
+                    "docker",
+                    "image",
+                    "inspect",
+                    "--format",
+                    "{{json .RepoTags}}|{{.Size}}",
+                    image_id,
+                ],
+                timeout=60,
+            )
+            rendered = str(inspected.get("stdout") or "").strip()
+            repo_tags_raw, separator, size_raw = rendered.rpartition("|")
+            if not inspected.get("ok") or not separator or "\n" in rendered:
+                raise RuntimeError("Docker image metadata invalid")
+            try:
+                repo_tags_value = json.loads(repo_tags_raw)
+                size_bytes = int(size_raw)
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                raise RuntimeError("Docker image metadata invalid") from exc
+            repo_tags = (
+                sorted(
+                    {
+                        str(item).strip()
+                        for item in repo_tags_value
+                        if isinstance(item, str) and str(item).strip()
+                    }
+                )
+                if isinstance(repo_tags_value, list)
+                else []
             )
             repositories = sorted(
                 {
-                    self._image_repository(tag)
+                    tag.rpartition(":")[0]
                     for tag in repo_tags
-                    if self._image_repository(tag)
+                    if tag.rpartition(":")[1] and tag.rpartition(":")[0]
                 }
             )
-            try:
-                size_bytes = int(row.get("Size") or 0)
-            except (TypeError, ValueError) as exc:
-                raise RuntimeError("Docker image size metadata invalid") from exc
             if (
-                not _IMAGE_ID_RE.fullmatch(image_id)
-                or image_id in referenced_image_ids
-                or not repo_tags
+                not repo_tags
                 or not repositories
                 or size_bytes < 0
                 or not set(repositories).issubset(RETIRED_DOCUMENT_IMAGE_REPOSITORIES)
@@ -685,7 +690,7 @@ volumes:
                     "sizeBytes": size_bytes,
                 }
             )
-        return sorted(candidates, key=lambda item: str(item["imageId"]))
+        return candidates
 
     def retired_document_image_cleanup_plan(self) -> dict[str, Any]:
         try:

@@ -98,7 +98,8 @@ def test_retired_document_image_cleanup_plan_selects_only_unreferenced_explicitl
     runtime = N8NHostMaintenanceRuntime()
     retired = "sha256:" + "1" * 64
     referenced = "sha256:" + "2" * 64
-    unrelated = "sha256:" + "3" * 64
+    aliased = "sha256:" + "3" * 64
+    calls: list[list[str]] = []
     monkeypatch.setattr(runtime, "_all_container_image_ids", lambda: {referenced})
     monkeypatch.setattr(
         runtime,
@@ -112,31 +113,45 @@ def test_retired_document_image_cleanup_plan_selects_only_unreferenced_explicitl
     )
 
     def run(argv, timeout=120):
-        if argv == ["docker", "image", "ls", "--no-trunc", "--format", "{{.ID}}"]:
-            return _result("\n".join([retired, referenced, unrelated]) + "\n")
-        if argv[:3] == ["docker", "image", "inspect"]:
-            assert argv[3:] == [retired, referenced, unrelated]
-            return _result(
-                json.dumps(
-                    [
-                        {
-                            "Id": retired,
-                            "RepoTags": ["gotenberg/gotenberg:8.11"],
-                            "Size": 11,
-                        },
-                        {
-                            "Id": referenced,
-                            "RepoTags": ["apache/tika:3.0"],
-                            "Size": 13,
-                        },
-                        {
-                            "Id": unrelated,
-                            "RepoTags": ["ghcr.io/example/unrelated:1"],
-                            "Size": 17,
-                        },
-                    ]
-                )
-            )
+        calls.append(argv)
+        if argv == [
+            "docker",
+            "image",
+            "ls",
+            "--no-trunc",
+            "--format",
+            "{{.ID}}",
+            "apache/tika",
+        ]:
+            return _result("\n".join([referenced, aliased]) + "\n")
+        if argv == [
+            "docker",
+            "image",
+            "ls",
+            "--no-trunc",
+            "--format",
+            "{{.ID}}",
+            "gotenberg/gotenberg",
+        ]:
+            return _result(retired + "\n")
+        if argv == [
+            "docker",
+            "image",
+            "inspect",
+            "--format",
+            "{{json .RepoTags}}|{{.Size}}",
+            retired,
+        ]:
+            return _result('["gotenberg/gotenberg:8.11"]|11')
+        if argv == [
+            "docker",
+            "image",
+            "inspect",
+            "--format",
+            "{{json .RepoTags}}|{{.Size}}",
+            aliased,
+        ]:
+            return _result('["apache/tika:3.0", "ghcr.io/example/unrelated:1"]|17')
         raise AssertionError(argv)
 
     monkeypatch.setattr(runtime, "_run", run)
@@ -158,6 +173,23 @@ def test_retired_document_image_cleanup_plan_selects_only_unreferenced_explicitl
     assert "volumes" in result["excluded"]
     assert "running-container-images" in result["excluded"]
     assert "non-retired-images" in result["excluded"]
+    assert [
+        "docker",
+        "image",
+        "inspect",
+        "--format",
+        "{{json .RepoTags}}|{{.Size}}",
+        retired,
+    ] in calls
+    assert [
+        "docker",
+        "image",
+        "inspect",
+        "--format",
+        "{{json .RepoTags}}|{{.Size}}",
+        aliased,
+    ] in calls
+    assert not any(referenced in call for call in calls)
 
 
 def test_retired_document_image_cleanup_apply_uses_exact_ids_without_force(
