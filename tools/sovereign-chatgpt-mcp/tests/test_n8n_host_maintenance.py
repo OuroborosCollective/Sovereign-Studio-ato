@@ -688,6 +688,43 @@ def test_stage1_compose_can_optionally_enable_instance_ai(tmp_path) -> None:
     assert "N8N_INSTANCE_AI_MODEL_API_KEY=${NEXOS_API_KEY}" in compose
 
 
+def test_stage1_health_wait_retries_until_all_endpoints_are_ready(monkeypatch) -> None:
+    runtime = N8NHostMaintenanceRuntime()
+    calls: list[tuple[str, int, str]] = []
+
+    monkeypatch.setattr(
+        runtime,
+        "_http_probe",
+        lambda host, port, path: (
+            calls.append((host, port, path)) is None and len(calls) > 3
+        ),
+    )
+    inspections = {
+        N8N_SANDBOX_API_CONTAINER: {
+            "NetworkSettings": {"Networks": {"n8n": {"IPAddress": "172.30.0.3"}}}
+        },
+        N8N_SANDBOX_RUNNER_CONTAINER: {
+            "NetworkSettings": {"Networks": {"n8n": {"IPAddress": "172.30.0.4"}}}
+        },
+    }
+
+    result = runtime._wait_for_stage1_health(
+        inspections,
+        attempts=2,
+        delay_seconds=0,
+    )
+
+    assert result == (True, True, True)
+    assert calls == [
+        ("127.0.0.1", 5678, "/healthz"),
+        ("172.30.0.3", 8080, "/healthz"),
+        ("172.30.0.4", 8080, "/readyz"),
+        ("127.0.0.1", 5678, "/healthz"),
+        ("172.30.0.3", 8080, "/healthz"),
+        ("172.30.0.4", 8080, "/readyz"),
+    ]
+
+
 def test_failed_stage1_can_restore_original_compose_with_rotated_bindings(monkeypatch, tmp_path) -> None:
     runtime = N8NHostMaintenanceRuntime(maintenance_root=str(tmp_path / "maintenance"))
     working = tmp_path / "hostinger"

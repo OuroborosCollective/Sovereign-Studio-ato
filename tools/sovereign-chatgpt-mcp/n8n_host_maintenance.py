@@ -1379,6 +1379,33 @@ volumes:
                 return candidate
         return ""
 
+    def _wait_for_stage1_health(
+        self,
+        inspections: dict[str, Any],
+        *,
+        attempts: int = 45,
+        delay_seconds: float = 2,
+    ) -> tuple[bool, bool, bool]:
+        api_ip = self._container_ip(inspections.get(N8N_SANDBOX_API_CONTAINER) or {})
+        runner_ip = self._container_ip(inspections.get(N8N_SANDBOX_RUNNER_CONTAINER) or {})
+        local_health = False
+        sandbox_api_health = False
+        sandbox_runner_health = False
+        probe_attempts = max(1, int(attempts))
+        for attempt in range(probe_attempts):
+            local_health = self._http_probe("127.0.0.1", 5678, "/healthz")
+            sandbox_api_health = bool(
+                api_ip and self._http_probe(api_ip, 8080, "/healthz")
+            )
+            sandbox_runner_health = bool(
+                runner_ip and self._http_probe(runner_ip, 8080, "/readyz")
+            )
+            if local_health and sandbox_api_health and sandbox_runner_health:
+                break
+            if attempt + 1 < probe_attempts:
+                time.sleep(delay_seconds)
+        return local_health, sandbox_api_health, sandbox_runner_health
+
     def _runtime_secret_matches(self, host_env: dict[str, str]) -> bool:
         n8n_env = self._container_env(N8N_CONTAINER)
         api_env = self._container_env(N8N_SANDBOX_API_CONTAINER)
@@ -1673,11 +1700,11 @@ volumes:
             and "WEBHOOK_URL" not in n8n_env
             and "N8N_RUNNERS_ENABLED" not in n8n_env
         )
-        local_health = self._http_probe("127.0.0.1", 5678, "/healthz")
-        api_ip = self._container_ip(inspections.get(N8N_SANDBOX_API_CONTAINER) or {})
-        runner_ip = self._container_ip(inspections.get(N8N_SANDBOX_RUNNER_CONTAINER) or {})
-        sandbox_api_health = bool(api_ip and self._http_probe(api_ip, 8080, "/healthz"))
-        sandbox_runner_health = bool(runner_ip and self._http_probe(runner_ip, 8080, "/readyz"))
+        (
+            local_health,
+            sandbox_api_health,
+            sandbox_runner_health,
+        ) = self._wait_for_stage1_health(inspections)
         logs = self._run(["docker", "logs", "--since", "5m", N8N_CONTAINER], timeout=60)
         combined_logs = str(logs.get("stdout") or "") + "\n" + str(logs.get("stderr") or "")
         proxy_error_absent = "ERR_ERL_UNEXPECTED_X_FORWARDED_FOR" not in combined_logs
