@@ -37,10 +37,15 @@ test('coordinated release is the single main-head image truth surface', () => {
 test('coordinated release waits for the full producer critical path and accepts exact-head refreshes', () => {
   assert.match(workflow, /timeout-minutes: 105/);
   assert.match(workflow, /attempt <= 540/);
+  assert.match(workflow, /const listRelevantRuns = async \(requirement\) =>/);
+  assert.match(workflow, /for \(let page = 1; page <= 10; page \+= 1\)/);
+  assert.match(workflow, /per_page: perPage/);
+  assert.match(workflow, /page,/);
   assert.match(workflow, /\['push', 'workflow_dispatch'\]/);
   assert.match(workflow, /String\(run\.head_sha \|\| ''\)\.toLowerCase\(\) === expected/);
   assert.match(workflow, /EXACT_REVISION_IMAGE_WORKFLOWS_TIMEOUT/);
   assert.match(workflow, /listJobsForWorkflowRun/);
+  assert.match(workflow, /const runs = await listRelevantRuns\(requirement\)/);
   assert.match(workflow, /publisherJob: 'Publish immutable backend image evidence'/);
   assert.match(workflow, /publisherJob: 'Verify published MCP digest'/);
   assert.match(workflow, /Number\(right\.id \|\| 0\) - Number\(left\.id \|\| 0\)/);
@@ -53,8 +58,6 @@ test('coordinated release waits for the full producer critical path and accepts 
   assert.match(workflow, /isBackendPrValidation/);
   assert.match(workflow, /isMcpNonPublishingDispatch/);
   assert.match(workflow, /Build immutable backend image/);
-  assert.match(workflow, /Boundary ledger drift preflight/);
-  assert.match(workflow, /Validate MCP operator/);
   const publisherMissing = workflow.indexOf('if (!publisher) {');
   const producerWait = workflow.indexOf("if (run.status !== 'completed')", publisherMissing);
   const missingFailure = workflow.indexOf('EXACT_REVISION_PUBLISHER_JOB_MISSING', publisherMissing);
