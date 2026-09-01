@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.EXPECTED_REVISION }}
-          fetch-depth: 1
+          fetch-depth: 2
 
       - name: Execute GitHub App revision-locked VPS deployment skill contract
         id: github_app_vps_deploy_skill
@@ -40,6 +40,91 @@ jobs:
             --repo "$GITHUB_WORKSPACE" \
             --revision "$EXPECTED_REVISION" \
             --output .sovereign-evidence/github-app-vps-deploy-skill.json
+
+      - name: Determine exact-revision readback control-plane bootstrap requirement
+        id: readback_bootstrap_scope
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_REVISION"
+          PARENT_REVISION="$(git rev-parse "${EXPECTED_REVISION}^")"
+          [[ "$PARENT_REVISION" =~ ^[0-9a-f]{40}$ ]]
+          if git diff --quiet "$PARENT_REVISION" "$EXPECTED_REVISION" -- \
+            tools/sovereign-chatgpt-mcp/deploy/run-coordinated-release-readback.py \
+            tools/sovereign-chatgpt-mcp/deploy/reconcile-main-release.py \
+            .github/workflows/sovereign-release-readback-bootstrap.yml; then
+            echo "required=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wait for exact-revision readback control-plane bootstrap
+        if: steps.readback_bootstrap_scope.outputs.required == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.0.1
+        env:
+          EXPECTED_REVISION: ${{ env.EXPECTED_REVISION }}
+        with:
+          script: |
+            const expected = String(process.env.EXPECTED_REVISION || '').toLowerCase();
+            if (!/^[0-9a-f]{40}$/.test(expected)) {
+              core.setFailed('EXPECTED_REVISION_INVALID');
+              return;
+            }
+            const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+            for (let attempt = 1; attempt <= 180; attempt += 1) {
+              const response = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'sovereign-release-readback-bootstrap.yml',
+                branch: 'main',
+                head_sha: expected,
+                per_page: 100,
+              });
+              const runs = response.data.workflow_runs
+                .filter((run) => String(run.head_sha || '').toLowerCase() === expected)
+                .filter((run) => ['push', 'workflow_dispatch'].includes(String(run.event || '')))
+                .sort((left, right) => Number(right.id || 0) - Number(left.id || 0));
+              const run = runs[0];
+              if (!run) {
+                await sleep(10000);
+                continue;
+              }
+              const jobsResponse = await github.rest.actions.listJobsForWorkflowRun({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: Number(run.id),
+                filter: 'latest',
+                per_page: 100,
+              });
+              const bootstrap = jobsResponse.data.jobs.find(
+                (job) => String(job.name || '') === 'Bootstrap forced runtime readback control plane',
+              );
+              if (!bootstrap) {
+                if (run.status !== 'completed') {
+                  await sleep(10000);
+                  continue;
+                }
+                core.setFailed(`READBACK_BOOTSTRAP_JOB_MISSING:${run.id}`);
+                return;
+              }
+              if (run.status !== 'completed' || bootstrap.status !== 'completed') {
+                await sleep(10000);
+                continue;
+              }
+              if (bootstrap.conclusion !== 'success') {
+                core.setFailed(`READBACK_BOOTSTRAP_FAILED:${bootstrap.conclusion}`);
+                return;
+              }
+              core.info(JSON.stringify({
+                status: 'EXACT_REVISION_READBACK_BOOTSTRAP_VERIFIED',
+                revision: expected,
+                runId: Number(run.id),
+                jobId: Number(bootstrap.id || 0),
+                secretValuesReturned: false,
+              }));
+              return;
+            }
+            core.setFailed('EXACT_REVISION_READBACK_BOOTSTRAP_TIMEOUT');
 
       - name: Wait for exact-revision image workflows
         id: workflows
