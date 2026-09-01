@@ -114,7 +114,10 @@ def atomic_json_write(payload: dict[str, Any]) -> None:
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(temporary, flags, 0o600)
     try:
-        os.write(descriptor, encoded)
+        view = memoryview(encoded)
+        while view:
+            written = os.write(descriptor, view)
+            view = view[written:]
         os.fsync(descriptor)
         os.fchmod(descriptor, 0o600)
         os.fchown(descriptor, 0, 0)
