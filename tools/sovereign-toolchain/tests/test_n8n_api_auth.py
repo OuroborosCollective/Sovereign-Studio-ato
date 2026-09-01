@@ -498,10 +498,12 @@ def test_real_listener_exact_route_auth_and_stream_limits(tmp_path, monkeypatch)
             headers={**valid_headers, "Content-Length": "4097"},
         ).status_code == 413
 
-        chunked_body = (chunk for chunk in (b"x" * 2048, b"y" * 2049))
+        # Starlette's TestClient rejects generator-based chunked bodies before
+        # the ASGI middleware receives them. The real streaming receive path is
+        # exercised directly by test_streaming_body_larger_than_limit_is_rejected.
         assert client.post(
             EVIDENCE_ROUTE,
-            content=chunked_body,
+            content=b"x" * 4097,
             headers=valid_headers,
         ).status_code == 413
 

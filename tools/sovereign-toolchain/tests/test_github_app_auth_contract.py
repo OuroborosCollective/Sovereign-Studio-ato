@@ -276,36 +276,31 @@ def test_streamable_mcp_is_fail_closed_and_served_with_exact_key() -> None:
             "clientInfo": {"name": "toolchain-route-contract", "version": "1"},
         },
     }
-    with environment({"TOOLCHAIN_API_KEY": None}), TestClient(
-        app,
-        base_url="http://127.0.0.1:8001",
-    ) as client:
-        assert client.post(
-            "/mcp/",
-            json=request,
-            headers={"Accept": "application/json, text/event-stream"},
-        ).status_code == 503
+    with TestClient(app, base_url="http://127.0.0.1:8001") as client:
+        with environment({"TOOLCHAIN_API_KEY": None}):
+            assert client.post(
+                "/mcp/",
+                json=request,
+                headers={"Accept": "application/json, text/event-stream"},
+            ).status_code == 503
 
-    with environment({"TOOLCHAIN_API_KEY": "test-toolchain-capability"}), TestClient(
-        app,
-        base_url="http://127.0.0.1:8001",
-    ) as client:
-        assert client.post(
-            "/mcp/",
-            json=request,
-            headers={
-                "Accept": "application/json, text/event-stream",
-                "X-Toolchain-Key": "wrong",
-            },
-        ).status_code == 401
-        response = client.post(
-            "/mcp/",
-            json=request,
-            headers={
-                "Accept": "application/json, text/event-stream",
-                "X-Toolchain-Key": "test-toolchain-capability",
-            },
-        )
+        with environment({"TOOLCHAIN_API_KEY": "test-toolchain-capability"}):
+            assert client.post(
+                "/mcp/",
+                json=request,
+                headers={
+                    "Accept": "application/json, text/event-stream",
+                    "X-Toolchain-Key": "wrong",
+                },
+            ).status_code == 401
+            response = client.post(
+                "/mcp/",
+                json=request,
+                headers={
+                    "Accept": "application/json, text/event-stream",
+                    "X-Toolchain-Key": "test-toolchain-capability",
+                },
+            )
 
-    assert response.status_code == 200
-    assert "result" in response.json()
+            assert response.status_code == 200
+            assert "result" in response.json()
