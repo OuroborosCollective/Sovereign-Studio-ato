@@ -347,7 +347,10 @@ def copy_snapshot(source: Path, target: Path, metadata: os.stat_result) -> None:
             chunk = os.read(input_descriptor, 131072)
             if not chunk:
                 break
-            os.write(output, chunk)
+            view = memoryview(chunk)
+            while view:
+                written = os.write(output, view)
+                view = view[written:]
         os.fchmod(output, stat.S_IMODE(metadata.st_mode))
         os.fchown(output, metadata.st_uid, metadata.st_gid)
         os.fsync(output)

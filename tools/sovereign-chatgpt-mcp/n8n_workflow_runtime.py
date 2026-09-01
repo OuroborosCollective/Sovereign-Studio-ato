@@ -596,7 +596,6 @@ class N8NWorkflowAutomationRuntime:
             "definitionSha256": _canonical_sha256(_definition_projection(definition)),
         }
 
-    @classmethod
     @staticmethod
     def _readback_semantics_are_bounded(
         workflow: Mapping[str, Any],

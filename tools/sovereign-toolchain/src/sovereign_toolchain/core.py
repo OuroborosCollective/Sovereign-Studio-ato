@@ -724,10 +724,21 @@ def github_actions_run_evidence(
         raise RuntimeError("GitHub Actions run response has no valid id")
 
     branch_head_sha = gh.branch_sha(owner, repo, selected_branch)
-    jobs_response = gh._request(
-        "GET",
-        f"/repos/{owner}/{repo}/actions/runs/{resolved_run_id}/jobs?per_page=100",
-    )
+    _JOB_PAGE_LIMIT = 100
+    _JOB_TOTAL_LIMIT = 250
+    all_jobs: list[Any] = []
+    page = 1
+    while len(all_jobs) < _JOB_TOTAL_LIMIT:
+        jobs_response = gh._request(
+            "GET",
+            f"/repos/{owner}/{repo}/actions/runs/{resolved_run_id}/jobs"
+            f"?per_page={_JOB_PAGE_LIMIT}&page={page}",
+        )
+        page_jobs = jobs_response.get("jobs") or []
+        all_jobs.extend(page_jobs)
+        if len(page_jobs) < _JOB_PAGE_LIMIT:
+            break
+        page += 1
     observation: dict[str, Any] = {
         "repository": f"{owner}/{repo}",
         "workflow_id": resolved_workflow_id,
@@ -740,7 +751,7 @@ def github_actions_run_evidence(
         "expected_head_sha": branch_head_sha,
         "status": run.get("status"),
         "conclusion": run.get("conclusion"),
-        "jobs": jobs_response.get("jobs") or [],
+        "jobs": all_jobs,
     }
     if previous_fingerprint:
         observation["previous_fingerprint"] = previous_fingerprint
