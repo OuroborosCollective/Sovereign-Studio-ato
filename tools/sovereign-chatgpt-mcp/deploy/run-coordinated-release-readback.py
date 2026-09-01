@@ -24,7 +24,7 @@ TOKEN_FILE = TOKEN_DIR / "github-token"
 DOCKER_CONFIG_DIR = TOKEN_DIR / "docker-config"
 RECEIPT_FILE = TOKEN_DIR / "receipt.json"
 ATTESTATION_KEY = Path("/etc/ssh/ssh_host_ed25519_key")
-RECONCILER = Path("/opt/sovereign-chatgpt-tools/bin/reconcile-main-release")
+RECONCILER = Path("/opt/sovereign-chatgpt-tools/bin/reconcile-main-release-readback")
 STATUS_FILE = Path("/var/lib/sovereign-release-reconciler/status.json")
 CONTROL_PLANE_ENV = Path(
     os.getenv(
