@@ -299,6 +299,58 @@ def test_create_request_separates_openrouter_free_and_management_targets(monkeyp
     assert management_request["llm_can_receive_protected_value"] is False
 
 
+@pytest.mark.parametrize(
+    ("target_id", "field_label", "request_id"),
+    (
+        (
+            "n8n_sovereign_api_key",
+            "n8n Public API-Key für Sovereign Studio",
+            "88888888-8888-4888-8888-888888888888",
+        ),
+        (
+            "n8n_aurion_api_key",
+            "n8n Public API-Key für Echoes of Aurion",
+            "99999999-9999-4999-8999-999999999999",
+        ),
+    ),
+)
+def test_create_request_allows_separate_n8n_keys_without_secret_transport(
+    monkeypatch,
+    target_id: str,
+    field_label: str,
+    request_id: str,
+) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    session = FakeSession([
+        FakeResponse(201, {
+            "ok": True,
+            "request": {
+                "id": request_id,
+                "targetId": target_id,
+                "status": "pending",
+            },
+        })
+    ])
+    client = OwnerInputClient(session=session)
+
+    result = client.create_request(
+        target_id=target_id,
+        title="n8n Public API-Zugang hinterlegen",
+        reason="Der getrennte n8n-Projektoperator benötigt einen Owner-geschützten Dateizugang.",
+    )
+
+    call = session.calls[0]
+    assert call["json"]["targetId"] == target_id
+    assert call["json"]["fieldLabel"] == field_label
+    assert "protectedValue" not in call["json"]
+    assert set(call["json"]) == {
+        "targetId", "title", "reason", "fieldLabel", "expiresInSeconds"
+    }
+    assert result["llm_can_receive_protected_value"] is False
+    assert result["protected_value_transport"] == "owner_ui_only"
+
+
 def test_generic_provider_activation_is_retired_without_network(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     session = FakeSession([])

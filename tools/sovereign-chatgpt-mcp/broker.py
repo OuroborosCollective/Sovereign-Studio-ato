@@ -23,6 +23,7 @@ from issue_closure_canary import IssueClosureCanaryRuntime
 from programming_language_catalog_runtime import ProgrammingLanguageCatalogRuntime
 from managed_compose import ManagedComposeRuntime
 from n8n_host_maintenance import N8NHostMaintenanceRuntime
+from n8n_workflow_runtime import N8NWorkflowAutomationRuntime
 from operations import OperationsRuntime
 from patchmon_fleet import PatchmonFleetRuntime
 from patchmon_operator import PatchmonOperatorRuntime
@@ -57,6 +58,7 @@ class BrokerRuntime:
         self.programming_language_catalog = ProgrammingLanguageCatalogRuntime()
         self.managed_compose = ManagedComposeRuntime()
         self.n8n_host_maintenance = N8NHostMaintenanceRuntime()
+        self.n8n_workflows = N8NWorkflowAutomationRuntime()
         self.desktop_worker = DesktopWorkerRuntime()
         self.patchmon = PatchmonOperatorRuntime()
         self.patchmon_fleet = PatchmonFleetRuntime(self.patchmon)
@@ -639,6 +641,20 @@ class BrokerRuntime:
                 confirmation_digest=str(values.get("confirmation_digest") or ""),
             ),
             "managed_compose_stack_plan": self.managed_compose_plan,
+            "n8n_workflow_plan": lambda values: self.n8n_workflows.plan(
+                lane_id=str(values.get("lane_id") or ""),
+                operation=str(values.get("operation") or ""),
+                workflow_id=str(values.get("workflow_id") or ""),
+                spec=values.get("spec") if isinstance(values.get("spec"), dict) else None,
+            ),
+            "n8n_workflow_apply": lambda values: self.n8n_workflows.apply(
+                lane_id=str(values.get("lane_id") or ""),
+                operation=str(values.get("operation") or ""),
+                workflow_id=str(values.get("workflow_id") or ""),
+                spec=values.get("spec") if isinstance(values.get("spec"), dict) else None,
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=bool(values.get("owner_approved", False)),
+            ),
             "memory_gateway_collection_canary": lambda _values: self.managed_compose.memory_gateway_collection_canary(),
             "litellm_provider_model_inventory": lambda _values: self.managed_compose.litellm_provider_model_inventory(),
             "openai_project_runtime_evidence": lambda _values: self.managed_compose.openai_project_runtime_evidence(),

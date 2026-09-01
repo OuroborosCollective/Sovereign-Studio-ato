@@ -37,6 +37,18 @@ Privater Operator für `OuroborosCollective/Sovereign-Studio-ato`. Er macht die 
 - `DROP`-, `DELETE`- und andere destruktive Migrationen besitzen einen zweiten, separat deaktivierten Schalter
 - kein OpenAI-API-Key im MCP-Server nötig; der Server ruft selbst kein Modell auf
 
+## Begrenzte n8n-Workflow-Steuerung
+
+Zwei zusätzliche Werkzeuge steuern ausschließlich den fest kompilierten CI-Evidence-Workflowtyp für die Lanes `sovereign` (`OuroborosCollective/Sovereign-Studio-ato`) und `aurion` (`OuroborosCollective/Echoes_of_Aurion`):
+
+- `n8n_workflow_plan` inventarisiert oder plant `create_draft`, `update_draft`, `activate` und `pause` ohne Schreibeffekt.
+- `n8n_workflow_apply` führt nur einen frisch bestätigten Plan mit `owner_approved=true`, exaktem Bestätigungs-SHA und dem ausschließlich im Host-Broker gesetzten Gate `SOVEREIGN_MCP_ENABLE_N8N_WORKFLOW_WRITE=1` aus.
+- Beide Lanes sind in der Community-Edition exakt an das Projekt `Personal` gebunden. Freie Projekte, URLs, Nodes, Workflowtypen, Delete, Archive und beliebige bestehende Workflows sind nicht unterstützt.
+- Die n8n-Public-API-Schlüssel werden getrennt über die sicheren Owner-Input-Ziele `n8n_sovereign_api_key` und `n8n_aurion_api_key` in root-eigenen Dateien gespeichert. Sie werden weder in den MCP-Container noch in Chat, Git, Logs oder Toolantworten transportiert.
+- Der Schlüssel benötigt minimal `project:list`, `credential:list/create` sowie `workflow:list/read/create/update/activate/deactivate`.
+- Der Evidence-Master verbleibt root-only auf dem Host. Der Broker erzeugt daraus je Lane eine andere HMAC-Fähigkeit für den Header `X-Sovereign-Evidence-Capability`; n8n erhält niemals den Master.
+- Die Repository-Templates bleiben `active:false`. Aktivierung erfolgt erst nach Deployment, exakter Credential-/Projektbindung, manueller Ausführung und serverseitigem Readback.
+
 ## Neuro-/Foundation- und Teaching-Lane
 
 Die neuromorph inspirierte Erweiterung läuft im **selben** FastMCP-Prozess und über denselben ChatGPT-Connector. Containername, Loopback-Port, Broker, Workspace-/Code-Pfad, Registry, Operating Profile und Sovottt-Verbindung bleiben erhalten. Es gibt keinen zweiten MCP-Server und keinen statischen Parallelkatalog.

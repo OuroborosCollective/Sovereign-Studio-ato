@@ -756,6 +756,7 @@ def _deploy_mcp_from_ci_scope(
         {
             "SOVEREIGN_MCP_EXPECTED_REVISION": revision,
             "SOVEREIGN_MCP_EXPECTED_DIGEST": mcp["digest"],
+            "SOVEREIGN_MCP_DEPLOYMENT_SOURCE_SCOPE": "full-repository",
         }
     )
     result = _command_json(

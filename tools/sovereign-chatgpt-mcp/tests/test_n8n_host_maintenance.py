@@ -534,6 +534,20 @@ def _inspect(name: str, service: str, image: str, image_id: str, working_dir: st
         "Running": service != "sandbox-certs",
         "ExitCode": 0,
     }
+    mounts = {
+        "sandbox-api": [{
+            "Type": "volume",
+            "Name": f"{N8N_PROJECT}_sandbox-api-tls",
+            "Destination": "/tls",
+            "RW": False,
+        }],
+        "sandbox-runner-1": [{
+            "Type": "volume",
+            "Name": f"{N8N_PROJECT}_sandbox-runner-tls",
+            "Destination": "/tls",
+            "RW": False,
+        }],
+    }.get(service, [])
     return {
         "Id": (service[0] * 64),
         "Image": image_id,
@@ -548,8 +562,24 @@ def _inspect(name: str, service: str, image: str, image_id: str, working_dir: st
             },
         },
         "State": state,
+        "HostConfig": {
+            "Privileged": False,
+            "Runtime": "sysbox-runc" if service == "sandbox-runner-1" else "runc",
+        },
+        "Mounts": mounts,
         "NetworkSettings": {
-            "Networks": {f"{N8N_PROJECT}_default": {"IPAddress": "172.30.0.2"}},
+            "Networks": (
+                {f"{N8N_PROJECT}_sandbox-control": {"IPAddress": "172.31.0.4"}}
+                if service == "sandbox-runner-1"
+                else {
+                    f"{N8N_PROJECT}_default": {"IPAddress": "172.30.0.3"},
+                    f"{N8N_PROJECT}_sandbox-control": {"IPAddress": "172.31.0.3"},
+                }
+                if service == "sandbox-api"
+                else {}
+                if service == "sandbox-certs"
+                else {f"{N8N_PROJECT}_default": {"IPAddress": "172.30.0.2"}}
+            ),
             "Ports": {"5678/tcp": [{"HostIp": "0.0.0.0", "HostPort": "32784"}]} if service == "n8n" else {},
         },
     }
@@ -582,6 +612,7 @@ def test_stage1_plan_detects_rotated_host_values_without_returning_them(monkeypa
         N8N_SANDBOX_RUNNER_CONTAINER: _inspect(N8N_SANDBOX_RUNNER_CONTAINER, "sandbox-runner-1", "n8nio/n8n-sandbox-service-runner-dind:latest", "sha256:" + "3" * 64, str(working)),
     }
     monkeypatch.setattr(runtime, "_inspect", lambda name: inspections[name])
+    monkeypatch.setattr(runtime, "_sysbox_runtime_registered", lambda: True)
     monkeypatch.setattr(
         runtime,
         "_container_env",
@@ -644,6 +675,8 @@ def test_stage1_plan_detects_rotated_host_values_without_returning_them(monkeypa
     assert runtime_nexos not in payload
     assert "a" * 40 not in payload
     assert ":latest" not in result["images"]["n8n"]
+    assert result["sysboxRuntimeRegistered"] is True
+    assert result["targetRunnerIsolation"] == "sysbox-runc"
 
 
 def test_stage1_plan_verifies_already_deployed_generated_compose(monkeypatch, tmp_path) -> None:
@@ -683,6 +716,7 @@ def test_stage1_plan_verifies_already_deployed_generated_compose(monkeypatch, tm
         N8N_SANDBOX_API_CONTAINER: _inspect(N8N_SANDBOX_API_CONTAINER, "sandbox-api", images["sandboxApi"], "sha256:" + "2" * 64, str(working)),
         N8N_SANDBOX_RUNNER_CONTAINER: _inspect(N8N_SANDBOX_RUNNER_CONTAINER, "sandbox-runner-1", images["sandboxRunner"], "sha256:" + "3" * 64, str(working)),
     }
+    monkeypatch.setattr(runtime, "_sysbox_runtime_registered", lambda: True)
     for inspect in inspections.values():
         inspect["Config"]["Labels"]["com.docker.compose.project.config_files"] = str(stage1_path)
     inspections[N8N_CONTAINER]["NetworkSettings"]["Ports"] = {
@@ -727,6 +761,9 @@ def test_stage1_plan_verifies_already_deployed_generated_compose(monkeypatch, tm
     assert result["status"] == "N8N_STAGE1_ALREADY_VERIFIED"
     assert result["alreadyDeployed"] is True
     assert result["managedComposeMatchesTarget"] is True
+    assert result["runnerIsolationVerified"] is True
+    assert result["sandboxTlsMaterialSeparated"] is True
+    assert result["sandboxNetworksSeparated"] is True
     assert result["originalComposeRecoveryAvailable"] is False
     assert result["mutationPerformed"] is False
     payload = json.dumps(result, sort_keys=True)
@@ -756,7 +793,17 @@ def test_stage1_compose_is_loopback_proxy_hardened_and_immutable(tmp_path) -> No
     assert "NEXOS_API_KEY" not in compose
     assert "WEBHOOK_URL=" not in compose.replace("N8N_WEBHOOK_URL=", "")
     assert ":latest" not in compose
-    assert "privileged: true" in compose
+    runner = compose.split("  sandbox-runner-1:", 1)[1].split("\nvolumes:", 1)[0]
+    assert "runtime: sysbox-runc" in runner
+    assert "privileged: false" in runner
+    assert "privileged: true" not in compose
+    assert "SANDBOX_RUNNER_HTTP_BASE_URL=https://" in runner
+    assert "sandbox-runner-tls:/tls:ro" in runner
+    assert "networks:\n      - sandbox-control" in runner
+    assert "      - default" not in runner
+    assert "control-grpc-api-client.crt" not in runner
+    assert "--world-readable" not in compose
+    assert "network_mode: none" in compose.split("  sandbox-certs:", 1)[1].split("  sandbox-api:", 1)[0]
     assert "ports:" not in compose.split("sandbox-api:", 1)[1].split("sandbox-runner-1:", 1)[0]
 
 
@@ -779,13 +826,13 @@ def test_stage1_compose_can_optionally_enable_instance_ai(tmp_path) -> None:
 
 def test_stage1_health_wait_retries_until_all_endpoints_are_ready(monkeypatch) -> None:
     runtime = N8NHostMaintenanceRuntime()
-    calls: list[tuple[str, int, str]] = []
+    calls: list[tuple[str, int, str, bool]] = []
 
     monkeypatch.setattr(
         runtime,
         "_http_probe",
-        lambda host, port, path: (
-            calls.append((host, port, path)) is None and len(calls) > 3
+        lambda host, port, path, *, tls=False: (
+            calls.append((host, port, path, tls)) is None and len(calls) > 3
         ),
     )
     inspections = {
@@ -805,13 +852,79 @@ def test_stage1_health_wait_retries_until_all_endpoints_are_ready(monkeypatch) -
 
     assert result == (True, True, True)
     assert calls == [
-        ("127.0.0.1", 5678, "/healthz"),
-        ("172.30.0.3", 8080, "/healthz"),
-        ("172.30.0.4", 8080, "/readyz"),
-        ("127.0.0.1", 5678, "/healthz"),
-        ("172.30.0.3", 8080, "/healthz"),
-        ("172.30.0.4", 8080, "/readyz"),
+        ("127.0.0.1", 5678, "/healthz", False),
+        ("172.30.0.3", 8080, "/healthz", False),
+        ("172.30.0.4", 8080, "/readyz", True),
+        ("127.0.0.1", 5678, "/healthz", False),
+        ("172.30.0.3", 8080, "/healthz", False),
+        ("172.30.0.4", 8080, "/readyz", True),
     ]
+
+
+def test_sysbox_runtime_inventory_is_exact_and_fail_closed(monkeypatch) -> None:
+    runtime = N8NHostMaintenanceRuntime()
+    monkeypatch.setattr(
+        runtime,
+        "_run",
+        lambda *_args, **_kwargs: _result(
+            '{"runc": {"path": "runc"}, "sysbox-runc": {"path": "sysbox-runc"}}'
+        ),
+    )
+    assert runtime._sysbox_runtime_registered() is True
+
+    monkeypatch.setattr(
+        runtime,
+        "_run",
+        lambda *_args, **_kwargs: _result('{"runc": {"path": "runc"}}'),
+    )
+    assert runtime._sysbox_runtime_registered() is False
+
+
+def test_stage1_plan_blocks_before_inspection_without_sysbox(monkeypatch) -> None:
+    runtime = N8NHostMaintenanceRuntime()
+    monkeypatch.setattr(runtime, "_sysbox_runtime_registered", lambda: False)
+    monkeypatch.setattr(
+        runtime,
+        "_inspect",
+        lambda _name: (_ for _ in ()).throw(
+            AssertionError("container inspection must not run without Sysbox")
+        ),
+    )
+
+    result = runtime.stage1_plan()
+
+    assert result["ok"] is False
+    assert result["status"] == "N8N_STAGE1_PLAN_BLOCKED"
+    assert result["failureFamily"] == "N8N_RUNTIME_EVIDENCE_INCOMPLETE"
+    assert "privileged runner fallback is prohibited" in result["blocker"]
+    assert result["mutationPerformed"] is False
+
+
+def test_stage1_apply_blocks_without_sysbox_before_compose_mutation(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    maintenance_root = tmp_path / "maintenance"
+    runtime = N8NHostMaintenanceRuntime(maintenance_root=str(maintenance_root))
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE", "1")
+    monkeypatch.setattr(runtime, "_sysbox_runtime_registered", lambda: False)
+    monkeypatch.setattr(
+        runtime,
+        "_inspect",
+        lambda _name: (_ for _ in ()).throw(
+            AssertionError("container inspection must not run without Sysbox")
+        ),
+    )
+
+    result = runtime.stage1_apply(
+        confirmation_sha256="a" * 64,
+        owner_approved=True,
+    )
+
+    assert result["status"] == "N8N_STAGE1_PLAN_BLOCKED"
+    assert result["mutationPerformed"] is False
+    assert not maintenance_root.exists()
 
 
 def test_failed_stage1_can_restore_original_compose_with_rotated_bindings(monkeypatch, tmp_path) -> None:

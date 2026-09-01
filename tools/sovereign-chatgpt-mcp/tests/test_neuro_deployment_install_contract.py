@@ -72,6 +72,7 @@ def test_launcher_preserves_every_existing_registration_and_adds_one_teacher_reg
         "openai_project_access_tools",
         "operational_governance_tools",
         "neuro_teaching_tools",
+        "n8n_workflow_tools",
         "operational_assurance_tools",
         "proven_learning_tools",
         "toolchain_composition",
@@ -145,7 +146,7 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
     assert 'chmod 0700 "$NEURO_RUNTIME_STATE_HOST_DIR"' in script
     assert 'set_value "$MANAGED_ENV" SOVEREIGN_SOURCE_REVISION "$EXPECTED_REVISION"' in script
     assert 'set_value "$MANAGED_ENV" SOVEREIGN_NEURO_POLICY_SHA256 "$NEURO_POLICY_SHA256"' in script
-    assert "managed_compose.py n8n_host_maintenance.py patchmon_operator.py" in script
+    assert "managed_compose.py n8n_host_maintenance.py n8n_workflow_runtime.py patchmon_operator.py" in script
     assert script.index('set_value "$MANAGED_ENV" SOVEREIGN_SOURCE_REVISION') < script.index(
         'docker compose up -d --no-build --force-recreate --remove-orphans'
     )
@@ -153,7 +154,7 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
         'docker compose up -d --no-build --force-recreate --remove-orphans'
     )
 
-    assert 'EXPECTED_MCP_TOOL_COUNT="249"' in script
+    assert 'EXPECTED_MCP_TOOL_COUNT="251"' in script
     assert 'INSTALL_STAGE="capture_previous_mcp_tool_surface"' in script
     assert 'INSTALL_STAGE="verify_mcp_tool_surface_preservation"' in script
     assert "mcp_tool_contract_registry(include_schemas=True)" in script
@@ -384,6 +385,9 @@ resolve_previous_mcp_registry_capture_mode
     ).hexdigest()
     runtime_environment = {
         **os.environ,
+        "SOVEREIGN_MCP_GITHUB_APP_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE": "",
         "PYTHONPATH": str(ROOT),
         "SOVEREIGN_MCP_WORKSPACE_ROOT": str(tmp_path / "workspaces"),
         "SOVEREIGN_TOOL_RANKING_STATE_ROOT": str(tmp_path / "tool-ranking"),
@@ -425,11 +429,13 @@ print(json.dumps({
     )
     assert registry_process.returncode == 0, registry_process.stderr
     current_registry = json.loads(registry_process.stdout.strip().splitlines()[-1])
-    assert current_registry["toolCount"] == 249
+    assert current_registry["toolCount"] == 251
 
     predecessor_registry = json.loads(json.dumps(current_registry))
     predecessor_registry["tools"] = [
-        item for item in predecessor_registry["tools"] if item["name"] not in EXPECTED_NEURO_TOOLS
+        item
+        for item in predecessor_registry["tools"]
+        if item["name"] not in EXPECTED_NEURO_TOOLS | {"n8n_workflow_plan", "n8n_workflow_apply"}
     ]
     predecessor_registry["toolCount"] = len(predecessor_registry["tools"])
     predecessor_registry["registrySnapshotSha256"] = "0" * 64
@@ -478,6 +484,15 @@ print(json.dumps({
     ).hexdigest()
     assert predecessor_semantic_sha256 == BASELINE_PREDECESSOR_SEMANTIC_SHA256
 
+    predecessor_registry["tools"].extend(
+        json.loads(json.dumps(item))
+        for item in current_registry["tools"]
+        if item["name"] in {"n8n_workflow_plan", "n8n_workflow_apply"}
+    )
+    predecessor_registry["tools"].sort(key=lambda item: item["name"])
+    predecessor_registry["toolCount"] = len(predecessor_registry["tools"])
+    assert predecessor_registry["toolCount"] == 246
+
     predecessor_path = tmp_path / "predecessor-registry.json"
     current_path = tmp_path / "current-registry.json"
     predecessor_path.write_text(json.dumps(predecessor_registry), "utf-8")
@@ -490,7 +505,7 @@ print(json.dumps({
             str(predecessor_path),
             str(current_path),
             "1",
-            "249",
+            "251",
         ],
         capture_output=True,
         text=True,
@@ -526,7 +541,7 @@ print(json.dumps({
             str(predecessor_path),
             str(incompatible_path),
             "1",
-            "249",
+            "251",
         ],
         capture_output=True,
         text=True,
@@ -566,7 +581,7 @@ print(json.dumps({
             str(property_predecessor_path),
             str(property_replacement_path),
             "1",
-            "249",
+            "251",
         ],
         capture_output=True,
         text=True,
@@ -602,7 +617,7 @@ print(json.dumps({
             str(one_of_predecessor_path),
             str(one_of_replacement_path),
             "1",
-            "249",
+            "251",
         ],
         capture_output=True,
         text=True,
@@ -646,7 +661,7 @@ print(json.dumps({
             str(output_predecessor_path),
             str(output_replacement_path),
             "1",
-            "249",
+            "251",
         ],
         capture_output=True,
         text=True,
@@ -690,7 +705,7 @@ print(json.dumps({
                 str(old_path),
                 str(new_path),
                 "1",
-                "249",
+                "251",
             ],
             capture_output=True,
             text=True,
@@ -819,7 +834,7 @@ print(json.dumps({
             str(predecessor_path),
             str(description_path),
             "1",
-            "249",
+            "251",
         ],
         capture_output=True,
         text=True,
@@ -852,7 +867,7 @@ def test_installer_runs_a_clean_real_registry_neuro_canary_without_selected_tool
     assert '"allowed_effects": ["read"]' in canary
     assert '[contract["name"] for contract in selected_contracts] == ["mcp_self_update_status"]' in canary
     assert 'registered_tool.fn = forbidden_selected_tool_call' in canary
-    assert 'assert len(set(guarded_tool_names)) == 244' in canary
+    assert 'assert len(set(guarded_tool_names)) == 246' in canary
     assert '__sovereign_success_tracking__' in canary
     assert '__sovereign_operating_profile_wrapped__' in canary
     assert 'guarded_tool_calls == []' in canary
@@ -917,6 +932,9 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
     canary_parent.mkdir(mode=0o700)
     environment = {
         **os.environ,
+        "SOVEREIGN_MCP_GITHUB_APP_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE": "",
         "PYTHONPATH": str(ROOT),
         "SOVEREIGN_CANARY_TEST_PARENT": str(canary_parent),
         "SOVEREIGN_EXPECTED_CANARY_REVISION": revision,
@@ -946,14 +964,14 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
     assert receipt == {
         "canonicalReadbackVerified": True,
         "commitReplayVerified": True,
-        "guardedPredecessorToolCount": 244,
+        "guardedPredecessorToolCount": 246,
         "isolatedStateCleaned": True,
         "previewProposalOnly": True,
         "persistedOutcomeTools": ["neuro_event_commit"],
         "quarantineNoMutation": True,
         "readOnlyCallsPersisted": False,
         "registeredToolSurfaceVerified": True,
-        "registryToolCount": 249,
+        "registryToolCount": 251,
         "selectedToolsExecuted": False,
         "status": "NEURO_DEPLOYMENT_CANARY_VERIFIED",
         "tamperDetected": True,
@@ -1001,8 +1019,12 @@ def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Pa
     deployment_surface = workflow + "\n" + remote_install
 
     assert "n8n_host_maintenance.py" in remote_install
-    assert "managed_compose.py n8n_host_maintenance.py patchmon_operator.py" in INSTALLER.read_text("utf-8")
+    assert "n8n_workflow_runtime.py" in remote_install
+    assert "n8n_workflow_tools.py" in remote_install
+    assert "managed_compose.py n8n_host_maintenance.py n8n_workflow_runtime.py patchmon_operator.py" in INSTALLER.read_text("utf-8")
     for path in (
+        "n8n_workflow_runtime.py",
+        "n8n_workflow_tools.py",
         "neuro_architecture_contract.py",
         "neuromorphic_runtime.py",
         "foundation_runtime.py",
@@ -1010,8 +1032,10 @@ def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Pa
         "skills/sovereign-neuro-teaching-runtime/SKILL.md",
     ):
         assert path in workflow
-    assert "assert len(tool_names) == 249" in workflow
-    assert "assert len(tool_names - expected_tools) == 244" in deployment_surface
+    assert "assert len(tool_names) == 251" in workflow
+    assert "n8n_workflow_plan" in deployment_surface
+    assert "n8n_workflow_apply" in deployment_surface
+    assert "assert len(tool_names - expected_tools) == 246" in deployment_surface
     assert "SOVEREIGN_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow
     assert workflow.count("ref: ${{ env.SOVEREIGN_SOURCE_REVISION }}") == 2
     assert '--expected-head "${SOVEREIGN_SOURCE_REVISION}"' in workflow

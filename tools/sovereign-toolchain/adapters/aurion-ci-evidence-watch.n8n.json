@@ -1,5 +1,5 @@
 {
-  "name": "Sovereign Coordinated Release Evidence Watch",
+  "name": "Aurion Zone Runtime Evidence Watch",
   "nodes": [
     {
       "parameters": {
@@ -18,7 +18,7 @@
         -240,
         0
       ],
-      "id": "8921583f-01db-5471-a1fd-a4896ec84ded",
+      "id": "361c4c40-6335-5206-96d6-e1dc09be8256",
       "name": "Evidence Schedule"
     },
     {
@@ -29,7 +29,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\"branch\":\"main\",\"owner\":\"OuroborosCollective\",\"previous_fingerprint\":null,\"repo\":\"Sovereign-Studio-ato\",\"workflow_id\":\"sovereign-coordinated-release.yml\"}",
+        "jsonBody": "{\"branch\":\"main\",\"owner\":\"OuroborosCollective\",\"previous_fingerprint\":null,\"repo\":\"Echoes_of_Aurion\",\"workflow_id\":\"340269357\"}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -38,12 +38,12 @@
         0,
         0
       ],
-      "id": "5e1a0ea3-eeda-59a8-a3f2-22bfa28eaeb6",
+      "id": "60737b3b-dd59-513f-8c68-808dc2366ddb",
       "name": "Submit Evidence Receipt",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "__SOVEREIGN_TOOLCHAIN_EVIDENCE_CREDENTIAL_ID__",
-          "name": "Sovereign Toolchain Evidence"
+          "id": "__AURION_TOOLCHAIN_EVIDENCE_CREDENTIAL_ID__",
+          "name": "Aurion Toolchain Evidence"
         }
       }
     }
@@ -66,9 +66,10 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "c451a2b6-5f74-43cb-a083-a6d98d7bd50e",
+  "versionId": "a271b2c3-6f85-44dc-b194-b7e09e8ce812",
   "meta": {
-    "templateCredsSetupCompleted": false
+    "templateCredsSetupCompleted": false,
+    "workflowFile": "deploy-aurion-zone-runtime.yml"
   },
   "tags": []
 }

@@ -7,7 +7,7 @@ Every no-code platform that can send HTTP POST can use:
 ```text
 POST /api/v1/tools/{tool_name}
 Content-Type: application/json
-X-Toolchain-Key: optional-shared-secret
+X-Toolchain-Key: required-shared-secret
 
 {"args": {...}}
 ```
@@ -34,29 +34,74 @@ Use an HTTP Request node:
 
 See `adapters/n8n-http-node-example.json`.
 
-### Sovereign CI evidence watch
+### Sovereign and Aurion CI evidence watches
 
-`adapters/sovereign-ci-evidence-watch.n8n.json` is an importable, disabled-by-default workflow for public GitHub Actions observation. It polls every five minutes, reads recent workflow runs plus jobs, and sends only bounded run/job/step metadata to `sovereign_ci_evidence_receipt`.
+The disabled, declarative templates are:
 
-Required non-secret configuration:
+- `adapters/sovereign-ci-evidence-watch.n8n.json`, pinned to
+  `OuroborosCollective/Sovereign-Studio-ato` workflow
+  `sovereign-coordinated-release.yml`;
+- `adapters/aurion-ci-evidence-watch.n8n.json`, pinned to
+  `OuroborosCollective/Echoes_of_Aurion` workflow ID `340269357`
+  (`deploy-aurion-zone-runtime.yml`).
 
-- `SOVEREIGN_N8N_REPOSITORY=OuroborosCollective/Sovereign-Studio-ato`
-- `SOVEREIGN_N8N_EXPECTED_HEAD_SHA=<exact expected SHA-40>` when revision binding is required
-- `SOVEREIGN_TOOLCHAIN_BASE_URL=<private/reverse-proxied toolchain URL>`
+Each template contains only a 15-minute schedule and one credential-bound HTTP Request node. It
+has no Code node, environment expression, direct GitHub request, or effect node. The request uses:
 
-`SOVEREIGN_TOOLCHAIN_API_KEY` is a credential and must only be injected after the n8n editor/runtime is behind the approved HTTPS/auth/network boundary. Do not place repository, VPS, database, Docker-socket, or unrestricted GitHub credentials in this workflow. Public repository observation itself requires no GitHub token.
+```text
+POST http://host.docker.internal:8002/api/v1/n8n/ci-evidence
+```
 
-The workflow's n8n static data stores only `stateFingerprint` values to suppress duplicate delivery. This is a delivery cursor, not canonical state. A successful GitHub run produces `SUCCESS` observation evidence only; it never produces Sovereign `VERIFIED`. External effects remain governed by the durable workflow permission/execution receipt contract and require independent authoritative readback.
+The body is direct and strict; it is not wrapped in `args`:
 
-The adapter intentionally has no Linear write, workflow dispatch, merge, deploy, VPS, database, or PatchMon mutation node. Add those only as separate permission-bound effect steps whose exact payload/revision is approved by Sovereign and whose effect is independently read back.
+```json
+{
+  "owner": "OuroborosCollective",
+  "repo": "Sovereign-Studio-ato",
+  "branch": "main",
+  "workflow_id": "sovereign-coordinated-release.yml"
+}
+```
 
-Before activating the workflow on a self-hosted n8n instance:
+The toolchain reads GitHub through its scoped GitHub App, resolves the selected workflow and current
+branch head server-side, and returns deterministic workflow/run/job/step evidence. There is no
+repo-wide latest-run fallback and n8n cannot supply the expected branch SHA.
 
-1. remove direct public editor port exposure and place the editor behind the approved reverse proxy/HTTPS/auth path;
-2. keep sandbox API/runner ports private and avoid host Docker-socket authority;
-3. pin coordinated n8n/sandbox image versions rather than independently floating `latest` tags;
-4. run the n8n security audit and verify execution-data redaction;
-5. import the workflow while it remains `active=false`, configure the bounded environment values, run a manual canary, then activate it.
+The installer generates or preserves one high-entropy master key at
+`/etc/sovereign-toolchain/n8n-evidence.key` as `root:root` mode `0600`. The full Toolchain app does
+not receive it. The minimal evidence service runs as a systemd `DynamicUser` with a strict read-only
+filesystem and receives the master through `LoadCredential`, never as an environment variable.
+
+A trusted host-side provisioning worker derives a different lowercase-hex HMAC-SHA256 capability
+for each exact lane. The HMAC key is the UTF-8 bytes of the master-key text. The message is:
+
+```text
+sovereign.n8n-ci-evidence-capability.v1
+<owner>/<repo>
+<workflow_id>
+<branch>
+```
+
+Bind the Sovereign-derived value only to `Sovereign Toolchain Evidence` and the Aurion-derived value
+only to `Aurion Toolchain Evidence`; both use header
+`X-Sovereign-Evidence-Capability`. The listener rejects a missing or malformed capability before
+parsing JSON and caps both declared and streamed request bodies at 4096 bytes. A lane capability cannot
+authorize the other lane, and sending the raw master key is rejected. Replace each template's
+matching credential-ID placeholder during import. Never place the master or derived values in Git,
+workflow JSON, container environment, logs, or chat output.
+
+Activate each imported workflow only after:
+
+1. the Header Auth credential is bound;
+2. a request without the credential returns 401 and a wrong value also returns 401;
+3. the other lane's credential and the raw master key both return 401;
+4. a manual execution succeeds for the exact repository, workflow, and branch;
+5. the returned workflow identity and server-resolved branch-head comparison match.
+
+A successful GitHub run remains observation evidence and still requires independent runtime
+readback before Sovereign may call it verified. These adapters contain no workflow dispatch, merge,
+deploy, VPS, database, Docker-socket, Linear, or PatchMon mutation node. Add effects only through
+separate permission-bound plan/apply/readback contracts.
 
 ## Make / Zapier-like tools
 

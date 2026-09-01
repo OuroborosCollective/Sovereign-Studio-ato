@@ -22,6 +22,7 @@ MUTATING_ACTIONS = frozenset(
         "deploy_verified_release",
         "rollback_release",
         "deploy_managed_compose_stack",
+        "n8n_workflow_apply",
         "desktop_worker_start",
         "desktop_worker_input",
         "desktop_worker_remove",

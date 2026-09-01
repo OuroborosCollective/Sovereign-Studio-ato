@@ -2,12 +2,11 @@
 
 Reusable toolchain for Sovereign Studio, the sandbox bundle, GitHub Draft-PR patching, no-code workspaces, and LLM agents.
 
-It is intentionally not tied to one chat. The same package exposes four integration surfaces:
+It is intentionally not tied to one chat. The package has two deliberately separate network boundaries:
 
-1. **MCP** at `/mcp` for MCP-compatible clients and agent workspaces.
-2. **REST/OpenAPI** at `/api` for no-code tools such as n8n, Make, Zapier-like HTTP actions, Retool, Bubble, custom dashboards, and app backends.
-3. **Generic tool dispatcher** at `/api/v1/tools/{name}` for agent routers.
-4. **CLI/scripts** for local repo and CI workflows.
+1. The full **MCP**, **REST/OpenAPI**, and generic dispatcher app binds only to `127.0.0.1:8001` on a deployed host. MCP and authenticated REST tool routes require `X-Toolchain-Key` and fail closed when `TOOLCHAIN_API_KEY` is absent.
+2. The minimal n8n CI-evidence listener binds on port `8002` for container-to-host access. It exposes only `/healthz` and `POST /api/v1/n8n/ci-evidence`; it has no MCP, OpenAPI, general tools, or write surface.
+3. **CLI/scripts** remain available for local repo and CI workflows.
 
 ## What it combines
 
@@ -27,7 +26,11 @@ The default write model is deliberately strict:
 - repos must be in `ALLOWED_REPOS`
 - SEARCH/REPLACE blocks must match exactly once
 - optional `expected_sha` prevents stale previews from being applied
-- REST integrations can require `X-Toolchain-Key`
+- MCP and authenticated REST integrations require `X-Toolchain-Key`; the installer preserves or creates a root-only 64-hex capability and proves a real MCP initialize handshake
+- the n8n listener accepts only two exact repository/workflow/branch lanes, each with its own HMAC-derived capability
+- evidence calls mint a separate repository-scoped GitHub App token with only Actions/Contents read permissions; full Toolchain write authority is not inherited
+- the n8n master key stays in a root-owned systemd credential and is never an n8n credential
+- deployment is materialized from the exact Git commit archive; a root-only manifest verifies two-service rollback by revision, file hashes, directory identity, service state, and socket boundary
 
 ## Install
 
@@ -55,10 +58,10 @@ curl -X POST http://127.0.0.1:8000/api/v1/tools/plan_sandbox_commands \
   -d '{"args":{"goal":"verify"}}'
 ```
 
-With API key:
+With API key, from the host or a trusted local proxy:
 
 ```bash
-curl -X POST https://your-domain.example/api/v1/tools/github_read_file \
+curl -X POST http://127.0.0.1:8000/api/v1/tools/github_read_file \
   -H "Content-Type: application/json" \
   -H "X-Toolchain-Key: $TOOLCHAIN_API_KEY" \
   -d '{"args":{"owner":"OuroborosCollective","repo":"Sovereign-Studio-ato","path":"README.md","ref":"main"}}'
@@ -70,11 +73,7 @@ curl -X POST https://your-domain.example/api/v1/tools/github_read_file \
 uv run python -m sovereign_toolchain.mcp_server
 ```
 
-Or deploy the hybrid server and connect clients to:
-
-```text
-https://your-domain.example/mcp
-```
+A deployed hybrid server listens only on `http://127.0.0.1:8001/mcp`. Every `/mcp` path requires exactly one `X-Toolchain-Key` header. Any remote access must use a separately authenticated trusted tunnel or loopback proxy; do not publish port `8001`.
 
 ## Apply the backend guardrails patch as Draft PR
 

@@ -47,6 +47,8 @@ ALLOWED_TARGETS = {
     "openrouter_management_api_key": "OpenRouter Management API Key",
     "notion_integration_token": "Notion Integration Token",
     "wolfram_cag_api_key": "Wolfram CAG API-Key",
+    "n8n_sovereign_api_key": "n8n Public API-Key für Sovereign Studio",
+    "n8n_aurion_api_key": "n8n Public API-Key für Echoes of Aurion",
     "hf_publication_rights": "HF-Publikationsrechte JSON-Receipt",
     "hf_cag_staging_publish_request": "Zum Publizieren exakt PUBLISH eingeben",
     "proven_learning_confirmation": "Exakter Learning-Plan-Hash",
