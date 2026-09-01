@@ -110,21 +110,48 @@ function severityWeight(severity: BrownfieldSeverity): number {
   return 1;
 }
 
-function scoreFor(findings: BrownfieldFinding[], category: BrownfieldCategory, maxWeight: number): number {
-  const weight = findings
-    .filter((finding) => finding.category === category)
-    .reduce((total, finding) => total + severityWeight(finding.severity), 0);
-  return Math.min(100, Math.round((weight / maxWeight) * 100));
-}
-
+// ⚡ Bolt Optimization: Consolidate multi-pass .filter().reduce() score computations into a single-pass O(N) loop
 function categoryScore(findings: BrownfieldFinding[]): BrownfieldScore {
-  const naming = scoreFor(findings, 'naming', 24);
-  const testCoverage = scoreFor(findings, 'test-coverage', 20);
-  const patternHealth = scoreFor(findings, 'pattern-inconsistency', 16);
-  const dependency = scoreFor(findings, 'dependency', 12);
-  const size = scoreFor(findings, 'size', 30);
-  const treeIntegrity = scoreFor(findings, 'tree-integrity', 20);
+  let namingWeight = 0;
+  let testCoverageWeight = 0;
+  let patternHealthWeight = 0;
+  let dependencyWeight = 0;
+  let sizeWeight = 0;
+  let treeIntegrityWeight = 0;
+
+  for (let i = 0; i < findings.length; i++) {
+    const finding = findings[i];
+    const w = severityWeight(finding.severity);
+    switch (finding.category) {
+      case 'naming':
+        namingWeight += w;
+        break;
+      case 'test-coverage':
+        testCoverageWeight += w;
+        break;
+      case 'pattern-inconsistency':
+        patternHealthWeight += w;
+        break;
+      case 'dependency':
+        dependencyWeight += w;
+        break;
+      case 'size':
+        sizeWeight += w;
+        break;
+      case 'tree-integrity':
+        treeIntegrityWeight += w;
+        break;
+    }
+  }
+
+  const naming = Math.min(100, Math.round((namingWeight / 24) * 100));
+  const testCoverage = Math.min(100, Math.round((testCoverageWeight / 20) * 100));
+  const patternHealth = Math.min(100, Math.round((patternHealthWeight / 16) * 100));
+  const dependency = Math.min(100, Math.round((dependencyWeight / 12) * 100));
+  const size = Math.min(100, Math.round((sizeWeight / 30) * 100));
+  const treeIntegrity = Math.min(100, Math.round((treeIntegrityWeight / 20) * 100));
   const total = Math.round((naming + testCoverage + patternHealth + dependency + size + treeIntegrity) / 6);
+
   return { total, naming, testCoverage, patternHealth, dependency, size, treeIntegrity };
 }
 
@@ -266,15 +293,22 @@ function deriveHotspots(findings: BrownfieldFinding[]): string[] {
     if (!finding.file) continue;
     weights.set(finding.file, (weights.get(finding.file) ?? 0) + severityWeight(finding.severity));
   }
+  // ⚡ Bolt Optimization: Fast native character comparison replacing slow localeCompare
   return Array.from(weights.entries())
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
     .slice(0, 5)
     .map(([file]) => file);
 }
 
+// ⚡ Bolt Optimization: Single pass accumulation of critical and warning counters avoiding multi-pass .filter() array allocations
 function buildBrownfieldSummary(score: BrownfieldScore, findings: BrownfieldFinding[]): string {
-  const critical = findings.filter((finding) => finding.severity === 'critical').length;
-  const warnings = findings.filter((finding) => finding.severity === 'warn').length;
+  let critical = 0;
+  let warnings = 0;
+  for (let i = 0; i < findings.length; i++) {
+    const sev = findings[i].severity;
+    if (sev === 'critical') critical++;
+    else if (sev === 'warn') warnings++;
+  }
   const quality = score.total < 25 ? 'stabil' : score.total < 55 ? 'prüfenswert' : 'riskant';
   return `Brownfield ${quality}: Debt Index ${score.total}/100 · ${critical} kritisch · ${warnings} Warnungen`;
 }
@@ -347,9 +381,10 @@ export function buildBrownfieldReport(input: BrownfieldExplorerInput): Brownfiel
   addDirectorySizeFindings(counts, findings);
   addDependencyFindings(hasPackageJson, hasLockfile, findings);
 
+  // ⚡ Bolt Optimization: Fast native string comparison replacing slow localeCompare
   const sortedFindings = findings.sort((a, b) => {
     const bySeverity = severityWeight(b.severity) - severityWeight(a.severity);
-    return bySeverity || a.id.localeCompare(b.id);
+    return bySeverity || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   });
   const score = categoryScore(sortedFindings);
 
