@@ -29,6 +29,11 @@ MCP_INSTALL_FAILURE_RE = re.compile(
     r"^install blocked: stage=(?P<stage>[A-Za-z0-9_:-]{1,160}) "
     r"exit=[1-9][0-9]{0,2} reason=(?P<reason>.*) rollback_attempted=(?P<rollback>[01])$"
 )
+MCP_NEURO_CANARY_FAILURE_RE = re.compile(
+    r"^isolated neuro runtime canary failed: "
+    r"phase=(?P<phase>[a-z][a-z0-9_-]{0,79});"
+    r"error=(?P<error_type>[A-Za-z_][A-Za-z0-9_]{0,79})$"
+)
 MUTATION_PROVEN_DEPLOY_STAGES = frozenset(
     {
         "candidate_network",
@@ -530,13 +535,21 @@ def _safe_mcp_install_diagnostic(output: str) -> dict[str, Any] | None:
             continue
         match = MCP_INSTALL_FAILURE_RE.fullmatch(raw_line.strip())
         if match is not None:
-            return {
+            reason = match.group("reason")
+            diagnostic: dict[str, Any] = {
                 "stage": match.group("stage"),
                 "failureReasonSha256": hashlib.sha256(
-                    match.group("reason").encode("utf-8", errors="replace")
+                    reason.encode("utf-8", errors="replace")
                 ).hexdigest(),
                 "rollbackAttempted": match.group("rollback") == "1",
             }
+            canary_match = MCP_NEURO_CANARY_FAILURE_RE.fullmatch(reason)
+            if canary_match is not None:
+                diagnostic["neuroCanary"] = {
+                    "phase": canary_match.group("phase"),
+                    "errorType": canary_match.group("error_type"),
+                }
+            return diagnostic
     return None
 
 
