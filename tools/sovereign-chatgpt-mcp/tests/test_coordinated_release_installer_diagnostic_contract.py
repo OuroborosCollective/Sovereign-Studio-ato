@@ -104,6 +104,67 @@ def test_current_installer_failure_projects_toolchain_rollback_without_raw_reaso
     assert raw_reason not in caught.value.detail
 
 
+def test_current_nested_toolchain_format_projects_only_bounded_inner_evidence(monkeypatch) -> None:
+    module = _load()
+    output_sha256 = "a" * 64
+    reason_sha256 = "b" * 64
+    bounded_reason = (
+        "revision-bound toolchain installer failed: "
+        "SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE stage=metadata "
+        f"reason_sha256={reason_sha256} rollback=verified output_sha256={output_sha256}"
+    )
+    completed = subprocess.CompletedProcess(
+        ["install"],
+        1,
+        "",
+        (
+            "install blocked: stage=install_revision_bound_toolchain exit=1 "
+            f"reason={bounded_reason} rollback_attempted=1 toolchain_rollback=not-required\n"
+        ),
+    )
+    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: completed)
+
+    with pytest.raises(module.ReconcileError) as caught:
+        module._command_json(["install"], timeout=10, stage="mcp_deploy")
+
+    diagnostic = caught.value.safe_evidence["installerDiagnostic"]
+    assert diagnostic["toolchainFailure"] == {
+        "stage": "metadata",
+        "failureReasonSha256": reason_sha256,
+        "rollback": "verified",
+        "outputSha256": output_sha256,
+    }
+    assert diagnostic["toolchainRollback"] == "not-required"
+    assert diagnostic["failureReasonSha256"] == hashlib.sha256(
+        bounded_reason.encode("utf-8")
+    ).hexdigest()
+
+
+def test_current_nested_toolchain_format_rejects_unknown_inner_rollback(monkeypatch) -> None:
+    module = _load()
+    bounded_reason = (
+        "revision-bound toolchain installer failed: "
+        "SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE stage=metadata "
+        f"reason_sha256={'b' * 64} rollback=unknown output_sha256={'a' * 64}"
+    )
+    completed = subprocess.CompletedProcess(
+        ["install"],
+        1,
+        "",
+        (
+            "install blocked: stage=install_revision_bound_toolchain exit=1 "
+            f"reason={bounded_reason} rollback_attempted=1 toolchain_rollback=not-required\n"
+        ),
+    )
+    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: completed)
+
+    with pytest.raises(module.ReconcileError) as caught:
+        module._command_json(["install"], timeout=10, stage="mcp_deploy")
+
+    diagnostic = caught.value.safe_evidence["installerDiagnostic"]
+    assert "toolchainFailure" not in diagnostic
+
+
 @pytest.mark.parametrize("rollback_state", ["not-required", "verified", "failed"])
 def test_installer_diagnostic_accepts_only_bounded_toolchain_rollback_states(
     monkeypatch,
