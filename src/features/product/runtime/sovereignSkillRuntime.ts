@@ -122,9 +122,11 @@ function repositoryPath(value: unknown, label: string): string {
 function canonicalize(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`;
+  // ⚡ Bolt: Fast native lexicographical comparison for JSON object keys replacing slow localeCompare.
+  // This avoids locale collation overhead during manifest serialization in high-frequency validation.
   const entries = Object.entries(value as Record<string, unknown>)
     .filter(([, item]) => item !== undefined)
-    .sort(([left], [right]) => left.localeCompare(right));
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
   return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalize(item)}`).join(',')}}`;
 }
 
