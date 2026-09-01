@@ -48,7 +48,9 @@ STAGE=preflight
 [[ -n "$SOURCE_DIR" && -d "$SOURCE_DIR" && ! -L "$SOURCE_DIR" ]] || fail "source directory invalid"
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "expected revision must be a full commit SHA"
 SOURCE_REPOSITORY_ROOT="$(git -C "$SOURCE_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
-[[ -n "$SOURCE_REPOSITORY_ROOT" && -d "$SOURCE_REPOSITORY_ROOT/.git" ]] || fail "source is not a full Git repository checkout"
+SOURCE_IN_WORK_TREE="$(git -C "$SOURCE_DIR" rev-parse --is-inside-work-tree 2>/dev/null || true)"
+[[ -n "$SOURCE_REPOSITORY_ROOT" && -d "$SOURCE_REPOSITORY_ROOT" && "$SOURCE_IN_WORK_TREE" == "true" ]] \
+  || fail "source is not a full Git repository checkout"
 [[ "$(realpath -- "$SOURCE_DIR")" == "$(realpath -- "$SOURCE_REPOSITORY_ROOT/tools/sovereign-toolchain")" ]] || fail "source directory is not the revision-bound toolchain path"
 command -v uv >/dev/null 2>&1 || fail "uv is required for the locked runtime build"
 command -v tar >/dev/null 2>&1 || fail "tar is required for revision materialization"

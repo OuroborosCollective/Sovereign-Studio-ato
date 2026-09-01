@@ -54,8 +54,49 @@ def _tracked_install_dirty(repo: Path) -> str:
     ).stdout
 
 
+def _worktree_identity(source_dir: Path) -> tuple[Path | None, str]:
+    root = subprocess.run(
+        ["git", "-C", str(source_dir), "rev-parse", "--show-toplevel"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    inside = subprocess.run(
+        ["git", "-C", str(source_dir), "rev-parse", "--is-inside-work-tree"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    resolved_root = Path(root.stdout.strip()).resolve() if root.returncode == 0 and root.stdout.strip() else None
+    return resolved_root, inside.stdout.strip() if inside.returncode == 0 else ""
+
+
 def test_revision_bound_toolchain_installer_is_tracked_executable() -> None:
     assert INSTALLER.stat().st_mode & stat.S_IXUSR
+
+
+def test_installer_contract_accepts_git_linked_worktrees_without_weakening_identity(tmp_path: Path) -> None:
+    repo = _repository(tmp_path)
+    linked = tmp_path / "linked"
+    _git(repo, "worktree", "add", "--detach", str(linked), "HEAD")
+
+    assert (linked / ".git").is_file()
+    linked_root, linked_inside = _worktree_identity(linked / "tools/sovereign-toolchain")
+    assert linked_root == linked.resolve()
+    assert linked_inside == "true"
+
+    plain = tmp_path / "plain"
+    (plain / "tools/sovereign-toolchain").mkdir(parents=True)
+    plain_root, plain_inside = _worktree_identity(plain / "tools/sovereign-toolchain")
+    assert plain_root is None
+    assert plain_inside == ""
+
+    installer = INSTALLER.read_text("utf-8")
+    assert 'rev-parse --is-inside-work-tree' in installer
+    assert '"$SOURCE_IN_WORK_TREE" == "true"' in installer
+    assert '-d "$SOURCE_REPOSITORY_ROOT/.git"' not in installer
+    assert 'SOURCE_REVISION="$(git -C "$SOURCE_DIR" rev-parse HEAD' in installer
+    assert '[[ "$SOURCE_REVISION" == "$EXPECTED_REVISION" ]]' in installer
 
 
 def test_installer_contract_scopes_tracked_dirty_check_to_materialized_sources() -> None:
