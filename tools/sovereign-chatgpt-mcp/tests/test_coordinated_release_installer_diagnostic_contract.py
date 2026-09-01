@@ -43,7 +43,42 @@ def test_outer_installer_projects_only_bounded_nested_toolchain_failure() -> Non
         'fail "revision-bound toolchain installer failed: '
         '$TOOLCHAIN_FAILURE_DIAGNOSTIC output_sha256=$TOOLCHAIN_FAILURE_SHA256"'
     ) in installer
+    assert "head -n 1" in installer
+    assert '"$TOOLCHAIN_INSTALL_LOG" | tail -n 1' not in installer
     assert "cut -c1-512" in installer
+
+
+def test_outer_installer_preserves_first_nested_failure_when_err_propagates(tmp_path: Path) -> None:
+    log = tmp_path / "toolchain.log"
+    deepest = (
+        "SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE stage=stage "
+        + "reason_sha256="
+        + "a" * 64
+        + " rollback=not-required"
+    )
+    parent = (
+        "SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE stage=stage "
+        + "reason_sha256="
+        + "b" * 64
+        + " rollback=not-required"
+    )
+    log.write_text(deepest + "\n" + parent + "\n", encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            "grep -E '^SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE stage=[a-z][a-z0-9_-]{0,79} reason_sha256=[0-9a-f]{64} rollback=(not-required|verified|failed)$' \"$1\" | head -n 1 | tr -d '\\r\\n' | cut -c1-512",
+            "bash",
+            str(log),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.stdout.strip() == deepest
+    assert parent not in completed.stdout
 
 
 def test_nested_toolchain_diagnostic_pattern_rejects_raw_reason(tmp_path: Path) -> None:
