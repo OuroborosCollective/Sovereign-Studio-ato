@@ -54,7 +54,15 @@ command -v uv >/dev/null 2>&1 || fail "uv is required for the locked runtime bui
 command -v tar >/dev/null 2>&1 || fail "tar is required for revision materialization"
 SOURCE_REVISION="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
 [[ "$SOURCE_REVISION" == "$EXPECTED_REVISION" ]] || fail "source revision differs from expected revision"
-[[ -z "$(git -C "$SOURCE_REPOSITORY_ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]] || fail "source repository has tracked modifications"
+TRACKED_INSTALL_DIRTY="$(
+  git -C "$SOURCE_REPOSITORY_ROOT" status \
+    --porcelain \
+    --untracked-files=no \
+    -- \
+    tools/sovereign-toolchain \
+    tools/sovereign-legacy-mcp-common
+)"
+[[ -z "$TRACKED_INSTALL_DIRTY" ]] || fail "revision-bound toolchain source has tracked modifications"
 [[ -f "$SOURCE_DIR/pyproject.toml" && -f "$SOURCE_DIR/uv.lock" ]] || fail "locked toolchain source incomplete"
 [[ -f "$UNIT_SOURCE" && ! -L "$UNIT_SOURCE" ]] || fail "full service unit source invalid"
 [[ -f "$EVIDENCE_UNIT_SOURCE" && ! -L "$EVIDENCE_UNIT_SOURCE" ]] || fail "evidence service unit source invalid"
