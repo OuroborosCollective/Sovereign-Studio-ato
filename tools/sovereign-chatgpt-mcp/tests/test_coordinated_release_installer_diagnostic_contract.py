@@ -35,9 +35,19 @@ def test_outer_installer_projects_only_bounded_nested_toolchain_failure() -> Non
     installer = INSTALLER.read_text("utf-8")
 
     assert "TOOLCHAIN_FAILURE_DIAGNOSTIC=" in installer
+    assert "TOOLCHAIN_UV_DIAGNOSTIC=" in installer
     assert (
         "^SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE stage=[a-z][a-z0-9_-]{0,79} "
         "reason_sha256=[0-9a-f]{64} rollback=(not-required|verified|failed)$"
+    ) in installer
+    assert (
+        "^SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=(CLI_COMPATIBILITY|LOCK_DRIFT|PYTHON|NETWORK|OTHER) "
+        "uv_version=([0-9]+\\.[0-9]+\\.[0-9]+|unknown) output_sha256=[0-9a-f]{64}$"
+    ) in installer
+    assert (
+        'fail "revision-bound toolchain installer failed: '
+        '$TOOLCHAIN_FAILURE_DIAGNOSTIC $TOOLCHAIN_UV_DIAGNOSTIC '
+        'output_sha256=$TOOLCHAIN_FAILURE_SHA256"'
     ) in installer
     assert (
         'fail "revision-bound toolchain installer failed: '
@@ -79,6 +89,31 @@ def test_outer_installer_preserves_first_nested_failure_when_err_propagates(tmp_
 
     assert completed.stdout.strip() == deepest
     assert parent not in completed.stdout
+
+
+def test_nested_toolchain_uv_diagnostic_projects_only_bounded_fields(tmp_path: Path) -> None:
+    log = tmp_path / "toolchain.log"
+    valid = (
+        "SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=CLI_COMPATIBILITY "
+        "uv_version=0.10.4 output_sha256=" + "c" * 64
+    )
+    raw = valid + " raw=do-not-project-this"
+    log.write_text(raw + "\n" + valid + "\n", encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            "grep",
+            "-E",
+            r"^SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=(CLI_COMPATIBILITY|LOCK_DRIFT|PYTHON|NETWORK|OTHER) uv_version=([0-9]+\.[0-9]+\.[0-9]+|unknown) output_sha256=[0-9a-f]{64}$",
+            str(log),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.stdout.splitlines() == [valid]
+    assert "do-not-project-this" not in completed.stdout
 
 
 def test_nested_toolchain_diagnostic_pattern_rejects_raw_reason(tmp_path: Path) -> None:

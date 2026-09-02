@@ -52,6 +52,31 @@ on_unhandled_error() {
 }
 trap 'on_unhandled_error "$LINENO"' ERR
 
+classify_uv_sync_failure() {
+  local log_file="$1"
+  if grep -Eqi '(unexpected argument|unrecognized option|unknown option|invalid option|found argument).*(--no-install-project|--no-dev|--locked)' "$log_file"; then
+    printf 'CLI_COMPATIBILITY\n'
+  elif grep -Eqi '(uv\.lock|lock ?file).*(needs? to be updated|out of date|not up[- ]to[- ]date)|locked.*(would|cannot|can.t).*update' "$log_file"; then
+    printf 'LOCK_DRIFT\n'
+  elif grep -Eqi '(python).*(not found|not available|unsupported|requires|requirement)|failed to (find|locate|download).*python' "$log_file"; then
+    printf 'PYTHON\n'
+  elif grep -Eqi '(timed? out|timeout|temporary failure|connection (refused|reset)|name or service not known|dns|tls|certificate|failed to download|network)' "$log_file"; then
+    printf 'NETWORK\n'
+  else
+    printf 'OTHER\n'
+  fi
+}
+
+bounded_uv_version() {
+  local version
+  version="$(uv --version 2>/dev/null | sed -nE 's/^uv ([0-9]+\.[0-9]+\.[0-9]+).*$/\1/p' | head -n 1)"
+  if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    printf '%s\n' "$version"
+  else
+    printf 'unknown\n'
+  fi
+}
+
 STAGE=preflight
 [[ -n "$SOURCE_DIR" && -d "$SOURCE_DIR" && ! -L "$SOURCE_DIR" ]] || fail "source directory invalid"
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "expected revision must be a full commit SHA"
@@ -110,7 +135,18 @@ chmod 0644 "$TEMP/sovereign-toolchain/$REVISION_MARKER_NAME"
 rm -rf "$TEMP/sovereign-toolchain/.venv"
 (
   cd "$TEMP/sovereign-toolchain"
-  env -u UV_FROZEN -u UV_LOCKED uv sync --locked --no-dev --no-install-project
+  UV_SYNC_LOG="$TEMP/uv-sync.log"
+  if ! env -u UV_FROZEN -u UV_LOCKED uv sync --locked --no-dev >"$UV_SYNC_LOG" 2>&1; then
+    UV_FAILURE_FAMILY="$(classify_uv_sync_failure "$UV_SYNC_LOG")"
+    UV_VERSION="$(bounded_uv_version)"
+    UV_OUTPUT_SHA256="$(sha256sum "$UV_SYNC_LOG" | awk '{print $1}')"
+    printf 'SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=%s uv_version=%s output_sha256=%s\n' \
+      "$UV_FAILURE_FAMILY" "$UV_VERSION" "$UV_OUTPUT_SHA256" >&2
+    rm -f "$UV_SYNC_LOG"
+    fail "uv sync failed family=$UV_FAILURE_FAMILY uv_version=$UV_VERSION output_sha256=$UV_OUTPUT_SHA256"
+  fi
+  rm -f "$UV_SYNC_LOG"
+  unset UV_SYNC_LOG UV_FAILURE_FAMILY UV_VERSION UV_OUTPUT_SHA256
   PYTHONPATH="$TEMP/sovereign-toolchain/src:$TEMP/sovereign-legacy-mcp-common" \
     .venv/bin/python -c 'import sovereign_toolchain.n8n_evidence_app, uvicorn'
 )

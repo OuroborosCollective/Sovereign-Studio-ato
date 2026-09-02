@@ -45,7 +45,15 @@ def test_installer_atomically_deploys_and_verifies_both_boundaries() -> None:
     installer = INSTALLER.read_text("utf-8")
 
     assert "command -v uv" in installer
-    assert "env -u UV_FROZEN -u UV_LOCKED uv sync --locked --no-dev --no-install-project" in installer
+    assert "env -u UV_FROZEN -u UV_LOCKED uv sync --locked --no-dev" in installer
+    assert "uv sync --locked --no-dev --no-install-project" not in installer
+    assert "SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC" in installer
+    assert "CLI_COMPATIBILITY" in installer
+    assert "LOCK_DRIFT" in installer
+    assert "PYTHON" in installer
+    assert "NETWORK" in installer
+    assert "bounded_uv_version" in installer
+    assert "UV_OUTPUT_SHA256" in installer
     assert "uv lock --check" not in installer
     assert "uv sync --frozen" not in installer
     assert 'git -C "$SOURCE_REPOSITORY_ROOT" archive --format=tar "$EXPECTED_REVISION"' in installer
@@ -121,6 +129,38 @@ def test_installer_atomically_deploys_and_verifies_both_boundaries() -> None:
     assert "final target runtime executable missing" in installer
     assert "n8n evidence master key leaked into process environment" in installer
 
+
+
+def test_uv_sync_failure_classifier_is_bounded_and_causal(tmp_path: Path) -> None:
+    installer = INSTALLER.read_text("utf-8")
+    function_body = installer.split("classify_uv_sync_failure() {", 1)[1].split(
+        "\nbounded_uv_version()", 1
+    )[0]
+    function_source = "classify_uv_sync_failure() {" + function_body
+    cases = {
+        "CLI_COMPATIBILITY": "error: unexpected argument '--no-install-project' found",
+        "LOCK_DRIFT": "uv.lock needs to be updated, but --locked was provided",
+        "PYTHON": "Python not found for the requested environment",
+        "NETWORK": "failed to download package: connection reset by peer",
+        "OTHER": "resolver exited for an unclassified bounded reason",
+    }
+    for expected, evidence in cases.items():
+        log = tmp_path / f"{expected.lower()}.log"
+        log.write_text(evidence + "\n", encoding="utf-8")
+        completed = subprocess.run(
+            [
+                "bash",
+                "-c",
+                function_source + '\nclassify_uv_sync_failure "$1"',
+                "bash",
+                str(log),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert completed.stderr == ""
+        assert completed.stdout.strip() == expected
 
 
 def test_rollback_helper_verifies_revision_files_services_and_sockets() -> None:
