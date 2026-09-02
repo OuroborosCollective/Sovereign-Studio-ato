@@ -1,0 +1,15 @@
+{
+  "target": "src/features/product/containers/BuilderContainer.test.tsx",
+  "source_ref": "sovereign/chatgpt/1788358270-finish-pr-1822-chat-first-edd174",
+  "branch_base_ref": "5e64426618a0931ac6e14410119a630cc6db746d",
+  "branch": "sovereign/chatgpt/1788358270-finish-pr-1822-chat-first-edd174",
+  "commit_message": "test(frontend): bind LLM failure evidence to Inspector",
+  "pr_title": "chore: transport #1822 chat-first test drift repair",
+  "pr_body": "Same-branch exact-search repair for #1823. Keeps the product runtime unchanged and updates the LLM failure regression to inspect technical Action Stream evidence only after Inspector is explicitly opened.",
+  "blocks": [
+    {
+      "search": "      await waitFor(() =>\n        expect(screen.getAllByText(/Codeauftragsvertrag blockiert|sichere Online-Aktionsroute ist blockiert/i).length).toBeGreaterThan(0),\n      );\n      expect(chatCalls).toBe(2);\n\n      fireEvent.click(screen.getByText('INSPECTOR'));\n      fireEvent.click(screen.getByRole('button', { name: /RT.*Runtime Quelle/i }));",
+      "replace": "      await waitFor(() => expect(chatCalls).toBe(2));\n      const actionStream = getActionStream();\n      await waitFor(() => expect(actionStream).toHaveTextContent('Codeauftragsvertrag blockiert'));\n\n      fireEvent.click(screen.getByRole('button', { name: /RT.*Runtime Quelle/i }));"
+    }
+  ]
+}
