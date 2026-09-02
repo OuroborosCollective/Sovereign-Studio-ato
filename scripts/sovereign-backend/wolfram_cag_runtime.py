@@ -245,8 +245,10 @@ def register_wolfram_cag_runtime(app: Any, *, get_connection: ConnectionFactory)
         if not _service_authorized():
             return jsonify({"ok": False, "error": "service_unauthorized"}), 401
         raw_body = request.get_json(silent=True)
-        if raw_body is None:
+        if raw_body is None and not request.data:
             body = {}
+        elif raw_body is None:
+            return jsonify({"ok": False, "error": "invalid_request"}), 400
         elif isinstance(raw_body, dict):
             body = raw_body
         else:

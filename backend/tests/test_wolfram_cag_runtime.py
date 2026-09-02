@@ -54,7 +54,7 @@ sys.modules["agent_runtime.adapters"] = adapters_pkg
 sys.modules["agent_runtime.adapters.wolfram_agenttools"] = adapter
 sys.modules["agent_runtime.wolfram_cag_partner_ledger"] = ledger
 
-fake_request = SimpleNamespace(headers={}, get_json=lambda silent=True: {})
+fake_request = SimpleNamespace(headers={}, data=b"", get_json=lambda silent=True: {})
 flask_module = ModuleType("flask")
 flask_module.jsonify = lambda value=None, **kwargs: value if value is not None else kwargs
 flask_module.request = fake_request
@@ -204,9 +204,43 @@ def test_canary_route_rejects_non_dictionary_json_payloads(monkeypatch, payload)
 
     runtime.request.headers = {"X-Sovereign-Owner-Request-Key": "bridge-key"}
     runtime.request.get_json = lambda silent=True: payload
+    runtime.request.data = b"some-body"
     body, status = canary_route()
     assert status == 400
     assert body == {"ok": False, "error": "invalid_request"}
+
+
+@pytest.mark.parametrize("raw_data", [b"null", b"invalid-json", b"{broken"])
+def test_canary_route_rejects_null_and_malformed_json_body(monkeypatch, raw_data):
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    app = _App()
+    runtime.register_wolfram_cag_runtime(app, get_connection=lambda: _Connection())
+    canary_route = app.routes[("/api/internal/wolfram-cag/canary", ("POST",))]
+
+    runtime.request.headers = {"X-Sovereign-Owner-Request-Key": "bridge-key"}
+    runtime.request.get_json = lambda silent=True: None
+    runtime.request.data = raw_data
+    body, status = canary_route()
+    assert status == 400
+    assert body == {"ok": False, "error": "invalid_request"}
+
+
+def test_canary_route_accepts_empty_body_as_default_all_components(monkeypatch):
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", REV)
+    app = _App()
+    persisted = []
+    monkeypatch.setattr(runtime, "execute_live_cag_request", lambda **kwargs: _receipt(kwargs["capability_id"]))
+    monkeypatch.setattr(runtime, "persist_partner_analysis", lambda conn, record: persisted.append(record) or record["analysisId"])
+    runtime.register_wolfram_cag_runtime(app, get_connection=lambda: _Connection())
+    canary_route = app.routes[("/api/internal/wolfram-cag/canary", ("POST",))]
+
+    runtime.request.headers = {"X-Sovereign-Owner-Request-Key": "bridge-key"}
+    runtime.request.get_json = lambda silent=True: None
+    runtime.request.data = b""
+    body, status = canary_route()
+    assert status == 200
+    assert body["ok"] is True
 
 
 def test_runtime_and_deployment_mirror_match_compile_and_app_registers_routes():
