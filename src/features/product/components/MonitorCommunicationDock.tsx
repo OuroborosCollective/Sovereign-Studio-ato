@@ -152,10 +152,11 @@ export function MonitorCommunicationDock({
         color: C.text,
       }}
     >
-      <div
-        data-testid="monitor-status-rail"
-        style={{
-          display: chatMode ? 'none' : 'flex',
+      {!chatMode && (
+        <div
+          data-testid="monitor-status-rail"
+          style={{
+            display: 'flex',
           alignItems: 'center',
           gap: 6,
           minHeight: 46,
@@ -198,10 +199,12 @@ export function MonitorCommunicationDock({
           TOOLCHAIN
         </button>
         {toolsLauncher}
-      </div>
+        </div>
+      )}
 
-      <div
-        role="status"
+      {!chatMode && (
+        <div
+          role="status"
         aria-live="polite"
         data-testid="monitor-runtime-status"
         style={{
@@ -216,7 +219,8 @@ export function MonitorCommunicationDock({
         }}
       >
         {status}
-      </div>
+        </div>
+      )}
 
       {(chatMode || visibleEntries.length > 0) && (
         <ol
