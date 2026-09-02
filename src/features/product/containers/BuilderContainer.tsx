@@ -642,6 +642,7 @@ function TopBar({
   workbenchStatusSlots,
   onWorkbenchSlotClick,
   showInspector,
+  sessionAge,
 }: {
   status: AgentStatus;
   repoReady: boolean;
@@ -666,6 +667,7 @@ function TopBar({
   workbenchStatusSlots: WorkbenchStatusSlot[];
   onWorkbenchSlotClick: (id: WorkbenchStatusSlotId) => void;
   showInspector: boolean;
+  sessionAge?: { text: string; isStale: boolean } | null;
 }) {
   const repoLabel = chatRepoSnapshot
     ? `${chatRepoSnapshot.name}:${chatRepoSnapshot.branch}`
@@ -742,6 +744,23 @@ function TopBar({
             >
               Monitor
             </span>
+            {/* Session Age badge */}
+            {sessionAge && (
+              <span
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 8,
+                  padding: "2px 5px",
+                  borderRadius: 6,
+                  background: sessionAge.isStale ? `${C.amber}18` : `${C.sky}18`,
+                  color: sessionAge.isStale ? C.amber : C.sky,
+                  border: `1px solid ${sessionAge.isStale ? C.amber : C.sky}33`,
+                }}
+                title={sessionAge.isStale ? "Session ist möglicherweise veraltet" : "Session Alter"}
+              >
+                {sessionAge.text.toUpperCase()}
+              </span>
+            )}
             {/* PAL badge */}
             {palTier && (
               <span
@@ -2168,6 +2187,7 @@ export function BuilderContainer({
 }: BuilderContainerProps) {
   // ── Original v3 state (verbatim)
   const [patternMemoryStore, setPatternMemoryStore] = useState<PatternMemoryStore>(() => loadPatternMemoryStoreFromStorage());
+  const [sessionAge, setSessionAge] = useState<{ text: string; isStale: boolean } | null>(null);
   const [wishText, setWishText] = useState(() => missionToWishText(mission));
   const [showRuntimeSheet, setShowRuntime] = useState(false);
   const [showSideMenu, setShowSide] = useState(false);
@@ -3239,6 +3259,7 @@ export function BuilderContainer({
         );
         if (session.messageCount > 0) {
           const age = formatPersistedSessionAge(session);
+          setSessionAge(age);
           if (age.isStale) {
             appendRuntimeNotice(`Warnung: Die wiederhergestellte Session ist älter als 3 Tage (Alter: ${age.text}) und möglicherweise nicht mehr mit dem aktuellen Codebase-Stand synchron.`);
           } else {
@@ -3249,12 +3270,14 @@ export function BuilderContainer({
         if (cancelled) return;
         persistedSessionRef.current = null;
         setChatHistory([]);
+        setSessionAge(null);
         addLog('warn', 'PostgreSQL bubble persistence is unavailable; no local fallback was used.', 'sys');
       }
     })();
 
     return () => {
       cancelled = true;
+      setSessionAge(null);
     };
   }, [addLog, authUser, chatRepoSnapshot, currentRepoScopeKey]);
 
@@ -5618,6 +5641,7 @@ Das echte Repo-Setup wurde geöffnet.`);
               .split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
           : undefined}
         onUserClick={() => authUser ? setShowProfile(true) : setShowLogin(true)}
+        sessionAge={sessionAge}
         workbenchStatusSlots={workbenchStatusSlots}
         onWorkbenchSlotClick={(id) => {
           if (id === "logs") {
