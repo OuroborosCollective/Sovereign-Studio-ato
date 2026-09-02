@@ -1,0 +1,23 @@
+{
+  "target": "src/features/product/components/MonitorCommunicationDock.tsx",
+  "source_ref": "sovereign/chatgpt/1788358270-finish-pr-1822-chat-first-edd174",
+  "branch_base_ref": "bbb12604641e636e620970d8f6ad29f55da8330c",
+  "branch": "sovereign/chatgpt/1788358270-finish-pr-1822-chat-first-edd174",
+  "commit_message": "fix(frontend): unmount monitor-only controls in chat mode",
+  "pr_title": "chore: transport #1822 chat-first test drift repair",
+  "pr_body": "Same-branch exact-search repair for #1823. Unmounts monitor-only controls in chat mode so hidden duplicate launcher/toolchain controls do not violate the chat-first DOM contract.",
+  "blocks": [
+    {
+      "search": "      <div\n        data-testid=\"monitor-status-rail\"\n        style={{\n          display: chatMode ? 'none' : 'flex',",
+      "replace": "      {!chatMode && (\n        <div\n          data-testid=\"monitor-status-rail\"\n          style={{\n            display: 'flex',"
+    },
+    {
+      "search": "        {toolsLauncher}\n      </div>\n\n      <div\n        role=\"status\"",
+      "replace": "        {toolsLauncher}\n        </div>\n      )}\n\n      {!chatMode && (\n        <div\n          role=\"status\""
+    },
+    {
+      "search": "        {status}\n      </div>\n\n      {(chatMode || visibleEntries.length > 0) && (",
+      "replace": "        {status}\n        </div>\n      )}\n\n      {(chatMode || visibleEntries.length > 0) && ("
+    }
+  ]
+}
