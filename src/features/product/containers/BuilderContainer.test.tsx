@@ -542,17 +542,18 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   it("renders the AppControl DevChat shell structure", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     const root = screen.getByTestId("builder-container");
-    expect(root).toHaveAttribute("data-layout", "live-desktop-monitor-primary");
+    expect(root).toHaveAttribute("data-layout", "chat-primary-agent-zero-background");
     expect(root).toHaveAttribute("aria-label", "Sovereign Builder");
     expect(screen.getAllByText("Sovereign").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Monitor").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByLabelText("Sovereign Studio Tabs")).toBeDefined();
-    expect(screen.getByText("MONITOR")).toBeDefined();
+    expect(screen.getByText("CHAT")).toBeDefined();
     expect(screen.getByText("INSPECTOR")).toBeDefined();
-    expect(screen.queryByTestId("sovereign-chat-body-window")).toBeNull();
-    expect(screen.getByTestId('live-workspace-monitor')).toBeDefined();
-    expect(screen.getByTestId('live-workspace-monitor-desktop')).toBeDefined();
-    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
+    expect(screen.getByTestId("sovereign-chat-body-window")).toBeDefined();
+    expect(screen.queryByTestId('live-workspace-monitor')).toBeNull();
+    expect(screen.queryByTestId('live-workspace-monitor-desktop')).toBeNull();
+    expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-mode', 'chat');
+    expect(screen.getByTestId('sovereign-chat-tool-row')).toBeDefined();
     expect(screen.getByTestId('monitor-runtime-action-trace')).toBeDefined();
     expect(chatField()).toBeDefined();
     expect(screen.getByLabelText("Menü")).toBeDefined();
@@ -609,7 +610,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(within(sideMenu).queryByText(/PAL Verlauf/i)).toBeNull();
   });
 
-  it("promotes a fresh workspace-bound projection to the desktop monitor instead of chat", async () => {
+  it("keeps chat primary and exposes a fresh workspace projection only through Inspector", async () => {
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
     );
@@ -628,13 +629,16 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(chatField(), { target: { value: TEST_REPO_URL } });
     fireEvent.click(sendButton());
 
+    await waitFor(() => expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined());
+    expect(screen.getByTestId('builder-container')).toHaveAttribute('data-layout', 'chat-primary-agent-zero-background');
+    expect(screen.getByTestId('primary-surface-tab')).toHaveAttribute('data-primary-surface', 'chat');
+    expect(screen.getByRole('button', { name: 'Sovereign Chat' })).toHaveTextContent('CHAT');
+    expect(screen.queryByText('monitor runtime output')).toBeNull();
+    expect(screen.queryByTestId('workspace-evidence-rail')).toBeNull();
+
+    fireEvent.click(screen.getByText('INSPECTOR'));
     await waitFor(() => expect(screen.getByText('monitor runtime output')).toBeDefined());
-    expect(screen.getByTestId('builder-container')).toHaveAttribute('data-layout', 'live-desktop-monitor-primary');
-    expect(screen.getByTestId('primary-surface-tab')).toHaveAttribute('data-primary-surface', 'desktop-monitor');
-    expect(screen.getByRole('button', { name: 'Live Monitor' })).toHaveTextContent('MONITOR');
     expect(screen.getByTestId('workspace-evidence-rail')).toBeDefined();
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
-    expect(screen.queryByLabelText(/Sovereign Chat Eingabe/i)).toBeNull();
   });
 
   it("keeps a concise code-order clarification in the non-overlay monitor dock", async () => {

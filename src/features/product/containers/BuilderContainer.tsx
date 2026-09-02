@@ -740,7 +740,7 @@ function TopBar({
                 border: `1px solid ${C.accent}33`,
               }}
             >
-              Monitor
+              Chat
             </span>
             {/* PAL badge */}
             {palTier && (
@@ -887,7 +887,9 @@ function TopBar({
       </div>
 
       {/* Werkbank Status — Actions/Files/Logs/Errors/Draft PR, primary and always visible */}
-      <WorkbenchStatusChips slots={workbenchStatusSlots} onSlotClick={onWorkbenchSlotClick} />
+      {showInspector ? (
+        <WorkbenchStatusChips slots={workbenchStatusSlots} onSlotClick={onWorkbenchSlotClick} />
+      ) : null}
 
       {/* Inspector — technical runtime modules, internal-only, hidden unless explicitly opened */}
       {showInspector && (
@@ -2040,8 +2042,8 @@ function SideDrawer({
   );
 }
 
-// BottomTabBar — Monitor is the permanent primary destination. The communication
-// dock is embedded in that surface; there is no user-facing fallback Chat mode.
+// BottomTabBar — Chat is the permanent primary destination. Technical runtime
+// projections stay optional behind Inspector instead of replacing conversation.
 function BottomTabBar({
   activeTab,
   onChatClick,
@@ -2054,8 +2056,8 @@ function BottomTabBar({
   onToggleInspector: () => void;
 }) {
   const isMonitor = activeTab === "chat";
-  const primaryIcon = "▣";
-  const primaryLabel = "MONITOR";
+  const primaryIcon = "◉";
+  const primaryLabel = "CHAT";
   return (
     <nav
       style={{
@@ -2072,9 +2074,9 @@ function BottomTabBar({
         type="button"
         onClick={onChatClick}
         aria-current={isMonitor ? "page" : undefined}
-        aria-label="Live Monitor"
+        aria-label="Sovereign Chat"
         data-testid="primary-surface-tab"
-        data-primary-surface="desktop-monitor"
+        data-primary-surface="chat"
         style={{
           display: "flex",
           flexDirection: "column",
@@ -2378,10 +2380,10 @@ export function BuilderContainer({
       : [],
     [agentProjections, scopedAgentJob?.jobId, scopedAgentJob?.workspaceId],
   );
-  // The workspace monitor is the permanent primary product surface. Runtime
-  // projections and desktop frames enrich it when available; they never decide
-  // whether the user is sent back to a legacy chat screen.
-  const liveMonitorPrimary = activeTab === 'chat';
+  // Chat is the permanent primary product surface. Agent Zero, repository
+  // execution and evidence collection stay behind the conversation and only
+  // surface technical projections when the owner explicitly opens Inspector.
+  const chatPrimary = activeTab === 'chat';
   // Keep LLM/user communication stable while a job starts, projections rotate or
   // desktop evidence refreshes. Only account/repository scope changes reset it.
   const monitorAccountKey = authUser?.id ?? 'guest';
@@ -2408,7 +2410,7 @@ export function BuilderContainer({
     };
     setMonitorCommunication((previous) => {
       if (previous.some((existing) => existing.id === entry.id)) return previous;
-      return [...previous.slice(-11), entry];
+      return [...previous.slice(-199), entry];
     });
   }, []);
   useEffect(() => {
@@ -3217,7 +3219,7 @@ export function BuilderContainer({
         const restoredMonitorEntries = restored
           .map(projectMonitorCommunicationLine)
           .filter((line): line is ChatLine => line !== null)
-          .slice(-12)
+          .slice(-200)
           .map((line, index): MonitorCommunicationEntry => ({
             id: `restored-monitor-${line.id || index}`,
             kind: line.role === 'user' ? 'user' : line.role === 'system' ? 'runtime' : 'communicate',
@@ -3229,7 +3231,7 @@ export function BuilderContainer({
           [...restoredMonitorEntries, ...previous].forEach((entry) => byId.set(entry.id, entry));
           return [...byId.values()]
             .sort((left, right) => left.createdAt - right.createdAt)
-            .slice(-12);
+            .slice(-200);
         });
 
         addLog(
@@ -4215,10 +4217,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       appendActionEvent(buildInputReceivedEvent(submittedText));
     }
 
-    // Natural language goes to the online LLM first. Deterministic parsing is
+    // Free user language stays a normal advisory chat. Deterministic parsing is
     // reserved strictly for exact machine controls, repository URLs and
-    // machine-generated preset markers. Free user language is never reinterpreted
-    // by browser heuristics when the online LLM is unavailable.
+    // machine-generated preset markers. No natural-language sentence may start
+    // GitHub or executor effects without an explicit typed action surface.
     const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
     const isReviewableExecutionPreset =
       submittedText.includes('Risiko: reviewable_patch')
@@ -4228,12 +4230,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     // last correlated request through the real pipeline and must never spend a
     // second interpretation call merely to understand the control itself.
     const isExactRetryControl = submittedText.trim().toLocaleLowerCase('de-DE') === 'retry';
-    const shouldUseOnlineLanguageUnderstanding =
-      !options.resumePendingIntent &&
-      !isSafeAnalysisPreset &&
-      !isReviewableExecutionPreset &&
-      !directRepoUrl &&
-      !isExactRetryControl;
+    const shouldUseOnlineLanguageUnderstanding = false;
 
     if (isReviewableExecutionPreset) {
       appendActionEvent(buildRouteSelectionEvent({
@@ -5485,7 +5482,11 @@ Das echte Repo-Setup wurde geöffnet.`);
   const submitDisabled =
     localRepoLoading || chatResponseBusy || isPublishing || !wishText.trim();
   const isChat = activeTab === "chat";
-  const showAgentEventStream = liveMonitorPrimary || agentWorkSnapshot.state !== 'idle' || scopedAgentIsRunning;
+  const showAgentEventStream = showInspector && (
+    agentWorkSnapshot.state !== 'idle'
+    || scopedAgentIsRunning
+    || scopedAgentProjections.length > 0
+  );
   const agentEventStream = showAgentEventStream ? (
     <AgentEventStream
       snapshot={agentWorkSnapshot}
@@ -5501,7 +5502,7 @@ Das echte Repo-Setup wurde geöffnet.`);
         })()
       }
       onOpenFile={openRepoExplorerFromFileBadge}
-      primaryMonitor={liveMonitorPrimary}
+      primaryMonitor={false}
       desktopFrame={scopedDesktopFrame}
     />
   ) : null;
@@ -5519,7 +5520,7 @@ Das echte Repo-Setup wurde geöffnet.`);
       ].filter(Boolean).join(" ")}
       data-role={builderContainerContract.dataRole}
       data-testid={builderContainerContract.testId}
-      data-layout={liveMonitorPrimary ? "live-desktop-monitor-primary" : "monitor-inspector-modules"}
+      data-layout={chatPrimary ? "chat-primary-agent-zero-background" : "chat-inspector-modules"}
       aria-label={builderContainerContract.ariaLabel}
       style={{
         width: "100%",
@@ -5665,8 +5666,8 @@ Das echte Repo-Setup wurde geöffnet.`);
       )}
 
       {/* MAIN CONTENT */}
-      <div className={chatRepoSnapshot && isChat ? "sovereign-chat-workbench sovereign-chat-workbench--split" : "sovereign-chat-workbench"}>
-        {chatRepoSnapshot && isChat ? (
+      <div className={chatRepoSnapshot && isChat && showInspector ? "sovereign-chat-workbench sovereign-chat-workbench--split" : "sovereign-chat-workbench"}>
+        {chatRepoSnapshot && isChat && showInspector ? (
           <aside className="sovereign-repo-split-inspector" aria-label="Repo-Baum Split-Bereich">
             <RepoTreeExplorer
               snapshot={chatRepoSnapshot}
@@ -5678,9 +5679,9 @@ Das echte Repo-Setup wurde geöffnet.`);
       {isChat ? (
           <div
             role="region"
-            aria-label="Sovereign Live Desktop Monitor"
-            data-testid="sovereign-live-monitor-primary"
-            data-primary-surface="desktop-monitor"
+            aria-label="Sovereign Chat"
+            data-testid="sovereign-chat-primary"
+            data-primary-surface="chat"
             style={{
               flex: 1,
               minWidth: 0,
@@ -5693,38 +5694,24 @@ Das echte Repo-Setup wurde geöffnet.`);
               flexDirection: "column",
             }}
           >
-            {agentEventStream}
-            <LauncherTaskbar />
-            <div
-              data-testid="monitor-action-controls"
-              style={{
-                flexShrink: 0,
-                borderTop: `1px solid ${C.border}`,
-                background: C.surface,
-              }}
-            >
-              <ActionSuggestionStrip
-                actions={SOVEREIGN_PRESET_ACTIONS}
-                repoReady={effectiveRepoReady}
-                githubWriteReady={githubWriteAllowed}
-                agentReady={agentReady ?? false}
-                disabled={localRepoLoading || chatResponseBusy || isPublishing}
-                onSelect={handlePresetActionSelect}
-              />
-            </div>
-            <div
-              data-testid="monitor-runtime-action-trace"
-              style={{
-                flexShrink: 0,
-                maxHeight: 132,
-                overflowY: 'auto',
-                borderTop: actionStream.events.length ? `1px solid ${C.border}` : undefined,
-                background: C.bg,
-              }}
-            >
-              <SovereignActionStreamPanel stream={actionStream} maxEvents={12} />
-            </div>
-            <OutcomeHints hints={outcomeHints} />
+            {showInspector ? agentEventStream : null}
+            {showInspector ? <LauncherTaskbar /> : null}
+
+            {showInspector ? (
+              <div
+                data-testid="monitor-runtime-action-trace"
+                style={{
+                  flexShrink: 0,
+                  maxHeight: 132,
+                  overflowY: 'auto',
+                  borderTop: actionStream.events.length ? `1px solid ${C.border}` : undefined,
+                  background: C.bg,
+                }}
+              >
+                <SovereignActionStreamPanel stream={actionStream} maxEvents={12} />
+              </div>
+            ) : null}
+            {showInspector ? <OutcomeHints hints={outcomeHints} /> : null}
             {testRunnerBusy && (
               <div role="status" style={{ margin: '8px 12px', padding: 10, border: `1px solid ${C.sky}44`, borderRadius: 10, color: C.sky }}>
                 Echte Workspace-Tests laufen…
@@ -5799,6 +5786,26 @@ Das echte Repo-Setup wurde geöffnet.`);
               );
             })()}
             <MonitorCommunicationDock
+              mode="chat"
+              emptyState={wishText.trim() ? null : (
+                <div style={{ width: 'min(760px, 100%)', textAlign: 'center' }}>
+                  <div aria-hidden="true" style={{ fontSize: 30, marginBottom: 8 }}>⬡</div>
+                  <h2 style={{ margin: 0, color: C.text, fontSize: 20, fontWeight: 650 }}>
+                    Was möchtest du tun?
+                  </h2>
+                  <p style={{ margin: '8px auto 18px', maxWidth: 560, color: C.textSub, fontSize: 13, lineHeight: 1.55 }}>
+                    Chatte ganz normal mit Sovereign. Modell und Werkzeuge kannst du unten wählen; Agent Zero und die Runtime arbeiten im Hintergrund.
+                  </p>
+                  <ActionSuggestionStrip
+                    actions={SOVEREIGN_PRESET_ACTIONS}
+                    repoReady={effectiveRepoReady}
+                    githubWriteReady={githubWriteAllowed}
+                    agentReady={agentReady ?? false}
+                    disabled={localRepoLoading || chatResponseBusy || isPublishing}
+                    onSelect={handlePresetActionSelect}
+                  />
+                </div>
+              )}
               value={wishText}
               onChange={setWishText}
               onSubmit={() => { void handleSubmit(); }}
@@ -5985,7 +5992,7 @@ Das echte Repo-Setup wurde geöffnet.`);
       )}
       </div>
 
-      {/* BOTTOM TAB BAR — Chat + Inspector toggle; technical modules live behind Inspector */}
+      {/* BOTTOM TAB BAR — Chat stays primary; technical modules live behind Inspector */}
       <BottomTabBar
         activeTab={activeTab}
         onChatClick={() => switchTab("chat")}
