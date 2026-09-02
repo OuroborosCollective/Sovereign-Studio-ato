@@ -1,14 +1,13 @@
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { MonitorCommunicationDock, type MonitorCommunicationEntry } from './MonitorCommunicationDock';
+import { SovereignChatDock, type SovereignChatEntry } from './MonitorCommunicationDock';
 import type { SovereignLlmRouteOption } from '../runtime/devChatWorkerBridge';
 
-const entries: readonly MonitorCommunicationEntry[] = [
-  { id: '1', kind: 'runtime', text: 'Workspace wird validiert.', createdAt: 1 },
-  { id: '2', kind: 'user', text: 'Was machst du gerade?', createdAt: 2 },
-  { id: '3', kind: 'communicate', text: 'Ich prüfe die Runtime-Evidence.', createdAt: 3 },
-  { id: '4', kind: 'communicate', text: 'Der Monitor bleibt währenddessen sichtbar.', createdAt: 4 },
+const entries: readonly SovereignChatEntry[] = [
+  { id: '1', kind: 'user', text: 'Was machst du gerade?', createdAt: 1 },
+  { id: '2', kind: 'assistant', text: 'Ich prüfe den Auftrag im Hintergrund.', createdAt: 2 },
+  { id: '3', kind: 'system', text: 'Für den nächsten Schritt brauche ich deine Freigabe.', createdAt: 3 },
 ];
 
 function makeRoute(
@@ -26,29 +25,23 @@ function makeRoute(
   };
 }
 
-function renderDock(overrides: Partial<React.ComponentProps<typeof MonitorCommunicationDock>> = {}) {
+function renderDock(overrides: Partial<React.ComponentProps<typeof SovereignChatDock>> = {}) {
   const onChange = vi.fn();
   const onSubmit = vi.fn();
   const onRouteChange = vi.fn();
-  const onOpenFlow = vi.fn();
-  const onRequestIdea = vi.fn();
   const onOpenToolchain = vi.fn();
   const onOpenTools = vi.fn();
 
   render(
-    <MonitorCommunicationDock
+    <SovereignChatDock
       value=""
       onChange={onChange}
       onSubmit={onSubmit}
       disabled={false}
       busy={false}
-      runtimeStatus="Sovereign Agent Runtime arbeitet"
       entries={entries}
       routeOptions={[]}
       onRouteChange={onRouteChange}
-      runtimeMood="😊✨"
-      onOpenFlow={onOpenFlow}
-      onRequestIdea={onRequestIdea}
       onOpenToolchain={onOpenToolchain}
       toolchainState="ready"
       toolsLauncher={(
@@ -64,37 +57,38 @@ function renderDock(overrides: Partial<React.ComponentProps<typeof MonitorCommun
     onChange,
     onSubmit,
     onRouteChange,
-    onOpenFlow,
-    onRequestIdea,
     onOpenToolchain,
     onOpenTools,
   };
 }
 
-describe('MonitorCommunicationDock', () => {
-  it('keeps THINK limited to observable runtime status and stays in document flow', () => {
+describe('SovereignChatDock', () => {
+  it('renders one normal chat surface without monitor runtime rails', () => {
     renderDock();
 
-    const dock = screen.getByTestId('monitor-communication-dock');
+    const dock = screen.getByTestId('sovereign-chat-dock');
     expect(dock).toHaveAttribute('data-overlay', 'false');
-    expect(dock.style.position).toBe('');
-    expect(screen.getByText('THINK')).toBeTruthy();
-    expect(screen.getByTestId('monitor-runtime-status')).toHaveTextContent('Sovereign Agent Runtime arbeitet');
-    expect(screen.getByTitle(/keine verborgene Modell-Gedankenkette/i)).toBeTruthy();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
+    expect(screen.queryByText('THINK')).toBeNull();
+    expect(screen.queryByText('FLOW')).toBeNull();
+    expect(screen.queryByText('IDEA')).toBeNull();
+    expect(screen.queryByTestId('monitor-runtime-status')).toBeNull();
   });
 
-  it('keeps recent receipts and the latest user mission visible with explicit roles', () => {
+  it('renders the complete conversation with user and Sovereign roles', () => {
     renderDock();
 
-    const rail = screen.getByTestId('monitor-communication-bubbles');
-    expect(rail.querySelectorAll('li')).toHaveLength(4);
-    expect(screen.getByText('Workspace wird validiert.')).toBeTruthy();
+    const chat = screen.getByTestId('sovereign-chat-body-window');
+    expect(chat.querySelectorAll('li')).toHaveLength(3);
     expect(screen.getByText('Was machst du gerade?')).toBeTruthy();
-    expect(screen.getAllByText('COMMUNICATE')).toHaveLength(2);
-    expect(screen.getByText('YOU')).toBeTruthy();
+    expect(screen.getByText('Ich prüfe den Auftrag im Hintergrund.')).toBeTruthy();
+    expect(screen.getAllByText('SOVEREIGN')).toHaveLength(2);
+    expect(screen.getByText('DU')).toBeTruthy();
+    expect(screen.queryByText('COMMUNICATE')).toBeNull();
+    expect(screen.queryByText('RUNTIME')).toBeNull();
   });
 
-  it('allows a question by Enter without leaving the monitor and keeps 44px touch controls', () => {
+  it('sends a chat message with Enter and keeps 44px touch controls', () => {
     const { onSubmit } = renderDock({ value: 'Wie ist der Stand?' });
     const input = screen.getByLabelText('Codeauftrag an Sovereign');
     const send = screen.getByRole('button', { name: 'Senden' });
@@ -109,46 +103,32 @@ describe('MonitorCommunicationDock', () => {
   it('shows a structural route hint without interpreting free language locally', () => {
     renderDock({ routeHint: 'Repo erkannt · Laden' });
 
-    expect(screen.getByTestId('monitor-route-hint')).toHaveTextContent('Repo erkannt · Laden');
+    expect(screen.getByTestId('sovereign-route-hint')).toHaveTextContent('Repo erkannt · Laden');
   });
 
-  it('redacts secret-shaped assistant output before it reaches the monitor bubble', () => {
+  it('redacts secret-shaped assistant output before it reaches the chat', () => {
     const secret = 'ghp_' + 'A'.repeat(40);
     renderDock({
-      entries: [{ id: 'secret', kind: 'communicate', text: 'credential ' + secret, createdAt: 1 }],
+      entries: [{ id: 'secret', kind: 'assistant', text: 'credential ' + secret, createdAt: 1 }],
     });
 
     expect(screen.queryByText(new RegExp(secret))).toBeNull();
-    expect(screen.getByTestId('monitor-communication-bubbles').textContent).not.toContain(secret);
+    expect(screen.getByTestId('sovereign-chat-body-window').textContent).not.toContain(secret);
   });
 
-  it('exposes the compact THINK, FLOW, IDEA, mood, TOOLCHAIN and launcher rail with real callbacks', () => {
-    const {
-      onOpenFlow,
-      onRequestIdea,
-      onOpenToolchain,
-      onOpenTools,
-    } = renderDock();
-    const rail = within(screen.getByTestId('monitor-status-rail'));
+  it('keeps toolchain and launcher next to the composer without a monitor rail', () => {
+    const { onOpenToolchain, onOpenTools } = renderDock();
+    const toolRow = within(screen.getByTestId('sovereign-chat-tool-row'));
 
-    expect(rail.getByText('THINK')).toBeTruthy();
-    expect(rail.getByLabelText('Sovereign bereit')).toHaveTextContent('😊✨');
-
-    const flow = rail.getByRole('button', { name: 'FLOW' });
-    const idea = rail.getByRole('button', { name: 'IDEA' });
-    const toolchain = rail.getByRole('button', { name: 'TOOLCHAIN' });
-    const launcher = rail.getByRole('button', { name: 'Tool Launcher öffnen' });
-
+    const toolchain = toolRow.getByRole('button', { name: 'TOOLCHAIN' });
+    const launcher = toolRow.getByRole('button', { name: 'Tool Launcher öffnen' });
     expect(toolchain).toHaveAttribute('title', 'Toolchain: bereit');
-    fireEvent.click(flow);
-    fireEvent.click(idea);
     fireEvent.click(toolchain);
     fireEvent.click(launcher);
 
-    expect(onOpenFlow).toHaveBeenCalledOnce();
-    expect(onRequestIdea).toHaveBeenCalledOnce();
     expect(onOpenToolchain).toHaveBeenCalledOnce();
     expect(onOpenTools).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId('monitor-status-rail')).toBeNull();
   });
 
   it('keeps the route picker compact, limits visible results to 24 and searches the full catalog', () => {
@@ -194,11 +174,11 @@ describe('MonitorCommunicationDock', () => {
     expect(screen.getByRole('dialog', { name: 'LLM-Modell auswählen' })).toBeTruthy();
     expect(onRouteChange).not.toHaveBeenCalled();
 
-    fireEvent.keyDown(screen.getByTestId('monitor-llm-route-picker'), { key: 'Escape' });
+    fireEvent.keyDown(screen.getByTestId('sovereign-llm-route-picker'), { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'LLM-Modell auswählen' })).toBeNull();
     expect(onRouteChange).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Monitor LLM Route auf Auto zurücksetzen' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chat LLM Route auf Auto zurücksetzen' }));
     expect(onRouteChange).toHaveBeenCalledOnce();
     expect(onRouteChange).toHaveBeenCalledWith('');
   });

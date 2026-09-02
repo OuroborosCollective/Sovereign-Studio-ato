@@ -20,11 +20,11 @@ export type SituationalBubbleSourceKind =
   | "CONSENT_CONTRACT"
   | "EFFECT_READBACK";
 
-export type MonitorCommunicationSourceKind = "LLM_RESPONSE" | "RUNTIME_NOTICE";
+export type ConversationProjectionSourceKind = "LLM_RESPONSE" | "RUNTIME_NOTICE";
 
-export interface MonitorCommunicationProjection {
-  readonly schemaVersion: "sovereign.monitor-communication-projection.v1";
-  readonly sourceKind: MonitorCommunicationSourceKind;
+export interface ConversationProjection {
+  readonly schemaVersion: "sovereign.conversation-projection.v1";
+  readonly sourceKind: ConversationProjectionSourceKind;
   readonly authority: "CONVERSATION_ONLY";
   readonly authoritative: false;
 }
@@ -72,7 +72,7 @@ export interface ChatLine {
   readonly path?: string;
   readonly createdAt?: number;
   readonly bubble?: SituationalBubbleBinding;
-  readonly monitorProjection?: MonitorCommunicationProjection;
+  readonly conversationProjection?: ConversationProjection;
 }
 
 export interface RuntimeSource {

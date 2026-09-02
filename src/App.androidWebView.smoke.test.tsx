@@ -34,46 +34,47 @@ beforeEach(() => {
   delete window.__sovereignSetupState;
 });
 
-async function openMonitorWorkspace(): Promise<void> {
+async function openChatWorkspace(): Promise<void> {
   render(<Provider store={store}><App /></Provider>);
 
   await waitFor(() => {
     expect(screen.getByTestId('builder-container')).toHaveAttribute(
       'data-layout',
-      'live-desktop-monitor-primary',
+      'chat-primary-agent-zero-background',
     );
   });
 }
 
 describe('App setup flow smoke', () => {
-  it('enters the monitor-first workbench as the Android app surface', async () => {
+  it('enters the chat-first workbench as the Android app surface', async () => {
     render(<Provider store={store}><App /></Provider>);
 
-    expect(screen.getByTestId('sovereign-monitor-app')).toHaveAttribute(
+    expect(screen.getByTestId('sovereign-chat-app')).toHaveAttribute(
       'data-layout',
-      'monitor-first-live-workspace',
+      'chat-first-agent-zero-background',
     );
 
     await waitFor(() => {
       expect(screen.getByTestId('builder-container')).toHaveAttribute(
         'data-layout',
-        'live-desktop-monitor-primary',
+        'chat-primary-agent-zero-background',
       );
     });
-    expect(screen.getByTestId('live-workspace-monitor-desktop')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
+    expect(screen.queryByTestId('live-workspace-monitor-desktop')).toBeNull();
   });
 
-  it('keeps LLM communication inside the Android monitor without a chat surface', async () => {
-    await openMonitorWorkspace();
+  it('keeps normal LLM communication inside the Android chat surface', async () => {
+    await openChatWorkspace();
 
-    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-dock')).toBeDefined();
     expect(screen.getByLabelText('Codeauftrag an Sovereign')).toBeDefined();
     expect(screen.getByPlaceholderText(/Codeauftrag eingeben/i)).toBeDefined();
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
   });
 
   it('does not open legacy controls during initial chat entry', async () => {
-    await openMonitorWorkspace();
+    await openChatWorkspace();
 
     expect(screen.queryByTestId('operator-monitor')).toBeNull();
     expect(screen.queryByTestId('automation__mode-select')).toBeNull();

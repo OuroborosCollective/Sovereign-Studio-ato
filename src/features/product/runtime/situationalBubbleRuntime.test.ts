@@ -3,7 +3,7 @@ import type { ChatLine, SituationalBubbleBinding } from './builderContainerTypes
 import {
   commitSituationalBubble,
   minimizeBubbleProjection,
-  projectMonitorCommunicationLine,
+  projectConversationChatLine,
   projectSituationalChatLine,
   projectSituationalChatLines,
 } from './situationalBubbleRuntime';
@@ -122,7 +122,7 @@ describe('situational bubble output firewall', () => {
   it('projects only role-matched committed bubbles', () => {
     const typedMission = line(mission());
     const wrongRole = line(mission({ bubbleHash: HASH_B }), 'assistant');
-    expect(projectMonitorCommunicationLine(typedMission)).toEqual(typedMission);
+    expect(projectConversationChatLine(typedMission)).toEqual(typedMission);
     expect(projectSituationalChatLines([
       typedMission,
       wrongRole,
@@ -131,34 +131,34 @@ describe('situational bubble output firewall', () => {
     ])).toEqual([typedMission]);
   });
 
-  it('requires explicit non-authoritative provenance for monitor-only conversation', () => {
+  it('requires explicit non-authoritative provenance for transient chat conversation', () => {
     const safe = { id: 'safe', role: 'assistant' as const, text: 'Die Analyse läuft.', createdAt: 1 };
     expect(projectSituationalChatLine(safe)).toBeNull();
-    expect(projectMonitorCommunicationLine(safe)).toBeNull();
+    expect(projectConversationChatLine(safe)).toBeNull();
 
     const conversation = {
       ...safe,
-      monitorProjection: {
-        schemaVersion: 'sovereign.monitor-communication-projection.v1' as const,
+      conversationProjection: {
+        schemaVersion: 'sovereign.conversation-projection.v1' as const,
         sourceKind: 'LLM_RESPONSE' as const,
         authority: 'CONVERSATION_ONLY' as const,
         authoritative: false as const,
       },
     };
-    expect(projectMonitorCommunicationLine(conversation)).toEqual(conversation);
-    expect(projectMonitorCommunicationLine({ ...conversation, role: 'system' })).toBeNull();
-    expect(projectMonitorCommunicationLine({ ...conversation, text: 'Reasoning: hidden provider trace' })).toBeNull();
-    expect(projectMonitorCommunicationLine({
+    expect(projectConversationChatLine(conversation)).toEqual(conversation);
+    expect(projectConversationChatLine({ ...conversation, role: 'system' })).toBeNull();
+    expect(projectConversationChatLine({ ...conversation, text: 'Reasoning: hidden provider trace' })).toBeNull();
+    expect(projectConversationChatLine({
       ...conversation,
       text: ['github', 'pat', 'x'.repeat(40)].join('_'),
     })).toBeNull();
   });
 
-  it('never downgrades an invalid typed bubble to ephemeral monitor text', () => {
+  it('never downgrades an invalid typed bubble to transient chat text', () => {
     const wrongRole = line(mission(), 'assistant');
     expect(projectSituationalChatLine(wrongRole)).toBeNull();
-    expect(projectMonitorCommunicationLine(wrongRole)).toBeNull();
-    expect(projectMonitorCommunicationLine({
+    expect(projectConversationChatLine(wrongRole)).toBeNull();
+    expect(projectConversationChatLine({
       ...line(mission()),
       text: 'Text does not match the committed bubble.',
     })).toBeNull();

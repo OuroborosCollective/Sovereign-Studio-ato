@@ -110,10 +110,7 @@ import {
   sessionMessageToChatLine,
   type PersistedSession,
 } from "../runtime/sessionPersistenceRuntime";
-import {
-  projectMonitorCommunicationLine,
-  projectSituationalChatLine,
-} from "../runtime/situationalBubbleRuntime";
+import { projectConversationChatLine } from "../runtime/situationalBubbleRuntime";
 import { runTests, type TestRunnerResult } from "../runtime/testRunnerRuntime";
 import {
   requestAutoCodeReview,
@@ -191,8 +188,8 @@ import {
 import { AgentWorkTimeline } from "../components/AgentWorkTimeline";
 import { AgentEventStream } from "../components/AgentEventStream";
 import {
-  MonitorCommunicationDock,
-  type MonitorCommunicationEntry,
+  SovereignChatDock,
+  type SovereignChatEntry,
 } from "../components/MonitorCommunicationDock";
 import { SovereignActionStreamPanel } from "../components/SovereignActionStreamPanel";
 import {
@@ -740,10 +737,10 @@ function TopBar({
                 border: `1px solid ${C.accent}33`,
               }}
             >
-              Monitor
+              Chat
             </span>
             {/* PAL badge */}
-            {palTier && (
+            {showInspector && palTier && (
               <span
                 style={{
                   fontFamily: "monospace",
@@ -828,9 +825,9 @@ function TopBar({
           </button>
         )}
 
-        <Ampel status={status} compact />
+        {showInspector ? <Ampel status={status} compact /> : null}
 
-        <button
+        {showInspector ? <button
           type="button"
           onClick={onSourceClick}
           aria-label="RT – Runtime Quelle"
@@ -862,10 +859,10 @@ function TopBar({
             }}
           />
           RT
-        </button>
+        </button> : null}
 
         {/* Panel toggle */}
-        <button
+        {showInspector ? <button
           type="button"
           onClick={onPanelToggle}
           aria-label={panelOpen ? "Panel schließen" : "Panel öffnen"}
@@ -883,11 +880,13 @@ function TopBar({
           }}
         >
           {panelOpen ? "▴" : "▾"}
-        </button>
+        </button> : null}
       </div>
 
       {/* Werkbank Status — Actions/Files/Logs/Errors/Draft PR, primary and always visible */}
-      <WorkbenchStatusChips slots={workbenchStatusSlots} onSlotClick={onWorkbenchSlotClick} />
+      {showInspector ? (
+        <WorkbenchStatusChips slots={workbenchStatusSlots} onSlotClick={onWorkbenchSlotClick} />
+      ) : null}
 
       {/* Inspector — technical runtime modules, internal-only, hidden unless explicitly opened */}
       {showInspector && (
@@ -2040,8 +2039,8 @@ function SideDrawer({
   );
 }
 
-// BottomTabBar — Monitor is the permanent primary destination. The communication
-// dock is embedded in that surface; there is no user-facing fallback Chat mode.
+// BottomTabBar — Chat is the permanent primary destination. Technical runtime
+// projections stay optional behind Inspector instead of replacing conversation.
 function BottomTabBar({
   activeTab,
   onChatClick,
@@ -2054,8 +2053,8 @@ function BottomTabBar({
   onToggleInspector: () => void;
 }) {
   const isMonitor = activeTab === "chat";
-  const primaryIcon = "▣";
-  const primaryLabel = "MONITOR";
+  const primaryIcon = "◉";
+  const primaryLabel = "CHAT";
   return (
     <nav
       style={{
@@ -2072,9 +2071,9 @@ function BottomTabBar({
         type="button"
         onClick={onChatClick}
         aria-current={isMonitor ? "page" : undefined}
-        aria-label="Live Monitor"
+        aria-label="Sovereign Chat"
         data-testid="primary-surface-tab"
-        data-primary-surface="desktop-monitor"
+        data-primary-surface="chat"
         style={{
           display: "flex",
           flexDirection: "column",
@@ -2160,7 +2159,6 @@ export function BuilderContainer({
   agentEvidenceAnchors,
   desktopFrame,
   patternLearningEvidence,
-  agentJobStatus,
   agentIsRunning,
   onStartAgent,
   onCancelAgent,
@@ -2378,51 +2376,10 @@ export function BuilderContainer({
       : [],
     [agentProjections, scopedAgentJob?.jobId, scopedAgentJob?.workspaceId],
   );
-  // The workspace monitor is the permanent primary product surface. Runtime
-  // projections and desktop frames enrich it when available; they never decide
-  // whether the user is sent back to a legacy chat screen.
-  const liveMonitorPrimary = activeTab === 'chat';
-  // Keep LLM/user communication stable while a job starts, projections rotate or
-  // desktop evidence refreshes. Only account/repository scope changes reset it.
-  const monitorAccountKey = authUser?.id ?? 'guest';
-  const monitorScopeKey = currentRepoScopeKey ?? 'unbound';
-  const previousMonitorBindingRef = useRef({
-    accountKey: monitorAccountKey,
-    scopeKey: monitorScopeKey,
-  });
-  const [monitorCommunication, setMonitorCommunication] = useState<MonitorCommunicationEntry[]>([]);
-  const monitorCommunicationSequenceRef = useRef(0);
-  const appendMonitorCommunication = useCallback((
-    kind: MonitorCommunicationEntry['kind'],
-    text: string,
-    id?: string,
-  ) => {
-    const clean = text.trim();
-    if (!clean) return;
-    monitorCommunicationSequenceRef.current += 1;
-    const entry: MonitorCommunicationEntry = {
-      id: id ?? `monitor-communication-${monitorCommunicationSequenceRef.current}`,
-      kind,
-      text: clean,
-      createdAt: Date.now(),
-    };
-    setMonitorCommunication((previous) => {
-      if (previous.some((existing) => existing.id === entry.id)) return previous;
-      return [...previous.slice(-11), entry];
-    });
-  }, []);
-  useEffect(() => {
-    const previous = previousMonitorBindingRef.current;
-    const next = { accountKey: monitorAccountKey, scopeKey: monitorScopeKey };
-    previousMonitorBindingRef.current = next;
-    const preserveFirstRepositoryBinding = previous.accountKey === next.accountKey
-      && previous.scopeKey === 'unbound'
-      && next.scopeKey !== 'unbound';
-    if (preserveFirstRepositoryBinding) return;
-    setMonitorCommunication([]);
-    monitorCommunicationSequenceRef.current = 0;
-  }, [monitorAccountKey, monitorScopeKey]);
-
+  // Chat is the permanent primary product surface. Agent Zero, repository
+  // execution and evidence collection stay behind the conversation and only
+  // surface technical projections when the owner explicitly opens Inspector.
+  const chatPrimary = activeTab === 'chat';
   // ── Issue #443: GitHub Access State
   const [githubAccessState, setGitHubAccessState] = useState<GitHubAccessSnapshot>(
     createGitHubAccessSnapshot(),
@@ -3002,31 +2959,19 @@ export function BuilderContainer({
         id: line.id ?? createChatLineId(line.role, chatLineIndexRef.current),
         createdAt,
       };
-      const committed = projectSituationalChatLine(candidate);
-      const monitorLine = projectMonitorCommunicationLine(candidate);
-      if (monitorLine) {
-        appendMonitorCommunication(
-          monitorLine.role === 'user'
-            ? 'user'
-            : monitorLine.role === 'system'
-              ? 'runtime'
-              : 'communicate',
-          monitorLine.text,
-          `monitor:${monitorLine.id}`,
-        );
-      }
+      const committed = projectConversationChatLine(candidate);
       if (!committed) return;
       setChatHistory((previous) => [...previous, committed]);
     },
-    [appendMonitorCommunication],
+    [],
   );
 
   const appendRuntimeNotice = useCallback((text: string) => {
     appendChatLine({
       role: 'system',
       text,
-      monitorProjection: {
-        schemaVersion: 'sovereign.monitor-communication-projection.v1',
+      conversationProjection: {
+        schemaVersion: 'sovereign.conversation-projection.v1',
         sourceKind: 'RUNTIME_NOTICE',
         authority: 'CONVERSATION_ONLY',
         authoritative: false,
@@ -3045,8 +2990,8 @@ export function BuilderContainer({
     appendChatLine({
       role: 'assistant',
       text: guardedText,
-      monitorProjection: {
-        schemaVersion: 'sovereign.monitor-communication-projection.v1',
+      conversationProjection: {
+        schemaVersion: 'sovereign.conversation-projection.v1',
         sourceKind: 'LLM_RESPONSE',
         authority: 'CONVERSATION_ONLY',
         authoritative: false,
@@ -3212,25 +3157,11 @@ export function BuilderContainer({
         if (cancelled) return;
         persistedSessionRef.current = session;
         chatLineIndexRef.current = session.messages.length;
-        const restored = session.messages.map(sessionMessageToChatLine);
+        const restored = session.messages
+          .map(sessionMessageToChatLine)
+          .map(projectConversationChatLine)
+          .filter((line): line is ChatLine => line !== null);
         setChatHistory(restored);
-        const restoredMonitorEntries = restored
-          .map(projectMonitorCommunicationLine)
-          .filter((line): line is ChatLine => line !== null)
-          .slice(-12)
-          .map((line, index): MonitorCommunicationEntry => ({
-            id: `restored-monitor-${line.id || index}`,
-            kind: line.role === 'user' ? 'user' : line.role === 'system' ? 'runtime' : 'communicate',
-            text: line.text,
-            createdAt: line.createdAt,
-          }));
-        setMonitorCommunication((previous) => {
-          const byId = new Map<string, MonitorCommunicationEntry>();
-          [...restoredMonitorEntries, ...previous].forEach((entry) => byId.set(entry.id, entry));
-          return [...byId.values()]
-            .sort((left, right) => left.createdAt - right.createdAt)
-            .slice(-12);
-        });
 
         addLog(
           'info',
@@ -3327,17 +3258,6 @@ export function BuilderContainer({
     runtimeBusy ||
     isPublishing,
   );
-  const workStateStatus = runtimeThinkingActive
-    ? chatResponseBusy
-      ? "LLM Runtime antwortet"
-      : scopedAgentJob
-        ? agentJobStatus?.trim() || "Sovereign Agent Runtime arbeitet"
-        : "Runtime arbeitet"
-    : workerBlocker
-      ? `blocked · ${workerBlocker.diagnostic.status ? `Worker HTTP ${workerBlocker.diagnostic.status}` : "Worker blockiert"}`
-      : effectiveRepoReady
-        ? "idle · Repo-Kontext bereit"
-        : "idle · Repo fehlt";
   const outcomeHints = useMemo(
     () => buildOutcomeHints(scopedAgentJob),
     [scopedAgentJob],
@@ -5482,10 +5402,26 @@ Das echte Repo-Setup wurde geöffnet.`);
     return false;
   };
 
+  const visibleChatEntries = useMemo<readonly SovereignChatEntry[]>(
+    () => chatHistory
+      .filter((line) => line.role !== 'thought')
+      .slice(-200)
+      .map((line) => ({
+        id: line.id,
+        kind: line.role === 'user' ? 'user' : line.role === 'system' ? 'system' : 'assistant',
+        text: line.text,
+        createdAt: line.createdAt ?? 0,
+      })),
+    [chatHistory],
+  );
   const submitDisabled =
     localRepoLoading || chatResponseBusy || isPublishing || !wishText.trim();
   const isChat = activeTab === "chat";
-  const showAgentEventStream = liveMonitorPrimary || agentWorkSnapshot.state !== 'idle' || scopedAgentIsRunning;
+  const showAgentEventStream = showInspector && (
+    agentWorkSnapshot.state !== 'idle'
+    || scopedAgentIsRunning
+    || scopedAgentProjections.length > 0
+  );
   const agentEventStream = showAgentEventStream ? (
     <AgentEventStream
       snapshot={agentWorkSnapshot}
@@ -5501,7 +5437,7 @@ Das echte Repo-Setup wurde geöffnet.`);
         })()
       }
       onOpenFile={openRepoExplorerFromFileBadge}
-      primaryMonitor={liveMonitorPrimary}
+      primaryMonitor={false}
       desktopFrame={scopedDesktopFrame}
     />
   ) : null;
@@ -5519,7 +5455,7 @@ Das echte Repo-Setup wurde geöffnet.`);
       ].filter(Boolean).join(" ")}
       data-role={builderContainerContract.dataRole}
       data-testid={builderContainerContract.testId}
-      data-layout={liveMonitorPrimary ? "live-desktop-monitor-primary" : "monitor-inspector-modules"}
+      data-layout={chatPrimary ? "chat-primary-agent-zero-background" : "chat-inspector-modules"}
       aria-label={builderContainerContract.ariaLabel}
       style={{
         width: "100%",
@@ -5665,8 +5601,8 @@ Das echte Repo-Setup wurde geöffnet.`);
       )}
 
       {/* MAIN CONTENT */}
-      <div className={chatRepoSnapshot && isChat ? "sovereign-chat-workbench sovereign-chat-workbench--split" : "sovereign-chat-workbench"}>
-        {chatRepoSnapshot && isChat ? (
+      <div className={chatRepoSnapshot && isChat && showInspector ? "sovereign-chat-workbench sovereign-chat-workbench--split" : "sovereign-chat-workbench"}>
+        {chatRepoSnapshot && isChat && showInspector ? (
           <aside className="sovereign-repo-split-inspector" aria-label="Repo-Baum Split-Bereich">
             <RepoTreeExplorer
               snapshot={chatRepoSnapshot}
@@ -5678,9 +5614,9 @@ Das echte Repo-Setup wurde geöffnet.`);
       {isChat ? (
           <div
             role="region"
-            aria-label="Sovereign Live Desktop Monitor"
-            data-testid="sovereign-live-monitor-primary"
-            data-primary-surface="desktop-monitor"
+            aria-label="Sovereign Chat"
+            data-testid="sovereign-chat-primary"
+            data-primary-surface="chat"
             style={{
               flex: 1,
               minWidth: 0,
@@ -5693,38 +5629,24 @@ Das echte Repo-Setup wurde geöffnet.`);
               flexDirection: "column",
             }}
           >
-            {agentEventStream}
-            <LauncherTaskbar />
-            <div
-              data-testid="monitor-action-controls"
-              style={{
-                flexShrink: 0,
-                borderTop: `1px solid ${C.border}`,
-                background: C.surface,
-              }}
-            >
-              <ActionSuggestionStrip
-                actions={SOVEREIGN_PRESET_ACTIONS}
-                repoReady={effectiveRepoReady}
-                githubWriteReady={githubWriteAllowed}
-                agentReady={agentReady ?? false}
-                disabled={localRepoLoading || chatResponseBusy || isPublishing}
-                onSelect={handlePresetActionSelect}
-              />
-            </div>
-            <div
-              data-testid="monitor-runtime-action-trace"
-              style={{
-                flexShrink: 0,
-                maxHeight: 132,
-                overflowY: 'auto',
-                borderTop: actionStream.events.length ? `1px solid ${C.border}` : undefined,
-                background: C.bg,
-              }}
-            >
-              <SovereignActionStreamPanel stream={actionStream} maxEvents={12} />
-            </div>
-            <OutcomeHints hints={outcomeHints} />
+            {showInspector ? agentEventStream : null}
+            {showInspector ? <LauncherTaskbar /> : null}
+
+            {showInspector ? (
+              <div
+                data-testid="monitor-runtime-action-trace"
+                style={{
+                  flexShrink: 0,
+                  maxHeight: 132,
+                  overflowY: 'auto',
+                  borderTop: actionStream.events.length ? `1px solid ${C.border}` : undefined,
+                  background: C.bg,
+                }}
+              >
+                <SovereignActionStreamPanel stream={actionStream} maxEvents={12} />
+              </div>
+            ) : null}
+            {showInspector ? <OutcomeHints hints={outcomeHints} /> : null}
             {testRunnerBusy && (
               <div role="status" style={{ margin: '8px 12px', padding: 10, border: `1px solid ${C.sky}44`, borderRadius: 10, color: C.sky }}>
                 Echte Workspace-Tests laufen…
@@ -5798,14 +5720,32 @@ Das echte Repo-Setup wurde geöffnet.`);
                 />
               );
             })()}
-            <MonitorCommunicationDock
+            <SovereignChatDock
+              emptyState={wishText.trim() ? null : (
+                <div style={{ width: 'min(760px, 100%)', textAlign: 'center' }}>
+                  <div aria-hidden="true" style={{ fontSize: 30, marginBottom: 8 }}>⬡</div>
+                  <h2 style={{ margin: 0, color: C.text, fontSize: 20, fontWeight: 650 }}>
+                    Was möchtest du tun?
+                  </h2>
+                  <p style={{ margin: '8px auto 18px', maxWidth: 560, color: C.textSub, fontSize: 13, lineHeight: 1.55 }}>
+                    Chatte ganz normal mit Sovereign. Modell und Werkzeuge kannst du unten wählen; Agent Zero und die Runtime arbeiten im Hintergrund.
+                  </p>
+                  <ActionSuggestionStrip
+                    actions={SOVEREIGN_PRESET_ACTIONS}
+                    repoReady={effectiveRepoReady}
+                    githubWriteReady={githubWriteAllowed}
+                    agentReady={agentReady ?? false}
+                    disabled={localRepoLoading || chatResponseBusy || isPublishing}
+                    onSelect={handlePresetActionSelect}
+                  />
+                </div>
+              )}
               value={wishText}
               onChange={setWishText}
               onSubmit={() => { void handleSubmit(); }}
               disabled={submitDisabled}
               busy={localRepoLoading || chatResponseBusy || isPublishing}
-              runtimeStatus={workStateStatus}
-              entries={monitorCommunication}
+              entries={visibleChatEntries}
               routeOptions={llmRouteOptions}
               selectedRouteId={selectedLlmRouteId}
               onRouteChange={(routeId) => {
@@ -5817,12 +5757,6 @@ Das echte Repo-Setup wurde geöffnet.`);
                 );
               }}
               routeCatalogError={llmRouteCatalogError}
-              runtimeMood={agentStatus === 'error' ? '🛟⚠️' : runtimeThinkingActive ? '🤖💭' : '😊✨'}
-              onOpenFlow={() => handleCompactToolSelect('runtime_logs')}
-              onRequestIdea={() => {
-                triggerHaptic('light');
-                onGenerateIdeas();
-              }}
               onOpenToolchain={() => {
                 appendActionEvent(buildLocalRuntimeResultEvent({
                   label: 'Toolchain geöffnet',
@@ -5985,7 +5919,7 @@ Das echte Repo-Setup wurde geöffnet.`);
       )}
       </div>
 
-      {/* BOTTOM TAB BAR — Chat + Inspector toggle; technical modules live behind Inspector */}
+      {/* BOTTOM TAB BAR — Chat stays primary; technical modules live behind Inspector */}
       <BottomTabBar
         activeTab={activeTab}
         onChatClick={() => switchTab("chat")}
