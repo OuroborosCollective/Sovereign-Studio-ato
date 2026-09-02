@@ -186,15 +186,15 @@ function run() {
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Repo geladen|Repo fehlt/, 'repo:status-pill-visible', 'Repo loaded/missing state must be visible.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Privater Zugang/, 'repo:private-access-visible', 'Private access state must be visible.');
 
-  requireText('src/features/product/containers/BuilderContainer.tsx', /MonitorCommunicationDock|chat-primary-agent-zero-background/, 'builder:chat-primary-visible', 'Builder must expose the chat-first workbench with model and tool selection while Agent Zero/runtime stay behind the conversation.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SovereignChatDock|chat-primary-agent-zero-background/, 'builder:chat-primary-visible', 'Builder must expose the chat-only workbench with model and tool selection while Agent Zero/runtime stay behind the conversation.');
   requireFile('src/features/product/components/LiveWorkspaceMonitor.tsx', 'Real workspace monitor component is required.');
   requireText('src/features/product/components/LiveWorkspaceMonitor.tsx', /live-workspace-monitor-desktop|DESKTOP · LIVE READBACK/, 'builder:desktop-readback-visible', 'Monitor must expose the real desktop-readback surface.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_ANALYZE_MISSION/, 'builder:analyze-visible', 'Analyze action must be bound to contract.');
   requireText(
     'src/features/product/containers/BuilderContainer.tsx',
-    /<MonitorCommunicationDock[\s\S]{0,1200}onSubmit=\{\(\)\s*=>\s*\{\s*void handleSubmit\(\);\s*\}\}/,
+    /<SovereignChatDock[\s\S]{0,1200}onSubmit=\{\(\)\s*=>\s*\{\s*void handleSubmit\(\);\s*\}\}/,
     'builder:start-visible',
-    'The chat communication dock must submit through the live runtime handler.',
+    'The primary chat must submit through the live runtime handler.',
   );
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_REPAIR_LOG/, 'builder:repair-visible', 'Repair action must be bound to contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_DRAFT_PR/, 'builder:draft-visible', 'Draft PR action must be bound to contract.');
@@ -212,9 +212,9 @@ function run() {
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /autoComplete=\{\s*SOVEREIGN_FORM_PRIVATE_ACCESS\.autoComplete/, 'repo:private-access-autocomplete-off', 'Private access must use autocomplete off from contract.');
   requireText(
     'src/features/product/containers/BuilderContainer.tsx',
-    /<MonitorCommunicationDock[\s\S]{0,400}value=\{wishText\}[\s\S]{0,200}onChange=\{setWishText\}/,
+    /<SovereignChatDock[\s\S]{0,400}value=\{wishText\}[\s\S]{0,200}onChange=\{setWishText\}/,
     'builder:mission-form-bound',
-    'Builder must bind the mission input state to the live chat communication dock.',
+    'Builder must bind the mission input state to the primary chat composer.',
   );
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_ANALYZE_MISSION/, 'builder:analyze-mission-action-bound', 'Builder must bind analyze mission action contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_DRAFT_PR/, 'builder:draft-pr-action-bound', 'Builder must bind draft PR action contract.');
@@ -291,7 +291,7 @@ function run() {
   requireText('src/App.tsx', /aria-label="Sovereign Chat"/, 'app:chat-root-aria-label', 'Chat-first App must expose its accessibility label.');
   requireText('src/App.tsx', /EvidenceObservatoryAtlas[\s\S]*window\.location\.pathname === '\/observatory'[\s\S]*window\.location\.pathname === '\/evidence-observatory'/, 'app:observatory-route-preserved', 'The evidence observatory must remain reachable outside the default monitor root.');
   forbidText('src/App.tsx', /PlayReleaseChat|data-layout="monitor-first-live-workspace"/, 'app:no-retired-primary-layout', 'The retired release-chat and forced monitor-first roots must not return.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /aria-label="Menü"[\s\S]*aria-label="Sovereign Seitenmenü"/, 'builder:menu-reachable', 'The owner-visible menu trigger and dialog must remain in the monitor surface.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /aria-label="Menü"[\s\S]*aria-label="Sovereign Seitenmenü"/, 'builder:menu-reachable', 'The owner-visible menu trigger and dialog must remain reachable from the primary chat surface.');
   requireText('src/features/product/components/MonitorCommunicationDock.tsx', /sovereign-llm-route-picker-trigger[\s\S]*aria-label="Modelle durchsuchen"[\s\S]*aria-label="Verfügbare LLM-Routen"/, 'builder:compact-model-picker', 'The complete model catalog must remain behind a compact searchable picker.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /data-testid=\{builderContainerContract\.testId\}|data-testid="builder-container"/, 'builder:root-test-id-bound', 'Builder must expose stable root test-id.');
   requireText(

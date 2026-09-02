@@ -145,7 +145,7 @@ function run() {
   requireFile('src/main.tsx', 'React entrypoint is required.');
   requireFile('src/App.tsx', 'App shell is required.');
   requireFile('src/features/product/components/LiveWorkspaceMonitor.tsx', 'Live workspace monitor surface is required.');
-  requireFile('src/features/product/components/MonitorCommunicationDock.tsx', 'Compact monitor communication dock is required.');
+  requireFile('src/features/product/components/MonitorCommunicationDock.tsx', 'Primary Sovereign chat dock implementation is required.');
   requireFile('src/index.css', 'Shared design CSS is required.');
   requireFile('src/features/product/containers/RepoSnapshotContainer.tsx', 'Repo snapshot container is required.');
   requireFile('src/features/product/containers/BuilderContainer.tsx', 'Builder container is required.');
@@ -222,10 +222,10 @@ function run() {
   requireText('src/SovereignAppWrapper.tsx', /<App\s*\/>|<App[\s>]/, 'wrapper:renders-inner-app', 'Sovereign wrapper renders the inner App without owning product truth.');
   requireText('src/SovereignAppWrapper.tsx', /return <App \/>|<App\s*\/>/, 'wrapper:passthrough-only', 'Sovereign wrapper is a passthrough and does not create product truth.');
   forbidText('src/SovereignAppWrapper.tsx', /useState|useEffect|localStorage|sessionStorage|querySelector/, 'wrapper:no-own-runtime-state', 'Sovereign wrapper must not own runtime state or inspect DOM.');
-  requireText('src/App.tsx', /BuilderContainer/, 'app:monitor-builder-root', 'App routes the authenticated root to the canonical Builder monitor.');
+  requireText('src/App.tsx', /BuilderContainer/, 'app:chat-builder-root', 'App routes the authenticated root to the canonical Sovereign chat builder.');
   requireText('src/App.tsx', /data-testid="sovereign-chat-app"/, 'app:chat-root-test-id', 'Chat-first App exposes its stable root test id.');
   requireText('src/App.tsx', /data-layout="chat-first-agent-zero-background"/, 'app:chat-root-layout', 'Chat-first App exposes its canonical conversation layout.');
-  requireText('src/App.tsx', /aria-label="Sovereign Workspace Monitor"/, 'app:monitor-root-label', 'Monitor-first App exposes its accessibility label.');
+  requireText('src/App.tsx', /aria-label="Sovereign Chat"/, 'app:chat-root-label', 'Chat-only App exposes its canonical accessibility label.');
   requireText('src/App.tsx', /<BuilderContainer[\s\S]*onStartAgent=\{startMonitorTask\}/, 'app:monitor-runtime-wiring', 'App wires the visible Builder to the canonical workspace Agent boundary.');
   requireText('src/App.tsx', /EvidenceObservatoryAtlas/, 'app:observatory-preserved', 'The evidence observatory remains an explicit secondary route.');
   requireText('src/App.tsx', /window\.location\.pathname === '\/observatory'[\s\S]*window\.location\.pathname === '\/evidence-observatory'[\s\S]*get\('observatory'\) === '1'/, 'app:observatory-route-contract', 'Both observatory paths and the query compatibility route remain reachable.');
@@ -234,12 +234,12 @@ function run() {
   requireText('src/features/product/containers/BuilderContainer.tsx', /createStructuredIntegrationIntentDraft/, 'builder:structured-action-preview', 'A valid LLM action becomes a structured visible integration draft.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onConfirm=\{\(\) => \{[\s\S]{0,500}startAgentFromApprovedDraft\(draft, executionIntent\)/, 'builder:explicit-action-confirmation', 'The workspace Agent starts only from the visible draft confirmation callback.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onConfirmWithGitHubAccess=\{\(\) => \{[\s\S]{0,500}Repository-Auftrag bleibt unbestätigt/, 'builder:access-is-not-action-consent', 'Opening GitHub access must keep the repository action unconfirmed.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /evaluateInputPolicy\(submittedText\)[\s\S]*fetchSovereignDirectLlmInterpretation\(\{/, 'builder:secret-before-llm', 'Builder rejects secret-shaped monitor input before the LLM compiler.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /aria-label="Menü"/, 'builder:old-menu-trigger', 'The restored monitor keeps the owner-visible menu trigger.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /aria-label="Sovereign Seitenmenü"/, 'builder:old-menu-dialog', 'The restored monitor keeps the owner-visible side menu.');
-  requireText('src/features/product/components/MonitorCommunicationDock.tsx', /sovereign-llm-route-picker-trigger[\s\S]*aria-label="Modelle durchsuchen"/, 'builder:compact-model-picker', 'The monitor keeps the model catalog behind a compact searchable picker.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /evaluateInputPolicy\(submittedText\)[\s\S]*fetchSovereignDirectLlmInterpretation\(\{/, 'builder:secret-before-llm', 'Builder rejects secret-shaped chat input before the LLM compiler.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /aria-label="Menü"/, 'builder:chat-menu-trigger', 'The primary chat keeps the owner-visible menu trigger.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /aria-label="Sovereign Seitenmenü"/, 'builder:chat-menu-dialog', 'The primary chat keeps the owner-visible side menu.');
+  requireText('src/features/product/components/MonitorCommunicationDock.tsx', /sovereign-llm-route-picker-trigger[\s\S]*aria-label="Modelle durchsuchen"/, 'builder:compact-model-picker', 'The primary chat keeps the model catalog behind a compact searchable picker.');
   forbidText('src/App.tsx', retiredAppAgentPattern, 'app:no-retired-agent-wiring', 'App must not restore retired external-agent client or start symbols.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /parseDevChatGithubUrl/, 'builder:repo-url-monitor-detection', 'Builder detects exact GitHub repo URLs from the monitor communication dock.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /parseDevChatGithubUrl/, 'builder:repo-url-chat-detection', 'Builder detects exact GitHub repo URLs from the primary chat composer.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /fetchDevChatRepoTree/, 'builder:repo-tree-runtime-load', 'Builder loads repo snapshots through the runtime bridge.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /validateGitHubTokenForRepo/, 'builder:github-access-validation', 'Builder validates GitHub access before write execution.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SovereignActionStreamPanel/, 'builder:action-stream-visible', 'Builder shows route-agnostic action stream state.');
@@ -249,8 +249,9 @@ function run() {
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-repo-url-input"|data-role=\{SOVEREIGN_FORM_REPO_URL\.dataRole\}/, 'repo:mobile-repo-input', 'Repo URL input keeps Android/mobile or contract role.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-token-input"|data-role=\{SOVEREIGN_FORM_PRIVATE_ACCESS\.dataRole\}/, 'repo:mobile-access-input', 'Access input keeps Android/mobile or contract role.');
 
-  requireText('src/features/product/containers/BuilderContainer.tsx', /MonitorCommunicationDock/, 'builder:monitor-input-visible', 'Builder exposes LLM communication inside the monitor instead of a chat-first surface.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /live-desktop-monitor-primary/, 'builder:monitor-primary-layout', 'Builder declares the permanent monitor-first primary layout.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SovereignChatDock/, 'builder:chat-input-visible', 'Builder exposes one normal Sovereign chat as the primary communication surface.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /chat-primary-agent-zero-background/, 'builder:chat-primary-layout', 'Builder declares the chat-only primary layout with Agent Zero in the background.');
+  forbidText('src/features/product/containers/BuilderContainer.tsx', /live-desktop-monitor-primary/, 'builder:no-monitor-primary-layout', 'The permanent monitor-first primary layout must not return.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onStartAgent/, 'builder:executor-start-prop', 'Builder keeps the internal Agent start path wired as one route.');
   forbidText('src/features/product/containers/BuilderContainer.tsx', retiredBuilderAgentPattern, 'builder:no-retired-agent-start-prop', 'Builder must not restore the retired external-agent start prop.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateIdeas/, 'builder:generation-handler', 'Builder keeps generation handler wired.');
