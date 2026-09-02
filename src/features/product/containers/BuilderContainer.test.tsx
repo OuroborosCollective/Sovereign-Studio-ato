@@ -554,7 +554,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByTestId('live-workspace-monitor-desktop')).toBeNull();
     expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-mode', 'chat');
     expect(screen.getByTestId('sovereign-chat-tool-row')).toBeDefined();
-    expect(screen.getByTestId('monitor-runtime-action-trace')).toBeDefined();
+    expect(screen.queryByTestId('monitor-runtime-action-trace')).toBeNull();
     expect(chatField()).toBeDefined();
     expect(screen.getByLabelText("Menü")).toBeDefined();
   });
@@ -669,12 +669,12 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getAllByText('RUNTIME').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Welche konkrete Änderung soll ich umsetzen?')).toBeDefined();
     expect(screen.queryByText('Provider prose must never reach the dock.')).toBeNull();
-    expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined();
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
-    expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-overlay', 'false');
+    expect(screen.getByTestId('sovereign-chat-primary')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
+    expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-mode', 'chat');
   });
 
-  it("keeps the monitor primary when the only workspace projection is stale", async () => {
+  it("keeps chat primary when the only workspace projection is stale", async () => {
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
     );
@@ -691,13 +691,13 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await loadRepoFromChat();
 
-    expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined();
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.getByTestId('sovereign-chat-primary')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(chatField()).toBeDefined();
-    expect(screen.getByTestId('primary-surface-tab')).toHaveAttribute('data-primary-surface', 'desktop-monitor');
+    expect(screen.getByTestId('primary-surface-tab')).toHaveAttribute('data-primary-surface', 'chat');
   });
 
-  it("keeps user questions inside the monitor when runtime waits for input", async () => {
+  it("keeps user questions inside the chat when runtime waits for input", async () => {
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
     );
@@ -714,23 +714,23 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await loadRepoFromChat();
 
-    expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined();
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.getByTestId('sovereign-chat-primary')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(chatField()).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Live Monitor' })).toHaveTextContent('MONITOR');
+    expect(screen.getByRole('button', { name: 'Sovereign Chat' })).toHaveTextContent('CHAT');
   });
 
-  it("shows the Workbench status vocabulary (Actions/Files/Logs/Errors/Draft PR) as primary nav, not technical module abbreviations", () => {
+  it("keeps Workbench status vocabulary behind Inspector instead of surrounding the primary chat", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
+    expect(screen.queryByLabelText("Werkbank Status")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Actions:/ })).toBeNull();
+    fireEvent.click(screen.getByText("INSPECTOR"));
     expect(screen.getByLabelText("Werkbank Status")).toBeDefined();
     expect(screen.getByRole("button", { name: /^Actions:/ })).toBeDefined();
     expect(screen.getByRole("button", { name: /^Changed:/ })).toBeDefined();
     expect(screen.getByRole("button", { name: /^Logs:/ })).toBeDefined();
     expect(screen.getByRole("button", { name: /^Errors:/ })).toBeDefined();
     expect(screen.getByRole("button", { name: /^Draft PR:/ })).toBeDefined();
-    expect(screen.queryByText("ROU")).toBeNull();
-    expect(screen.queryByText("INT")).toBeNull();
-    expect(screen.queryByText("PAT")).toBeNull();
   });
 
   it("keeps technical runtime module abbreviations hidden until the Inspector is explicitly opened", () => {
@@ -745,6 +745,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   it("shows explicit empty states for Actions, Files and Errors instead of fabricated data", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
+    fireEvent.click(screen.getByText('INSPECTOR'));
     fireEvent.click(screen.getByRole("button", { name: /^Actions:/ }));
     expect(screen.getByText("Noch keine Actions")).toBeDefined();
     fireEvent.click(screen.getByLabelText("Schließen"));
@@ -772,6 +773,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       />,
     );
     await loadRepoFromChat();
+    fireEvent.click(screen.getByText('INSPECTOR'));
     fireEvent.click(screen.getByRole("button", { name: /^Changed:/ }));
     await waitFor(() => expect(screen.getByText("src/App.tsx")).toBeDefined());
     fireEvent.click(screen.getByLabelText("Schließen"));
@@ -779,7 +781,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText("Draft PR öffnen")).toBeDefined();
   });
 
-  it("keeps the default builder surface quiet and monitor-first", () => {
+  it("keeps the default builder surface quiet and chat-first", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     expect(screen.queryByText("Sovereign Studio")).toBeNull();
     expect(screen.queryByText("Planner")).toBeNull();
@@ -798,27 +800,29 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText(/simulate/i)).toBeNull();
   });
 
-  it("keeps monitor action controls available in the idle state without a welcome chat screen", () => {
+  it("shows guided suggestions only in the empty primary chat", () => {
     const props = baseProps();
     renderWithProviders(<BuilderContainer {...props} mission="" />);
-    expect(screen.getByTestId('monitor-action-controls')).toBeDefined();
+    expect(screen.getByTestId('sovereign-action-suggestion-strip')).toBeDefined();
     expect(screen.getByLabelText('Tool Launcher öffnen')).toBeDefined();
     expect(screen.queryByText("Let's build!")).toBeNull();
-    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
-    expect(screen.getByTestId('monitor-runtime-action-trace')).toBeDefined();
+    expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-mode', 'chat');
+    expect(screen.queryByTestId('monitor-runtime-action-trace')).toBeNull();
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  it("keeps runtime action receipts visible inside the monitor instead of the removed chat surface", async () => {
+  it("keeps runtime action receipts available behind Inspector instead of crowding the chat", async () => {
     renderWithProviders(<BuilderContainer {...baseProps()} mission="" />);
 
     fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Repo' }));
+    expect(screen.queryByRole('log', { name: 'Sovereign Action Stream' })).toBeNull();
+    fireEvent.click(screen.getByText('INSPECTOR'));
 
     const actionStream = screen.getByRole('log', { name: 'Sovereign Action Stream' });
     expect(screen.getByTestId('monitor-runtime-action-trace')).toContainElement(actionStream);
     expect(actionStream).toHaveTextContent('Repo-Setup geöffnet');
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
   });
 
   it("shows integration intent draft card for normal text inputs when repo is ready", async () => {
@@ -843,7 +847,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(chatField().value).toBe("");
     // Issue #520: Normal text with repo loaded shows draft card instead of routing to Worker
     await waitFor(() => expect(screen.getByTestId("integration-intent-draft-card")).toBeInTheDocument());
-    expect(screen.getByTestId('sovereign-live-monitor-primary')).toHaveStyle({
+    expect(screen.getByTestId('sovereign-chat-primary')).toHaveStyle({
       overflowY: 'auto',
       overflowX: 'hidden',
     });
@@ -1103,6 +1107,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   it("keeps Worker runtime sources unknown until health or response evidence exists", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} agentReady onStartAgent={vi.fn()} />);
+    fireEvent.click(screen.getByText('INSPECTOR'));
     const rtButton = screen.getByRole("button", { name: /RT.*Runtime Quelle/i });
     expect(rtButton).toHaveAttribute("title", "Runtime Quelle");
     fireEvent.click(rtButton);
@@ -1135,6 +1140,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
         requestUrl(input as RequestInfo | URL).includes('/api/llm/chat'),
       )).toBe(true));
+      fireEvent.click(screen.getByText('INSPECTOR'));
       fireEvent.click(screen.getByRole("button", { name: /RT.*Runtime Quelle/i }));
       await waitFor(() => expect(screen.getByText("LLM Runtime")).toBeDefined());
       expect(screen.queryByText("LLM Runtime nicht geprüft")).toBeNull();
@@ -1223,6 +1229,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       );
       expect(chatCalls).toBe(2);
 
+      fireEvent.click(screen.getByText('INSPECTOR'));
       fireEvent.click(screen.getByRole('button', { name: /RT.*Runtime Quelle/i }));
       await waitFor(() => expect(screen.getByText('LLM Runtime blockiert')).toBeDefined());
     } finally {
@@ -1383,7 +1390,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       />,
     );
     await loadRepoFromChat();
-    expect(screen.getByTestId('agent-event-stream-primary-monitor')).toBeDefined();
+    expect(screen.queryByTestId('agent-event-stream')).toBeNull();
+    fireEvent.click(screen.getByText('INSPECTOR'));
+    expect(screen.getByTestId('agent-event-stream')).toBeDefined();
     expect(screen.getByText('Sovereign Agent arbeitet…')).toBeDefined();
     expect(screen.getByText('Dateien: 1')).toBeDefined();
     expect(screen.getByRole('button', { name: 'Repo Datei öffnen: src/App.tsx' })).toBeDefined();
@@ -1509,20 +1518,24 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await waitFor(() => expect(screen.getByText("Erste Monitor-Mission")).toBeDefined());
     fireEvent.change(chatField(), { target: { value: "Direkte Folgefrage im Monitor" } });
     expect(chatField().value).toBe("Direkte Folgefrage im Monitor");
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  it("keeps primary Android controls at least 44px", () => {
+  it("keeps primary Android chat controls at least 44px and technical controls bounded to Inspector", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
 
     expect(screen.getByLabelText("Menü")).toHaveStyle({ width: "44px", height: "44px" });
     expect(screen.getByLabelText("Profil")).toHaveStyle({ width: "44px", height: "44px" });
+    expect(screen.queryByRole("button", { name: /RT.*Runtime Quelle/i })).toBeNull();
+    expect(screen.queryByLabelText("Panel öffnen")).toBeNull();
+    expect(chatField()).toHaveStyle({ minHeight: "44px" });
+    expect(sendButton()).toHaveStyle({ width: "44px", height: "44px" });
+
+    fireEvent.click(screen.getByText("INSPECTOR"));
     expect(screen.getByRole("button", { name: /RT.*Runtime Quelle/i })).toHaveStyle({ minHeight: "44px" });
     expect(screen.getByLabelText("Panel öffnen")).toHaveStyle({ minWidth: "44px", minHeight: "44px" });
     expect(screen.getByRole("button", { name: /^Actions:/ })).toHaveStyle({ minHeight: "44px" });
-    expect(chatField()).toHaveStyle({ minHeight: "44px" });
-    expect(sendButton()).toHaveStyle({ width: "44px", height: "44px" });
 
     fireEvent.click(screen.getByLabelText("Menü"));
     expect(screen.getByLabelText("Menü schließen")).toHaveStyle({ minWidth: "44px", minHeight: "44px" });
@@ -1957,6 +1970,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       />,
     );
     await loadRepoFromChat();
+    fireEvent.click(screen.getByText('INSPECTOR'));
 
     expect(screen.queryByRole("button", { name: "Draft PR öffnen" })).toBeNull();
     const draftStatus = screen.getByRole("button", { name: /Draft PR:/i });
@@ -2397,7 +2411,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       requestUrl(input as RequestInfo | URL).endsWith("/bubbles")
     ))).toBe(true));
 
-    fireEvent.click(screen.getByRole("button", { name: "Live Monitor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sovereign Chat" }));
     expect(await screen.findByText(/wiederhergestellte Session ist älter als 3 Tage/i)).toBeDefined();
   });
 });
