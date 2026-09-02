@@ -307,7 +307,7 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     await expect(page.locator('[data-testid="sovereign-chat-primary"]')).toBeVisible();
     await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toBeVisible();
     await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-chat-dock"]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Menü', exact: true })).toBeVisible();
 
     const routeTrigger = page.locator('[data-testid="sovereign-llm-route-picker-trigger"]');

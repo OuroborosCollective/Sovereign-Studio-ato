@@ -27,19 +27,23 @@ describe('Sovereign chat-first primary-surface contract', () => {
     expect(app).toContain("new URLSearchParams(window.location.search).get('observatory') === '1'");
   });
 
-  it('keeps chat primary while monitor diagnostics, model picker and menu remain reachable', () => {
+  it('keeps one chat primary while technical diagnostics remain Inspector-only', () => {
     const builder = source('src/features/product/containers/BuilderContainer.tsx');
     const monitor = source('src/features/product/components/LiveWorkspaceMonitor.tsx');
-    const dock = source('src/features/product/components/MonitorCommunicationDock.tsx');
+    const chatDock = source('src/features/product/components/MonitorCommunicationDock.tsx');
 
-    expect(builder).toContain('MonitorCommunicationDock');
+    expect(builder).toContain('SovereignChatDock');
+    expect(builder).not.toContain('<MonitorCommunicationDock');
     expect(builder).toContain('chat-primary-agent-zero-background');
     expect(builder).toContain('aria-label="Menü"');
     expect(builder).toContain('aria-label="Sovereign Seitenmenü"');
     expect(monitor).toContain('live-workspace-monitor-desktop');
-    expect(dock).toContain('data-testid="monitor-communication-dock"');
-    expect(dock).toContain('data-testid="sovereign-llm-route-picker-trigger"');
-    expect(dock).toContain('aria-label="Modelle durchsuchen"');
+    expect(chatDock).toContain('data-testid="sovereign-chat-dock"');
+    expect(chatDock).not.toContain('data-testid="monitor-communication-dock"');
+    expect(chatDock).not.toContain('COMMUNICATE');
+    expect(chatDock).not.toContain('>THINK<');
+    expect(chatDock).toContain('data-testid="sovereign-llm-route-picker-trigger"');
+    expect(chatDock).toContain('aria-label="Modelle durchsuchen"');
   });
 
   it('guards chat input before the LLM compiler and keeps execution behind the visible draft confirmation', () => {

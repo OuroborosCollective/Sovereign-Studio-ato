@@ -18,7 +18,7 @@ test.describe('Chat-first workspace browser smoke', () => {
     await expect(page.locator('[data-testid="sovereign-chat-primary"]')).toBeVisible();
     await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toBeVisible();
     await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-chat-dock"]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Menü', exact: true })).toBeVisible();
   });
 
@@ -42,7 +42,7 @@ test.describe('Chat-first workspace browser smoke', () => {
     await expect(accessDialog.getByRole('button', { name: 'Abbrechen' })).toBeFocused();
   });
 
-  test('3. The compact communication dock keeps the route catalog collapsed', async ({ page }) => {
+  test('3. The primary chat composer keeps the route catalog collapsed', async ({ page }) => {
     const composer = page.getByLabel('Codeauftrag an Sovereign');
     await expect(composer).toBeVisible();
     await expect(composer).toHaveAttribute(
@@ -70,7 +70,7 @@ test.describe('Chat-first workspace browser smoke', () => {
     await expect(page.getByRole('button', { name: 'Sovereign Chat' })).toBeVisible();
     await expect(page.locator('[data-testid="sovereign-action-suggestion-strip"]')).toBeVisible();
     await expect(page.locator('[data-testid="monitor-runtime-action-trace"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-chat-dock"]')).toBeVisible();
     await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toBeVisible();
     await page.getByText('INSPECTOR', { exact: true }).click();
     await expect(page.locator('[data-testid="monitor-runtime-action-trace"]')).toBeAttached();
@@ -80,7 +80,7 @@ test.describe('Chat-first workspace browser smoke', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.locator('[data-testid="sovereign-chat-app"]')).toBeVisible();
     await expect(page.locator('[data-testid="sovereign-chat-primary"]')).toBeVisible();
-    await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-chat-dock"]')).toBeVisible();
 
     await page.getByRole('button', { name: 'Menü', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Sovereign Seitenmenü' })).toBeVisible();
