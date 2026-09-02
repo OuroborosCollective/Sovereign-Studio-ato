@@ -88,12 +88,12 @@ async function assertReadOnlyJsonBoundary(request: APIRequestContext, probe: Pro
 test.describe('Frontend endpoint live runtime smoke', () => {
   test.skip(!LIVE_ENDPOINT_SMOKE, 'Enable explicitly after deployment with SOVEREIGN_ENDPOINT_LIVE_SMOKE=1.');
 
-  test('built monitor-first frontend loads before endpoint probes', async ({ page }) => {
+  test('built chat-first frontend loads before endpoint probes', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('[data-testid="sovereign-monitor-app"]')).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator('[data-testid="sovereign-live-monitor-primary"]')).toBeVisible();
-    await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toBeVisible();
-    await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="sovereign-chat-app"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-testid="sovereign-chat-primary"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toBeVisible();
+    await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toHaveCount(0);
   });
 
   test('static assurance contributes exhaustive exact endpoints', async () => {

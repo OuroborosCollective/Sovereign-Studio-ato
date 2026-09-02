@@ -27,29 +27,29 @@ beforeAll(() => {
 });
 
 describe('App', () => {
-  it('opens the permanent monitor-first workspace surface', async () => {
+  it('opens the permanent chat-first workspace surface', async () => {
     render(<Provider store={store}><App /></Provider>);
 
-    expect(screen.getByTestId('sovereign-monitor-app')).toHaveAttribute(
+    expect(screen.getByTestId('sovereign-chat-app')).toHaveAttribute(
       'data-layout',
-      'monitor-first-live-workspace',
+      'chat-first-agent-zero-background',
     );
-    expect(screen.getByTestId('sovereign-monitor-app')).toHaveAttribute(
+    expect(screen.getByTestId('sovereign-chat-app')).toHaveAttribute(
       'data-legacy-backend-image-marker',
       'DevChat sovereign-release-chat play-release-chat',
     );
     expect(screen.queryByText('DevChat')).toBeNull();
-    expect(await screen.findAllByText('Monitor')).not.toHaveLength(0);
+    expect(await screen.findAllByText('Chat')).not.toHaveLength(0);
     expect(screen.getByTestId('builder-container')).toHaveAttribute(
       'data-layout',
-      'live-desktop-monitor-primary',
+      'chat-primary-agent-zero-background',
     );
-    expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined();
-    expect(screen.getByTestId('live-workspace-monitor')).toBeDefined();
-    expect(screen.getByTestId('live-workspace-monitor-desktop')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-primary')).toBeDefined();
+    expect(screen.queryByTestId('live-workspace-monitor')).toBeNull();
+    expect(screen.queryByTestId('live-workspace-monitor-desktop')).toBeNull();
     expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
     expect(screen.getByLabelText('Codeauftrag an Sovereign')).toBeDefined();
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(screen.queryByTestId('chat-only-app')).toBeNull();
     expect(screen.queryByLabelText('Sovereign Rescue öffnen')).toBeNull();
   });
