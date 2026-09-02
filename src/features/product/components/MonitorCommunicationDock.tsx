@@ -34,6 +34,8 @@ export interface MonitorCommunicationDockProps {
   readonly toolsLauncher?: React.ReactNode;
   readonly onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
   readonly slashMenu?: React.ReactNode;
+  readonly mode?: 'monitor' | 'chat';
+  readonly emptyState?: React.ReactNode;
 }
 
 const MAX_VISIBLE_ROUTE_RESULTS = 24;
@@ -96,15 +98,20 @@ export function MonitorCommunicationDock({
   toolsLauncher,
   onKeyDown,
   slashMenu,
+  mode = 'monitor',
+  emptyState,
 }: MonitorCommunicationDockProps) {
   const [routePickerOpen, setRoutePickerOpen] = useState(false);
   const [routeQuery, setRouteQuery] = useState('');
+  const chatMode = mode === 'chat';
   const visibleEntryIds = new Set(entries.slice(-4).map((entry) => entry.id));
   entries
     .filter((entry) => entry.kind === 'user')
     .slice(-2)
     .forEach((entry) => visibleEntryIds.add(entry.id));
-  const visibleEntries = entries.filter((entry) => visibleEntryIds.has(entry.id)).slice(-6);
+  const visibleEntries = chatMode
+    ? entries
+    : entries.filter((entry) => visibleEntryIds.has(entry.id)).slice(-6);
   const status = safeText(runtimeStatus, 240) || 'Runtimestatus nicht verfügbar';
   const visibleRouteHint = safeText(routeHint ?? '', 240);
   const selectedRoute = routeOptions.find((route) => route.id === selectedRouteId);
@@ -130,20 +137,26 @@ export function MonitorCommunicationDock({
 
   return (
     <section
-      aria-label="Monitor Kommunikation"
+      aria-label={chatMode ? 'Sovereign Chat' : 'Monitor Kommunikation'}
       data-testid="monitor-communication-dock"
+      data-mode={mode}
       data-overlay="false"
       style={{
-        flexShrink: 0,
-        borderTop: `1px solid ${C.border}`,
+        flexShrink: chatMode ? 1 : 0,
+        flex: chatMode ? 1 : undefined,
+        minHeight: chatMode ? 0 : undefined,
+        display: chatMode ? 'flex' : undefined,
+        flexDirection: chatMode ? 'column' : undefined,
+        borderTop: chatMode ? 0 : `1px solid ${C.border}`,
         background: '#0b1016',
         color: C.text,
       }}
     >
-      <div
-        data-testid="monitor-status-rail"
-        style={{
-          display: 'flex',
+      {!chatMode && (
+        <div
+          data-testid="monitor-status-rail"
+          style={{
+            display: 'flex',
           alignItems: 'center',
           gap: 6,
           minHeight: 46,
@@ -186,13 +199,16 @@ export function MonitorCommunicationDock({
           TOOLCHAIN
         </button>
         {toolsLauncher}
-      </div>
+        </div>
+      )}
 
-      <div
-        role="status"
+      {!chatMode && (
+        <div
+          role="status"
         aria-live="polite"
         data-testid="monitor-runtime-status"
         style={{
+          display: chatMode ? 'none' : undefined,
           minHeight: 27,
           padding: '5px 10px',
           color: C.textSub,
@@ -203,23 +219,33 @@ export function MonitorCommunicationDock({
         }}
       >
         {status}
-      </div>
+        </div>
+      )}
 
-      {visibleEntries.length > 0 && (
+      {(chatMode || visibleEntries.length > 0) && (
         <ol
-          aria-label="Letzte Monitor-Kommunikation"
-          data-testid="monitor-communication-bubbles"
+          aria-label={chatMode ? 'Chatverlauf' : 'Letzte Monitor-Kommunikation'}
+          data-testid={chatMode ? 'sovereign-chat-body-window' : 'monitor-communication-bubbles'}
           style={{
             listStyle: 'none',
             margin: 0,
-            padding: '7px 10px',
+            padding: chatMode ? '18px clamp(12px, 4vw, 28px)' : '7px 10px',
             display: 'flex',
-            gap: 7,
-            overflowX: 'auto',
-            borderTop: `1px solid ${C.border}`,
+            flexDirection: chatMode ? 'column' : undefined,
+            flex: chatMode ? 1 : undefined,
+            minHeight: chatMode ? 0 : undefined,
+            gap: chatMode ? 12 : 7,
+            overflowY: chatMode ? 'auto' : undefined,
+            overflowX: chatMode ? 'hidden' : 'auto',
+            borderTop: chatMode ? 0 : `1px solid ${C.border}`,
             borderBottom: `1px solid ${C.border}`,
           }}
         >
+          {chatMode && visibleEntries.length === 0 && emptyState ? (
+            <li style={{ flex: 1, display: 'grid', placeItems: 'center', minHeight: '42vh' }}>
+              {emptyState}
+            </li>
+          ) : null}
           {visibleEntries.map((entry) => {
             const text = safeText(entry.text);
             if (!text) return null;
@@ -229,18 +255,23 @@ export function MonitorCommunicationDock({
                 key={entry.id}
                 data-kind={entry.kind}
                 style={{
-                  flex: '0 1 min(420px, 78vw)',
-                  minWidth: 'min(230px, 68vw)',
-                  maxHeight: 86,
-                  overflowY: 'auto',
-                  padding: '7px 9px',
-                  borderRadius: 10,
+                  flex: chatMode ? '0 0 auto' : '0 1 min(420px, 78vw)',
+                  alignSelf: chatMode ? (entry.kind === 'user' ? 'flex-end' : 'flex-start') : undefined,
+                  width: chatMode ? 'fit-content' : undefined,
+                  minWidth: chatMode ? 0 : 'min(230px, 68vw)',
+                  maxWidth: chatMode ? 'min(760px, 88%)' : undefined,
+                  maxHeight: chatMode ? 'none' : 86,
+                  overflowY: chatMode ? 'visible' : 'auto',
+                  padding: chatMode ? '10px 13px' : '7px 9px',
+                  borderRadius: chatMode ? 16 : 10,
                   border: `1px solid ${accent}44`,
-                  background: `${accent}0d`,
+                  background: entry.kind === 'user' && chatMode ? `${C.sky}18` : `${accent}0d`,
                 }}
               >
                 <strong style={{ display: 'block', color: accent, font: '700 9px/1.2 monospace', letterSpacing: '.08em' }}>
-                  {entryLabel(entry.kind)}
+                  {chatMode
+                    ? entry.kind === 'user' ? 'DU' : entry.kind === 'runtime' ? 'STATUS' : 'SOVEREIGN'
+                    : entryLabel(entry.kind)}
                 </strong>
                 <span style={{ display: 'block', marginTop: 4, color: C.textSub, fontSize: 11, lineHeight: 1.45, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
                   {text}
@@ -249,6 +280,36 @@ export function MonitorCommunicationDock({
             );
           })}
         </ol>
+      )}
+
+      {chatMode && (
+        <div
+          data-testid="sovereign-chat-tool-row"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            padding: '7px 10px 0',
+            background: '#0b1016',
+          }}
+        >
+          <button
+            type="button"
+            onClick={onOpenToolchain}
+            disabled={!onOpenToolchain}
+            title={`Toolchain: ${toolchainLabel}`}
+            style={railButtonStyle(toolchainState === 'ready')}
+          >
+            TOOLCHAIN
+          </button>
+          {toolsLauncher}
+          <span
+            role="status"
+            style={{ marginLeft: 'auto', color: busy ? C.sky : C.textMuted, font: '9px/1.2 monospace' }}
+          >
+            {busy ? 'Agent arbeitet…' : 'Bereit'}
+          </span>
+        </div>
       )}
 
       {onRouteChange && (
@@ -292,7 +353,7 @@ export function MonitorCommunicationDock({
               <button
                 type="button"
                 onClick={() => onRouteChange('')}
-                aria-label="Monitor LLM Route auf Auto zurücksetzen"
+                aria-label={chatMode ? 'Chat LLM Route auf Auto zurücksetzen' : 'Monitor LLM Route auf Auto zurücksetzen'}
                 style={railButtonStyle(false)}
               >
                 AUTO

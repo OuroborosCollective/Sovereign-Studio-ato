@@ -36,13 +36,13 @@ import {
 import { RescuePanel } from './features/rescue/RescuePanel';
 import { EvidenceObservatoryAtlas } from './features/evidence-observatory/EvidenceObservatoryAtlas';
 
-const MONITOR_FIRST_STYLE: React.CSSProperties = {
+const CHAT_FIRST_STYLE: React.CSSProperties = {
   height: '100dvh',
   overflow: 'hidden',
   background: '#0e1116',
 };
 
-function SovereignMonitorApp() {
+function SovereignChatApp() {
   const [mission, setMission] = useState('GitHub-URL einfügen oder Auftrag an das LLM geben.');
   const agentConfig = useMemo(() => resolveSovereignAgentConfig(), []);
   const agentClient = useMemo(
@@ -517,16 +517,16 @@ function SovereignMonitorApp() {
   return (
     <LlmAdapterProvider>
       <main
-        data-testid="sovereign-monitor-app"
-        data-layout="monitor-first-live-workspace"
-        aria-label="Sovereign Workspace Monitor"
+        data-testid="sovereign-chat-app"
+        data-layout="chat-first-agent-zero-background"
+        aria-label="Sovereign Chat"
         data-legacy-backend-image-marker="DevChat sovereign-release-chat play-release-chat"
-        style={MONITOR_FIRST_STYLE}
+        style={CHAT_FIRST_STYLE}
       >
         <BuilderContainer
           mission={mission}
           repoReady={repoReady}
-          repoReason={repoReady ? `Runtime-Repository: ${canonicalAgentJob.repoUrl}` : 'Noch kein Repository an den Workspace-Monitor gebunden.'}
+          repoReason={repoReady ? `Runtime-Repository: ${canonicalAgentJob.repoUrl}` : 'Noch kein Repository an den Chat-Workspace gebunden.'}
           repoBusy={repoBusy}
           runtimeBusy={agentIsRunning}
           isPublishing={isPublishing}
@@ -595,5 +595,5 @@ export default function App() {
     && (window.location.pathname === '/observatory'
       || window.location.pathname === '/evidence-observatory'
       || new URLSearchParams(window.location.search).get('observatory') === '1');
-  return observatoryMode ? <EvidenceObservatoryAtlas /> : <SovereignMonitorApp />;
+  return observatoryMode ? <EvidenceObservatoryAtlas /> : <SovereignChatApp />;
 }

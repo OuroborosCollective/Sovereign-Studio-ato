@@ -223,8 +223,8 @@ function run() {
   requireText('src/SovereignAppWrapper.tsx', /return <App \/>|<App\s*\/>/, 'wrapper:passthrough-only', 'Sovereign wrapper is a passthrough and does not create product truth.');
   forbidText('src/SovereignAppWrapper.tsx', /useState|useEffect|localStorage|sessionStorage|querySelector/, 'wrapper:no-own-runtime-state', 'Sovereign wrapper must not own runtime state or inspect DOM.');
   requireText('src/App.tsx', /BuilderContainer/, 'app:monitor-builder-root', 'App routes the authenticated root to the canonical Builder monitor.');
-  requireText('src/App.tsx', /data-testid="sovereign-monitor-app"/, 'app:monitor-root-test-id', 'Monitor-first App exposes its stable root test id.');
-  requireText('src/App.tsx', /data-layout="monitor-first-live-workspace"/, 'app:monitor-root-layout', 'Monitor-first App exposes its canonical live-workspace layout.');
+  requireText('src/App.tsx', /data-testid="sovereign-chat-app"/, 'app:chat-root-test-id', 'Chat-first App exposes its stable root test id.');
+  requireText('src/App.tsx', /data-layout="chat-first-agent-zero-background"/, 'app:chat-root-layout', 'Chat-first App exposes its canonical conversation layout.');
   requireText('src/App.tsx', /aria-label="Sovereign Workspace Monitor"/, 'app:monitor-root-label', 'Monitor-first App exposes its accessibility label.');
   requireText('src/App.tsx', /<BuilderContainer[\s\S]*onStartAgent=\{startMonitorTask\}/, 'app:monitor-runtime-wiring', 'App wires the visible Builder to the canonical workspace Agent boundary.');
   requireText('src/App.tsx', /EvidenceObservatoryAtlas/, 'app:observatory-preserved', 'The evidence observatory remains an explicit secondary route.');
