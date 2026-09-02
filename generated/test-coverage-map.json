@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-08-27T22:12:58.100Z",
+  "generatedAt": "2026-09-01T23:35:54.996Z",
   "discovery": {
     "scope": "tracked repository test conventions",
     "excludedDirectories": [
@@ -31,25 +31,26 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 727,
+  "totalTestFiles": 743,
   "testRoots": {
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
     "backend": 1,
-    "backend/tests": 160,
+    "backend/tests": 163,
     "backend/tests/e2e": 1,
     "integrations/openhands/sovereign-mcp-toolset-plugin/tests": 1,
     "research": 1,
     "scripts": 11,
-    "scripts/sovereign-backend/tests": 73,
+    "scripts/sovereign-backend/tests": 74,
     "scripts/tests": 3,
     "sovereign-studio-rn/e2e": 7,
-    "src": 356,
+    "src": 357,
+    "tests": 1,
     "tests/e2e": 5,
     "tools": 3,
-    "tools/sovereign-chatgpt-mcp/tests": 97,
+    "tools/sovereign-chatgpt-mcp/tests": 102,
     "tools/sovereign-github-patch-mcp/tests": 4,
-    "tools/sovereign-toolchain/tests": 2
+    "tools/sovereign-toolchain/tests": 7
   },
   "files": [
     {
@@ -300,6 +301,22 @@
     },
     {
       "file": "backend/tests/test_agent_workspace_provisioner.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_agent_zero_integration_static.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_agent_zero_runtime.py",
       "language": "python",
       "testRoot": "backend/tests",
       "gates": [],
@@ -591,6 +608,14 @@
     },
     {
       "file": "backend/tests/test_dynamic_janitor_tool.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_effect_surface.py",
       "language": "python",
       "testRoot": "backend/tests",
       "gates": [],
@@ -1692,6 +1717,16 @@
     },
     {
       "file": "scripts/sovereign-backend/tests/test_draft_pr_create_gate_readback.py",
+      "language": "python",
+      "testRoot": "scripts/sovereign-backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
+      "file": "scripts/sovereign-backend/tests/test_effect_surface.py",
       "language": "python",
       "testRoot": "scripts/sovereign-backend/tests",
       "gates": [],
@@ -6152,6 +6187,25 @@
       "category": "release-gate"
     },
     {
+      "file": "src/features/product/runtime/repositoryActionFallback.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
       "file": "src/features/product/runtime/responsePacingRuntime.test.ts",
       "language": "javascript-typescript",
       "testRoot": "src",
@@ -9264,6 +9318,14 @@
       "category": "e2e"
     },
     {
+      "file": "tests/test_guest_auth_contract.py",
+      "language": "python",
+      "testRoot": "tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
       "file": "tools/sovereign-chatgpt-mcp/test_cognitive_architecture_status.py",
       "language": "python",
       "testRoot": "tools",
@@ -9453,6 +9515,14 @@
     },
     {
       "file": "tools/sovereign-chatgpt-mcp/tests/test_control_plane_copy_diagnostics.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-chatgpt-mcp/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-chatgpt-mcp/tests/test_coordinated_release_installer_diagnostic_contract.py",
       "language": "python",
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
       "gates": [],
@@ -9712,6 +9782,30 @@
     },
     {
       "file": "tools/sovereign-chatgpt-mcp/tests/test_mcp_protocol_health.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-chatgpt-mcp/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-chatgpt-mcp/tests/test_n8n_host_maintenance.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-chatgpt-mcp/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-chatgpt-mcp/tests/test_n8n_workflow_runtime.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-chatgpt-mcp/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-chatgpt-mcp/tests/test_n8n_workflow_tools.py",
       "language": "python",
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
       "gates": [],
@@ -10031,6 +10125,14 @@
       "category": "python-suite"
     },
     {
+      "file": "tools/sovereign-chatgpt-mcp/tests/test_sovereign_backend_compose.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-chatgpt-mcp/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
       "file": "tools/sovereign-chatgpt-mcp/tests/test_sovereign_cognitive_widget_metadata.py",
       "language": "python",
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
@@ -10103,6 +10205,14 @@
       "category": "python-suite"
     },
     {
+      "file": "tools/sovereign-toolchain/tests/test_ci_evidence.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-toolchain/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
       "file": "tools/sovereign-toolchain/tests/test_deploy_contract.py",
       "language": "python",
       "testRoot": "tools/sovereign-toolchain/tests",
@@ -10111,7 +10221,39 @@
       "category": "python-suite"
     },
     {
+      "file": "tools/sovereign-toolchain/tests/test_github_actions_run_evidence.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-toolchain/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
       "file": "tools/sovereign-toolchain/tests/test_github_app_auth_contract.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-toolchain/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-toolchain/tests/test_installer_dirty_scope.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-toolchain/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-toolchain/tests/test_n8n_api_auth.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-toolchain/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-toolchain/tests/test_n8n_stage1_compose_contract.py",
       "language": "python",
       "testRoot": "tools/sovereign-toolchain/tests",
       "gates": [],

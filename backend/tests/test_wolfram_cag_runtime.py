@@ -195,6 +195,20 @@ def test_runtime_routes_require_owner_bridge_and_reject_arbitrary_input(monkeypa
     assert "unknown CAG capability" in invalid_component_body["error"]
 
 
+@pytest.mark.parametrize("payload", [["list"], "string", 123, True])
+def test_canary_route_rejects_non_dictionary_json_payloads(monkeypatch, payload):
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    app = _App()
+    runtime.register_wolfram_cag_runtime(app, get_connection=lambda: _Connection())
+    canary_route = app.routes[("/api/internal/wolfram-cag/canary", ("POST",))]
+
+    runtime.request.headers = {"X-Sovereign-Owner-Request-Key": "bridge-key"}
+    runtime.request.get_json = lambda silent=True: payload
+    body, status = canary_route()
+    assert status == 400
+    assert body == {"ok": False, "error": "invalid_request"}
+
+
 def test_runtime_and_deployment_mirror_match_compile_and_app_registers_routes():
     canonical_path = ROOT / "backend" / "wolfram_cag_runtime.py"
     mirror_path = ROOT / "scripts" / "sovereign-backend" / "wolfram_cag_runtime.py"
