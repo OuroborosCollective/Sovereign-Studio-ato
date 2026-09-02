@@ -1,0 +1,16 @@
+{
+  "target": "src/features/product/containers/BuilderContainer.test.tsx",
+  "source_ref": "sovereign/chatgpt/1788358270-finish-pr-1822-chat-first-edd174",
+  "branch_base_ref": "734f606b2e8c89422c220e3b5526951309111847",
+  "branch": "sovereign/chatgpt/1788358270-finish-pr-1822-chat-first-edd174",
+  "expected_sha": "cc615bb0769a4d333582bd86e49d33af3fd34b1c",
+  "commit_message": "test(frontend): hide terminal tab outside inspector",
+  "pr_title": "chore: transport #1822 chat-first test drift repair",
+  "pr_body": "Same-branch exact-blob search/replace repair for PR #1823. No merge intent; this branch remains transport-only.",
+  "blocks": [
+    {
+      "search": "    expect(screen.getByRole(\"tab\", { name: /Terminal/i })).toBeDisabled();",
+      "replace": "    expect(screen.queryByRole(\"tab\", { name: /Terminal/i })).toBeNull();"
+    }
+  ]
+}
