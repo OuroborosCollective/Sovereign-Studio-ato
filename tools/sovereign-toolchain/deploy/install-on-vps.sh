@@ -44,6 +44,14 @@ fail() {
   exit "$exit_code"
 }
 
+on_unhandled_error() {
+  local line="${1:-0}"
+  trap - ERR
+  [[ "$line" =~ ^[0-9]+$ ]] || line=0
+  fail "unhandled command failure line=$line"
+}
+trap 'on_unhandled_error "$LINENO"' ERR
+
 STAGE=preflight
 [[ -n "$SOURCE_DIR" && -d "$SOURCE_DIR" && ! -L "$SOURCE_DIR" ]] || fail "source directory invalid"
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "expected revision must be a full commit SHA"
@@ -102,8 +110,7 @@ chmod 0644 "$TEMP/sovereign-toolchain/$REVISION_MARKER_NAME"
 rm -rf "$TEMP/sovereign-toolchain/.venv"
 (
   cd "$TEMP/sovereign-toolchain"
-  uv lock --check
-  uv sync --frozen --no-dev --no-install-project
+  env -u UV_FROZEN -u UV_LOCKED uv sync --locked --no-dev --no-install-project
   PYTHONPATH="$TEMP/sovereign-toolchain/src:$TEMP/sovereign-legacy-mcp-common" \
     .venv/bin/python -c 'import sovereign_toolchain.n8n_evidence_app, uvicorn'
 )

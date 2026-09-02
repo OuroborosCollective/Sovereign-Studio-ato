@@ -3487,7 +3487,7 @@ if [[ "$DEPLOYMENT_SOURCE_SCOPE" == "full-repository" ]]; then
     bash "$TOOLCHAIN_INSTALLER" "$TOOLCHAIN_SOURCE" >"$TOOLCHAIN_INSTALL_LOG" 2>&1; then
     TOOLCHAIN_FAILURE_DIAGNOSTIC="$(
       grep -E '^SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE stage=[a-z][a-z0-9_-]{0,79} reason_sha256=[0-9a-f]{64} rollback=(not-required|verified|failed)$' \
-        "$TOOLCHAIN_INSTALL_LOG" | tail -n 1 | tr -d '\r\n' | cut -c1-512 || true
+        "$TOOLCHAIN_INSTALL_LOG" | head -n 1 | tr -d '\r\n' | cut -c1-512 || true
     )"
     TOOLCHAIN_FAILURE_SHA256="$(sha256sum "$TOOLCHAIN_INSTALL_LOG" | awk '{print $1}')"
     rm -f "$TOOLCHAIN_INSTALL_LOG"
