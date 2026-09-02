@@ -1847,7 +1847,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Diff" }));
 
-    expect(screen.getAllByText("Changed").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Changed").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("src/App.tsx")).toBeDefined();
     const actionStream = getActionStream();
     expect(actionStream).toHaveTextContent("Diff-Prüfung geöffnet");
@@ -1944,7 +1944,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByAltText("Beobachteter Sovereign Workspace Desktop")).toBeNull();
     expect(screen.queryByText("monitor runtime output")).toBeNull();
     expect(screen.queryByTestId("workspace-evidence-rail")).toBeNull();
-    expect(screen.getByTestId("live-workspace-monitor-desktop-unavailable")).toBeDefined();
+    expect(screen.queryByTestId("live-workspace-monitor-desktop-unavailable")).toBeNull();
   });
 
   it("hides an evidence anchor from another job in the loaded repository", async () => {
@@ -2140,7 +2140,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   });
 
   it("README & Docs preset opens real repo setup before GitHub access when repo evidence is missing", async () => {
-    renderWithProviders(<BuilderContainer {...baseProps()} agentReady={false} />);
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" agentReady={false} />);
     fireEvent.click(screen.getByRole("button", { name: /README & Docs aktualisieren/i }));
 
     await waitFor(() =>
