@@ -1,0 +1,19 @@
+{
+  "target": "src/features/product/components/PaletteEnhancements.palette.test.tsx",
+  "source_ref": "sovereign/chatgpt/1788358270-finish-pr-1822-chat-first-edd174",
+  "branch_base_ref": "9deb25ddc9b272f13d366abf32d1ef478d64093d",
+  "branch": "sovereign/chatgpt/1788358270-finish-pr-1822-chat-first-edd174",
+  "commit_message": "test(frontend): open Inspector for technical palette controls",
+  "pr_title": "chore: transport #1822 chat-first test drift repair",
+  "pr_body": "Same-branch exact-search repair for #1823. Updates only the two stale Palette accessibility tests so technical RT and panel controls are queried after Inspector is explicitly opened.",
+  "blocks": [
+    {
+      "search": "    it('Runtime RT button keeps visible label in accessible name', () => {\n      renderWithProviders(<BuilderContainer {...baseProps} />);\n      const rtButton = screen.getByRole('button', { name: /RT.*Runtime Quelle/i });",
+      "replace": "    it('Runtime RT button keeps visible label in accessible name', () => {\n      renderWithProviders(<BuilderContainer {...baseProps} />);\n      fireEvent.click(screen.getByText('INSPECTOR'));\n      const rtButton = screen.getByRole('button', { name: /RT.*Runtime Quelle/i });"
+    },
+    {
+      "search": "    it('Panel toggle button has title and aria-label', () => {\n      renderWithProviders(<BuilderContainer {...baseProps} />);\n      const toggleButton = screen.getByRole('button', { name: /Panel öffnen/i });",
+      "replace": "    it('Panel toggle button has title and aria-label', () => {\n      renderWithProviders(<BuilderContainer {...baseProps} />);\n      fireEvent.click(screen.getByText('INSPECTOR'));\n      const toggleButton = screen.getByRole('button', { name: /Panel öffnen/i });"
+    }
+  ]
+}
