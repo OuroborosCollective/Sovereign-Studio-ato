@@ -4217,10 +4217,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       appendActionEvent(buildInputReceivedEvent(submittedText));
     }
 
-    // Free user language stays a normal advisory chat. Deterministic parsing is
+    // Natural language goes to the online LLM first. Deterministic parsing is
     // reserved strictly for exact machine controls, repository URLs and
-    // machine-generated preset markers. No natural-language sentence may start
-    // GitHub or executor effects without an explicit typed action surface.
+    // machine-generated preset markers. Free user language is never reinterpreted
+    // by browser heuristics when the online LLM is unavailable.
     const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
     const isReviewableExecutionPreset =
       submittedText.includes('Risiko: reviewable_patch')
@@ -4230,7 +4230,12 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     // last correlated request through the real pipeline and must never spend a
     // second interpretation call merely to understand the control itself.
     const isExactRetryControl = submittedText.trim().toLocaleLowerCase('de-DE') === 'retry';
-    const shouldUseOnlineLanguageUnderstanding = false;
+    const shouldUseOnlineLanguageUnderstanding =
+      !options.resumePendingIntent &&
+      !isSafeAnalysisPreset &&
+      !isReviewableExecutionPreset &&
+      !directRepoUrl &&
+      !isExactRetryControl;
 
     if (isReviewableExecutionPreset) {
       appendActionEvent(buildRouteSelectionEvent({

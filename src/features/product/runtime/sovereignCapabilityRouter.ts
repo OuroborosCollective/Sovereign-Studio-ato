@@ -661,25 +661,16 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
     return buildRecoverablePackageDecision('code-llm', 'code_patch_plan');
   }
 
-  // Unclassified free language is conversation, never implicit execution. This
-  // preserves a normal chat surface while keeping every mutation behind an
-  // explicit typed control, preset or owner-confirmed execution contract.
-  if (input.hasActiveWorkerBlocker) {
-    return {
-      route: 'worker-chat',
-      capability: 'free_chat',
-      allowed: false,
-      reason: 'Worker ist blockiert. Chat kann nicht verarbeitet werden. Bitte Blocker beheben.',
-      blocker: 'executor_unavailable',
-      nextAction: 'show_blocker',
-    };
-  }
+  // Unknown intent: if worker is already blocked, surface that — not a silent "ask_user".
   return {
     route: 'worker-chat',
     capability: 'free_chat',
-    allowed: true,
-    reason: 'Freie Sprache bleibt ein normaler Chat; keine Schreib- oder Executor-Route startet implizit.',
-    nextAction: 'run_worker',
+    allowed: false,
+    reason: input.hasActiveWorkerBlocker
+      ? 'Worker ist blockiert. Auftrag kann nicht verarbeitet werden. Bitte Blocker beheben.'
+      : 'Auftrag konnte nicht erkannt werden. Bitte konkretisieren.',
+    blocker: input.hasActiveWorkerBlocker ? 'executor_unavailable' : 'unsupported_intent',
+    nextAction: input.hasActiveWorkerBlocker ? 'show_blocker' : 'ask_user',
   };
 }
 
