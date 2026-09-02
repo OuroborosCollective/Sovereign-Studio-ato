@@ -71,3 +71,7 @@
 ## 2026-08-26 - [Consolidating Multi-Pass Array Traversals in Summary Computations]
 **Learning:** Computing summary statistics and extracting unique tags using chained `.filter()`, `.reduce()`, and `[...new Set(filtered.map(...))]` methods incurs severe CPU and garbage collection pressure due to multiple $O(N)$ passes and continuous intermediate array allocations on every invocation. Replacing these method chains with a single-pass `for...of` loop completely avoids multiple traversals and eliminates intermediate arrays, keeping computations flat and extremely fast.
 **Action:** Always refactor sequential array method chains (like `.filter().reduce()` or `.filter().map()`) into a single-pass loop when dealing with frequent or large-scale data summary computations to avoid intermediate allocations and reduce iteration overhead.
+
+## 2026-08-27 - [Consolidating Nested Array Iterations]
+**Learning:** Chaining array methods like `filter()` followed by `map()` or mapping to a `Set` (e.g., `[...new Set(array.map())]`) in performance-critical loops incurs heavy garbage collection and iteration penalties due to multiple O(N) array allocations. Consolidating nested traversals into a single `for...of` loop where filtering and Set accumulation happen concurrently significantly optimizes these sections, eliminating intermediate array instantiations entirely.
+**Action:** When working in high-frequency functions or tight loops processing thousands of items (like signal aggregations), always consolidate separate mapped traversals into a single-pass loop.
