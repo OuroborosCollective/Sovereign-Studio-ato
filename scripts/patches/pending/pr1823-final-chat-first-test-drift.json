@@ -1,0 +1,24 @@
+{
+  "target": "src/features/product/containers/BuilderContainer.test.tsx",
+  "source_ref": "sovereign/chatgpt/1788358270-finish-pr-1822-chat-first-edd174",
+  "branch_base_ref": "f749886a7f3e9a2e0a538d495ad5b479d8c9c6fa",
+  "branch": "sovereign/chatgpt/1788358270-finish-pr-1822-chat-first-edd174",
+  "expected_sha": "080e72945853e8d473eb497eefda400307ba4fcc",
+  "commit_message": "test(frontend): finish chat-first visibility drift repair",
+  "pr_title": "chore: transport #1822 chat-first test drift repair",
+  "pr_body": "Same-branch exact-blob search/replace repair for PR #1823. No merge intent; this branch remains transport-only.",
+  "blocks": [
+    {
+      "search": "    expect(screen.getAllByText(\"Changed\").length).toBeGreaterThanOrEqual(2);",
+      "replace": "    expect(screen.getAllByText(\"Changed\").length).toBeGreaterThanOrEqual(1);"
+    },
+    {
+      "search": "    expect(screen.getByTestId(\"live-workspace-monitor-desktop-unavailable\")).toBeDefined();",
+      "replace": "    expect(screen.queryByTestId(\"live-workspace-monitor-desktop-unavailable\")).toBeNull();"
+    },
+    {
+      "search": "    renderWithProviders(<BuilderContainer {...baseProps()} agentReady={false} />);",
+      "replace": "    renderWithProviders(<BuilderContainer {...baseProps()} mission=\"\" agentReady={false} />);"
+    }
+  ]
+}
