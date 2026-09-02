@@ -1230,12 +1230,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den neuen Runtime-State.' } });
       fireEvent.click(sendButton());
-      await waitFor(() =>
-        expect(screen.getAllByText(/Codeauftragsvertrag blockiert|sichere Online-Aktionsroute ist blockiert/i).length).toBeGreaterThan(0),
-      );
-      expect(chatCalls).toBe(2);
+      await waitFor(() => expect(chatCalls).toBe(2));
+      const actionStream = getActionStream();
+      await waitFor(() => expect(actionStream).toHaveTextContent('Codeauftragsvertrag blockiert'));
 
-      fireEvent.click(screen.getByText('INSPECTOR'));
       fireEvent.click(screen.getByRole('button', { name: /RT.*Runtime Quelle/i }));
       await waitFor(() => expect(screen.getByText('LLM Runtime blockiert')).toBeDefined());
     } finally {
