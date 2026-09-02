@@ -793,7 +793,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText("Planner")).toBeNull();
     expect(screen.queryByText("Changes")).toBeNull();
     expect(screen.queryByText("Code")).toBeNull();
-    expect(screen.getByRole("tab", { name: /Terminal/i })).toBeDisabled();
+    expect(screen.queryByRole("tab", { name: /Terminal/i })).toBeNull();
     expect(screen.getByTestId("sovereign-chat-body-window")).toBeDefined();
     expect(screen.queryByText(/Sovereign geführter Chat Ablauf/i)).toBeNull();
   });
