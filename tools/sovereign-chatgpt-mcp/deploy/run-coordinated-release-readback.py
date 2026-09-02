@@ -333,7 +333,11 @@ def main() -> int:
         receipt = _read_status()
         signature = _sign(receipt)
         _emit(scope, receipt, signature)
-        return completed.returncode
+        # SSH is the signed-evidence transport boundary, not the deployment
+        # verdict boundary. Once a target-system receipt was read, signed and
+        # emitted, transport succeeded even if reconciliation itself failed.
+        # The GitHub-side receipt verifier remains authoritative for success.
+        return 0
     except ReadbackError as exc:
         print(json.dumps({
             "schemaVersion": "sovereign.independent-target-runtime-receipt-error.v1",
