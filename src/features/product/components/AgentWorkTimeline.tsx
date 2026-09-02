@@ -57,6 +57,7 @@ const EventRow: React.FC<EventRowProps> = ({ event, isCurrent }) => {
       }}
     >
       <span
+        aria-hidden="true"
         style={{
           width: 16,
           textAlign: 'center',
@@ -74,6 +75,7 @@ const EventRow: React.FC<EventRowProps> = ({ event, isCurrent }) => {
         </span>
         {event.detail && (
           <span
+            title={event.detail}
             style={{
               fontSize: 11,
               color: C.textSub,
@@ -101,6 +103,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
   snapshot,
   onOpenPr,
   onViewDiff,
+  className,
 }) => {
   const [expanded, setExpanded] = useState(false);
 
@@ -126,6 +129,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
       role="region"
       aria-label="Agent Work Timeline"
       data-testid="agent-work-timeline"
+      className={className}
       style={{
         margin: '8px 0',
         padding: '12px 14px',
@@ -140,6 +144,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span
+          aria-hidden="true"
           style={{
             width: 8,
             height: 8,
@@ -153,7 +158,10 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
           {headerLabel}
         </span>
         {repoFullName && (
-          <span style={{ fontSize: 11, color: C.textSub, fontFamily: 'monospace' }}>
+          <span
+            title={`Repository: ${repoFullName}`}
+            style={{ fontSize: 11, color: C.textSub, fontFamily: 'monospace' }}
+          >
             {repoFullName}
           </span>
         )}
@@ -162,7 +170,10 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
       <div style={{ fontSize: 11, color: lamp, fontWeight: 500 }}>
         {stateLabel}
         {jobId && state !== 'draft_pr_ready' && (
-          <span style={{ color: C.textSub, fontWeight: 400, marginLeft: 8, fontFamily: 'monospace' }}>
+          <span
+            title={`Job ID: ${jobId}`}
+            style={{ color: C.textSub, fontWeight: 400, marginLeft: 8, fontFamily: 'monospace' }}
+          >
             Job: {jobId}
           </span>
         )}
@@ -182,6 +193,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
             <button
               type="button"
               onClick={() => setExpanded(true)}
+              className="focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none rounded"
               style={{
                 background: 'none',
                 border: 'none',
@@ -192,6 +204,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
                 textAlign: 'left',
               }}
               aria-label={`${hiddenCount} ältere Ereignisse anzeigen`}
+              title={`${hiddenCount} ältere Ereignisse anzeigen`}
             >
               ↑ {hiddenCount} ältere Ereignisse
             </button>
@@ -207,6 +220,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
             <button
               type="button"
               onClick={() => setExpanded(false)}
+              className="focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none rounded"
               style={{
                 background: 'none',
                 border: 'none',
@@ -216,6 +230,8 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
                 fontSize: 11,
                 textAlign: 'left',
               }}
+              aria-label="Ältere Ereignisse ausblenden"
+              title="Ältere Ereignisse ausblenden"
             >
               ↓ Weniger anzeigen
             </button>
@@ -225,10 +241,10 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
 
       {branchName && (
         <div style={{ fontSize: 11, color: C.textSub, fontFamily: 'monospace' }}>
-          Branch: <span style={{ color: C.sky }}>{branchName}</span>
+          Branch: <span title={`Branch: ${branchName}`} style={{ color: C.sky }}>{branchName}</span>
           {commitSha && (
             <>
-              {' · '}Commit: <span style={{ color: C.sky }}>{commitSha.slice(0, 7)}</span>
+              {' · '}Commit: <span title={`Commit SHA: ${commitSha}`} style={{ color: C.sky }}>{commitSha.slice(0, 7)}</span>
             </>
           )}
         </div>
@@ -236,6 +252,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
 
       {blockerReason && (
         <div
+          title={`Blockiert: ${blockerReason}`}
           style={{
             fontSize: 12,
             color: C.rose,
@@ -254,6 +271,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
             <button
               type="button"
               onClick={onOpenPr}
+              className="focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
               style={{
                 padding: '7px 14px',
                 borderRadius: 8,
@@ -264,7 +282,8 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
                 fontWeight: 500,
                 cursor: 'pointer',
               }}
-              aria-label="PR öffnen"
+              aria-label="Draft PR auf GitHub öffnen"
+              title="Draft PR auf GitHub öffnen"
             >
               PR öffnen
             </button>
@@ -273,6 +292,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
             <button
               type="button"
               onClick={onViewDiff}
+              className="focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none"
               style={{
                 padding: '7px 14px',
                 borderRadius: 8,
@@ -283,7 +303,8 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
                 fontWeight: 500,
                 cursor: 'pointer',
               }}
-              aria-label="Diff ansehen"
+              aria-label="Diff-Vorschau der Änderungen anzeigen"
+              title="Diff-Vorschau der Änderungen anzeigen"
             >
               Diff ansehen
             </button>

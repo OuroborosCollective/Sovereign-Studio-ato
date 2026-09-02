@@ -22,6 +22,7 @@ import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
+import { AgentWorkTimeline } from './AgentWorkTimeline';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -811,13 +812,14 @@ describe('Palette Accessibility Enhancements', () => {
     });
 
     it('shows stateful submit button titles based on loading status', () => {
+      const onLoad = vi.fn();
       const { rerender } = render(
         <CompactRepoSetupSheet
           value=""
           busy={false}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoad}
           onClose={vi.fn()}
         />
       );
@@ -833,7 +835,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={false}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoad}
           onClose={vi.fn()}
         />
       );
@@ -849,7 +851,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={true}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoad}
           onClose={vi.fn()}
         />
       );
@@ -1101,6 +1103,76 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(watchBtn);
       expect(onWatchChecks).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('AgentWorkTimeline Accessibility and Micro-UX Enhancements', () => {
+    it('renders with title tooltips on metadata, expand/collapse toggles, and styled action buttons', () => {
+      const mockSnapshot = {
+        id: 'work-456',
+        state: 'draft_pr_ready' as const,
+        draftPrUrl: 'https://github.com/owner/repo/pull/101',
+        branchName: 'fix/ui-a11y',
+        commitSha: '9876543210ab',
+        repoFullName: 'owner/repo',
+        jobId: 'job-999',
+        blockerReason: undefined,
+        events: [
+          { id: 'ev-1', ts: Date.now() - 5000, state: 'intent_detected' as const, label: 'Ereignis 1', detail: 'Detail 1' },
+          { id: 'ev-2', ts: Date.now() - 4000, state: 'planning' as const, label: 'Ereignis 2' },
+          { id: 'ev-3', ts: Date.now() - 3000, state: 'generating_code' as const, label: 'Ereignis 3' },
+          { id: 'ev-4', ts: Date.now() - 2000, state: 'applying_patch' as const, label: 'Ereignis 4' },
+          { id: 'ev-5', ts: Date.now() - 1000, state: 'draft_pr_ready' as const, label: 'Ereignis 5' },
+        ],
+        created: Date.now(),
+        updated: Date.now(),
+      };
+
+      const onOpenPr = vi.fn();
+      const onViewDiff = vi.fn();
+
+      render(
+        <AgentWorkTimeline
+          snapshot={mockSnapshot}
+          onOpenPr={onOpenPr}
+          onViewDiff={onViewDiff}
+        />
+      );
+
+      const region = screen.getByRole('region', { name: 'Agent Work Timeline' });
+      expect(region).toBeInTheDocument();
+
+      expect(screen.getByTitle('Repository: owner/repo')).toBeInTheDocument();
+      expect(screen.getByTitle('Branch: fix/ui-a11y')).toBeInTheDocument();
+      expect(screen.getByTitle('Commit SHA: 9876543210ab')).toBeInTheDocument();
+
+      // Expand events toggle
+      const expandBtn = screen.getByRole('button', { name: '1 ältere Ereignisse anzeigen' });
+      expect(expandBtn).toHaveAttribute('title', '1 ältere Ereignisse anzeigen');
+      expect(expandBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(expandBtn);
+
+      expect(screen.getByTitle('Detail 1')).toBeInTheDocument();
+
+      const collapseBtn = screen.getByRole('button', { name: 'Ältere Ereignisse ausblenden' });
+      expect(collapseBtn).toHaveAttribute('title', 'Ältere Ereignisse ausblenden');
+      expect(collapseBtn).toHaveClass('focus-visible:ring-2');
+
+      // Action buttons
+      const openPrBtn = screen.getByRole('button', { name: 'Draft PR auf GitHub öffnen' });
+      expect(openPrBtn).toHaveAttribute('title', 'Draft PR auf GitHub öffnen');
+      expect(openPrBtn).toHaveClass('focus-visible:ring-2');
+
+      const viewDiffBtn = screen.getByRole('button', { name: 'Diff-Vorschau der Änderungen anzeigen' });
+      expect(viewDiffBtn).toHaveAttribute('title', 'Diff-Vorschau der Änderungen anzeigen');
+      expect(viewDiffBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(openPrBtn);
+      expect(onOpenPr).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(viewDiffBtn);
+      expect(onViewDiff).toHaveBeenCalledTimes(1);
     });
   });
 });
