@@ -806,14 +806,39 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText(/simulate/i)).toBeNull();
   });
 
-  it("shows guided suggestions only in the empty primary chat", () => {
+  it("diagnostic: empty chat renders guided suggestion strip", () => {
     const props = baseProps();
     renderWithProviders(<BuilderContainer {...props} mission="" />);
     expect(screen.getByTestId('sovereign-action-suggestion-strip')).toBeDefined();
+  });
+
+  it("diagnostic: empty chat keeps tool launcher visible", () => {
+    const props = baseProps();
+    renderWithProviders(<BuilderContainer {...props} mission="" />);
     expect(screen.getByLabelText('Tool Launcher öffnen')).toBeDefined();
+  });
+
+  it("diagnostic: empty chat excludes legacy build copy", () => {
+    const props = baseProps();
+    renderWithProviders(<BuilderContainer {...props} mission="" />);
     expect(screen.queryByText("Let's build!")).toBeNull();
+  });
+
+  it("diagnostic: monitor communication dock is in chat mode", () => {
+    const props = baseProps();
+    renderWithProviders(<BuilderContainer {...props} mission="" />);
     expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-mode', 'chat');
+  });
+
+  it("diagnostic: runtime action trace stays hidden before Inspector", () => {
+    const props = baseProps();
+    renderWithProviders(<BuilderContainer {...props} mission="" />);
     expect(screen.queryByTestId('monitor-runtime-action-trace')).toBeNull();
+  });
+
+  it("diagnostic: empty mount does not emit mission change", () => {
+    const props = baseProps();
+    renderWithProviders(<BuilderContainer {...props} mission="" />);
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
