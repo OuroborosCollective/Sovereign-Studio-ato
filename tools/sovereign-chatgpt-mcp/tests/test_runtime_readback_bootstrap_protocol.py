@@ -70,6 +70,42 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
         self.assertEqual(observed_token, token)
         self.assertEqual(username, "OuroborosCollective")
 
+    def test_forced_readback_transports_signed_failure_receipt_to_verifier(self) -> None:
+        module = _load_entrypoint()
+        completed = type("Completed", (), {"returncode": 1})()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module.TOKEN_DIR = root
+            module.TOKEN_FILE = root / "github-token"
+            module.DOCKER_CONFIG_DIR = root / "docker-config"
+            module.RECEIPT_FILE = root / "receipt.json"
+            with (
+                patch.object(module.os, "geteuid", return_value=0),
+                patch.object(
+                    module,
+                    "_read_input",
+                    return_value=(
+                        _scope(),
+                        "ghs_ephemeral_runtime_token_abcdefghijklmnopqrstuvwxyz",
+                        "OuroborosCollective",
+                    ),
+                ),
+                patch.object(module, "_backend_env_file", return_value=root / "backend.env"),
+                patch.object(module, "_write_token"),
+                patch.object(module, "_prepare_registry_auth"),
+                patch.object(module.subprocess, "run", return_value=completed),
+                patch.object(
+                    module,
+                    "_read_status",
+                    return_value=b'{"ok":false,"secretValuesReturned":false}',
+                ),
+                patch.object(module, "_sign", return_value=b"signed-receipt"),
+                patch.object(module, "_emit") as emit,
+                patch.object(module, "_cleanup_registry_auth"),
+            ):
+                self.assertEqual(module.main(), 0)
+                emit.assert_called_once()
+
     def test_forced_readback_rejects_unbounded_extra_framing(self) -> None:
         module = _load_entrypoint()
         token = "ghs_ephemeral_runtime_token_abcdefghijklmnopqrstuvwxyz"

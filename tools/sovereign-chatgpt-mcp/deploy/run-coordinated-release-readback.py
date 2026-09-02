@@ -333,7 +333,13 @@ def main() -> int:
         receipt = _read_status()
         signature = _sign(receipt)
         _emit(scope, receipt, signature)
-        return completed.returncode
+        # The forced SSH command is a transport boundary, not the deployment
+        # verdict boundary. Once a signed target-system receipt was emitted,
+        # let the GitHub-side verifier decide whether that receipt proves a
+        # successful coordinated deployment. Propagating the reconciler exit
+        # code here would make `set -o pipefail` skip the verifier and hide the
+        # exact signed failure receipt behind a generic SSH exit status.
+        return 0
     except ReadbackError as exc:
         print(json.dumps({
             "schemaVersion": "sovereign.independent-target-runtime-receipt-error.v1",
