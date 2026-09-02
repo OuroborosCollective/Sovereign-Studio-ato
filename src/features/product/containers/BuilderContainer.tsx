@@ -743,7 +743,7 @@ function TopBar({
               Chat
             </span>
             {/* PAL badge */}
-            {palTier && (
+            {showInspector && palTier && (
               <span
                 style={{
                   fontFamily: "monospace",
@@ -828,9 +828,9 @@ function TopBar({
           </button>
         )}
 
-        <Ampel status={status} compact />
+        {showInspector ? <Ampel status={status} compact /> : null}
 
-        <button
+        {showInspector ? <button
           type="button"
           onClick={onSourceClick}
           aria-label="RT – Runtime Quelle"
@@ -862,10 +862,10 @@ function TopBar({
             }}
           />
           RT
-        </button>
+        </button> : null}
 
         {/* Panel toggle */}
-        <button
+        {showInspector ? <button
           type="button"
           onClick={onPanelToggle}
           aria-label={panelOpen ? "Panel schließen" : "Panel öffnen"}
@@ -883,7 +883,7 @@ function TopBar({
           }}
         >
           {panelOpen ? "▴" : "▾"}
-        </button>
+        </button> : null}
       </div>
 
       {/* Werkbank Status — Actions/Files/Logs/Errors/Draft PR, primary and always visible */}

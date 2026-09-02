@@ -237,7 +237,7 @@ export function MonitorCommunicationDock({
             borderBottom: `1px solid ${C.border}`,
           }}
         >
-          {chatMode && visibleEntries.length === 0 ? (
+          {chatMode && visibleEntries.length === 0 && emptyState ? (
             <li style={{ flex: 1, display: 'grid', placeItems: 'center', minHeight: '42vh' }}>
               {emptyState}
             </li>
