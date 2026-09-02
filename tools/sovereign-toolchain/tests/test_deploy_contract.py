@@ -45,7 +45,7 @@ def test_installer_atomically_deploys_and_verifies_both_boundaries() -> None:
     installer = INSTALLER.read_text("utf-8")
 
     assert "command -v uv" in installer
-    assert "uv lock --check" in installer
+    assert "uv lock --check" not in installer
     assert "uv sync --frozen --no-dev --no-install-project" in installer
     assert 'git -C "$SOURCE_REPOSITORY_ROOT" archive --format=tar "$EXPECTED_REVISION"' in installer
     assert 'cp -a "$SOURCE_DIR/."' not in installer
