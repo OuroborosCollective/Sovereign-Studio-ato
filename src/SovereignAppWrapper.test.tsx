@@ -50,7 +50,7 @@ describe('SovereignAppWrapper - Chat-first UI Contract', () => {
     });
 
     expect(screen.queryByTestId('live-workspace-monitor-desktop')).toBeNull();
-    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-dock')).toBeDefined();
     expect(screen.getByLabelText('Codeauftrag an Sovereign')).toBeDefined();
     expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(screen.getByLabelText('Sovereign Studio Tabs')).toBeDefined();

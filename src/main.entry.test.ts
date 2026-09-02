@@ -34,8 +34,8 @@ describe('main app entry', () => {
     const builder = readSource('./features/product/containers/BuilderContainer.tsx');
 
     expect(builder).toContain('data-testid="sovereign-chat-primary"');
-    expect(builder).toContain('<MonitorCommunicationDock');
-    expect(builder).toContain('mode="chat"');
+    expect(builder).toContain('<SovereignChatDock');
+    expect(builder).not.toContain('mode="chat"');
     expect(builder).toContain('chat-primary-agent-zero-background');
     expect(builder).not.toContain('liveMonitorPrimary');
   });

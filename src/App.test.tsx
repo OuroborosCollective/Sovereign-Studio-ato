@@ -47,7 +47,7 @@ describe('App', () => {
     expect(screen.getByTestId('sovereign-chat-primary')).toBeDefined();
     expect(screen.queryByTestId('live-workspace-monitor')).toBeNull();
     expect(screen.queryByTestId('live-workspace-monitor-desktop')).toBeNull();
-    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-dock')).toBeDefined();
     expect(screen.getByLabelText('Codeauftrag an Sovereign')).toBeDefined();
     expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(screen.queryByTestId('chat-only-app')).toBeNull();

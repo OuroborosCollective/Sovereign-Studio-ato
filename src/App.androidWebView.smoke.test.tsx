@@ -67,7 +67,7 @@ describe('App setup flow smoke', () => {
   it('keeps normal LLM communication inside the Android chat surface', async () => {
     await openChatWorkspace();
 
-    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-dock')).toBeDefined();
     expect(screen.getByLabelText('Codeauftrag an Sovereign')).toBeDefined();
     expect(screen.getByPlaceholderText(/Codeauftrag eingeben/i)).toBeDefined();
     expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();

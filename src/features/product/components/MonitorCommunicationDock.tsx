@@ -3,38 +3,33 @@ import { maskSecrets } from '../../../shared/utils/crypto';
 import { C } from './builderConstants';
 import type { SovereignLlmRouteOption } from '../runtime/devChatWorkerBridge';
 
-export type MonitorCommunicationKind = 'user' | 'communicate' | 'runtime';
-export type MonitorToolchainState = 'checking' | 'ready' | 'blocked' | 'unavailable';
+export type SovereignChatKind = 'user' | 'assistant' | 'system';
+export type SovereignChatToolchainState = 'checking' | 'ready' | 'blocked' | 'unavailable';
 
-export interface MonitorCommunicationEntry {
+export interface SovereignChatEntry {
   readonly id: string;
-  readonly kind: MonitorCommunicationKind;
+  readonly kind: SovereignChatKind;
   readonly text: string;
   readonly createdAt: number;
 }
 
-export interface MonitorCommunicationDockProps {
+export interface SovereignChatDockProps {
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly onSubmit: () => void;
   readonly disabled: boolean;
   readonly busy: boolean;
-  readonly runtimeStatus: string;
-  readonly entries: readonly MonitorCommunicationEntry[];
+  readonly entries: readonly SovereignChatEntry[];
   readonly routeOptions?: readonly SovereignLlmRouteOption[];
   readonly selectedRouteId?: string;
   readonly onRouteChange?: (routeId: string) => void;
   readonly routeCatalogError?: string | null;
   readonly routeHint?: string;
-  readonly runtimeMood?: string;
-  readonly onOpenFlow?: () => void;
-  readonly onRequestIdea?: () => void;
   readonly onOpenToolchain?: () => void;
-  readonly toolchainState?: MonitorToolchainState;
+  readonly toolchainState?: SovereignChatToolchainState;
   readonly toolsLauncher?: React.ReactNode;
   readonly onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
   readonly slashMenu?: React.ReactNode;
-  readonly mode?: 'monitor' | 'chat';
   readonly emptyState?: React.ReactNode;
 }
 
@@ -44,12 +39,6 @@ function safeText(value: string, max = 900): string {
   const masked = maskSecrets(value.trim());
   if (!masked) return '';
   return masked.length > max ? `${masked.slice(0, max - 1)}…` : masked;
-}
-
-function entryLabel(kind: MonitorCommunicationKind): string {
-  if (kind === 'user') return 'YOU';
-  if (kind === 'runtime') return 'RUNTIME';
-  return 'COMMUNICATE';
 }
 
 function routeSearchText(route: SovereignLlmRouteOption): string {
@@ -77,42 +66,28 @@ function railButtonStyle(active = false): React.CSSProperties {
   };
 }
 
-export function MonitorCommunicationDock({
+export function SovereignChatDock({
   value,
   onChange,
   onSubmit,
   disabled,
   busy,
-  runtimeStatus,
   entries,
   routeOptions = [],
   selectedRouteId = '',
   onRouteChange,
   routeCatalogError,
   routeHint,
-  runtimeMood = '😊✨',
-  onOpenFlow,
-  onRequestIdea,
   onOpenToolchain,
   toolchainState = 'unavailable',
   toolsLauncher,
   onKeyDown,
   slashMenu,
-  mode = 'monitor',
   emptyState,
-}: MonitorCommunicationDockProps) {
+}: SovereignChatDockProps) {
   const [routePickerOpen, setRoutePickerOpen] = useState(false);
   const [routeQuery, setRouteQuery] = useState('');
-  const chatMode = mode === 'chat';
-  const visibleEntryIds = new Set(entries.slice(-4).map((entry) => entry.id));
-  entries
-    .filter((entry) => entry.kind === 'user')
-    .slice(-2)
-    .forEach((entry) => visibleEntryIds.add(entry.id));
-  const visibleEntries = chatMode
-    ? entries
-    : entries.filter((entry) => visibleEntryIds.has(entry.id)).slice(-6);
-  const status = safeText(runtimeStatus, 240) || 'Runtimestatus nicht verfügbar';
+  const visibleEntries = entries.slice(-200);
   const visibleRouteHint = safeText(routeHint ?? '', 240);
   const selectedRoute = routeOptions.find((route) => route.id === selectedRouteId);
   const query = routeQuery.trim().toLocaleLowerCase();
@@ -137,57 +112,81 @@ export function MonitorCommunicationDock({
 
   return (
     <section
-      aria-label={chatMode ? 'Sovereign Chat' : 'Monitor Kommunikation'}
-      data-testid="monitor-communication-dock"
-      data-mode={mode}
+      aria-label="Sovereign Chat"
+      data-testid="sovereign-chat-dock"
       data-overlay="false"
       style={{
-        flexShrink: chatMode ? 1 : 0,
-        flex: chatMode ? 1 : undefined,
-        minHeight: chatMode ? 0 : undefined,
-        display: chatMode ? 'flex' : undefined,
-        flexDirection: chatMode ? 'column' : undefined,
-        borderTop: chatMode ? 0 : `1px solid ${C.border}`,
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
         background: '#0b1016',
         color: C.text,
       }}
     >
-      <div
-        data-testid="monitor-status-rail"
+      <ol
+        aria-label="Chatverlauf"
+        data-testid="sovereign-chat-body-window"
         style={{
-          display: chatMode ? 'none' : 'flex',
-          alignItems: 'center',
-          gap: 6,
-          minHeight: 46,
-          padding: '5px 10px',
+          listStyle: 'none',
+          margin: 0,
+          padding: '18px clamp(12px, 4vw, 28px)',
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
+          minHeight: 0,
+          gap: 12,
+          overflowY: 'auto',
+          overflowX: 'hidden',
           borderBottom: `1px solid ${C.border}`,
-          flexWrap: 'wrap',
         }}
       >
-        <span
-          title="Beobachtbarer Runtime-Status; keine verborgene Modell-Gedankenkette."
-          style={{ ...railButtonStyle(busy), display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-        >
-          THINK
-        </span>
-        <button type="button" onClick={onOpenFlow} disabled={!onOpenFlow} style={railButtonStyle(false)}>
-          FLOW
-        </button>
-        <button
-          type="button"
-          onClick={onRequestIdea}
-          disabled={!onRequestIdea || busy}
-          style={{ ...railButtonStyle(false), opacity: !onRequestIdea || busy ? 0.5 : 1 }}
-        >
-          IDEA
-        </button>
-        <span
-          aria-label={busy ? 'Sovereign arbeitet' : 'Sovereign bereit'}
-          title={busy ? 'Runtime arbeitet' : 'Runtime wartet auf Auftrag'}
-          style={{ minWidth: 44, textAlign: 'center', fontSize: 17 }}
-        >
-          {runtimeMood}
-        </span>
+        {visibleEntries.length === 0 && emptyState ? (
+          <li style={{ flex: 1, display: 'grid', placeItems: 'center', minHeight: '42vh' }}>
+            {emptyState}
+          </li>
+        ) : null}
+        {visibleEntries.map((entry) => {
+          const text = safeText(entry.text);
+          if (!text) return null;
+          const accent = entry.kind === 'user' ? C.sky : C.green;
+          return (
+            <li
+              key={entry.id}
+              data-kind={entry.kind}
+              style={{
+                flex: '0 0 auto',
+                alignSelf: entry.kind === 'user' ? 'flex-end' : 'flex-start',
+                width: 'fit-content',
+                minWidth: 0,
+                maxWidth: 'min(760px, 88%)',
+                padding: '10px 13px',
+                borderRadius: 16,
+                border: `1px solid ${accent}44`,
+                background: entry.kind === 'user' ? `${C.sky}18` : `${C.green}0d`,
+              }}
+            >
+              <strong style={{ display: 'block', color: accent, font: '700 9px/1.2 monospace', letterSpacing: '.08em' }}>
+                {entry.kind === 'user' ? 'DU' : 'SOVEREIGN'}
+              </strong>
+              <span style={{ display: 'block', marginTop: 4, color: C.textSub, fontSize: 11, lineHeight: 1.45, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                {text}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+
+      <div
+        data-testid="sovereign-chat-tool-row"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 7,
+          padding: '7px 10px 0',
+          background: '#0b1016',
+        }}
+      >
         <button
           type="button"
           onClick={onOpenToolchain}
@@ -198,119 +197,17 @@ export function MonitorCommunicationDock({
           TOOLCHAIN
         </button>
         {toolsLauncher}
-      </div>
-
-      <div
-        role="status"
-        aria-live="polite"
-        data-testid="monitor-runtime-status"
-        style={{
-          display: chatMode ? 'none' : undefined,
-          minHeight: 27,
-          padding: '5px 10px',
-          color: C.textSub,
-          font: '10px/1.35 monospace',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {status}
-      </div>
-
-      {(chatMode || visibleEntries.length > 0) && (
-        <ol
-          aria-label={chatMode ? 'Chatverlauf' : 'Letzte Monitor-Kommunikation'}
-          data-testid={chatMode ? 'sovereign-chat-body-window' : 'monitor-communication-bubbles'}
-          style={{
-            listStyle: 'none',
-            margin: 0,
-            padding: chatMode ? '18px clamp(12px, 4vw, 28px)' : '7px 10px',
-            display: 'flex',
-            flexDirection: chatMode ? 'column' : undefined,
-            flex: chatMode ? 1 : undefined,
-            minHeight: chatMode ? 0 : undefined,
-            gap: chatMode ? 12 : 7,
-            overflowY: chatMode ? 'auto' : undefined,
-            overflowX: chatMode ? 'hidden' : 'auto',
-            borderTop: chatMode ? 0 : `1px solid ${C.border}`,
-            borderBottom: `1px solid ${C.border}`,
-          }}
+        <span
+          role="status"
+          style={{ marginLeft: 'auto', color: busy ? C.sky : C.textMuted, font: '9px/1.2 monospace' }}
         >
-          {chatMode && visibleEntries.length === 0 && emptyState ? (
-            <li style={{ flex: 1, display: 'grid', placeItems: 'center', minHeight: '42vh' }}>
-              {emptyState}
-            </li>
-          ) : null}
-          {visibleEntries.map((entry) => {
-            const text = safeText(entry.text);
-            if (!text) return null;
-            const accent = entry.kind === 'user' ? C.sky : entry.kind === 'runtime' ? C.amber : C.green;
-            return (
-              <li
-                key={entry.id}
-                data-kind={entry.kind}
-                style={{
-                  flex: chatMode ? '0 0 auto' : '0 1 min(420px, 78vw)',
-                  alignSelf: chatMode ? (entry.kind === 'user' ? 'flex-end' : 'flex-start') : undefined,
-                  width: chatMode ? 'fit-content' : undefined,
-                  minWidth: chatMode ? 0 : 'min(230px, 68vw)',
-                  maxWidth: chatMode ? 'min(760px, 88%)' : undefined,
-                  maxHeight: chatMode ? 'none' : 86,
-                  overflowY: chatMode ? 'visible' : 'auto',
-                  padding: chatMode ? '10px 13px' : '7px 9px',
-                  borderRadius: chatMode ? 16 : 10,
-                  border: `1px solid ${accent}44`,
-                  background: entry.kind === 'user' && chatMode ? `${C.sky}18` : `${accent}0d`,
-                }}
-              >
-                <strong style={{ display: 'block', color: accent, font: '700 9px/1.2 monospace', letterSpacing: '.08em' }}>
-                  {chatMode
-                    ? entry.kind === 'user' ? 'DU' : entry.kind === 'runtime' ? 'STATUS' : 'SOVEREIGN'
-                    : entryLabel(entry.kind)}
-                </strong>
-                <span style={{ display: 'block', marginTop: 4, color: C.textSub, fontSize: 11, lineHeight: 1.45, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-                  {text}
-                </span>
-              </li>
-            );
-          })}
-        </ol>
-      )}
-
-      {chatMode && (
-        <div
-          data-testid="sovereign-chat-tool-row"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 7,
-            padding: '7px 10px 0',
-            background: '#0b1016',
-          }}
-        >
-          <button
-            type="button"
-            onClick={onOpenToolchain}
-            disabled={!onOpenToolchain}
-            title={`Toolchain: ${toolchainLabel}`}
-            style={railButtonStyle(toolchainState === 'ready')}
-          >
-            TOOLCHAIN
-          </button>
-          {toolsLauncher}
-          <span
-            role="status"
-            style={{ marginLeft: 'auto', color: busy ? C.sky : C.textMuted, font: '9px/1.2 monospace' }}
-          >
-            {busy ? 'Agent arbeitet…' : 'Bereit'}
-          </span>
-        </div>
-      )}
+          {busy ? 'Agent Zero arbeitet…' : 'Bereit'}
+        </span>
+      </div>
 
       {onRouteChange && (
         <div
-          data-testid="monitor-llm-route-picker"
+          data-testid="sovereign-llm-route-picker"
           style={{ position: 'relative', padding: '7px 10px 0' }}
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
@@ -349,7 +246,7 @@ export function MonitorCommunicationDock({
               <button
                 type="button"
                 onClick={() => onRouteChange('')}
-                aria-label={chatMode ? 'Chat LLM Route auf Auto zurücksetzen' : 'Monitor LLM Route auf Auto zurücksetzen'}
+                aria-label="Chat LLM Route auf Auto zurücksetzen"
                 style={railButtonStyle(false)}
               >
                 AUTO
@@ -444,7 +341,7 @@ export function MonitorCommunicationDock({
       )}
 
       {visibleRouteHint && !routeCatalogError && (
-        <div data-testid="monitor-route-hint" style={{ padding: '4px 10px 0', color: C.textMuted, font: '9px/1.3 monospace' }}>
+        <div data-testid="sovereign-route-hint" style={{ padding: '4px 10px 0', color: C.textMuted, font: '9px/1.3 monospace' }}>
           {visibleRouteHint}
         </div>
       )}

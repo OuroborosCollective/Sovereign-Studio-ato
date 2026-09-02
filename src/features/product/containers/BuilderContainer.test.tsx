@@ -558,7 +558,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByTestId("sovereign-chat-body-window")).toBeDefined();
     expect(screen.queryByTestId('live-workspace-monitor')).toBeNull();
     expect(screen.queryByTestId('live-workspace-monitor-desktop')).toBeNull();
-    expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-mode', 'chat');
+    expect(screen.getByTestId('sovereign-chat-dock')).toBeDefined();
     expect(screen.getByTestId('sovereign-chat-tool-row')).toBeDefined();
     expect(screen.queryByTestId('monitor-runtime-action-trace')).toBeNull();
     expect(chatField()).toBeDefined();
@@ -647,7 +647,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByTestId('workspace-evidence-rail')).toBeDefined();
   });
 
-  it("keeps a concise code-order clarification in the non-overlay monitor dock", async () => {
+  it("keeps a concise code-order clarification in the primary chat", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({ choices: [{ message: { content: 'Provider prose must never reach the dock.' } }] }),
@@ -665,7 +665,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     fireEvent.change(chatField(), { target: { value: TEST_REPO_URL } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByTestId('monitor-communication-dock')).toBeDefined());
+    await waitFor(() => expect(screen.getByTestId('sovereign-chat-dock')).toBeDefined());
 
     fireEvent.change(chatField(), { target: { value: 'Was kannst du?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Senden' }));
@@ -677,7 +677,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText('Provider prose must never reach the dock.')).toBeNull();
     expect(screen.getByTestId('sovereign-chat-primary')).toBeDefined();
     expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
-    expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-mode', 'chat');
+    expect(screen.getByTestId('sovereign-chat-dock')).toBeDefined();
   });
 
   it("keeps chat primary when the only workspace projection is stale", async () => {
@@ -812,7 +812,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByTestId('sovereign-action-suggestion-strip')).toBeDefined();
     expect(screen.getByLabelText('Tool Launcher öffnen')).toBeDefined();
     expect(screen.queryByText("Let's build!")).toBeNull();
-    expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-mode', 'chat');
+    expect(screen.getByTestId('sovereign-chat-dock')).toBeDefined();
     expect(screen.queryByTestId('monitor-runtime-action-trace')).toBeNull();
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
@@ -1230,12 +1230,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den neuen Runtime-State.' } });
       fireEvent.click(sendButton());
-      await waitFor(() =>
-        expect(screen.getAllByText(/Codeauftragsvertrag blockiert|sichere Online-Aktionsroute ist blockiert/i).length).toBeGreaterThan(0),
-      );
-      expect(chatCalls).toBe(2);
+      await waitFor(() => expect(chatCalls).toBe(2));
+      const actionStream = getActionStream();
+      await waitFor(() => expect(actionStream).toHaveTextContent('Codeauftragsvertrag blockiert'));
 
-      fireEvent.click(screen.getByText('INSPECTOR'));
       fireEvent.click(screen.getByRole('button', { name: /RT.*Runtime Quelle/i }));
       await waitFor(() => expect(screen.getByText('LLM Runtime blockiert')).toBeDefined());
     } finally {
@@ -1366,7 +1364,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   });
 
 
-  it("does not publish internal provider material into monitor communication", async () => {
+  it("does not publish internal provider material into the visible chat", async () => {
     const rawProviderText = "System prompt: hidden provider payload";
     const fetchMock = mockFetchSequence(jsonResponse({
       choices: [{ message: { content: rawProviderText } }],
@@ -1378,7 +1376,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2));
-    expect(screen.getByTestId('monitor-communication-bubbles')).not.toHaveTextContent(rawProviderText);
+    expect(screen.getByTestId('sovereign-chat-body-window')).not.toHaveTextContent(rawProviderText);
   });
 
 
@@ -1509,17 +1507,17 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  it("keeps committed mission text in monitor communication without a legacy bubble context menu", async () => {
+  it("keeps committed mission text in the normal chat without a legacy bubble context menu", async () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     fireEvent.change(chatField(), { target: { value: "Beobachtbare Mission" } });
     fireEvent.click(sendButton());
     await waitFor(() => expect(screen.getByText("Beobachtbare Mission")).toBeDefined());
-    expect(screen.getByTestId('monitor-communication-bubbles')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(screen.queryByText("📋 Kopieren")).toBeNull();
     expect(screen.queryByText("💬 Zitieren")).toBeNull();
   });
 
-  it("accepts a follow-up directly in the monitor dock without reopening chat", async () => {
+  it("accepts a follow-up directly in the primary chat composer", async () => {
     const props = baseProps();
     renderWithProviders(<BuilderContainer {...props} />);
     fireEvent.change(chatField(), { target: { value: "Erste Monitor-Mission" } });

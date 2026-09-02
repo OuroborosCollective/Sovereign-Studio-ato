@@ -110,10 +110,7 @@ import {
   sessionMessageToChatLine,
   type PersistedSession,
 } from "../runtime/sessionPersistenceRuntime";
-import {
-  projectMonitorCommunicationLine,
-  projectSituationalChatLine,
-} from "../runtime/situationalBubbleRuntime";
+import { projectConversationChatLine } from "../runtime/situationalBubbleRuntime";
 import { runTests, type TestRunnerResult } from "../runtime/testRunnerRuntime";
 import {
   requestAutoCodeReview,
@@ -191,8 +188,8 @@ import {
 import { AgentWorkTimeline } from "../components/AgentWorkTimeline";
 import { AgentEventStream } from "../components/AgentEventStream";
 import {
-  MonitorCommunicationDock,
-  type MonitorCommunicationEntry,
+  SovereignChatDock,
+  type SovereignChatEntry,
 } from "../components/MonitorCommunicationDock";
 import { SovereignActionStreamPanel } from "../components/SovereignActionStreamPanel";
 import {
@@ -2162,7 +2159,6 @@ export function BuilderContainer({
   agentEvidenceAnchors,
   desktopFrame,
   patternLearningEvidence,
-  agentJobStatus,
   agentIsRunning,
   onStartAgent,
   onCancelAgent,
@@ -2384,47 +2380,6 @@ export function BuilderContainer({
   // execution and evidence collection stay behind the conversation and only
   // surface technical projections when the owner explicitly opens Inspector.
   const chatPrimary = activeTab === 'chat';
-  // Keep LLM/user communication stable while a job starts, projections rotate or
-  // desktop evidence refreshes. Only account/repository scope changes reset it.
-  const monitorAccountKey = authUser?.id ?? 'guest';
-  const monitorScopeKey = currentRepoScopeKey ?? 'unbound';
-  const previousMonitorBindingRef = useRef({
-    accountKey: monitorAccountKey,
-    scopeKey: monitorScopeKey,
-  });
-  const [monitorCommunication, setMonitorCommunication] = useState<MonitorCommunicationEntry[]>([]);
-  const monitorCommunicationSequenceRef = useRef(0);
-  const appendMonitorCommunication = useCallback((
-    kind: MonitorCommunicationEntry['kind'],
-    text: string,
-    id?: string,
-  ) => {
-    const clean = text.trim();
-    if (!clean) return;
-    monitorCommunicationSequenceRef.current += 1;
-    const entry: MonitorCommunicationEntry = {
-      id: id ?? `monitor-communication-${monitorCommunicationSequenceRef.current}`,
-      kind,
-      text: clean,
-      createdAt: Date.now(),
-    };
-    setMonitorCommunication((previous) => {
-      if (previous.some((existing) => existing.id === entry.id)) return previous;
-      return [...previous.slice(-199), entry];
-    });
-  }, []);
-  useEffect(() => {
-    const previous = previousMonitorBindingRef.current;
-    const next = { accountKey: monitorAccountKey, scopeKey: monitorScopeKey };
-    previousMonitorBindingRef.current = next;
-    const preserveFirstRepositoryBinding = previous.accountKey === next.accountKey
-      && previous.scopeKey === 'unbound'
-      && next.scopeKey !== 'unbound';
-    if (preserveFirstRepositoryBinding) return;
-    setMonitorCommunication([]);
-    monitorCommunicationSequenceRef.current = 0;
-  }, [monitorAccountKey, monitorScopeKey]);
-
   // ── Issue #443: GitHub Access State
   const [githubAccessState, setGitHubAccessState] = useState<GitHubAccessSnapshot>(
     createGitHubAccessSnapshot(),
@@ -3004,31 +2959,19 @@ export function BuilderContainer({
         id: line.id ?? createChatLineId(line.role, chatLineIndexRef.current),
         createdAt,
       };
-      const committed = projectSituationalChatLine(candidate);
-      const monitorLine = projectMonitorCommunicationLine(candidate);
-      if (monitorLine) {
-        appendMonitorCommunication(
-          monitorLine.role === 'user'
-            ? 'user'
-            : monitorLine.role === 'system'
-              ? 'runtime'
-              : 'communicate',
-          monitorLine.text,
-          `monitor:${monitorLine.id}`,
-        );
-      }
+      const committed = projectConversationChatLine(candidate);
       if (!committed) return;
       setChatHistory((previous) => [...previous, committed]);
     },
-    [appendMonitorCommunication],
+    [],
   );
 
   const appendRuntimeNotice = useCallback((text: string) => {
     appendChatLine({
       role: 'system',
       text,
-      monitorProjection: {
-        schemaVersion: 'sovereign.monitor-communication-projection.v1',
+      conversationProjection: {
+        schemaVersion: 'sovereign.conversation-projection.v1',
         sourceKind: 'RUNTIME_NOTICE',
         authority: 'CONVERSATION_ONLY',
         authoritative: false,
@@ -3047,8 +2990,8 @@ export function BuilderContainer({
     appendChatLine({
       role: 'assistant',
       text: guardedText,
-      monitorProjection: {
-        schemaVersion: 'sovereign.monitor-communication-projection.v1',
+      conversationProjection: {
+        schemaVersion: 'sovereign.conversation-projection.v1',
         sourceKind: 'LLM_RESPONSE',
         authority: 'CONVERSATION_ONLY',
         authoritative: false,
@@ -3214,25 +3157,11 @@ export function BuilderContainer({
         if (cancelled) return;
         persistedSessionRef.current = session;
         chatLineIndexRef.current = session.messages.length;
-        const restored = session.messages.map(sessionMessageToChatLine);
+        const restored = session.messages
+          .map(sessionMessageToChatLine)
+          .map(projectConversationChatLine)
+          .filter((line): line is ChatLine => line !== null);
         setChatHistory(restored);
-        const restoredMonitorEntries = restored
-          .map(projectMonitorCommunicationLine)
-          .filter((line): line is ChatLine => line !== null)
-          .slice(-200)
-          .map((line, index): MonitorCommunicationEntry => ({
-            id: `restored-monitor-${line.id || index}`,
-            kind: line.role === 'user' ? 'user' : line.role === 'system' ? 'runtime' : 'communicate',
-            text: line.text,
-            createdAt: line.createdAt,
-          }));
-        setMonitorCommunication((previous) => {
-          const byId = new Map<string, MonitorCommunicationEntry>();
-          [...restoredMonitorEntries, ...previous].forEach((entry) => byId.set(entry.id, entry));
-          return [...byId.values()]
-            .sort((left, right) => left.createdAt - right.createdAt)
-            .slice(-200);
-        });
 
         addLog(
           'info',
@@ -3329,17 +3258,6 @@ export function BuilderContainer({
     runtimeBusy ||
     isPublishing,
   );
-  const workStateStatus = runtimeThinkingActive
-    ? chatResponseBusy
-      ? "LLM Runtime antwortet"
-      : scopedAgentJob
-        ? agentJobStatus?.trim() || "Sovereign Agent Runtime arbeitet"
-        : "Runtime arbeitet"
-    : workerBlocker
-      ? `blocked · ${workerBlocker.diagnostic.status ? `Worker HTTP ${workerBlocker.diagnostic.status}` : "Worker blockiert"}`
-      : effectiveRepoReady
-        ? "idle · Repo-Kontext bereit"
-        : "idle · Repo fehlt";
   const outcomeHints = useMemo(
     () => buildOutcomeHints(scopedAgentJob),
     [scopedAgentJob],
@@ -5484,6 +5402,18 @@ Das echte Repo-Setup wurde geöffnet.`);
     return false;
   };
 
+  const visibleChatEntries = useMemo<readonly SovereignChatEntry[]>(
+    () => chatHistory
+      .filter((line) => line.role !== 'thought')
+      .slice(-200)
+      .map((line) => ({
+        id: line.id,
+        kind: line.role === 'user' ? 'user' : line.role === 'system' ? 'system' : 'assistant',
+        text: line.text,
+        createdAt: line.createdAt ?? 0,
+      })),
+    [chatHistory],
+  );
   const submitDisabled =
     localRepoLoading || chatResponseBusy || isPublishing || !wishText.trim();
   const isChat = activeTab === "chat";
@@ -5790,8 +5720,7 @@ Das echte Repo-Setup wurde geöffnet.`);
                 />
               );
             })()}
-            <MonitorCommunicationDock
-              mode="chat"
+            <SovereignChatDock
               emptyState={wishText.trim() ? null : (
                 <div style={{ width: 'min(760px, 100%)', textAlign: 'center' }}>
                   <div aria-hidden="true" style={{ fontSize: 30, marginBottom: 8 }}>⬡</div>
@@ -5816,8 +5745,7 @@ Das echte Repo-Setup wurde geöffnet.`);
               onSubmit={() => { void handleSubmit(); }}
               disabled={submitDisabled}
               busy={localRepoLoading || chatResponseBusy || isPublishing}
-              runtimeStatus={workStateStatus}
-              entries={monitorCommunication}
+              entries={visibleChatEntries}
               routeOptions={llmRouteOptions}
               selectedRouteId={selectedLlmRouteId}
               onRouteChange={(routeId) => {
@@ -5829,12 +5757,6 @@ Das echte Repo-Setup wurde geöffnet.`);
                 );
               }}
               routeCatalogError={llmRouteCatalogError}
-              runtimeMood={agentStatus === 'error' ? '🛟⚠️' : runtimeThinkingActive ? '🤖💭' : '😊✨'}
-              onOpenFlow={() => handleCompactToolSelect('runtime_logs')}
-              onRequestIdea={() => {
-                triggerHaptic('light');
-                onGenerateIdeas();
-              }}
               onOpenToolchain={() => {
                 appendActionEvent(buildLocalRuntimeResultEvent({
                   label: 'Toolchain geöffnet',

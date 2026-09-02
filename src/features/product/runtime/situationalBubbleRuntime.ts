@@ -230,16 +230,16 @@ export function projectSituationalChatLine(line: ChatLine): ChatLine | null {
   return { ...line, bubble: committed.bubble };
 }
 
-export function projectMonitorCommunicationLine(line: ChatLine): ChatLine | null {
-  // Persisted workflow truth must pass the complete bubble firewall. It may
-  // never downgrade to a transient conversation projection.
+export function projectConversationChatLine(line: ChatLine): ChatLine | null {
+  // Persisted workflow truth must pass the complete bubble firewall. It shares
+  // the same visible chat with safe transient conversation, but never loses its
+  // stronger canonical binding.
   if (line.bubble) return projectSituationalChatLine(line);
 
-  // Non-authoritative conversation is a separate, explicitly typed projection.
-  // Raw provider/system text cannot opt itself into the permanent monitor by
-  // merely looking harmless; only the bounded local call sites may attach this
-  // provenance envelope, and the envelope carries no action or resume authority.
-  const projection = line.monitorProjection;
+  // Non-authoritative assistant/runtime conversation is allowed into the chat
+  // only through an explicit conversation-only provenance envelope. Raw
+  // provider/system text can never opt itself into the visible conversation.
+  const projection = line.conversationProjection;
   if (!projection || Object.keys(projection).some((key) => ![
     'schemaVersion',
     'sourceKind',
@@ -247,7 +247,7 @@ export function projectMonitorCommunicationLine(line: ChatLine): ChatLine | null
     'authoritative',
   ].includes(key))) return null;
   if (
-    projection.schemaVersion !== 'sovereign.monitor-communication-projection.v1'
+    projection.schemaVersion !== 'sovereign.conversation-projection.v1'
     || projection.authority !== 'CONVERSATION_ONLY'
     || projection.authoritative !== false
   ) return null;
@@ -262,7 +262,7 @@ export function projectMonitorCommunicationLine(line: ChatLine): ChatLine | null
   const folded = text.toLocaleLowerCase('en-US');
   if (INTERNAL_TEXT_MARKERS.some((marker) => folded.includes(marker))) return null;
   if (SECRET_PATTERNS.some((pattern) => pattern.test(text))) return null;
-  return { ...line, text, monitorProjection: projection };
+  return { ...line, text, conversationProjection: projection };
 }
 
 export function projectSituationalChatLines(lines: readonly ChatLine[]): ChatLine[] {
