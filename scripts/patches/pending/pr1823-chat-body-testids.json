@@ -1,0 +1,27 @@
+{
+  "target": "src/features/product/containers/BuilderContainer.test.tsx",
+  "source_ref": "sovereign/chatgpt/1788358270-finish-pr-1822-chat-first-edd174",
+  "branch_base_ref": "d80008dd8b4911535c7ff0ec49c54e2fa6999ae5",
+  "branch": "sovereign/chatgpt/1788358270-finish-pr-1822-chat-first-edd174",
+  "commit_message": "test(frontend): use chat body evidence for chat-first regressions",
+  "pr_title": "chore: transport #1822 chat-first test drift repair",
+  "pr_body": "Same-branch exact-search repair for #1823. Updates only stale chat-first test names and bubble testids; product behavior is unchanged.",
+  "blocks": [
+    {
+      "search": "  it(\"does not publish internal provider material into monitor communication\", async () => {",
+      "replace": "  it(\"does not publish internal provider material into the visible chat\", async () => {"
+    },
+    {
+      "search": "    expect(screen.getByTestId('monitor-communication-bubbles')).not.toHaveTextContent(rawProviderText);",
+      "replace": "    expect(screen.getByTestId('sovereign-chat-body-window')).not.toHaveTextContent(rawProviderText);"
+    },
+    {
+      "search": "  it(\"keeps committed mission text in monitor communication without a legacy bubble context menu\", async () => {",
+      "replace": "  it(\"keeps committed mission text in the normal chat without a legacy bubble context menu\", async () => {"
+    },
+    {
+      "search": "    expect(screen.getByTestId('monitor-communication-bubbles')).toBeDefined();",
+      "replace": "    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();"
+    }
+  ]
+}
