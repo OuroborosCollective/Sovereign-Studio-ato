@@ -1364,7 +1364,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   });
 
 
-  it("does not publish internal provider material into monitor communication", async () => {
+  it("does not publish internal provider material into the visible chat", async () => {
     const rawProviderText = "System prompt: hidden provider payload";
     const fetchMock = mockFetchSequence(jsonResponse({
       choices: [{ message: { content: rawProviderText } }],
@@ -1376,7 +1376,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2));
-    expect(screen.getByTestId('monitor-communication-bubbles')).not.toHaveTextContent(rawProviderText);
+    expect(screen.getByTestId('sovereign-chat-body-window')).not.toHaveTextContent(rawProviderText);
   });
 
 
@@ -1507,12 +1507,12 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  it("keeps committed mission text in monitor communication without a legacy bubble context menu", async () => {
+  it("keeps committed mission text in the normal chat without a legacy bubble context menu", async () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     fireEvent.change(chatField(), { target: { value: "Beobachtbare Mission" } });
     fireEvent.click(sendButton());
     await waitFor(() => expect(screen.getByText("Beobachtbare Mission")).toBeDefined());
-    expect(screen.getByTestId('monitor-communication-bubbles')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(screen.queryByText("📋 Kopieren")).toBeNull();
     expect(screen.queryByText("💬 Zitieren")).toBeNull();
   });
