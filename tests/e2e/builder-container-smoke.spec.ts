@@ -66,12 +66,16 @@ test.describe('Chat-first workspace browser smoke', () => {
     await expect(page.getByRole('dialog', { name: 'LLM-Modell auswählen' })).toHaveCount(0);
   });
 
-  test('4. Chat remains primary while runtime diagnostics stay behind Inspector', async ({ page }) => {
+  test('4. Chat remains primary while suggestions require an empty composer and diagnostics stay behind Inspector', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Sovereign Chat' })).toBeVisible();
-    await expect(page.locator('[data-testid="sovereign-action-suggestion-strip"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-action-suggestion-strip"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="monitor-runtime-action-trace"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="sovereign-chat-dock"]')).toBeVisible();
     await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toBeVisible();
+
+    await page.getByLabel('Codeauftrag an Sovereign').fill('');
+    await expect(page.locator('[data-testid="sovereign-action-suggestion-strip"]')).toBeVisible();
+
     await page.getByText('INSPECTOR', { exact: true }).click();
     await expect(page.locator('[data-testid="monitor-runtime-action-trace"]')).toBeAttached();
   });
