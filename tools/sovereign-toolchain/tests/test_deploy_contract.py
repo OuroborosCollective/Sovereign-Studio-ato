@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import subprocess
 from pathlib import Path
@@ -10,6 +11,7 @@ ROLLBACK_HELPER = ROOT / "sovereign-toolchain" / "deploy" / "rollback-last-insta
 APP = ROOT / "sovereign-toolchain" / "src" / "sovereign_toolchain" / "app.py"
 METADATA_READER = ROOT / "sovereign-toolchain" / "deploy" / "read-broker-github-app-metadata.sh"
 WORKFLOW = ROOT.parent / ".github" / "workflows" / "sovereign-toolchain.yml"
+SELF_UPDATE_SERVICE = ROOT / "sovereign-chatgpt-mcp" / "deploy" / "sovereign-chatgpt-mcp-self-update.service"
 
 
 def test_units_split_loopback_full_app_from_minimal_evidence_listener() -> None:
@@ -44,8 +46,24 @@ def test_installer_atomically_deploys_and_verifies_both_boundaries() -> None:
     installer = INSTALLER.read_text("utf-8")
 
     assert "command -v uv" in installer
-    assert "uv lock --check" in installer
-    assert "uv sync --frozen --no-dev --no-install-project" in installer
+    assert 'UV_CACHE_DIR="$TEMP/uv-cache"' in installer
+    assert 'install -d -m 0700 -o root -g root "$UV_CACHE_DIR"' in installer
+    assert 'env -u UV_FROZEN -u UV_LOCKED UV_CACHE_DIR="$UV_CACHE_DIR" uv sync --locked --no-dev --no-install-project' in installer
+    assert 'rm -rf "$UV_CACHE_DIR"' in installer
+    assert "SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC" in installer
+    assert "CLI_COMPATIBILITY" in installer
+    assert "LOCK_DRIFT" in installer
+    assert "STORAGE" in installer
+    assert "PERMISSION" in installer
+    assert "BUILD_SYSTEM" in installer
+    assert "CACHE_IO" in installer
+    assert "RESOLUTION" in installer
+    assert "PYTHON" in installer
+    assert "NETWORK" in installer
+    assert "bounded_uv_version" in installer
+    assert "UV_OUTPUT_SHA256" in installer
+    assert "uv lock --check" not in installer
+    assert "uv sync --frozen" not in installer
     assert 'git -C "$SOURCE_REPOSITORY_ROOT" archive --format=tar "$EXPECTED_REVISION"' in installer
     assert 'cp -a "$SOURCE_DIR/."' not in installer
     assert 'cp -a "$COMMON_SOURCE/."' not in installer
@@ -59,6 +77,9 @@ def test_installer_atomically_deploys_and_verifies_both_boundaries() -> None:
 
     assert 'ROLLBACK_HELPER="$BACKUP_ROOT/rollback-last-install.py"' in installer
     assert 'python3 "$ROLLBACK_HELPER" prepare' in installer
+    assert 'ROLLBACK_PREPARE_LOG="$(mktemp)"' in installer
+    assert "SOVEREIGN_TOOLCHAIN_ROLLBACK_FAILURE operation=prepare reason_sha256=" in installer
+    assert 'rollback prepare failed: $ROLLBACK_PREPARE_DIAGNOSTIC output_sha256=$ROLLBACK_PREPARE_OUTPUT_SHA256' in installer
     assert 'python3 "$ROLLBACK_HELPER" rollback' in installer
     assert 'python3 "$ROLLBACK_HELPER" commit' in installer
     assert 'trap \'on_activation_signal HUP\' HUP' in installer
@@ -121,6 +142,55 @@ def test_installer_atomically_deploys_and_verifies_both_boundaries() -> None:
 
 
 
+def test_uv_sync_uses_private_staging_cache_under_protect_home() -> None:
+    installer = INSTALLER.read_text("utf-8")
+    self_update_service = SELF_UPDATE_SERVICE.read_text("utf-8")
+
+    assert "User=root" in self_update_service
+    assert "ProtectHome=true" in self_update_service
+    assert 'UV_CACHE_DIR="$TEMP/uv-cache"' in installer
+    assert 'UV_CACHE_DIR="$UV_CACHE_DIR" uv sync' in installer
+    assert "UV_CACHE_DIR=$HOME" not in installer
+    assert "UV_CACHE_DIR=/root" not in installer
+
+
+def test_uv_sync_failure_classifier_is_bounded_and_causal(tmp_path: Path) -> None:
+    installer = INSTALLER.read_text("utf-8")
+    function_body = installer.split("classify_uv_sync_failure() {", 1)[1].split(
+        "\nbounded_uv_version()", 1
+    )[0]
+    function_source = "classify_uv_sync_failure() {" + function_body
+    cases = {
+        "CLI_COMPATIBILITY": "error: unexpected argument '--no-install-project' found",
+        "LOCK_DRIFT": "uv.lock needs to be updated, but --locked was provided",
+        "STORAGE": "failed to write cache: No space left on device",
+        "PERMISSION": "failed to create virtual environment: Permission denied",
+        "BUILD_SYSTEM": "Failed to build wheel using the build backend hatchling",
+        "CACHE_IO": "cache entry corrupt: checksum mismatch",
+        "RESOLUTION": "No solution found when resolving dependencies",
+        "PYTHON": "Python not found for the requested environment",
+        "NETWORK": "failed to fetch package: connection reset by peer",
+        "OTHER": "resolver exited for an unclassified bounded reason",
+    }
+    for expected, evidence in cases.items():
+        log = tmp_path / f"{expected.lower()}.log"
+        log.write_text(evidence + "\n", encoding="utf-8")
+        completed = subprocess.run(
+            [
+                "bash",
+                "-c",
+                function_source + '\nclassify_uv_sync_failure "$1"',
+                "bash",
+                str(log),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert completed.stderr == ""
+        assert completed.stdout.strip() == expected
+
+
 def test_rollback_helper_verifies_revision_files_services_and_sockets() -> None:
     helper = ROLLBACK_HELPER.read_text("utf-8")
 
@@ -162,6 +232,73 @@ def load_rollback_helper():
     helper = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helper)
     return helper
+
+
+def test_prepare_accepts_legacy_predecessor_without_revision_marker(tmp_path: Path) -> None:
+    helper = load_rollback_helper()
+    root = tmp_path / "legacy-root"
+    backup_root = root / ".installer-backups"
+    toolchain = root / "sovereign-toolchain"
+    common = root / "sovereign-legacy-mcp-common"
+    backup_root.mkdir(parents=True)
+    toolchain.mkdir()
+    common.mkdir()
+
+    helper.BACKUP_ROOT = backup_root
+    helper.MANIFEST_PATH = backup_root / "last-install.json"
+    helper.DIRECTORIES = (
+        (toolchain, "sovereign-toolchain"),
+        (common, "sovereign-legacy-mcp-common"),
+    )
+    helper.FILES = ()
+    helper.SERVICES = ()
+    captured = {}
+    helper.atomic_json_write = lambda payload: captured.update(payload)
+    helper.read_manifest = lambda: dict(captured)
+    helper.retire_superseded_snapshots = lambda _payload: None
+
+    helper.prepare("a" * 40, "20260903T200000Z.123")
+
+    assert captured["previousRevision"] is None
+    assert captured["directories"][0]["previousPresent"] is True
+    assert not (toolchain / helper.REVISION_MARKER).exists()
+    helper.verify_restored_snapshots(captured)
+
+    (toolchain / helper.REVISION_MARKER).write_text("b" * 40, encoding="ascii")
+    try:
+        helper.verify_restored_snapshots(captured)
+    except helper.RollbackError as exc:
+        assert str(exc) == "restored legacy revision marker state changed"
+    else:
+        raise AssertionError("legacy predecessor marker drift was not rejected")
+
+
+def test_prepare_rejects_invalid_existing_revision_marker(tmp_path: Path) -> None:
+    helper = load_rollback_helper()
+    root = tmp_path / "legacy-root"
+    backup_root = root / ".installer-backups"
+    toolchain = root / "sovereign-toolchain"
+    common = root / "sovereign-legacy-mcp-common"
+    backup_root.mkdir(parents=True)
+    toolchain.mkdir()
+    common.mkdir()
+    (toolchain / helper.REVISION_MARKER).write_text("not-a-revision", encoding="ascii")
+
+    helper.BACKUP_ROOT = backup_root
+    helper.MANIFEST_PATH = backup_root / "last-install.json"
+    helper.DIRECTORIES = (
+        (toolchain, "sovereign-toolchain"),
+        (common, "sovereign-legacy-mcp-common"),
+    )
+    helper.FILES = ()
+    helper.SERVICES = ()
+
+    try:
+        helper.prepare("a" * 40, "20260903T200001Z.124")
+    except helper.RollbackError as exc:
+        assert str(exc) == "previous revision marker is invalid"
+    else:
+        raise AssertionError("invalid predecessor revision marker was accepted")
 
 
 def test_snapshot_retirement_is_bounded_and_preserves_the_current_generation(tmp_path: Path) -> None:
@@ -246,6 +383,37 @@ def test_installer_is_valid_bash() -> None:
 
     assert result.returncode == 0, result.stderr
     assert helper.returncode == 0, helper.stderr
+
+
+def test_pre_activation_unhandled_error_emits_only_bounded_hashed_diagnostic(tmp_path: Path) -> None:
+    installer = INSTALLER.read_text("utf-8")
+    assert 'trap \'on_unhandled_error "$LINENO"\' ERR' in installer
+    assert installer.index('trap \'on_unhandled_error "$LINENO"\' ERR') < installer.index("STAGE=preflight")
+    assert installer.index("MUTATION_STARTED=1") < installer.index("trap on_activation_error ERR")
+
+    marker = "STAGE=preflight\n"
+    injected = installer.replace(marker, marker + "false\n", 1)
+    injected_path = tmp_path / "install-on-vps.sh"
+    injected_path.write_text(injected, encoding="utf-8")
+
+    false_line = injected.splitlines().index("false") + 1
+    expected_reason = hashlib.sha256(
+        f"unhandled command failure line={false_line}".encode("utf-8")
+    ).hexdigest()
+    completed = subprocess.run(
+        ["bash", str(injected_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert completed.stdout == ""
+    assert completed.stderr.splitlines() == [
+        "SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE "
+        f"stage=preflight reason_sha256={expected_reason} rollback=not-required"
+    ]
+    assert "unhandled command failure" not in completed.stderr
 
 
 def test_metadata_reader_ignores_unrelated_non_shellsafe_dotenv_line(tmp_path: Path) -> None:

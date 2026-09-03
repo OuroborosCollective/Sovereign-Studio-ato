@@ -17,6 +17,8 @@ def test_runtime_boundaries_report_enforced_execution_model(monkeypatch) -> None
         "SOVEREIGN_MCP_ENABLE_SELF_UPDATE",
         "SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE",
         "SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE",
+        "SOVEREIGN_MCP_ENABLE_AURION_OPERATOR",
+        "SOVEREIGN_MCP_ENABLE_AURION_WRITE",
     ):
         monkeypatch.setenv(name, "1")
 
@@ -59,6 +61,9 @@ def test_runtime_boundaries_report_enforced_execution_model(monkeypatch) -> None
         "managed_compose_write",
         "patchmon_patch_write",
         "fleet_maintenance_write",
+        "aurion_account_role_readback",
+        "aurion_account_role_plan",
+        "aurion_account_role_apply",
     }
 
 

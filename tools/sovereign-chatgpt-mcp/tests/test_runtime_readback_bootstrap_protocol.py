@@ -83,6 +83,50 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
             with self.assertRaisesRegex(module.ReadbackError, "input framing is invalid"):
                 module._read_input()
 
+    def test_forced_readback_treats_signed_failure_receipt_as_transport_success(self) -> None:
+        module = _load_entrypoint()
+        scope = _scope()
+        receipt = json.dumps(
+            {
+                "schemaVersion": "sovereign.coordinated-release-reconciler-status.v1",
+                "ok": False,
+                "status": "MCP_UPDATE_FAILED_BACKEND_PRESERVED",
+                "secretValuesReturned": False,
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        signature = b"-----BEGIN SSH SIGNATURE-----\nregression\n"
+        completed = module.subprocess.CompletedProcess(
+            [str(module.RECONCILER)],
+            1,
+            stdout=b"",
+            stderr=b"",
+        )
+        with (
+            patch.object(module.os, "geteuid", return_value=0),
+            patch.object(
+                module,
+                "_read_input",
+                return_value=(scope, "ghs_ephemeral_runtime_token_abcdefghijklmnopqrstuvwxyz", "OuroborosCollective"),
+            ),
+            patch.object(
+                module,
+                "_backend_env_file",
+                return_value=Path("/run/secrets/sovereign-backend.env"),
+            ),
+            patch.object(module, "_write_token"),
+            patch.object(module, "_prepare_registry_auth"),
+            patch.object(module.subprocess, "run", return_value=completed),
+            patch.object(module, "_read_status", return_value=receipt),
+            patch.object(module, "_sign", return_value=signature),
+            patch.object(module, "_emit") as emit,
+            patch.object(module, "_cleanup_registry_auth"),
+        ):
+            exit_code = module.main()
+
+        self.assertEqual(exit_code, 0)
+        emit.assert_called_once_with(scope, receipt, signature)
+
     def test_target_reconcile_environment_binds_canonical_backend_repository(self) -> None:
         module = _load_entrypoint()
         source = ENTRYPOINT.read_text("utf-8")

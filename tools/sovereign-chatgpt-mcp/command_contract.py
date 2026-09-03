@@ -7,6 +7,7 @@ MUTATING_ACTIONS = frozenset(
         "preview_verified_migration",
         "apply_verified_migration",
         "postgres_admin_sql",
+        "aurion_account_role_apply",
         "git_push_main",
         "github_rerun_failed_workflows",
         "github_workflow_dispatch",

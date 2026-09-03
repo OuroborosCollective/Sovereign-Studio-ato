@@ -27,7 +27,8 @@ DEPLOY_DIAGNOSTIC_RE = re.compile(
 )
 MCP_INSTALL_FAILURE_RE = re.compile(
     r"^install blocked: stage=(?P<stage>[A-Za-z0-9_:-]{1,160}) "
-    r"exit=[1-9][0-9]{0,2} reason=(?P<reason>.*) rollback_attempted=(?P<rollback>[01])$"
+    r"exit=[1-9][0-9]{0,2} reason=(?P<reason>.*) rollback_attempted=(?P<rollback>[01])"
+    r"(?: toolchain_rollback=(?P<toolchain_rollback>not-required|verified|failed))?$"
 )
 MCP_NEURO_CANARY_FAILURE_RE = re.compile(
     r"^isolated neuro runtime canary failed: "
@@ -543,6 +544,9 @@ def _safe_mcp_install_diagnostic(output: str) -> dict[str, Any] | None:
                 ).hexdigest(),
                 "rollbackAttempted": match.group("rollback") == "1",
             }
+            toolchain_rollback = match.group("toolchain_rollback")
+            if toolchain_rollback is not None:
+                diagnostic["toolchainRollback"] = toolchain_rollback
             canary_match = MCP_NEURO_CANARY_FAILURE_RE.fullmatch(reason)
             if canary_match is not None:
                 diagnostic["neuroCanary"] = {

@@ -65,24 +65,36 @@ jobs:
             ];
             const evidence = {};
             const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-            for (let attempt = 1; attempt <= 540; attempt += 1) {
-              let waiting = false;
-              for (const requirement of required) {
+            const listRelevantRuns = async (requirement) => {
+              const perPage = 100;
+              const workflowRuns = [];
+              for (let page = 1; page <= 10; page += 1) {
                 const response = await github.rest.actions.listWorkflowRuns({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   workflow_id: requirement.workflow,
                   branch: 'main',
                   head_sha: expected,
-                  per_page: 20,
+                  per_page: perPage,
+                  page,
                 });
-                const runs = response.data.workflow_runs
-                  .filter((run) => String(run.head_sha || '').toLowerCase() === expected)
-                  .filter((run) => ['push', 'workflow_dispatch'].includes(String(run.event || '')))
-                  .sort((left, right) => (
-                    Number(right.id || 0) - Number(left.id || 0)
-                    || Number(right.run_attempt || 0) - Number(left.run_attempt || 0)
-                  ));
+                workflowRuns.push(...response.data.workflow_runs);
+                if (response.data.workflow_runs.length < perPage) {
+                  break;
+                }
+              }
+              return workflowRuns
+                .filter((run) => String(run.head_sha || '').toLowerCase() === expected)
+                .filter((run) => ['push', 'workflow_dispatch'].includes(String(run.event || '')))
+                .sort((left, right) => (
+                  Number(right.id || 0) - Number(left.id || 0)
+                  || Number(right.run_attempt || 0) - Number(left.run_attempt || 0)
+                ));
+            };
+            for (let attempt = 1; attempt <= 540; attempt += 1) {
+              let waiting = false;
+              for (const requirement of required) {
+                const runs = await listRelevantRuns(requirement);
                 let accepted = null;
                 for (const run of runs) {
                   const jobsResponse = await github.rest.actions.listJobsForWorkflowRun({
@@ -112,14 +124,12 @@ jobs:
                     && run.event === 'workflow_dispatch'
                     && jobByName('Build immutable backend image')?.conclusion === 'success'
                   );
-                  const isMcpBranchUpdate = (
+                  const isMcpNonPublishingDispatch = (
                     requirement.workflow === 'sovereign-chatgpt-mcp.yml'
                     && run.event === 'workflow_dispatch'
-                    && jobByName('Boundary ledger drift preflight')?.conclusion === 'skipped'
-                    && jobByName('Validate MCP operator')?.conclusion === 'skipped'
                   );
                   if (publisher.conclusion === 'skipped') {
-                    if (isBackendPrValidation || isMcpBranchUpdate) {
+                    if (isBackendPrValidation || isMcpNonPublishingDispatch) {
                       // Only explicitly non-producing dispatch modes may be bypassed.
                       continue;
                     }

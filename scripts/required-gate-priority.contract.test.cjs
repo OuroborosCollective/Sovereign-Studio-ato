@@ -48,7 +48,6 @@ test('only required workflows and one bounded owner recovery lane receive direct
     workflowFiles.filter((name) => name !== ownerRecoveryWorkflowName),
     [
       'boundary-ledger-drift.yml',
-      'desktop-worker.yml',
       'integration-plan-lane-gate.yml',
       'release-verification.yml',
       'sovereign-agent-backend.yml',

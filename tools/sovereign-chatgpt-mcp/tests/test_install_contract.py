@@ -145,6 +145,40 @@ def test_desktop_worker_module_is_installed_in_control_plane_and_broker() -> Non
     assert "desktop_worker.py" in broker_copy_loop
 
 
+def test_aurion_operator_module_is_packaged_for_the_runtime_import_contract() -> None:
+    installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
+    runtime_copy_loop = installer.split('INSTALL_STAGE="copy_control_plane_files"', 1)[1].split("\ndone", 1)[0]
+    broker_copy_loop = installer.split("for file in broker.py", 1)[1].split("\ndone", 1)[0]
+
+    assert "aurion_operator.py" in dockerfile
+    assert "aurion_operator.py" in runtime_copy_loop
+    assert "aurion_operator.py" in broker_copy_loop
+    assert "import aurion_operator" in installer
+    assert "aurion_operator.AurionOperatorRuntime is not None" in installer
+
+
+def test_runtime_import_contract_failure_is_bounded_and_phase_diagnostic() -> None:
+    installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+
+    assert 'INSTALL_STAGE="verify_runtime_import_contracts"' in installer
+    assert 'CORE_IMPORT_LOG="$(mktemp)"' in installer
+    assert 'CORE_IMPORT_SHA256="$(sha256sum "$CORE_IMPORT_LOG"' in installer
+    assert '>"$CORE_IMPORT_LOG" 2>&1' in installer
+    assert 'rm -f "$CORE_IMPORT_LOG"' in installer
+    assert 'runtime import contract failed phase=launcher_bootstrap output_sha256=$CORE_IMPORT_SHA256' in installer
+    assert 'runtime import contract failed phase=repository_determinism output_sha256=$CORE_IMPORT_SHA256' in installer
+    assert 'runtime import contract failed phase=governance_surface output_sha256=$CORE_IMPORT_SHA256' in installer
+    assert 'runtime import contract failed phase=server_surface output_sha256=$CORE_IMPORT_SHA256' in installer
+    assert 'runtime import contract failed phase=runtime_types output_sha256=$CORE_IMPORT_SHA256' in installer
+    assert 'runtime import contract failed phase=broker_status output_sha256=$CORE_IMPORT_SHA256' in installer
+    assert 'runtime import contract failed phase=unisolated_core_contract output_sha256=$CORE_IMPORT_SHA256' in installer
+    assert 'runtime import contract failed phase=neuro_imports' in installer
+    assert 'assert launcher.OPERATING_PROFILE_ENFORCEMENT.enforcedToolCount == launcher.OPERATING_PROFILE_ENFORCEMENT.mutableToolCount' in installer
+    assert 'assert callable(server.aurion_account_role_apply)' in installer
+    assert 'assert status.get("status") == "BROKER_READY"' in installer
+
+
 def test_installer_assigns_workspace_to_container_user_and_probes_write_access() -> None:
     script = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
 

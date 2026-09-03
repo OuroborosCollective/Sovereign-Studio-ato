@@ -474,9 +474,12 @@ def handle_installation_event(
     get_connection: Callable,
 ) -> dict:
     """Handle installation lifecycle events."""
+    installation = installation if isinstance(installation, dict) else {}
+    account = installation.get("account")
+    account = account if isinstance(account, dict) else {}
     installation_id = installation.get("id")
-    account_login = installation.get("account", {}).get("login", "")
-    account_type = installation.get("account", {}).get("type", "User")
+    account_login = str(account.get("login") or "")
+    account_type = str(account.get("type") or "User")
     
     if action == "created":
         # New installation - create credit account
@@ -485,10 +488,20 @@ def handle_installation_event(
         
         # Check for Pro/Team plan
         # This would come from marketplace purchase
-        
+
+        try:
+            parsed_installation_id = int(installation_id or 0)
+        except (TypeError, ValueError):
+            parsed_installation_id = 0
+
+        try:
+            parsed_account_id = int(account.get("id") or 0)
+        except (TypeError, ValueError):
+            parsed_account_id = 0
+
         created = create_credit_account(
-            installation_id=int(installation_id or 0),
-            account_id=int(installation.get("account", {}).get("id") or 0),
+            installation_id=parsed_installation_id,
+            account_id=parsed_account_id,
             account_login=account_login,
             plan=plan,
             initial_credits=initial_credits,
@@ -578,11 +591,21 @@ def handle_marketplace_purchase(
     get_connection: Callable,
 ) -> dict:
     """Handle marketplace purchase events."""
-    account = marketplace_purchase.get("account", {})
+    marketplace_purchase = marketplace_purchase if isinstance(marketplace_purchase, dict) else {}
+    account = marketplace_purchase.get("account")
+    account = account if isinstance(account, dict) else {}
     account_login = str(account.get("login") or "")
-    account_id = int(account.get("id") or 0)
-    plan = marketplace_purchase.get("plan", {}).get("name", "free")
-    unit_count = marketplace_purchase.get("unit_count", 1)
+    try:
+        account_id = int(account.get("id") or 0)
+    except (TypeError, ValueError):
+        account_id = 0
+    plan_obj = marketplace_purchase.get("plan")
+    plan_obj = plan_obj if isinstance(plan_obj, dict) else {}
+    plan = str(plan_obj.get("name") or "free")
+    try:
+        unit_count = int(marketplace_purchase.get("unit_count") or 1)
+    except (TypeError, ValueError):
+        unit_count = 1
     
     # Map plans to credits
     plan_credits = {

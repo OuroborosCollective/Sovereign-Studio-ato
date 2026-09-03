@@ -389,11 +389,14 @@ def prepare(expected_revision: str, stamp: str) -> None:
         )
     if directories[0]["previousPresent"]:
         marker = DIRECTORIES[0][0] / REVISION_MARKER
-        if marker.is_symlink() or not marker.is_file():
-            raise RollbackError("previous revision marker is unavailable")
-        previous_revision = marker.read_text("ascii").strip()
-        if not SHA40.fullmatch(previous_revision):
+        if marker.is_symlink():
             raise RollbackError("previous revision marker is invalid")
+        if marker.exists():
+            if not marker.is_file():
+                raise RollbackError("previous revision marker is invalid")
+            previous_revision = marker.read_text("ascii").strip()
+            if not SHA40.fullmatch(previous_revision):
+                raise RollbackError("previous revision marker is invalid")
 
     files: list[dict[str, Any]] = []
     for target, basename, required_mode in FILES:
@@ -541,7 +544,14 @@ def verify_restored_snapshots(payload: dict[str, Any]) -> None:
     previous = payload["previousRevision"]
     if payload["directories"][0]["previousPresent"]:
         marker = DIRECTORIES[0][0] / REVISION_MARKER
-        if marker.read_text("ascii").strip() != previous:
+        if previous is None:
+            if marker.exists() or marker.is_symlink():
+                raise RollbackError("restored legacy revision marker state changed")
+        elif (
+            marker.is_symlink()
+            or not marker.is_file()
+            or marker.read_text("ascii").strip() != previous
+        ):
             raise RollbackError("restored revision readback failed")
 
 

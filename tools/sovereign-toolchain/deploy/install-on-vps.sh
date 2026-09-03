@@ -44,17 +44,70 @@ fail() {
   exit "$exit_code"
 }
 
+on_unhandled_error() {
+  local line="${1:-0}"
+  trap - ERR
+  [[ "$line" =~ ^[0-9]+$ ]] || line=0
+  fail "unhandled command failure line=$line"
+}
+trap 'on_unhandled_error "$LINENO"' ERR
+
+classify_uv_sync_failure() {
+  local log_file="$1"
+  if grep -Eqi '(unexpected argument|unrecognized option|unknown option|invalid option|found argument).*(--no-install-project|--no-dev|--locked)' "$log_file"; then
+    printf 'CLI_COMPATIBILITY\n'
+  elif grep -Eqi '(uv\.lock|lock ?file).*(needs? to be updated|out of date|not up[- ]to[- ]date)|locked.*(would|cannot|can.t).*update' "$log_file"; then
+    printf 'LOCK_DRIFT\n'
+  elif grep -Eqi '(no space left on device|disk quota|quota exceeded|filesystem full|out of disk space)' "$log_file"; then
+    printf 'STORAGE\n'
+  elif grep -Eqi '(permission denied|operation not permitted|access denied|read-only file system|read only file system)' "$log_file"; then
+    printf 'PERMISSION\n'
+  elif grep -Eqi '(failed to build|build backend|build-system|build system|pep[ -]?517|hatchling|failed to prepare metadata|failed to build wheel)' "$log_file"; then
+    printf 'BUILD_SYSTEM\n'
+  elif grep -Eqi '(cache).*(corrupt|invalid|failed|error)|failed to (extract|unpack)|input/output error|i/o error|checksum mismatch|hash mismatch' "$log_file"; then
+    printf 'CACHE_IO\n'
+  elif grep -Eqi '(no solution found|unsatisfiable|could not resolve|resolution failed|no matching distribution|package.*not found|not found in.*registry)' "$log_file"; then
+    printf 'RESOLUTION\n'
+  elif grep -Eqi '(python).*(not found|not available|unsupported|requires|requirement)|failed to (find|locate|download).*python' "$log_file"; then
+    printf 'PYTHON\n'
+  elif grep -Eqi '(timed? out|timeout|temporary failure|connection (refused|reset|aborted)|name or service not known|dns|tls|certificate|failed to (download|fetch)|request error|connect error|network|failed to query.*registry)' "$log_file"; then
+    printf 'NETWORK\n'
+  else
+    printf 'OTHER\n'
+  fi
+}
+
+bounded_uv_version() {
+  local version
+  version="$(uv --version 2>/dev/null | sed -nE 's/^uv ([0-9]+\.[0-9]+\.[0-9]+).*$/\1/p' | head -n 1)"
+  if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    printf '%s\n' "$version"
+  else
+    printf 'unknown\n'
+  fi
+}
+
 STAGE=preflight
 [[ -n "$SOURCE_DIR" && -d "$SOURCE_DIR" && ! -L "$SOURCE_DIR" ]] || fail "source directory invalid"
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "expected revision must be a full commit SHA"
 SOURCE_REPOSITORY_ROOT="$(git -C "$SOURCE_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
-[[ -n "$SOURCE_REPOSITORY_ROOT" && -d "$SOURCE_REPOSITORY_ROOT/.git" ]] || fail "source is not a full Git repository checkout"
+SOURCE_IN_WORK_TREE="$(git -C "$SOURCE_DIR" rev-parse --is-inside-work-tree 2>/dev/null || true)"
+[[ -n "$SOURCE_REPOSITORY_ROOT" && -d "$SOURCE_REPOSITORY_ROOT" && "$SOURCE_IN_WORK_TREE" == "true" ]] \
+  || fail "source is not a full Git repository checkout"
 [[ "$(realpath -- "$SOURCE_DIR")" == "$(realpath -- "$SOURCE_REPOSITORY_ROOT/tools/sovereign-toolchain")" ]] || fail "source directory is not the revision-bound toolchain path"
 command -v uv >/dev/null 2>&1 || fail "uv is required for the locked runtime build"
 command -v tar >/dev/null 2>&1 || fail "tar is required for revision materialization"
 SOURCE_REVISION="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
 [[ "$SOURCE_REVISION" == "$EXPECTED_REVISION" ]] || fail "source revision differs from expected revision"
-[[ -z "$(git -C "$SOURCE_REPOSITORY_ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]] || fail "source repository has tracked modifications"
+TRACKED_INSTALL_DIRTY="$(
+  git -C "$SOURCE_REPOSITORY_ROOT" status \
+    --porcelain \
+    --untracked-files=no \
+    -- \
+    tools/sovereign-toolchain \
+    tools/sovereign-legacy-mcp-common
+)"
+[[ -z "$TRACKED_INSTALL_DIRTY" ]] || fail "revision-bound toolchain source has tracked modifications"
 [[ -f "$SOURCE_DIR/pyproject.toml" && -f "$SOURCE_DIR/uv.lock" ]] || fail "locked toolchain source incomplete"
 [[ -f "$UNIT_SOURCE" && ! -L "$UNIT_SOURCE" ]] || fail "full service unit source invalid"
 [[ -f "$EVIDENCE_UNIT_SOURCE" && ! -L "$EVIDENCE_UNIT_SOURCE" ]] || fail "evidence service unit source invalid"
@@ -92,8 +145,21 @@ chmod 0644 "$TEMP/sovereign-toolchain/$REVISION_MARKER_NAME"
 rm -rf "$TEMP/sovereign-toolchain/.venv"
 (
   cd "$TEMP/sovereign-toolchain"
-  uv lock --check
-  uv sync --frozen --no-dev --no-install-project
+  UV_SYNC_LOG="$TEMP/uv-sync.log"
+  UV_CACHE_DIR="$TEMP/uv-cache"
+  install -d -m 0700 -o root -g root "$UV_CACHE_DIR"
+  if ! env -u UV_FROZEN -u UV_LOCKED UV_CACHE_DIR="$UV_CACHE_DIR" uv sync --locked --no-dev --no-install-project >"$UV_SYNC_LOG" 2>&1; then
+    UV_FAILURE_FAMILY="$(classify_uv_sync_failure "$UV_SYNC_LOG")"
+    UV_VERSION="$(bounded_uv_version)"
+    UV_OUTPUT_SHA256="$(sha256sum "$UV_SYNC_LOG" | awk '{print $1}')"
+    printf 'SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=%s uv_version=%s output_sha256=%s\n' \
+      "$UV_FAILURE_FAMILY" "$UV_VERSION" "$UV_OUTPUT_SHA256" >&2
+    rm -f "$UV_SYNC_LOG"
+    fail "uv sync failed family=$UV_FAILURE_FAMILY uv_version=$UV_VERSION output_sha256=$UV_OUTPUT_SHA256"
+  fi
+  rm -f "$UV_SYNC_LOG"
+  rm -rf "$UV_CACHE_DIR"
+  unset UV_SYNC_LOG UV_CACHE_DIR UV_FAILURE_FAMILY UV_VERSION UV_OUTPUT_SHA256
   PYTHONPATH="$TEMP/sovereign-toolchain/src:$TEMP/sovereign-legacy-mcp-common" \
     .venv/bin/python -c 'import sovereign_toolchain.n8n_evidence_app, uvicorn'
 )
@@ -192,9 +258,23 @@ atomic_install() {
 }
 
 atomic_install 0500 "$ROLLBACK_HELPER_SOURCE" "$ROLLBACK_HELPER"
-python3 "$ROLLBACK_HELPER" prepare \
+ROLLBACK_PREPARE_LOG="$(mktemp)"
+if ! python3 "$ROLLBACK_HELPER" prepare \
   --expected-installed-revision "$EXPECTED_REVISION" \
-  --stamp "$STAMP" >/dev/null
+  --stamp "$STAMP" >"$ROLLBACK_PREPARE_LOG" 2>&1; then
+  ROLLBACK_PREPARE_DIAGNOSTIC="$(
+    grep -E '^SOVEREIGN_TOOLCHAIN_ROLLBACK_FAILURE operation=prepare reason_sha256=[0-9a-f]{64}$' \
+      "$ROLLBACK_PREPARE_LOG" | head -n 1 | tr -d '\r\n' | cut -c1-256 || true
+  )"
+  ROLLBACK_PREPARE_OUTPUT_SHA256="$(sha256sum "$ROLLBACK_PREPARE_LOG" | awk '{print $1}')"
+  rm -f "$ROLLBACK_PREPARE_LOG"
+  if [[ -n "$ROLLBACK_PREPARE_DIAGNOSTIC" ]]; then
+    fail "rollback prepare failed: $ROLLBACK_PREPARE_DIAGNOSTIC output_sha256=$ROLLBACK_PREPARE_OUTPUT_SHA256"
+  fi
+  fail "rollback prepare failed: output_sha256=$ROLLBACK_PREPARE_OUTPUT_SHA256"
+fi
+rm -f "$ROLLBACK_PREPARE_LOG"
+unset ROLLBACK_PREPARE_LOG ROLLBACK_PREPARE_DIAGNOSTIC ROLLBACK_PREPARE_OUTPUT_SHA256
 
 rollback() {
   [[ "$ROLLBACK_COMPLETED" != "1" ]] || return 0

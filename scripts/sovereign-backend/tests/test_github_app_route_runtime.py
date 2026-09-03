@@ -298,3 +298,35 @@ def test_configured_status_requires_all_secret_families() -> None:
     assert payload["apiConfigured"] is False
     assert payload["oauthConfigured"] is False
     assert payload["webhookConfigured"] is False
+
+
+def test_installation_and_marketplace_events_handle_non_dict_nested_payloads() -> None:
+    conn = Connection([None])
+
+    res1 = github_app.handle_installation_event(
+        action="created",
+        installation="not-a-dict",  # type: ignore
+        get_connection=lambda: conn,
+    )
+    assert res1["ok"] is False
+    assert res1["installation_id"] is None
+
+    res2 = github_app.handle_installation_event(
+        action="created",
+        installation={"id": "bad-id", "account": "not-a-dict"},
+        get_connection=lambda: conn,
+    )
+    assert res2["ok"] is False
+    assert res2["installation_id"] == "bad-id"
+
+    res3 = github_app.handle_marketplace_purchase(
+        action="purchased",
+        marketplace_purchase={
+            "account": "invalid",
+            "plan": 12345,
+            "unit_count": "invalid",
+        },
+        get_connection=lambda: conn,
+    )
+    assert res3["ok"] is False
+    assert res3["action"] == "marketplace_account_invalid"
