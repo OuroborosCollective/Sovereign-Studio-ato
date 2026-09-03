@@ -234,6 +234,73 @@ def load_rollback_helper():
     return helper
 
 
+def test_prepare_accepts_legacy_predecessor_without_revision_marker(tmp_path: Path) -> None:
+    helper = load_rollback_helper()
+    root = tmp_path / "legacy-root"
+    backup_root = root / ".installer-backups"
+    toolchain = root / "sovereign-toolchain"
+    common = root / "sovereign-legacy-mcp-common"
+    backup_root.mkdir(parents=True)
+    toolchain.mkdir()
+    common.mkdir()
+
+    helper.BACKUP_ROOT = backup_root
+    helper.MANIFEST_PATH = backup_root / "last-install.json"
+    helper.DIRECTORIES = (
+        (toolchain, "sovereign-toolchain"),
+        (common, "sovereign-legacy-mcp-common"),
+    )
+    helper.FILES = ()
+    helper.SERVICES = ()
+    captured = {}
+    helper.atomic_json_write = lambda payload: captured.update(payload)
+    helper.read_manifest = lambda: dict(captured)
+    helper.retire_superseded_snapshots = lambda _payload: None
+
+    helper.prepare("a" * 40, "20260903T200000Z.123")
+
+    assert captured["previousRevision"] is None
+    assert captured["directories"][0]["previousPresent"] is True
+    assert not (toolchain / helper.REVISION_MARKER).exists()
+    helper.verify_restored_snapshots(captured)
+
+    (toolchain / helper.REVISION_MARKER).write_text("b" * 40, encoding="ascii")
+    try:
+        helper.verify_restored_snapshots(captured)
+    except helper.RollbackError as exc:
+        assert str(exc) == "restored legacy revision marker state changed"
+    else:
+        raise AssertionError("legacy predecessor marker drift was not rejected")
+
+
+def test_prepare_rejects_invalid_existing_revision_marker(tmp_path: Path) -> None:
+    helper = load_rollback_helper()
+    root = tmp_path / "legacy-root"
+    backup_root = root / ".installer-backups"
+    toolchain = root / "sovereign-toolchain"
+    common = root / "sovereign-legacy-mcp-common"
+    backup_root.mkdir(parents=True)
+    toolchain.mkdir()
+    common.mkdir()
+    (toolchain / helper.REVISION_MARKER).write_text("not-a-revision", encoding="ascii")
+
+    helper.BACKUP_ROOT = backup_root
+    helper.MANIFEST_PATH = backup_root / "last-install.json"
+    helper.DIRECTORIES = (
+        (toolchain, "sovereign-toolchain"),
+        (common, "sovereign-legacy-mcp-common"),
+    )
+    helper.FILES = ()
+    helper.SERVICES = ()
+
+    try:
+        helper.prepare("a" * 40, "20260903T200001Z.124")
+    except helper.RollbackError as exc:
+        assert str(exc) == "previous revision marker is invalid"
+    else:
+        raise AssertionError("invalid predecessor revision marker was accepted")
+
+
 def test_snapshot_retirement_is_bounded_and_preserves_the_current_generation(tmp_path: Path) -> None:
     helper = load_rollback_helper()
     helper.BACKUP_ROOT = tmp_path
