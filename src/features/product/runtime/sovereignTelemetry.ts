@@ -122,17 +122,21 @@ export function validateTelemetryState(state: SovereignTelemetryState): Sovereig
   if (state.events.length > MAX_EVENTS) errors.push(`Telemetry has more than ${MAX_EVENTS} events.`);
 
   const ids = new Set<string>();
+  // ⚡ Bolt: Track latest event per stage in a single pass to eliminate redundant .filter() calls per stage
+  const actualLatestByStage: Partial<Record<SovereignTelemetryStage, SovereignTelemetryEvent>> = {};
+
   for (const event of state.events) {
     if (ids.has(event.id)) warnings.push(`Duplicate telemetry event id: ${event.id}`);
     ids.add(event.id);
     const report = validateTelemetryEvent(event);
     errors.push(...report.errors.map((error) => `${event.label || event.id}: ${error}`));
     warnings.push(...report.warnings.map((warning) => `${event.label || event.id}: ${warning}`));
+    actualLatestByStage[event.stage] = event;
   }
 
   for (const [stage, event] of Object.entries(state.latestByStage)) {
     if (!TELEMETRY_STAGES.includes(stage as SovereignTelemetryStage)) errors.push(`Unknown latest telemetry stage: ${stage}`);
-    const latest = state.events.filter((item) => item.stage === stage).slice(-1)[0];
+    const latest = actualLatestByStage[stage as SovereignTelemetryStage];
     if (latest && latest.id !== event?.id) warnings.push(`latestByStage mismatch for ${stage}.`);
   }
 
@@ -201,8 +205,18 @@ export function summarizeTelemetry(state: SovereignTelemetryState): string {
   assertTelemetryStateValid(state);
   if (!state.events.length) return 'No telemetry events yet.';
   const latest = state.events[state.events.length - 1];
-  const errorCount = state.events.filter((event) => event.level === 'error').length;
-  const warningCount = state.events.filter((event) => event.level === 'warning').length;
+
+  // ⚡ Bolt: Single-pass O(N) accumulation loop for error and warning counts eliminating array allocation overhead
+  let errorCount = 0;
+  let warningCount = 0;
+  for (const event of state.events) {
+    if (event.level === 'error') {
+      errorCount += 1;
+    } else if (event.level === 'warning') {
+      warningCount += 1;
+    }
+  }
+
   return `${state.events.length} events, ${warningCount} warning(s), ${errorCount} error(s). Latest: ${latest?.label ?? 'unknown'}`;
 }
 
