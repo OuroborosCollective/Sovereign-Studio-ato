@@ -291,22 +291,42 @@ export function eraseUserPatterns(store: PatternMemoryStore, now = Date.now()): 
 
 export function derivePatternMemoryCounters(store: PatternMemoryStore): PatternMemoryRuntimeCounters {
   const entries = store.entries;
-  const verifiedEntries = entries.filter((e) => e.verified);
-  const localExecutableEntries = entries.filter((e) => e.localExecutable);
-  const frequentlyUsed = entries.filter((e) => e.reuseCount >= FREQUENTLY_USED_THRESHOLD);
+  let verifiedCount = 0;
+  let localExecutableCount = 0;
+  let frequentlyUsedCount = 0;
+  let localUserCount = 0;
+  let remoteUserCount = 0;
+  let sharedDerivedCount = 0;
+  let lastSuccessfulReuseAt: number | null = null;
 
-  const allLastUsed = entries.map((e) => e.lastUsedAt).filter((t): t is number => t !== null);
-  const lastSuccessfulReuseAt = allLastUsed.length > 0 ? Math.max(...allLastUsed) : null;
+  // ⚡ Bolt: Consolidate multi-pass array iterations into a single loop
+  // This avoids intermediate array allocations from multiple chained .filter().map() calls,
+  // drastically reducing CPU usage and GC pressure during memory analytics.
+  for (const e of entries) {
+    if (e.verified) verifiedCount++;
+    if (e.localExecutable) localExecutableCount++;
+    if (e.reuseCount >= FREQUENTLY_USED_THRESHOLD) frequentlyUsedCount++;
+
+    if (e.ownerScope === 'local-user') localUserCount++;
+    else if (e.ownerScope === 'remote-user') remoteUserCount++;
+    else if (e.ownerScope === 'shared-derived') sharedDerivedCount++;
+
+    if (e.lastUsedAt !== null) {
+      if (lastSuccessfulReuseAt === null || e.lastUsedAt > lastSuccessfulReuseAt) {
+        lastSuccessfulReuseAt = e.lastUsedAt;
+      }
+    }
+  }
 
   return {
     totalStored: entries.length,
-    verifiedCount: verifiedEntries.length,
-    localExecutableCount: localExecutableEntries.length,
-    frequentlyUsedCount: frequentlyUsed.length,
+    verifiedCount,
+    localExecutableCount,
+    frequentlyUsedCount,
     lastSuccessfulReuseAt,
-    localUserCount: entries.filter((e) => e.ownerScope === 'local-user').length,
-    remoteUserCount: entries.filter((e) => e.ownerScope === 'remote-user').length,
-    sharedDerivedCount: entries.filter((e) => e.ownerScope === 'shared-derived').length,
+    localUserCount,
+    remoteUserCount,
+    sharedDerivedCount,
   };
 }
 
