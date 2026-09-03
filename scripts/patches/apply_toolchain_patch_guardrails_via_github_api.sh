@@ -27,6 +27,7 @@ set -euo pipefail
 
 REPO_FULL_NAME="${REPO_FULL_NAME:-OuroborosCollective/Sovereign-Studio-ato}"
 BASE_BRANCH="${BASE_BRANCH:-main}"
+SOURCE_BRANCH="${SOURCE_BRANCH:-${GITHUB_REF_NAME:-$BASE_BRANCH}}"
 PATCH_BRANCH="${PATCH_BRANCH:-sovereign/apply-toolchain-guardrails}"
 TARGET_PATH="${TARGET_PATH:-scripts/sovereign-backend/app.py}"
 COMMIT_MESSAGE="${COMMIT_MESSAGE:-fix(toolchain): apply backend patch guardrails}"
@@ -97,13 +98,49 @@ PY
 }
 
 printf '\n== Apply verified local patch ==\n'
-python3 scripts/patches/apply_toolchain_patch_guardrails.py --repo-root . --apply
-python3 -m py_compile "${TARGET_PATH}"
+if [[ "${TARGET_PATH}" == ".github/workflows/sovereign-chatgpt-mcp.yml" ]]; then
+  PATCH_SPEC="scripts/patches/pending/aurion-mariadb-mcp-workflow.json"
+  [[ -f "${PATCH_SPEC}" ]] || { echo "ERROR: bounded workflow patch spec is missing: ${PATCH_SPEC}" >&2; exit 2; }
+  python3 - "${PATCH_SPEC}" "${TARGET_PATH}" <<'PY'
+from pathlib import Path
+import json
+import sys
 
-printf '\n== Resolve base commit ==\n'
-base_ref_json="$(api GET "${API_BASE}/git/ref/heads/${BASE_BRANCH}")"
+spec_path = Path(sys.argv[1])
+target_path = Path(sys.argv[2])
+spec = json.loads(spec_path.read_text("utf-8"))
+if spec.get("target") != target_path.as_posix():
+    raise SystemExit("workflow patch target mismatch")
+blocks = spec.get("blocks")
+if not isinstance(blocks, list) or not 1 <= len(blocks) <= 20:
+    raise SystemExit("workflow patch blocks are invalid")
+text = target_path.read_text("utf-8")
+for index, block in enumerate(blocks, start=1):
+    if not isinstance(block, dict):
+        raise SystemExit(f"workflow patch block {index} is invalid")
+    search = block.get("search")
+    replace = block.get("replace")
+    if not isinstance(search, str) or not search or not isinstance(replace, str):
+        raise SystemExit(f"workflow patch block {index} is invalid")
+    if text.count(search) != 1:
+        raise SystemExit(f"workflow patch block {index} occurrence mismatch")
+    text = text.replace(search, replace, 1)
+target_path.write_text(text, "utf-8")
+PY
+else
+  python3 scripts/patches/apply_toolchain_patch_guardrails.py --repo-root . --apply
+fi
+case "${TARGET_PATH}" in
+  *.py) python3 -m py_compile "${TARGET_PATH}" ;;
+  *.yml|*.yaml) python3 -c 'import sys,yaml; yaml.safe_load(open(sys.argv[1], encoding="utf-8"))' "${TARGET_PATH}" ;;
+  *) echo "ERROR: unsupported verified target type: ${TARGET_PATH}" >&2; exit 2 ;;
+esac
+
+printf '\n== Resolve source commit ==\n'
+[[ "${SOURCE_BRANCH}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ && "${SOURCE_BRANCH}" != *".."* ]] || { echo "ERROR: invalid SOURCE_BRANCH" >&2; exit 2; }
+base_ref_json="$(api GET "${API_BASE}/git/ref/heads/${SOURCE_BRANCH}")"
 base_sha="$(printf '%s' "${base_ref_json}" | json_get_string object.sha)"
-echo "base=${BASE_BRANCH} sha=${base_sha}"
+echo "source=${SOURCE_BRANCH} sha=${base_sha}; pr_base=${BASE_BRANCH}"
 
 printf '\n== Create patch branch if needed ==\n'
 branch_payload="$(mktemp)"
