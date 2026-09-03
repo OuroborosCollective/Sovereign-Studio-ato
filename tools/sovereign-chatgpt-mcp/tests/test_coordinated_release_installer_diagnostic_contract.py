@@ -41,7 +41,7 @@ def test_outer_installer_projects_only_bounded_nested_toolchain_failure() -> Non
         "reason_sha256=[0-9a-f]{64} rollback=(not-required|verified|failed)$"
     ) in installer
     assert (
-        "^SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=(CLI_COMPATIBILITY|LOCK_DRIFT|PYTHON|NETWORK|OTHER) "
+        "^SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=(CLI_COMPATIBILITY|LOCK_DRIFT|STORAGE|PERMISSION|BUILD_SYSTEM|CACHE_IO|RESOLUTION|PYTHON|NETWORK|OTHER) "
         "uv_version=([0-9]+\\.[0-9]+\\.[0-9]+|unknown) output_sha256=[0-9a-f]{64}$"
     ) in installer
     assert (
@@ -94,7 +94,7 @@ def test_outer_installer_preserves_first_nested_failure_when_err_propagates(tmp_
 def test_nested_toolchain_uv_diagnostic_projects_only_bounded_fields(tmp_path: Path) -> None:
     log = tmp_path / "toolchain.log"
     valid = (
-        "SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=CLI_COMPATIBILITY "
+        "SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=BUILD_SYSTEM "
         "uv_version=0.10.4 output_sha256=" + "c" * 64
     )
     raw = valid + " raw=do-not-project-this"
@@ -104,7 +104,7 @@ def test_nested_toolchain_uv_diagnostic_projects_only_bounded_fields(tmp_path: P
         [
             "grep",
             "-E",
-            r"^SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=(CLI_COMPATIBILITY|LOCK_DRIFT|PYTHON|NETWORK|OTHER) uv_version=([0-9]+\.[0-9]+\.[0-9]+|unknown) output_sha256=[0-9a-f]{64}$",
+            r"^SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=(CLI_COMPATIBILITY|LOCK_DRIFT|STORAGE|PERMISSION|BUILD_SYSTEM|CACHE_IO|RESOLUTION|PYTHON|NETWORK|OTHER) uv_version=([0-9]+\.[0-9]+\.[0-9]+|unknown) output_sha256=[0-9a-f]{64}$",
             str(log),
         ],
         check=True,
