@@ -35,6 +35,24 @@ MCP_NEURO_CANARY_FAILURE_RE = re.compile(
     r"phase=(?P<phase>[a-z][a-z0-9_-]{0,79});"
     r"error=(?P<error_type>[A-Za-z_][A-Za-z0-9_]{0,79})$"
 )
+MCP_NESTED_TOOLCHAIN_FAILURE_RE = re.compile(
+    r"^revision-bound toolchain installer failed: "
+    r"SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE stage=(?P<stage>[a-z][a-z0-9_-]{0,79}) "
+    r"reason_sha256=(?P<reason_sha256>[0-9a-f]{64}) "
+    r"rollback=(?P<rollback>not-required|verified|failed)"
+    r"(?P<diagnostic>.*?) output_sha256=(?P<output_sha256>[0-9a-f]{64})$"
+)
+MCP_NESTED_TOOLCHAIN_UV_DIAGNOSTIC_RE = re.compile(
+    r"^SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC "
+    r"family=(?P<family>CLI_COMPATIBILITY|LOCK_DRIFT|STORAGE|PERMISSION|BUILD_SYSTEM|CACHE_IO|RESOLUTION|PYTHON|NETWORK|OTHER) "
+    r"uv_version=(?P<uv_version>[0-9]+\.[0-9]+\.[0-9]+|unknown) "
+    r"output_sha256=(?P<output_sha256>[0-9a-f]{64})$"
+)
+MCP_NESTED_TOOLCHAIN_ROLLBACK_DIAGNOSTIC_RE = re.compile(
+    r"^SOVEREIGN_TOOLCHAIN_ROLLBACK_FAILURE "
+    r"operation=(?P<operation>prepare|rollback|commit) "
+    r"reason_sha256=(?P<reason_sha256>[0-9a-f]{64})$"
+)
 MUTATION_PROVEN_DEPLOY_STAGES = frozenset(
     {
         "candidate_network",
@@ -530,6 +548,37 @@ def _safe_deploy_diagnostics(output: str) -> list[dict[str, str]]:
     return diagnostics
 
 
+def _safe_nested_toolchain_diagnostic(reason: str) -> dict[str, Any] | None:
+    match = MCP_NESTED_TOOLCHAIN_FAILURE_RE.fullmatch(reason)
+    if match is None:
+        return None
+    diagnostic: dict[str, Any] = {
+        "stage": match.group("stage"),
+        "reasonSha256": match.group("reason_sha256"),
+        "rollback": match.group("rollback"),
+        "outputSha256": match.group("output_sha256"),
+    }
+    nested = str(match.group("diagnostic") or "").strip()
+    if not nested:
+        return diagnostic
+    uv_match = MCP_NESTED_TOOLCHAIN_UV_DIAGNOSTIC_RE.fullmatch(nested)
+    if uv_match is not None:
+        diagnostic["uv"] = {
+            "family": uv_match.group("family"),
+            "version": uv_match.group("uv_version"),
+            "outputSha256": uv_match.group("output_sha256"),
+        }
+        return diagnostic
+    rollback_match = MCP_NESTED_TOOLCHAIN_ROLLBACK_DIAGNOSTIC_RE.fullmatch(nested)
+    if rollback_match is not None:
+        diagnostic["rollbackFailure"] = {
+            "operation": rollback_match.group("operation"),
+            "reasonSha256": rollback_match.group("reason_sha256"),
+        }
+        return diagnostic
+    return None
+
+
 def _safe_mcp_install_diagnostic(output: str) -> dict[str, Any] | None:
     for raw_line in reversed(output.splitlines()):
         if len(raw_line) > 1000:
@@ -553,6 +602,9 @@ def _safe_mcp_install_diagnostic(output: str) -> dict[str, Any] | None:
                     "phase": canary_match.group("phase"),
                     "errorType": canary_match.group("error_type"),
                 }
+            toolchain_match = _safe_nested_toolchain_diagnostic(reason)
+            if toolchain_match is not None:
+                diagnostic["toolchain"] = toolchain_match
             return diagnostic
     return None
 
