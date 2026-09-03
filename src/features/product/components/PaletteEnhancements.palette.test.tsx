@@ -53,15 +53,19 @@ describe('Palette Accessibility Enhancements', () => {
       expect(menuButton).toHaveAttribute('title', 'Menü');
     });
 
-    it('Runtime RT button keeps visible label in accessible name', () => {
+    it('Runtime RT button stays behind Inspector and keeps its accessible name there', () => {
       renderWithProviders(<BuilderContainer {...baseProps} />);
+      expect(screen.queryByRole('button', { name: /RT.*Runtime Quelle/i })).toBeNull();
+      fireEvent.click(screen.getByText('INSPECTOR'));
       const rtButton = screen.getByRole('button', { name: /RT.*Runtime Quelle/i });
       expect(rtButton).toHaveAttribute('aria-label', 'RT – Runtime Quelle');
       expect(rtButton).toHaveAttribute('title', 'Runtime Quelle');
     });
 
-    it('Panel toggle button has title and aria-label', () => {
+    it('Panel toggle stays behind Inspector and keeps title and aria-label there', () => {
       renderWithProviders(<BuilderContainer {...baseProps} />);
+      expect(screen.queryByRole('button', { name: /Panel öffnen/i })).toBeNull();
+      fireEvent.click(screen.getByText('INSPECTOR'));
       const toggleButton = screen.getByRole('button', { name: /Panel öffnen/i });
       expect(toggleButton).toHaveAttribute('aria-label', 'Panel öffnen');
       expect(toggleButton).toHaveAttribute('title', 'Panel öffnen');
