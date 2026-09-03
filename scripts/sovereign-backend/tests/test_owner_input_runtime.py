@@ -30,6 +30,8 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
         "openrouter_api_key",
         "revolver_provider_key",
         "notion_integration_token",
+        "n8n_sovereign_api_key",
+        "n8n_aurion_api_key",
         "hf_publication_rights",
         "hf_cag_staging_publish_request",
         "proven_learning_confirmation",
@@ -47,6 +49,24 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
     assert openrouter_target["path"] == (tmp_path / "openrouter_api_key.txt").resolve()
     assert openrouter_target["fieldLabel"] == "OpenRouter API-Key"
     assert openrouter_target["maxBytes"] == 8192
+
+    sovereign_n8n_target = targets["n8n_sovereign_api_key"]
+    assert sovereign_n8n_target["path"] == (
+        tmp_path / "n8n_sovereign_api_key.txt"
+    ).resolve()
+    assert sovereign_n8n_target["fieldLabel"] == "n8n Public API-Key für Sovereign Studio"
+    assert sovereign_n8n_target["maxBytes"] == 8192
+    assert sovereign_n8n_target["kind"] == "root_owned_credential"
+    assert sovereign_n8n_target["ownerUid"] == 0
+    assert sovereign_n8n_target["ownerGid"] == 0
+
+    aurion_n8n_target = targets["n8n_aurion_api_key"]
+    assert aurion_n8n_target["path"] == (tmp_path / "n8n_aurion_api_key.txt").resolve()
+    assert aurion_n8n_target["fieldLabel"] == "n8n Public API-Key für Echoes of Aurion"
+    assert aurion_n8n_target["maxBytes"] == 8192
+    assert aurion_n8n_target["kind"] == "root_owned_credential"
+    assert aurion_n8n_target["ownerUid"] == 0
+    assert aurion_n8n_target["ownerGid"] == 0
 
     revolver_target = targets["revolver_provider_key"]
     assert revolver_target["path"] == (tmp_path / "revolver_provider_key.txt").resolve()
@@ -110,6 +130,124 @@ def test_atomic_write_rejects_empty_and_oversized_values(monkeypatch, tmp_path: 
         runtime._atomic_write(target, "")
     with pytest.raises(ValueError, match="überschreitet"):
         runtime._atomic_write({**target, "maxBytes": 3}, "four")
+
+
+def test_n8n_root_owned_target_is_written_as_regular_0600_file(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    chown_calls: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        os,
+        "fchown",
+        lambda _descriptor, uid, gid: chown_calls.append((uid, gid)),
+    )
+    real_fstat = os.fstat
+
+    def root_owned_fstat(descriptor):
+        observed = real_fstat(descriptor)
+        return types.SimpleNamespace(
+            st_uid=0,
+            st_gid=0,
+            st_mode=observed.st_mode,
+        )
+
+    monkeypatch.setattr(os, "fstat", root_owned_fstat)
+    real_lstat = os.lstat
+
+    def root_owned_lstat(path):
+        observed = real_lstat(path)
+        return types.SimpleNamespace(
+            st_uid=0,
+            st_gid=0,
+            st_mode=observed.st_mode,
+        )
+
+    monkeypatch.setattr(os, "lstat", root_owned_lstat)
+    target = runtime._target_map()["n8n_sovereign_api_key"]
+
+    runtime._atomic_write(target, "test-n8n-key-material")
+
+    path = tmp_path / "n8n_sovereign_api_key.txt"
+    assert path.is_file()
+    assert not path.is_symlink()
+    assert os.stat(path).st_mode & 0o777 == 0o600
+    assert chown_calls == [(0, 0)]
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_n8n_root_owned_target_rejects_final_ownership_mismatch(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setattr(os, "fchown", lambda _descriptor, _uid, _gid: None)
+    real_fstat = os.fstat
+    real_lstat = os.lstat
+    target_path = tmp_path / "n8n_sovereign_api_key.txt"
+
+    def root_owned_fstat(descriptor):
+        observed = real_fstat(descriptor)
+        return types.SimpleNamespace(
+            st_uid=0,
+            st_gid=0,
+            st_mode=observed.st_mode,
+        )
+
+    def non_root_final_lstat(path):
+        observed = real_lstat(path)
+        if Path(path) == target_path:
+            return types.SimpleNamespace(
+                st_uid=1000,
+                st_gid=0,
+                st_mode=observed.st_mode,
+            )
+        return observed
+
+    monkeypatch.setattr(os, "fstat", root_owned_fstat)
+    monkeypatch.setattr(os, "lstat", non_root_final_lstat)
+    target = runtime._target_map()["n8n_sovereign_api_key"]
+
+    with pytest.raises(ValueError, match="finalen Root-Eigentümer-Vertrag"):
+        runtime._atomic_write(target, "test-n8n-key-material")
+
+    assert not target_path.exists()
+
+
+def test_n8n_root_owned_target_fails_closed_without_root(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    target = runtime._target_map()["n8n_aurion_api_key"]
+
+    with pytest.raises(ValueError, match="Root-Eigentümerwechsel"):
+        runtime._atomic_write(target, "test-n8n-key-material")
+
+    assert not (tmp_path / "n8n_aurion_api_key.txt").exists()
+
+
+def test_n8n_root_owned_target_rejects_existing_symlink(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    backing = tmp_path / "backing.txt"
+    backing.write_text("unchanged", encoding="utf-8")
+    target_path = tmp_path / "n8n_sovereign_api_key.txt"
+    target_path.symlink_to(backing)
+    target = runtime._target_map()["n8n_sovereign_api_key"]
+
+    with pytest.raises(ValueError, match="Symlink"):
+        runtime._atomic_write(target, "test-n8n-key-material")
+
+    assert target_path.is_symlink()
+    assert backing.read_text("utf-8") == "unchanged"
 
 
 def test_agents_sdk_fails_closed_without_explicit_direct_route_run_config() -> None:
@@ -194,6 +332,8 @@ def test_raw_payment_card_numbers_are_rejected_but_provider_tokens_are_not() -> 
     assert runtime._contains_payment_card_bytes(b"tok_provider_9f42b1d0") is False
     assert runtime._comment_is_safe("Bitte für den Agents-SDK-Lauf verwenden.") is True
     assert runtime._comment_is_safe("Karte 4242 4242 4242 4242") is False
+    jwt_shaped = "eyJ" + ("a" * 16) + "." + ("b" * 20) + "." + ("c" * 24)
+    assert runtime._comment_is_safe(jwt_shaped) is False
     assert runtime._comment_is_safe("ghp_abcdefghijklmnopqrstuvwxyz123456") is False
 
 

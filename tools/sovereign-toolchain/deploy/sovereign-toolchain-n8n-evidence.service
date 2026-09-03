@@ -1,0 +1,31 @@
+[Unit]
+Description=Sovereign n8n CI Evidence Listener
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+WorkingDirectory=/opt/sovereign-legacy-mcp/sovereign-toolchain
+EnvironmentFile=/etc/sovereign-toolchain/evidence-runtime.env
+Environment=PYTHONPATH=/opt/sovereign-legacy-mcp/sovereign-toolchain/src:/opt/sovereign-legacy-mcp/sovereign-legacy-mcp-common
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+LoadCredential=github-app-private-key.pem:/opt/secure/sovereign-github-app/private-key.pem
+LoadCredential=n8n-evidence-master.key:/etc/sovereign-toolchain/n8n-evidence.key
+ExecStart=/opt/sovereign-legacy-mcp/sovereign-toolchain/.venv/bin/python -m uvicorn sovereign_toolchain.n8n_evidence_app:app --host 0.0.0.0 --port 8002 --workers 2
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

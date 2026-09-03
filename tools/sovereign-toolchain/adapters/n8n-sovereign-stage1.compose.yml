@@ -1,0 +1,142 @@
+services:
+  n8n:
+    image: ${N8N_IMAGE_REF:?set N8N_IMAGE_REF to an immutable n8n tag or digest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.rule=Host(`${COMPOSE_PROJECT_NAME}.${TRAEFIK_HOST}`)
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.entrypoints=websecure
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.tls.certresolver=letsencrypt
+      - traefik.http.services.${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=5678
+    environment:
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_SECURE_COOKIE=true
+      - N8N_HOST=${COMPOSE_PROJECT_NAME}.${TRAEFIK_HOST}
+      - N8N_PROTOCOL=https
+      - N8N_PORT=5678
+      - N8N_PROXY_HOPS=1
+      - N8N_WEBHOOK_URL=https://${COMPOSE_PROJECT_NAME}.${TRAEFIK_HOST}/
+      - N8N_EDITOR_BASE_URL=https://${COMPOSE_PROJECT_NAME}.${TRAEFIK_HOST}/
+      - N8N_UNVERIFIED_PACKAGES_ENABLED=false
+      - NODE_ENV=production
+      - GENERIC_TIMEZONE=${TZ}
+      - TZ=${TZ}
+      - N8N_ENABLED_MODULES=instance-ai
+      - N8N_INSTANCE_AI_MODEL_URL=https://api.nexos.ai/v1
+      - N8N_INSTANCE_AI_MODEL=${N8N_INSTANCE_AI_MODEL}
+      - N8N_INSTANCE_AI_MODEL_API_KEY=${NEXOS_API_KEY}
+      - N8N_INSTANCE_AI_SANDBOX_ENABLED=true
+      - N8N_INSTANCE_AI_SANDBOX_PROVIDER=n8n-sandbox
+      - N8N_SANDBOX_SERVICE_URL=http://sandbox-api:8080
+      - N8N_SANDBOX_SERVICE_API_KEY=${SANDBOX_API_KEY}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      sandbox-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5678/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  sandbox-certs:
+    image: ${N8N_SANDBOX_API_IMAGE_REF:?set N8N_SANDBOX_API_IMAGE_REF to an immutable tag or digest}
+    user: '0:0'
+    network_mode: none
+    entrypoint: ['sh', '-c']
+    command:
+      - >
+        bootstrap-mtls.sh --out-dir /tls --api-san sandbox-api
+        --control-san-prefix sandbox-runner &&
+        chown -R sandbox-api:sandbox-api /tls/api &&
+        chown -R root:root /tls/runner &&
+        chmod -R go-rwx /tls && chmod -R u+rX /tls
+    environment:
+      - NUM_RUNNERS=1
+    volumes:
+      - sandbox-api-tls:/tls/api
+      - sandbox-runner-tls:/tls/runner
+    restart: "no"
+
+  sandbox-api:
+    image: ${N8N_SANDBOX_API_IMAGE_REF:?set N8N_SANDBOX_API_IMAGE_REF to an immutable tag or digest}
+    restart: unless-stopped
+    depends_on:
+      sandbox-certs:
+        condition: service_completed_successfully
+    environment:
+      - SANDBOX_API_KEYS=${SANDBOX_API_KEY}
+      - SANDBOX_API_RUNNER_REGISTRATION_TOKEN=${SANDBOX_RUNNER_REGISTRATION_TOKEN}
+      - SANDBOX_API_RUNNER_API_KEY=${SANDBOX_RUNNER_API_KEY}
+      - SANDBOX_API_GRPC_TLS_CERT_FILE=/tls/grpc-server.crt
+      - SANDBOX_API_GRPC_TLS_KEY_FILE=/tls/grpc-server.key
+      - SANDBOX_API_GRPC_TLS_CLIENT_CA_FILE=/tls/ca.crt
+      - SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_CA_FILE=/tls/ca.crt
+      - SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_CERT_FILE=/tls/control-grpc-api-client.crt
+      - SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_KEY_FILE=/tls/control-grpc-api-client.key
+      - SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_SERVER_NAME=sandbox-runner-1
+    volumes:
+      - sandbox-api-tls:/tls:ro
+    networks:
+      - default
+      - sandbox-control
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  sandbox-runner-1:
+    image: ${N8N_SANDBOX_RUNNER_IMAGE_REF:?set N8N_SANDBOX_RUNNER_IMAGE_REF to an immutable tag or digest}
+    restart: unless-stopped
+    # Production Linux DIND must use the host-registered Sysbox runtime.
+    # Do not fall back to privileged mode: deployment must fail closed when
+    # sysbox-runc is unavailable.
+    runtime: sysbox-runc
+    privileged: false
+    depends_on:
+      sandbox-api:
+        condition: service_healthy
+    environment:
+      - SANDBOX_RUNNER_API_KEYS=${SANDBOX_RUNNER_API_KEY}
+      - SANDBOX_RUNNER_REGISTRATION_TOKEN=${SANDBOX_RUNNER_REGISTRATION_TOKEN}
+      - SANDBOX_RUNNER_API_GRPC_ADDR=sandbox-api:9090
+      - SANDBOX_RUNNER_HTTP_BASE_URL=https://sandbox-runner-1:8080
+      - SANDBOX_RUNNER_CONTROL_GRPC_LISTEN_ADDR=:9091
+      - SANDBOX_RUNNER_CONTROL_GRPC_ADVERTISE_ADDR=sandbox-runner-1:9091
+      - SANDBOX_RUNNER_ID=runner-1
+      - SANDBOX_RUNNER_DOCKER_SANDBOX_IMAGE=${N8N_SANDBOX_INNER_IMAGE_REF:?set N8N_SANDBOX_INNER_IMAGE_REF to an immutable tag or digest}
+      - SANDBOX_RUNNER_REGISTRATION_GRPC_CA_FILE=/tls/ca.crt
+      - SANDBOX_RUNNER_REGISTRATION_GRPC_CERT_FILE=/tls/grpc-client.crt
+      - SANDBOX_RUNNER_REGISTRATION_GRPC_KEY_FILE=/tls/grpc-client.key
+      - SANDBOX_RUNNER_REGISTRATION_GRPC_SERVER_NAME=sandbox-api
+      - SANDBOX_RUNNER_CONTROL_GRPC_TLS_CERT_FILE=/tls/control-grpc-server.crt
+      - SANDBOX_RUNNER_CONTROL_GRPC_TLS_KEY_FILE=/tls/control-grpc-server.key
+      - SANDBOX_RUNNER_CONTROL_GRPC_TLS_CLIENT_CA_FILE=/tls/ca.crt
+    volumes:
+      - sandbox-runner-tls:/tls:ro
+    networks:
+      - sandbox-control
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "--no-check-certificate", "https://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+
+networks:
+  default:
+  sandbox-control:
+    driver: bridge
+
+volumes:
+  n8n_data:
+  sandbox-api-tls:
+  sandbox-runner-tls:

@@ -7,6 +7,17 @@ REQUEST_FILE="${SOVEREIGN_MCP_SELF_UPDATE_REQUEST:-/run/sovereign-chatgpt-broker
 STATE_DIR="${SOVEREIGN_MCP_SELF_UPDATE_STATE_DIR:-/var/lib/sovereign-chatgpt-self-update}"
 STATUS_FILE="$STATE_DIR/status.json"
 INSTALLER="$SOURCE_DIR/tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh"
+TOOLCHAIN_SOURCE="$SOURCE_DIR/tools/sovereign-toolchain"
+TOOLCHAIN_INSTALLER="$TOOLCHAIN_SOURCE/deploy/install-on-vps.sh"
+TOOLCHAIN_COMMON_SOURCE="$SOURCE_DIR/tools/sovereign-legacy-mcp-common"
+TOOLCHAIN_REVISION_MARKER="/opt/sovereign-legacy-mcp/sovereign-toolchain/.sovereign-source-revision"
+TOOLCHAIN_N8N_EVIDENCE_KEY="/etc/sovereign-toolchain/n8n-evidence.key"
+TOOLCHAIN_ROLLBACK_ROOT="/opt/sovereign-legacy-mcp/.installer-backups"
+TOOLCHAIN_ROLLBACK_MANIFEST="$TOOLCHAIN_ROLLBACK_ROOT/last-install.json"
+TOOLCHAIN_ROLLBACK_HELPER="$TOOLCHAIN_ROLLBACK_ROOT/rollback-last-install.py"
+TOOLCHAIN_MANIFEST_BEFORE_SHA="absent"
+TOOLCHAIN_ROLLBACK_CHECK_ENABLED=0
+TOOLCHAIN_ROLLBACK_VERIFIED=0
 BROKER_ENV="/opt/sovereign-chatgpt-tools/broker.env"
 GHCR_ENV="${SOVEREIGN_MCP_GHCR_ENV:-/opt/sovereign-chatgpt-tools/.ghcr.env}"
 OWNER_GITHUB_TOKEN_FILE="${SOVEREIGN_MCP_GITHUB_TOKEN_FILE:-/opt/sovereign-owner-managed/github_owner_token.txt}"
@@ -48,6 +59,13 @@ payload = {
     "container_healthy": updated,
     "mcp_protocol_ready": updated,
     "broker_rpc_ready": updated,
+    "toolchain_revision_verified": updated,
+    "toolchain_health_readback": updated,
+    "toolchain_n8n_evidence_auth_canary": updated,
+    "toolchain_full_app_loopback": updated,
+    "toolchain_n8n_evidence_minimal": updated,
+    "toolchain_n8n_evidence_lane_capabilities": updated,
+    "deployment_source_scope": "full-repository" if updated else "unverified",
     "cross_runtime_parity_proven": updated,
     "parity_evidence_source": "immutable_image_label_and_ci_vector_comparison" if updated else "unavailable",
     "updated_at": int(time.time()),
@@ -111,12 +129,51 @@ recover_control_plane() {
   set -e
 }
 
+toolchain_manifest_fingerprint() {
+  if [[ ! -e "$TOOLCHAIN_ROLLBACK_MANIFEST" ]]; then
+    printf 'absent\n'
+    return 0
+  fi
+  [[ -f "$TOOLCHAIN_ROLLBACK_MANIFEST" && ! -L "$TOOLCHAIN_ROLLBACK_MANIFEST" ]] || return 1
+  [[ "$(stat -c %u "$TOOLCHAIN_ROLLBACK_MANIFEST")" == "0" ]] || return 1
+  [[ "$(stat -c %a "$TOOLCHAIN_ROLLBACK_MANIFEST")" == "600" ]] || return 1
+  sha256sum "$TOOLCHAIN_ROLLBACK_MANIFEST" | awk '{print $1}'
+}
+
+rollback_toolchain_if_changed() {
+  [[ "$TOOLCHAIN_ROLLBACK_CHECK_ENABLED" == "1" ]] || return 0
+  [[ "$TOOLCHAIN_ROLLBACK_VERIFIED" != "1" ]] || return 0
+  local after_sha
+  after_sha="$(toolchain_manifest_fingerprint)" || return 1
+  [[ "$after_sha" != "$TOOLCHAIN_MANIFEST_BEFORE_SHA" ]] || return 0
+  [[ -f "$TOOLCHAIN_ROLLBACK_HELPER" && ! -L "$TOOLCHAIN_ROLLBACK_HELPER" ]] || return 1
+  python3 "$TOOLCHAIN_ROLLBACK_HELPER" rollback \
+    --expected-installed-revision "$EXPECTED_REVISION" >/dev/null || return 1
+  TOOLCHAIN_ROLLBACK_VERIFIED=1
+}
+
+handle_failure() {
+  local exit_code="$1"
+  local detail="$2"
+  local rollback_state="not-required"
+  trap - ERR
+  if rollback_toolchain_if_changed; then
+    if [[ "$TOOLCHAIN_ROLLBACK_VERIFIED" == "1" ]]; then
+      rollback_state="verified"
+    fi
+  else
+    rollback_state="failed"
+    exit_code=70
+  fi
+  recover_control_plane
+  write_status FAILED "${EXPECTED_REVISION:-}" "stage=${CURRENT_STAGE}; ${detail}; toolchain_rollback=${rollback_state}; recovery attempted"
+  exit "$exit_code"
+}
+
 on_error() {
   local exit_code="$?"
-  trap - ERR
-  recover_control_plane
-  write_status FAILED "${EXPECTED_REVISION:-}" "stage=${CURRENT_STAGE}; self-update command failed; recovery attempted"
-  exit "$exit_code"
+  # Status compatibility prefix: stage=${CURRENT_STAGE}; self-update command failed; recovery attempted
+  handle_failure "$exit_code" "self-update command failed"
 }
 trap on_error ERR
 
@@ -308,19 +365,63 @@ CHECKED_OUT_REVISION="$(git rev-parse HEAD)"
 }
 unset CHECKED_OUT_REVISION
 [[ -x "$INSTALLER" ]] || chmod 0750 "$INSTALLER"
+[[ -d "$TOOLCHAIN_SOURCE" && ! -L "$TOOLCHAIN_SOURCE" ]] || {
+  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; full-repository toolchain source is unavailable"
+  exit 1
+}
+[[ -f "$TOOLCHAIN_INSTALLER" && ! -L "$TOOLCHAIN_INSTALLER" ]] || {
+  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; full-repository toolchain installer is unavailable"
+  exit 1
+}
+[[ -d "$TOOLCHAIN_COMMON_SOURCE" && ! -L "$TOOLCHAIN_COMMON_SOURCE" && -f "$TOOLCHAIN_COMMON_SOURCE/github_app_auth.py" ]] || {
+  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; full-repository legacy common source is unavailable"
+  exit 1
+}
+[[ -x "$TOOLCHAIN_INSTALLER" ]] || chmod 0750 "$TOOLCHAIN_INSTALLER"
 
 CURRENT_STAGE="install_control_plane"
 write_status INSTALLING "$EXPECTED_REVISION" "installing private ChatGPT MCP and broker from the CI-built immutable image"
+TOOLCHAIN_MANIFEST_BEFORE_SHA="$(toolchain_manifest_fingerprint)"
+TOOLCHAIN_ROLLBACK_CHECK_ENABLED=1
 INSTALL_LOG="$(mktemp)"
 if ! SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" \
+  SOVEREIGN_MCP_DEPLOYMENT_SOURCE_SCOPE=full-repository \
   SOVEREIGN_MCP_TUNNEL_MODE="$SELF_UPDATE_TUNNEL_MODE" \
   bash "$INSTALLER" >"$INSTALL_LOG" 2>&1; then
   INSTALL_DETAIL="$(grep -E '^install blocked: stage=' "$INSTALL_LOG" | tail -n 1 | tr -d '\r\n' | cut -c1-1200 || true)"
-  recover_control_plane
-  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; ${INSTALL_DETAIL:-installer failed without bounded stage evidence}; recovery attempted"
   rm -f "$INSTALL_LOG"
-  exit 1
+  handle_failure 1 "${INSTALL_DETAIL:-installer failed without bounded stage evidence}"
 fi
+python3 - "$INSTALL_LOG" "$EXPECTED_REVISION" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+receipt = None
+for line in reversed(Path(sys.argv[1]).read_text("utf-8").splitlines()):
+    try:
+        candidate = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    if isinstance(candidate, dict) and candidate.get("ok") is True and candidate.get("mcp_revision"):
+        receipt = candidate
+        break
+if receipt is None:
+    raise SystemExit("MCP installer emitted no bounded success receipt")
+expected = {
+    "mcp_revision": sys.argv[2],
+    "deployment_source_scope": "full-repository",
+    "toolchain_install_required": True,
+    "toolchain_revision": sys.argv[2],
+    "toolchain_revision_verified": True,
+    "toolchain_health_readback": True,
+    "toolchain_n8n_evidence_auth_canary": True,
+    "toolchain_rollback_capable": True,
+}
+for field, value in expected.items():
+    if receipt.get(field) != value:
+        raise SystemExit(f"MCP installer toolchain receipt field mismatch: {field}")
+PY
 rm -f "$INSTALL_LOG"
 
 CURRENT_STAGE="verify_end_to_end_control_plane"
@@ -331,6 +432,137 @@ docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{if .State.Hea
 docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock
 docker exec sovereign-chatgpt-mcp python -c 'import server; status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
 docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
+systemctl is-active --quiet sovereign-toolchain.service
+systemctl is-active --quiet sovereign-toolchain-n8n-evidence.service
+[[ "$(systemctl show --property DynamicUser --value sovereign-toolchain-n8n-evidence.service)" == "yes" ]]
+[[ "$(systemctl show --property ProtectSystem --value sovereign-toolchain-n8n-evidence.service)" == "strict" ]]
+[[ -z "$(systemctl show --property ReadWritePaths --value sovereign-toolchain-n8n-evidence.service)" ]]
+[[ -f "$TOOLCHAIN_REVISION_MARKER" && ! -L "$TOOLCHAIN_REVISION_MARKER" ]]
+[[ "$(tr -d '\r\n' < "$TOOLCHAIN_REVISION_MARKER")" == "$EXPECTED_REVISION" ]]
+[[ "$(systemctl show --property ExecStart --value sovereign-toolchain.service)" == *"--host 127.0.0.1 --port 8001"* ]]
+[[ "$(systemctl show --property ExecStart --value sovereign-toolchain-n8n-evidence.service)" == *"--host 0.0.0.0 --port 8002"* ]]
+python3 - "$TOOLCHAIN_N8N_EVIDENCE_KEY" <<'PY'
+from pathlib import Path
+import hashlib
+import hmac
+import json
+import sys
+import urllib.error
+import urllib.request
+
+master = Path(sys.argv[1]).read_text("utf-8").strip()
+assert len(master) == 64 and all(character in "0123456789abcdef" for character in master)
+context = "sovereign.n8n-ci-evidence-capability.v1"
+full_origin = "http://127.0.0.1:8001"
+evidence_origin = "http://127.0.0.1:8002"
+evidence_url = evidence_origin + "/api/v1/n8n/ci-evidence"
+sovereign = {
+    "owner": "OuroborosCollective",
+    "repo": "Sovereign-Studio-ato",
+    "workflow_id": "sovereign-coordinated-release.yml",
+    "branch": "main",
+}
+aurion = {
+    "owner": "OuroborosCollective",
+    "repo": "Echoes_of_Aurion",
+    "workflow_id": 340269357,
+    "branch": "main",
+}
+
+def capability(payload):
+    message = (
+        context
+        + "\n"
+        + payload["owner"]
+        + "/"
+        + payload["repo"]
+        + "\n"
+        + str(payload["workflow_id"])
+        + "\n"
+        + payload["branch"]
+    ).encode("utf-8")
+    return hmac.new(master.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+def request_status(url, *, method="GET", payload=None, header=None, timeout=5):
+    headers = {}
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    if header is not None:
+        headers["X-Sovereign-Evidence-Capability"] = header
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            body = response.read()
+            return response.status, json.loads(body.decode("utf-8")) if body else None
+    except urllib.error.HTTPError as error:
+        error.read()
+        return error.code, None
+
+assert request_status(full_origin + "/")[1] == {
+    "ok": True,
+    "name": "Sovereign Universal Toolchain",
+    "rest": "/api/v1/manifest",
+    "openapi": "/api/openapi.json",
+    "mcp": "/mcp",
+}
+assert request_status(evidence_origin + "/healthz")[1] == {
+    "ok": True,
+    "service": "sovereign-n8n-ci-evidence",
+    "capabilityContext": context,
+}
+for path in ("/", "/docs", "/redoc", "/openapi.json", "/mcp", "/api/v1/manifest"):
+    assert request_status(evidence_origin + path)[0] == 404
+
+sovereign_capability = capability(sovereign)
+aurion_capability = capability(aurion)
+for supplied in (None, "invalid", master, aurion_capability):
+    assert request_status(
+        evidence_url,
+        method="POST",
+        payload=sovereign,
+        header=supplied,
+    )[0] == 401
+assert request_status(
+    evidence_url,
+    method="POST",
+    payload=aurion,
+    header=sovereign_capability,
+)[0] == 401
+assert request_status(
+    full_origin + "/api/v1/n8n/ci-evidence",
+    method="POST",
+    payload=sovereign,
+    header=sovereign_capability,
+)[0] == 404
+assert request_status(
+    full_origin + "/api/v1/tools/github_read_file",
+    method="POST",
+    payload={"args": {}},
+)[0] == 401
+
+for payload, header in (
+    (sovereign, sovereign_capability),
+    (aurion, aurion_capability),
+):
+    status, body = request_status(
+        evidence_url,
+        method="POST",
+        payload=payload,
+        header=header,
+        timeout=70,
+    )
+    assert status == 200
+    assert body["ok"] is True
+    assert body["tool"] == "github_actions_run_evidence"
+    result = body["result"]
+    assert result["repository"] == payload["owner"] + "/" + payload["repo"]
+    assert result["workflowSelector"] == str(payload["workflow_id"])
+    assert result["branch"] == payload["branch"]
+PY
 if [[ "$SELF_UPDATE_TUNNEL_MODE" == "required" ]]; then
   CURRENT_STAGE="verify_required_tunnel"
   systemctl is-active --quiet sovereign-openai-tunnel.service
@@ -341,18 +573,15 @@ RUNNING_IMAGE_REFERENCE="$(docker inspect --format '{{.Config.Image}}' sovereign
 RUNNING_REPO_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$RUNNING_IMAGE_REFERENCE" 2>/dev/null || true)"
 RUNNING_IMAGE_DIGEST="${RUNNING_REPO_DIGEST##*@}"
 RUNNING_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$RUNNING_IMAGE_REFERENCE" 2>/dev/null || true)"
-[[ "$RUNNING_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
-  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; running MCP image has no verified immutable digest"
-  exit 1
-}
-[[ "$RUNNING_REVISION" == "$EXPECTED_REVISION" ]] || {
-  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; running MCP image revision does not match expected revision"
-  exit 1
-}
+[[ "$RUNNING_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || \
+  handle_failure 1 "running MCP image has no verified immutable digest"
+[[ "$RUNNING_REVISION" == "$EXPECTED_REVISION" ]] || \
+  handle_failure 1 "running MCP image revision does not match expected revision"
 if [[ "$SELF_UPDATE_TUNNEL_MODE" == "required" ]]; then
-  COMPLETION_DETAIL="private ChatGPT MCP, host command worker, broker RPC, protocol handshake and required tunnel verified"
+  COMPLETION_DETAIL="private ChatGPT MCP, revision-bound toolchain, toolchain health/auth canaries, host command worker, broker RPC, protocol handshake and required tunnel verified"
 else
-  COMPLETION_DETAIL="private ChatGPT MCP, host command worker, broker RPC and protocol handshake verified; tunnel not required"
+  COMPLETION_DETAIL="private ChatGPT MCP, revision-bound toolchain, toolchain health/auth canaries, host command worker, broker RPC and protocol handshake verified; tunnel not required"
 fi
-write_status UPDATED "$EXPECTED_REVISION" "$COMPLETION_DETAIL" "$RUNNING_IMAGE_DIGEST"
 rm -f "$REQUEST_FILE"
+write_status UPDATED "$EXPECTED_REVISION" "$COMPLETION_DETAIL" "$RUNNING_IMAGE_DIGEST"
+TOOLCHAIN_ROLLBACK_CHECK_ENABLED=0

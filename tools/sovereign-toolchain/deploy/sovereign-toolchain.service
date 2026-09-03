@@ -10,7 +10,7 @@ WorkingDirectory=/opt/sovereign-legacy-mcp/sovereign-toolchain
 EnvironmentFile=/etc/sovereign-toolchain/runtime.env
 Environment=PYTHONPATH=/opt/sovereign-legacy-mcp/sovereign-toolchain/src:/opt/sovereign-legacy-mcp/sovereign-legacy-mcp-common
 LoadCredential=github-app-private-key.pem:/opt/secure/sovereign-github-app/private-key.pem
-ExecStart=/opt/sovereign-legacy-mcp/sovereign-toolchain/.venv/bin/uvicorn sovereign_toolchain.app:app --host 0.0.0.0 --port 8001 --workers 2
+ExecStart=/opt/sovereign-legacy-mcp/sovereign-toolchain/.venv/bin/python -m uvicorn sovereign_toolchain.app:app --host 127.0.0.1 --port 8001 --workers 2
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

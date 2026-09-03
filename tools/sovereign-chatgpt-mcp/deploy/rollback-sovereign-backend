@@ -75,7 +75,10 @@ if [[ -e "$OWNER_INPUT_HOST_ROOT" || -L "$OWNER_INPUT_HOST_ROOT" ]]; then
 else
   mkdir -p "$OWNER_INPUT_HOST_ROOT"
 fi
+chown root:root "$OWNER_INPUT_HOST_ROOT"
 chmod 0700 "$OWNER_INPUT_HOST_ROOT"
+[[ "$(stat -c '%u:%g:%a' "$OWNER_INPUT_HOST_ROOT")" == "0:0:700" ]] \
+  || fail "owner input host root must be root:root with mode 0700"
 [[ -w "$OWNER_INPUT_HOST_ROOT" && -x "$OWNER_INPUT_HOST_ROOT" ]] \
   || fail "owner input host root is not writable and searchable"
 if [[ -e "$WORKSPACE_HOST_ROOT" || -L "$WORKSPACE_HOST_ROOT" ]]; then

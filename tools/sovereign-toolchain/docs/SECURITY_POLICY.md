@@ -5,9 +5,9 @@
 - Do not expose `GITHUB_TOKEN` to browsers, mobile apps, no-code client-side flows, LLM prompts, service environments, or runtime files.
 - Use only per-operation GitHub App installation tokens minted from a root-only Systemd credential; never use a persistent GitHub PAT or `GITHUB_TOKEN` fallback.
 - Set `ALLOWED_REPOS`.
-- Keep `TOOLCHAIN_API_KEY` enabled for public REST deployments.
-- Put the service behind TLS.
-- Validate origins at your reverse proxy if exposing MCP/REST publicly.
+- Bind the full MCP/REST app to loopback only and require exactly one `X-Toolchain-Key` header for MCP and authenticated REST tool calls; a missing server key must fail closed.
+- Never expose full MCP/REST directly. If remote access is required, use a separately authenticated TLS tunnel or loopback proxy and validate origins there.
+- Keep the evidence listener separate: only health plus the exact capability-bound CI-evidence route, with a repository-scoped read-only GitHub App token.
 - Use Draft PRs for write actions.
 - Keep `confirm=true` behind a user-visible confirmation.
 

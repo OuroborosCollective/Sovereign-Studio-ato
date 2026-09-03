@@ -13,6 +13,7 @@ import hmac
 import json
 import os
 import re
+import stat
 import time
 import uuid
 from pathlib import Path
@@ -72,6 +73,13 @@ DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
         "maxBytes": 8192,
         "kind": "management_credential",
     },
+    "agent_zero_api_key": {
+        "label": "Agent Zero External API für Sovereign Capability Expansion",
+        "fieldLabel": "Agent Zero API-Key",
+        "path": "/opt/sovereign-owner-managed/agent_zero_api_key.txt",
+        "maxBytes": 8192,
+        "kind": "credential",
+    },
     "revolver_provider_key": {
         "label": "Einmaliger Free-Revolver Provider-Zugang",
         "fieldLabel": "Free-Provider API-Key",
@@ -92,6 +100,24 @@ DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
         "path": "/opt/sovereign-owner-managed/wolfram_cag_api_key.txt",
         "maxBytes": 8192,
         "kind": "credential",
+    },
+    "n8n_sovereign_api_key": {
+        "label": "n8n Public API für Sovereign Studio",
+        "fieldLabel": "n8n Public API-Key für Sovereign Studio",
+        "path": "/opt/sovereign-owner-managed/n8n_sovereign_api_key.txt",
+        "maxBytes": 8192,
+        "kind": "root_owned_credential",
+        "ownerUid": 0,
+        "ownerGid": 0,
+    },
+    "n8n_aurion_api_key": {
+        "label": "n8n Public API für Echoes of Aurion",
+        "fieldLabel": "n8n Public API-Key für Echoes of Aurion",
+        "path": "/opt/sovereign-owner-managed/n8n_aurion_api_key.txt",
+        "maxBytes": 8192,
+        "kind": "root_owned_credential",
+        "ownerUid": 0,
+        "ownerGid": 0,
     },
     "hf_publication_rights": {
         "label": "Evidence Observatory Hugging Face publication rights",
@@ -117,6 +143,7 @@ DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
 }
 SENSITIVE_COMMENT_PATTERNS = (
     re.compile(r"\b(?:ghp_|github_pat_|sk-proj-|Bearer\s+)[A-Za-z0-9_./+=-]{8,}", re.IGNORECASE),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
 )
 
@@ -141,9 +168,12 @@ def _target_map() -> dict[str, dict[str, Any]]:
     targets["openrouter_management_api_key"]["path"] = str(
         _root() / "openrouter_management_api_key.txt"
     )
+    targets["agent_zero_api_key"]["path"] = str(_root() / "agent_zero_api_key.txt")
     targets["revolver_provider_key"]["path"] = str(_root() / "revolver_provider_key.txt")
     targets["notion_integration_token"]["path"] = str(_root() / "notion_integration_token.txt")
     targets["wolfram_cag_api_key"]["path"] = str(_root() / "wolfram_cag_api_key.txt")
+    targets["n8n_sovereign_api_key"]["path"] = str(_root() / "n8n_sovereign_api_key.txt")
+    targets["n8n_aurion_api_key"]["path"] = str(_root() / "n8n_aurion_api_key.txt")
     targets["hf_publication_rights"]["path"] = str(_root() / "hf_publication_rights.json")
     targets["hf_cag_staging_publish_request"]["path"] = str(_root() / "hf_cag_staging_publish.action")
     targets["proven_learning_confirmation"]["path"] = str(_root() / "proven_learning_confirmation.txt")
@@ -176,7 +206,8 @@ def _target_map() -> dict[str, dict[str, Any]]:
     root = _root()
     validated: dict[str, dict[str, Any]] = {}
     for target_id, raw in targets.items():
-        path = Path(str(raw.get("path") or "")).resolve()
+        configured_path = Path(str(raw.get("path") or ""))
+        path = configured_path.parent.resolve() / configured_path.name
         if root != path.parent and root not in path.parents:
             continue
         max_bytes = max(1, min(int(raw.get("maxBytes") or 8192), 65536))
@@ -187,6 +218,8 @@ def _target_map() -> dict[str, dict[str, Any]]:
             "path": path,
             "maxBytes": max_bytes,
             "kind": str(raw.get("kind") or "credential")[:40],
+            "ownerUid": int(raw.get("ownerUid", -1)),
+            "ownerGid": int(raw.get("ownerGid", -1)),
         }
     return validated
 
@@ -359,8 +392,19 @@ def _atomic_write(target: dict[str, Any], protected_value: bytes | bytearray | s
         raise ValueError("Der geschützte Wert fehlt oder überschreitet das Ziel-Limit")
     path = Path(target["path"])
     root = _root()
+    kind = str(target.get("kind") or "")
+    root_owned = kind == "root_owned_credential"
+    owner_uid = int(target.get("ownerUid", -1))
+    owner_gid = int(target.get("ownerGid", -1))
+    if root_owned:
+        if owner_uid != 0 or owner_gid != 0:
+            raise ValueError("Root-geschütztes Ziel hat einen ungültigen Eigentümer-Vertrag")
+        if os.geteuid() != 0:
+            raise ValueError("Root-geschütztes Ziel benötigt Root-Eigentümerwechsel")
+    if path.is_symlink():
+        raise ValueError("Das geschützte Ziel darf kein Symlink sein")
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if target.get("kind") == "freellm_provider_credential":
+    if kind == "freellm_provider_credential":
         if os.geteuid() != 0:
             raise ValueError("FreeLLM Provider-Key-Ziel benötigt Root-Eigentümerwechsel")
         os.chown(path.parent, FREELLM_RUNTIME_UID, FREELLM_RUNTIME_GID)
@@ -368,21 +412,44 @@ def _atomic_write(target: dict[str, Any], protected_value: bytes | bytearray | s
     resolved_parent = path.parent.resolve()
     if resolved_parent != root and root not in resolved_parent.parents:
         raise ValueError("Das Ziel liegt außerhalb des Owner-Verzeichnisses")
+    if root_owned and resolved_parent != root:
+        raise ValueError("Root-geschützte Ziele müssen direkt im Owner-Verzeichnis liegen")
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    open_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    open_flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        descriptor = os.open(temporary, open_flags, 0o600)
         try:
+            if root_owned:
+                os.fchown(descriptor, owner_uid, owner_gid)
+            os.fchmod(descriptor, 0o600)
             view = memoryview(encoded)
             written = 0
             while written < len(view):
                 written += os.write(descriptor, view[written:])
             os.fsync(descriptor)
+            descriptor_stat = os.fstat(descriptor)
+            if root_owned and (
+                descriptor_stat.st_uid != owner_uid or descriptor_stat.st_gid != owner_gid
+            ):
+                raise ValueError("Das geschützte Ziel erfüllt den Root-Eigentümer-Vertrag nicht")
         finally:
             os.close(descriptor)
+        if path.is_symlink():
+            raise ValueError("Das geschützte Ziel darf kein Symlink sein")
         os.replace(temporary, path)
-        if target.get("kind") == "freellm_provider_credential":
+        if kind == "freellm_provider_credential":
             os.chown(path, FREELLM_RUNTIME_UID, FREELLM_RUNTIME_GID)
         os.chmod(path, 0o600)
+        written_stat = os.lstat(path)
+        if not stat.S_ISREG(written_stat.st_mode) or stat.S_IMODE(written_stat.st_mode) != 0o600:
+            path.unlink(missing_ok=True)
+            raise ValueError("Das geschützte Ziel erfüllt den Regular-File-/Mode-Vertrag nicht")
+        if root_owned and (
+            written_stat.st_uid != owner_uid or written_stat.st_gid != owner_gid
+        ):
+            path.unlink(missing_ok=True)
+            raise ValueError("Das geschützte Ziel erfüllt den finalen Root-Eigentümer-Vertrag nicht")
     finally:
         temporary.unlink(missing_ok=True)
         for index in range(len(encoded)):

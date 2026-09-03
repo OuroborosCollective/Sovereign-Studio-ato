@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+import dataclasses
 import difflib
 import fnmatch
 import hashlib
@@ -19,12 +21,16 @@ from typing import Any, Literal
 
 from github_app_auth import GitHubAppInstallationAuth, GitHubAppInstallationConfig
 
+from .ci_evidence import build_ci_evidence_receipt, build_revision_guardian_receipt
+
 DEFAULT_WORKER_URL = "https://sovereign-studio-worker.projectouroboroscollective.workers.dev/git/patch"
 DEFAULT_REPO = "OuroborosCollective/Sovereign-Studio-ato"
 DEFAULT_TARGET_PATH = "scripts/sovereign-backend/app.py"
 DEFAULT_PATCH_BRANCH = "sovereign/apply-toolchain-guardrails"
 DEFAULT_COMMIT_MESSAGE = "fix(toolchain): apply backend patch guardrails"
 DEFAULT_PR_BODY = "Applies the verified Toolchain backend guardrails patch from scripts/patches/apply_toolchain_patch_guardrails.py."
+
+_WORKFLOW_FILE_RE = re.compile(r"^[A-Za-z0-9_.-]+\.ya?ml$")
 
 TEXT_SUFFIXES = {
     ".md", ".txt", ".json", ".yml", ".yaml", ".toml", ".ini", ".env",
@@ -109,6 +115,85 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "owner": {"type": "string"}, "repo": {"type": "string"}, "path": {"type": "string"},
                 "message": {"type": "string"}, "blocks": {"type": "array"},
                 "expected_sha": {"type": "string"}, "dry_run": {"type": "boolean", "default": False}
+            }
+        },
+    },
+    {
+        "name": "sovereign_ci_evidence_receipt",
+        "description": "Normalize one GitHub Actions observation into deterministic observation-only evidence for n8n delivery de-duplication. Never creates VERIFIED truth.",
+        "write_action": False,
+        "input_schema": {
+            "type": "object",
+            "required": [
+                "repository",
+                "workflow_id",
+                "workflow_name",
+                "workflow_selector",
+                "branch",
+                "branch_head_sha",
+                "run_id",
+                "head_sha",
+                "status",
+                "jobs",
+            ],
+            "properties": {
+                "repository": {"type": "string"},
+                "workflow_id": {"type": "integer", "minimum": 1},
+                "workflow_name": {"type": "string"},
+                "workflow_selector": {"type": "string"},
+                "branch": {"type": "string"},
+                "branch_head_sha": {"type": "string"},
+                "run_id": {"type": "integer", "minimum": 1},
+                "head_sha": {"type": "string"},
+                "expected_head_sha": {"type": "string"},
+                "status": {"type": "string"},
+                "conclusion": {"type": ["string", "null"]},
+                "jobs": {"type": "array"},
+                "previous_fingerprint": {"type": "string"}
+            }
+        },
+    },
+    {
+        "name": "sovereign_revision_guardian_receipt",
+        "description": "Compare Git/build/deploy/health/image/schema identities into deterministic observation-only PASS/DRIFT evidence. Never creates VERIFIED truth.",
+        "write_action": False,
+        "input_schema": {
+            "type": "object",
+            "required": ["repository", "expected_revision", "git_revision", "build_revision", "deploy_revision", "health_revision", "expected_image_digest", "image_digest", "health_status", "schema_readback"],
+            "properties": {
+                "repository": {"type": "string"},
+                "expected_revision": {"type": "string"},
+                "git_revision": {"type": "string"},
+                "build_revision": {"type": "string"},
+                "deploy_revision": {"type": "string"},
+                "health_revision": {"type": "string"},
+                "expected_image_digest": {"type": "string"},
+                "image_digest": {"type": "string"},
+                "health_status": {"type": "string"},
+                "schema_readback": {"type": "string"},
+                "previous_fingerprint": {"type": "string"}
+            }
+        },
+    },
+    {
+        "name": "github_actions_run_evidence",
+        "description": "Read one exact workflow's latest or selected GitHub Actions run through the scoped GitHub App and normalize workflow/run/job/step evidence for n8n. Read-only.",
+        "write_action": False,
+        "input_schema": {
+            "type": "object",
+            "required": ["owner", "repo", "workflow_id"],
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "workflow_id": {
+                    "oneOf": [
+                        {"type": "integer", "minimum": 1},
+                        {"type": "string"}
+                    ]
+                },
+                "branch": {"type": "string", "default": "main"},
+                "run_id": {"type": "integer", "minimum": 1},
+                "previous_fingerprint": {"type": "string"}
             }
         },
     },
@@ -245,9 +330,86 @@ class GitHubContent:
     html_url: str | None
     size: int
 
+_GITHUB_READ_ONLY_ENV = "SOVEREIGN_TOOLCHAIN_GITHUB_READ_ONLY"
+_READ_ONLY_GITHUB_PERMISSIONS = {"actions": "read", "contents": "read"}
+
+
+class _ReadOnlyGitHubAppInstallationAuth(GitHubAppInstallationAuth):
+    """Mint a lane-scoped token whose requested permissions are read-only."""
+
+    def _issue_token_sync(self) -> str:
+        app_jwt = self._app_jwt()
+        repository_name = self.config.repository.split("/", 1)[1]
+        request_body = {
+            "repositories": [repository_name],
+            "permissions": dict(_READ_ONLY_GITHUB_PERMISSIONS),
+        }
+        request = urllib.request.Request(
+            f"https://api.github.com/app/installations/{self.config.installation_id}/access_tokens",
+            data=json.dumps(request_body, separators=(",", ":")).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {app_jwt}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                status = getattr(response, "status", None)
+                if status is None:
+                    status = response.getcode()
+                raw = response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(
+                f"GitHub App installation token request rejected: HTTP {exc.code}"
+            ) from exc
+        except (OSError, urllib.error.URLError) as exc:
+            raise RuntimeError("GitHub App installation token request failed") from exc
+        if status != 201:
+            raise RuntimeError(
+                f"GitHub App installation token request rejected: HTTP {status}"
+            )
+        try:
+            payload = json.loads(raw)
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError("GitHub App installation token response is invalid") from exc
+        token = str(payload.get("token") or "").strip() if isinstance(payload, dict) else ""
+        if len(token) < 20 or any(character.isspace() for character in token):
+            raise RuntimeError("GitHub App installation token response is invalid")
+        return token
+
+    async def _issue_token(self) -> str:
+        return await asyncio.to_thread(self._issue_token_sync)
+
+
 class GitHubClient:
-    def __init__(self) -> None:
-        self.auth = GitHubAppInstallationAuth(GitHubAppInstallationConfig.from_env())
+    def __init__(self, repository: str | None = None) -> None:
+        config = GitHubAppInstallationConfig.from_env()
+        selected_repository = config.repository if repository is None else repository
+        if (
+            not isinstance(selected_repository, str)
+            or selected_repository != selected_repository.strip()
+            or selected_repository.count("/") != 1
+        ):
+            raise PermissionError("Repository is not allowlisted")
+        owner, repo = selected_repository.split("/", 1)
+        if not owner or not repo:
+            raise PermissionError("Repository is not allowlisted")
+        allowed_repo(owner, repo)
+        scoped_config = dataclasses.replace(config, repository=selected_repository)
+        read_only_flag = os.getenv(_GITHUB_READ_ONLY_ENV, "")
+        if read_only_flag not in {"", "0", "1"}:
+            raise RuntimeError(
+                f"{_GITHUB_READ_ONLY_ENV} must be unset, 0, or 1"
+            )
+        auth_type = (
+            _ReadOnlyGitHubAppInstallationAuth
+            if read_only_flag == "1"
+            else GitHubAppInstallationAuth
+        )
+        self.auth = auth_type(scoped_config)
         self.api = os.getenv("GITHUB_API_BASE", "https://api.github.com").rstrip("/")
 
     def _request(self, method: str, path_or_url: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -480,6 +642,122 @@ def github_read_file(owner: str, repo: str, path: str, ref: str | None = None, m
     content, truncated = truncate(data.content, max_chars)
     return {"owner": owner, "repo": repo, "path": safe_rel(path), "ref": ref, "sha": data.sha, "html_url": data.html_url, "bytes": data.size, "truncated": truncated, "content": content}
 
+
+def _workflow_selector(value: Any) -> str:
+    if isinstance(value, bool):
+        raise ValueError("workflow_id must be a positive integer or workflow filename")
+    if isinstance(value, int):
+        if value <= 0:
+            raise ValueError("workflow_id must be positive")
+        return str(value)
+    selector = str(value or "").strip()
+    if selector.isdigit():
+        if int(selector) <= 0:
+            raise ValueError("workflow_id must be positive")
+        return selector
+    if not _WORKFLOW_FILE_RE.fullmatch(selector):
+        raise ValueError("workflow_id must be a safe .yml/.yaml filename or positive integer")
+    return selector
+
+
+def _safe_branch(value: str) -> str:
+    branch = str(value or "").strip()
+    if (
+        not branch
+        or len(branch) > 255
+        or branch.startswith(("/", "~"))
+        or branch.endswith(("/", "."))
+        or ".." in branch
+        or "//" in branch
+        or "@{" in branch
+        or any(character.isspace() or character in "\\~^:?*[" for character in branch)
+    ):
+        raise ValueError("branch is not a safe Git ref")
+    return branch
+
+
+def github_actions_run_evidence(
+    owner: str,
+    repo: str,
+    workflow_id: int | str,
+    branch: str = "main",
+    run_id: int | None = None,
+    previous_fingerprint: str | None = None,
+) -> dict[str, Any]:
+    allowed_repo(owner, repo)
+    selector = _workflow_selector(workflow_id)
+    selected_branch = _safe_branch(branch)
+    gh = GitHubClient(f"{owner}/{repo}")
+    selector_q = urllib.parse.quote(selector, safe="")
+    workflow = gh._request(
+        "GET",
+        f"/repos/{owner}/{repo}/actions/workflows/{selector_q}",
+    )
+    resolved_workflow_id = int(workflow.get("id") or 0)
+    if resolved_workflow_id <= 0:
+        raise RuntimeError("GitHub Actions workflow response has no valid id")
+    workflow_name = str(workflow.get("name") or "").strip()
+    if not workflow_name:
+        raise RuntimeError("GitHub Actions workflow response has no name")
+
+    if run_id is None:
+        branch_q = urllib.parse.quote(selected_branch, safe="")
+        latest = gh._request(
+            "GET",
+            f"/repos/{owner}/{repo}/actions/workflows/{selector_q}/runs?branch={branch_q}&per_page=1",
+        )
+        runs = latest.get("workflow_runs") or []
+        if not runs:
+            raise RuntimeError("No GitHub Actions run found for requested workflow and branch")
+        run = runs[0]
+    else:
+        if isinstance(run_id, bool) or int(run_id) <= 0:
+            raise ValueError("run_id must be a positive integer")
+        run = gh._request("GET", f"/repos/{owner}/{repo}/actions/runs/{int(run_id)}")
+
+    if int(run.get("workflow_id") or 0) != resolved_workflow_id:
+        raise RuntimeError("GitHub Actions run does not belong to the selected workflow")
+    if str(run.get("head_branch") or "").strip() != selected_branch:
+        raise RuntimeError("GitHub Actions run does not belong to the selected branch")
+    resolved_run_id = int(run.get("id") or 0)
+    if resolved_run_id <= 0:
+        raise RuntimeError("GitHub Actions run response has no valid id")
+
+    branch_head_sha = gh.branch_sha(owner, repo, selected_branch)
+    _JOB_PAGE_LIMIT = 100
+    _JOB_TOTAL_LIMIT = 250
+    all_jobs: list[Any] = []
+    page = 1
+    while len(all_jobs) < _JOB_TOTAL_LIMIT:
+        jobs_response = gh._request(
+            "GET",
+            f"/repos/{owner}/{repo}/actions/runs/{resolved_run_id}/jobs"
+            f"?per_page={_JOB_PAGE_LIMIT}&page={page}",
+        )
+        page_jobs = jobs_response.get("jobs") or []
+        all_jobs.extend(page_jobs)
+        if len(page_jobs) < _JOB_PAGE_LIMIT:
+            break
+        page += 1
+    observation: dict[str, Any] = {
+        "repository": f"{owner}/{repo}",
+        "workflow_id": resolved_workflow_id,
+        "workflow_name": workflow_name,
+        "workflow_selector": selector,
+        "branch": selected_branch,
+        "branch_head_sha": branch_head_sha,
+        "run_id": resolved_run_id,
+        "head_sha": run.get("head_sha"),
+        "expected_head_sha": branch_head_sha,
+        "status": run.get("status"),
+        "conclusion": run.get("conclusion"),
+        "jobs": all_jobs,
+    }
+    if previous_fingerprint:
+        observation["previous_fingerprint"] = previous_fingerprint
+    return build_ci_evidence_receipt(observation)
+
+
 def github_apply_search_replace_pr(owner: str, repo: str, path: str, message: str, blocks: list[dict[str, str]], branch_name: str | None = None, title: str | None = None, body: str | None = None, base_branch: str | None = None, expected_sha: str | None = None, confirm: bool = False) -> dict[str, Any]:
     allowed_repo(owner, repo)
     base_branch = base_branch or os.getenv("BASE_BRANCH", "main")
@@ -577,6 +855,16 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         "list_archive_files": lambda: archive_reader.list_files(args.get("source", "studio"), args.get("prefix", ""), args.get("glob", "*"), int(args.get("limit", 100))),
         "read_archive_text": lambda: archive_reader.read_text(args["source"], args["path"], int(args.get("max_chars", 20000))),
         "plan_sandbox_commands": lambda: plan_sandbox_commands(args.get("goal", "verify")),
+        "sovereign_ci_evidence_receipt": lambda: build_ci_evidence_receipt(args),
+        "sovereign_revision_guardian_receipt": lambda: build_revision_guardian_receipt(args),
+        "github_actions_run_evidence": lambda: github_actions_run_evidence(
+            args["owner"],
+            args["repo"],
+            args["workflow_id"],
+            args.get("branch", "main"),
+            args.get("run_id"),
+            args.get("previous_fingerprint"),
+        ),
         "preview_search_replace": lambda: preview_search_replace(args["path"], args["content"], args["blocks"]),
         "make_patch_payload": lambda: make_patch_payload(args["owner"], args["repo"], args["path"], args["message"], args["blocks"], args.get("expected_sha") or args.get("expectedSha"), bool(args.get("dry_run", False))),
         "github_read_file": lambda: github_read_file(args["owner"], args["repo"], args["path"], args.get("ref"), int(args.get("max_chars", 60000))),

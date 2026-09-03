@@ -244,8 +244,14 @@ def register_wolfram_cag_runtime(app: Any, *, get_connection: ConnectionFactory)
     def _canary():
         if not _service_authorized():
             return jsonify({"ok": False, "error": "service_unauthorized"}), 401
-        body = request.get_json(silent=True) or {}
-        if not isinstance(body, dict) or set(body) - {"components"}:
+        raw_body = request.get_json(silent=True)
+        if raw_body is None:
+            body = {}
+        elif isinstance(raw_body, dict):
+            body = raw_body
+        else:
+            return jsonify({"ok": False, "error": "invalid_request"}), 400
+        if set(body) - {"components"}:
             return jsonify({"ok": False, "error": "invalid_request"}), 400
         try:
             selected = _selected_components(body.get("components"))

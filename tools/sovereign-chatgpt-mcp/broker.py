@@ -12,8 +12,12 @@ from pathlib import Path
 from typing import Any
 
 from admin_mode import PrivateAdminRuntime
+from aurion_operator import AurionOperatorRuntime
 from browserless_reader import BrowserlessReplayReader
-from command_contract import is_mutating_action
+from command_contract import (
+    is_mutating_action,
+    standing_owner_delegation_approved,
+)
 from desktop_worker import DesktopWorkerRuntime
 from document_pipeline import DocumentPipelineRuntime
 from fleet_maintenance import FleetMaintenanceRuntime
@@ -22,6 +26,8 @@ from github_knowledge_canary import GitHubKnowledgeCanaryRuntime
 from issue_closure_canary import IssueClosureCanaryRuntime
 from programming_language_catalog_runtime import ProgrammingLanguageCatalogRuntime
 from managed_compose import ManagedComposeRuntime
+from n8n_host_maintenance import N8NHostMaintenanceRuntime
+from n8n_workflow_runtime import N8NWorkflowAutomationRuntime
 from operations import OperationsRuntime
 from patchmon_fleet import PatchmonFleetRuntime
 from patchmon_operator import PatchmonOperatorRuntime
@@ -55,6 +61,8 @@ class BrokerRuntime:
         self.issue_closure = IssueClosureCanaryRuntime()
         self.programming_language_catalog = ProgrammingLanguageCatalogRuntime()
         self.managed_compose = ManagedComposeRuntime()
+        self.n8n_host_maintenance = N8NHostMaintenanceRuntime()
+        self.n8n_workflows = N8NWorkflowAutomationRuntime()
         self.desktop_worker = DesktopWorkerRuntime()
         self.patchmon = PatchmonOperatorRuntime()
         self.patchmon_fleet = PatchmonFleetRuntime(self.patchmon)
@@ -67,6 +75,7 @@ class BrokerRuntime:
             )
         )
         self.admin = PrivateAdminRuntime(self.operations)
+        self.aurion = AurionOperatorRuntime()
         self.self_update = SelfUpdateRuntime()
         self.github = GitHubAdminRuntime(self.self_update)
 
@@ -378,8 +387,14 @@ class BrokerRuntime:
         }
 
     def patchmon_action_plan(self, values: dict[str, Any]) -> dict[str, Any]:
-        """Route the fixed bootstrap compatibility action through the existing plan tool."""
+        """Route fixed host-maintenance compatibility actions through the existing plan tool."""
         action = str(values.get("action") or "").strip()
+        if action == "docker_cache_cleanup":
+            return self.n8n_host_maintenance.docker_cache_cleanup_plan()
+        if action == "retired_document_image_cleanup":
+            return self.n8n_host_maintenance.retired_document_image_cleanup_plan()
+        if action == "tagged_image_retention_cleanup":
+            return self.n8n_host_maintenance.tagged_image_retention_cleanup_plan()
         if action == "bootstrap_local_fleet":
             return self.patchmon_fleet.bootstrap_plan(friendly_name="sovereign-vps")
         return self.patchmon.patch_action_plan(
@@ -392,8 +407,23 @@ class BrokerRuntime:
         )
 
     def patchmon_action_apply(self, values: dict[str, Any]) -> dict[str, Any]:
-        """Route the confirmed bootstrap compatibility action through the host worker."""
+        """Route confirmed host-maintenance compatibility actions through the host worker."""
         action = str(values.get("action") or "").strip()
+        if action == "docker_cache_cleanup":
+            return self.n8n_host_maintenance.docker_cache_cleanup_apply(
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=self.private_owner_mode,
+            )
+        if action == "retired_document_image_cleanup":
+            return self.n8n_host_maintenance.retired_document_image_cleanup_apply(
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=self.private_owner_mode,
+            )
+        if action == "tagged_image_retention_cleanup":
+            return self.n8n_host_maintenance.tagged_image_retention_cleanup_apply(
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=self.private_owner_mode,
+            )
         if action == "bootstrap_local_fleet":
             return self.patchmon_fleet.bootstrap_apply(
                 confirmation_sha256=str(values.get("confirmation_sha256") or ""),
@@ -408,6 +438,26 @@ class BrokerRuntime:
             patch_type=str(values.get("patch_type") or "patch_all"),
             package_names=values.get("package_names") if isinstance(values.get("package_names"), list) else [],
             schedule_override=str(values.get("schedule_override") or ""),
+        )
+
+    def managed_compose_plan(self, values: dict[str, Any]) -> dict[str, Any]:
+        """Route the fixed n8n host stage through the existing managed-compose plan surface."""
+        stack_id = str(values.get("stack_id") or "").strip()
+        if stack_id == "n8n-host-stage1":
+            return self.n8n_host_maintenance.stage1_plan()
+        return self.managed_compose.plan(stack_id=stack_id)
+
+    def managed_compose_apply(self, values: dict[str, Any]) -> dict[str, Any]:
+        """Route the fixed n8n host stage through the existing managed-compose apply surface."""
+        stack_id = str(values.get("stack_id") or "").strip()
+        if stack_id == "n8n-host-stage1":
+            return self.n8n_host_maintenance.stage1_apply(
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=self.private_owner_mode,
+            )
+        return self.managed_compose.deploy(
+            stack_id=stack_id,
+            confirmation_sha256=str(values.get("confirmation_sha256") or ""),
         )
 
     def dispatch(
@@ -485,6 +535,11 @@ class BrokerRuntime:
                 owner_approved=bool(values.get("owner_approved", False)),
             ),
             "resolve_backend_image": self.resolve_backend_image,
+            "preview_verified_migration": lambda values: self.operations.preview_verified_migration(
+                workspace_id=str(values.get("workspace_id") or ""),
+                path=str(values.get("path") or ""),
+                expected_sha256=str(values.get("expected_sha256") or ""),
+            ),
             "apply_verified_migration": lambda values: self.admin.apply_verified_migration_with_self_heal(
                 workspace_id=str(values.get("workspace_id") or ""),
                 path=str(values.get("path") or ""),
@@ -494,6 +549,25 @@ class BrokerRuntime:
                 sql=str(values.get("sql") or ""),
                 database=str(values.get("database") or ""),
                 timeout_seconds=int(values.get("timeout_seconds") or 300),
+            ),
+            "aurion_account_role_readback": lambda values: self.aurion.account_role_readback(
+                open_id=str(values.get("open_id") or ""),
+                expected_revision=str(values.get("expected_revision") or ""),
+            ),
+            "aurion_account_role_plan": lambda values: self.aurion.account_role_plan(
+                open_id=str(values.get("open_id") or ""),
+                role=str(values.get("role") or ""),
+                expected_revision=str(values.get("expected_revision") or ""),
+            ),
+            "aurion_account_role_apply": lambda values: self.aurion.account_role_apply(
+                open_id=str(values.get("open_id") or ""),
+                role=str(values.get("role") or ""),
+                expected_revision=str(values.get("expected_revision") or ""),
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=standing_owner_delegation_approved(
+                    private_owner_mode=self.private_owner_mode,
+                    caller_attestation=bool(values.get("owner_approved", False)),
+                ),
             ),
             "git_push_main": lambda values: self.admin.push_workspace_to_main(
                 workspace_id=str(values.get("workspace_id") or ""),
@@ -590,8 +664,25 @@ class BrokerRuntime:
                 target_image_digest=str(values.get("target_image_digest") or ""),
                 confirmation_digest=str(values.get("confirmation_digest") or ""),
             ),
-            "managed_compose_stack_plan": lambda values: self.managed_compose.plan(
-                stack_id=str(values.get("stack_id") or ""),
+            "managed_compose_stack_plan": self.managed_compose_plan,
+            "n8n_workflow_plan": lambda values: self.n8n_workflows.plan(
+                lane_id=str(values.get("lane_id") or ""),
+                operation=str(values.get("operation") or ""),
+                workflow_id=str(values.get("workflow_id") or ""),
+                spec=values.get("spec") if isinstance(values.get("spec"), dict) else None,
+            ),
+            "n8n_workflow_apply": lambda values: self.n8n_workflows.apply(
+                lane_id=str(values.get("lane_id") or ""),
+                operation=str(values.get("operation") or ""),
+                workflow_id=str(values.get("workflow_id") or ""),
+                spec=values.get("spec") if isinstance(values.get("spec"), dict) else None,
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=standing_owner_delegation_approved(
+                    private_owner_mode=self.private_owner_mode,
+                    caller_attestation=bool(
+                        values.get("owner_approved", False)
+                    ),
+                ),
             ),
             "memory_gateway_collection_canary": lambda _values: self.managed_compose.memory_gateway_collection_canary(),
             "litellm_provider_model_inventory": lambda _values: self.managed_compose.litellm_provider_model_inventory(),
@@ -601,10 +692,7 @@ class BrokerRuntime:
                 balanced_provider_model=str(values.get("balanced_provider_model") or ""),
                 confirmation_inventory_sha256=str(values.get("confirmation_inventory_sha256") or ""),
             ),
-            "deploy_managed_compose_stack": lambda values: self.managed_compose.deploy(
-                stack_id=str(values.get("stack_id") or ""),
-                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
-            ),
+            "deploy_managed_compose_stack": self.managed_compose_apply,
             "desktop_worker_plan": lambda values: self.desktop_worker.plan(
                 activation_id=str(values.get("activation_id") or ""),
             ),

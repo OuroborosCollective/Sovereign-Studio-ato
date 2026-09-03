@@ -38,6 +38,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
         "ci_repair_tools.py",
         "llm_boundary_ledger.py",
         "llm_boundary_contract.py",
+        "n8n_workflow_runtime.py",
     ):
         assert filename in broker_copy_loop
     assert "SOVEREIGN_MCP_ENABLE_ADMIN_SQL" in script

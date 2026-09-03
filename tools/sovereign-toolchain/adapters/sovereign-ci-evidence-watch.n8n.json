@@ -1,0 +1,74 @@
+{
+  "name": "Sovereign Coordinated Release Evidence Watch",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -240,
+        0
+      ],
+      "id": "8921583f-01db-5471-a1fd-a4896ec84ded",
+      "name": "Evidence Schedule"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8002/api/v1/n8n/ci-evidence",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"branch\":\"main\",\"owner\":\"OuroborosCollective\",\"previous_fingerprint\":null,\"repo\":\"Sovereign-Studio-ato\",\"workflow_id\":\"sovereign-coordinated-release.yml\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "5e1a0ea3-eeda-59a8-a3f2-22bfa28eaeb6",
+      "name": "Submit Evidence Receipt",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__SOVEREIGN_TOOLCHAIN_EVIDENCE_CREDENTIAL_ID__",
+          "name": "Sovereign Toolchain Evidence"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Evidence Schedule": {
+      "main": [
+        [
+          {
+            "node": "Submit Evidence Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c451a2b6-5f74-43cb-a083-a6d98d7bd50e",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

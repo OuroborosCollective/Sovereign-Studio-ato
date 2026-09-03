@@ -708,6 +708,34 @@ def test_mcp_installer_failure_returns_stage_without_reason(monkeypatch) -> None
     assert raw_secret not in caught.value.detail
 
 
+def test_mcp_installer_failure_exposes_only_safe_neuro_canary_classification(monkeypatch) -> None:
+    module = _load()
+    completed = subprocess.CompletedProcess(
+        ["install"],
+        1,
+        "",
+        (
+            "install blocked: stage=verify_isolated_neuro_runtime_canary exit=1 "
+            "reason=isolated neuro runtime canary failed: "
+            "phase=teaching_simulation;error=PermissionError rollback_attempted=1\n"
+        ),
+    )
+    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: completed)
+
+    with pytest.raises(module.ReconcileError) as caught:
+        module._command_json(["install"], timeout=10, stage="mcp_deploy")
+
+    diagnostic = caught.value.safe_evidence["installerDiagnostic"]
+    assert diagnostic["stage"] == "verify_isolated_neuro_runtime_canary"
+    assert diagnostic["rollbackAttempted"] is True
+    assert diagnostic["neuroCanary"] == {
+        "phase": "teaching_simulation",
+        "errorType": "PermissionError",
+    }
+    assert "teaching_simulation" in json.dumps(diagnostic)
+    assert "isolated neuro runtime canary failed" not in json.dumps(diagnostic)
+
+
 def test_mcp_deploy_runs_ci_scoped_non_executable_installer_through_fixed_bash(
     monkeypatch, tmp_path
 ) -> None:

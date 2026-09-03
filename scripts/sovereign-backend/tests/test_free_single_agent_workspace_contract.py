@@ -30,7 +30,9 @@ def test_free_agent_uses_one_isolated_workspace_task_with_write_and_test_tools()
     assert '"maxBackgroundAgents": 0' in routes
     assert '"codeServerWorkspace"' in routes
     assert "repository_tool_factory" in agents
-    assert "tools=repository_tools" in agents
+    assert "capability_tool_factory" in agents
+    assert "tools=[*repository_tools, *capability_tools]" in agents
+    assert "If the mission explicitly requires one of those capabilities" in agents
     assert "_AGENT_FREE_WORKSPACE_MAX_TURNS: Final[int] = 12" in agents
     assert 'if "free-single-agent" in normalized:' in agents
     assert "free_fallback_resolution(" in routes

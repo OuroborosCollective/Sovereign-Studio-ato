@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from operations import OperationsRuntime
+from operations import OperationsRuntime, _normalize_pg_dump_for_server
 
 
 DIGEST = "sha256:" + "a" * 64
@@ -330,7 +330,148 @@ def test_destructive_delete_remains_separately_blocked(tmp_path, monkeypatch) ->
     assert result["destructive_actions"] == ["delete_rows"]
 
 
-def test_verified_backfill_runs_policy_repair_preview_then_admin_apply(tmp_path, monkeypatch) -> None:
+def test_pg17_transaction_timeout_is_removed_only_for_pre17_server() -> None:
+    dump = "SET transaction_timeout = 0;\nCREATE TABLE public.example(id integer);\n"
+    pg15, repairs15 = _normalize_pg_dump_for_server(dump, 150001)
+    pg17, repairs17 = _normalize_pg_dump_for_server(dump, 170002)
+
+    assert "transaction_timeout" not in pg15
+    assert "CREATE TABLE public.example" in pg15
+    assert repairs15 == ("remove_pg17_transaction_timeout_for_pre17_server",)
+    assert pg17 == dump
+    assert repairs17 == ()
+
+
+def test_preview_hydrates_real_schema_without_copying_rows(tmp_path, monkeypatch) -> None:
+    sql = "ALTER TABLE agent_events DROP CONSTRAINT IF EXISTS agent_events_source_check;\n"
+    workspace_id, relative_path, checksum = _migration_workspace(tmp_path, sql)
+    backend_env = tmp_path / "backend.env"
+    backend_env.write_text(
+        "POSTGRES_HOST=db\n"
+        "POSTGRES_PORT=5432\n"
+        "POSTGRES_DB=postgres\n"
+        "POSTGRES_USER=postgres\n"
+        "POSTGRES_PASSWORD=admin-secret\n",
+        "utf-8",
+    )
+    monkeypatch.setenv("SOVEREIGN_MCP_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setenv("SOVEREIGN_BACKEND_ENV_FILE", str(backend_env))
+    monkeypatch.setenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST", "db")
+    monkeypatch.setenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT", "5432")
+    monkeypatch.setenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_DB", "sovereign_migration_preview")
+    runtime = OperationsRuntime()
+    calls = []
+    dump_calls = []
+    schema_sql = (
+        "SET transaction_timeout = 0;\n"
+        "CREATE TABLE public.agent_events(event_id text PRIMARY KEY, source text NOT NULL);\n"
+    )
+
+    def fake_run_input(argv, input_text, *, password, timeout):
+        calls.append({"argv": argv, "input": input_text, "password": password, "timeout": timeout})
+        if "SHOW server_version_num" in input_text:
+            return {"ok": True, "exit_code": 0, "stdout": " 150001\n", "stderr": ""}
+        return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
+
+    def fake_run_capture(argv, *, password, timeout, max_stdout_bytes):
+        dump_calls.append({
+            "argv": argv,
+            "password": password,
+            "timeout": timeout,
+            "max_stdout_bytes": max_stdout_bytes,
+        })
+        return {
+            "ok": True,
+            "exit_code": 0,
+            "stdout": schema_sql,
+            "stdout_bytes": len(schema_sql.encode()),
+            "stdout_sha256": hashlib.sha256(schema_sql.encode()).hexdigest(),
+            "stderr_sha256": hashlib.sha256(b"").hexdigest(),
+            "failure_family": None,
+        }
+
+    monkeypatch.setattr(runtime, "_run_input", fake_run_input)
+    monkeypatch.setattr(runtime, "_run_capture", fake_run_capture)
+    result = runtime.preview_verified_migration(
+        workspace_id=workspace_id,
+        path=relative_path,
+        expected_sha256=checksum,
+    )
+
+    assert result["ok"] is True
+    assert result["status"] == "PREVIEW_VERIFIED"
+    assert result["rolled_back"] is True
+    assert result["schema_hydrated"] is True
+    assert result["schema_source"] == "production-target-pre-data"
+    assert result["preview_tables"] == ["public.agent_events"]
+    assert result["server_version_num"] == 150001
+    assert result["schema_compatibility_repairs"] == [
+        "remove_pg17_transaction_timeout_for_pre17_server"
+    ]
+    assert result["production_rows_copied"] is False
+    assert result["production_write_performed"] is False
+    assert result["preview_cleanup_verified"] is True
+    assert len(dump_calls) == 1
+    assert "--schema-only" in dump_calls[0]["argv"]
+    assert "--no-owner" in dump_calls[0]["argv"]
+    assert "--no-privileges" in dump_calls[0]["argv"]
+    assert "--section=pre-data" in dump_calls[0]["argv"]
+    assert "--strict-names" in dump_calls[0]["argv"]
+    assert "--table=public.agent_events" in dump_calls[0]["argv"]
+    assert dump_calls[0]["argv"][-1] == "postgres"
+    assert len(calls) == 5
+    assert 'DROP DATABASE IF EXISTS "sovereign_migration_preview" WITH (FORCE);' in calls[0]["input"]
+    assert 'CREATE DATABASE "sovereign_migration_preview"' in calls[0]["input"]
+    assert calls[1]["input"] == "SHOW server_version_num;\n"
+    assert "transaction_timeout" not in calls[2]["input"]
+    assert "CREATE TABLE public.agent_events" in calls[2]["input"]
+    assert "ALTER TABLE agent_events" in calls[3]["input"]
+    assert "ROLLBACK;" in calls[3]["input"]
+    assert calls[4]["input"] == calls[0]["input"]
+
+
+def test_preview_target_discovery_excludes_tables_created_by_same_migration(tmp_path, monkeypatch) -> None:
+    sql = """
+CREATE TABLE IF NOT EXISTS child_events(id text PRIMARY KEY, run_id text REFERENCES agent_runs(run_id));
+ALTER TABLE agent_evidence ADD COLUMN IF NOT EXISTS external_ref text;
+"""
+    workspace_id, relative_path, _checksum = _migration_workspace(tmp_path, sql)
+    monkeypatch.setenv("SOVEREIGN_MCP_WORKSPACE_ROOT", str(tmp_path))
+    runtime = OperationsRuntime()
+    migration = runtime._migration(workspace_id, relative_path)
+
+    assert migration["preview_tables"] == (
+        "public.agent_evidence",
+        "public.agent_runs",
+    )
+    assert "public.child_events" not in migration["preview_tables"]
+
+
+def test_preview_database_can_never_equal_production_database(tmp_path, monkeypatch) -> None:
+    sql = "ALTER TABLE agent_events DROP CONSTRAINT IF EXISTS agent_events_source_check;\n"
+    workspace_id, relative_path, checksum = _migration_workspace(tmp_path, sql)
+    backend_env = tmp_path / "backend.env"
+    backend_env.write_text(
+        "POSTGRES_HOST=db\nPOSTGRES_PORT=5432\nPOSTGRES_DB=postgres\n"
+        "POSTGRES_USER=postgres\nPOSTGRES_PASSWORD=admin-secret\n",
+        "utf-8",
+    )
+    monkeypatch.setenv("SOVEREIGN_MCP_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setenv("SOVEREIGN_BACKEND_ENV_FILE", str(backend_env))
+    monkeypatch.setenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST", "db")
+    monkeypatch.setenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT", "5432")
+    monkeypatch.setenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_DB", "postgres")
+    runtime = OperationsRuntime()
+
+    with pytest.raises(ValueError, match="niemals die Produktionsdatenbank"):
+        runtime.preview_verified_migration(
+            workspace_id=workspace_id,
+            path=relative_path,
+            expected_sha256=checksum,
+        )
+
+
+def test_verified_backfill_runs_hydrated_preview_then_admin_apply(tmp_path, monkeypatch) -> None:
     sql = """-- additive
 BEGIN;
 DO $$
@@ -356,11 +497,6 @@ COMMIT;
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_DB_WRITES", "1")
     monkeypatch.setenv("SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS", "1")
     monkeypatch.setenv("SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS", "0")
-    monkeypatch.setenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST", "db")
-    monkeypatch.setenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT", "5432")
-    monkeypatch.setenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_DB", "sovereign_migration_preview")
-    monkeypatch.setenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_USER", "sovereign_mcp_preview")
-    monkeypatch.setenv("SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD", "preview-secret")
     runtime = OperationsRuntime()
     calls = []
 
@@ -369,24 +505,32 @@ COMMIT;
         return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
 
     monkeypatch.setattr(runtime, "_run_input", fake_run_input)
+    monkeypatch.setattr(
+        runtime,
+        "preview_verified_migration",
+        lambda **_kwargs: {
+            "ok": True,
+            "status": "PREVIEW_VERIFIED",
+            "rolled_back": True,
+            "sha256": checksum,
+            "schema_hydrated": True,
+            "production_rows_copied": False,
+        },
+    )
     result = runtime.apply_verified_migration(
         workspace_id=workspace_id,
         path=relative_path,
         confirmation_sha256=checksum,
     )
     assert result["status"] == "APPLIED"
-    assert result["preview"] == {"ok": True, "rolled_back": True}
+    assert result["preview"]["schema_hydrated"] is True
     assert result["data_backfill_actions"] == ["update_rows"]
     assert result["policy_repair"]["status"] == "APPLIED"
     assert result["policy_repair"]["scope"] == "preview_only"
     assert result["policy_repair"]["source_unchanged"] is True
-    assert len(calls) == 2
-    assert calls[0]["password"] == "preview-secret"
-    assert "ROLLBACK;" in calls[0]["input"]
-    assert calls[0]["input"].count("COMMIT;") == 0
-    assert "DO $$" in calls[0]["input"]
-    assert calls[1]["password"] == "admin-secret"
-    assert calls[1]["input"] == sql
+    assert len(calls) == 1
+    assert calls[0]["password"] == "admin-secret"
+    assert calls[0]["input"] == sql
 
 
 def test_migration_path_cannot_escape_workspace(tmp_path, monkeypatch) -> None:

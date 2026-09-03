@@ -1,0 +1,75 @@
+{
+  "name": "Aurion Zone Runtime Evidence Watch",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -240,
+        0
+      ],
+      "id": "361c4c40-6335-5206-96d6-e1dc09be8256",
+      "name": "Evidence Schedule"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8002/api/v1/n8n/ci-evidence",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"branch\":\"main\",\"owner\":\"OuroborosCollective\",\"previous_fingerprint\":null,\"repo\":\"Echoes_of_Aurion\",\"workflow_id\":\"340269357\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "60737b3b-dd59-513f-8c68-808dc2366ddb",
+      "name": "Submit Evidence Receipt",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__AURION_TOOLCHAIN_EVIDENCE_CREDENTIAL_ID__",
+          "name": "Aurion Toolchain Evidence"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Evidence Schedule": {
+      "main": [
+        [
+          {
+            "node": "Submit Evidence Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a271b2c3-6f85-44dc-b194-b7e09e8ce812",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "workflowFile": "deploy-aurion-zone-runtime.yml"
+  },
+  "tags": []
+}

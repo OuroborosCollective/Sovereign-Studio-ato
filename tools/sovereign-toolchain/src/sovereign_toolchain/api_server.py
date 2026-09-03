@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hmac
+import os
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
@@ -10,11 +12,14 @@ from .core import TOOL_DEFINITIONS, briefing, dispatch_tool, safe_error
 class ToolCall(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
 
+
 def check_api_key(x_toolchain_key: str | None = Header(default=None)) -> None:
-    # Optional shared-secret gate for no-code tools.
-    import os
+    """Fail closed for every authenticated route on the loopback-only full app."""
     expected = os.getenv("TOOLCHAIN_API_KEY", "").strip()
-    if expected and x_toolchain_key != expected:
+    if not expected or not expected.isascii():
+        raise HTTPException(status_code=503, detail="toolchain API capability is not configured")
+    supplied = x_toolchain_key or ""
+    if not supplied.isascii() or not hmac.compare_digest(supplied, expected):
         raise HTTPException(status_code=401, detail="Invalid or missing X-Toolchain-Key")
 
 app = FastAPI(
@@ -45,7 +50,7 @@ def invoke_tool(name: str, call: ToolCall, x_toolchain_key: str | None = Header(
     except Exception as e:
         return {"ok": False, "tool": name, "error": safe_error(e)}
 
-# No-code friendly aliases. These endpoints all accept {"args": {...}} for simple HTTP-request nodes.
+
 @app.post("/v1/github/read-file")
 def read_file(call: ToolCall, x_toolchain_key: str | None = Header(default=None)) -> dict[str, Any]:
     check_api_key(x_toolchain_key)

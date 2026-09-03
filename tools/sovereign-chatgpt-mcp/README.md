@@ -37,6 +37,20 @@ Privater Operator für `OuroborosCollective/Sovereign-Studio-ato`. Er macht die 
 - `DROP`-, `DELETE`- und andere destruktive Migrationen besitzen einen zweiten, separat deaktivierten Schalter
 - kein OpenAI-API-Key im MCP-Server nötig; der Server ruft selbst kein Modell auf
 
+## Begrenzte n8n-Workflow-Steuerung
+
+Zwei zusätzliche Werkzeuge steuern ausschließlich den fest kompilierten CI-Evidence-Workflowtyp für die Lanes `sovereign` (`OuroborosCollective/Sovereign-Studio-ato`) und `aurion` (`OuroborosCollective/Echoes_of_Aurion`):
+
+- `n8n_workflow_plan` inventarisiert oder plant `create_draft`, `update_draft`, `activate` und `pause` ohne Schreibeffekt.
+- `n8n_workflow_apply` führt nur einen exakt hash-bestätigten Plan mit `owner_approved=true`, aktivem privaten Owner-Modus und dem ausschließlich im Host-Broker gesetzten Gate `SOVEREIGN_MCP_ENABLE_N8N_WORKFLOW_WRITE=1` aus.
+- Das Autorisierungsmodell ist eine stehende Delegation an den privaten Einzel-Owner-MCP: `owner_approved` ist die ausdrückliche Attestierung des authentifizierten MCP-Aufrufers, kein unabhängig ausgestelltes oder einmalig konsumiertes Freigabe-Receipt. Der Broker verknüpft diese Attestierung serverseitig mit dem privaten Owner-Modus; das Deaktivieren eines der beiden Host-Gates blockiert weitere Schreibvorgänge.
+- Beide Lanes sind in der Community-Edition exakt an das Projekt `Personal` gebunden. Freie Projekte, URLs, Nodes, Workflowtypen, Delete, Archive und beliebige bestehende Workflows sind nicht unterstützt.
+- Die n8n-Public-API-Schlüssel werden getrennt über die sicheren Owner-Input-Ziele `n8n_sovereign_api_key` und `n8n_aurion_api_key` in root-eigenen Dateien gespeichert. Sie werden weder in den MCP-Container noch in Chat, Git, Logs oder Toolantworten transportiert.
+- Der Schlüssel benötigt minimal `project:list`, `credential:list/create` sowie `workflow:list/read/create/update/activate/deactivate`.
+- Der Evidence-Master verbleibt root-only auf dem Host. Der Broker erzeugt daraus je Lane eine andere HMAC-Fähigkeit für den Header `X-Sovereign-Evidence-Capability`; n8n erhält niemals den Master.
+- Die festen Zwei-Node-Workflows besitzen absichtlich keinen schreibenden State-Node. Ohne zurückgesendeten Fingerprint behauptet ein Receipt deshalb weder Änderung noch Benachrichtigungsbedarf: `deliveryCursorPresent=false`, `stateChanged=false`, `shouldNotify=false`.
+- Die Repository-Templates bleiben `active:false`. Ein erfolgreicher `activate`-Write belegt zunächst nur Definition, Projekt und Aktivstatus. `n8n_workflow_apply` meldet bis zu einem unabhängig geprüften exakten Lane-Ausführungs-Canary `N8N_WORKFLOW_ACTIVATION_PENDING_EXECUTION_EVIDENCE` mit `ok=false`; auch »bereits aktiv« oder ein nach Timeout strukturell reconcilter Publish darf die fehlende Ausführungsevidence nicht umgehen.
+
 ## Neuro-/Foundation- und Teaching-Lane
 
 Die neuromorph inspirierte Erweiterung läuft im **selben** FastMCP-Prozess und über denselben ChatGPT-Connector. Containername, Loopback-Port, Broker, Workspace-/Code-Pfad, Registry, Operating Profile und Sovottt-Verbindung bleiben erhalten. Es gibt keinen zweiten MCP-Server und keinen statischen Parallelkatalog.

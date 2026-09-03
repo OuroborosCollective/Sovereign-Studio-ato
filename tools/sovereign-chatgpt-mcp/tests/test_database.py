@@ -235,6 +235,45 @@ COMMIT;
     assert "END $$;" in preview
 
 
+def test_preview_delegates_to_hash_bound_host_schema_clone(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, repo = repo_runtime
+    migration = repo / "migrations" / "hydrated.sql"
+    migration.parent.mkdir(exist_ok=True)
+    sql = "ALTER TABLE agent_events DROP CONSTRAINT IF EXISTS agent_events_source_check;\n"
+    migration.write_text(sql, "utf-8")
+    checksum = hashlib.sha256(sql.encode()).hexdigest()
+    database = DatabaseRuntime(runtime._repo)
+    calls = []
+
+    def fake_call(action, arguments, timeout):
+        calls.append((action, arguments, timeout))
+        return {
+            "ok": True,
+            "status": "PREVIEW_VERIFIED",
+            "rolled_back": True,
+            "sha256": checksum,
+            "schema_hydrated": True,
+            "production_rows_copied": False,
+        }
+
+    monkeypatch.setattr(database.broker, "call", fake_call)
+    result = database.preview_migration(workspace_id, "migrations/hydrated.sql")
+
+    assert result["ok"] is True
+    assert result["schema_hydrated"] is True
+    assert calls == [
+        (
+            "preview_verified_migration",
+            {
+                "workspace_id": workspace_id,
+                "path": "migrations/hydrated.sql",
+                "expected_sha256": checksum,
+            },
+            300,
+        )
+    ]
+
+
 def test_productive_migration_is_disabled_by_default(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
     migration = repo / "migrations" / "002.sql"

@@ -30,6 +30,12 @@ EXPECTED_NEURO_TOOLS = {
     "teaching_package_assess",
 }
 
+EXPECTED_AURION_TOOLS = {
+    "aurion_account_role_readback",
+    "aurion_account_role_plan",
+    "aurion_account_role_apply",
+}
+
 EXPECTED_COMPATIBLE_PREDECESSOR_DRIFT = {
     "mcp_diagnostic_chain_plan",
     "mcp_toolchain_compile",
@@ -72,6 +78,7 @@ def test_launcher_preserves_every_existing_registration_and_adds_one_teacher_reg
         "openai_project_access_tools",
         "operational_governance_tools",
         "neuro_teaching_tools",
+        "n8n_workflow_tools",
         "operational_assurance_tools",
         "proven_learning_tools",
         "toolchain_composition",
@@ -145,6 +152,7 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
     assert 'chmod 0700 "$NEURO_RUNTIME_STATE_HOST_DIR"' in script
     assert 'set_value "$MANAGED_ENV" SOVEREIGN_SOURCE_REVISION "$EXPECTED_REVISION"' in script
     assert 'set_value "$MANAGED_ENV" SOVEREIGN_NEURO_POLICY_SHA256 "$NEURO_POLICY_SHA256"' in script
+    assert "managed_compose.py n8n_host_maintenance.py n8n_workflow_runtime.py patchmon_operator.py" in script
     assert script.index('set_value "$MANAGED_ENV" SOVEREIGN_SOURCE_REVISION') < script.index(
         'docker compose up -d --no-build --force-recreate --remove-orphans'
     )
@@ -152,7 +160,8 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
         'docker compose up -d --no-build --force-recreate --remove-orphans'
     )
 
-    assert 'EXPECTED_MCP_TOOL_COUNT="249"' in script
+    assert 'EXPECTED_MCP_TOOL_COUNT="251"' in script
+    assert 'EXPECTED_MCP_TOOL_COUNT="254"' in script.split('INSTALL_STAGE="configure_private_owner_mode"', 1)[1]
     assert 'INSTALL_STAGE="capture_previous_mcp_tool_surface"' in script
     assert 'INSTALL_STAGE="verify_mcp_tool_surface_preservation"' in script
     assert "mcp_tool_contract_registry(include_schemas=True)" in script
@@ -383,6 +392,9 @@ resolve_previous_mcp_registry_capture_mode
     ).hexdigest()
     runtime_environment = {
         **os.environ,
+        "SOVEREIGN_MCP_GITHUB_APP_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE": "",
         "PYTHONPATH": str(ROOT),
         "SOVEREIGN_MCP_WORKSPACE_ROOT": str(tmp_path / "workspaces"),
         "SOVEREIGN_TOOL_RANKING_STATE_ROOT": str(tmp_path / "tool-ranking"),
@@ -392,6 +404,8 @@ resolve_previous_mcp_registry_capture_mode
         "SOVEREIGN_NEURO_POLICY_SHA256": policy_sha256,
         "SOVEREIGN_ANDROID_NATIVE_BUILD_MODE": "github_actions",
         "SOVEREIGN_KAPPA_POS": "1000000",
+        "SOVEREIGN_MCP_ENABLE_AURION_OPERATOR": "1",
+        "SOVEREIGN_MCP_ENABLE_AURION_WRITE": "1",
     }
     registry_process = subprocess.run(
         [
@@ -424,11 +438,13 @@ print(json.dumps({
     )
     assert registry_process.returncode == 0, registry_process.stderr
     current_registry = json.loads(registry_process.stdout.strip().splitlines()[-1])
-    assert current_registry["toolCount"] == 249
+    assert current_registry["toolCount"] == 254
 
     predecessor_registry = json.loads(json.dumps(current_registry))
     predecessor_registry["tools"] = [
-        item for item in predecessor_registry["tools"] if item["name"] not in EXPECTED_NEURO_TOOLS
+        item
+        for item in predecessor_registry["tools"]
+        if item["name"] not in EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS | {"n8n_workflow_plan", "n8n_workflow_apply"}
     ]
     predecessor_registry["toolCount"] = len(predecessor_registry["tools"])
     predecessor_registry["registrySnapshotSha256"] = "0" * 64
@@ -477,6 +493,15 @@ print(json.dumps({
     ).hexdigest()
     assert predecessor_semantic_sha256 == BASELINE_PREDECESSOR_SEMANTIC_SHA256
 
+    predecessor_registry["tools"].extend(
+        json.loads(json.dumps(item))
+        for item in current_registry["tools"]
+        if item["name"] in {"n8n_workflow_plan", "n8n_workflow_apply"}
+    )
+    predecessor_registry["tools"].sort(key=lambda item: item["name"])
+    predecessor_registry["toolCount"] = len(predecessor_registry["tools"])
+    assert predecessor_registry["toolCount"] == 246
+
     predecessor_path = tmp_path / "predecessor-registry.json"
     current_path = tmp_path / "current-registry.json"
     predecessor_path.write_text(json.dumps(predecessor_registry), "utf-8")
@@ -489,7 +514,7 @@ print(json.dumps({
             str(predecessor_path),
             str(current_path),
             "1",
-            "249",
+            "254",
         ],
         capture_output=True,
         text=True,
@@ -498,7 +523,7 @@ print(json.dumps({
     )
     assert compatibility.returncode == 0, compatibility.stderr
     compatibility_receipt = json.loads(compatibility.stdout.strip().splitlines()[-1])
-    assert set(compatibility_receipt["additions"]) == EXPECTED_NEURO_TOOLS
+    assert set(compatibility_receipt["additions"]) == EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS
     assert set(compatibility_receipt["changedCompatibleContracts"]) == (
         EXPECTED_COMPATIBLE_PREDECESSOR_DRIFT
     )
@@ -525,7 +550,7 @@ print(json.dumps({
             str(predecessor_path),
             str(incompatible_path),
             "1",
-            "249",
+            "254",
         ],
         capture_output=True,
         text=True,
@@ -565,7 +590,7 @@ print(json.dumps({
             str(property_predecessor_path),
             str(property_replacement_path),
             "1",
-            "249",
+            "254",
         ],
         capture_output=True,
         text=True,
@@ -601,7 +626,7 @@ print(json.dumps({
             str(one_of_predecessor_path),
             str(one_of_replacement_path),
             "1",
-            "249",
+            "254",
         ],
         capture_output=True,
         text=True,
@@ -645,7 +670,7 @@ print(json.dumps({
             str(output_predecessor_path),
             str(output_replacement_path),
             "1",
-            "249",
+            "254",
         ],
         capture_output=True,
         text=True,
@@ -689,7 +714,7 @@ print(json.dumps({
                 str(old_path),
                 str(new_path),
                 "1",
-                "249",
+                "254",
             ],
             capture_output=True,
             text=True,
@@ -818,7 +843,7 @@ print(json.dumps({
             str(predecessor_path),
             str(description_path),
             "1",
-            "249",
+            "254",
         ],
         capture_output=True,
         text=True,
@@ -827,6 +852,128 @@ print(json.dumps({
     )
     assert rejected_description_drift.returncode != 0
     assert "description changed" in rejected_description_drift.stderr
+
+
+def test_mcp_archive_requires_exact_toolchain_and_nested_install_joins_outer_rollback(
+    tmp_path: Path,
+) -> None:
+    script = INSTALLER.read_text("utf-8")
+    remote_install = REMOTE_INSTALL.read_text("utf-8")
+    syntax = subprocess.run(
+        ["bash", "-n", str(INSTALLER)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    remote_syntax = subprocess.run(
+        ["bash", "-n", str(REMOTE_INSTALL)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert syntax.returncode == 0, syntax.stderr
+    assert remote_syntax.returncode == 0, remote_syntax.stderr
+
+    archive_preflight = script.split(
+        'if [[ "$DEPLOYMENT_SOURCE_SCOPE" == "full-repository" ]]; then',
+        1,
+    )[1].split('[[ -z "$EXPECTED_MCP_DIGEST"', 1)[0]
+    assert 'INSTALL_STAGE="verify_preinstalled_revision_bound_toolchain"' in archive_preflight
+    assert "verify_revision_bound_toolchain_installation" in archive_preflight
+    assert script.index('INSTALL_STAGE="verify_preinstalled_revision_bound_toolchain"') < script.index(
+        "ROLLBACK_ARMED=1"
+    )
+    verification = script.split(
+        "verify_revision_bound_toolchain_installation() {",
+        1,
+    )[1].split('\n}\n\nINSTALL_STAGE="preflight"', 1)[0]
+    assert 'payload.get("schemaVersion") != "sovereign.toolchain.rollback.v1"' in verification
+    assert 'payload.get("state") != "committed"' in verification
+    assert 'payload.get("installedRevision") != sys.argv[2]' in verification
+    assert "sovereign-toolchain-n8n-evidence.service" in verification
+    assert '"http://127.0.0.1:8001/api/healthz"' in verification
+    assert '"http://127.0.0.1:8002/healthz"' in verification
+    assert "if exc.code != 401" in verification
+    assert "n8n evidence listener accepted an unauthenticated request" in verification
+
+    nested_install = script.index(
+        'bash "$TOOLCHAIN_INSTALLER" "$TOOLCHAIN_SOURCE" >"$TOOLCHAIN_INSTALL_LOG" 2>&1'
+    )
+    nested_arm = script.index("TOOLCHAIN_ROLLBACK_ARMED=1", nested_install)
+    receipt_validation = script.index(
+        'python3 - "$TOOLCHAIN_INSTALL_LOG" "$EXPECTED_REVISION"',
+        nested_install,
+    )
+    assert nested_install < nested_arm < receipt_validation
+    outer_exit = script.split("on_installer_exit() {", 1)[1].split(
+        "\n}\ntrap on_installer_exit EXIT",
+        1,
+    )[0]
+    assert outer_exit.index("rollback_revision_bound_toolchain") < outer_exit.index(
+        "recover_previous_control_plane"
+    )
+    assert 'toolchain_rollback_state="failed"' in outer_exit
+    assert "exit_code=70" in outer_exit
+    final_disarm = script.rindex("TOOLCHAIN_ROLLBACK_ARMED=0")
+    predecessor_assertion = script.index(
+        'if [[ "$PREVIOUS_MCP_CONTAINER_PRESENT" == "1" ]]',
+        receipt_validation,
+    )
+    assert predecessor_assertion < final_disarm < script.rindex('INSTALL_STAGE="completed"')
+
+    for field in (
+        "'deployment_source_scope': 'mcp-release-archive'",
+        "'toolchain_install_required': False",
+        "'toolchain_revision': expected_revision",
+        "'toolchain_revision_verified': True",
+        "'toolchain_health_readback': True",
+        "'toolchain_n8n_evidence_auth_canary': True",
+        "'toolchain_rollback_capable': True",
+    ):
+        assert field in remote_install
+    assert "installer did not prove the exact matching toolchain" in remote_install
+
+    rollback_function = script.split(
+        "rollback_revision_bound_toolchain() {",
+        1,
+    )[1].split("\n}\n\nrecover_previous_control_plane", 1)[0]
+    helper = tmp_path / "rollback-last-install.py"
+    trace = tmp_path / "rollback-trace"
+    manifest = tmp_path / "last-install.json"
+    helper.write_text(
+        "from pathlib import Path\n"
+        "import os, sys\n"
+        "with Path(os.environ['TOOLCHAIN_ROLLBACK_TRACE']).open('a', encoding='utf-8') as out:\n"
+        "    out.write(' '.join(sys.argv[1:]) + '\\n')\n",
+        "utf-8",
+    )
+    manifest.write_text("{}\n", "utf-8")
+    harness = f"""
+set -Eeuo pipefail
+TOOLCHAIN_ROLLBACK_ARMED=1
+TOOLCHAIN_ROLLBACK_COMPLETED=0
+TOOLCHAIN_ROLLBACK_HELPER="$1"
+TOOLCHAIN_ROLLBACK_MANIFEST="$2"
+EXPECTED_REVISION="{'a' * 40}"
+rollback_revision_bound_toolchain() {{
+{rollback_function}
+}}
+rollback_revision_bound_toolchain
+rollback_revision_bound_toolchain
+printf '%s %s\n' "$TOOLCHAIN_ROLLBACK_ARMED" "$TOOLCHAIN_ROLLBACK_COMPLETED"
+"""
+    rolled_back = subprocess.run(
+        ["bash", "-c", harness, "rollback-harness", str(helper), str(manifest)],
+        env={**os.environ, "TOOLCHAIN_ROLLBACK_TRACE": str(trace)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rolled_back.returncode == 0, rolled_back.stderr
+    assert rolled_back.stdout.strip() == "0 1"
+    assert trace.read_text("utf-8").splitlines() == [
+        f"rollback --expected-installed-revision {'a' * 40}"
+    ]
 
 
 def test_installer_runs_a_clean_real_registry_neuro_canary_without_selected_tool_execution() -> None:
@@ -851,7 +998,7 @@ def test_installer_runs_a_clean_real_registry_neuro_canary_without_selected_tool
     assert '"allowed_effects": ["read"]' in canary
     assert '[contract["name"] for contract in selected_contracts] == ["mcp_self_update_status"]' in canary
     assert 'registered_tool.fn = forbidden_selected_tool_call' in canary
-    assert 'assert len(set(guarded_tool_names)) == 244' in canary
+    assert 'assert len(set(guarded_tool_names)) == 249' in canary
     assert '__sovereign_success_tracking__' in canary
     assert '__sovereign_operating_profile_wrapped__' in canary
     assert 'guarded_tool_calls == []' in canary
@@ -901,7 +1048,7 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
     section = script.split('INSTALL_STAGE="verify_isolated_neuro_runtime_canary"', 1)[1].split(
         'INSTALL_STAGE="verify_operating_profile_canaries"', 1
     )[0]
-    marker = 'sovereign-chatgpt-mcp python - <<\'PY\'\n'
+    marker = 'sovereign-chatgpt-mcp python - 2>&1 <<\'PY\'\n'
     embedded = section.split(marker, 1)[1].rsplit("\nPY", 1)[0]
     embedded = embedded.replace(
         'dir="/var/lib/sovereign-tool-routing"',
@@ -916,6 +1063,9 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
     canary_parent.mkdir(mode=0o700)
     environment = {
         **os.environ,
+        "SOVEREIGN_MCP_GITHUB_APP_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE": "",
         "PYTHONPATH": str(ROOT),
         "SOVEREIGN_CANARY_TEST_PARENT": str(canary_parent),
         "SOVEREIGN_EXPECTED_CANARY_REVISION": revision,
@@ -929,6 +1079,8 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
         "SOVEREIGN_MCP_REPOSITORY": "OuroborosCollective/Sovereign-Studio-ato",
         "SOVEREIGN_ANDROID_NATIVE_BUILD_MODE": "github_actions",
         "SOVEREIGN_KAPPA_POS": "1000000",
+        "SOVEREIGN_MCP_ENABLE_AURION_OPERATOR": "1",
+        "SOVEREIGN_MCP_ENABLE_AURION_WRITE": "1",
     }
     completed = subprocess.run(
         [sys.executable, "-c", embedded],
@@ -945,14 +1097,14 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
     assert receipt == {
         "canonicalReadbackVerified": True,
         "commitReplayVerified": True,
-        "guardedPredecessorToolCount": 244,
+        "guardedPredecessorToolCount": 249,
         "isolatedStateCleaned": True,
         "previewProposalOnly": True,
         "persistedOutcomeTools": ["neuro_event_commit"],
         "quarantineNoMutation": True,
         "readOnlyCallsPersisted": False,
         "registeredToolSurfaceVerified": True,
-        "registryToolCount": 249,
+        "registryToolCount": 254,
         "selectedToolsExecuted": False,
         "status": "NEURO_DEPLOYMENT_CANARY_VERIFIED",
         "tamperDetected": True,
@@ -965,13 +1117,47 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
     assert list(canary_parent.iterdir()) == []
     assert list((tmp_path / "workspaces").iterdir()) == []
 
+    failed_parent = tmp_path / "failed-mounted-routing-state"
+    failed_parent.mkdir(mode=0o700)
+    failed_workspaces = tmp_path / "failed-workspaces"
+    failed_workspaces.mkdir(mode=0o700)
+    failed_environment = {
+        **environment,
+        "SOVEREIGN_CANARY_TEST_PARENT": str(failed_parent),
+        "SOVEREIGN_NEURO_POLICY_SHA256": "0" * 64,
+        "SOVEREIGN_MCP_WORKSPACE_ROOT": str(failed_workspaces),
+    }
+    failed = subprocess.run(
+        [sys.executable, "-c", embedded],
+        cwd=ROOT,
+        env=failed_environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert failed.returncode != 0
+    assert json.loads(failed.stdout.strip().splitlines()[-1]) == {
+        "errorType": "AssertionError",
+        "phase": "environment_binding",
+        "status": "NEURO_DEPLOYMENT_CANARY_FAILED",
+    }
+    assert "Traceback" not in (failed.stdout + failed.stderr)
+
 
 def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Path) -> None:
     workflow = WORKFLOW.read_text("utf-8")
     remote_install = REMOTE_INSTALL.read_text("utf-8")
     deployment_surface = workflow + "\n" + remote_install
 
+    assert "n8n_host_maintenance.py" in remote_install
+    assert "n8n_workflow_runtime.py" in remote_install
+    assert "n8n_workflow_tools.py" in remote_install
+    assert "managed_compose.py n8n_host_maintenance.py n8n_workflow_runtime.py patchmon_operator.py" in INSTALLER.read_text("utf-8")
     for path in (
+        "n8n_workflow_runtime.py",
+        "n8n_workflow_tools.py",
         "neuro_architecture_contract.py",
         "neuromorphic_runtime.py",
         "foundation_runtime.py",
@@ -979,8 +1165,10 @@ def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Pa
         "skills/sovereign-neuro-teaching-runtime/SKILL.md",
     ):
         assert path in workflow
-    assert "assert len(tool_names) == 249" in workflow
-    assert "assert len(tool_names - expected_tools) == 244" in deployment_surface
+    assert "assert len(tool_names) == 251" in workflow
+    assert "n8n_workflow_plan" in deployment_surface
+    assert "n8n_workflow_apply" in deployment_surface
+    assert "assert len(tool_names - expected_tools) == 249" in deployment_surface
     assert "SOVEREIGN_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow
     assert workflow.count("ref: ${{ env.SOVEREIGN_SOURCE_REVISION }}") == 2
     assert '--expected-head "${SOVEREIGN_SOURCE_REVISION}"' in workflow

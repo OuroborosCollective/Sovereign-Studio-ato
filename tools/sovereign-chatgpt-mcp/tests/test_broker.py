@@ -277,6 +277,242 @@ def test_patchmon_bootstrap_compatibility_apply_preserves_confirmation_and_owner
     }
 
 
+def test_docker_cache_cleanup_reuses_patchmon_plan_and_apply_surfaces(monkeypatch) -> None:
+    runtime = BrokerRuntime()
+    runtime.private_owner_mode = True
+    observed = {}
+
+    monkeypatch.setattr(
+        runtime.n8n_host_maintenance,
+        "docker_cache_cleanup_plan",
+        lambda: {"ok": True, "status": "DOCKER_CACHE_CLEANUP_PLAN_READY", "confirmationSha256": "a" * 64},
+    )
+
+    def cleanup_apply(*, confirmation_sha256, owner_approved):
+        observed.update(confirmation_sha256=confirmation_sha256, owner_approved=owner_approved)
+        return {"ok": True, "status": "DOCKER_CACHE_CLEANUP_VERIFIED"}
+
+    monkeypatch.setattr(runtime.n8n_host_maintenance, "docker_cache_cleanup_apply", cleanup_apply)
+    monkeypatch.setattr(
+        runtime.patchmon,
+        "patch_action_plan",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("PatchMon plan must not execute")),
+    )
+    monkeypatch.setattr(
+        runtime.patchmon,
+        "patch_action_apply",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("PatchMon apply must not execute")),
+    )
+
+    plan = runtime.patchmon_action_plan({"action": "docker_cache_cleanup"})
+    applied = runtime.patchmon_action_apply(
+        {"action": "docker_cache_cleanup", "confirmation_sha256": "a" * 64}
+    )
+
+    assert plan["status"] == "DOCKER_CACHE_CLEANUP_PLAN_READY"
+    assert applied["status"] == "DOCKER_CACHE_CLEANUP_VERIFIED"
+    assert observed == {"confirmation_sha256": "a" * 64, "owner_approved": True}
+
+
+def test_retired_document_image_cleanup_reuses_patchmon_plan_and_apply_surfaces(
+    monkeypatch,
+) -> None:
+    runtime = BrokerRuntime()
+    runtime.private_owner_mode = True
+    observed = {}
+
+    monkeypatch.setattr(
+        runtime.n8n_host_maintenance,
+        "retired_document_image_cleanup_plan",
+        lambda: {
+            "ok": True,
+            "status": "RETIRED_DOCUMENT_IMAGE_CLEANUP_PLAN_READY",
+            "confirmationSha256": "d" * 64,
+        },
+    )
+
+    def cleanup_apply(*, confirmation_sha256, owner_approved):
+        observed.update(
+            confirmation_sha256=confirmation_sha256,
+            owner_approved=owner_approved,
+        )
+        return {"ok": True, "status": "RETIRED_DOCUMENT_IMAGE_CLEANUP_VERIFIED"}
+
+    monkeypatch.setattr(
+        runtime.n8n_host_maintenance,
+        "retired_document_image_cleanup_apply",
+        cleanup_apply,
+    )
+    monkeypatch.setattr(
+        runtime.patchmon,
+        "patch_action_plan",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("PatchMon plan must not execute")
+        ),
+    )
+    monkeypatch.setattr(
+        runtime.patchmon,
+        "patch_action_apply",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("PatchMon apply must not execute")
+        ),
+    )
+
+    plan = runtime.patchmon_action_plan(
+        {"action": "retired_document_image_cleanup"}
+    )
+    applied = runtime.patchmon_action_apply(
+        {
+            "action": "retired_document_image_cleanup",
+            "confirmation_sha256": "d" * 64,
+        }
+    )
+
+    assert plan["status"] == "RETIRED_DOCUMENT_IMAGE_CLEANUP_PLAN_READY"
+    assert applied["status"] == "RETIRED_DOCUMENT_IMAGE_CLEANUP_VERIFIED"
+    assert observed == {"confirmation_sha256": "d" * 64, "owner_approved": True}
+
+
+def test_tagged_image_retention_cleanup_reuses_patchmon_plan_and_apply_surfaces(
+    monkeypatch,
+) -> None:
+    runtime = BrokerRuntime()
+    runtime.private_owner_mode = True
+    observed = {}
+
+    monkeypatch.setattr(
+        runtime.n8n_host_maintenance,
+        "tagged_image_retention_cleanup_plan",
+        lambda: {
+            "ok": True,
+            "status": "TAGGED_IMAGE_RETENTION_CLEANUP_PLAN_READY",
+            "confirmationSha256": "e" * 64,
+        },
+    )
+
+    def cleanup_apply(*, confirmation_sha256, owner_approved):
+        observed.update(
+            confirmation_sha256=confirmation_sha256,
+            owner_approved=owner_approved,
+        )
+        return {"ok": True, "status": "TAGGED_IMAGE_RETENTION_CLEANUP_VERIFIED"}
+
+    monkeypatch.setattr(
+        runtime.n8n_host_maintenance,
+        "tagged_image_retention_cleanup_apply",
+        cleanup_apply,
+    )
+    monkeypatch.setattr(
+        runtime.patchmon,
+        "patch_action_plan",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("PatchMon plan must not execute")
+        ),
+    )
+    monkeypatch.setattr(
+        runtime.patchmon,
+        "patch_action_apply",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("PatchMon apply must not execute")
+        ),
+    )
+
+    plan = runtime.patchmon_action_plan(
+        {"action": "tagged_image_retention_cleanup"}
+    )
+    applied = runtime.patchmon_action_apply(
+        {
+            "action": "tagged_image_retention_cleanup",
+            "confirmation_sha256": "e" * 64,
+        }
+    )
+
+    assert plan["status"] == "TAGGED_IMAGE_RETENTION_CLEANUP_PLAN_READY"
+    assert applied["status"] == "TAGGED_IMAGE_RETENTION_CLEANUP_VERIFIED"
+    assert observed == {"confirmation_sha256": "e" * 64, "owner_approved": True}
+
+
+def test_n8n_stage1_reuses_managed_compose_plan_and_apply_surfaces(monkeypatch) -> None:
+    runtime = BrokerRuntime()
+    runtime.private_owner_mode = True
+    observed = {}
+
+    monkeypatch.setattr(
+        runtime.n8n_host_maintenance,
+        "stage1_plan",
+        lambda: {"ok": True, "status": "N8N_STAGE1_PLAN_READY", "confirmationSha256": "b" * 64},
+    )
+
+    def stage1_apply(*, confirmation_sha256, owner_approved):
+        observed.update(confirmation_sha256=confirmation_sha256, owner_approved=owner_approved)
+        return {"ok": True, "status": "N8N_STAGE1_VERIFIED"}
+
+    monkeypatch.setattr(runtime.n8n_host_maintenance, "stage1_apply", stage1_apply)
+    monkeypatch.setattr(
+        runtime.managed_compose,
+        "plan",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("generic compose plan must not execute")),
+    )
+    monkeypatch.setattr(
+        runtime.managed_compose,
+        "deploy",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("generic compose deploy must not execute")),
+    )
+
+    plan = runtime.managed_compose_plan({"stack_id": "n8n-host-stage1"})
+    applied = runtime.managed_compose_apply(
+        {"stack_id": "n8n-host-stage1", "confirmation_sha256": "b" * 64}
+    )
+
+    assert plan["status"] == "N8N_STAGE1_PLAN_READY"
+    assert applied["status"] == "N8N_STAGE1_VERIFIED"
+    assert observed == {"confirmation_sha256": "b" * 64, "owner_approved": True}
+
+
+def test_n8n_workflow_apply_intersects_caller_attestation_with_private_owner_mode(
+    monkeypatch,
+) -> None:
+    runtime = BrokerRuntime()
+    forwarded_owner_approvals = []
+
+    def apply(**kwargs):
+        forwarded_owner_approvals.append(kwargs["owner_approved"])
+        return {
+            "ok": kwargs["owner_approved"],
+            "status": (
+                "N8N_WORKFLOW_APPLIED"
+                if kwargs["owner_approved"]
+                else "N8N_WORKFLOW_APPLY_BLOCKED"
+            ),
+        }
+
+    monkeypatch.setattr(runtime.n8n_workflows, "apply", apply)
+    arguments = {
+        "lane_id": "sovereign",
+        "operation": "activate",
+        "workflow_id": "workflow-1",
+        "confirmation_sha256": "a" * 64,
+        "owner_approved": True,
+    }
+
+    runtime.private_owner_mode = False
+    blocked = runtime.dispatch(
+        "n8n_workflow_apply",
+        arguments,
+        execution_origin="host_worker",
+    )
+    runtime.private_owner_mode = True
+    accepted = runtime.dispatch(
+        "n8n_workflow_apply",
+        arguments,
+        execution_origin="host_worker",
+    )
+
+    assert blocked["status"] == "N8N_WORKFLOW_APPLY_BLOCKED"
+    assert accepted["status"] == "N8N_WORKFLOW_APPLIED"
+    assert forwarded_owner_approvals == [False, True]
+
+
 def test_patchmon_non_bootstrap_action_still_delegates_to_operator(monkeypatch) -> None:
     runtime = BrokerRuntime()
     observed = {}

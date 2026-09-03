@@ -254,7 +254,7 @@ jobs:
 
       - name: Compile Python runtime
         run: |
-          python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_knowledge_canary.py github_knowledge_mcp_client.py github_issue_contracts.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py managed_compose.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py server.py tool_extensions.py launcher.py
+          python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_knowledge_canary.py github_knowledge_mcp_client.py github_issue_contracts.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py managed_compose.py n8n_workflow_runtime.py n8n_workflow_tools.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py server.py tool_extensions.py launcher.py
           python -m py_compile neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py
 
       - name: Validate fixed shell and systemd assets
@@ -334,7 +334,7 @@ jobs:
           grep -q '"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only"' deploy/install-on-vps.sh
           grep -q '"read_only_tool_calls_persisted":false' deploy/install-on-vps.sh
           grep -q '"canary_persisted_outcome_tools":\["neuro_event_commit"\]' deploy/install-on-vps.sh
-          grep -q 'EXPECTED_MCP_TOOL_COUNT="249"' deploy/install-on-vps.sh
+          grep -q 'EXPECTED_MCP_TOOL_COUNT="251"' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_NEURO_RUNTIME_STATE_ROOT: /var/lib/sovereign-tool-routing/neuro-runtime' docker-compose.yml
           grep -q 'SOVEREIGN_NEURO_GLOBAL_MAX_EVENTS: "100000"' docker-compose.yml
           grep -q 'SOVEREIGN_NEURO_GLOBAL_MAX_BYTES: "268435456"' docker-compose.yml
@@ -581,10 +581,13 @@ jobs:
           import operational_governance_tools
           import output_contracts
           import toolchain_composition
+          import n8n_workflow_tools
           import server
           import self_heal
           import tool_extensions
           assert launcher.mcp is server.mcp
+          assert callable(n8n_workflow_tools.n8n_workflow_plan)
+          assert callable(n8n_workflow_tools.n8n_workflow_apply)
           assert output_contracts.ToolOutputEnvelope is not None
           for name in ('mcp_toolchain_contract_inventory','mcp_toolchain_compile','mcp_toolchain_validate','mcp_toolchain_next_step','mcp_diagnostic_chain_plan'):
               assert callable(getattr(toolchain_composition, name)), name
@@ -729,8 +732,10 @@ jobs:
               'teaching_lesson_simulate',
               'teaching_package_assess',
           }
-          assert len(tool_names) == 249, len(tool_names)
+          assert len(tool_names) == 251, len(tool_names)
           assert neuro_tool_names <= tool_names, sorted(neuro_tool_names - tool_names)
+          n8n_workflow_tool_names = {'n8n_workflow_plan', 'n8n_workflow_apply'}
+          assert n8n_workflow_tool_names <= tool_names, sorted(n8n_workflow_tool_names - tool_names)
           assert {
               'backend_engineering_tool_inventory',
               'backend_architecture_assess',
@@ -1053,11 +1058,13 @@ jobs:
           printf '%s\n' "${EXPECTED_REVISION}" > sovereign-chatgpt-mcp.revision
           printf '%s\n' "${EXPECTED_IMAGE_DIGEST}" > sovereign-chatgpt-mcp.image-digest
           printf '%s\n' "${KAPPA_POS}" > sovereign-chatgpt-mcp.kappa-pos
+          printf 'mcp-release-archive\n' > sovereign-chatgpt-mcp.bundle-scope
           sha256sum \
             sovereign-chatgpt-mcp.tar.gz \
             sovereign-chatgpt-mcp.revision \
             sovereign-chatgpt-mcp.image-digest \
             sovereign-chatgpt-mcp.kappa-pos \
+            sovereign-chatgpt-mcp.bundle-scope \
             > sovereign-chatgpt-mcp.sha256
           sha256sum --check sovereign-chatgpt-mcp.sha256
 
@@ -1088,6 +1095,7 @@ jobs:
               "$RELEASE_DIR/sovereign-chatgpt-mcp.revision" \
               "$RELEASE_DIR/sovereign-chatgpt-mcp.image-digest" \
               "$RELEASE_DIR/sovereign-chatgpt-mcp.kappa-pos" \
+              "$RELEASE_DIR/sovereign-chatgpt-mcp.bundle-scope" \
               "$RELEASE_DIR/sovereign-chatgpt-mcp.sha256"
 
       - name: Upload exact MCP release
@@ -1097,7 +1105,7 @@ jobs:
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
-          source: 'sovereign-chatgpt-mcp.tar.gz,sovereign-chatgpt-mcp.revision,sovereign-chatgpt-mcp.image-digest,sovereign-chatgpt-mcp.kappa-pos,sovereign-chatgpt-mcp.sha256'
+          source: 'sovereign-chatgpt-mcp.tar.gz,sovereign-chatgpt-mcp.revision,sovereign-chatgpt-mcp.image-digest,sovereign-chatgpt-mcp.kappa-pos,sovereign-chatgpt-mcp.bundle-scope,sovereign-chatgpt-mcp.sha256'
           target: ${{ env.RELEASE_RELATIVE_DIR }}
           overwrite: true
 

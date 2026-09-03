@@ -4,8 +4,10 @@ MUTATING_ACTIONS = frozenset(
     {
         "host_worker_canary",
         "resolve_backend_image",
+        "preview_verified_migration",
         "apply_verified_migration",
         "postgres_admin_sql",
+        "aurion_account_role_apply",
         "git_push_main",
         "github_rerun_failed_workflows",
         "github_workflow_dispatch",
@@ -21,6 +23,7 @@ MUTATING_ACTIONS = frozenset(
         "deploy_verified_release",
         "rollback_release",
         "deploy_managed_compose_stack",
+        "n8n_workflow_apply",
         "desktop_worker_start",
         "desktop_worker_input",
         "desktop_worker_remove",
@@ -40,3 +43,12 @@ MUTATING_ACTIONS = frozenset(
 
 def is_mutating_action(action: str) -> bool:
     return str(action or "").strip() in MUTATING_ACTIONS
+
+
+def standing_owner_delegation_approved(
+    *,
+    private_owner_mode: bool,
+    caller_attestation: bool,
+) -> bool:
+    """Intersect caller intent with the server-controlled standing delegation."""
+    return bool(private_owner_mode and caller_attestation)
