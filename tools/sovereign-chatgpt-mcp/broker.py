@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from admin_mode import PrivateAdminRuntime
+from aurion_operator import AurionOperatorRuntime
 from browserless_reader import BrowserlessReplayReader
 from command_contract import (
     is_mutating_action,
@@ -74,6 +75,7 @@ class BrokerRuntime:
             )
         )
         self.admin = PrivateAdminRuntime(self.operations)
+        self.aurion = AurionOperatorRuntime()
         self.self_update = SelfUpdateRuntime()
         self.github = GitHubAdminRuntime(self.self_update)
 
@@ -547,6 +549,25 @@ class BrokerRuntime:
                 sql=str(values.get("sql") or ""),
                 database=str(values.get("database") or ""),
                 timeout_seconds=int(values.get("timeout_seconds") or 300),
+            ),
+            "aurion_account_role_readback": lambda values: self.aurion.account_role_readback(
+                open_id=str(values.get("open_id") or ""),
+                expected_revision=str(values.get("expected_revision") or ""),
+            ),
+            "aurion_account_role_plan": lambda values: self.aurion.account_role_plan(
+                open_id=str(values.get("open_id") or ""),
+                role=str(values.get("role") or ""),
+                expected_revision=str(values.get("expected_revision") or ""),
+            ),
+            "aurion_account_role_apply": lambda values: self.aurion.account_role_apply(
+                open_id=str(values.get("open_id") or ""),
+                role=str(values.get("role") or ""),
+                expected_revision=str(values.get("expected_revision") or ""),
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=standing_owner_delegation_approved(
+                    private_owner_mode=self.private_owner_mode,
+                    caller_attestation=bool(values.get("owner_approved", False)),
+                ),
             ),
             "git_push_main": lambda values: self.admin.push_workspace_to_main(
                 workspace_id=str(values.get("workspace_id") or ""),
