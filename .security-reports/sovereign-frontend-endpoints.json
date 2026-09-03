@@ -274,7 +274,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1578,
+      "line": 1588,
       "methods": [
         "POST"
       ],
@@ -283,7 +283,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1578,
+      "line": 1588,
       "methods": [
         "POST"
       ],
@@ -292,7 +292,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1648,
+      "line": 1658,
       "methods": [
         "POST"
       ],
@@ -301,7 +301,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1648,
+      "line": 1658,
       "methods": [
         "POST"
       ],
@@ -310,7 +310,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1739,
+      "line": 1751,
       "methods": [
         "POST"
       ],
@@ -319,7 +319,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1739,
+      "line": 1751,
       "methods": [
         "POST"
       ],
@@ -328,7 +328,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1532,
+      "line": 1540,
       "methods": [
         "GET"
       ],
@@ -337,7 +337,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1532,
+      "line": 1540,
       "methods": [
         "GET"
       ],
@@ -346,7 +346,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1708,
+      "line": 1720,
       "methods": [
         "DELETE"
       ],
@@ -355,7 +355,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1708,
+      "line": 1720,
       "methods": [
         "DELETE"
       ],
@@ -364,7 +364,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1627,
+      "line": 1637,
       "methods": [
         "POST"
       ],
@@ -373,7 +373,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1627,
+      "line": 1637,
       "methods": [
         "POST"
       ],
@@ -382,7 +382,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1547,
+      "line": 1555,
       "methods": [
         "POST"
       ],
@@ -391,7 +391,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1547,
+      "line": 1555,
       "methods": [
         "POST"
       ],
@@ -1777,7 +1777,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1275,
+      "line": 1277,
       "methods": [
         "POST"
       ],
@@ -1786,7 +1786,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1275,
+      "line": 1277,
       "methods": [
         "POST"
       ],
@@ -1795,7 +1795,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1367,
+      "line": 1373,
       "methods": [
         "GET"
       ],
@@ -1804,7 +1804,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1367,
+      "line": 1373,
       "methods": [
         "GET"
       ],
@@ -1813,7 +1813,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1449,
+      "line": 1455,
       "methods": [
         "POST"
       ],
@@ -1822,7 +1822,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1449,
+      "line": 1455,
       "methods": [
         "POST"
       ],
@@ -1849,7 +1849,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1418,
+      "line": 1424,
       "methods": [
         "DELETE"
       ],
@@ -1858,7 +1858,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1418,
+      "line": 1424,
       "methods": [
         "DELETE"
       ],
@@ -1867,7 +1867,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1397,
+      "line": 1403,
       "methods": [
         "POST"
       ],
@@ -1876,7 +1876,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1397,
+      "line": 1403,
       "methods": [
         "POST"
       ],
@@ -1885,7 +1885,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1343,
+      "line": 1347,
       "methods": [
         "POST"
       ],
@@ -1894,7 +1894,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1343,
+      "line": 1347,
       "methods": [
         "POST"
       ],
@@ -1903,7 +1903,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1323,
+      "line": 1325,
       "methods": [
         "POST"
       ],
@@ -1912,7 +1912,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1323,
+      "line": 1325,
       "methods": [
         "POST"
       ],
@@ -1939,7 +1939,7 @@
     },
     {
       "file": "backend/knowledge_library.py",
-      "line": 1484,
+      "line": 1492,
       "methods": [
         "GET"
       ],
@@ -1948,7 +1948,7 @@
     },
     {
       "file": "scripts/sovereign-backend/knowledge_library.py",
-      "line": 1484,
+      "line": 1492,
       "methods": [
         "GET"
       ],
@@ -6625,7 +6625,7 @@
       "backendRoutes": [
         {
           "file": "backend/knowledge_library.py",
-          "line": 1275,
+          "line": 1277,
           "methods": [
             "POST"
           ],
@@ -6634,7 +6634,7 @@
         },
         {
           "file": "scripts/sovereign-backend/knowledge_library.py",
-          "line": 1275,
+          "line": 1277,
           "methods": [
             "POST"
           ],
@@ -6665,7 +6665,7 @@
       "backendRoutes": [
         {
           "file": "backend/knowledge_library.py",
-          "line": 1449,
+          "line": 1455,
           "methods": [
             "POST"
           ],
@@ -6674,7 +6674,7 @@
         },
         {
           "file": "scripts/sovereign-backend/knowledge_library.py",
-          "line": 1449,
+          "line": 1455,
           "methods": [
             "POST"
           ],
@@ -6695,6 +6695,7 @@
       "status": "BOUND",
       "testReferences": {
         "backend": [
+          "backend/tests/test_knowledge_json_validation.py",
           "tools/sovereign-chatgpt-mcp/tests/test_repository_skill_tools.py"
         ],
         "e2e": [],
@@ -6734,7 +6735,9 @@
       },
       "status": "BOUND",
       "testReferences": {
-        "backend": [],
+        "backend": [
+          "backend/tests/test_knowledge_json_validation.py"
+        ],
         "e2e": [],
         "unit": [
           "src/features/knowledge/knowledgeApi.test.ts"
@@ -6745,7 +6748,7 @@
       "backendRoutes": [
         {
           "file": "backend/knowledge_library.py",
-          "line": 1418,
+          "line": 1424,
           "methods": [
             "DELETE"
           ],
@@ -6754,7 +6757,7 @@
         },
         {
           "file": "scripts/sovereign-backend/knowledge_library.py",
-          "line": 1418,
+          "line": 1424,
           "methods": [
             "DELETE"
           ],
@@ -6763,7 +6766,7 @@
         },
         {
           "file": "backend/knowledge_library.py",
-          "line": 1397,
+          "line": 1403,
           "methods": [
             "POST"
           ],
@@ -6772,7 +6775,7 @@
         },
         {
           "file": "scripts/sovereign-backend/knowledge_library.py",
-          "line": 1397,
+          "line": 1403,
           "methods": [
             "POST"
           ],
@@ -6781,7 +6784,7 @@
         },
         {
           "file": "backend/knowledge_library.py",
-          "line": 1343,
+          "line": 1347,
           "methods": [
             "POST"
           ],
@@ -6790,7 +6793,7 @@
         },
         {
           "file": "scripts/sovereign-backend/knowledge_library.py",
-          "line": 1343,
+          "line": 1347,
           "methods": [
             "POST"
           ],
@@ -6799,7 +6802,7 @@
         },
         {
           "file": "backend/knowledge_library.py",
-          "line": 1323,
+          "line": 1325,
           "methods": [
             "POST"
           ],
@@ -6808,7 +6811,7 @@
         },
         {
           "file": "scripts/sovereign-backend/knowledge_library.py",
-          "line": 1323,
+          "line": 1325,
           "methods": [
             "POST"
           ],
@@ -6846,7 +6849,9 @@
       },
       "status": "BOUND",
       "testReferences": {
-        "backend": [],
+        "backend": [
+          "backend/tests/test_knowledge_json_validation.py"
+        ],
         "e2e": [],
         "unit": [
           "src/features/knowledge/knowledgeApi.test.ts"
@@ -6857,7 +6862,7 @@
       "backendRoutes": [
         {
           "file": "backend/knowledge_library.py",
-          "line": 1418,
+          "line": 1424,
           "methods": [
             "DELETE"
           ],
@@ -6866,7 +6871,7 @@
         },
         {
           "file": "scripts/sovereign-backend/knowledge_library.py",
-          "line": 1418,
+          "line": 1424,
           "methods": [
             "DELETE"
           ],
@@ -6875,7 +6880,7 @@
         },
         {
           "file": "backend/knowledge_library.py",
-          "line": 1343,
+          "line": 1347,
           "methods": [
             "POST"
           ],
@@ -6884,7 +6889,7 @@
         },
         {
           "file": "scripts/sovereign-backend/knowledge_library.py",
-          "line": 1343,
+          "line": 1347,
           "methods": [
             "POST"
           ],
@@ -6904,7 +6909,9 @@
       },
       "status": "BOUND",
       "testReferences": {
-        "backend": [],
+        "backend": [
+          "backend/tests/test_knowledge_json_validation.py"
+        ],
         "e2e": [],
         "unit": [
           "src/features/knowledge/knowledgeApi.test.ts"
@@ -6915,7 +6922,7 @@
       "backendRoutes": [
         {
           "file": "backend/knowledge_library.py",
-          "line": 1418,
+          "line": 1424,
           "methods": [
             "DELETE"
           ],
@@ -6924,7 +6931,7 @@
         },
         {
           "file": "scripts/sovereign-backend/knowledge_library.py",
-          "line": 1418,
+          "line": 1424,
           "methods": [
             "DELETE"
           ],
@@ -6933,7 +6940,7 @@
         },
         {
           "file": "backend/knowledge_library.py",
-          "line": 1323,
+          "line": 1325,
           "methods": [
             "POST"
           ],
@@ -6942,7 +6949,7 @@
         },
         {
           "file": "scripts/sovereign-backend/knowledge_library.py",
-          "line": 1323,
+          "line": 1325,
           "methods": [
             "POST"
           ],
@@ -6962,7 +6969,9 @@
       },
       "status": "BOUND",
       "testReferences": {
-        "backend": [],
+        "backend": [
+          "backend/tests/test_knowledge_json_validation.py"
+        ],
         "e2e": [],
         "unit": [
           "src/features/knowledge/knowledgeApi.test.ts"
@@ -6973,7 +6982,7 @@
       "backendRoutes": [
         {
           "file": "backend/knowledge_library.py",
-          "line": 1418,
+          "line": 1424,
           "methods": [
             "DELETE"
           ],
@@ -6982,7 +6991,7 @@
         },
         {
           "file": "scripts/sovereign-backend/knowledge_library.py",
-          "line": 1418,
+          "line": 1424,
           "methods": [
             "DELETE"
           ],
@@ -7020,7 +7029,9 @@
       },
       "status": "BOUND",
       "testReferences": {
-        "backend": [],
+        "backend": [
+          "backend/tests/test_knowledge_json_validation.py"
+        ],
         "e2e": [],
         "unit": [
           "src/features/knowledge/knowledgeApi.test.ts"
@@ -7031,7 +7042,7 @@
       "backendRoutes": [
         {
           "file": "backend/knowledge_library.py",
-          "line": 1484,
+          "line": 1492,
           "methods": [
             "GET"
           ],
@@ -7040,7 +7051,7 @@
         },
         {
           "file": "scripts/sovereign-backend/knowledge_library.py",
-          "line": 1484,
+          "line": 1492,
           "methods": [
             "GET"
           ],
@@ -18970,10 +18981,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "a5b1d6535c94b30ce569ffe494bb0b81cf20ca111aefd156f0e268af132211ed",
-  "revision": "b297ade4d4e07b0f877e815257137e92493afc2f",
+  "reportSha256": "3c6af76288bb5d61c511bba44239d218616290c2bcd38cefe5a709363d416e7a",
+  "revision": "f40d46e5f12266eec664f56837be7e310e07f997",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "ad7d7ce048e6a0053aeb606ea9eed38d25a272969650945933c8d9947ee2bbca",
+  "sourceTreeSha256": "7580be181e7ec09d190dafd083b1f841aba8c9666e7ec91b0ff875fbdf5cc826",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -18992,7 +19003,7 @@
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
-    "testFileCount": 755,
+    "testFileCount": 798,
     "unmatchedActiveRequestCount": 0
   },
   "truthBoundary": {

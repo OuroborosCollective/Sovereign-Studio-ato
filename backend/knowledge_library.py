@@ -1236,7 +1236,9 @@ def register_knowledge_routes(
     @app.route("/api/knowledge/sources/url", methods=["POST"])
     @require_session
     def knowledge_source_url():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "Malformed payload; dictionary required"}), 400
         try:
             document = fetch_url_document(str(body.get("url") or ""))
             if body.get("title"):
@@ -1323,7 +1325,9 @@ def register_knowledge_routes(
     @app.route("/api/knowledge/sources/upload-ticket", methods=["POST"])
     @require_session
     def knowledge_source_upload_ticket():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "Malformed payload; dictionary required"}), 400
         conn = get_connection()
         try:
             ticket = _create_r2_upload_ticket(conn, request.session_user_id, body)
@@ -1343,7 +1347,9 @@ def register_knowledge_routes(
     @app.route("/api/knowledge/sources/upload-confirm", methods=["POST"])
     @require_session
     def knowledge_source_upload_confirm():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "Malformed payload; dictionary required"}), 400
         object_id = str(body.get("objectId") or "").strip()
         if not object_id:
             return jsonify({"ok": False, "error": "objectId is required"}), 400
@@ -1449,7 +1455,9 @@ def register_knowledge_routes(
     @app.route("/api/knowledge/search", methods=["POST"])
     @require_session
     def knowledge_search():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "results": [], "error": "Malformed payload; dictionary required"}), 400
         query_text = str(body.get("query") or "").strip()[:4_000]
         if not query_text:
             return jsonify({"error": "query is required"}), 400
@@ -1547,7 +1555,9 @@ def register_admin_knowledge_routes(
     @app.route("/api/admin/knowledge/sources/url", methods=["POST"])
     @require_admin
     def admin_knowledge_source_url():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "Malformed payload; dictionary required"}), 400
         try:
             document = fetch_url_document(str(body.get("url") or ""))
             conn = get_connection()
@@ -1648,7 +1658,9 @@ def register_admin_knowledge_routes(
     @app.route("/api/admin/knowledge/repair", methods=["POST"])
     @require_admin
     def admin_knowledge_repair():
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "Malformed payload; dictionary required"}), 400
         try:
             max_batches = max(1, min(int(body.get("maxBatches", 8)), 20))
         except (TypeError, ValueError):
@@ -1739,7 +1751,9 @@ def register_admin_knowledge_routes(
     @app.route("/api/admin/knowledge/search", methods=["POST"])
     @require_admin
     def admin_knowledge_search():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "results": [], "error": "Malformed payload; dictionary required"}), 400
         query_text = str(body.get("query") or "").strip()[:4_000]
         if not query_text:
             return jsonify({"error": "query is required"}), 400
