@@ -3517,8 +3517,18 @@ if [[ "$DEPLOYMENT_SOURCE_SCOPE" == "full-repository" ]]; then
       grep -E '^SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=(CLI_COMPATIBILITY|LOCK_DRIFT|STORAGE|PERMISSION|BUILD_SYSTEM|CACHE_IO|RESOLUTION|PYTHON|NETWORK|OTHER) uv_version=([0-9]+\.[0-9]+\.[0-9]+|unknown) output_sha256=[0-9a-f]{64}$' \
         "$TOOLCHAIN_INSTALL_LOG" | head -n 1 | tr -d '\r\n' | cut -c1-512 || true
     )"
+    TOOLCHAIN_ROLLBACK_DIAGNOSTIC="$(
+      grep -E '^SOVEREIGN_TOOLCHAIN_ROLLBACK_FAILURE operation=(prepare|rollback|commit) reason_sha256=[0-9a-f]{64}$' \
+        "$TOOLCHAIN_INSTALL_LOG" | head -n 1 | tr -d '\r\n' | cut -c1-512 || true
+    )"
     TOOLCHAIN_FAILURE_SHA256="$(sha256sum "$TOOLCHAIN_INSTALL_LOG" | awk '{print $1}')"
     rm -f "$TOOLCHAIN_INSTALL_LOG"
+    if [[ -n "$TOOLCHAIN_FAILURE_DIAGNOSTIC" && -n "$TOOLCHAIN_UV_DIAGNOSTIC" && -n "$TOOLCHAIN_ROLLBACK_DIAGNOSTIC" ]]; then
+      fail "revision-bound toolchain installer failed: $TOOLCHAIN_FAILURE_DIAGNOSTIC $TOOLCHAIN_UV_DIAGNOSTIC $TOOLCHAIN_ROLLBACK_DIAGNOSTIC output_sha256=$TOOLCHAIN_FAILURE_SHA256"
+    fi
+    if [[ -n "$TOOLCHAIN_FAILURE_DIAGNOSTIC" && -n "$TOOLCHAIN_ROLLBACK_DIAGNOSTIC" ]]; then
+      fail "revision-bound toolchain installer failed: $TOOLCHAIN_FAILURE_DIAGNOSTIC $TOOLCHAIN_ROLLBACK_DIAGNOSTIC output_sha256=$TOOLCHAIN_FAILURE_SHA256"
+    fi
     if [[ -n "$TOOLCHAIN_FAILURE_DIAGNOSTIC" && -n "$TOOLCHAIN_UV_DIAGNOSTIC" ]]; then
       fail "revision-bound toolchain installer failed: $TOOLCHAIN_FAILURE_DIAGNOSTIC $TOOLCHAIN_UV_DIAGNOSTIC output_sha256=$TOOLCHAIN_FAILURE_SHA256"
     fi
