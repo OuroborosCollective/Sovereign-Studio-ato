@@ -1,0 +1,16 @@
+{
+  "target": "tools/sovereign-chatgpt-mcp/neuro_teaching_tools.py",
+  "source_ref": "0c2ff65bf35db9e0349e61c5a482eef94200c7f4",
+  "branch_base_ref": "0c2ff65bf35db9e0349e61c5a482eef94200c7f4",
+  "branch": "sovereign/chatgpt/fix-neuro-first-init-read-lock",
+  "expectedSha": "6a379e7a2d54b56f9c3d89132817d0ebaf24bc57",
+  "commit_message": "fix(mcp): synchronize neuro first-initialization readers",
+  "pr_title": "fix(mcp): synchronize neuro first-initialization readers",
+  "pr_body": "Fixes the observed first-initialization SQLite race from MCP validator run 33797024718. Raw read helpers now acquire a shared no-follow file lock and verify inode identity before opening SQLite, so they cannot observe the database while the canonical NeuromorphicLedger constructor holds its exclusive initialization lock. No tool authority, routing, schema, UI, or execution behavior changes. Runtime/merge success is not claimed until exact-head CI and post-merge immutable runtime readback pass.",
+  "blocks": [
+    {
+      "search": "def _readonly_connection(path: Path) -> sqlite3.Connection:\n    if not os.path.lexists(path):\n        raise FileNotFoundError(path.name)\n    status = os.lstat(path)\n    if stat.S_ISLNK(status.st_mode) or not stat.S_ISREG(status.st_mode):\n        raise RuntimeError(\"neuro database must be a non-symlink regular file\")\n    connection = sqlite3.connect(f\"file:{path}?mode=ro\", uri=True, timeout=5.0)\n    connection.row_factory = sqlite3.Row\n    connection.execute(\"PRAGMA query_only=ON\")\n    return connection",
+      "replace": "@contextmanager\ndef _readonly_connection(path: Path):\n    if not os.path.lexists(path):\n        raise FileNotFoundError(path.name)\n    status = os.lstat(path)\n    if stat.S_ISLNK(status.st_mode) or not stat.S_ISREG(status.st_mode):\n        raise RuntimeError(\"neuro database must be a non-symlink regular file\")\n    flags = os.O_RDONLY | getattr(os, \"O_CLOEXEC\", 0)\n    if hasattr(os, \"O_NOFOLLOW\"):\n        flags |= os.O_NOFOLLOW\n    descriptor = os.open(path, flags)\n    connection: sqlite3.Connection | None = None\n    locked = False\n    try:\n        opened = os.fstat(descriptor)\n        if (\n            not stat.S_ISREG(opened.st_mode)\n            or opened.st_nlink != 1\n            or opened.st_dev != status.st_dev\n            or opened.st_ino != status.st_ino\n        ):\n            raise RuntimeError(\"neuro database identity changed before read lock\")\n        fcntl.flock(descriptor, fcntl.LOCK_SH)\n        locked = True\n        observed = os.lstat(path)\n        if (\n            stat.S_ISLNK(observed.st_mode)\n            or not stat.S_ISREG(observed.st_mode)\n            or observed.st_dev != opened.st_dev\n            or observed.st_ino != opened.st_ino\n        ):\n            raise RuntimeError(\"neuro database identity changed during read lock\")\n        connection = sqlite3.connect(f\"file:{path}?mode=ro\", uri=True, timeout=5.0)\n        connection.row_factory = sqlite3.Row\n        connection.execute(\"PRAGMA query_only=ON\")\n        yield connection\n    finally:\n        if connection is not None:\n            connection.close()\n        try:\n            if locked:\n                fcntl.flock(descriptor, fcntl.LOCK_UN)\n        finally:\n            os.close(descriptor)"
+    }
+  ]
+}
