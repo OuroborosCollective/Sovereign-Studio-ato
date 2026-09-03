@@ -77,6 +77,9 @@ def test_installer_atomically_deploys_and_verifies_both_boundaries() -> None:
 
     assert 'ROLLBACK_HELPER="$BACKUP_ROOT/rollback-last-install.py"' in installer
     assert 'python3 "$ROLLBACK_HELPER" prepare' in installer
+    assert 'ROLLBACK_PREPARE_LOG="$(mktemp)"' in installer
+    assert "SOVEREIGN_TOOLCHAIN_ROLLBACK_FAILURE operation=prepare reason_sha256=" in installer
+    assert 'rollback prepare failed: $ROLLBACK_PREPARE_DIAGNOSTIC output_sha256=$ROLLBACK_PREPARE_OUTPUT_SHA256' in installer
     assert 'python3 "$ROLLBACK_HELPER" rollback' in installer
     assert 'python3 "$ROLLBACK_HELPER" commit' in installer
     assert 'trap \'on_activation_signal HUP\' HUP' in installer

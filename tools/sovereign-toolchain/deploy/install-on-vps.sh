@@ -258,9 +258,23 @@ atomic_install() {
 }
 
 atomic_install 0500 "$ROLLBACK_HELPER_SOURCE" "$ROLLBACK_HELPER"
-python3 "$ROLLBACK_HELPER" prepare \
+ROLLBACK_PREPARE_LOG="$(mktemp)"
+if ! python3 "$ROLLBACK_HELPER" prepare \
   --expected-installed-revision "$EXPECTED_REVISION" \
-  --stamp "$STAMP" >/dev/null
+  --stamp "$STAMP" >"$ROLLBACK_PREPARE_LOG" 2>&1; then
+  ROLLBACK_PREPARE_DIAGNOSTIC="$(
+    grep -E '^SOVEREIGN_TOOLCHAIN_ROLLBACK_FAILURE operation=prepare reason_sha256=[0-9a-f]{64}$' \
+      "$ROLLBACK_PREPARE_LOG" | head -n 1 | tr -d '\r\n' | cut -c1-256 || true
+  )"
+  ROLLBACK_PREPARE_OUTPUT_SHA256="$(sha256sum "$ROLLBACK_PREPARE_LOG" | awk '{print $1}')"
+  rm -f "$ROLLBACK_PREPARE_LOG"
+  if [[ -n "$ROLLBACK_PREPARE_DIAGNOSTIC" ]]; then
+    fail "rollback prepare failed: $ROLLBACK_PREPARE_DIAGNOSTIC output_sha256=$ROLLBACK_PREPARE_OUTPUT_SHA256"
+  fi
+  fail "rollback prepare failed: output_sha256=$ROLLBACK_PREPARE_OUTPUT_SHA256"
+fi
+rm -f "$ROLLBACK_PREPARE_LOG"
+unset ROLLBACK_PREPARE_LOG ROLLBACK_PREPARE_DIAGNOSTIC ROLLBACK_PREPARE_OUTPUT_SHA256
 
 rollback() {
   [[ "$ROLLBACK_COMPLETED" != "1" ]] || return 0
