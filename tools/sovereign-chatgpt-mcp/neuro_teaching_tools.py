@@ -387,50 +387,16 @@ def _require_runtime_modules() -> None:
         raise RuntimeError("runtime module unavailable: " + "; ".join(missing))
 
 
-@contextmanager
-def _readonly_connection(path: Path):
+def _readonly_connection(path: Path) -> sqlite3.Connection:
     if not os.path.lexists(path):
         raise FileNotFoundError(path.name)
     status = os.lstat(path)
     if stat.S_ISLNK(status.st_mode) or not stat.S_ISREG(status.st_mode):
         raise RuntimeError("neuro database must be a non-symlink regular file")
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    descriptor = os.open(path, flags)
-    connection: sqlite3.Connection | None = None
-    locked = False
-    try:
-        opened = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(opened.st_mode)
-            or opened.st_nlink != 1
-            or opened.st_dev != status.st_dev
-            or opened.st_ino != status.st_ino
-        ):
-            raise RuntimeError("neuro database identity changed before read lock")
-        fcntl.flock(descriptor, fcntl.LOCK_SH)
-        locked = True
-        observed = os.lstat(path)
-        if (
-            stat.S_ISLNK(observed.st_mode)
-            or not stat.S_ISREG(observed.st_mode)
-            or observed.st_dev != opened.st_dev
-            or observed.st_ino != opened.st_ino
-        ):
-            raise RuntimeError("neuro database identity changed during read lock")
-        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA query_only=ON")
-        yield connection
-    finally:
-        if connection is not None:
-            connection.close()
-        try:
-            if locked:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
-        finally:
-            os.close(descriptor)
+    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA query_only=ON")
+    return connection
 
 
 def _read_source_head(path: Path, source: str) -> dict[str, Any]:
@@ -645,7 +611,7 @@ def _sensor_spikes(
         if not isinstance(feature, Mapping):
             raise ValueError(f"sensor_features[{index}] must be an object")
         if set(feature) != {"sensorId", "tick", "magnitude"}:
-            raise ValueError(f"sensor_features[{index}].sensorId is invalid")
+            raise ValueError(f"sensor_features[{index}] fields are invalid")
         sensor_id = feature["sensorId"]
         tick = feature["tick"]
         magnitude = feature["magnitude"]
