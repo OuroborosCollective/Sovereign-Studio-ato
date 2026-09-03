@@ -129,17 +129,21 @@ export function* generateTickWindows(
     // Check abort signal
     if (options.abortSignal?.aborted) return;
 
-    const windowSignals = signals.filter(
-      (s) => s.metadata.tick >= startTick && s.metadata.tick <= endTick,
-    );
+    const windowSignals: OrderedSignal[] = [];
+    const uniqueTicks = new Set<number>();
+    const uniqueNodes = new Set<string>();
 
-    // Check if window is complete (has all ticks in range)
+    for (const s of signals) {
+      if (s.metadata.tick >= startTick && s.metadata.tick <= endTick) {
+        windowSignals.push(s);
+        uniqueTicks.add(s.metadata.tick);
+        uniqueNodes.add(s.metadata.node);
+      }
+    }
+
     const expectedTicks = endTick - startTick + 1;
-    const uniqueTicks = new Set(windowSignals.map((s) => s.metadata.tick));
     const isComplete = uniqueTicks.size === expectedTicks;
-
-    // Get unique nodes
-    const nodes = [...new Set(windowSignals.map((s) => s.metadata.node))].sort();
+    const nodes = Array.from(uniqueNodes).sort();
 
     yield {
       id: `window-${startTick}-${endTick}-${windowIndex}`,
@@ -207,11 +211,17 @@ export function* generateOverlappingTickWindows(
     const endTickIdx = Math.min(startIdx + config.windowSize - 1, ticks.length - 1);
     const endTick = ticks[endTickIdx];
 
-    const windowSignals = signals.filter(
-      (s) => s.metadata.tick >= startTick && s.metadata.tick <= endTick,
-    );
+    const windowSignals: OrderedSignal[] = [];
+    const uniqueNodes = new Set<string>();
 
-    const nodes = [...new Set(windowSignals.map((s) => s.metadata.node))].sort();
+    for (const s of signals) {
+      if (s.metadata.tick >= startTick && s.metadata.tick <= endTick) {
+        windowSignals.push(s);
+        uniqueNodes.add(s.metadata.node);
+      }
+    }
+
+    const nodes = Array.from(uniqueNodes).sort();
     const isComplete = windowSignals.length > 0 && endTickIdx - startIdx + 1 === config.windowSize;
 
     yield {
