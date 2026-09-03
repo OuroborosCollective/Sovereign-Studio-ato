@@ -1520,11 +1520,11 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   it("accepts a follow-up directly in the primary chat composer", async () => {
     const props = baseProps();
     renderWithProviders(<BuilderContainer {...props} />);
-    fireEvent.change(chatField(), { target: { value: "Erste Monitor-Mission" } });
+    fireEvent.change(chatField(), { target: { value: "Erste Chat-Mission" } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByText("Erste Monitor-Mission")).toBeDefined());
-    fireEvent.change(chatField(), { target: { value: "Direkte Folgefrage im Monitor" } });
-    expect(chatField().value).toBe("Direkte Folgefrage im Monitor");
+    await waitFor(() => expect(screen.getByText("Erste Chat-Mission")).toBeDefined());
+    fireEvent.change(chatField(), { target: { value: "Direkte Folgefrage im Chat" } });
+    expect(chatField().value).toBe("Direkte Folgefrage im Chat");
     expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
