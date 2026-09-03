@@ -182,15 +182,15 @@ function scanRuntimeContracts() {
 
   if (
     /BuilderContainer/.test(app)
-    && /data-testid="sovereign-monitor-app"/.test(app)
-    && /data-layout="monitor-first-live-workspace"/.test(app)
+    && /data-testid="sovereign-chat-app"/.test(app)
+    && /data-layout="chat-first-agent-zero-background"/.test(app)
     && /onStartAgent=\{startMonitorTask\}/.test(app)
     && /EvidenceObservatoryAtlas/.test(app)
     && /window\.location\.pathname === '\/observatory'/.test(app)
   ) {
-    pass('app:monitor-first-live-path', 'App routes live work through the canonical monitor Builder while preserving the evidence observatory.');
+    pass('app:chat-first-live-path', 'App routes live work through the canonical chat Builder while preserving the evidence observatory.');
   } else {
-    fail('app:monitor-first-live-path', 'App must route the default client through the canonical monitor Builder and preserve the observatory route.');
+    fail('app:chat-first-live-path', 'App must route the default client through the canonical chat Builder and preserve the observatory route.');
   }
 
   if (
@@ -208,9 +208,9 @@ function scanRuntimeContracts() {
     && /setShowGitHubAccessOverride\(true\)/.test(builder)
     && /Repository-Auftrag bleibt unbestätigt/.test(builder)
   ) {
-    pass('builder:input-and-access-boundary', 'Monitor input is secret-guarded and opening GitHub access does not confirm the action.');
+    pass('builder:input-and-access-boundary', 'Chat input is secret-guarded and opening GitHub access does not confirm the action.');
   } else {
-    fail('builder:input-and-access-boundary', 'Monitor input must be guarded and GitHub access must remain separate from action consent.');
+    fail('builder:input-and-access-boundary', 'Chat input must be guarded and GitHub access must remain separate from action consent.');
   }
 
   if (
@@ -218,16 +218,16 @@ function scanRuntimeContracts() {
     && /aria-label="Modelle durchsuchen"/.test(dock)
     && /aria-label="Verfügbare LLM-Routen"/.test(dock)
   ) {
-    pass('builder:compact-route-picker', 'The complete LLM catalog stays behind a compact searchable monitor control.');
+    pass('builder:compact-route-picker', 'The complete LLM catalog stays behind a compact searchable chat control.');
   } else {
-    fail('builder:compact-route-picker', 'The monitor must not expand the complete LLM catalog into the default surface.');
+    fail('builder:compact-route-picker', 'The chat must not expand the complete LLM catalog into the default surface.');
   }
 
   if (/appendActionEvent|SovereignActionStreamPanel/.test(builder)) pass('builder:action-stream-runtime', 'Builder publishes route/action state through the action stream.');
   else fail('builder:action-stream-runtime', 'Builder must publish route/action state through the action stream.');
 
-  if (/addLog|appendRuntimeNotice|buildLocalExecutorStatusAnswer/.test(builder)) pass('builder:runtime-feedback', 'Builder keeps runtime feedback visible in the monitor.');
-  else fail('builder:runtime-feedback', 'Builder must keep runtime feedback visible in the monitor.');
+  if (/addLog|appendRuntimeNotice|buildLocalExecutorStatusAnswer/.test(builder)) pass('builder:runtime-feedback', 'Builder keeps runtime feedback available from the chat and Inspector.');
+  else fail('builder:runtime-feedback', 'Builder must keep runtime feedback available from the chat and Inspector.');
 
   if (/stripTokenFromText|stripSecrets|validateGitHubTokenForRepo|validateGitHubTokenFormat/.test(builder)) pass('builder:redaction-and-access-validation', 'Builder validates/redacts visible runtime access values.');
   else fail('builder:redaction-and-access-validation', 'Builder must validate/redact visible runtime access values.');

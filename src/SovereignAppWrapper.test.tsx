@@ -26,14 +26,14 @@ beforeAll(() => {
   }
 });
 
-describe('SovereignAppWrapper - Monitor-first UI Contract', () => {
+describe('SovereignAppWrapper - Chat-first UI Contract', () => {
   it('forwards directly into the App without a wrapper lamp shell', async () => {
     render(<Provider store={store}><SovereignAppWrapper /></Provider>);
 
     await waitFor(() => {
       expect(screen.getByTestId('builder-container')).toHaveAttribute(
         'data-layout',
-        'live-desktop-monitor-primary',
+        'chat-primary-agent-zero-background',
       );
     });
 
@@ -42,17 +42,17 @@ describe('SovereignAppWrapper - Monitor-first UI Contract', () => {
     expect(screen.queryByTestId('sovereign-shell-content')).toBeNull();
   });
 
-  it('keeps the workspace monitor and embedded LLM dock as the visible product surface', async () => {
+  it('keeps the normal chat and model/tool dock as the visible product surface', async () => {
     render(<Provider store={store}><SovereignAppWrapper /></Provider>);
 
     await waitFor(() => {
-      expect(screen.getByTestId('live-workspace-monitor')).toBeDefined();
+      expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     });
 
-    expect(screen.getByTestId('live-workspace-monitor-desktop')).toBeDefined();
-    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
+    expect(screen.queryByTestId('live-workspace-monitor-desktop')).toBeNull();
+    expect(screen.getByTestId('sovereign-chat-dock')).toBeDefined();
     expect(screen.getByLabelText('Codeauftrag an Sovereign')).toBeDefined();
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(screen.getByLabelText('Sovereign Studio Tabs')).toBeDefined();
   });
 });
