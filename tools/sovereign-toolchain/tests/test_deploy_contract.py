@@ -50,6 +50,11 @@ def test_installer_atomically_deploys_and_verifies_both_boundaries() -> None:
     assert "SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC" in installer
     assert "CLI_COMPATIBILITY" in installer
     assert "LOCK_DRIFT" in installer
+    assert "STORAGE" in installer
+    assert "PERMISSION" in installer
+    assert "BUILD_SYSTEM" in installer
+    assert "CACHE_IO" in installer
+    assert "RESOLUTION" in installer
     assert "PYTHON" in installer
     assert "NETWORK" in installer
     assert "bounded_uv_version" in installer
@@ -140,8 +145,13 @@ def test_uv_sync_failure_classifier_is_bounded_and_causal(tmp_path: Path) -> Non
     cases = {
         "CLI_COMPATIBILITY": "error: unexpected argument '--no-install-project' found",
         "LOCK_DRIFT": "uv.lock needs to be updated, but --locked was provided",
+        "STORAGE": "failed to write cache: No space left on device",
+        "PERMISSION": "failed to create virtual environment: Permission denied",
+        "BUILD_SYSTEM": "Failed to build wheel using the build backend hatchling",
+        "CACHE_IO": "cache entry corrupt: checksum mismatch",
+        "RESOLUTION": "No solution found when resolving dependencies",
         "PYTHON": "Python not found for the requested environment",
-        "NETWORK": "failed to download package: connection reset by peer",
+        "NETWORK": "failed to fetch package: connection reset by peer",
         "OTHER": "resolver exited for an unclassified bounded reason",
     }
     for expected, evidence in cases.items():
