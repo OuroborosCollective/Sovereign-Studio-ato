@@ -76,6 +76,10 @@ def _private_admin_capabilities() -> list[str]:
         capabilities.append("managed_compose_write")
     if os.getenv("SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE", "0").strip() == "1":
         capabilities.extend(("patchmon_patch_write", "fleet_maintenance_write"))
+    if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_OPERATOR", "0").strip() == "1":
+        capabilities.extend(("aurion_account_role_readback", "aurion_account_role_plan"))
+        if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_WRITE", "0").strip() == "1":
+            capabilities.append("aurion_account_role_apply")
     return capabilities
 
 
@@ -267,7 +271,7 @@ mcp = FastMCP(
         "mergefähigen PR mit exakt bestätigtem Head-SHA mergen. repository_close_pr darf ausschließlich mit privatem Owner-Modus, ausdrücklicher Owner-Freigabe, exaktem Head-SHA und einem begrenzten Redundanzgrund schließen; es führt niemals einen Merge aus. Standardmäßig müssen alle Checks grün und der PR bereits bereit sein. Nur bei expliziter Owner-Freigabe darf "
         "repository_merge_pr einen Draft über GitHubs Ready-for-Review-Mutation freigeben und ausschließlich die bekannten Android-Pending-Gates ignorieren, wenn der PR keine Android-Flächen berührt und kein Check fehlgeschlagen ist. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
         "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, darf der Merge keinen direkten Self-Update-Installer starten. "
-        "Ausschließlich der Main-Workflow sovereign-chatgpt-mcp.yml darf nach Validator, immutablem Image-Publish und Digest-Prüfung die bestätigte Merge-Revision auf dem VPS installieren. Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
+        "Ausschließlich der Main-Workflow sovereign-chatgpt-mcp.yml darf nach Validator, immutablem Image-Publish und Digest-Prüfung die bestätigte Merge-Revision auf dem VPS installieren. Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. Echoes of Aurion bleibt eine getrennte Truth-Boundary und verwendet MariaDB/MySQL: verwende für Aurion niemals postgres_admin_sql. Für lokale Aurion-Konten nutze ausschließlich aurion_account_role_readback, aurion_account_role_plan und aurion_account_role_apply; der Apply ist hashgebunden, owner-gated und darf ausschließlich id/openId/role der exakt adressierten local:-Identität berühren. localCredentials, Passwortmaterial, andere Nutzer, Schema und Migrationen bleiben außerhalb dieses Pfades. "
         "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. Für bezahlte Provider-Routen verwende ausschließlich openrouter_provider_status und openrouter_provider_activate; Paid-Secrets werden ausschließlich über owner_approval_request_create mit target_id openrouter_api_key eingegeben. Für OpenRouter-Free verwende openrouter_free_status, openrouter_free_activate und openrouter_free_key_rotate. Ein Free-Ausführungsschlüssel wird ausschließlich über target_id openrouter_free_api_key eingegeben; ein Management-Key ausschließlich über target_id openrouter_management_api_key. Der Management-Key darf nur Schlüssel verwalten und niemals Modellanfragen ausführen. Alle Aktivierungs- und Rotationswerkzeuge akzeptieren keinen Key als Argument; Zero-Cost-Doppel-Canary, Fingerprints, atomare Dateispeicherung und exakte Upstream-Key-Hashes bleiben im Backend. Für den getrennten direkten FreeLLM-Pfad verwende freellm_provider_status, freellm_provider_keyless_activate, freellm_provider_discover und freellm_provider_recheck. freellm_provider_keyless_activate darf ausschließlich die aktuell allowlisteten Kilo-/OVH-Marker konfigurieren und behauptet noch keine Route als bereit; erst Discovery oder Recheck dürfen nach frischem Katalog und direkter Nullkosten-Doppel-Canary ein Modell aktivieren. Diese Werkzeuge akzeptieren keinen Key. "
         "Für persistierte Controller-Runs des konfigurierten Owners verwende controller_run_start, controller_run_list, controller_run_status und controller_run_resume. Nutze controller_run_external_event nur für exakt identifizierte externe GitHub-, Broker-, MCP-, Dokument- oder Datenbank-Evidence; das Tool darf weder Run-/Task-Status noch aktive Blocker verändern. Diese Brücke darf keine Browser-Cookies, Admin-Keys oder geschützten Werte annehmen und darf WAITING_FOR_OWNER niemals umgehen. "
         "Für öffentliche Manus-Share-Replays verwende manus_public_replay_read. Dieser read-only Pfad akzeptiert ausschließlich HTTPS-Links unter manus.im/share, rendert über den lokal gebundenen Browserless-Content-Endpunkt und gibt begrenzten sichtbaren Text plus Hash-Evidence zurück. "
@@ -1940,6 +1944,61 @@ def postgres_admin_sql(sql: str, database: str = "", timeout_seconds: int = 300)
         "postgres_admin_sql",
         {"sql": sql, "database": database, "timeout_seconds": timeout_seconds},
         timeout=max(60, min(int(timeout_seconds) + 30, 3660)),
+    )
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def aurion_account_role_readback(
+    open_id: Annotated[
+        str,
+        Field(pattern=r"^local:[A-Za-z0-9_.-]{1,32}$", description="Exact local Aurion openId; never a credential."),
+    ],
+    expected_revision: Annotated[
+        str,
+        Field(pattern=r"^[0-9a-f]{40}$", description="Exact running Echoes of Aurion source revision."),
+    ],
+) -> dict[str, Any]:
+    """Read only id/openId/role for one local Aurion account from the exact healthy Aurion runtime."""
+    return broker.call(
+        "aurion_account_role_readback",
+        {"open_id": open_id, "expected_revision": expected_revision},
+        timeout=90,
+    )
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def aurion_account_role_plan(
+    open_id: Annotated[str, Field(pattern=r"^local:[A-Za-z0-9_.-]{1,32}$")],
+    role: Annotated[str, Field(pattern=r"^(?:user|admin)$")],
+    expected_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+) -> dict[str, Any]:
+    """Bind one local Aurion role change to the exact users row, container identity and current revision without mutating data."""
+    return broker.call(
+        "aurion_account_role_plan",
+        {"open_id": open_id, "role": role, "expected_revision": expected_revision},
+        timeout=90,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def aurion_account_role_apply(
+    open_id: Annotated[str, Field(pattern=r"^local:[A-Za-z0-9_.-]{1,32}$")],
+    role: Annotated[str, Field(pattern=r"^(?:user|admin)$")],
+    expected_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    confirmation_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Queue one hash-bound local Aurion users.role update and require exact post-write DB/runtime readback."""
+    return broker.call(
+        "aurion_account_role_apply",
+        {
+            "open_id": open_id,
+            "role": role,
+            "expected_revision": expected_revision,
+            "confirmation_sha256": confirmation_sha256,
+            "owner_approved": owner_approved,
+        },
+        timeout=180,
     )
 
 

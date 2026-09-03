@@ -30,6 +30,12 @@ EXPECTED_NEURO_TOOLS = {
     "teaching_package_assess",
 }
 
+EXPECTED_AURION_TOOLS = {
+    "aurion_account_role_readback",
+    "aurion_account_role_plan",
+    "aurion_account_role_apply",
+}
+
 EXPECTED_COMPATIBLE_PREDECESSOR_DRIFT = {
     "mcp_diagnostic_chain_plan",
     "mcp_toolchain_compile",
@@ -154,7 +160,7 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
         'docker compose up -d --no-build --force-recreate --remove-orphans'
     )
 
-    assert 'EXPECTED_MCP_TOOL_COUNT="251"' in script
+    assert 'EXPECTED_MCP_TOOL_COUNT="254"' in script
     assert 'INSTALL_STAGE="capture_previous_mcp_tool_surface"' in script
     assert 'INSTALL_STAGE="verify_mcp_tool_surface_preservation"' in script
     assert "mcp_tool_contract_registry(include_schemas=True)" in script
@@ -429,13 +435,13 @@ print(json.dumps({
     )
     assert registry_process.returncode == 0, registry_process.stderr
     current_registry = json.loads(registry_process.stdout.strip().splitlines()[-1])
-    assert current_registry["toolCount"] == 251
+    assert current_registry["toolCount"] == 254
 
     predecessor_registry = json.loads(json.dumps(current_registry))
     predecessor_registry["tools"] = [
         item
         for item in predecessor_registry["tools"]
-        if item["name"] not in EXPECTED_NEURO_TOOLS | {"n8n_workflow_plan", "n8n_workflow_apply"}
+        if item["name"] not in EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS | {"n8n_workflow_plan", "n8n_workflow_apply"}
     ]
     predecessor_registry["toolCount"] = len(predecessor_registry["tools"])
     predecessor_registry["registrySnapshotSha256"] = "0" * 64
@@ -505,7 +511,7 @@ print(json.dumps({
             str(predecessor_path),
             str(current_path),
             "1",
-            "251",
+            "254",
         ],
         capture_output=True,
         text=True,
@@ -514,7 +520,7 @@ print(json.dumps({
     )
     assert compatibility.returncode == 0, compatibility.stderr
     compatibility_receipt = json.loads(compatibility.stdout.strip().splitlines()[-1])
-    assert set(compatibility_receipt["additions"]) == EXPECTED_NEURO_TOOLS
+    assert set(compatibility_receipt["additions"]) == EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS
     assert set(compatibility_receipt["changedCompatibleContracts"]) == (
         EXPECTED_COMPATIBLE_PREDECESSOR_DRIFT
     )
@@ -541,7 +547,7 @@ print(json.dumps({
             str(predecessor_path),
             str(incompatible_path),
             "1",
-            "251",
+            "254",
         ],
         capture_output=True,
         text=True,
@@ -581,7 +587,7 @@ print(json.dumps({
             str(property_predecessor_path),
             str(property_replacement_path),
             "1",
-            "251",
+            "254",
         ],
         capture_output=True,
         text=True,
@@ -617,7 +623,7 @@ print(json.dumps({
             str(one_of_predecessor_path),
             str(one_of_replacement_path),
             "1",
-            "251",
+            "254",
         ],
         capture_output=True,
         text=True,
@@ -661,7 +667,7 @@ print(json.dumps({
             str(output_predecessor_path),
             str(output_replacement_path),
             "1",
-            "251",
+            "254",
         ],
         capture_output=True,
         text=True,
@@ -705,7 +711,7 @@ print(json.dumps({
                 str(old_path),
                 str(new_path),
                 "1",
-                "251",
+                "254",
             ],
             capture_output=True,
             text=True,
@@ -834,7 +840,7 @@ print(json.dumps({
             str(predecessor_path),
             str(description_path),
             "1",
-            "251",
+            "254",
         ],
         capture_output=True,
         text=True,
@@ -989,7 +995,7 @@ def test_installer_runs_a_clean_real_registry_neuro_canary_without_selected_tool
     assert '"allowed_effects": ["read"]' in canary
     assert '[contract["name"] for contract in selected_contracts] == ["mcp_self_update_status"]' in canary
     assert 'registered_tool.fn = forbidden_selected_tool_call' in canary
-    assert 'assert len(set(guarded_tool_names)) == 246' in canary
+    assert 'assert len(set(guarded_tool_names)) == 249' in canary
     assert '__sovereign_success_tracking__' in canary
     assert '__sovereign_operating_profile_wrapped__' in canary
     assert 'guarded_tool_calls == []' in canary
@@ -1086,14 +1092,14 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
     assert receipt == {
         "canonicalReadbackVerified": True,
         "commitReplayVerified": True,
-        "guardedPredecessorToolCount": 246,
+        "guardedPredecessorToolCount": 249,
         "isolatedStateCleaned": True,
         "previewProposalOnly": True,
         "persistedOutcomeTools": ["neuro_event_commit"],
         "quarantineNoMutation": True,
         "readOnlyCallsPersisted": False,
         "registeredToolSurfaceVerified": True,
-        "registryToolCount": 251,
+        "registryToolCount": 254,
         "selectedToolsExecuted": False,
         "status": "NEURO_DEPLOYMENT_CANARY_VERIFIED",
         "tamperDetected": True,
@@ -1154,10 +1160,10 @@ def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Pa
         "skills/sovereign-neuro-teaching-runtime/SKILL.md",
     ):
         assert path in workflow
-    assert "assert len(tool_names) == 251" in workflow
+    assert "assert len(tool_names) == 254" in workflow
     assert "n8n_workflow_plan" in deployment_surface
     assert "n8n_workflow_apply" in deployment_surface
-    assert "assert len(tool_names - expected_tools) == 246" in deployment_surface
+    assert "assert len(tool_names - expected_tools) == 249" in deployment_surface
     assert "SOVEREIGN_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow
     assert workflow.count("ref: ${{ env.SOVEREIGN_SOURCE_REVISION }}") == 2
     assert '--expected-head "${SOVEREIGN_SOURCE_REVISION}"' in workflow

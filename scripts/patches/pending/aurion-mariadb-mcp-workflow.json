@@ -1,0 +1,31 @@
+{
+  "target": ".github/workflows/sovereign-chatgpt-mcp.yml",
+  "source_ref": "sovereign/chatgpt/1788444662-aurion-genkit-transport-bdb51e",
+  "branch_base_ref": "sovereign/chatgpt/1788444662-aurion-genkit-transport-bdb51e",
+  "branch": "sovereign/chatgpt/aurion-mariadb-workflow-254",
+  "commit_message": "feat(mcp): bind Aurion MariaDB operator to CI surface",
+  "pr_title": "feat(mcp): add bounded Aurion MariaDB admin operator",
+  "pr_body": "Adds the workflow-side registry and compile gates for the revision-bound Aurion MariaDB account operator. The implementation is inherited from the exact transport branch. No Genkit runtime is exposed. Merge only after exact-head CI and runtime readback.",
+  "blocks": [
+    {
+      "search": "python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py",
+      "replace": "python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py aurion_operator.py github_admin.py"
+    },
+    {
+      "search": "          grep -q 'admin_mode.py' deploy/install-on-vps.sh\n          grep -q 'github_admin.py' deploy/install-on-vps.sh",
+      "replace": "          grep -q 'admin_mode.py' deploy/install-on-vps.sh\n          grep -q 'aurion_operator.py' deploy/install-on-vps.sh\n          grep -q 'github_admin.py' deploy/install-on-vps.sh"
+    },
+    {
+      "search": "          grep -q 'EXPECTED_MCP_TOOL_COUNT=\"251\"' deploy/install-on-vps.sh",
+      "replace": "          grep -q 'EXPECTED_MCP_TOOL_COUNT=\"254\"' deploy/install-on-vps.sh"
+    },
+    {
+      "search": "          for name in (\n              'postgres_admin_sql',",
+      "replace": "          for name in (\n              'postgres_admin_sql',\n              'aurion_account_role_readback',\n              'aurion_account_role_plan',\n              'aurion_account_role_apply',"
+    },
+    {
+      "search": "          assert len(tool_names) == 251, len(tool_names)",
+      "replace": "          assert len(tool_names) == 254, len(tool_names)"
+    }
+  ]
+}
