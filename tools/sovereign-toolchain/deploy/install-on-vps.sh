@@ -58,9 +58,19 @@ classify_uv_sync_failure() {
     printf 'CLI_COMPATIBILITY\n'
   elif grep -Eqi '(uv\.lock|lock ?file).*(needs? to be updated|out of date|not up[- ]to[- ]date)|locked.*(would|cannot|can.t).*update' "$log_file"; then
     printf 'LOCK_DRIFT\n'
+  elif grep -Eqi '(no space left on device|disk quota|quota exceeded|filesystem full|out of disk space)' "$log_file"; then
+    printf 'STORAGE\n'
+  elif grep -Eqi '(permission denied|operation not permitted|access denied|read-only file system|read only file system)' "$log_file"; then
+    printf 'PERMISSION\n'
+  elif grep -Eqi '(failed to build|build backend|build-system|build system|pep[ -]?517|hatchling|failed to prepare metadata|failed to build wheel)' "$log_file"; then
+    printf 'BUILD_SYSTEM\n'
+  elif grep -Eqi '(cache).*(corrupt|invalid|failed|error)|failed to (extract|unpack)|input/output error|i/o error|checksum mismatch|hash mismatch' "$log_file"; then
+    printf 'CACHE_IO\n'
+  elif grep -Eqi '(no solution found|unsatisfiable|could not resolve|resolution failed|no matching distribution|package.*not found|not found in.*registry)' "$log_file"; then
+    printf 'RESOLUTION\n'
   elif grep -Eqi '(python).*(not found|not available|unsupported|requires|requirement)|failed to (find|locate|download).*python' "$log_file"; then
     printf 'PYTHON\n'
-  elif grep -Eqi '(timed? out|timeout|temporary failure|connection (refused|reset)|name or service not known|dns|tls|certificate|failed to download|network)' "$log_file"; then
+  elif grep -Eqi '(timed? out|timeout|temporary failure|connection (refused|reset|aborted)|name or service not known|dns|tls|certificate|failed to (download|fetch)|request error|connect error|network|failed to query.*registry)' "$log_file"; then
     printf 'NETWORK\n'
   else
     printf 'OTHER\n'
