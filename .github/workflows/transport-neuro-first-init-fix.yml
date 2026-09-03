@@ -1,0 +1,30 @@
+name: Transport Neuro First-Init Fix
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/fix-neuro-init-and-toolchain-evidence
+    paths:
+      - .github/workflows/transport-neuro-first-init-fix.yml
+      - scripts/patches/pending/fix-neuro-first-init-read-lock.json
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Apply exact hash-bound patch onto clean main child branch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO_FULL_NAME: ${{ github.repository }}
+          BASE_BRANCH: main
+          DRY_RUN: "false"
+        run: |
+          python3 scripts/patches/search_replace_runner.py scripts/patches/pending/fix-neuro-first-init-read-lock.json
