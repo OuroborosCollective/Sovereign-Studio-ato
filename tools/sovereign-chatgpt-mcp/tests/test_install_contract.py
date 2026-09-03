@@ -145,6 +145,19 @@ def test_desktop_worker_module_is_installed_in_control_plane_and_broker() -> Non
     assert "desktop_worker.py" in broker_copy_loop
 
 
+def test_aurion_operator_module_is_packaged_for_the_runtime_import_contract() -> None:
+    installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
+    runtime_copy_loop = installer.split('INSTALL_STAGE="copy_control_plane_files"', 1)[1].split("\ndone", 1)[0]
+    broker_copy_loop = installer.split("for file in broker.py", 1)[1].split("\ndone", 1)[0]
+
+    assert "aurion_operator.py" in dockerfile
+    assert "aurion_operator.py" in runtime_copy_loop
+    assert "aurion_operator.py" in broker_copy_loop
+    assert "import aurion_operator" in installer
+    assert "aurion_operator.AurionOperatorRuntime is not None" in installer
+
+
 def test_installer_assigns_workspace_to_container_user_and_probes_write_access() -> None:
     script = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
 
