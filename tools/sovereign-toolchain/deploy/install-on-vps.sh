@@ -146,7 +146,9 @@ rm -rf "$TEMP/sovereign-toolchain/.venv"
 (
   cd "$TEMP/sovereign-toolchain"
   UV_SYNC_LOG="$TEMP/uv-sync.log"
-  if ! env -u UV_FROZEN -u UV_LOCKED uv sync --locked --no-dev --no-install-project >"$UV_SYNC_LOG" 2>&1; then
+  UV_CACHE_DIR="$TEMP/uv-cache"
+  install -d -m 0700 -o root -g root "$UV_CACHE_DIR"
+  if ! env -u UV_FROZEN -u UV_LOCKED UV_CACHE_DIR="$UV_CACHE_DIR" uv sync --locked --no-dev --no-install-project >"$UV_SYNC_LOG" 2>&1; then
     UV_FAILURE_FAMILY="$(classify_uv_sync_failure "$UV_SYNC_LOG")"
     UV_VERSION="$(bounded_uv_version)"
     UV_OUTPUT_SHA256="$(sha256sum "$UV_SYNC_LOG" | awk '{print $1}')"
@@ -156,7 +158,8 @@ rm -rf "$TEMP/sovereign-toolchain/.venv"
     fail "uv sync failed family=$UV_FAILURE_FAMILY uv_version=$UV_VERSION output_sha256=$UV_OUTPUT_SHA256"
   fi
   rm -f "$UV_SYNC_LOG"
-  unset UV_SYNC_LOG UV_FAILURE_FAMILY UV_VERSION UV_OUTPUT_SHA256
+  rm -rf "$UV_CACHE_DIR"
+  unset UV_SYNC_LOG UV_CACHE_DIR UV_FAILURE_FAMILY UV_VERSION UV_OUTPUT_SHA256
   PYTHONPATH="$TEMP/sovereign-toolchain/src:$TEMP/sovereign-legacy-mcp-common" \
     .venv/bin/python -c 'import sovereign_toolchain.n8n_evidence_app, uvicorn'
 )

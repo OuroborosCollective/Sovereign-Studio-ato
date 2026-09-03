@@ -11,6 +11,7 @@ ROLLBACK_HELPER = ROOT / "sovereign-toolchain" / "deploy" / "rollback-last-insta
 APP = ROOT / "sovereign-toolchain" / "src" / "sovereign_toolchain" / "app.py"
 METADATA_READER = ROOT / "sovereign-toolchain" / "deploy" / "read-broker-github-app-metadata.sh"
 WORKFLOW = ROOT.parent / ".github" / "workflows" / "sovereign-toolchain.yml"
+SELF_UPDATE_SERVICE = ROOT / "sovereign-chatgpt-mcp" / "deploy" / "sovereign-chatgpt-mcp-self-update.service"
 
 
 def test_units_split_loopback_full_app_from_minimal_evidence_listener() -> None:
@@ -45,7 +46,10 @@ def test_installer_atomically_deploys_and_verifies_both_boundaries() -> None:
     installer = INSTALLER.read_text("utf-8")
 
     assert "command -v uv" in installer
-    assert "env -u UV_FROZEN -u UV_LOCKED uv sync --locked --no-dev --no-install-project" in installer
+    assert 'UV_CACHE_DIR="$TEMP/uv-cache"' in installer
+    assert 'install -d -m 0700 -o root -g root "$UV_CACHE_DIR"' in installer
+    assert 'env -u UV_FROZEN -u UV_LOCKED UV_CACHE_DIR="$UV_CACHE_DIR" uv sync --locked --no-dev --no-install-project' in installer
+    assert 'rm -rf "$UV_CACHE_DIR"' in installer
     assert "SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC" in installer
     assert "CLI_COMPATIBILITY" in installer
     assert "LOCK_DRIFT" in installer
@@ -133,6 +137,18 @@ def test_installer_atomically_deploys_and_verifies_both_boundaries() -> None:
     assert "final target runtime executable missing" in installer
     assert "n8n evidence master key leaked into process environment" in installer
 
+
+
+def test_uv_sync_uses_private_staging_cache_under_protect_home() -> None:
+    installer = INSTALLER.read_text("utf-8")
+    self_update_service = SELF_UPDATE_SERVICE.read_text("utf-8")
+
+    assert "User=root" in self_update_service
+    assert "ProtectHome=true" in self_update_service
+    assert 'UV_CACHE_DIR="$TEMP/uv-cache"' in installer
+    assert 'UV_CACHE_DIR="$UV_CACHE_DIR" uv sync' in installer
+    assert "UV_CACHE_DIR=$HOME" not in installer
+    assert "UV_CACHE_DIR=/root" not in installer
 
 
 def test_uv_sync_failure_classifier_is_bounded_and_causal(tmp_path: Path) -> None:
