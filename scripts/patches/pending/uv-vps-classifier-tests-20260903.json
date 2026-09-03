@@ -1,0 +1,20 @@
+{
+  "target": "tools/sovereign-toolchain/tests/test_deploy_contract.py",
+  "source_ref": "6db876a4378284624166df82846e40671377b4d4",
+  "branch_base_ref": "6db876a4378284624166df82846e40671377b4d4",
+  "branch": "sovereign/chatgpt/uv-vps-classifier-20260903",
+  "expectedSha": "2e7a0668e129cf93ee545a8fd36ad428d0255442",
+  "commit_message": "test(toolchain): cover bounded VPS uv failure families",
+  "pr_title": "fix(toolchain): classify bounded VPS uv failures",
+  "pr_body": "Reconciles the residual VPS uv diagnostic lane against current main without restoring --no-install-project. Adds bounded failure families and regression coverage only.",
+  "blocks": [
+    {
+      "search": "    assert \"CLI_COMPATIBILITY\" in installer\n    assert \"LOCK_DRIFT\" in installer\n    assert \"PYTHON\" in installer\n    assert \"NETWORK\" in installer",
+      "replace": "    assert \"CLI_COMPATIBILITY\" in installer\n    assert \"LOCK_DRIFT\" in installer\n    assert \"STORAGE\" in installer\n    assert \"PERMISSION\" in installer\n    assert \"BUILD_SYSTEM\" in installer\n    assert \"CACHE_IO\" in installer\n    assert \"RESOLUTION\" in installer\n    assert \"PYTHON\" in installer\n    assert \"NETWORK\" in installer"
+    },
+    {
+      "search": "    cases = {\n        \"CLI_COMPATIBILITY\": \"error: unexpected argument '--no-install-project' found\",\n        \"LOCK_DRIFT\": \"uv.lock needs to be updated, but --locked was provided\",\n        \"PYTHON\": \"Python not found for the requested environment\",\n        \"NETWORK\": \"failed to download package: connection reset by peer\",\n        \"OTHER\": \"resolver exited for an unclassified bounded reason\",\n    }",
+      "replace": "    cases = {\n        \"CLI_COMPATIBILITY\": \"error: unexpected argument '--no-install-project' found\",\n        \"LOCK_DRIFT\": \"uv.lock needs to be updated, but --locked was provided\",\n        \"STORAGE\": \"failed to write cache: No space left on device\",\n        \"PERMISSION\": \"failed to create virtual environment: Permission denied\",\n        \"BUILD_SYSTEM\": \"Failed to build wheel using the build backend hatchling\",\n        \"CACHE_IO\": \"cache entry corrupt: checksum mismatch\",\n        \"RESOLUTION\": \"No solution found when resolving dependencies\",\n        \"PYTHON\": \"Python not found for the requested environment\",\n        \"NETWORK\": \"failed to fetch package: connection reset by peer\",\n        \"OTHER\": \"resolver exited for an unclassified bounded reason\",\n    }"
+    }
+  ]
+}
