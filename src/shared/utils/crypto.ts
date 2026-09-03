@@ -14,7 +14,7 @@ const HUGGINGFACE_KEY_REGEX = /hf_[a-zA-Z0-9]{8,100}/g;
 const TOGETHER_KEY_REGEX = /together_[a-zA-Z0-9]{8,100}/g;
 const POLLINATIONS_KEY_REGEX = /pollinations_[a-zA-Z0-9]{8,100}/g;
 const BEARER_TOKEN_REGEX = /Bearer\s+[a-zA-Z0-9._~+/-]+=*/gi;
-const LABEL_CREDENTIAL_REGEX = /(["']?)(client[_-]?secret|client[_-]?id|session[_-]?token|session[_-]?id|refresh[_-]?token|auth[_-]?token|id[_-]?token|api[_-]?secret|password|passwd|token|secret|api[_-]?key|access[_-]?token|private[_-]?key)\1(\s*[:=]\s*)["']?[a-zA-Z0-9_@#$%^&*.\-~+/=]+["']?/gi;
+const LABEL_CREDENTIAL_REGEX = /(["']?)(client[_-]?secret|client[_-]?id|session[_-]?token|session[_-]?id|refresh[_-]?token|auth[_-]?token|id[_-]?token|api[_-]?secret|database[_-]?password|db[_-]?password|db[_-]?pass|master[_-]?password|master[_-]?key|secret[_-]?key|signing[_-]?key|password|passwd|token|secret|api[_-]?key|access[_-]?token|private[_-]?key)\1(\s*[:=]\s*)["']?[a-zA-Z0-9_@#$%^&*.\-~+/=]+["']?/gi;
 
 // 1-slot memoization cache to optimize consecutive calls with identical text
 // (extremely common during high-frequency chat pacing or parent re-renders).
