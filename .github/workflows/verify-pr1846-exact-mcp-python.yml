@@ -1,0 +1,61 @@
+name: Verify PR1846 Exact MCP Python
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/fix-neuro-init-and-toolchain-evidence
+    paths:
+      - .github/workflows/verify-pr1846-exact-mcp-python.yml
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_HEAD: 3064550e02699eeb7f883c10faea35ae6ae3ee88
+  SOVEREIGN_SOURCE_REVISION: 3064550e02699eeb7f883c10faea35ae6ae3ee88
+  SOVEREIGN_MCP_WORKSPACE_ROOT: /tmp/sovereign-mcp-workspaces
+  SOVEREIGN_MCP_HOST: 127.0.0.1
+  SOVEREIGN_MCP_PORT: '8090'
+  SOVEREIGN_MCP_REPOSITORY: OuroborosCollective/Sovereign-Studio-ato
+  SOVEREIGN_ANDROID_NATIVE_BUILD_MODE: github_actions
+  KAPPA_POS: '1000000'
+  SOVEREIGN_KAPPA_POS: '1000000'
+  CROSS_RUNTIME_PARITY: 'true'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: tools/sovereign-chatgpt-mcp
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: 3064550e02699eeb7f883c10faea35ae6ae3ee88
+      - name: Verify immutable checkout identity
+        run: test "$(git rev-parse HEAD)" = "${EXPECTED_HEAD}"
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/sovereign-chatgpt-mcp/requirements.txt
+      - name: Setup Node parity runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Python dependencies
+        run: python -m pip install --requirement requirements.txt
+      - name: Compile changed Python surfaces
+        run: python -m py_compile neuro_teaching_tools.py deploy/reconcile-main-release.py tests/test_neuro_first_init_read_lock.py tests/test_coordinated_release_nested_toolchain_projection.py
+      - name: Run causal regression slice
+        run: |
+          python -m pytest -q \
+            tests/test_neuro_first_init_read_lock.py \
+            tests/test_neuro_teaching_tools.py::test_concurrent_cas_loser_compensates_pending_admission \
+            tests/test_coordinated_release_nested_toolchain_projection.py \
+            tests/test_coordinated_release_installer_diagnostic_contract.py
+      - name: Run complete MCP Python suite
+        run: python -m pytest -q
