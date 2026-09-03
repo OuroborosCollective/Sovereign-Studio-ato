@@ -3496,7 +3496,7 @@ if [[ "$DEPLOYMENT_SOURCE_SCOPE" == "full-repository" ]]; then
         "$TOOLCHAIN_INSTALL_LOG" | head -n 1 | tr -d '\r\n' | cut -c1-512 || true
     )"
     TOOLCHAIN_UV_DIAGNOSTIC="$(
-      grep -E '^SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=(CLI_COMPATIBILITY|LOCK_DRIFT|PYTHON|NETWORK|OTHER) uv_version=([0-9]+\.[0-9]+\.[0-9]+|unknown) output_sha256=[0-9a-f]{64}$' \
+      grep -E '^SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=(CLI_COMPATIBILITY|LOCK_DRIFT|STORAGE|PERMISSION|BUILD_SYSTEM|CACHE_IO|RESOLUTION|PYTHON|NETWORK|OTHER) uv_version=([0-9]+\.[0-9]+\.[0-9]+|unknown) output_sha256=[0-9a-f]{64}$' \
         "$TOOLCHAIN_INSTALL_LOG" | head -n 1 | tr -d '\r\n' | cut -c1-512 || true
     )"
     TOOLCHAIN_FAILURE_SHA256="$(sha256sum "$TOOLCHAIN_INSTALL_LOG" | awk '{print $1}')"
