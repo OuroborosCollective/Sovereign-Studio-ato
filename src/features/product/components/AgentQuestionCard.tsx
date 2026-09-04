@@ -88,7 +88,7 @@ export const AgentQuestionCard: React.FC<AgentQuestionCardProps> = ({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-        <span style={{ fontSize: 14, lineHeight: 1, color: C.amber }}>?</span>
+        <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, color: C.amber }}>?</span>
         <div>
           <div style={{ fontSize: 12, fontWeight: 600, color: C.amber, marginBottom: 4 }}>
             Sovereign braucht eine Entscheidung
@@ -123,6 +123,7 @@ export const AgentQuestionCard: React.FC<AgentQuestionCardProps> = ({
               onFocus={() => setFocusedId(option.id)}
               onBlur={() => setFocusedId(null)}
               title={option.label}
+              className="focus-visible:ring-2 focus-visible:ring-[#00d9b1] focus-visible:outline-none"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -140,6 +141,7 @@ export const AgentQuestionCard: React.FC<AgentQuestionCardProps> = ({
               }}
             >
               <span
+                aria-hidden="true"
                 style={{
                   width: 14,
                   height: 14,
@@ -154,6 +156,7 @@ export const AgentQuestionCard: React.FC<AgentQuestionCardProps> = ({
               >
                 {isSelected && (
                   <span
+                    aria-hidden="true"
                     style={{
                       width: 5,
                       height: 5,
@@ -178,6 +181,7 @@ export const AgentQuestionCard: React.FC<AgentQuestionCardProps> = ({
         onFocus={() => setConfirmFocused(true)}
         onBlur={() => setConfirmFocused(false)}
         title={disabled ? 'Rückfrage bereits beantwortet' : !selected ? 'Bitte wählen Sie zuerst eine Option aus' : 'Ausgewählte Antwort an den Agenten senden'}
+        className="focus-visible:ring-2 focus-visible:ring-[#00d9b1] focus-visible:outline-none"
         style={{
           padding: '9px 16px',
           borderRadius: 8,
