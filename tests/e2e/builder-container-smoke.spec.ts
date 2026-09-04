@@ -2,21 +2,22 @@ import { test, expect } from '@playwright/test';
 
 const EXTENDED_TIMEOUT = { timeout: 30_000 };
 
-test.describe('Monitor-first workspace browser smoke', () => {
+test.describe('Chat-first workspace browser smoke', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('[data-testid="sovereign-monitor-app"]')).toBeVisible(EXTENDED_TIMEOUT);
+    await expect(page.locator('[data-testid="sovereign-chat-app"]')).toBeVisible(EXTENDED_TIMEOUT);
   });
 
-  test('1. App loads the canonical monitor-first workspace', async ({ page }) => {
-    const app = page.locator('[data-testid="sovereign-monitor-app"]');
-    await expect(app).toHaveAttribute('data-layout', 'monitor-first-live-workspace');
-    await expect(app).toHaveAttribute('aria-label', 'Sovereign Workspace Monitor');
+  test('1. App loads the canonical chat-first workspace', async ({ page }) => {
+    const app = page.locator('[data-testid="sovereign-chat-app"]');
+    await expect(app).toHaveAttribute('data-layout', 'chat-first-agent-zero-background');
+    await expect(app).toHaveAttribute('aria-label', 'Sovereign Chat');
 
-    const builder = page.locator('[data-layout="live-desktop-monitor-primary"]');
+    const builder = page.locator('[data-layout="chat-primary-agent-zero-background"]');
     await expect(builder).toBeVisible();
-    await expect(page.locator('[data-testid="sovereign-live-monitor-primary"]')).toBeVisible();
-    await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-chat-primary"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toBeVisible();
+    await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Menü', exact: true })).toBeVisible();
   });
@@ -65,18 +66,20 @@ test.describe('Monitor-first workspace browser smoke', () => {
     await expect(page.getByRole('dialog', { name: 'LLM-Modell auswählen' })).toHaveCount(0);
   });
 
-  test('4. Monitor controls remain the single primary surface', async ({ page }) => {
-    await expect(page.getByRole('button', { name: 'Live Monitor' })).toBeVisible();
-    await expect(page.locator('[data-testid="monitor-action-controls"]')).toBeVisible();
-    await expect(page.locator('[data-testid="monitor-runtime-action-trace"]')).toBeAttached();
+  test('4. Chat remains primary while runtime diagnostics stay behind Inspector', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'Sovereign Chat' })).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-action-suggestion-strip"]')).toBeVisible();
+    await expect(page.locator('[data-testid="monitor-runtime-action-trace"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
-    await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toBeVisible();
+    await page.getByText('INSPECTOR', { exact: true }).click();
+    await expect(page.locator('[data-testid="monitor-runtime-action-trace"]')).toBeAttached();
   });
 
-  test('5. Monitor shell and restored menu remain reachable at phone width', async ({ page }) => {
+  test('5. Chat shell and restored menu remain reachable at phone width', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.locator('[data-testid="sovereign-monitor-app"]')).toBeVisible();
-    await expect(page.locator('[data-testid="sovereign-live-monitor-primary"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-chat-app"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-chat-primary"]')).toBeVisible();
     await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
 
     await page.getByRole('button', { name: 'Menü', exact: true }).click();
@@ -86,6 +89,6 @@ test.describe('Monitor-first workspace browser smoke', () => {
   test('6. The evidence observatory route remains independently reachable', async ({ page }) => {
     await page.goto('/observatory');
     await expect(page.locator('[data-testid="evidence-observatory-atlas"]')).toBeVisible(EXTENDED_TIMEOUT);
-    await expect(page.locator('[data-testid="sovereign-monitor-app"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="sovereign-chat-app"]')).toHaveCount(0);
   });
 });

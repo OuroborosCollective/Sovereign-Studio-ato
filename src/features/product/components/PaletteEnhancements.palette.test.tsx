@@ -55,6 +55,7 @@ describe('Palette Accessibility Enhancements', () => {
 
     it('Runtime RT button keeps visible label in accessible name', () => {
       renderWithProviders(<BuilderContainer {...baseProps} />);
+      fireEvent.click(screen.getByText('INSPECTOR'));
       const rtButton = screen.getByRole('button', { name: /RT.*Runtime Quelle/i });
       expect(rtButton).toHaveAttribute('aria-label', 'RT – Runtime Quelle');
       expect(rtButton).toHaveAttribute('title', 'Runtime Quelle');
@@ -62,6 +63,7 @@ describe('Palette Accessibility Enhancements', () => {
 
     it('Panel toggle button has title and aria-label', () => {
       renderWithProviders(<BuilderContainer {...baseProps} />);
+      fireEvent.click(screen.getByText('INSPECTOR'));
       const toggleButton = screen.getByRole('button', { name: /Panel öffnen/i });
       expect(toggleButton).toHaveAttribute('aria-label', 'Panel öffnen');
       expect(toggleButton).toHaveAttribute('title', 'Panel öffnen');

@@ -16,13 +16,13 @@ describe('DevChat Draft PR execution contract', () => {
     expect(builder).toContain('Vorgemerktes Review-Preset wird direkt über den Repository-Executor wiederaufgenommen');
   });
 
-  it('preserves executable swarm, recovery, and publication behind the typed engine boundary in the monitor-first root', () => {
+  it('preserves executable swarm, recovery, and publication behind the typed engine boundary in the chat-first root', () => {
     const app = source('src/App.tsx');
     const boundary = source('src/features/product/runtime/sovereignEngineBoundary.ts');
     const client = source('src/features/product/runtime/sovereignAgentClient.ts');
     const runtime = source('src/features/product/runtime/sovereignAgentRuntime.ts');
 
-    expect(app).toContain('data-layout="monitor-first-live-workspace"');
+    expect(app).toContain('data-layout="chat-first-agent-zero-background"');
     expect(app).toContain("'START_REPOSITORY_EXECUTION'");
     expect(app).toContain("'CREATE_DRAFT_PR'");
     expect(app).toContain('executeSovereignEngineCommand');
@@ -47,7 +47,7 @@ describe('DevChat Draft PR execution contract', () => {
     expect(builder).toContain('githubAccessToken: githubTokenRef.current || undefined');
   });
 
-  it('keeps Rescue mounted behind the monitor-first root failure affordance', () => {
+  it('keeps Rescue mounted behind the chat-first root failure affordance', () => {
     const app = source('src/App.tsx');
     const rescue = source('src/features/rescue/RescuePanel.tsx');
 
