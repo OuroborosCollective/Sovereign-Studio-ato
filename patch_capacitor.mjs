@@ -1,9 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { pathToFileURL } from 'node:url';
 
 /**
  * Patches a file by replacing occurrences of a string.
@@ -77,7 +74,7 @@ const isMainModule = () => {
     const currentURL = new URL(import.meta.url).href;
     
     return scriptURL === currentURL;
-  } catch (e) {
+  } catch (_e) {
     return false;
   }
 };
