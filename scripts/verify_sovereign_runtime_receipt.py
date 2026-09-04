@@ -77,15 +77,15 @@ def _validate_signature(receipt: bytes, signature: bytes, allowed_signers: Path)
             capture_output=True,
             check=False,
         )
-    _require(verification.returncode == 0, "target-system receipt signature is invalid")
+    _require(verification.returncode == 0, f"target-system receipt signature is invalid: {verification.stderr.decode('utf-8', errors='replace')}")
 
 
 def _validate_runtime(receipt: dict[str, Any], scope: dict[str, Any]) -> None:
     _require(receipt.get("schemaVersion") == "sovereign.coordinated-release-reconciler-status.v1", "receipt schema mismatch")
-    _require(receipt.get("ok") is True and receipt.get("status") == "COORDINATED_RELEASE_DEPLOYED", "receipt is not a successful coordinated runtime deployment")
+    _require(receipt.get("ok") is True and receipt.get("status") == "COORDINATED_RELEASE_DEPLOYED", f"receipt is not a successful coordinated runtime deployment: status={receipt.get('status')}, ok={receipt.get('ok')}")
     _require(receipt.get("secretValuesReturned") is False, "receipt secret contract is unsafe")
-    _require(receipt.get("revision") == scope["revision"], "receipt revision mismatch")
-    _require(receipt.get("expectedScope") == scope, "receipt expected scope mismatch")
+    _require(receipt.get("revision") == scope["revision"], f"receipt revision mismatch: expected={scope['revision']}, got={receipt.get('revision')}")
+    _require(receipt.get("expectedScope") == scope, f"receipt expected scope mismatch: expected={scope}, got={receipt.get('expectedScope')}")
     _require(receipt.get("evidenceSha256") == _canonical_sha256(receipt, omit="evidenceSha256"), "receipt evidence hash mismatch")
     backend_image = receipt.get("backendImage") if isinstance(receipt.get("backendImage"), dict) else {}
     mcp_image = receipt.get("mcpImage") if isinstance(receipt.get("mcpImage"), dict) else {}
@@ -94,12 +94,12 @@ def _validate_runtime(receipt: dict[str, Any], scope: dict[str, Any]) -> None:
     mcp_runtime = runtime.get("mcp") if isinstance(runtime.get("mcp"), dict) else {}
     broker = runtime.get("broker") if isinstance(runtime.get("broker"), dict) else {}
     patchmon = runtime.get("patchmon") if isinstance(runtime.get("patchmon"), dict) else {}
-    _require(backend_image.get("digest") == scope["backendDigest"], "backend image digest mismatch")
-    _require(mcp_image.get("digest") == scope["mcpDigest"], "MCP image digest mismatch")
-    _require(backend_runtime.get("running") is True and backend_runtime.get("revision") == scope["revision"] and backend_runtime.get("digest") == scope["backendDigest"], "backend runtime parity failed")
-    _require(mcp_runtime.get("running") is True and mcp_runtime.get("health") == "healthy" and mcp_runtime.get("revision") == scope["revision"] and mcp_runtime.get("digest") == scope["mcpDigest"], "MCP runtime parity failed")
-    _require(broker.get("status") == "BROKER_READY", "broker readiness failed")
-    _require(isinstance(patchmon.get("evidenceSha256"), str) and len(patchmon["evidenceSha256"]) == 64, "PatchMon evidence is missing")
+    _require(backend_image.get("digest") == scope["backendDigest"], f"backend image digest mismatch: expected={scope['backendDigest']}, got={backend_image.get('digest')}")
+    _require(mcp_image.get("digest") == scope["mcpDigest"], f"MCP image digest mismatch: expected={scope['mcpDigest']}, got={mcp_image.get('digest')}")
+    _require(backend_runtime.get("running") is True and backend_runtime.get("revision") == scope["revision"] and backend_runtime.get("digest") == scope["backendDigest"], f"backend runtime parity failed: running={backend_runtime.get('running')}, revision={backend_runtime.get('revision')}, digest={backend_runtime.get('digest')}")
+    _require(mcp_runtime.get("running") is True and mcp_runtime.get("health") == "healthy" and mcp_runtime.get("revision") == scope["revision"] and mcp_runtime.get("digest") == scope["mcpDigest"], f"mcp runtime parity failed: running={mcp_runtime.get('running')}, health={mcp_runtime.get('health')}, revision={mcp_runtime.get('revision')}, digest={mcp_runtime.get('digest')}")
+    _require(broker.get("status") == "BROKER_READY", f"broker readiness failed: status={broker.get('status')}")
+    _require(isinstance(patchmon.get("evidenceSha256"), str) and len(patchmon["evidenceSha256"]) == 64, f"PatchMon evidence is missing: {patchmon}")
 
 
 def main() -> int:
@@ -113,7 +113,7 @@ def main() -> int:
         scope = _scope_from_manifest(manifest, release_gate_run_id)
         _require(envelope.get("schemaVersion") == "sovereign.independent-target-runtime-receipt.v1", "envelope schema mismatch")
         _require(envelope.get("secretValuesReturned") is False, "envelope secret contract is unsafe")
-        _require(envelope.get("scope") == scope, "envelope scope does not bind manifest")
+        _require(envelope.get("scope") == scope, f"envelope scope does not bind manifest: expected={scope}, got={envelope.get('scope')}")
         receipt = base64.b64decode(str(envelope.get("receiptBase64") or ""), validate=True)
         signature = base64.b64decode(str(((envelope.get("signature") or {}) if isinstance(envelope.get("signature"), dict) else {}).get("valueBase64") or ""), validate=True)
         _require(hashlib.sha256(receipt).hexdigest() == envelope.get("receiptSha256"), "envelope receipt hash mismatch")
@@ -139,6 +139,7 @@ def main() -> int:
             "schemaVersion": "sovereign.runtime-receipt-verdict.v1",
             "status": "BLOCKED_BY_MISSING_OR_CONTRADICTED_EVIDENCE",
             "failureSha256": hashlib.sha256(str(exc).encode("utf-8")).hexdigest(),
+            "failureDetail": str(exc),
             "secretValuesReturned": False,
         }
         exit_code = 2
