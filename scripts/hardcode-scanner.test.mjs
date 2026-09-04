@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs';
+import { writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
@@ -121,7 +121,7 @@ function cleanupTestFixtures() {
         rmSync(join(process.cwd(), entry), { recursive: true, force: true });
       }
     }
-  } catch (e) {
+  } catch (_e) {
     // Ignore errors during cleanup
   }
 }

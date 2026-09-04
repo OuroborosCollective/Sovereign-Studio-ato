@@ -116,7 +116,7 @@ function scanDirectory(dirPath, allFindings = []) {
         const content = readFileSync(dirPath, 'utf-8');
         const findings = scanFile(dirPath, content);
         allFindings.push(...findings);
-      } catch (err) {
+      } catch (_err) {
         // Skip files that can't be read
       }
     }
@@ -140,7 +140,7 @@ function scanDirectory(dirPath, allFindings = []) {
         const content = readFileSync(fullPath, 'utf-8');
         const findings = scanFile(relativePath, content);
         allFindings.push(...findings);
-      } catch (err) {
+      } catch (_err) {
         // Skip files that can't be read
       }
     }
