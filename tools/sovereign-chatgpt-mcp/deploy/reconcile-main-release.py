@@ -42,6 +42,12 @@ MCP_NESTED_TOOLCHAIN_FAILURE_RE = re.compile(
     r"rollback=(?P<rollback>not-required|verified|failed)"
     r"(?P<diagnostic>.*?) output_sha256=(?P<output_sha256>[0-9a-f]{64})$"
 )
+MCP_NESTED_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC_RE = re.compile(
+    r"^SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC "
+    r"phase=(?P<phase>[a-z][a-z0-9_-]{0,79});"
+    r"error=(?P<error_type>[A-Za-z_][A-Za-z0-9_]{0,79}) "
+    r"output_sha256=(?P<output_sha256>[0-9a-f]{64})$"
+)
 MCP_NESTED_TOOLCHAIN_UV_DIAGNOSTIC_RE = re.compile(
     r"^SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC "
     r"family=(?P<family>CLI_COMPATIBILITY|LOCK_DRIFT|STORAGE|PERMISSION|BUILD_SYSTEM|CACHE_IO|RESOLUTION|PYTHON|NETWORK|OTHER) "
@@ -560,6 +566,14 @@ def _safe_nested_toolchain_diagnostic(reason: str) -> dict[str, Any] | None:
     }
     nested = str(match.group("diagnostic") or "").strip()
     if not nested:
+        return diagnostic
+    auth_match = MCP_NESTED_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC_RE.fullmatch(nested)
+    if auth_match is not None:
+        diagnostic["authCanary"] = {
+            "phase": auth_match.group("phase"),
+            "errorType": auth_match.group("error_type"),
+            "outputSha256": auth_match.group("output_sha256"),
+        }
         return diagnostic
     uv_match = MCP_NESTED_TOOLCHAIN_UV_DIAGNOSTIC_RE.fullmatch(nested)
     if uv_match is not None:

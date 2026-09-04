@@ -101,6 +101,8 @@ def test_installer_atomically_deploys_and_verifies_both_boundaries() -> None:
     assert "read-only token mode crossed into full runtime" in installer
 
     assert "authenticated boundary canary failed" in installer
+    assert "SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC" in installer
+    assert '"status": "AUTHENTICATED_BOUNDARY_CANARY_FAILED"' in installer
     assert "ProxyHandler({})" in installer
     assert "X-Sovereign-Evidence-Capability" in installer
     assert "X-Toolchain-Key" in installer
@@ -160,6 +162,82 @@ def test_activation_rebinds_unit_sources_after_staged_tree_move() -> None:
     assert activation.count(evidence_rebind) == 1
     assert activation.index(tree_move) < activation.index(full_rebind) < activation.index(full_install)
     assert activation.index(tree_move) < activation.index(evidence_rebind) < activation.index(evidence_install)
+
+
+def test_authenticated_boundary_canary_emits_bounded_phase_evidence() -> None:
+    installer = INSTALLER.read_text("utf-8")
+    canary = installer.split('AUTH_CANARY_LOG="$TEMP/authenticated-boundary-canary.log"', 1)[1].split(
+        'PID="$(systemctl show --property MainPID', 1
+    )[0]
+
+    assert "sys.excepthook = _safe_canary_exception_hook" in canary
+    assert 'file=sys.stderr' in canary
+    assert '"status": "AUTHENTICATED_BOUNDARY_CANARY_FAILED"' in canary
+    assert "SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC %s output_sha256=%s" in canary
+    assert "phase_pattern.fullmatch(phase)" in canary
+    assert "error_pattern.fullmatch(error_type)" in canary
+    assert "phase=unclassified;error=UnknownError" in canary
+    assert 'AUTH_CANARY_LOG="$(mktemp)"' not in installer
+    assert 'AUTH_CANARY_LOG="$TEMP/authenticated-boundary-canary.log"' in installer
+    assert 'trap cleanup_stage EXIT' in installer
+    assert 'python3 - "$AUTH_CANARY_LOG" 2>/dev/null' in canary
+    assert 'Path(sys.argv[1]).read_text("utf-8")' in canary
+    assert '<<\'PY\' < "$AUTH_CANARY_LOG"' not in canary
+    for phase in (
+        "protected_credentials",
+        "full_rest_auth",
+        "full_mcp_auth",
+        "evidence_auth_boundaries",
+        "evidence_payload_limits",
+        "evidence_lane_policy",
+        "sovereign_live_evidence",
+        "aurion_live_evidence",
+    ):
+        assert phase in canary
+    assert "str(_error)" not in canary
+    assert "repr(_error)" not in canary
+    assert "traceback.print" not in canary
+
+
+def test_authenticated_boundary_canary_parser_reads_only_allowlisted_log_fields(
+    tmp_path: Path,
+) -> None:
+    installer = INSTALLER.read_text("utf-8")
+    marker = 'python3 - "$AUTH_CANARY_LOG" 2>/dev/null <<\'PY\' || true\n'
+    parser = installer.split(marker, 1)[1].split('\nPY\n  )"', 1)[0]
+    log = tmp_path / "authenticated-boundary-canary.log"
+    log.write_text(
+        '{"status":"AUTHENTICATED_BOUNDARY_CANARY_FAILED",'
+        '"phase":"aurion_live_evidence","errorType":"TimeoutError",'
+        '"privateDetail":"must-not-project"}\n',
+        encoding="utf-8",
+    )
+
+    accepted = subprocess.run(
+        ["python3", "-c", parser, str(log)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert accepted.returncode == 0
+    assert accepted.stdout.strip() == "phase=aurion_live_evidence;error=TimeoutError"
+    assert accepted.stderr == ""
+    assert "must-not-project" not in accepted.stdout
+
+    log.write_text(
+        '{"status":"AUTHENTICATED_BOUNDARY_CANARY_FAILED",'
+        '"phase":"../../escape","errorType":"TimeoutError"}\n',
+        encoding="utf-8",
+    )
+    rejected = subprocess.run(
+        ["python3", "-c", parser, str(log)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode == 0
+    assert rejected.stdout == ""
+    assert rejected.stderr == ""
 
 
 def test_uv_sync_uses_private_staging_cache_under_protect_home() -> None:

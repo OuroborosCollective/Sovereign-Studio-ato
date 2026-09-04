@@ -12,6 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "deploy/reconcile-main-release.py"
 INSTALLER = ROOT / "deploy/install-on-vps.sh"
+TOOLCHAIN_INSTALLER = ROOT.parent / "sovereign-toolchain/deploy/install-on-vps.sh"
 
 
 def _load():
@@ -37,9 +38,16 @@ def test_outer_installer_projects_only_bounded_nested_toolchain_failure() -> Non
     assert "TOOLCHAIN_FAILURE_DIAGNOSTIC=" in installer
     assert "TOOLCHAIN_UV_DIAGNOSTIC=" in installer
     assert "TOOLCHAIN_ROLLBACK_DIAGNOSTIC=" in installer
+    assert "TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC=" in installer
+    assert "TOOLCHAIN_AUTH_CANARY_SUFFIX=" in installer
     assert (
         "^SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE stage=[a-z][a-z0-9_-]{0,79} "
         "reason_sha256=[0-9a-f]{64} rollback=(not-required|verified|failed)$"
+    ) in installer
+    assert (
+        "^SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC "
+        "phase=[a-z][a-z0-9_-]{0,79};error=[A-Za-z_][A-Za-z0-9_]{0,79} "
+        "output_sha256=[0-9a-f]{64}$"
     ) in installer
     assert (
         "^SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=(CLI_COMPATIBILITY|LOCK_DRIFT|STORAGE|PERMISSION|BUILD_SYSTEM|CACHE_IO|RESOLUTION|PYTHON|NETWORK|OTHER) "
@@ -51,17 +59,20 @@ def test_outer_installer_projects_only_bounded_nested_toolchain_failure() -> Non
     ) in installer
     assert (
         'fail "revision-bound toolchain installer failed: '
-        '$TOOLCHAIN_FAILURE_DIAGNOSTIC $TOOLCHAIN_UV_DIAGNOSTIC '
+        '$TOOLCHAIN_FAILURE_DIAGNOSTIC${TOOLCHAIN_AUTH_CANARY_SUFFIX} '
+        '$TOOLCHAIN_UV_DIAGNOSTIC '
         'output_sha256=$TOOLCHAIN_FAILURE_SHA256"'
     ) in installer
     assert (
         'fail "revision-bound toolchain installer failed: '
-        '$TOOLCHAIN_FAILURE_DIAGNOSTIC $TOOLCHAIN_ROLLBACK_DIAGNOSTIC '
+        '$TOOLCHAIN_FAILURE_DIAGNOSTIC${TOOLCHAIN_AUTH_CANARY_SUFFIX} '
+        '$TOOLCHAIN_ROLLBACK_DIAGNOSTIC '
         'output_sha256=$TOOLCHAIN_FAILURE_SHA256"'
     ) in installer
     assert (
         'fail "revision-bound toolchain installer failed: '
-        '$TOOLCHAIN_FAILURE_DIAGNOSTIC output_sha256=$TOOLCHAIN_FAILURE_SHA256"'
+        '$TOOLCHAIN_FAILURE_DIAGNOSTIC${TOOLCHAIN_AUTH_CANARY_SUFFIX} '
+        'output_sha256=$TOOLCHAIN_FAILURE_SHA256"'
     ) in installer
     assert "head -n 1" in installer
     assert '"$TOOLCHAIN_INSTALL_LOG" | tail -n 1' not in installer
@@ -133,6 +144,45 @@ def test_nested_toolchain_uv_diagnostic_projects_only_bounded_fields(
             "grep",
             "-E",
             r"^SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=(CLI_COMPATIBILITY|LOCK_DRIFT|STORAGE|PERMISSION|BUILD_SYSTEM|CACHE_IO|RESOLUTION|PYTHON|NETWORK|OTHER) uv_version=([0-9]+\.[0-9]+\.[0-9]+|unknown) output_sha256=[0-9a-f]{64}$",
+            str(log),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.stdout.splitlines() == [valid]
+    assert "do-not-project-this" not in completed.stdout
+
+
+def test_nested_auth_canary_marker_format_matches_toolchain_producer() -> None:
+    outer = INSTALLER.read_text("utf-8")
+    producer = TOOLCHAIN_INSTALLER.read_text("utf-8")
+
+    assert 'print(f"phase={phase};error={error_type}")' in producer
+    assert (
+        "^SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC "
+        "phase=[a-z][a-z0-9_-]{0,79};error=[A-Za-z_][A-Za-z0-9_]{0,79} "
+        "output_sha256=[0-9a-f]{64}$"
+    ) in outer
+    assert "phase=[a-z][a-z0-9_-]{0,79} error=" not in outer
+
+
+def test_nested_toolchain_auth_canary_diagnostic_projects_only_bounded_fields(tmp_path: Path) -> None:
+    log = tmp_path / "toolchain.log"
+    valid = (
+        "SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC "
+        "phase=aurion_live_evidence;error=TimeoutError output_sha256="
+        + "e" * 64
+    )
+    raw = valid + " detail=do-not-project-this"
+    log.write_text(raw + "\n" + valid + "\n", encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            "grep",
+            "-E",
+            r"^SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC phase=[a-z][a-z0-9_-]{0,79};error=[A-Za-z_][A-Za-z0-9_]{0,79} output_sha256=[0-9a-f]{64}$",
             str(log),
         ],
         check=True,
