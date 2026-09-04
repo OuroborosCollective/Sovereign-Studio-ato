@@ -12,7 +12,7 @@ const SENSITIVE_DIRS = ['core/', 'auth/', 'security/', 'crypto/'];
 function runCmd(cmd, opts = {}) {
     try {
         return execSync(cmd, { cwd: rootDir, encoding: 'utf-8', stdio: 'pipe', ...opts });
-    } catch (e) {
+    } catch {
         return null;
     }
 }
@@ -62,7 +62,7 @@ function detectDrift() {
             if (!Array.isArray(pkgs) || pkgs.length === 0) {
                 drift.push('empty_workspace');
             }
-        } catch (e) {
+        } catch {
             drift.push('invalid_workspace_json');
         }
     }
@@ -71,7 +71,7 @@ function detectDrift() {
     try {
         // Test if lockfile matches package.json
         execSync('pnpm install --frozen-lockfile', { cwd: rootDir, encoding: 'utf-8', stdio: 'ignore' });
-    } catch (e) {
+    } catch {
         drift.push('outdated_lockfile');
     }
 
@@ -220,12 +220,12 @@ function runBuilds(executionOrder) {
     for (const pkg of executionOrder) {
         try {
             runCmdThrow(`pnpm --filter ${pkg} run --if-present build`);
-        } catch (e) {
+        } catch {
             console.error(`Build failed for ${pkg}. Attempting minimal repair...`);
             try {
                 runCmd('pnpm install');
                 runCmdThrow(`pnpm --filter ${pkg} run --if-present build`);
-            } catch (e2) {
+            } catch {
                 process.exit(1);
             }
         }
@@ -239,12 +239,12 @@ function runTests(executionOrder) {
         try {
             runCmdThrow(`pnpm --filter ${pkg} run --if-present test:run`);
             runCmdThrow(`pnpm --filter ${pkg} run --if-present test`);
-        } catch (e) {
+        } catch {
             try {
                 runCmd('pnpm install');
                 runCmdThrow(`pnpm --filter ${pkg} run --if-present test:run`);
                 runCmdThrow(`pnpm --filter ${pkg} run --if-present test`);
-            } catch (e2) {
+            } catch {
                 process.exit(1);
             }
         }

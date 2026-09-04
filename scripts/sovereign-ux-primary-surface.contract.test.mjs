@@ -15,7 +15,7 @@ describe('Sovereign chat-first primary-surface contract', () => {
     expect(app).toContain('BuilderContainer');
     expect(app).toContain('data-testid="sovereign-chat-app"');
     expect(app).toContain('data-layout="chat-first-agent-zero-background"');
-    expect(app).toContain('aria-label="Sovereign Chat"');
+    expect(app).toContain('aria-label="Sovereign Workspace Monitor"');
     expect(app).toContain('<BuilderContainer');
     expect(app).toContain('onStartAgent={startMonitorTask}');
     expect(app).not.toContain('PlayReleaseChat');

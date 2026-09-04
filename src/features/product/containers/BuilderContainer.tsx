@@ -5525,7 +5525,7 @@ Das echte Repo-Setup wurde geöffnet.`);
       ].filter(Boolean).join(" ")}
       data-role={builderContainerContract.dataRole}
       data-testid={builderContainerContract.testId}
-      data-layout={chatPrimary ? "chat-primary-agent-zero-background" : "chat-inspector-modules"}
+      data-layout={chatPrimary ? "chat-primary-agent-zero-background" : "live-desktop-monitor-primary"}
       aria-label={builderContainerContract.ariaLabel}
       style={{
         width: "100%",

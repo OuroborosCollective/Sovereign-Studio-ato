@@ -57,3 +57,6 @@
 ## 2025-08-13 - [Overriding Visible Buttons via ARIA Labels]
 **Learning:** Overriding a button's visible text (e.g., 'Repo-Snapshot laden') with an 'aria-label' that does not match or include that exact text violates the WCAG 'Label in Name' requirement. It also disrupts testing frameworks and standard selectors looking for the visible text.
 **Action:** For buttons with descriptive, dynamic text content, rely on the visible text for the accessible name, and use the 'title' attribute exclusively for stateful hover descriptions rather than using aria-label overrides.
+## 2024-05-24 - Disabled States for Destructive Chat Actions
+**Learning:** Destructive actions like "Clear conversation" in the chat interface were missing disabled states when the chat was already empty. This is a common pattern to overlook, but providing immediate feedback (disabling the button) prevents users from clicking actions that have no effect.
+**Action:** When implementing clearing or deletion actions across the app, always verify that the action is disabled when there is no data to operate on, and provide a helpful tooltip explaining why it is disabled.

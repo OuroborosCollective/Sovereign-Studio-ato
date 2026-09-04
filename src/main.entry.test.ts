@@ -25,7 +25,7 @@ describe('main app entry', () => {
     expect(app).toContain('BuilderContainer');
     expect(app).toContain('data-testid="sovereign-chat-app"');
     expect(app).toContain('data-layout="chat-first-agent-zero-background"');
-    expect(app).toContain('aria-label="Sovereign Chat"');
+    expect(app).toContain('aria-label="Sovereign Workspace Monitor"');
     expect(app).toContain('CHAT_FIRST_STYLE');
     expect(app).not.toContain('data-layout="monitor-first-live-workspace"');
   });

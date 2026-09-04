@@ -105,7 +105,7 @@ describe('current Sovereign app shell contract', () => {
       'BuilderContainer',
       'data-testid="sovereign-chat-app"',
       'data-layout="chat-first-agent-zero-background"',
-      'aria-label="Sovereign Chat"',
+      'aria-label="Sovereign Workspace Monitor"',
       'CHAT_FIRST_STYLE',
       'getDesktopFrame(jobId)',
     ]);
