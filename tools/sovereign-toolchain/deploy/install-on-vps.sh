@@ -416,7 +416,7 @@ assert listeners("/proc/net/tcp", 8002) == {"00000000"}
 assert not listeners("/proc/net/tcp6", 8002)
 PY
 
-AUTH_CANARY_LOG="$(mktemp)"
+AUTH_CANARY_LOG="$TEMP/authenticated-boundary-canary.log"
 set +e
 python3 - "$ENV_TARGET" "$N8N_EVIDENCE_KEY_TARGET" >"$AUTH_CANARY_LOG" 2>&1 <<'PY'
 from pathlib import Path

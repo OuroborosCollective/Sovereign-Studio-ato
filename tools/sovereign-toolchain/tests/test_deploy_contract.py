@@ -166,7 +166,7 @@ def test_activation_rebinds_unit_sources_after_staged_tree_move() -> None:
 
 def test_authenticated_boundary_canary_emits_bounded_phase_evidence() -> None:
     installer = INSTALLER.read_text("utf-8")
-    canary = installer.split('AUTH_CANARY_LOG="$(mktemp)"', 1)[1].split(
+    canary = installer.split('AUTH_CANARY_LOG="$TEMP/authenticated-boundary-canary.log"', 1)[1].split(
         'PID="$(systemctl show --property MainPID', 1
     )[0]
 
@@ -177,6 +177,9 @@ def test_authenticated_boundary_canary_emits_bounded_phase_evidence() -> None:
     assert "phase_pattern.fullmatch(phase)" in canary
     assert "error_pattern.fullmatch(error_type)" in canary
     assert "phase=unclassified;error=UnknownError" in canary
+    assert 'AUTH_CANARY_LOG="$(mktemp)"' not in installer
+    assert 'AUTH_CANARY_LOG="$TEMP/authenticated-boundary-canary.log"' in installer
+    assert 'trap cleanup_stage EXIT' in installer
     assert 'python3 - "$AUTH_CANARY_LOG" 2>/dev/null' in canary
     assert 'Path(sys.argv[1]).read_text("utf-8")' in canary
     assert '<<\'PY\' < "$AUTH_CANARY_LOG"' not in canary
