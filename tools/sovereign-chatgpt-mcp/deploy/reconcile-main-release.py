@@ -44,7 +44,7 @@ MCP_NESTED_TOOLCHAIN_FAILURE_RE = re.compile(
 )
 MCP_NESTED_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC_RE = re.compile(
     r"^SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC "
-    r"phase=(?P<phase>[a-z][a-z0-9_-]{0,79}) "
+    r"phase=(?P<phase>[a-z][a-z0-9_-]{0,79});"
     r"error=(?P<error_type>[A-Za-z_][A-Za-z0-9_]{0,79}) "
     r"output_sha256=(?P<output_sha256>[0-9a-f]{64})$"
 )

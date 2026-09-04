@@ -77,7 +77,7 @@ def test_nested_auth_canary_diagnostic_is_projected_without_raw_reason(monkeypat
         + "7" * 64
         + " rollback=verified "
         "SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC "
-        "phase=aurion_live_evidence error=TimeoutError output_sha256="
+        "phase=aurion_live_evidence;error=TimeoutError output_sha256="
         + "8" * 64
         + " output_sha256="
         + "9" * 64

@@ -12,6 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "deploy/reconcile-main-release.py"
 INSTALLER = ROOT / "deploy/install-on-vps.sh"
+TOOLCHAIN_INSTALLER = ROOT.parent / "sovereign-toolchain/deploy/install-on-vps.sh"
 
 
 def _load():
@@ -45,7 +46,7 @@ def test_outer_installer_projects_only_bounded_nested_toolchain_failure() -> Non
     ) in installer
     assert (
         "^SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC "
-        "phase=[a-z][a-z0-9_-]{0,79} error=[A-Za-z_][A-Za-z0-9_]{0,79} "
+        "phase=[a-z][a-z0-9_-]{0,79};error=[A-Za-z_][A-Za-z0-9_]{0,79} "
         "output_sha256=[0-9a-f]{64}$"
     ) in installer
     assert (
@@ -154,11 +155,24 @@ def test_nested_toolchain_uv_diagnostic_projects_only_bounded_fields(
     assert "do-not-project-this" not in completed.stdout
 
 
+def test_nested_auth_canary_marker_format_matches_toolchain_producer() -> None:
+    outer = INSTALLER.read_text("utf-8")
+    producer = TOOLCHAIN_INSTALLER.read_text("utf-8")
+
+    assert 'print(f"phase={phase};error={error_type}")' in producer
+    assert (
+        "^SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC "
+        "phase=[a-z][a-z0-9_-]{0,79};error=[A-Za-z_][A-Za-z0-9_]{0,79} "
+        "output_sha256=[0-9a-f]{64}$"
+    ) in outer
+    assert "phase=[a-z][a-z0-9_-]{0,79} error=" not in outer
+
+
 def test_nested_toolchain_auth_canary_diagnostic_projects_only_bounded_fields(tmp_path: Path) -> None:
     log = tmp_path / "toolchain.log"
     valid = (
         "SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC "
-        "phase=aurion_live_evidence error=TimeoutError output_sha256="
+        "phase=aurion_live_evidence;error=TimeoutError output_sha256="
         + "e" * 64
     )
     raw = valid + " detail=do-not-project-this"
@@ -168,7 +182,7 @@ def test_nested_toolchain_auth_canary_diagnostic_projects_only_bounded_fields(tm
         [
             "grep",
             "-E",
-            r"^SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC phase=[a-z][a-z0-9_-]{0,79} error=[A-Za-z_][A-Za-z0-9_]{0,79} output_sha256=[0-9a-f]{64}$",
+            r"^SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC phase=[a-z][a-z0-9_-]{0,79};error=[A-Za-z_][A-Za-z0-9_]{0,79} output_sha256=[0-9a-f]{64}$",
             str(log),
         ],
         check=True,

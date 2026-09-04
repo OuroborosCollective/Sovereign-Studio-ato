@@ -3514,7 +3514,7 @@ if [[ "$DEPLOYMENT_SOURCE_SCOPE" == "full-repository" ]]; then
         "$TOOLCHAIN_INSTALL_LOG" | head -n 1 | tr -d '\r\n' | cut -c1-512 || true
     )"
     TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC="$(
-      grep -E '^SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC phase=[a-z][a-z0-9_-]{0,79} error=[A-Za-z_][A-Za-z0-9_]{0,79} output_sha256=[0-9a-f]{64}$' \
+      grep -E '^SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC phase=[a-z][a-z0-9_-]{0,79};error=[A-Za-z_][A-Za-z0-9_]{0,79} output_sha256=[0-9a-f]{64}$' \
         "$TOOLCHAIN_INSTALL_LOG" | head -n 1 | tr -d '\r\n' | cut -c1-512 || true
     )"
     TOOLCHAIN_UV_DIAGNOSTIC="$(
