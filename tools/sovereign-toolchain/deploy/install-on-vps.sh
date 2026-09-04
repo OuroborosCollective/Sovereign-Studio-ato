@@ -317,6 +317,10 @@ mv "$TEMP/sovereign-toolchain" "$TARGET"
 mv "$TEMP/sovereign-legacy-mcp-common" "$COMMON_TARGET"
 chmod -R u=rwX,go=rX "$TARGET" "$COMMON_TARGET"
 
+# The staged tree now lives at TARGET. Rebind unit sources before reading them;
+# otherwise atomic_install would dereference the already-moved TEMP paths.
+UNIT_SOURCE="$TARGET/deploy/sovereign-toolchain.service"
+EVIDENCE_UNIT_SOURCE="$TARGET/deploy/sovereign-toolchain-n8n-evidence.service"
 atomic_install 0644 "$UNIT_SOURCE" "$UNIT_TARGET"
 atomic_install 0644 "$EVIDENCE_UNIT_SOURCE" "$EVIDENCE_UNIT_TARGET"
 atomic_install 0600 "$TEMP/runtime.env" "$ENV_TARGET"

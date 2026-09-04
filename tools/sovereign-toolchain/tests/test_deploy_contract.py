@@ -141,6 +141,26 @@ def test_installer_atomically_deploys_and_verifies_both_boundaries() -> None:
     assert "n8n evidence master key leaked into process environment" in installer
 
 
+def test_activation_rebinds_unit_sources_after_staged_tree_move() -> None:
+    installer = INSTALLER.read_text("utf-8")
+    activation = installer.split("MUTATION_STARTED=1", 1)[1].split("STAGE=runtime", 1)[0]
+
+    tree_move = 'mv "$TEMP/sovereign-toolchain" "$TARGET"'
+    full_rebind = 'UNIT_SOURCE="$TARGET/deploy/sovereign-toolchain.service"'
+    evidence_rebind = (
+        'EVIDENCE_UNIT_SOURCE="$TARGET/deploy/'
+        'sovereign-toolchain-n8n-evidence.service"'
+    )
+    full_install = 'atomic_install 0644 "$UNIT_SOURCE" "$UNIT_TARGET"'
+    evidence_install = (
+        'atomic_install 0644 "$EVIDENCE_UNIT_SOURCE" "$EVIDENCE_UNIT_TARGET"'
+    )
+
+    assert activation.count(full_rebind) == 1
+    assert activation.count(evidence_rebind) == 1
+    assert activation.index(tree_move) < activation.index(full_rebind) < activation.index(full_install)
+    assert activation.index(tree_move) < activation.index(evidence_rebind) < activation.index(evidence_install)
+
 
 def test_uv_sync_uses_private_staging_cache_under_protect_home() -> None:
     installer = INSTALLER.read_text("utf-8")
