@@ -2405,7 +2405,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(screen.getByLabelText("init"));
     expect(screen.getByTestId("builder-container")).toHaveAttribute(
       "data-layout",
-      "chat-inspector-modules",
+      "live-desktop-monitor-primary",
     );
 
     await act(async () => {

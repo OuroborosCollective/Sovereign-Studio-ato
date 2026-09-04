@@ -519,7 +519,7 @@ function SovereignChatApp() {
       <main
         data-testid="sovereign-chat-app"
         data-layout="chat-first-agent-zero-background"
-        aria-label="Sovereign Chat"
+        aria-label="Sovereign Workspace Monitor"
         data-legacy-backend-image-marker="DevChat sovereign-release-chat play-release-chat"
         style={CHAT_FIRST_STYLE}
       >
