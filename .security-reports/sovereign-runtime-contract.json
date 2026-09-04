@@ -1,6 +1,6 @@
 {
   "name": "Sovereign Runtime Contract Scan",
-  "generatedAt": "2026-06-26T22:44:53.378Z",
+  "generatedAt": "2026-09-04T23:28:33.024Z",
   "status": "pass",
   "checks": [
     {
@@ -33,6 +33,22 @@
       "message": "App shell is required.",
       "details": {
         "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "file:src/features/product/components/LiveWorkspaceMonitor.tsx",
+      "ok": true,
+      "message": "Live workspace monitor surface is required.",
+      "details": {
+        "filePath": "src/features/product/components/LiveWorkspaceMonitor.tsx"
+      }
+    },
+    {
+      "id": "file:src/features/product/components/MonitorCommunicationDock.tsx",
+      "ok": true,
+      "message": "Compact monitor communication dock is required.",
+      "details": {
+        "filePath": "src/features/product/components/MonitorCommunicationDock.tsx"
       }
     },
     {
@@ -92,6 +108,118 @@
       }
     },
     {
+      "id": "file:scripts/frontend_endpoint_contracts.py",
+      "ok": true,
+      "message": "Frontend endpoint contract compiler is required.",
+      "details": {
+        "filePath": "scripts/frontend_endpoint_contracts.py"
+      }
+    },
+    {
+      "id": "file:scripts/tests/test_frontend_endpoint_contracts.py",
+      "ok": true,
+      "message": "Frontend endpoint compiler regressions are required.",
+      "details": {
+        "filePath": "scripts/tests/test_frontend_endpoint_contracts.py"
+      }
+    },
+    {
+      "id": "file:scripts/vitest_causal_runner.py",
+      "ok": true,
+      "message": "Bounded Vitest causal evidence runner is required.",
+      "details": {
+        "filePath": "scripts/vitest_causal_runner.py"
+      }
+    },
+    {
+      "id": "file:scripts/tests/test_vitest_causal_runner.py",
+      "ok": true,
+      "message": "Vitest causal evidence runner regressions are required.",
+      "details": {
+        "filePath": "scripts/tests/test_vitest_causal_runner.py"
+      }
+    },
+    {
+      "id": "file:scripts/frontend_test_gate.py",
+      "ok": true,
+      "message": "Shell-free frontend test gate orchestrator is required.",
+      "details": {
+        "filePath": "scripts/frontend_test_gate.py"
+      }
+    },
+    {
+      "id": "file:scripts/tests/test_frontend_test_gate.py",
+      "ok": true,
+      "message": "Frontend test gate orchestrator regressions are required.",
+      "details": {
+        "filePath": "scripts/tests/test_frontend_test_gate.py"
+      }
+    },
+    {
+      "id": "file:tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
+      "ok": true,
+      "message": "Built-browser endpoint smoke is required.",
+      "details": {
+        "filePath": "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
+      }
+    },
+    {
+      "id": "file:src/features/admin/api/adminApiClient.ownerInput.test.ts",
+      "ok": true,
+      "message": "Protected owner-input endpoint regression is required.",
+      "details": {
+        "filePath": "src/features/admin/api/adminApiClient.ownerInput.test.ts"
+      }
+    },
+    {
+      "id": "file:src/features/billing/billingSlice.test.ts",
+      "ok": true,
+      "message": "Billing endpoint regression is required.",
+      "details": {
+        "filePath": "src/features/billing/billingSlice.test.ts"
+      }
+    },
+    {
+      "id": "file:src/features/knowledge/knowledgeApi.test.ts",
+      "ok": true,
+      "message": "Knowledge endpoint regression is required.",
+      "details": {
+        "filePath": "src/features/knowledge/knowledgeApi.test.ts"
+      }
+    },
+    {
+      "id": "file:src/features/rescue/rescueClient.test.ts",
+      "ok": true,
+      "message": "Rescue endpoint regression is required.",
+      "details": {
+        "filePath": "src/features/rescue/rescueClient.test.ts"
+      }
+    },
+    {
+      "id": "file:src/features/toolchain/toolchainApi.test.ts",
+      "ok": true,
+      "message": "Toolchain endpoint regression is required.",
+      "details": {
+        "filePath": "src/features/toolchain/toolchainApi.test.ts"
+      }
+    },
+    {
+      "id": "file:src/features/toolchain/skillsApi.test.ts",
+      "ok": true,
+      "message": "Skill endpoint regression is required.",
+      "details": {
+        "filePath": "src/features/toolchain/skillsApi.test.ts"
+      }
+    },
+    {
+      "id": "file:docs/architecture/FRONTEND_ENDPOINT_CONTRACTS.v1.md",
+      "ok": true,
+      "message": "Frontend endpoint truth-boundary documentation is required.",
+      "details": {
+        "filePath": "docs/architecture/FRONTEND_ENDPOINT_CONTRACTS.v1.md"
+      }
+    },
+    {
       "id": "script:type-check",
       "ok": true,
       "message": "TypeScript check script is available.",
@@ -133,19 +261,328 @@
       }
     },
     {
-      "id": "main:imports-app",
+      "id": "script:frontend-endpoints",
       "ok": true,
-      "message": "main.tsx imports the app shell.",
+      "message": "Frontend endpoint compiler and regression script is available.",
+      "details": {
+        "found": [
+          "test:frontend-endpoints"
+        ]
+      }
+    },
+    {
+      "id": "script:frontend-endpoints-e2e",
+      "ok": true,
+      "message": "Frontend endpoint Playwright smoke script is available.",
+      "details": {
+        "found": [
+          "test:e2e:frontend-endpoints"
+        ]
+      }
+    },
+    {
+      "id": "workflow:frontend-endpoint-contracts",
+      "ok": true,
+      "message": "Runtime contract workflow executes the canonical smoke gate.",
+      "details": {
+        "filePath": ".github/workflows/sovereign-contract-scan.yml"
+      }
+    },
+    {
+      "id": "workflow:frontend-endpoint-smoke-chain",
+      "ok": true,
+      "message": "The canonical smoke gate runs the fixed shell-free frontend test orchestrator.",
+      "details": {
+        "filePath": "package.json"
+      }
+    },
+    {
+      "id": "workflow:frontend-endpoint-targeted-chain",
+      "ok": true,
+      "message": "The targeted endpoint gate preserves the existing endpoint assurance and then runs the fixed shell-free orchestrator in endpoint mode.",
+      "details": {
+        "filePath": "package.json"
+      }
+    },
+    {
+      "id": "workflow:frontend-endpoint-e2e",
+      "ok": true,
+      "message": "Current App E2E workflow executes the endpoint browser smoke through the full Playwright suite.",
+      "details": {
+        "filePath": ".github/workflows/e2e-testing.yml"
+      }
+    },
+    {
+      "id": "frontend-endpoints:external-inventory",
+      "ok": true,
+      "message": "Endpoint compiler preserves third-party request inventory separately from backend routes.",
+      "details": {
+        "filePath": "scripts/frontend_endpoint_contracts.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:legacy-import-gate",
+      "ok": true,
+      "message": "Endpoint compiler rejects active reactivation of legacy endpoint surfaces.",
+      "details": {
+        "filePath": "scripts/frontend_endpoint_contracts.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:mutation-test-gate",
+      "ok": true,
+      "message": "Endpoint compiler rejects active mutation requests without test evidence.",
+      "details": {
+        "filePath": "scripts/frontend_endpoint_contracts.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:mutation-test-count",
+      "ok": true,
+      "message": "Endpoint report exposes the mutation test-evidence count.",
+      "details": {
+        "filePath": "scripts/frontend_endpoint_contracts.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:targeted-client-tests",
+      "ok": true,
+      "message": "Frontend test gate executes all targeted client regression suites.",
+      "details": {
+        "filePath": "scripts/frontend_test_gate.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:targeted-causal-runner",
+      "ok": true,
+      "message": "Targeted endpoint clients use the bounded causal Vitest runner.",
+      "details": {
+        "filePath": "scripts/frontend_test_gate.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:broad-causal-runner",
+      "ok": true,
+      "message": "The broad frontend smoke uses the bounded causal Vitest runner.",
+      "details": {
+        "filePath": "scripts/frontend_test_gate.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:compiler-stage-fallback",
+      "ok": true,
+      "message": "The endpoint compiler stage emits a bounded failure identity.",
+      "details": {
+        "filePath": "scripts/frontend_test_gate.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:client-stage-fallback",
+      "ok": true,
+      "message": "The targeted client stage emits a bounded fallback identity if its runner aborts.",
+      "details": {
+        "filePath": "scripts/frontend_test_gate.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:smoke-stage-fallback",
+      "ok": true,
+      "message": "The broad smoke stage emits a bounded fallback identity if its runner aborts.",
+      "details": {
+        "filePath": "scripts/frontend_test_gate.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:bounded-stage-capture",
+      "ok": true,
+      "message": "The frontend test gate captures stage output instead of replaying raw logs.",
+      "details": {
+        "filePath": "scripts/frontend_test_gate.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:junit-failure-fallback",
+      "ok": true,
+      "message": "Every failed frontend gate stage emits a bounded single-test JUnit fallback.",
+      "details": {
+        "filePath": "scripts/frontend_test_gate.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:junit-causal-identity",
+      "ok": true,
+      "message": "The JUnit fallback binds only the redacted causal or stage identity.",
+      "details": {
+        "filePath": "scripts/frontend_test_gate.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:pytest-causal-token",
+      "ok": true,
+      "message": "The gate extracts only the first whitespace-free Pytest FAILED or ERROR identity.",
+      "details": {
+        "filePath": "scripts/frontend_test_gate.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:pytest-causal-forwarding",
+      "ok": true,
+      "message": "The Python regression stage forwards bounded causal test identities.",
+      "details": {
+        "filePath": "scripts/frontend_test_gate.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:no-shell-gate",
+      "ok": true,
+      "message": "The frontend test gate must never execute through a shell.",
+      "details": {
+        "filePath": "scripts/frontend_test_gate.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:causal-failure-identity",
+      "ok": true,
+      "message": "The causal runner emits a Pytest-compatible file and test identity.",
+      "details": {
+        "filePath": "scripts/vitest_causal_runner.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:no-raw-vitest-output",
+      "ok": true,
+      "message": "The causal runner does not project raw Vitest stdout or stderr.",
+      "details": {
+        "filePath": "scripts/vitest_causal_runner.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:ephemeral-raw-vitest-report",
+      "ok": true,
+      "message": "Raw Vitest JSON exists only in an automatically deleted temporary directory.",
+      "details": {
+        "filePath": "scripts/vitest_causal_runner.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:redacted-summary-only",
+      "ok": true,
+      "message": "Persisted Vitest evidence explicitly records that the raw report was not retained.",
+      "details": {
+        "filePath": "scripts/vitest_causal_runner.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:bounded-summary-path",
+      "ok": true,
+      "message": "Only a bounded redacted Vitest summary is written to the security report directory.",
+      "details": {
+        "filePath": "scripts/vitest_causal_runner.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:no-shell-runner",
+      "ok": true,
+      "message": "The causal runner must never invoke Vitest through a shell.",
+      "details": {
+        "filePath": "scripts/vitest_causal_runner.py"
+      }
+    },
+    {
+      "id": "frontend-endpoints:e2e-import-readback",
+      "ok": true,
+      "message": "Browser smoke reads the import-boundary verdict from the exact report.",
+      "details": {
+        "filePath": "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
+      }
+    },
+    {
+      "id": "frontend-endpoints:e2e-mutation-test-readback",
+      "ok": true,
+      "message": "Browser smoke reads the mutation test-evidence verdict from the exact report.",
+      "details": {
+        "filePath": "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
+      }
+    },
+    {
+      "id": "frontend-endpoints:e2e-unexpected-api-denial",
+      "ok": true,
+      "message": "Browser smoke fails when the tested journey emits an unexpected first-party API request.",
+      "details": {
+        "filePath": "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
+      }
+    },
+    {
+      "id": "frontend-endpoints:e2e-pageerror-denial",
+      "ok": true,
+      "message": "Browser smoke fails on uncaught page errors.",
+      "details": {
+        "filePath": "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
+      }
+    },
+    {
+      "id": "frontend-endpoints:e2e-truth-boundary",
+      "ok": true,
+      "message": "Browser smoke does not promote adapter observations to external runtime truth.",
+      "details": {
+        "filePath": "tests/e2e/frontend-endpoint-contract-smoke.spec.ts"
+      }
+    },
+    {
+      "id": "providers:legacy-direct-manager-classified",
+      "ok": true,
+      "message": "Historical direct provider manager is explicitly outside the current production graph.",
+      "details": {
+        "filePath": "src/features/ai/providerManager.ts"
+      }
+    },
+    {
+      "id": "providers:backend-bridge-active",
+      "ok": true,
+      "message": "Current product LLM adapters retain the backend-owned online bridge.",
+      "details": {
+        "filePath": "src/features/product/llm/sovereignLlmAdapters.ts"
+      }
+    },
+    {
+      "id": "providers:local-safe-active",
+      "ok": true,
+      "message": "Current product LLM adapters retain the local non-network fallback.",
+      "details": {
+        "filePath": "src/features/product/llm/sovereignLlmAdapters.ts"
+      }
+    },
+    {
+      "id": "providers:no-direct-browser-adapters",
+      "ok": true,
+      "message": "Current product LLM assembly must not reactivate direct browser provider adapters.",
+      "details": {
+        "filePath": "src/features/product/llm/sovereignLlmAdapters.ts"
+      }
+    },
+    {
+      "id": "billing:no-phantom-endpoints",
+      "ok": true,
+      "message": "Billing frontend must not call unimplemented cancel or restore routes.",
+      "details": {
+        "filePath": "src/features/billing/billingSlice.ts"
+      }
+    },
+    {
+      "id": "main:imports-wrapper",
+      "ok": true,
+      "message": "main.tsx imports the Sovereign runtime wrapper.",
       "details": {
         "filePath": "src/main.tsx",
         "imports": [
           "react",
           "react-dom/client",
+          "react-redux",
           "posthog-js",
           "./SovereignAppWrapper",
           "./components/ErrorBoundary",
-          "./global-runtime-monitor",
           "./store",
+          "./features/product/runtime/sovereignWorkspaceCommand",
           "./runtime-adapter",
           "./index.css",
           "./styles/arelogic-brand.css",
@@ -157,7 +594,7 @@
     {
       "id": "main:renders-app",
       "ok": true,
-      "message": "main.tsx renders App.",
+      "message": "main.tsx renders App through the wrapper import.",
       "details": {
         "filePath": "src/main.tsx"
       }
@@ -187,59 +624,195 @@
       }
     },
     {
-      "id": "app:github-repo-hook",
+      "id": "wrapper:renders-inner-app",
       "ok": true,
-      "message": "App uses real GitHub repo runtime hook.",
+      "message": "Sovereign wrapper renders the inner App without owning product truth.",
+      "details": {
+        "filePath": "src/SovereignAppWrapper.tsx"
+      }
+    },
+    {
+      "id": "wrapper:passthrough-only",
+      "ok": true,
+      "message": "Sovereign wrapper is a passthrough and does not create product truth.",
+      "details": {
+        "filePath": "src/SovereignAppWrapper.tsx"
+      }
+    },
+    {
+      "id": "wrapper:no-own-runtime-state",
+      "ok": true,
+      "message": "Sovereign wrapper must not own runtime state or inspect DOM.",
+      "details": {
+        "filePath": "src/SovereignAppWrapper.tsx"
+      }
+    },
+    {
+      "id": "app:monitor-builder-root",
+      "ok": true,
+      "message": "App routes the authenticated root to the canonical Builder monitor.",
       "details": {
         "filePath": "src/App.tsx"
       }
     },
     {
-      "id": "app:sequential-step-runner",
+      "id": "app:chat-root-test-id",
       "ok": true,
-      "message": "App routes important work through sequential runtime.",
+      "message": "Chat-first App exposes its stable root test id.",
       "details": {
         "filePath": "src/App.tsx"
       }
     },
     {
-      "id": "app:telemetry-publisher",
+      "id": "app:chat-root-layout",
       "ok": true,
-      "message": "App publishes telemetry for runtime handoff visibility.",
+      "message": "Chat-first App exposes its canonical conversation layout.",
       "details": {
         "filePath": "src/App.tsx"
       }
     },
     {
-      "id": "app:coach-derived-from-runtime",
+      "id": "app:chat-root-label",
       "ok": true,
-      "message": "Coach state is derived from runtime state.",
+      "message": "Chat-first App exposes its accessibility label.",
       "details": {
         "filePath": "src/App.tsx"
       }
     },
     {
-      "id": "app:coach-bridge",
+      "id": "app:monitor-runtime-wiring",
       "ok": true,
-      "message": "App publishes coach state to runtime bridge.",
+      "message": "App wires the visible Builder to the canonical workspace Agent boundary.",
       "details": {
         "filePath": "src/App.tsx"
       }
     },
     {
-      "id": "app:real-package-builder",
+      "id": "app:observatory-preserved",
       "ok": true,
-      "message": "App uses real package builder from repo files.",
+      "message": "The evidence observatory remains an explicit secondary route.",
       "details": {
         "filePath": "src/App.tsx"
       }
     },
     {
-      "id": "app:draft-pr-publisher",
+      "id": "app:observatory-route-contract",
       "ok": true,
-      "message": "App keeps Draft PR publishing wired.",
+      "message": "Both observatory paths and the query compatibility route remain reachable.",
       "details": {
         "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:no-release-chat-root",
+      "ok": true,
+      "message": "The authenticated root must not regress to the retired chat-only release surface.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "builder:llm-action-boundary",
+      "ok": true,
+      "message": "Builder uses the online structured LLM contract as the repository-action boundary.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:structured-action-preview",
+      "ok": true,
+      "message": "A valid LLM action becomes a structured visible integration draft.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:explicit-action-confirmation",
+      "ok": true,
+      "message": "The workspace Agent starts only from the visible draft confirmation callback.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:access-is-not-action-consent",
+      "ok": true,
+      "message": "Opening GitHub access must keep the repository action unconfirmed.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:secret-before-llm",
+      "ok": true,
+      "message": "Builder rejects secret-shaped monitor input before the LLM compiler.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:old-menu-trigger",
+      "ok": true,
+      "message": "The restored monitor keeps the owner-visible menu trigger.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:old-menu-dialog",
+      "ok": true,
+      "message": "The restored monitor keeps the owner-visible side menu.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:compact-model-picker",
+      "ok": true,
+      "message": "The monitor keeps the model catalog behind a compact searchable picker.",
+      "details": {
+        "filePath": "src/features/product/components/MonitorCommunicationDock.tsx"
+      }
+    },
+    {
+      "id": "app:no-retired-agent-wiring",
+      "ok": true,
+      "message": "App must not restore retired external-agent client or start symbols.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "builder:repo-url-monitor-detection",
+      "ok": true,
+      "message": "Builder detects exact GitHub repo URLs from the monitor communication dock.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:repo-tree-runtime-load",
+      "ok": true,
+      "message": "Builder loads repo snapshots through the runtime bridge.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:github-access-validation",
+      "ok": true,
+      "message": "Builder validates GitHub access before write execution.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:action-stream-visible",
+      "ok": true,
+      "message": "Builder shows route-agnostic action stream state.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
       }
     },
     {
@@ -275,17 +848,33 @@
       }
     },
     {
-      "id": "builder:analyze-visible",
+      "id": "builder:monitor-input-visible",
       "ok": true,
-      "message": "Builder exposes a visible mission analysis/preparation action.",
+      "message": "Builder exposes LLM communication inside the monitor instead of a chat-first surface.",
       "details": {
         "filePath": "src/features/product/containers/BuilderContainer.tsx"
       }
     },
     {
-      "id": "builder:start-visible",
+      "id": "builder:chat-primary-layout",
       "ok": true,
-      "message": "Builder exposes a visible task start action.",
+      "message": "Builder declares the permanent chat-first primary layout.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:executor-start-prop",
+      "ok": true,
+      "message": "Builder keeps the internal Agent start path wired as one route.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:no-retired-agent-start-prop",
+      "ok": true,
+      "message": "Builder must not restore the retired external-agent start prop.",
       "details": {
         "filePath": "src/features/product/containers/BuilderContainer.tsx"
       }
@@ -409,14 +998,6 @@
       }
     },
     {
-      "id": "monitor:installed",
-      "ok": true,
-      "message": "main.tsx should install the global monitor.",
-      "details": {
-        "filePath": "src/main.tsx"
-      }
-    },
-    {
       "id": "android:directory",
       "ok": true,
       "message": "Android project directory exists.",
@@ -429,6 +1010,15 @@
       "details": {}
     }
   ],
-  "warnings": [],
+  "warnings": [
+    {
+      "id": "monitor:installed",
+      "message": "main.tsx should install the global monitor.",
+      "details": {
+        "filePath": "src/main.tsx",
+        "pattern": "/installGlobalRuntimeMonitor/"
+      }
+    }
+  ],
   "errors": []
 }

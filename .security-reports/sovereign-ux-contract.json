@@ -1,6 +1,6 @@
 {
   "name": "Sovereign UX Contract Scan",
-  "generatedAt": "2026-08-26T01:20:20.795Z",
+  "generatedAt": "2026-09-04T23:28:33.109Z",
   "status": "pass",
   "checks": [
     {
@@ -332,9 +332,9 @@
       }
     },
     {
-      "id": "builder:monitor-primary-visible",
+      "id": "builder:chat-primary-visible",
       "ok": true,
-      "message": "Builder must expose the monitor-first workbench and embedded LLM communication dock.",
+      "message": "Builder must expose the chat-first workbench with model and tool selection while Agent Zero/runtime stay behind the conversation.",
       "details": {
         "filePath": "src/features/product/containers/BuilderContainer.tsx"
       }
@@ -366,7 +366,7 @@
     {
       "id": "builder:start-visible",
       "ok": true,
-      "message": "The monitor communication dock must submit through the live runtime handler.",
+      "message": "The chat communication dock must submit through the live runtime handler.",
       "details": {
         "filePath": "src/features/product/containers/BuilderContainer.tsx"
       }
@@ -470,7 +470,7 @@
     {
       "id": "builder:mission-form-bound",
       "ok": true,
-      "message": "Builder must bind the mission input state to the live monitor communication dock.",
+      "message": "Builder must bind the mission input state to the live chat communication dock.",
       "details": {
         "filePath": "src/features/product/containers/BuilderContainer.tsx"
       }
@@ -924,35 +924,67 @@
       }
     },
     {
-      "id": "app:monitor-root-test-id",
+      "id": "app:chat-builder-root",
       "ok": true,
-      "message": "App must expose the monitor-first live root.",
+      "message": "App must render the canonical chat-first Builder root.",
       "details": {
         "filePath": "src/App.tsx"
       }
     },
     {
-      "id": "app:monitor-layout-bound",
+      "id": "app:chat-root-test-id",
       "ok": true,
-      "message": "App must declare monitor-first live workspace layout.",
+      "message": "Chat-first App must expose its stable root test id.",
       "details": {
         "filePath": "src/App.tsx"
       }
     },
     {
-      "id": "app:monitor-aria-label-bound",
+      "id": "app:chat-root-layout",
       "ok": true,
-      "message": "App must expose the Sovereign Workspace Monitor aria label.",
+      "message": "Chat-first App must declare its conversation-first layout.",
       "details": {
         "filePath": "src/App.tsx"
       }
     },
     {
-      "id": "app:no-chat-only-layout",
+      "id": "app:chat-root-aria-label",
       "ok": true,
-      "message": "The legacy chat-only app layout must not return.",
+      "message": "Chat-first App must expose its accessibility label.",
       "details": {
         "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:observatory-route-preserved",
+      "ok": true,
+      "message": "The evidence observatory must remain reachable outside the default monitor root.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:no-retired-primary-layout",
+      "ok": true,
+      "message": "The retired release-chat and forced monitor-first roots must not return.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "builder:menu-reachable",
+      "ok": true,
+      "message": "The owner-visible menu trigger and dialog must remain in the monitor surface.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:compact-model-picker",
+      "ok": true,
+      "message": "The complete model catalog must remain behind a compact searchable picker.",
+      "details": {
+        "filePath": "src/features/product/components/MonitorCommunicationDock.tsx"
       }
     },
     {
@@ -966,7 +998,7 @@
     {
       "id": "builder:primary-surface-layout-bound",
       "ok": true,
-      "message": "Builder must keep the workspace monitor primary while using a separate technical inspector layout.",
+      "message": "Builder must keep chat primary while using a separate technical inspector layout.",
       "details": {
         "filePath": "src/features/product/containers/BuilderContainer.tsx"
       }

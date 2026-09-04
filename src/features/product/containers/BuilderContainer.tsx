@@ -5791,6 +5791,9 @@ Das echte Repo-Setup wurde geöffnet.`);
               );
             })()}
             <MonitorCommunicationDock
+              value={wishText}
+              onChange={setWishText}
+              onSubmit={() => { void handleSubmit(); }}
               mode="chat"
               emptyState={wishText.trim() ? null : (
                 <div style={{ width: 'min(760px, 100%)', textAlign: 'center' }}>
@@ -5811,9 +5814,6 @@ Das echte Repo-Setup wurde geöffnet.`);
                   />
                 </div>
               )}
-              value={wishText}
-              onChange={setWishText}
-              onSubmit={() => { void handleSubmit(); }}
               disabled={submitDisabled}
               busy={localRepoLoading || chatResponseBusy || isPublishing}
               runtimeStatus={workStateStatus}
