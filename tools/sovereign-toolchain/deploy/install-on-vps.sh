@@ -416,7 +416,9 @@ assert listeners("/proc/net/tcp", 8002) == {"00000000"}
 assert not listeners("/proc/net/tcp6", 8002)
 PY
 
-python3 - "$ENV_TARGET" "$N8N_EVIDENCE_KEY_TARGET" <<'PY' || fail "authenticated boundary canary failed"
+AUTH_CANARY_LOG="$(mktemp)"
+set +e
+python3 - "$ENV_TARGET" "$N8N_EVIDENCE_KEY_TARGET" >"$AUTH_CANARY_LOG" 2>&1 <<'PY'
 from pathlib import Path
 import hashlib
 import hmac
@@ -428,6 +430,31 @@ import stat
 import sys
 import urllib.error
 import urllib.request
+
+canary_phase = "protected_credentials"
+
+
+def _safe_canary_exception_hook(error_type, _error, _traceback) -> None:
+    error_name = str(getattr(error_type, "__name__", "UnknownError"))
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", error_name):
+        error_name = "UnknownError"
+    print(
+        json.dumps(
+            {
+                "status": "AUTHENTICATED_BOUNDARY_CANARY_FAILED",
+                "phase": canary_phase,
+                "errorType": error_name,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+sys.excepthook = _safe_canary_exception_hook
+
 
 def protected_text(path_text: str) -> str:
     path = Path(path_text)
@@ -488,6 +515,7 @@ def request(target: str, *, method: str = "GET", payload=None, headers=None, tim
         body = error.read()
         return error.code, body, dict(error.headers)
 
+canary_phase = "full_rest_auth"
 tool_call = {"args": {"goal": "verify"}}
 for headers in ({}, {"X-Toolchain-Key": "0" * 64}):
     assert request(
@@ -504,6 +532,7 @@ rest_status, rest_body, _ = request(
 )
 assert rest_status == 200 and json.loads(rest_body)["ok"] is True
 
+canary_phase = "full_mcp_auth"
 initialize = {
     "jsonrpc": "2.0",
     "id": 1,
@@ -560,6 +589,7 @@ mcp_status, mcp_body, _ = request(
 assert mcp_status == 200
 assert b'"result"' in mcp_body and b'"serverInfo"' in mcp_body
 
+canary_phase = "evidence_auth_boundaries"
 sovereign_capability = capability(master, sovereign)
 aurion_capability = capability(master, aurion)
 wrong_master_capability = capability("0" * 64, sovereign)
@@ -579,6 +609,7 @@ assert request(
     headers={"X-Sovereign-Evidence-Capability": sovereign_capability},
 )[0] == 404
 
+canary_phase = "evidence_payload_limits"
 oversized = dict(sovereign, padding="x" * 4096)
 assert request(
     evidence_url,
@@ -602,6 +633,7 @@ chunked_response.read()
 assert chunked_response.status == 413
 connection.close()
 
+canary_phase = "evidence_lane_policy"
 unsupported = dict(sovereign, branch="develop")
 assert request(
     evidence_url,
@@ -623,9 +655,9 @@ assert request(
     headers={"X-Sovereign-Evidence-Capability": sovereign_capability},
 )[0] == 404
 
-for payload, header in (
-    (sovereign, sovereign_capability),
-    (aurion, aurion_capability),
+for canary_phase, payload, header in (
+    ("sovereign_live_evidence", sovereign, sovereign_capability),
+    ("aurion_live_evidence", aurion, aurion_capability),
 ):
     status, body, _ = request(
         evidence_url,
@@ -641,6 +673,54 @@ for payload, header in (
     assert result["workflowSelector"] == str(payload["workflow_id"])
     assert result["branch"] == payload["branch"]
 PY
+AUTH_CANARY_EXIT_CODE=$?
+set -e
+if (( AUTH_CANARY_EXIT_CODE != 0 )); then
+  AUTH_CANARY_OUTPUT_SHA256="$(sha256sum "$AUTH_CANARY_LOG" | awk '{print $1}')"
+  AUTH_CANARY_DIAGNOSTIC="$(
+    python3 - "$AUTH_CANARY_LOG" 2>/dev/null <<'PY' || true
+from pathlib import Path
+import json
+import re
+import sys
+
+phase_pattern = re.compile(r"^[a-z][a-z0-9_-]{0,79}$")
+error_pattern = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,79}$")
+try:
+    raw_lines = Path(sys.argv[1]).read_text("utf-8").splitlines()
+except (OSError, UnicodeError):
+    raw_lines = []
+for raw_line in reversed(raw_lines):
+    try:
+        payload = json.loads(raw_line)
+    except (TypeError, ValueError):
+        continue
+    if not isinstance(payload, dict):
+        continue
+    phase = payload.get("phase")
+    error_type = payload.get("errorType")
+    if (
+        payload.get("status") == "AUTHENTICATED_BOUNDARY_CANARY_FAILED"
+        and isinstance(phase, str)
+        and isinstance(error_type, str)
+        and phase_pattern.fullmatch(phase)
+        and error_pattern.fullmatch(error_type)
+    ):
+        print(f"phase={phase};error={error_type}")
+        break
+PY
+  )"
+  if [[ ! "$AUTH_CANARY_DIAGNOSTIC" =~ ^phase=[a-z][a-z0-9_-]{0,79}\;error=[A-Za-z_][A-Za-z0-9_]{0,79}$ ]]; then
+    AUTH_CANARY_DIAGNOSTIC="phase=unclassified;error=UnknownError"
+  fi
+  printf 'SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC %s output_sha256=%s\n' \
+    "$AUTH_CANARY_DIAGNOSTIC" "$AUTH_CANARY_OUTPUT_SHA256" >&2
+  rm -f "$AUTH_CANARY_LOG"
+  unset AUTH_CANARY_LOG AUTH_CANARY_EXIT_CODE AUTH_CANARY_OUTPUT_SHA256 AUTH_CANARY_DIAGNOSTIC
+  fail "authenticated boundary canary failed"
+fi
+rm -f "$AUTH_CANARY_LOG"
+unset AUTH_CANARY_LOG AUTH_CANARY_EXIT_CODE
 
 PID="$(systemctl show --property MainPID --value "$SERVICE")"
 EVIDENCE_PID="$(systemctl show --property MainPID --value "$EVIDENCE_SERVICE")"

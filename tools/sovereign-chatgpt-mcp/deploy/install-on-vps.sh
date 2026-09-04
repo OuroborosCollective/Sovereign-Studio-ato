@@ -3513,6 +3513,10 @@ if [[ "$DEPLOYMENT_SOURCE_SCOPE" == "full-repository" ]]; then
       grep -E '^SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE stage=[a-z][a-z0-9_-]{0,79} reason_sha256=[0-9a-f]{64} rollback=(not-required|verified|failed)$' \
         "$TOOLCHAIN_INSTALL_LOG" | head -n 1 | tr -d '\r\n' | cut -c1-512 || true
     )"
+    TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC="$(
+      grep -E '^SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC phase=[a-z][a-z0-9_-]{0,79} error=[A-Za-z_][A-Za-z0-9_]{0,79} output_sha256=[0-9a-f]{64}$' \
+        "$TOOLCHAIN_INSTALL_LOG" | head -n 1 | tr -d '\r\n' | cut -c1-512 || true
+    )"
     TOOLCHAIN_UV_DIAGNOSTIC="$(
       grep -E '^SOVEREIGN_TOOLCHAIN_UV_DIAGNOSTIC family=(CLI_COMPATIBILITY|LOCK_DRIFT|STORAGE|PERMISSION|BUILD_SYSTEM|CACHE_IO|RESOLUTION|PYTHON|NETWORK|OTHER) uv_version=([0-9]+\.[0-9]+\.[0-9]+|unknown) output_sha256=[0-9a-f]{64}$' \
         "$TOOLCHAIN_INSTALL_LOG" | head -n 1 | tr -d '\r\n' | cut -c1-512 || true
@@ -3522,18 +3526,22 @@ if [[ "$DEPLOYMENT_SOURCE_SCOPE" == "full-repository" ]]; then
         "$TOOLCHAIN_INSTALL_LOG" | head -n 1 | tr -d '\r\n' | cut -c1-512 || true
     )"
     TOOLCHAIN_FAILURE_SHA256="$(sha256sum "$TOOLCHAIN_INSTALL_LOG" | awk '{print $1}')"
+    TOOLCHAIN_AUTH_CANARY_SUFFIX=""
+    if [[ -n "$TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC" ]]; then
+      TOOLCHAIN_AUTH_CANARY_SUFFIX=" $TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC"
+    fi
     rm -f "$TOOLCHAIN_INSTALL_LOG"
     if [[ -n "$TOOLCHAIN_FAILURE_DIAGNOSTIC" && -n "$TOOLCHAIN_UV_DIAGNOSTIC" && -n "$TOOLCHAIN_ROLLBACK_DIAGNOSTIC" ]]; then
-      fail "revision-bound toolchain installer failed: $TOOLCHAIN_FAILURE_DIAGNOSTIC $TOOLCHAIN_UV_DIAGNOSTIC $TOOLCHAIN_ROLLBACK_DIAGNOSTIC output_sha256=$TOOLCHAIN_FAILURE_SHA256"
+      fail "revision-bound toolchain installer failed: $TOOLCHAIN_FAILURE_DIAGNOSTIC${TOOLCHAIN_AUTH_CANARY_SUFFIX} $TOOLCHAIN_UV_DIAGNOSTIC $TOOLCHAIN_ROLLBACK_DIAGNOSTIC output_sha256=$TOOLCHAIN_FAILURE_SHA256"
     fi
     if [[ -n "$TOOLCHAIN_FAILURE_DIAGNOSTIC" && -n "$TOOLCHAIN_ROLLBACK_DIAGNOSTIC" ]]; then
-      fail "revision-bound toolchain installer failed: $TOOLCHAIN_FAILURE_DIAGNOSTIC $TOOLCHAIN_ROLLBACK_DIAGNOSTIC output_sha256=$TOOLCHAIN_FAILURE_SHA256"
+      fail "revision-bound toolchain installer failed: $TOOLCHAIN_FAILURE_DIAGNOSTIC${TOOLCHAIN_AUTH_CANARY_SUFFIX} $TOOLCHAIN_ROLLBACK_DIAGNOSTIC output_sha256=$TOOLCHAIN_FAILURE_SHA256"
     fi
     if [[ -n "$TOOLCHAIN_FAILURE_DIAGNOSTIC" && -n "$TOOLCHAIN_UV_DIAGNOSTIC" ]]; then
-      fail "revision-bound toolchain installer failed: $TOOLCHAIN_FAILURE_DIAGNOSTIC $TOOLCHAIN_UV_DIAGNOSTIC output_sha256=$TOOLCHAIN_FAILURE_SHA256"
+      fail "revision-bound toolchain installer failed: $TOOLCHAIN_FAILURE_DIAGNOSTIC${TOOLCHAIN_AUTH_CANARY_SUFFIX} $TOOLCHAIN_UV_DIAGNOSTIC output_sha256=$TOOLCHAIN_FAILURE_SHA256"
     fi
     if [[ -n "$TOOLCHAIN_FAILURE_DIAGNOSTIC" ]]; then
-      fail "revision-bound toolchain installer failed: $TOOLCHAIN_FAILURE_DIAGNOSTIC output_sha256=$TOOLCHAIN_FAILURE_SHA256"
+      fail "revision-bound toolchain installer failed: $TOOLCHAIN_FAILURE_DIAGNOSTIC${TOOLCHAIN_AUTH_CANARY_SUFFIX} output_sha256=$TOOLCHAIN_FAILURE_SHA256"
     fi
     fail "revision-bound toolchain installer failed: output_sha256=$TOOLCHAIN_FAILURE_SHA256"
   fi

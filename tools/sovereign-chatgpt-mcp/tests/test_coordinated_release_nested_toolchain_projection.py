@@ -68,6 +68,40 @@ def test_nested_uv_diagnostic_is_projected_without_raw_installer_detail(monkeypa
     assert reason not in caught.value.detail
 
 
+def test_nested_auth_canary_diagnostic_is_projected_without_raw_reason(monkeypatch) -> None:
+    module = _load()
+    reason = (
+        "revision-bound toolchain installer failed: "
+        "SOVEREIGN_TOOLCHAIN_INSTALL_FAILURE stage=readback "
+        + "reason_sha256="
+        + "7" * 64
+        + " rollback=verified "
+        "SOVEREIGN_TOOLCHAIN_AUTH_CANARY_DIAGNOSTIC "
+        "phase=aurion_live_evidence error=TimeoutError output_sha256="
+        + "8" * 64
+        + " output_sha256="
+        + "9" * 64
+    )
+    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: _failure(reason))
+
+    with pytest.raises(module.ReconcileError) as caught:
+        module._command_json(["install"], timeout=10, stage="mcp_deploy")
+
+    assert caught.value.safe_evidence["installerDiagnostic"]["toolchain"] == {
+        "stage": "readback",
+        "reasonSha256": "7" * 64,
+        "rollback": "verified",
+        "outputSha256": "9" * 64,
+        "authCanary": {
+            "phase": "aurion_live_evidence",
+            "errorType": "TimeoutError",
+            "outputSha256": "8" * 64,
+        },
+    }
+    assert reason not in str(caught.value.safe_evidence)
+    assert reason not in caught.value.detail
+
+
 def test_nested_rollback_diagnostic_is_projected_without_raw_reason(monkeypatch) -> None:
     module = _load()
     reason = (
