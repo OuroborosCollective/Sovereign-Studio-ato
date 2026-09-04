@@ -199,6 +199,47 @@ def test_authenticated_boundary_canary_emits_bounded_phase_evidence() -> None:
     assert "traceback.print" not in canary
 
 
+def test_authenticated_boundary_canary_parser_reads_only_allowlisted_log_fields(
+    tmp_path: Path,
+) -> None:
+    installer = INSTALLER.read_text("utf-8")
+    marker = 'python3 - "$AUTH_CANARY_LOG" 2>/dev/null <<\'PY\' || true\n'
+    parser = installer.split(marker, 1)[1].split('\nPY\n  )"', 1)[0]
+    log = tmp_path / "authenticated-boundary-canary.log"
+    log.write_text(
+        '{"status":"AUTHENTICATED_BOUNDARY_CANARY_FAILED",'
+        '"phase":"aurion_live_evidence","errorType":"TimeoutError",'
+        '"privateDetail":"must-not-project"}\n',
+        encoding="utf-8",
+    )
+
+    accepted = subprocess.run(
+        ["python3", "-c", parser, str(log)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert accepted.returncode == 0
+    assert accepted.stdout.strip() == "phase=aurion_live_evidence;error=TimeoutError"
+    assert accepted.stderr == ""
+    assert "must-not-project" not in accepted.stdout
+
+    log.write_text(
+        '{"status":"AUTHENTICATED_BOUNDARY_CANARY_FAILED",'
+        '"phase":"../../escape","errorType":"TimeoutError"}\n',
+        encoding="utf-8",
+    )
+    rejected = subprocess.run(
+        ["python3", "-c", parser, str(log)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode == 0
+    assert rejected.stdout == ""
+    assert rejected.stderr == ""
+
+
 def test_uv_sync_uses_private_staging_cache_under_protect_home() -> None:
     installer = INSTALLER.read_text("utf-8")
     self_update_service = SELF_UPDATE_SERVICE.read_text("utf-8")
