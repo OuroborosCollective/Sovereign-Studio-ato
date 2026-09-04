@@ -1,0 +1,254 @@
+{
+  "name": "Sovereign Live Path Scan",
+  "generatedAt": "2026-09-04T23:28:33.191Z",
+  "status": "pass",
+  "scannedFiles": 849,
+  "checks": [
+    {
+      "id": "scanner:files-found",
+      "ok": true,
+      "message": "Src live files found for scan.",
+      "details": {
+        "count": 849
+      }
+    },
+    {
+      "id": "legacy-marker-test:src/appShellContract.test.ts",
+      "ok": true,
+      "message": "Legacy mobile boot markers are allowed in regression tests.",
+      "details": {
+        "filePath": "src/appShellContract.test.ts"
+      }
+    },
+    {
+      "id": "legacy-marker-test:src/mobile-operator-coach-priority.test.ts",
+      "ok": true,
+      "message": "Legacy mobile boot markers are allowed in regression tests.",
+      "details": {
+        "filePath": "src/mobile-operator-coach-priority.test.ts"
+      }
+    },
+    {
+      "id": "legacy-marker-test:src/mobile-operator-coach.test.ts",
+      "ok": true,
+      "message": "Legacy mobile boot markers are allowed in regression tests.",
+      "details": {
+        "filePath": "src/mobile-operator-coach.test.ts"
+      }
+    },
+    {
+      "id": "legacy-marker-test:src/mobile-setup-drawer.direct-fallback.test.ts",
+      "ok": true,
+      "message": "Legacy mobile boot markers are allowed in regression tests.",
+      "details": {
+        "filePath": "src/mobile-setup-drawer.direct-fallback.test.ts"
+      }
+    },
+    {
+      "id": "legacy-marker-test:src/mobile-setup-drawer.selectors.test.ts",
+      "ok": true,
+      "message": "Legacy mobile boot markers are allowed in regression tests.",
+      "details": {
+        "filePath": "src/mobile-setup-drawer.selectors.test.ts"
+      }
+    },
+    {
+      "id": "legacy-marker-test:src/mobile-setup-drawer.test.ts",
+      "ok": true,
+      "message": "Legacy mobile boot markers are allowed in regression tests.",
+      "details": {
+        "filePath": "src/mobile-setup-drawer.test.ts"
+      }
+    },
+    {
+      "id": "legacy-marker-test:src/mobile-workbench-console.test.ts",
+      "ok": true,
+      "message": "Legacy mobile boot markers are allowed in regression tests.",
+      "details": {
+        "filePath": "src/mobile-workbench-console.test.ts"
+      }
+    },
+    {
+      "id": "legacy-marker-test:src/mobile-workflow-guidance.test.ts",
+      "ok": true,
+      "message": "Legacy mobile boot markers are allowed in regression tests.",
+      "details": {
+        "filePath": "src/mobile-workflow-guidance.test.ts"
+      }
+    },
+    {
+      "id": "legacy-marker-test:src/mobile-workspace-order.test.ts",
+      "ok": true,
+      "message": "Legacy mobile boot markers are allowed in regression tests.",
+      "details": {
+        "filePath": "src/mobile-workspace-order.test.ts"
+      }
+    },
+    {
+      "id": "main:no-legacy-import:mobile-agent-monitor",
+      "ok": true,
+      "message": "main.tsx does not import mobile-agent-monitor.",
+      "details": {
+        "moduleName": "mobile-agent-monitor"
+      }
+    },
+    {
+      "id": "main:no-legacy-import:mobile-more-menu",
+      "ok": true,
+      "message": "main.tsx does not import mobile-more-menu.",
+      "details": {
+        "moduleName": "mobile-more-menu"
+      }
+    },
+    {
+      "id": "main:no-legacy-import:mobile-setup-drawer",
+      "ok": true,
+      "message": "main.tsx does not import mobile-setup-drawer.",
+      "details": {
+        "moduleName": "mobile-setup-drawer"
+      }
+    },
+    {
+      "id": "main:no-legacy-import:mobile-workspace-order",
+      "ok": true,
+      "message": "main.tsx does not import mobile-workspace-order.",
+      "details": {
+        "moduleName": "mobile-workspace-order"
+      }
+    },
+    {
+      "id": "main:no-legacy-import:mobile-operator-coach",
+      "ok": true,
+      "message": "main.tsx does not import mobile-operator-coach.",
+      "details": {
+        "moduleName": "mobile-operator-coach"
+      }
+    },
+    {
+      "id": "main:no-legacy-import:mobile-workbench-console",
+      "ok": true,
+      "message": "main.tsx does not import mobile-workbench-console.",
+      "details": {
+        "moduleName": "mobile-workbench-console"
+      }
+    },
+    {
+      "id": "main:viewport-runtime",
+      "ok": true,
+      "message": "Viewport runtime is installed.",
+      "details": {}
+    },
+    {
+      "id": "main:persistence-runtime",
+      "ok": true,
+      "message": "Workspace persistence runtime is installed.",
+      "details": {}
+    },
+    {
+      "id": "app:chat-first-live-path",
+      "ok": true,
+      "message": "App routes live work through the canonical chat Builder while preserving the evidence observatory.",
+      "details": {}
+    },
+    {
+      "id": "builder:structured-action-live-path",
+      "ok": true,
+      "message": "Builder turns structured LLM evidence into a visible review-gated action before any Agent start.",
+      "details": {}
+    },
+    {
+      "id": "builder:input-and-access-boundary",
+      "ok": true,
+      "message": "Chat input is secret-guarded and opening GitHub access does not confirm the action.",
+      "details": {}
+    },
+    {
+      "id": "builder:compact-route-picker",
+      "ok": true,
+      "message": "The complete LLM catalog stays behind a compact searchable chat control.",
+      "details": {}
+    },
+    {
+      "id": "builder:action-stream-runtime",
+      "ok": true,
+      "message": "Builder publishes route/action state through the action stream.",
+      "details": {}
+    },
+    {
+      "id": "builder:runtime-feedback",
+      "ok": true,
+      "message": "Builder keeps runtime feedback available from the chat and Inspector.",
+      "details": {}
+    },
+    {
+      "id": "builder:redaction-and-access-validation",
+      "ok": true,
+      "message": "Builder validates/redacts visible runtime access values.",
+      "details": {}
+    },
+    {
+      "id": "monitor:coach-bus",
+      "ok": true,
+      "message": "Global monitor reads coach state events.",
+      "details": {}
+    },
+    {
+      "id": "monitor:telemetry-bus",
+      "ok": true,
+      "message": "Global monitor reads telemetry events.",
+      "details": {}
+    }
+  ],
+  "warnings": [
+    {
+      "id": "legacy-mobile-module:src/mobile-agent-monitor.ts",
+      "message": "Legacy mobile DOM module still exists. It is allowed only while absent from main.tsx boot path.",
+      "details": {
+        "filePath": "src/mobile-agent-monitor.ts"
+      }
+    },
+    {
+      "id": "legacy-mobile-module:src/mobile-more-menu.ts",
+      "message": "Legacy mobile DOM module still exists. It is allowed only while absent from main.tsx boot path.",
+      "details": {
+        "filePath": "src/mobile-more-menu.ts"
+      }
+    },
+    {
+      "id": "legacy-mobile-module:src/mobile-operator-coach.ts",
+      "message": "Legacy mobile DOM module still exists. It is allowed only while absent from main.tsx boot path.",
+      "details": {
+        "filePath": "src/mobile-operator-coach.ts"
+      }
+    },
+    {
+      "id": "legacy-mobile-module:src/mobile-setup-drawer.ts",
+      "message": "Legacy mobile DOM module still exists. It is allowed only while absent from main.tsx boot path.",
+      "details": {
+        "filePath": "src/mobile-setup-drawer.ts"
+      }
+    },
+    {
+      "id": "legacy-mobile-module:src/mobile-workbench-console.ts",
+      "message": "Legacy mobile DOM module still exists. It is allowed only while absent from main.tsx boot path.",
+      "details": {
+        "filePath": "src/mobile-workbench-console.ts"
+      }
+    },
+    {
+      "id": "legacy-mobile-module:src/mobile-workspace-order.ts",
+      "message": "Legacy mobile DOM module still exists. It is allowed only while absent from main.tsx boot path.",
+      "details": {
+        "filePath": "src/mobile-workspace-order.ts"
+      }
+    },
+    {
+      "id": "legacy-marker:src/runtime-adapter.ts",
+      "message": "Legacy mobile marker appears outside boot path. Review before reusing it.",
+      "details": {
+        "filePath": "src/runtime-adapter.ts"
+      }
+    }
+  ],
+  "errors": []
+}
