@@ -225,7 +225,7 @@ function run() {
   requireText('src/App.tsx', /BuilderContainer/, 'app:monitor-builder-root', 'App routes the authenticated root to the canonical Builder monitor.');
   requireText('src/App.tsx', /data-testid="sovereign-chat-app"/, 'app:chat-root-test-id', 'Chat-first App exposes its stable root test id.');
   requireText('src/App.tsx', /data-layout="chat-first-agent-zero-background"/, 'app:chat-root-layout', 'Chat-first App exposes its canonical conversation layout.');
-  requireText('src/App.tsx', /aria-label="Sovereign Workspace Monitor"/, 'app:monitor-root-label', 'Monitor-first App exposes its accessibility label.');
+  requireText('src/App.tsx', /aria-label="Sovereign Chat"/, 'app:chat-root-label', 'Chat-first App exposes its accessibility label.');
   requireText('src/App.tsx', /<BuilderContainer[\s\S]*onStartAgent=\{startMonitorTask\}/, 'app:monitor-runtime-wiring', 'App wires the visible Builder to the canonical workspace Agent boundary.');
   requireText('src/App.tsx', /EvidenceObservatoryAtlas/, 'app:observatory-preserved', 'The evidence observatory remains an explicit secondary route.');
   requireText('src/App.tsx', /window\.location\.pathname === '\/observatory'[\s\S]*window\.location\.pathname === '\/evidence-observatory'[\s\S]*get\('observatory'\) === '1'/, 'app:observatory-route-contract', 'Both observatory paths and the query compatibility route remain reachable.');
@@ -250,7 +250,7 @@ function run() {
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-token-input"|data-role=\{SOVEREIGN_FORM_PRIVATE_ACCESS\.dataRole\}/, 'repo:mobile-access-input', 'Access input keeps Android/mobile or contract role.');
 
   requireText('src/features/product/containers/BuilderContainer.tsx', /MonitorCommunicationDock/, 'builder:monitor-input-visible', 'Builder exposes LLM communication inside the monitor instead of a chat-first surface.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /live-desktop-monitor-primary/, 'builder:monitor-primary-layout', 'Builder declares the permanent monitor-first primary layout.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /chat-primary-agent-zero-background/, 'builder:chat-primary-layout', 'Builder declares the permanent chat-first primary layout.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onStartAgent/, 'builder:executor-start-prop', 'Builder keeps the internal Agent start path wired as one route.');
   forbidText('src/features/product/containers/BuilderContainer.tsx', retiredBuilderAgentPattern, 'builder:no-retired-agent-start-prop', 'Builder must not restore the retired external-agent start prop.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateIdeas/, 'builder:generation-handler', 'Builder keeps generation handler wired.');
