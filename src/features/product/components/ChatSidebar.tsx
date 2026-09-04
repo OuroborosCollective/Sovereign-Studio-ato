@@ -351,8 +351,8 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
             type="submit"
             disabled={!canSubmit}
             className="px-4 py-3 bg-cyan-500/20 border border-cyan-500/30 rounded-2xl text-cyan-400 hover:bg-cyan-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
-            aria-label="Send"
-            title="Send"
+            aria-label="Send message"
+            title={!canSubmit ? "Enter a message to send" : "Send message (Enter)"}
           >
             <Send size={18} />
           </button>
@@ -361,8 +361,10 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
         <button
           type="button"
           onClick={onClearChat}
-          className="w-full mt-2 py-2 text-[11px] text-slate-500 hover:text-slate-400 flex items-center justify-center gap-2 transition-colors"
-          title="Clear conversation"
+          disabled={safeMessages.length === 0}
+          className="w-full mt-2 py-2 text-[11px] text-slate-500 hover:text-slate-400 disabled:opacity-50 disabled:hover:text-slate-500 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+          title={safeMessages.length === 0 ? "Conversation is already empty" : "Clear conversation"}
+          aria-label="Clear conversation"
         >
           <Trash2 size={12} />
           Clear conversation
