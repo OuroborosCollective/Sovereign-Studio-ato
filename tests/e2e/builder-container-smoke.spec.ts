@@ -68,6 +68,8 @@ test.describe('Chat-first workspace browser smoke', () => {
 
   test('4. Chat remains primary while runtime diagnostics stay behind Inspector', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Sovereign Chat' })).toBeVisible();
+    const composer = page.getByLabel('Codeauftrag an Sovereign');
+    await composer.fill('');
     await expect(page.locator('[data-testid="sovereign-action-suggestion-strip"]')).toBeVisible();
     await expect(page.locator('[data-testid="monitor-runtime-action-trace"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
