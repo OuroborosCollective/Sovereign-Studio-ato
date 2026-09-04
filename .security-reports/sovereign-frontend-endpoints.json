@@ -976,7 +976,7 @@
     },
     {
       "file": "backend/github_app.py",
-      "line": 817,
+      "line": 794,
       "methods": [
         "GET"
       ],
@@ -985,7 +985,7 @@
     },
     {
       "file": "scripts/sovereign-backend/github_app.py",
-      "line": 817,
+      "line": 794,
       "methods": [
         "GET"
       ],
@@ -1336,7 +1336,7 @@
     },
     {
       "file": "backend/github_app.py",
-      "line": 886,
+      "line": 863,
       "methods": [
         "GET"
       ],
@@ -1345,7 +1345,7 @@
     },
     {
       "file": "scripts/sovereign-backend/github_app.py",
-      "line": 886,
+      "line": 863,
       "methods": [
         "GET"
       ],
@@ -1354,7 +1354,7 @@
     },
     {
       "file": "backend/github_app.py",
-      "line": 710,
+      "line": 687,
       "methods": [
         "GET"
       ],
@@ -1363,7 +1363,7 @@
     },
     {
       "file": "scripts/sovereign-backend/github_app.py",
-      "line": 710,
+      "line": 687,
       "methods": [
         "GET"
       ],
@@ -1372,7 +1372,7 @@
     },
     {
       "file": "backend/github_app.py",
-      "line": 728,
+      "line": 705,
       "methods": [
         "GET"
       ],
@@ -1381,7 +1381,7 @@
     },
     {
       "file": "scripts/sovereign-backend/github_app.py",
-      "line": 728,
+      "line": 705,
       "methods": [
         "GET"
       ],
@@ -1390,7 +1390,7 @@
     },
     {
       "file": "backend/github_app.py",
-      "line": 747,
+      "line": 724,
       "methods": [
         "GET"
       ],
@@ -1399,7 +1399,7 @@
     },
     {
       "file": "scripts/sovereign-backend/github_app.py",
-      "line": 747,
+      "line": 724,
       "methods": [
         "GET"
       ],
@@ -1408,7 +1408,7 @@
     },
     {
       "file": "backend/github_app.py",
-      "line": 771,
+      "line": 748,
       "methods": [
         "POST"
       ],
@@ -1417,7 +1417,7 @@
     },
     {
       "file": "scripts/sovereign-backend/github_app.py",
-      "line": 771,
+      "line": 748,
       "methods": [
         "POST"
       ],
@@ -3505,7 +3505,7 @@
     },
     {
       "file": "backend/github_app.py",
-      "line": 675,
+      "line": 652,
       "methods": [
         "POST"
       ],
@@ -3514,7 +3514,7 @@
     },
     {
       "file": "scripts/sovereign-backend/github_app.py",
-      "line": 675,
+      "line": 652,
       "methods": [
         "POST"
       ],
@@ -18981,10 +18981,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "0b0581e44c300da1f47ebf3d7554b17b247a39a14c5be6735d7e824a20f10ae5",
-  "revision": "ffe84bb349700718a566ccd3f3d758a51cff949a",
+  "reportSha256": "3c6af76288bb5d61c511bba44239d218616290c2bcd38cefe5a709363d416e7a",
+  "revision": "f40d46e5f12266eec664f56837be7e310e07f997",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "ef426f094a3fef36ba09dda5a1af8f0d26c466b97bd3ec9114c3955eae29015e",
+  "sourceTreeSha256": "7580be181e7ec09d190dafd083b1f841aba8c9666e7ec91b0ff875fbdf5cc826",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -19003,7 +19003,7 @@
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
-    "testFileCount": 759,
+    "testFileCount": 798,
     "unmatchedActiveRequestCount": 0
   },
   "truthBoundary": {

@@ -12,7 +12,7 @@
  *   node scripts/signing-config.mjs --keystore <path> --alias <alias> --storepass <pass> --keypass <pass>
  */
 
-import { existsSync, writeFileSync } from 'fs';
+import { writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
