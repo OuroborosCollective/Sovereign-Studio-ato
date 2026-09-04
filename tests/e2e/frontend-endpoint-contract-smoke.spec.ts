@@ -157,7 +157,7 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     });
   });
 
-  test('the built monitor-first surface executes the authenticated structured FreeLLM contract without an unconsented billing write', async ({ page }) => {
+  test('the built chat-first surface executes the authenticated structured FreeLLM contract without an unconsented billing write', async ({ page }) => {
     const observed: Array<{ method: string; path: string }> = [];
     const unexpectedApiRequests: Array<{ method: string; path: string }> = [];
     const llmChatBodies: Array<Record<string, unknown>> = [];
@@ -176,7 +176,7 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
       id: '00000000-0000-4000-8000-000000000777',
       defaultModelId: 'free/test-model',
       label: 'Verified Free Test Route',
-      description: 'Monitor-first browser smoke',
+      description: 'Chat-first browser smoke',
       provider: 'freellm',
       billingCategory: 'free',
       fundingMode: 'provider_free_quota',
@@ -300,12 +300,13 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     });
 
     await page.goto('/');
-    const app = page.locator('[data-testid="sovereign-monitor-app"]');
+    const app = page.locator('[data-testid="sovereign-chat-app"]');
     await expect(app).toBeVisible({ timeout: 30_000 });
-    await expect(app).toHaveAttribute('data-layout', 'monitor-first-live-workspace');
-    await expect(page.locator('[data-layout="live-desktop-monitor-primary"]')).toBeVisible();
-    await expect(page.locator('[data-testid="sovereign-live-monitor-primary"]')).toBeVisible();
-    await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toBeVisible();
+    await expect(app).toHaveAttribute('data-layout', 'chat-first-agent-zero-background');
+    await expect(page.locator('[data-layout="chat-primary-agent-zero-background"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-chat-primary"]')).toBeVisible();
+    await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toBeVisible();
+    await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Menü', exact: true })).toBeVisible();
 

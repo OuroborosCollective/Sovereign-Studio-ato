@@ -486,13 +486,20 @@ function repoScopedEvidenceAnchor(
   };
 }
 
+function openInspector(): void {
+  if (screen.queryByTestId('monitor-runtime-action-trace')) return;
+  fireEvent.click(screen.getByText('INSPECTOR'));
+}
+
+function getActionStream(): HTMLElement {
+  openInspector();
+  return screen.getByRole('log', { name: 'Sovereign Action Stream' });
+}
+
 async function loadRepoUrlFromChat(repoUrl: string): Promise<void> {
   fireEvent.change(chatField(), { target: { value: repoUrl } });
   fireEvent.click(sendButton());
   await waitFor(() => expect(screen.getByLabelText('Repo Inspector öffnen')).toBeDefined());
-  await waitFor(() =>
-    expect(screen.getByRole("button", { name: /Fehler suchen & als Draft PR reparieren/i })).not.toBeDisabled(),
-  );
 }
 
 async function loadRepoFromChat(): Promise<void> {
@@ -506,8 +513,7 @@ async function validateGitHubAccessFromLauncher(): Promise<void> {
   fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
   fireEvent.click(screen.getByText('Übernehmen'));
   await waitFor(() =>
-    expect(screen.getByRole('log', { name: 'Sovereign Action Stream' }))
-      .toHaveTextContent('GitHub-Zugang bereit'),
+    expect(getActionStream()).toHaveTextContent('GitHub-Zugang bereit'),
   );
 }
 
@@ -542,18 +548,19 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   it("renders the AppControl DevChat shell structure", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     const root = screen.getByTestId("builder-container");
-    expect(root).toHaveAttribute("data-layout", "live-desktop-monitor-primary");
+    expect(root).toHaveAttribute("data-layout", "chat-primary-agent-zero-background");
     expect(root).toHaveAttribute("aria-label", "Sovereign Builder");
     expect(screen.getAllByText("Sovereign").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("Monitor").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("Monitor")).toBeNull();
     expect(screen.getByLabelText("Sovereign Studio Tabs")).toBeDefined();
-    expect(screen.getByText("MONITOR")).toBeDefined();
+    expect(screen.getByText("CHAT")).toBeDefined();
     expect(screen.getByText("INSPECTOR")).toBeDefined();
-    expect(screen.queryByTestId("sovereign-chat-body-window")).toBeNull();
-    expect(screen.getByTestId('live-workspace-monitor')).toBeDefined();
-    expect(screen.getByTestId('live-workspace-monitor-desktop')).toBeDefined();
-    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
-    expect(screen.getByTestId('monitor-runtime-action-trace')).toBeDefined();
+    expect(screen.getByTestId("sovereign-chat-body-window")).toBeDefined();
+    expect(screen.queryByTestId('live-workspace-monitor')).toBeNull();
+    expect(screen.queryByTestId('live-workspace-monitor-desktop')).toBeNull();
+    expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-mode', 'chat');
+    expect(screen.getByTestId('sovereign-chat-tool-row')).toBeDefined();
+    expect(screen.queryByTestId('monitor-runtime-action-trace')).toBeNull();
     expect(chatField()).toBeDefined();
     expect(screen.getByLabelText("Menü")).toBeDefined();
   });
@@ -609,7 +616,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(within(sideMenu).queryByText(/PAL Verlauf/i)).toBeNull();
   });
 
-  it("promotes a fresh workspace-bound projection to the desktop monitor instead of chat", async () => {
+  it("keeps chat primary and exposes a fresh workspace projection only through Inspector", async () => {
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
     );
@@ -628,13 +635,16 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(chatField(), { target: { value: TEST_REPO_URL } });
     fireEvent.click(sendButton());
 
+    await waitFor(() => expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined());
+    expect(screen.getByTestId('builder-container')).toHaveAttribute('data-layout', 'chat-primary-agent-zero-background');
+    expect(screen.getByTestId('primary-surface-tab')).toHaveAttribute('data-primary-surface', 'chat');
+    expect(screen.getByRole('button', { name: 'Sovereign Chat' })).toHaveTextContent('CHAT');
+    expect(screen.queryByText('monitor runtime output')).toBeNull();
+    expect(screen.queryByTestId('workspace-evidence-rail')).toBeNull();
+
+    fireEvent.click(screen.getByText('INSPECTOR'));
     await waitFor(() => expect(screen.getByText('monitor runtime output')).toBeDefined());
-    expect(screen.getByTestId('builder-container')).toHaveAttribute('data-layout', 'live-desktop-monitor-primary');
-    expect(screen.getByTestId('primary-surface-tab')).toHaveAttribute('data-primary-surface', 'desktop-monitor');
-    expect(screen.getByRole('button', { name: 'Live Monitor' })).toHaveTextContent('MONITOR');
     expect(screen.getByTestId('workspace-evidence-rail')).toBeDefined();
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
-    expect(screen.queryByLabelText(/Sovereign Chat Eingabe/i)).toBeNull();
   });
 
   it("keeps a concise code-order clarification in the non-overlay monitor dock", async () => {
@@ -662,15 +672,15 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3));
     await waitFor(() => expect(screen.getByText('Was kannst du?')).toBeDefined());
-    expect(screen.getAllByText('RUNTIME').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText('RUNTIME')).toBeNull();
     expect(screen.getByText('Welche konkrete Änderung soll ich umsetzen?')).toBeDefined();
     expect(screen.queryByText('Provider prose must never reach the dock.')).toBeNull();
-    expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined();
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
-    expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-overlay', 'false');
+    expect(screen.getByTestId('sovereign-chat-primary')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
+    expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-mode', 'chat');
   });
 
-  it("keeps the monitor primary when the only workspace projection is stale", async () => {
+  it("keeps chat primary when the only workspace projection is stale", async () => {
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
     );
@@ -687,13 +697,13 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await loadRepoFromChat();
 
-    expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined();
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.getByTestId('sovereign-chat-primary')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(chatField()).toBeDefined();
-    expect(screen.getByTestId('primary-surface-tab')).toHaveAttribute('data-primary-surface', 'desktop-monitor');
+    expect(screen.getByTestId('primary-surface-tab')).toHaveAttribute('data-primary-surface', 'chat');
   });
 
-  it("keeps user questions inside the monitor when runtime waits for input", async () => {
+  it("keeps user questions inside the chat when runtime waits for input", async () => {
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
     );
@@ -710,23 +720,23 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await loadRepoFromChat();
 
-    expect(screen.getByTestId('sovereign-live-monitor-primary')).toBeDefined();
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.getByTestId('sovereign-chat-primary')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(chatField()).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Live Monitor' })).toHaveTextContent('MONITOR');
+    expect(screen.getByRole('button', { name: 'Sovereign Chat' })).toHaveTextContent('CHAT');
   });
 
-  it("shows the Workbench status vocabulary (Actions/Files/Logs/Errors/Draft PR) as primary nav, not technical module abbreviations", () => {
+  it("keeps Workbench status vocabulary behind Inspector instead of surrounding the primary chat", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
+    expect(screen.queryByLabelText("Werkbank Status")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Actions:/ })).toBeNull();
+    fireEvent.click(screen.getByText("INSPECTOR"));
     expect(screen.getByLabelText("Werkbank Status")).toBeDefined();
     expect(screen.getByRole("button", { name: /^Actions:/ })).toBeDefined();
     expect(screen.getByRole("button", { name: /^Changed:/ })).toBeDefined();
     expect(screen.getByRole("button", { name: /^Logs:/ })).toBeDefined();
     expect(screen.getByRole("button", { name: /^Errors:/ })).toBeDefined();
     expect(screen.getByRole("button", { name: /^Draft PR:/ })).toBeDefined();
-    expect(screen.queryByText("ROU")).toBeNull();
-    expect(screen.queryByText("INT")).toBeNull();
-    expect(screen.queryByText("PAT")).toBeNull();
   });
 
   it("keeps technical runtime module abbreviations hidden until the Inspector is explicitly opened", () => {
@@ -741,6 +751,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   it("shows explicit empty states for Actions, Files and Errors instead of fabricated data", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
+    fireEvent.click(screen.getByText('INSPECTOR'));
     fireEvent.click(screen.getByRole("button", { name: /^Actions:/ }));
     expect(screen.getByText("Noch keine Actions")).toBeDefined();
     fireEvent.click(screen.getByLabelText("Schließen"));
@@ -768,6 +779,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       />,
     );
     await loadRepoFromChat();
+    fireEvent.click(screen.getByText('INSPECTOR'));
     fireEvent.click(screen.getByRole("button", { name: /^Changed:/ }));
     await waitFor(() => expect(screen.getByText("src/App.tsx")).toBeDefined());
     fireEvent.click(screen.getByLabelText("Schließen"));
@@ -775,14 +787,14 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText("Draft PR öffnen")).toBeDefined();
   });
 
-  it("keeps the default builder surface quiet and monitor-first", () => {
+  it("keeps the default builder surface quiet and chat-first", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     expect(screen.queryByText("Sovereign Studio")).toBeNull();
     expect(screen.queryByText("Planner")).toBeNull();
     expect(screen.queryByText("Changes")).toBeNull();
     expect(screen.queryByText("Code")).toBeNull();
-    expect(screen.getByRole("tab", { name: /Terminal/i })).toBeDisabled();
-    expect(screen.queryByTestId("sovereign-chat-body-window")).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Terminal/i })).toBeNull();
+    expect(screen.getByTestId("sovereign-chat-body-window")).toBeDefined();
     expect(screen.queryByText(/Sovereign geführter Chat Ablauf/i)).toBeNull();
   });
 
@@ -794,27 +806,29 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText(/simulate/i)).toBeNull();
   });
 
-  it("keeps monitor action controls available in the idle state without a welcome chat screen", () => {
+  it("shows guided suggestions only in the empty primary chat", () => {
     const props = baseProps();
     renderWithProviders(<BuilderContainer {...props} mission="" />);
-    expect(screen.getByTestId('monitor-action-controls')).toBeDefined();
+    expect(screen.getByTestId('sovereign-action-suggestion-strip')).toBeDefined();
     expect(screen.getByLabelText('Tool Launcher öffnen')).toBeDefined();
     expect(screen.queryByText("Let's build!")).toBeNull();
-    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
-    expect(screen.getByTestId('monitor-runtime-action-trace')).toBeDefined();
+    expect(screen.getByTestId('monitor-communication-dock')).toHaveAttribute('data-mode', 'chat');
+    expect(screen.queryByTestId('monitor-runtime-action-trace')).toBeNull();
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  it("keeps runtime action receipts visible inside the monitor instead of the removed chat surface", async () => {
+  it("keeps runtime action receipts available behind Inspector instead of crowding the chat", async () => {
     renderWithProviders(<BuilderContainer {...baseProps()} mission="" />);
 
     fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Repo' }));
+    expect(screen.queryByRole('log', { name: 'Sovereign Action Stream' })).toBeNull();
+    fireEvent.click(screen.getByText('INSPECTOR'));
 
     const actionStream = screen.getByRole('log', { name: 'Sovereign Action Stream' });
     expect(screen.getByTestId('monitor-runtime-action-trace')).toContainElement(actionStream);
     expect(actionStream).toHaveTextContent('Repo-Setup geöffnet');
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
   });
 
   it("shows integration intent draft card for normal text inputs when repo is ready", async () => {
@@ -839,7 +853,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(chatField().value).toBe("");
     // Issue #520: Normal text with repo loaded shows draft card instead of routing to Worker
     await waitFor(() => expect(screen.getByTestId("integration-intent-draft-card")).toBeInTheDocument());
-    expect(screen.getByTestId('sovereign-live-monitor-primary')).toHaveStyle({
+    expect(screen.getByTestId('sovereign-chat-primary')).toHaveStyle({
       overflowY: 'auto',
       overflowX: 'hidden',
     });
@@ -890,7 +904,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
     fireEvent.click(screen.getByText('Übernehmen'));
     await waitFor(() => expect(
-      screen.getByRole('log', { name: 'Sovereign Action Stream' }),
+      getActionStream(),
     ).toHaveTextContent('GitHub-Zugang bereit'));
 
     // Access capability is not consent to execute. The exact preview stays pending.
@@ -990,7 +1004,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       expect(screen.getByRole("dialog", { name: "Repo Setup" })).toBeDefined(),
     );
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
-    expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
+    expect(getActionStream())
       .toHaveTextContent("Preset wartet auf Repo: Features");
   });
 
@@ -1046,7 +1060,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       .getByRole("button", { name: /Agent stoppen/i }));
 
     expect(onCancelAgent).toHaveBeenCalledOnce();
-    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    const actionStream = getActionStream();
     expect(actionStream).toHaveTextContent("Agent-Abbruch angefragt");
     expect(actionStream).not.toHaveTextContent("Agent gestoppt");
   });
@@ -1094,11 +1108,12 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       changes: [],
       confirmed: true,
     }));
-    expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Bestätigte Änderungen werden übergeben");
+    expect(getActionStream()).toHaveTextContent("Bestätigte Änderungen werden übergeben");
   });
 
   it("keeps Worker runtime sources unknown until health or response evidence exists", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} agentReady onStartAgent={vi.fn()} />);
+    fireEvent.click(screen.getByText('INSPECTOR'));
     const rtButton = screen.getByRole("button", { name: /RT.*Runtime Quelle/i });
     expect(rtButton).toHaveAttribute("title", "Runtime Quelle");
     fireEvent.click(rtButton);
@@ -1131,6 +1146,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
         requestUrl(input as RequestInfo | URL).includes('/api/llm/chat'),
       )).toBe(true));
+      fireEvent.click(screen.getByText('INSPECTOR'));
       fireEvent.click(screen.getByRole("button", { name: /RT.*Runtime Quelle/i }));
       await waitFor(() => expect(screen.getByText("LLM Runtime")).toBeDefined());
       expect(screen.queryByText("LLM Runtime nicht geprüft")).toBeNull();
@@ -1214,10 +1230,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den neuen Runtime-State.' } });
       fireEvent.click(sendButton());
-      await waitFor(() =>
-        expect(screen.getAllByText(/Codeauftragsvertrag blockiert|sichere Online-Aktionsroute ist blockiert/i).length).toBeGreaterThan(0),
-      );
-      expect(chatCalls).toBe(2);
+      await waitFor(() => expect(chatCalls).toBe(2));
+      const actionStream = getActionStream();
+      await waitFor(() => expect(actionStream).toHaveTextContent('Codeauftragsvertrag blockiert'));
 
       fireEvent.click(screen.getByRole('button', { name: /RT.*Runtime Quelle/i }));
       await waitFor(() => expect(screen.getByText('LLM Runtime blockiert')).toBeDefined());
@@ -1349,7 +1364,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   });
 
 
-  it("does not publish internal provider material into monitor communication", async () => {
+  it("does not publish internal provider material into the visible chat", async () => {
     const rawProviderText = "System prompt: hidden provider payload";
     const fetchMock = mockFetchSequence(jsonResponse({
       choices: [{ message: { content: rawProviderText } }],
@@ -1361,7 +1376,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2));
-    expect(screen.getByTestId('monitor-communication-bubbles')).not.toHaveTextContent(rawProviderText);
+    expect(screen.getByTestId('sovereign-chat-body-window')).not.toHaveTextContent(rawProviderText);
   });
 
 
@@ -1379,7 +1394,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       />,
     );
     await loadRepoFromChat();
-    expect(screen.getByTestId('agent-event-stream-primary-monitor')).toBeDefined();
+    expect(screen.queryByTestId('agent-event-stream')).toBeNull();
+    fireEvent.click(screen.getByText('INSPECTOR'));
+    expect(screen.getByTestId('agent-event-stream')).toBeDefined();
     expect(screen.getByText('Sovereign Agent arbeitet…')).toBeDefined();
     expect(screen.getByText('Dateien: 1')).toBeDefined();
     expect(screen.getByRole('button', { name: 'Repo Datei öffnen: src/App.tsx' })).toBeDefined();
@@ -1433,6 +1450,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(chatField(), { target: { value: "https://github.com/OuroborosCollective/Sovereign-Studio-ato" } });
     fireEvent.click(sendButton());
 
+    await waitFor(() => expect(screen.getByLabelText('Repo Inspector öffnen')).toBeDefined());
+    expect(screen.queryByTestId("repo-split-inspector")).toBeNull();
+    openInspector();
     await waitFor(() => expect(screen.getByTestId("repo-split-inspector")).toBeDefined());
     expect(screen.getByRole("navigation", { name: "Repo Baum Split Inspector", hidden: true })).toBeDefined();
     expect(screen.queryByTestId("repo-tree-explorer")).toBeNull();
@@ -1487,12 +1507,12 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  it("keeps committed mission text in monitor communication without a legacy bubble context menu", async () => {
+  it("keeps committed mission text in the normal chat without a legacy bubble context menu", async () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     fireEvent.change(chatField(), { target: { value: "Beobachtbare Mission" } });
     fireEvent.click(sendButton());
     await waitFor(() => expect(screen.getByText("Beobachtbare Mission")).toBeDefined());
-    expect(screen.getByTestId('monitor-communication-bubbles')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(screen.queryByText("📋 Kopieren")).toBeNull();
     expect(screen.queryByText("💬 Zitieren")).toBeNull();
   });
@@ -1505,20 +1525,24 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await waitFor(() => expect(screen.getByText("Erste Monitor-Mission")).toBeDefined());
     fireEvent.change(chatField(), { target: { value: "Direkte Folgefrage im Monitor" } });
     expect(chatField().value).toBe("Direkte Folgefrage im Monitor");
-    expect(screen.queryByTestId('sovereign-chat-body-window')).toBeNull();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  it("keeps primary Android controls at least 44px", () => {
+  it("keeps primary Android chat controls at least 44px and technical controls bounded to Inspector", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
 
     expect(screen.getByLabelText("Menü")).toHaveStyle({ width: "44px", height: "44px" });
     expect(screen.getByLabelText("Profil")).toHaveStyle({ width: "44px", height: "44px" });
+    expect(screen.queryByRole("button", { name: /RT.*Runtime Quelle/i })).toBeNull();
+    expect(screen.queryByLabelText("Panel öffnen")).toBeNull();
+    expect(chatField()).toHaveStyle({ minHeight: "44px" });
+    expect(sendButton()).toHaveStyle({ width: "44px", height: "44px" });
+
+    fireEvent.click(screen.getByText("INSPECTOR"));
     expect(screen.getByRole("button", { name: /RT.*Runtime Quelle/i })).toHaveStyle({ minHeight: "44px" });
     expect(screen.getByLabelText("Panel öffnen")).toHaveStyle({ minWidth: "44px", minHeight: "44px" });
     expect(screen.getByRole("button", { name: /^Actions:/ })).toHaveStyle({ minHeight: "44px" });
-    expect(chatField()).toHaveStyle({ minHeight: "44px" });
-    expect(sendButton()).toHaveStyle({ width: "44px", height: "44px" });
 
     fireEvent.click(screen.getByLabelText("Menü"));
     expect(screen.getByLabelText("Menü schließen")).toHaveStyle({ minWidth: "44px", minHeight: "44px" });
@@ -1582,7 +1606,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onStartAgent).not.toHaveBeenCalled();
     fireEvent.click(within(draftCard).getByRole('button', { name: 'Repository-Auftrag starten' }));
     await waitFor(() =>
-      expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
+      expect(getActionStream())
         .toHaveTextContent("Freigegebener Repository-Auftrag angefragt"),
     );
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
@@ -1655,7 +1679,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onStartAgent).not.toHaveBeenCalled();
     fireEvent.click(within(draftCard).getByRole('button', { name: 'Repository-Auftrag starten' }));
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
-    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    const actionStream = getActionStream();
     await waitFor(() =>
       expect(actionStream).toHaveTextContent("Sovereign Agent Start fehlgeschlagen"),
     );
@@ -1698,7 +1722,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(screen.getByRole("button", { name: "GitHub-Zugang schließen" }));
 
     expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
-    expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
+    expect(getActionStream())
       .toHaveTextContent("GitHub-Zugangsfläche geschlossen");
   });
 
@@ -1730,7 +1754,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(diffItem);
 
     await waitFor(() => expect(screen.getAllByText(/Keine Changed-Files- oder Patch-Diff-Evidence vorhanden/i).length).toBeGreaterThan(0));
-    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    const actionStream = getActionStream();
     expect(actionStream).toHaveTextContent("Diff blockiert");
     fireEvent.click(within(actionStream).getByRole("button", { name: "Details" }));
     expect(actionStream.querySelector('[data-route="diff"][data-state="blocked"]')).not.toBeNull();
@@ -1761,7 +1785,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     expect(onStartAgent).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getAllByText(/bereits ein bestätigter Executor-Job aktiv/i).length).toBeGreaterThan(0));
-    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    const actionStream = getActionStream();
     expect(actionStream).toHaveTextContent("Laufender Executor-Job angezeigt");
     fireEvent.click(within(actionStream).getByRole("button", { name: "Details" }));
     expect(actionStream.querySelector('[data-route="agent-job"][data-state="running"]')).not.toBeNull();
@@ -1776,7 +1800,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     const repoUrlInput = screen.getByLabelText("GitHub Repository URL");
     expect(repoUrlInput).toBeDefined();
     expect(screen.queryByRole("dialog", { name: "Repo Inspector" })).toBeNull();
-    expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Repo-Setup geöffnet");
+    expect(getActionStream()).toHaveTextContent("Repo-Setup geöffnet");
 
     fireEvent.keyDown(repoUrlInput, { key: "Escape", code: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Repo Setup" })).toBeNull();
@@ -1797,7 +1821,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(filesItem);
 
     expect(screen.getByRole("dialog", { name: "Repo Inspector" })).toBeDefined();
-    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    const actionStream = getActionStream();
     expect(actionStream).toHaveTextContent("Datei-Explorer geöffnet");
     fireEvent.click(screen.getByRole("button", { name: "Details" }));
     expect(actionStream.querySelector('[data-route="files"]')).not.toBeNull();
@@ -1821,9 +1845,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Diff" }));
 
-    expect(screen.getAllByText("Changed").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Changed").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("src/App.tsx")).toBeDefined();
-    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    const actionStream = getActionStream();
     expect(actionStream).toHaveTextContent("Diff-Prüfung geöffnet");
     fireEvent.click(screen.getByRole("button", { name: "Details" }));
     expect(actionStream.querySelector('[data-route="diff"]')).not.toBeNull();
@@ -1835,7 +1859,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Health" }));
 
-    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    const actionStream = getActionStream();
     await waitFor(() => expect(actionStream).toHaveTextContent("health Inspektion abgeschlossen"));
     fireEvent.click(within(actionStream).getByRole("button", { name: "Details" }));
 
@@ -1918,7 +1942,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByAltText("Beobachteter Sovereign Workspace Desktop")).toBeNull();
     expect(screen.queryByText("monitor runtime output")).toBeNull();
     expect(screen.queryByTestId("workspace-evidence-rail")).toBeNull();
-    expect(screen.getByTestId("live-workspace-monitor-desktop-unavailable")).toBeDefined();
+    expect(screen.queryByTestId("live-workspace-monitor-desktop-unavailable")).toBeNull();
   });
 
   it("hides an evidence anchor from another job in the loaded repository", async () => {
@@ -1953,6 +1977,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       />,
     );
     await loadRepoFromChat();
+    fireEvent.click(screen.getByText('INSPECTOR'));
 
     expect(screen.queryByRole("button", { name: "Draft PR öffnen" })).toBeNull();
     const draftStatus = screen.getByRole("button", { name: /Draft PR:/i });
@@ -1975,7 +2000,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(screen.getByLabelText("Tool Launcher schließen"));
 
     await loadRepoUrlFromChat(SECOND_REPO_URL);
-    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    const actionStream = getActionStream();
     expect(actionStream).not.toHaveTextContent("GitHub-Zugang bereit");
     expect(actionStream).toHaveTextContent("Repo-Kontext geladen");
     fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
@@ -2011,14 +2036,14 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
     fireEvent.click(screen.getByText('Übernehmen'));
     await waitFor(() =>
-      expect(screen.getByRole('log', { name: 'Sovereign Action Stream' })).toHaveTextContent('GitHub-Zugang wird geprüft'),
+      expect(getActionStream()).toHaveTextContent('GitHub-Zugang wird geprüft'),
     );
 
     await loadRepoUrlFromChat(SECOND_REPO_URL);
     resolveValidation?.(jsonResponse({ ok: true, canWrite: true, code: 'ready', error: null }));
 
     await waitFor(() =>
-      expect(screen.getByRole('log', { name: 'Sovereign Action Stream' })).toHaveTextContent('GitHub-Zugangsprüfung verworfen'),
+      expect(getActionStream()).toHaveTextContent('GitHub-Zugangsprüfung verworfen'),
     );
     fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
     expect(screen.getByRole('menuitem', { name: 'GitHub Access' }).getAttribute('title')).toContain('Zugang fehlt');
@@ -2063,7 +2088,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     resolveOAuthValidation?.(jsonResponse({ ok: false, canWrite: false, code: 'temporary_error', error: 'stale OAuth failure' }, 503));
     await act(async () => { await Promise.resolve(); });
 
-    const actionStream = screen.getByRole('log', { name: 'Sovereign Action Stream' });
+    const actionStream = getActionStream();
     expect(actionStream).toHaveTextContent('GitHub-Zugang bereit');
     expect(actionStream).not.toHaveTextContent('GitHub OAuth reicht für dieses Repo nicht aus');
     await new Promise((resolve) => window.setTimeout(resolve, 850));
@@ -2077,7 +2102,6 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
     );
     renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentReady={false} />);
-    await loadRepoFromChat();
     const callsBeforePreset = nonAuthFetchCalls(fetchMock).length;
     const presetButton = screen.getByRole("button", { name: /Fehler suchen & als Draft PR reparieren/i });
     await waitFor(() => expect(presetButton).not.toBeDisabled());
@@ -2085,9 +2109,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(presetButton);
     fireEvent.click(presetButton);
 
-    await waitFor(() => expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(1));
-    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
-    expect(actionStream.textContent?.match(/GitHub-Schreibzugang erforderlich/g) ?? []).toHaveLength(1);
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Repo Setup" })).toBeDefined());
+    const actionStream = getActionStream();
+    expect(actionStream.textContent?.match(/Preset wartet auf Repo: Fehler/g) ?? []).toHaveLength(1);
     expect(screen.queryByText(/Ich habe diesen Auftrag vorgemerkt/i)).toBeNull();
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsBeforePreset);
   });
@@ -2097,29 +2121,31 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
     );
     renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentReady={false} />);
-    await loadRepoFromChat();
     const callsBeforePreset = nonAuthFetchCalls(fetchMock).length;
     const presetButton = screen.getByRole("button", { name: /Fehler suchen & als Draft PR reparieren/i });
     await waitFor(() => expect(presetButton).not.toBeDisabled());
 
     fireEvent.click(presetButton);
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Repo Setup" })).toBeDefined());
+    fireEvent.change(screen.getByLabelText("GitHub Repository URL"), { target: { value: TEST_REPO_URL } });
+    fireEvent.click(screen.getByRole("button", { name: "Repo-Snapshot laden" }));
 
     await waitFor(() => expect(screen.getByText(/GitHub-Zugang fehlt/i)).toBeDefined());
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsBeforePreset);
-    expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
+    expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThan(callsBeforePreset);
+    expect(getActionStream())
       .not.toHaveTextContent("Code-Auftrag braucht Ergebnis-Gate");
     expect(screen.queryByText(/Was ist die sichere Analyse für dieses Repo/i)).toBeNull();
   });
 
   it("README & Docs preset opens real repo setup before GitHub access when repo evidence is missing", async () => {
-    renderWithProviders(<BuilderContainer {...baseProps()} agentReady={false} />);
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" agentReady={false} />);
     fireEvent.click(screen.getByRole("button", { name: /README & Docs aktualisieren/i }));
 
     await waitFor(() =>
       expect(screen.getByRole("dialog", { name: "Repo Setup" })).toBeDefined(),
     );
     expect(screen.getByLabelText("GitHub Repository URL")).toBeDefined();
-    expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
+    expect(getActionStream())
       .toHaveTextContent("Preset wartet auf Repo: Docs");
     expect(screen.queryByText("Zugang eingeben")).toBeNull();
   });
@@ -2168,7 +2194,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(within(draftCard).getByTestId('confirm-blocker'))
       .toHaveTextContent('Backend-Workspace-Executor ist nicht verbunden.');
     expect(within(draftCard).getByRole('button', { name: 'Repository-Auftrag starten' })).toBeDisabled();
-    expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
+    expect(getActionStream())
       .not.toHaveTextContent("Freigegebener Repository-Auftrag angefragt");
     expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3);
   });
@@ -2192,7 +2218,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(oauthValidationCalls()).toHaveLength(1);
     await waitFor(() => expect(oauthValidationCalls()).toHaveLength(2), { timeout: 2500 });
     await waitFor(() => expect(
-      screen.getByRole('log', { name: 'Sovereign Action Stream' }),
+      getActionStream(),
     ).toHaveTextContent('GitHub-Zugang bereit'));
     expect(screen.queryByLabelText(/GitHub Token/i)).toBeNull();
 
@@ -2223,7 +2249,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     });
     fireEvent.click(sendButton());
 
-    const actionStream = screen.getByRole('log', { name: 'Sovereign Action Stream' });
+    const actionStream = getActionStream();
     await waitFor(() => expect(actionStream).toHaveTextContent('Executor braucht GitHub-Zugang'));
     expect(actionStream).not.toHaveTextContent('Kein bestätigter Code- oder Draft-PR-Ausführungsauftrag');
     expect(onStartAgent).not.toHaveBeenCalled();
@@ -2255,7 +2281,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(
-      screen.getByRole('log', { name: 'Sovereign Action Stream' }),
+      getActionStream(),
     ).toHaveTextContent('Codeauftragsvertrag blockiert'));
     await waitFor(() => expect(
       screen.getAllByText('Die sichere Online-Aktionsroute ist blockiert. Soll ich denselben Auftrag mit Auto/Revolver erneut versuchen?').length,
@@ -2263,7 +2289,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(onStartAgent).not.toHaveBeenCalled();
     expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
     expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
-    expect(screen.getByRole('log', { name: 'Sovereign Action Stream' }))
+    expect(getActionStream())
       .not.toHaveTextContent('Sovereign Agent Job angefragt');
     expect(fetchMock.mock.calls.some(([input]) => requestUrl(input as RequestInfo | URL).includes('/api/llm/chat'))).toBe(true);
   });
@@ -2304,7 +2330,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(chatField(), { target: { value: 'Erkläre mir LICENSE und was dort geregelt ist.' } });
     fireEvent.click(sendButton());
 
-    const actionStream = screen.getByRole('log', { name: 'Sovereign Action Stream' });
+    const actionStream = getActionStream();
     await waitFor(() => expect(actionStream).toHaveTextContent('Codeauftragsvertrag blockiert'));
     expect(screen.queryByText(rawProviderText)).toBeNull();
     expect(onStartAgent).not.toHaveBeenCalled();
@@ -2379,7 +2405,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(screen.getByLabelText("init"));
     expect(screen.getByTestId("builder-container")).toHaveAttribute(
       "data-layout",
-      "monitor-inspector-modules",
+      "chat-inspector-modules",
     );
 
     await act(async () => {
@@ -2393,7 +2419,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       requestUrl(input as RequestInfo | URL).endsWith("/bubbles")
     ))).toBe(true));
 
-    fireEvent.click(screen.getByRole("button", { name: "Live Monitor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sovereign Chat" }));
     expect(await screen.findByText(/wiederhergestellte Session ist älter als 3 Tage/i)).toBeDefined();
   });
 });

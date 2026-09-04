@@ -98,18 +98,18 @@ describe('current Sovereign app shell contract', () => {
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
-  it('makes App.tsx a monitor-first live surface instead of a legacy workspace dashboard', () => {
+  it('makes App.tsx a chat-first live surface instead of a legacy workspace dashboard', () => {
     const app = read(APP_PATH);
 
     expectContainsAll(app, [
       'BuilderContainer',
-      'data-testid="sovereign-monitor-app"',
-      'data-layout="monitor-first-live-workspace"',
-      'aria-label="Sovereign Workspace Monitor"',
-      'MONITOR_FIRST_STYLE',
+      'data-testid="sovereign-chat-app"',
+      'data-layout="chat-first-agent-zero-background"',
+      'aria-label="Sovereign Chat"',
+      'CHAT_FIRST_STYLE',
       'getDesktopFrame(jobId)',
     ]);
-    expect(app).not.toContain('data-layout="chat-only-live-entry"');
+    expect(app).not.toContain('data-layout="monitor-first-live-workspace"');
 
     expectContainsNone(app, REMOVED_VISIBLE_SHELL_TOKENS);
     expectContainsAll(app, [
