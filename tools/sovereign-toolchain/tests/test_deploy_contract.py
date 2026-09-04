@@ -183,6 +183,13 @@ def test_authenticated_boundary_canary_emits_bounded_phase_evidence() -> None:
     assert 'python3 - "$AUTH_CANARY_LOG" 2>/dev/null' in canary
     assert 'Path(sys.argv[1]).read_text("utf-8")' in canary
     assert '<<\'PY\' < "$AUTH_CANARY_LOG"' not in canary
+    assert "AUTH_CANARY_EXIT_CODE=0" in canary
+    assert (
+        'if python3 - "$ENV_TARGET" "$N8N_EVIDENCE_KEY_TARGET" '
+        '>"$AUTH_CANARY_LOG" 2>&1 <<\'PY\''
+    ) in canary
+    assert "\nPY\nthen\n  :\nelse\n  AUTH_CANARY_EXIT_CODE=$?\nfi\n" in canary
+    assert "set +e" not in canary
     for phase in (
         "protected_credentials",
         "full_rest_auth",
@@ -197,6 +204,51 @@ def test_authenticated_boundary_canary_emits_bounded_phase_evidence() -> None:
     assert "str(_error)" not in canary
     assert "repr(_error)" not in canary
     assert "traceback.print" not in canary
+
+
+def test_authenticated_boundary_canary_failure_bypasses_standing_err_trap(
+    tmp_path: Path,
+) -> None:
+    installer = INSTALLER.read_text("utf-8")
+    canary = installer.split('AUTH_CANARY_LOG="$TEMP/authenticated-boundary-canary.log"', 1)[1].split(
+        'PID="$(systemctl show --property MainPID', 1
+    )[0]
+    assert "AUTH_CANARY_EXIT_CODE=0" in canary
+    assert "if python3" in canary
+    assert "AUTH_CANARY_EXIT_CODE=$?" in canary
+    assert "set +e" not in canary
+
+    harness = tmp_path / "err-trap-canary.sh"
+    harness.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -Eeuo pipefail\n"
+        "on_activation_error() {\n"
+        "  printf 'unexpected-err-trap\\n' >&2\n"
+        "  exit 97\n"
+        "}\n"
+        "trap on_activation_error ERR\n"
+        "AUTH_CANARY_EXIT_CODE=0\n"
+        "if python3 - <<'PY'\n"
+        "raise SystemExit(7)\n"
+        "PY\n"
+        "then\n"
+        "  :\n"
+        "else\n"
+        "  AUTH_CANARY_EXIT_CODE=$?\n"
+        "fi\n"
+        "printf '%s\\n' \"$AUTH_CANARY_EXIT_CODE\"\n",
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        ["bash", str(harness)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == "7\n"
+    assert completed.stderr == ""
 
 
 def test_authenticated_boundary_canary_parser_reads_only_allowlisted_log_fields(

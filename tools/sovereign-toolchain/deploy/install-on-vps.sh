@@ -417,8 +417,8 @@ assert not listeners("/proc/net/tcp6", 8002)
 PY
 
 AUTH_CANARY_LOG="$TEMP/authenticated-boundary-canary.log"
-set +e
-python3 - "$ENV_TARGET" "$N8N_EVIDENCE_KEY_TARGET" >"$AUTH_CANARY_LOG" 2>&1 <<'PY'
+AUTH_CANARY_EXIT_CODE=0
+if python3 - "$ENV_TARGET" "$N8N_EVIDENCE_KEY_TARGET" >"$AUTH_CANARY_LOG" 2>&1 <<'PY'
 from pathlib import Path
 import hashlib
 import hmac
@@ -673,8 +673,11 @@ for canary_phase, payload, header in (
     assert result["workflowSelector"] == str(payload["workflow_id"])
     assert result["branch"] == payload["branch"]
 PY
-AUTH_CANARY_EXIT_CODE=$?
-set -e
+then
+  :
+else
+  AUTH_CANARY_EXIT_CODE=$?
+fi
 if (( AUTH_CANARY_EXIT_CODE != 0 )); then
   AUTH_CANARY_OUTPUT_SHA256="$(sha256sum "$AUTH_CANARY_LOG" | awk '{print $1}')"
   AUTH_CANARY_DIAGNOSTIC="$(
