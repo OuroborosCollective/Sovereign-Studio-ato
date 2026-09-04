@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-09-02T22:43:02.802Z",
+  "generatedAt": "2026-09-04T23:12:34.387Z",
   "discovery": {
     "scope": "tracked repository test conventions",
     "excludedDirectories": [
@@ -31,14 +31,8 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 775,
+  "totalTestFiles": 747,
   "testRoots": {
-    ".venv-backend-tests": 2,
-    ".venv-backend-tests/lib/python3.12/site-packages/certifi/tests": 1,
-    ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests": 13,
-    ".venv-backend-tests/lib/python3.12/site-packages/jsonschema_specifications/tests": 1,
-    ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests": 9,
-    ".venv-backend-tests/lib/python3.12/site-packages/referencing/tests": 5,
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
     "backend": 1,
@@ -54,259 +48,11 @@
     "tests": 1,
     "tests/e2e": 5,
     "tools": 3,
-    "tools/sovereign-chatgpt-mcp/tests": 102,
+    "tools/sovereign-chatgpt-mcp/tests": 105,
     "tools/sovereign-github-patch-mcp/tests": 4,
     "tools/sovereign-toolchain/tests": 7
   },
   "files": [
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/annotated_types/test_cases.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/certifi/tests/test_certify.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/certifi/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests/test_backend_django/test_backend.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests/test_backend_flask/test_backend.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests/test_base.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests/test_bug29.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests/test_dispatcher.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests/test_examples20.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests/test_jsonrpc.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests/test_jsonrpc1.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests/test_jsonrpc2.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests/test_jsonrpc_errors.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests/test_manager.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests/test_pep3107.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests/test_utils.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonrpc/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests/test_cli.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests/test_deprecations.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests/test_exceptions.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests/test_format.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests/test_jsonschema_test_suite.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests/test_types.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests/test_utils.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests/test_validators.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests/typing/test_all_concrete_validators_match_protocol.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema_specifications/tests/test_jsonschema_specifications.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/jsonschema_specifications/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/referencing/tests/test_core.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/referencing/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/referencing/tests/test_exceptions.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/referencing/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/referencing/tests/test_jsonschema.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/referencing/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/referencing/tests/test_referencing_suite.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/referencing/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/referencing/tests/test_retrieval.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests/lib/python3.12/site-packages/referencing/tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
-    {
-      "file": ".venv-backend-tests/lib/python3.12/site-packages/sniffio/_tests/test_sniffio.py",
-      "language": "python",
-      "testRoot": ".venv-backend-tests",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "python-suite"
-    },
     {
       "file": "android/app/src/androidTest/java/com/getcapacitor/myapp/ExampleInstrumentedTest.java",
       "language": "android-jvm",
@@ -9668,6 +9414,14 @@
       "category": "python-suite"
     },
     {
+      "file": "tools/sovereign-chatgpt-mcp/tests/test_aurion_operator.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-chatgpt-mcp/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
       "file": "tools/sovereign-chatgpt-mcp/tests/test_backend_deploy_diagnostics_continuity.py",
       "language": "python",
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
@@ -9785,6 +9539,14 @@
     },
     {
       "file": "tools/sovereign-chatgpt-mcp/tests/test_coordinated_release_installer_diagnostic_contract.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-chatgpt-mcp/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-chatgpt-mcp/tests/test_coordinated_release_nested_toolchain_projection.py",
       "language": "python",
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
       "gates": [],
@@ -10084,6 +9846,14 @@
     },
     {
       "file": "tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-chatgpt-mcp/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-chatgpt-mcp/tests/test_neuro_first_init_read_lock.py",
       "language": "python",
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
       "gates": [],
