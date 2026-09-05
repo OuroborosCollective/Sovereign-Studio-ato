@@ -4078,6 +4078,25 @@ _SOVEREIGN_CODE_ACTION_RESPONSE_FORMAT = {
 }
 
 
+def _code_action_contract_messages(messages: list) -> list:
+    """Send the server-owned contract even when response_format is unsupported."""
+    schema = _json.dumps(
+        _SOVEREIGN_CODE_ACTION_RESPONSE_FORMAT["json_schema"]["schema"],
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    instruction = (
+        "Return exactly one JSON object matching this schema, without Markdown or prose. "
+        "Interpret the user request; do not execute it or claim execution. "
+        "action_disposition must be review. For mode=action use a supported intent, "
+        "clarification_code=none and confidence>=0.5. For mode=clarify use "
+        "intent=unknown and a non-none clarification_code. "
+        "language must contain 1-16 characters. JSON schema: " + schema
+    )
+    return [{"role": "system", "content": instruction}, *messages]
+
+
 def _llm_route_config(route: dict) -> dict:
     config = (route or {}).get("config")
     if isinstance(config, dict):
@@ -8091,6 +8110,8 @@ def public_llm_chat():
                 "blocker": "free_route_revolver_exhausted",
             }), 503
 
+        if output_contract_id:
+            messages = _code_action_contract_messages(messages)
         input_token_upper_bound = _estimate_llm_input_token_upper_bound(messages)
         estimated_tokens = input_token_upper_bound + max_tokens
         reserved_cost, provider_cost_upper_bound_micros = reservation_credits(
@@ -8212,6 +8233,7 @@ def public_llm_chat():
             "stream": False,
         }
         fallback_route = None
+        validated_contract = None
         result = {}
         evidence = {}
         resp = None
@@ -8259,16 +8281,28 @@ def public_llm_chat():
             attempt_usage_seen = revolver_provider_usage_seen(evidence)
             provider_usage_seen = provider_usage_seen or attempt_usage_seen
             if not err and resp is not None and resp.ok:
-                if resolver_enabled:
+                validated_contract = (
+                    _validate_code_action_contract(result) if output_contract_id else None
+                )
+                contract_invalid = bool(output_contract_id) and validated_contract is None
+                if resolver_enabled or output_contract_id:
                     try:
                         _record_llm_revolver_attempt(
                             request_id=request_id,
                             attempt_number=attempt_count,
                             route=candidate_route,
-                            outcome="success",
+                            outcome="terminal_failure" if contract_invalid else "success",
                             response=resp,
                             evidence=evidence,
-                            decision=None,
+                            decision=(
+                                {
+                                    "blocker": "llm_output_contract_violation",
+                                    "retryAllowed": False,
+                                    "state": "cooldown",
+                                    "cooldownSeconds": 30,
+                                }
+                                if contract_invalid else None
+                            ),
                         )
                     except Exception:
                         return refund_failed_run("revolver_evidence_failed")
@@ -8386,7 +8420,6 @@ def public_llm_chat():
             }), 500
 
         if output_contract_id:
-            validated_contract = _validate_code_action_contract(result)
             if validated_contract is None:
                 return jsonify({
                     "error": "Provider-Antwort verletzt den Codeauftragsvertrag",

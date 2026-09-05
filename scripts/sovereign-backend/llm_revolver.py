@@ -31,6 +31,7 @@ _RECEIPT_SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 _FREELLM_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v3"
 _OPENROUTER_FREE_RECEIPT_SCHEMA = "sovereign.openrouter-free-route-receipt.v1"
 _RETRY_WINDOWS_SECONDS = {
+    "openrouter_account_credits_required": 3600,
     "provider_quota_exhausted": 3600,
     "provider_rate_limited": 60,
     "litellm_upstream_unavailable": 30,

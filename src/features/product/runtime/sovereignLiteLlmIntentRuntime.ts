@@ -231,6 +231,27 @@ function createDiagnostic(args: {
 }): DevChatWorkerDiagnostic {
   const status = args.status;
   const body = args.body ?? (args.error instanceof Error ? args.error.message : '');
+  let blocker: unknown;
+  try {
+    const payload: unknown = JSON.parse(body);
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      blocker = (payload as { blocker?: unknown }).blocker;
+    }
+  } catch {
+    // A non-JSON response carries no typed backend blocker.
+  }
+  if (status === 502 && blocker === 'llm_output_contract_violation') {
+    return {
+      route: args.route,
+      model: args.model,
+      messageCount: args.messageCount,
+      status,
+      statusText: args.statusText,
+      scope: 'worker_runtime',
+      canClientFix: false,
+      nextAction: 'Backend-Ausgabevertrag prüfen: vollständiges Schema an den Provider senden und die Antwort vor Erfolgsmeldung validieren; keine lokale Sprachdeutung starten.',
+    };
+  }
   if (status === 402) {
     return {
       route: args.route,
