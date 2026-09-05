@@ -32,6 +32,18 @@ const diagnosticText = [
 ].join('\n');
 
 describe('WorkerBlockerCard', () => {
+  it.each([
+    ['worker_runtime', 'LLM-Antwort konnte nicht verwendet werden'],
+    ['worker_config', 'LLM-Route nicht freigegeben'],
+  ] as const)('does not label a %s failure as an unreachable provider', (scope, title) => {
+    render(<WorkerBlockerCard
+      blocker={{ ...mockBlocker, diagnostic: { ...mockDiagnostic, status: 502, scope } }}
+      onExplain={() => {}}
+    />);
+    expect(screen.getByText(title)).toBeTruthy();
+    expect(screen.queryByText('LLM-Runtime nicht erreichbar')).toBeNull();
+  });
+
   it('renders blocker message', () => {
     render(
       <WorkerBlockerCard

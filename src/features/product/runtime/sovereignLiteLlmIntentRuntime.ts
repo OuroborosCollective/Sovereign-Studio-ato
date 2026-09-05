@@ -231,6 +231,39 @@ function createDiagnostic(args: {
 }): DevChatWorkerDiagnostic {
   const status = args.status;
   const body = args.body ?? (args.error instanceof Error ? args.error.message : '');
+  let blocker: unknown;
+  try {
+    const payload: unknown = JSON.parse(body);
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      blocker = (payload as { blocker?: unknown }).blocker;
+    }
+  } catch {
+    // A non-JSON response carries no typed backend blocker.
+  }
+  if (blocker === 'llm_output_contract_violation') {
+    return {
+      route: args.route,
+      model: args.model,
+      messageCount: args.messageCount,
+      status,
+      statusText: args.statusText,
+      scope: 'worker_runtime',
+      canClientFix: false,
+      nextAction: 'Provider hat geantwortet. Backend-Ausgabevertrag prüfen: vollständiges Schema senden und vor Erfolgsmeldung validieren; keine lokale Sprachdeutung und kein blinder Retry nach Provider-Nutzung.',
+    };
+  }
+  if (blocker === 'llm_output_contract_route_unavailable') {
+    return {
+      route: args.route,
+      model: args.model,
+      messageCount: args.messageCount,
+      status,
+      statusText: args.statusText,
+      scope: 'worker_config',
+      canClientFix: false,
+      nextAction: 'Keine freigegebene Route erfüllt den Codeauftragsvertrag. Modell- und Schema-Fähigkeit serverseitig prüfen; keine beliebige Ersatzroute ausführen.',
+    };
+  }
   if (status === 402) {
     return {
       route: args.route,

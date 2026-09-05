@@ -192,7 +192,7 @@ function run() {
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_ANALYZE_MISSION/, 'builder:analyze-visible', 'Analyze action must be bound to contract.');
   requireText(
     'src/features/product/containers/BuilderContainer.tsx',
-    /<MonitorCommunicationDock[\s\S]{0,1200}onSubmit=\{\(\)\s*=>\s*\{\s*void handleSubmit\(\);\s*\}\}/,
+    /value=\{wishText\}\s*onChange=\{setWishText\}\s*onSubmit=\{\(\)\s*=>\s*\{\s*void handleSubmit\(\);\s*\}\}/,
     'builder:start-visible',
     'The chat communication dock must submit through the live runtime handler.',
   );
@@ -212,7 +212,7 @@ function run() {
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /autoComplete=\{\s*SOVEREIGN_FORM_PRIVATE_ACCESS\.autoComplete/, 'repo:private-access-autocomplete-off', 'Private access must use autocomplete off from contract.');
   requireText(
     'src/features/product/containers/BuilderContainer.tsx',
-    /<MonitorCommunicationDock[\s\S]{0,400}value=\{wishText\}[\s\S]{0,200}onChange=\{setWishText\}/,
+    /value=\{wishText\}\s*onChange=\{setWishText\}/,
     'builder:mission-form-bound',
     'Builder must bind the mission input state to the live chat communication dock.',
   );

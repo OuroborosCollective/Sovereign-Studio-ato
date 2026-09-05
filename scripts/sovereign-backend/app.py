@@ -4102,13 +4102,36 @@ def _code_action_contract_mode(route: dict) -> str | None:
     # FreeLLM models remain usable through a stricter server boundary: the
     # provider receives a JSON-only prompt, and any non-contract output is
     # discarded before it can reach the browser.
-    if route_transport(dict(route)) == "freellm":
+    if (
+        route_transport(dict(route)) == "freellm"
+        or route_is_verified_free(dict(route))
+    ):
         return "server-validated-json"
     return None
 
 
 def _route_supports_code_action_contract(route: dict) -> bool:
     return _code_action_contract_mode(route) is not None
+
+
+def _code_action_contract_messages(messages: list) -> list:
+    """Send the actual server-owned schema, including to prompt-only providers.
+
+    This is instruction, not output evidence: every completion still passes the
+    strict validator. Never synthesize a local intent or accept client schemas.
+    """
+    schema = _SOVEREIGN_CODE_ACTION_RESPONSE_FORMAT["json_schema"]["schema"]
+    instruction = (
+        "Return exactly one JSON object matching this JSON Schema; no Markdown, "
+        "prose or additional keys. The object proposes an action, never executes "
+        "or authorizes one. action_disposition must always be review. "
+        "For mode=action use an allowed action intent, clarification_code=none "
+        "and confidence>=0.5. For mode=clarify use intent=unknown and a "
+        "clarification_code other than none. language must contain 1-16 "
+        "characters. Include every required field. JSON Schema: "
+        + _json.dumps(schema, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    )
+    return [{"role": "system", "content": instruction}, *[dict(item) for item in messages]]
 
 
 _CODE_ACTION_CONTRACT_KEYS = {
@@ -8091,6 +8114,10 @@ def public_llm_chat():
                 "blocker": "free_route_revolver_exhausted",
             }), 503
 
+        if output_contract_id:
+            # Include the schema before reservation so paid token bounds cover
+            # the exact messages that will actually be sent to the provider.
+            messages = _code_action_contract_messages(messages)
         input_token_upper_bound = _estimate_llm_input_token_upper_bound(messages)
         estimated_tokens = input_token_upper_bound + max_tokens
         reserved_cost, provider_cost_upper_bound_micros = reservation_credits(
@@ -8259,19 +8286,54 @@ def public_llm_chat():
             attempt_usage_seen = revolver_provider_usage_seen(evidence)
             provider_usage_seen = provider_usage_seen or attempt_usage_seen
             if not err and resp is not None and resp.ok:
-                if resolver_enabled:
+                contract_invalid = bool(
+                    output_contract_id
+                    and _validate_code_action_contract(result) is None
+                )
+                # A transport success is not a contract success. Preserve the
+                # no-retry-after-usage boundary, and never change a manual pin.
+                contract_retry = bool(
+                    contract_invalid
+                    and route_selection_mode == "auto"
+                    and resolver_enabled
+                    and not attempt_usage_seen
+                    and attempt_count < min(len(candidate_routes), 3)
+                    and route_is_verified_free(dict(candidate_route))
+                    and route_is_verified_free(dict(candidate_routes[attempt_count]))
+                )
+                contract_decision = {
+                    "blocker": "llm_output_contract_violation",
+                    "state": "ready",
+                    "cooldownSeconds": 0,
+                    "retryAllowed": contract_retry,
+                } if contract_invalid else None
+                if resolver_enabled or output_contract_id:
                     try:
                         _record_llm_revolver_attempt(
                             request_id=request_id,
                             attempt_number=attempt_count,
                             route=candidate_route,
-                            outcome="success",
+                            outcome=(
+                                "retryable_failure" if contract_retry
+                                else "terminal_failure" if contract_invalid
+                                else "success"
+                            ),
                             response=resp,
                             evidence=evidence,
-                            decision=None,
+                            decision=contract_decision,
                         )
                     except Exception:
+                        # Usage must never disappear behind an unearned refund.
+                        if attempt_usage_seen:
+                            _mark_llm_settlement_failed(request_id, "revolver_evidence_failed")
+                            return jsonify({
+                                "error": "Provider-Nutzung erkannt; Attempt-Evidence fehlt",
+                                "blocker": "revolver_evidence_failed",
+                                "requestId": request_id,
+                            }), 500
                         return refund_failed_run("revolver_evidence_failed")
+                if contract_retry:
+                    continue
                 if str(candidate_route["id"]) != str(route["id"]):
                     fallback_route = candidate_route
                 break
@@ -8388,11 +8450,28 @@ def public_llm_chat():
         if output_contract_id:
             validated_contract = _validate_code_action_contract(result)
             if validated_contract is None:
+                # Billing truth is retained even though the product request
+                # failed. Do not leave a rejected completion marked successful.
+                _update_llm_usage_settlement(
+                    request_id,
+                    status="failed",
+                    error_code="llm_output_contract_violation",
+                    request_count=max(1, attempt_count),
+                )
                 return jsonify({
-                    "error": "Provider-Antwort verletzt den Codeauftragsvertrag",
+                    "error": "Provider antwortet, aber der Codeauftragsvertrag wurde verletzt",
                     "blocker": "llm_output_contract_violation",
+                    "failureFamily": "output_contract",
+                    "upstreamHttpStatus": int(resp.status_code),
+                    "providerResponseReceived": True,
                     "requestId": request_id,
                     "sovereignBilling": billing,
+                    "sovereignRevolver": {
+                        "mode": resolver_mode,
+                        "attempts": max(1, attempt_count),
+                        "retryBlockedByUsage": provider_usage_seen,
+                        "routeSelectionMode": route_selection_mode,
+                    },
                 }), 502
             selected_route = fallback_route or route
             normalized_contract_json = _json.dumps(

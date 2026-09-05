@@ -365,6 +365,20 @@ def test_paid_quota_cooldown_resolves_to_free_profile() -> None:
     assert resolution.reason == "paid_route_unavailable_resolved_to_free_revolver"
 
 
+def test_paid_budget_cooldown_keeps_verified_free_candidates():
+    now = datetime.now(timezone.utc)
+    paid = route("paid", category="standard", scope="paid:key-a", priority=10,
+                 profile=PAID_SWARM_PROFILE)
+    free = route("free", category="free", scope="free:key-a", priority=20,
+                 profile=FREE_SINGLE_AGENT_PROFILE)
+    states = {"paid:key-a": {"status": "cooldown",
+                            "cooldown_until": now + timedelta(hours=1)}}
+    assert build_paid_to_free_candidates(paid, [paid, free], state_by_scope=states, now=now) == [free]
+    assert build_paid_to_free_candidates(paid, [paid], state_by_scope=states, now=now) == []
+    invalid = {**paid, "disabled": True}
+    assert build_paid_to_free_candidates(invalid, [free], state_by_scope=states, now=now) == []
+
+
 def test_paid_to_free_candidates_deduplicate_shared_quota_scopes() -> None:
     paid = route(
         "paid",

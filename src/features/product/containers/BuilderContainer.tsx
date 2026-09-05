@@ -4212,7 +4212,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     // Haptic feedback for send (Issue #429)
     triggerHaptic("light");
 
-    if (!options.resumePendingIntent && !options.inputAlreadyRecorded) {
+    // A literal repository URL is a public GitHub read, not a persisted mission.
+    // Keep authenticated mission persistence and every protected executor gate intact.
+    const directRepoUrl = parseDevChatGithubUrl(submittedText);
+    if (!options.resumePendingIntent && !options.inputAlreadyRecorded && (authUser || !directRepoUrl)) {
       if (!(await persistMissionInput(submittedText))) return;
       appendActionEvent(buildInputReceivedEvent(submittedText));
     }
@@ -4225,7 +4228,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     const isReviewableExecutionPreset =
       submittedText.includes('Risiko: reviewable_patch')
       || submittedText.includes('Risiko: executor_required');
-    const directRepoUrl = parseDevChatGithubUrl(submittedText);
     // "Retry" is an exact UI control, not natural language. It replays the
     // last correlated request through the real pipeline and must never spend a
     // second interpretation call merely to understand the control itself.

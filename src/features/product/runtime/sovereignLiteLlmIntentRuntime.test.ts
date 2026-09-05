@@ -393,6 +393,28 @@ describe('sovereignLiteLlmIntentRuntime structured code-action lane', () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url) === SOVEREIGN_WORKER_CHAT)).toBe(false);
   });
 
+  it('attributes a typed output-contract 502 to backend validation without exposing provider content', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ routes: [freeRoute('route-contract', 'model-contract')] }))
+      .mockResolvedValueOnce(jsonResponse({
+        blocker: 'llm_output_contract_violation',
+        error: 'Provider-Antwort verletzt den Codeauftragsvertrag',
+      }, 502));
+    const result = await fetchSovereignLiteLlmInterpretation({
+      text: 'Pruefe das Repository.',
+      requestId: '00000000-0000-4000-8000-000000000114',
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.interpretation).toBeUndefined();
+    expect(result.diagnostic).toMatchObject({
+      status: 502, scope: 'worker_runtime', canClientFix: false,
+    });
+    expect(result.diagnostic?.bodySnippet).toBeUndefined();
+    expect(result.diagnostic?.nextAction).toContain('Backend-Ausgabevertrag');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('classifies HTTP 401 as a recoverable backend-session blocker', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({

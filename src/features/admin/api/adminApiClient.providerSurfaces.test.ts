@@ -29,6 +29,16 @@ afterEach(() => {
 });
 
 describe('adminApiClient typed provider surface read model', () => {
+  it('preserves an OmniRoute blocker even when the upstream message is unknown', async () => {
+    setAdminKey('test-admin-key');
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      error: 'Unknown error', blocker: 'omniroute_canary_http_403',
+    }), { status: 502, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchImpl);
+    await expect(adminApiClient.refreshOmniRoute()).rejects.toThrow('omniroute_canary_http_403 · HTTP 502');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it('reads paid, free, OmniRoute, and generic provider evidence from their dedicated endpoints', async () => {
     const calls: string[] = [];
     let useNonCanonicalEnvelope = false;
@@ -110,7 +120,7 @@ describe('adminApiClient typed provider surface read model', () => {
             providerModel: 'openrouter/free',
             fallbackAfterQuota: 'freellm',
             paidFallbackAllowed: false,
-            accountWideQuotaScope: 'openrouter-free',
+            accountWideQuotaScope: 'openrouter:account:free-models',
           },
           runtimeIdentity: {},
           secretValuesReturned: false,
@@ -267,7 +277,7 @@ describe('adminApiClient typed provider surface read model', () => {
           providerModel: 'openrouter/free',
           fallbackAfterQuota: 'freellm',
           paidFallbackAllowed: false,
-          accountWideQuotaScope: 'openrouter-free',
+          accountWideQuotaScope: 'openrouter:account:free-models',
         },
         runtimeIdentity: {},
         secretValuesReturned: false,
@@ -306,7 +316,7 @@ describe('adminApiClient typed provider surface read model', () => {
           providerModel: 'openrouter/free',
           fallbackAfterQuota: 'freellm',
           paidFallbackAllowed: false,
-          accountWideQuotaScope: 'openrouter-free',
+          accountWideQuotaScope: 'openrouter:account:free-models',
         },
         runtimeIdentity: {},
         secretValuesReturned: false,
@@ -314,6 +324,9 @@ describe('adminApiClient typed provider surface read model', () => {
     };
 
     expect(isAcceptedLlmProviderSurfaceReadModel(valid)).toBe(true);
+    const staleQuotaScope = structuredClone(valid);
+    staleQuotaScope.openRouterFree.routingPolicy.accountWideQuotaScope = 'openrouter-free';
+    expect(isAcceptedLlmProviderSurfaceReadModel(staleQuotaScope)).toBe(false);
 
     const readyOmniRoute = {
       ...omniRoute,

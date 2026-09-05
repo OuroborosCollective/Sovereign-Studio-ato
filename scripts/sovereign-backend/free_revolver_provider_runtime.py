@@ -262,7 +262,7 @@ def _direct_completion_canary(
                 json={
                     "model": model_id,
                     "messages": [{"role": "user", "content": "Reply with OK."}],
-                    "max_tokens": 8,
+                    "max_tokens": 512,
                     "temperature": 0,
                 },
                 timeout=30,
@@ -338,6 +338,14 @@ def _direct_completion_canary(
                 "httpStatus": status,
             }
         if not general_chat_response_verified(payload):
+            if isinstance(choices[0], dict) and choices[0].get("finish_reason") == "length":
+                return {
+                    "ok": False,
+                    "blocker": "freellm_upstream_unavailable",
+                    "httpStatus": status,
+                    "failureFamily": "completion_token_limit",
+                    "latencyMs": int((time.monotonic() - started) * 1000),
+                }
             return {
                 "ok": False,
                 "blocker": "freellm_general_chat_canary_failed",
@@ -2843,6 +2851,7 @@ def register_free_revolver_provider_runtime(
     def internal_freellm_provider_status():
         if not _internal_owner_authorized():
             return jsonify({"error": "forbidden", "protectedValuesReturned": False}), 403
+        runtime_identity = _runtime_identity()
         rows = query(
             """SELECT source.id::text, source.label, source.api_base, source.auth_mode,
                       source.status, source.enabled, source.last_http_status,
@@ -2872,6 +2881,14 @@ def register_free_revolver_provider_runtime(
                 str(source.get("key_fingerprint") or ""),
             )
             managed_source = managed_internal_source_spec(source.get("api_base")) or {}
+            ready_model_ids = (
+                _revision_bound_ready_model_ids(
+                    query,
+                    source_id=str(source.get("id") or ""),
+                    runtime_identity=runtime_identity,
+                )
+                if source.get("enabled") and managed_key["available"] else set()
+            )
             ready_rows = query(
                 """SELECT model.upstream_model_id,
                           route.id::text AS route_id,
@@ -2904,7 +2921,8 @@ def register_free_revolver_provider_runtime(
                 "cooldownEvidence": item.get("cooldown_evidence") or {},
                 "eligibilityEvidence": item.get("eligibility_evidence") or {},
                 "actualUpstream": item.get("actual_upstream") or {},
-            } for item in ready_rows]
+            } for item in ready_rows
+              if str(item.get("upstream_model_id") or "") in ready_model_ids]
             providers.append({
                 "sourceId": str(source.get("id") or ""),
                 "sourceType": str(managed_source.get("sourceId") or "external-free-provider"),
@@ -2929,7 +2947,9 @@ def register_free_revolver_provider_runtime(
                 "keyFingerprintMatchesFile": managed_key["fingerprintMatches"],
                 "modelCount": int(source.get("model_count") or 0),
                 "freeEligibleCount": int(source.get("free_eligible_count") or 0),
-                "readyCount": int(source.get("ready_count") or 0),
+                "storedReadyCount": int(source.get("ready_count") or 0),
+                "readyCount": len(ready_model_ids),
+                "readyCountSource": "revision-bound-fresh-canary-routes",
                 "readyEvidence": ready_evidence,
                 "blockedEvidence": _blocked_general_chat_evidence(
                     query,
@@ -2971,7 +2991,7 @@ def register_free_revolver_provider_runtime(
                 for item in credential_pools
                 if item["mode"] == "keyless"
             ),
-            "runtimeIdentity": _runtime_identity(),
+            "runtimeIdentity": runtime_identity,
             "protectedValuesReturned": False,
         })
 

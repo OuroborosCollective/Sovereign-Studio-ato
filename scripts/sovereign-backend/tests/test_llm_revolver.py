@@ -136,6 +136,25 @@ def test_quota_and_rate_limit_rotate_only_without_usage():
     )["retryAllowed"] is False
 
 
+def test_openrouter_402_permits_free_fallback_only_before_usage():
+    from direct_llm_runtime import classify_direct_llm_failure
+    import requests
+
+    response = requests.Response()
+    response.status_code = 402
+    response._content = b'{"error":{"message":"Insufficient credits"}}'
+    classified = classify_direct_llm_failure(
+        {"provider": "openrouter", "runtime_kind": "openrouter",
+         "config": {"transport": "openrouter"}}, response,
+    )
+    assert classified["blocker"] == "openrouter_account_credits_required"
+    decision = failure_decision(classified, usage_seen=False)
+    assert decision["retryAllowed"] is True
+    assert decision["state"] == "cooldown"
+    assert decision["cooldownSeconds"] == 3600
+    assert failure_decision(classified, usage_seen=True)["retryAllowed"] is False
+
+
 def test_request_id_alone_is_not_usage_evidence():
     assert provider_usage_seen({
         "totalTokens": 0,

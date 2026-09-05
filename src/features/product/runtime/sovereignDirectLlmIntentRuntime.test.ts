@@ -32,6 +32,30 @@ function actionEnvelope(overrides: Record<string, unknown> = {}) {
 }
 
 describe('sovereignDirectLlmIntentRuntime code-action binding', () => {
+  it.each([
+    ['llm_output_contract_violation', 502, 'worker_runtime'],
+    ['llm_output_contract_route_unavailable', 409, 'worker_config'],
+    ['freellm_upstream_unavailable', 502, 'upstream_provider'],
+  ])('classifies %s from the structured blocker rather than HTTP alone', async (blocker, status, scope) => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ routes: [structuredFreeRoute] }))
+      .mockResolvedValueOnce(jsonResponse({ blocker }, Number(status))) as unknown as typeof fetch;
+    const result = await fetchSovereignDirectLlmInterpretation({
+      text: 'Prüfe die Tests.',
+      fetchImpl,
+      requestId: '88888888-8888-4888-8888-888888888888',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.interpretation).toBeUndefined();
+    expect(result.diagnostic?.scope).toBe(scope);
+    expect(result.diagnostic?.status).toBe(status);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    if (blocker === 'llm_output_contract_violation') {
+      expect(result.diagnostic?.nextAction).toContain('Provider hat geantwortet');
+      expect(result.diagnostic?.nextAction).not.toContain('Rate-Limit');
+    }
+  });
+
   it('fails closed when a manually pinned route is absent from the action-contract catalog', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({ routes: [structuredFreeRoute] })) as unknown as typeof fetch;
 

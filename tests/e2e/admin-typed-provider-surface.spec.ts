@@ -231,7 +231,7 @@ async function installAdminMock(page: Page, calls: Call[]): Promise<void> {
           providerModel: 'openrouter/free',
           fallbackAfterQuota: 'freellm',
           paidFallbackAllowed: false,
-          accountWideQuotaScope: 'openrouter-free',
+          accountWideQuotaScope: 'openrouter:account:free-models',
         },
         runtimeIdentity: {},
         secretValuesReturned: false,
