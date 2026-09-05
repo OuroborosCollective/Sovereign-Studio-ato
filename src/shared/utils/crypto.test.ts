@@ -86,6 +86,17 @@ describe('maskSecrets', () => {
     expect(maskSecrets('client_id: client_id_12345')).toBe('client_id: ****');
     expect(maskSecrets('session_token=session_token_67890')).toBe('session_token=****');
     expect(maskSecrets('session_id: sess_123456789')).toBe('session_id: ****');
+    expect(maskSecrets('access_key_id: AKIA1234567890ABCDEF')).toBe('access_key_id: ****');
+    expect(maskSecrets('secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY')).toBe('secret_access_key=****');
+    expect(maskSecrets('aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY')).toBe('aws_secret_access_key: ****');
+    expect(maskSecrets('encryption_key=top_secret_cipher_pass')).toBe('encryption_key=****');
+    expect(maskSecrets('cipher_key: cipher_val_99')).toBe('cipher_key: ****');
+    expect(maskSecrets('passphrase=my_super_passphrase')).toBe('passphrase=****');
+    expect(maskSecrets('database_password: db_secret_123')).toBe('database_password: ****');
+    expect(maskSecrets('db_password=db_pass_456')).toBe('db_password=****');
+    expect(maskSecrets('master_password: master_secret_789')).toBe('master_password: ****');
+    expect(maskSecrets('signing_key=signing_val_001')).toBe('signing_key=****');
+    expect(maskSecrets('signing_secret: signing_secret_002')).toBe('signing_secret: ****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
