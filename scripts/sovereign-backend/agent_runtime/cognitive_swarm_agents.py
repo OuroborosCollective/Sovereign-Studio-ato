@@ -29,7 +29,10 @@ from .cognitive_llm_transport import (
     RouteRuntimeError,
     build_route_run_config,
 )
-from .cognitive_output_budget import assess_output_budget_evidence
+from .cognitive_output_budget import (
+    AGENT_OUTPUT_TOKEN_LIMIT as _AGENT_OUTPUT_TOKEN_LIMIT,
+    assess_output_budget_evidence,
+)
 from .cognitive_usage_billing import AgentStageBilling
 from .fleet_supervisor import FleetContractError, FleetPlan
 from .llm_contract import (
@@ -43,7 +46,6 @@ from .llm_contract import (
 DEFAULT_MODEL: Final[str] = ""
 ALLOWED_LITELLM_MODEL_ALIASES: Final[frozenset[str]] = frozenset()
 _DIRECT_ROUTE_REQUIRED_TRANSPORT: Final[str] = "unresolved"
-_AGENT_OUTPUT_TOKEN_LIMIT: Final[int] = 2_048
 _AGENT_WORKER_MAX_TURNS: Final[int] = 4
 _AGENT_FREE_WORKSPACE_MAX_TURNS: Final[int] = 12
 _AGENT_SINGLE_STAGE_MAX_TURNS: Final[int] = 1
