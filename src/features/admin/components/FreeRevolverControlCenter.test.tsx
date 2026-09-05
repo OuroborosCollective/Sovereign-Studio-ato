@@ -113,7 +113,7 @@ function apiFixture(): UseAdminFreeRevolverProvidersResult {
         providerModel: 'openrouter/free',
         fallbackAfterQuota: 'freellm',
         paidFallbackAllowed: false,
-        accountWideQuotaScope: 'openrouter-free',
+        accountWideQuotaScope: 'openrouter:account:free-models',
       },
       runtimeIdentity: {},
       secretValuesReturned: false,

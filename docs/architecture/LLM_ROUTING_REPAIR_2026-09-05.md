@@ -22,6 +22,15 @@ This document distinguishes implementation and tests from production verificatio
 
 ## Implemented behavior
 
+This consolidated repair incorporates the incident fixes from PR #1860 at
+`3ec95ce7011999438aa33b603debf572c428a055`; do not merge both overlapping drafts.
+It also corrects the admin quota identity to `openrouter:account:free-models`
+and preserves typed OmniRoute blockers and accurate chat-card headings.
+
+LiteLLM remains retired. The existing `sovereignLiteLlmIntentRuntime.ts` filename
+and compatibility exports do not add a LiteLLM service, dependency or transport.
+The active providers remain the direct OpenRouter and FreeLLM paths.
+
 The backend prepends the full server-owned action schema and semantic constraints
 before token estimation and reservation. Provider-native structured output remains
 enabled only when supported. Validation precedes attempt success persistence.

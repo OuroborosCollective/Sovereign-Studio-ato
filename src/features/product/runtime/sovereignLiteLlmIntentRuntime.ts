@@ -240,7 +240,7 @@ function createDiagnostic(args: {
   } catch {
     // A non-JSON response carries no typed backend blocker.
   }
-  if (status === 502 && blocker === 'llm_output_contract_violation') {
+  if (blocker === 'llm_output_contract_violation') {
     return {
       route: args.route,
       model: args.model,
@@ -249,7 +249,19 @@ function createDiagnostic(args: {
       statusText: args.statusText,
       scope: 'worker_runtime',
       canClientFix: false,
-      nextAction: 'Backend-Ausgabevertrag prüfen: vollständiges Schema an den Provider senden und die Antwort vor Erfolgsmeldung validieren; keine lokale Sprachdeutung starten.',
+      nextAction: 'Provider hat geantwortet. Backend-Ausgabevertrag prüfen: vollständiges Schema senden und vor Erfolgsmeldung validieren; keine lokale Sprachdeutung und kein blinder Retry nach Provider-Nutzung.',
+    };
+  }
+  if (blocker === 'llm_output_contract_route_unavailable') {
+    return {
+      route: args.route,
+      model: args.model,
+      messageCount: args.messageCount,
+      status,
+      statusText: args.statusText,
+      scope: 'worker_config',
+      canClientFix: false,
+      nextAction: 'Keine freigegebene Route erfüllt den Codeauftragsvertrag. Modell- und Schema-Fähigkeit serverseitig prüfen; keine beliebige Ersatzroute ausführen.',
     };
   }
   if (status === 402) {
