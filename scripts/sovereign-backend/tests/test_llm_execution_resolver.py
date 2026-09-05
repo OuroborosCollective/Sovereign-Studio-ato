@@ -5,6 +5,8 @@ from pathlib import Path
 import os
 import sys
 
+import pytest
+
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
@@ -17,9 +19,10 @@ from llm_execution_resolver import (
     build_paid_to_free_candidates,
     free_fallback_resolution,
     resolve_execution_profile,
+    load_execution_resolution,
 )
 from llm_revolver import verify_free_route_reason
-from llm_transport import FREELLM_BASE_URL, OPENROUTER_BASE_URL
+from llm_transport import FREELLM_BASE_URL, OPENROUTER_BASE_URL, OMNIROUTE_BASE_URL
 
 
 SOURCE_REVISION = "1" * 40
@@ -595,3 +598,95 @@ def test_forced_free_resolution_preserves_openrouter_fallback_context() -> None:
     assert fallback.requested_mode == "auto"
     assert fallback.fallback_from_transport == "openrouter"
     assert fallback.primary_route["id"] == "free"
+
+class _SdkCursor:
+    def __init__(self, routes):
+        self.routes = routes
+        self.query = ""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, query, params=None):
+        self.query = query
+
+    def fetchone(self):
+        return {"id": "test-account", "email": "", "role": "user", "credits": 25,
+                "provider_funded_credits": 0, "paid_purchase_verified": False}
+
+    def fetchall(self):
+        return self.routes if "FROM llm_routes" in self.query else []
+
+
+class _SdkConnection:
+    def __init__(self, routes):
+        self.test_cursor = _SdkCursor(routes)
+        self.closed = False
+
+    def cursor(self):
+        return self.test_cursor
+
+    def close(self):
+        self.closed = True
+
+
+def _sdk_routes():
+    managed = route("managed", category="free", scope="free:managed",
+                    priority=20, profile=FREE_SINGLE_AGENT_PROFILE)
+    omni = route("omni", category="free", scope="free:omni",
+                 priority=1, profile=FREE_SINGLE_AGENT_PROFILE)
+    omni["base_url"] = OMNIROUTE_BASE_URL
+    return managed, omni
+
+
+def test_sdk_loader_skips_keyless_omniroute_but_direct_chat_keeps_it():
+    managed, omni = _sdk_routes()
+    connection = _SdkConnection([omni, managed])
+    resolution = load_execution_resolution(
+        lambda: connection, user_id="test-account", requested_mode="free")
+    assert connection.closed
+    assert resolution.primary_route["id"] == "managed"
+    assert [item["id"] for item in resolution.candidate_routes] == ["managed"]
+    direct = resolve_execution_profile(
+        routes=[omni, managed], state_by_scope={}, paid_purchase_verified=False,
+        provider_funded_credits=0, credit_balance=25, requested_mode="free")
+    assert direct.primary_route["id"] == "omni"
+
+
+@pytest.mark.parametrize("pin", ["requested_model", "requested_main_model",
+                                "requested_agent_model"])
+def test_sdk_loader_does_not_replace_explicit_unsupported_pin(pin):
+    managed, omni = _sdk_routes()
+    connection = _SdkConnection([omni, managed])
+    with pytest.raises(ExecutionResolutionError) as caught:
+        load_execution_resolution(
+            lambda: connection, user_id="test-account", **{pin: "omni"})
+    assert connection.closed
+    assert caught.value.failure_family == "agents_sdk_route_unsupported"
+    assert caught.value.status_code == 422
+
+
+def test_sdk_loader_does_not_make_unverified_managed_route_eligible():
+    managed, omni = _sdk_routes()
+    managed["config"]["canaryConfirmationCount"] = 0
+    connection = _SdkConnection([omni, managed])
+    resolution = load_execution_resolution(
+        lambda: connection, user_id="test-account", requested_mode="free")
+    assert resolution is None
+    assert connection.closed
+
+
+def test_sdk_loader_preserves_supported_paid_route_and_free_fallback():
+    managed, omni = _sdk_routes()
+    paid = route("paid", category="standard", scope="paid:test",
+                 priority=0, profile=PAID_SWARM_PROFILE)
+    connection = _SdkConnection([paid, omni, managed])
+    connection.test_cursor.fetchone = lambda: {
+        "id": "test-account", "email": "", "role": "user", "credits": 25,
+        "provider_funded_credits": 25, "paid_purchase_verified": True}
+    resolution = load_execution_resolution(lambda: connection, user_id="test-account")
+    assert resolution.primary_route["id"] == "paid"
+    assert [item["id"] for item in resolution.candidate_routes] == ["paid", "managed"]
