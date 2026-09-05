@@ -575,7 +575,7 @@ function isAcceptedOpenRouterFreeStatus(value: unknown): value is OpenRouterFree
     && policy.providerModel === 'openrouter/free'
     && policy.fallbackAfterQuota === 'freellm'
     && policy.paidFallbackAllowed === false
-    && policy.accountWideQuotaScope === 'openrouter-free'
+    && policy.accountWideQuotaScope === 'openrouter:account:free-models'
     && isRecord(value.runtimeIdentity)
     && value.secretValuesReturned === false;
 }
@@ -792,11 +792,20 @@ async function req<T>(
     const body = await res.json().catch(() => ({})) as {
       error?: string | { message?: string; code?: string };
       message?: string;
+      blocker?: unknown;
     };
     const message = typeof body.error === 'string'
       ? body.error
       : body.error?.message ?? body.message;
-    throw new Error(message ?? `HTTP ${res.status}`);
+    const blocker = typeof body.blocker === 'string'
+      && /^[a-z][a-z0-9_:-]{0,159}$/i.test(body.blocker)
+      ? body.blocker
+      : null;
+    // Preserve the backend's bounded cause instead of reducing OmniRoute and
+    // other provider failures to an uncorrelated "Unknown error".
+    throw new Error(blocker
+      ? `${blocker} · HTTP ${res.status}${message ? ` · ${message}` : ''}`
+      : message ?? `HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
 }

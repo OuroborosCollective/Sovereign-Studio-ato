@@ -401,6 +401,46 @@ def test_paid_to_free_candidates_deduplicate_shared_quota_scopes() -> None:
     )] == ["paid", "free-a-alias", "free-b"]
 
 
+def test_paid_budget_block_or_cooldown_preserves_independent_free_candidates() -> None:
+    now = datetime(2026, 9, 5, tzinfo=timezone.utc)
+    paid = route("budget-paid", category="standard", scope="paid:budget",
+                 priority=10, profile=PAID_SWARM_PROFILE)
+    free = route("budget-free", category="free", scope="free:independent",
+                 priority=20, profile=FREE_SINGLE_AGENT_PROFILE)
+    for state in (
+        {"status": "blocked"},
+        {"status": "cooldown", "cooldown_until": now + timedelta(hours=1)},
+    ):
+        candidates = build_paid_to_free_candidates(
+            paid, [paid, free], state_by_scope={"paid:budget": state}, now=now,
+        )
+        assert [candidate["id"] for candidate in candidates] == ["budget-free"]
+        assert build_paid_to_free_candidates(
+            paid, [paid], state_by_scope={"paid:budget": state}, now=now,
+        ) == []
+        assert build_paid_to_free_candidates(
+            paid, [paid, free],
+            state_by_scope={"paid:budget": state, "free:independent": {"status": "blocked"}},
+            now=now,
+        ) == []
+
+
+def test_invalid_paid_identity_cannot_enable_automatic_free_fallback() -> None:
+    paid = route("invalid-paid", category="standard", scope="paid:invalid",
+                 priority=10, profile=PAID_SWARM_PROFILE)
+    free = route("valid-free", category="free", scope="free:independent",
+                 priority=20, profile=FREE_SINGLE_AGENT_PROFILE)
+    paid["config"]["catalogVerified"] = False
+    assert build_paid_to_free_candidates(paid, [paid, free]) == []
+
+
+def test_execution_resolver_deployment_mirror_is_byte_identical() -> None:
+    root = BACKEND.parents[1]
+    assert (BACKEND / "llm_execution_resolver.py").read_bytes() == (
+        root / "backend/llm_execution_resolver.py"
+    ).read_bytes()
+
+
 def test_paid_provider_failure_derives_free_single_agent_fallback() -> None:
     paid = route(
         "paid",

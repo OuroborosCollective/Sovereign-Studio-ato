@@ -310,25 +310,28 @@ def build_paid_to_free_candidates(
             state_by_scope=states,
             now=current_time,
         )
-    if not _paid_route_available(
+    # Invalid/disabled primary identities still fail closed. A verified paid
+    # route in budget/quota cooldown must not erase independent free routes.
+    if not route_is_verified_paid(primary):
+        return []
+    paid_available = _paid_route_available(
         primary,
         state_by_scope=states,
         now=current_time,
-    ):
-        return []
+    )
 
     free_routes = _ordered_free_routes(
         route for route in routes if route_is_verified_free(route)
     )
     if not free_routes:
-        return [primary]
+        return [primary] if paid_available else []
     free_candidates = build_revolver_candidates(
         free_routes[0],
         free_routes,
         state_by_scope=states,
         now=current_time,
     )
-    return [primary, *free_candidates]
+    return [*([primary] if paid_available else []), *free_candidates]
 
 
 def resolve_execution_profile(

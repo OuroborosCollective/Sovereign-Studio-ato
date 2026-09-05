@@ -111,7 +111,11 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
       ? 'Zugriff nicht erlaubt'
       : stepUpRequired
         ? 'Bestätigung erforderlich (Step-Up)'
-        : 'LLM-Runtime nicht erreichbar';
+        : diagnostic.scope === 'worker_runtime'
+          ? 'LLM-Antwort konnte nicht verwendet werden'
+          : diagnostic.scope === 'worker_config'
+            ? 'LLM-Route nicht freigegeben'
+            : 'LLM-Runtime nicht erreichbar';
   const canAgent = Boolean(allowAgentAction && actionMessage && onAgentInstead);
   const canRetry = Boolean((onRetryWithMessage && actionMessage) || onRetry);
   
