@@ -232,10 +232,13 @@ function createActionEvent(input: SovereignActionEventInput, index: number): Sov
 }
 
 function eventsSinceLastInput(events: readonly SovereignActionEvent[]): readonly SovereignActionEvent[] {
-  const lastInputIndex = events.reduce(
-    (last, event, index) => (event.kind === 'input_received' ? index : last),
-    -1,
-  );
+  let lastInputIndex = -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].kind === 'input_received') {
+      lastInputIndex = i;
+      break;
+    }
+  }
   return lastInputIndex >= 0 ? events.slice(lastInputIndex) : events;
 }
 
@@ -336,19 +339,22 @@ export function appendSovereignActionEvents(
   inputs: readonly SovereignActionEventInput[],
   maxEvents = 80,
 ): SovereignActionStreamState {
-  return inputs.reduce(
-    (current, input) => appendSovereignActionEvent(current, input, maxEvents),
-    stream,
-  );
+  let current = stream;
+  for (const input of inputs) {
+    current = appendSovereignActionEvent(current, input, maxEvents);
+  }
+  return current;
 }
 
 export function latestSovereignActionByRoute(
   stream: SovereignActionStreamState,
 ): Partial<Record<SovereignActionRoute, SovereignActionEvent>> {
-  return stream.events.reduce<Partial<Record<SovereignActionRoute, SovereignActionEvent>>>(
-    (latest, event) => ({ ...latest, [event.route]: event }),
-    {},
-  );
+  // ⚡ Bolt: Replace O(N^2) object spread copying in reduce with single-pass mutation loop
+  const latest: Partial<Record<SovereignActionRoute, SovereignActionEvent>> = {};
+  for (const event of stream.events) {
+    latest[event.route] = event;
+  }
+  return latest;
 }
 
 export function findActiveSovereignActionBlocker(stream: SovereignActionStreamState): SovereignActionEvent | null {
@@ -590,8 +596,12 @@ function mapEventStateToSeverity(state: SovereignActionEventState): SovereignBlo
 export function deriveBlockerCountsFromEvents(
   events: readonly SovereignActionEvent[],
 ): { activeBlockers: number; warnings: number; errors: number; blockedEventCount: number } {
-  const uniqueBlockers = new Map<string, { kind: SovereignBlockerKind; severity: SovereignBlockerSeverity }>();
+  // ⚡ Bolt: Single-pass accumulation with Set tracking avoids Array.from allocations and multiple .filter() passes
+  const seenBlockerKeys = new Set<string>();
   let blockedCount = 0;
+  let activeBlockers = 0;
+  let warnings = 0;
+  let errors = 0;
 
   for (const event of events) {
     if (event.state === 'blocked' || event.state === 'failed') {
@@ -599,22 +609,22 @@ export function deriveBlockerCountsFromEvents(
       const blockerKind = mapEventKindToBlockerKind(event.kind);
       if (blockerKind) {
         const key = `${event.route}:${blockerKind}`;
-        if (!uniqueBlockers.has(key)) {
-          uniqueBlockers.set(key, {
-            kind: blockerKind,
-            severity: mapEventStateToSeverity(event.state),
-          });
+        if (!seenBlockerKeys.has(key)) {
+          seenBlockerKeys.add(key);
+          activeBlockers++;
+          const severity = mapEventStateToSeverity(event.state);
+          if (severity === 'warning') {
+            warnings++;
+          } else if (severity === 'error') {
+            errors++;
+          }
         }
       }
     }
   }
 
-  const blockers = Array.from(uniqueBlockers.values());
-  const warnings = blockers.filter((b) => b.severity === 'warning').length;
-  const errors = blockers.filter((b) => b.severity === 'error').length;
-
   return {
-    activeBlockers: blockers.length,
+    activeBlockers,
     warnings,
     errors,
     blockedEventCount: blockedCount,
