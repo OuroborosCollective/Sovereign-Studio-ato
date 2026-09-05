@@ -1,19 +1,17 @@
-// Execute the actual scanner; only filesystem/report/process adapters are isolated.
+// Import the actual scanner as a module; isolate only its filesystem/report adapters.
 import fs from 'node:fs';
-import path from 'node:path';
-import vm from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const builderPath = 'src/features/product/containers/BuilderContainer.tsx';
 const builder = fs.readFileSync(builderPath, 'utf8');
-const scanner = fs.readFileSync('scripts/sovereign-ux-contract-scan.mjs', 'utf8')
-  .replace(/^import .+;$/gm, '');
+const scannerPath = '../../../../scripts/sovereign-ux-contract-scan.mjs';
 
-function scan(source: string) {
+async function scan(source: string) {
   let report: { status: string; errors: Array<{ id: string }> } | undefined;
   const exits: number[] = [];
-  vm.runInNewContext(scanner, {
-    fs: {
+  vi.resetModules();
+  vi.doMock('node:fs', () => ({
+    default: {
       ...fs,
       readFileSync: (filePath: string) => filePath === builderPath
         ? source : fs.readFileSync(filePath, 'utf8'),
@@ -21,35 +19,46 @@ function scan(source: string) {
       writeFileSync: () => undefined,
       appendFileSync: () => undefined,
     },
-    path,
-    process: { env: {}, exit: (code: number) => { exits.push(code); } },
-    console: { log: (value: string) => { report = JSON.parse(value); } },
-  }, { timeout: 5000 });
-  if (!report) throw new Error('Scanner did not emit its report');
-  return { report, exits };
+  }));
+  vi.doMock('node:process', () => ({
+    default: { env: {}, exit: (code: number) => { exits.push(code); } },
+  }));
+  const log = vi.spyOn(console, 'log').mockImplementation((value: string) => {
+    report = JSON.parse(value);
+  });
+  try {
+    await import(/* @vite-ignore */ scannerPath);
+    if (!report) throw new Error('Scanner did not emit its report');
+    return { report, exits };
+  } finally {
+    log.mockRestore();
+    vi.doUnmock('node:fs');
+    vi.doUnmock('node:process');
+    vi.resetModules();
+  }
 }
 
 describe('production UX scanner chat bindings', () => {
-  it('accepts the actual chat dock with its expanded empty-state markup', () => {
-    const { report, exits } = scan(builder);
+  it('accepts the actual chat dock with its expanded empty-state markup', async () => {
+    const { report, exits } = await scan(builder);
     expect(report.status).toBe('pass');
     expect(report.errors).toEqual([]);
     expect(exits).toEqual([]);
   });
 
-  it('rejects a changed submit handler even when the original name remains elsewhere', () => {
+  it('rejects a changed submit handler even when the original name remains elsewhere', async () => {
     const broken = builder.replace('onSubmit={() => { void handleSubmit(); }}',
       'onSubmit={() => { void unrelatedHandler(); }}');
     expect(broken).not.toBe(builder);
-    const { report, exits } = scan(broken);
+    const { report, exits } = await scan(broken);
     expect(report.errors.map(error => error.id)).toContain('builder:start-visible');
     expect(exits).toEqual([1]);
   });
 
-  it('rejects an input state disconnected from setWishText', () => {
+  it('rejects an input state disconnected from setWishText', async () => {
     const broken = builder.replace('onChange={setWishText}', 'onChange={unrelatedHandler}');
     expect(broken).not.toBe(builder);
-    const { report, exits } = scan(broken);
+    const { report, exits } = await scan(broken);
     expect(report.errors.map(error => error.id)).toContain('builder:mission-form-bound');
     expect(exits).toEqual([1]);
   });
