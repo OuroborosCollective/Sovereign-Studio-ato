@@ -4102,7 +4102,10 @@ def _code_action_contract_mode(route: dict) -> str | None:
     # FreeLLM models remain usable through a stricter server boundary: the
     # provider receives a JSON-only prompt, and any non-contract output is
     # discarded before it can reach the browser.
-    if route_transport(dict(route)) == "freellm":
+    if (
+        route_transport(dict(route)) == "freellm"
+        or route_is_verified_free(dict(route))
+    ):
         return "server-validated-json"
     return None
 

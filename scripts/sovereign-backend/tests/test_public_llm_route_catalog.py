@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import ast
 import json
+import sys
 from pathlib import Path
 
 
 BACKEND = Path(__file__).resolve().parents[1]
 APP = BACKEND / "app.py"
+sys.path.insert(0, str(BACKEND))
+from llm_revolver import route_is_verified_free
 
 
 def _function(name: str) -> ast.FunctionDef:
@@ -166,6 +169,7 @@ def test_freellm_routes_use_server_validated_json_mode() -> None:
         {
             "_llm_route_config": lambda route: route.get("config", {}),
             "route_transport": lambda route: route.get("transport"),
+            "route_is_verified_free": route_is_verified_free,
         },
     )
     mode = namespace["_code_action_contract_mode"]

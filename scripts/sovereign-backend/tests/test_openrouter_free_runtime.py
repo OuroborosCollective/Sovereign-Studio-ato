@@ -407,3 +407,24 @@ def test_textual_canary_still_requires_free_generation_evidence(monkeypatch, cos
         runtime._double_canary(TEST_CREDENTIAL)
     assert exc.value.family == family
     assert [method for method, _, _ in calls] == ["POST", "GET"]
+
+
+def test_verified_openrouter_free_route_can_enter_strict_server_action_validation(monkeypatch):
+    import ast
+    from llm_transport import route_transport
+
+    module = ast.parse((BACKEND / "app.py").read_text(encoding="utf-8"))
+    names = {"_llm_route_config", "_code_action_contract_mode"}
+    nodes = [node for node in module.body
+             if isinstance(node, ast.FunctionDef) and node.name in names]
+    namespace = {"route_transport": route_transport,
+                 "route_is_verified_free": route_is_verified_free, "_json": json}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), "app.py", "exec"), namespace)
+    mode = namespace["_code_action_contract_mode"]
+    route = _verified_route(monkeypatch)
+    assert mode(route) == "server-validated-json"
+    route["config"]["canaryReceipt"]["zeroCostEvidenceVerified"] = False
+    assert mode(route) is None
+    route = _verified_route(monkeypatch)
+    route["disabled"] = True
+    assert mode(route) is None
