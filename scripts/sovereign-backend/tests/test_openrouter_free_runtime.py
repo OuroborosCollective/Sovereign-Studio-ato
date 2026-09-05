@@ -428,3 +428,66 @@ def test_verified_openrouter_free_route_can_enter_strict_server_action_validatio
     route = _verified_route(monkeypatch)
     route["disabled"] = True
     assert mode(route) is None
+
+
+def test_generation_receipt_waits_for_late_indexing_without_new_completion(monkeypatch):
+    responses = [_Response(404, {"error": {"message": "Resource not found"}}) for _ in range(5)]
+    responses.append(_Response(200, {"data": {
+        "total_cost": "0", "model": "example/model:free", "router": "openrouter/free",
+    }}))
+    sleeps = []
+    calls = []
+    class Session(_Session):
+        def get(self, url, **kwargs):
+            calls.append((url, kwargs["params"]))
+            return responses.pop(0)
+    monkeypatch.setattr(runtime.requests, "Session", lambda: Session(None))
+    monkeypatch.setattr(runtime.time, "sleep", sleeps.append)
+    result = runtime._generation_zero_cost(TEST_CREDENTIAL, "same-generation")
+    assert result["totalCostUsd"] == "0"
+    assert result["generationId"] == "same-generation"
+    assert sleeps == [1, 2, 3, 4, 5]
+    assert len(calls) == 6
+    assert all(url.endswith("/generation") and params == {"id": "same-generation"}
+               for url, params in calls)
+
+
+def test_missing_generation_receipt_has_bounded_specific_failure(monkeypatch):
+    calls = []
+    sleeps = []
+    class Session(_Session):
+        def get(self, url, **kwargs):
+            calls.append(url)
+            return _Response(404, {"error": {"message": "Resource not found"}})
+    monkeypatch.setattr(runtime.requests, "Session", lambda: Session(None))
+    monkeypatch.setattr(runtime.time, "sleep", sleeps.append)
+    with pytest.raises(runtime.OpenRouterFreeRuntimeError) as exc:
+        runtime._generation_zero_cost(TEST_CREDENTIAL, "missing-generation")
+    assert exc.value.family == "openrouter_generation_receipt_unavailable"
+    assert exc.value.status_code == 503
+    assert len(calls) == 6
+    assert sum(sleeps) == 15
+
+
+@pytest.mark.parametrize("status,family", [
+    (401, "openrouter_credentials_rejected"),
+    (429, "openrouter_rate_limited"),
+    (500, "openrouter_upstream_unavailable"),
+])
+def test_generation_receipt_only_retries_not_found(monkeypatch, status, family):
+    sleeps = []
+    monkeypatch.setattr(runtime.requests, "Session",
+                        lambda: _Session(_Response(status, {"error": {}})))
+    monkeypatch.setattr(runtime.time, "sleep", sleeps.append)
+    with pytest.raises(runtime.OpenRouterFreeRuntimeError) as exc:
+        runtime._generation_zero_cost(TEST_CREDENTIAL, "generation")
+    assert exc.value.family == family
+    assert sleeps == []
+
+
+def test_data_policy_endpoint_failure_does_not_relax_privacy():
+    response = _Response(404, {"error": {
+        "message": "No endpoints found that match your data policy.",
+    }})
+    assert runtime._safe_error_family(response) == "openrouter_data_policy_no_endpoints"
+    assert runtime._FREE_PROVIDER_POLICY["data_collection"] == "deny"
