@@ -31,6 +31,8 @@ export interface ExternalRouteConsentGateProps {
 export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: ExternalRouteConsentGateProps) {
   return (
     <div
+      role="region"
+      aria-label="Einwilligung für externe Notfall-Routen"
       style={{
         background: C.surface,
         border: `1px solid ${C.orange}`,
@@ -49,6 +51,7 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
         }}
       >
         <div
+          aria-hidden="true"
           style={{
             width: 36,
             height: 36,
@@ -107,6 +110,7 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
           deinen Auftrag und Repo-Kontext außerhalb der lokalen Runtime verarbeiten.
         </div>
         <ul
+          role="list"
           style={{
             margin: '8px 0 0 0',
             padding: '0 0 0 20px',
@@ -132,6 +136,9 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
         <button
           type="button"
           onClick={onDeny}
+          aria-label="Externe Notfall-Routen ablehnen und lokal fortfahren"
+          title="Externe Notfall-Routen ablehnen und lokal fortfahren"
+          className="focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:outline-none"
           style={{
             padding: '8px 16px',
             borderRadius: 8,
@@ -147,6 +154,9 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
         <button
           type="button"
           onClick={onApprove}
+          aria-label="Externe Notfall-Routen einmalig aktivieren"
+          title="Externe Notfall-Routen einmalig aktivieren"
+          className="focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:outline-none"
           style={{
             padding: '8px 16px',
             borderRadius: 8,

@@ -22,6 +22,7 @@ import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
+import { ExternalRouteConsentGate } from './ExternalRouteConsentGate';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1103,6 +1104,41 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(watchBtn);
       expect(onWatchChecks).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('ExternalRouteConsentGate Accessibility and Micro-UX Enhancements', () => {
+    it('renders landmark region, list role, focus rings, and action button title/aria-labels', () => {
+      const onApprove = vi.fn();
+      const onDeny = vi.fn();
+
+      render(
+        <ExternalRouteConsentGate
+          onApprove={onApprove}
+          onDeny={onDeny}
+          attempts={2}
+        />
+      );
+
+      const region = screen.getByRole('region', { name: 'Einwilligung für externe Notfall-Routen' });
+      expect(region).toBeInTheDocument();
+
+      const list = screen.getByRole('list');
+      expect(list).toBeInTheDocument();
+
+      const denyBtn = screen.getByRole('button', { name: 'Externe Notfall-Routen ablehnen und lokal fortfahren' });
+      expect(denyBtn).toHaveAttribute('title', 'Externe Notfall-Routen ablehnen und lokal fortfahren');
+      expect(denyBtn).toHaveClass('focus-visible:ring-2');
+
+      const approveBtn = screen.getByRole('button', { name: 'Externe Notfall-Routen einmalig aktivieren' });
+      expect(approveBtn).toHaveAttribute('title', 'Externe Notfall-Routen einmalig aktivieren');
+      expect(approveBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(denyBtn);
+      expect(onDeny).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(approveBtn);
+      expect(onApprove).toHaveBeenCalledTimes(1);
     });
   });
 });
