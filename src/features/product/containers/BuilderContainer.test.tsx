@@ -545,6 +545,42 @@ afterEach(() => {
 });
 
 describe("BuilderContainer (AppControl DevChat shell)", () => {
+  it("loads a public repository URL without a session or protected mission writes", async () => {
+    useUserStore.getState().clearUser();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (isAuthBootstrapRequest(input)) return jsonResponse({ error: 'unauthorized' }, 401);
+      if (url.includes('/git/trees/')) return jsonResponse({
+        sha: 'a'.repeat(40), tree: [{ path: 'README.md', type: 'blob', sha: 'b'.repeat(40) }],
+      });
+      if (url.includes('/commits/')) return jsonResponse({ sha: 'c'.repeat(40) });
+      return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithProviders(<BuilderContainer {...baseProps()} repoReady={false} />);
+    await loadRepoFromChat();
+    expect(screen.queryByRole('dialog', { name: 'Anmelden' })).toBeNull();
+    const urls = fetchMock.mock.calls.map(([input]) => requestUrl(input));
+    expect(urls.some(url => url.includes('/git/trees/'))).toBe(true);
+    expect(urls.some(url => url.includes('/commits/'))).toBe(true);
+    expect(urls.some(url => url.includes('/chat-session') || url.includes('/api/llm/chat'))).toBe(false);
+  });
+
+  it("keeps unauthenticated natural-language missions behind the session gate", async () => {
+    useUserStore.getState().clearUser();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+      isAuthBootstrapRequest(input)
+        ? jsonResponse({ error: 'unauthorized' }, 401)
+        : runtimeSupportResponse(requestUrl(input), init) ?? jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithProviders(<BuilderContainer {...baseProps()} repoReady={false} />);
+    fireEvent.change(chatField(), { target: { value: 'Repariere die Tests im Repository.' } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Anmelden' })).toBeDefined());
+    const urls = fetchMock.mock.calls.map(([input]) => requestUrl(input));
+    expect(urls.some(url => url.includes('/chat-session') || url.includes('/api/llm/chat'))).toBe(false);
+  });
+
   it("renders the AppControl DevChat shell structure", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     const root = screen.getByTestId("builder-container");

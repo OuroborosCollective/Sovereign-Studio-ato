@@ -88,6 +88,29 @@ test.describe('Chat-first workspace browser smoke', () => {
     await expect(page.getByRole('dialog', { name: 'Sovereign Seitenmenü' })).toBeVisible();
   });
 
+  test('public repository URL loads while the user session is absent', async ({ page }) => {
+    await page.route('**/api/auth/me', route => route.fulfill({
+      status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'unauthorized' }),
+    }));
+    await page.route('https://api.github.com/repos/example/public-repo/git/trees/main?recursive=1',
+      route => route.fulfill({ json: {
+        sha: 'a'.repeat(40), tree: [{ path: 'README.md', type: 'blob', sha: 'b'.repeat(40) }],
+      } }));
+    await page.route('https://api.github.com/repos/example/public-repo/commits/main',
+      route => route.fulfill({ json: { sha: 'c'.repeat(40) } }));
+    const protectedRequests: string[] = [];
+    page.on('request', request => {
+      if (request.url().includes('/chat-session') || request.url().includes('/api/llm/chat'))
+        protectedRequests.push(request.url());
+    });
+    await page.reload();
+    await page.getByLabel('Codeauftrag an Sovereign').fill('https://github.com/example/public-repo');
+    await page.getByRole('button', { name: 'Senden', exact: true }).click();
+    await expect(page.getByLabel('Repo Inspector öffnen')).toBeVisible(EXTENDED_TIMEOUT);
+    await expect(page.getByRole('dialog', { name: 'Anmelden', exact: true })).toHaveCount(0);
+    expect(protectedRequests).toEqual([]);
+  });
+
   test('6. The evidence observatory route remains independently reachable', async ({ page }) => {
     await page.goto('/observatory');
     await expect(page.locator('[data-testid="evidence-observatory-atlas"]')).toBeVisible(EXTENDED_TIMEOUT);
