@@ -24,11 +24,11 @@ from llm_transport import (
     route_transport,
 )
 from paid_execution_entitlement import resolve_paid_execution_entitlement
+from .cognitive_output_budget import AGENT_OUTPUT_TOKEN_LIMIT as _AGENT_OUTPUT_TOKEN_LIMIT
 
 
 ConnectionFactory = Callable[[], Any]
 _AGENT_INPUT_TOKEN_LIMIT = 32_000
-_AGENT_OUTPUT_TOKEN_LIMIT = 2_048
 _AGENT_DEFAULT_REQUEST_LIMIT = 1
 _AGENT_WORKER_REQUEST_LIMIT = 6
 

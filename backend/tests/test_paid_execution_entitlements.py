@@ -190,7 +190,18 @@ def _billing_for(connection: _BillingConnection) -> AgentStageBilling:
     return billing
 
 
-def test_admin_reservation_bypasses_purchase_only_and_debits_real_credits() -> None:
+def test_admin_reservation_bypasses_purchase_only_and_debits_real_credits(monkeypatch) -> None:
+    import agent_runtime.cognitive_usage_billing as billing_module
+    from agent_runtime.cognitive_output_budget import AGENT_OUTPUT_TOKEN_LIMIT
+
+    observed = []
+    calculate = billing_module.reservation_credits
+
+    def capture_reservation(**kwargs):
+        observed.append(kwargs["output_token_limit"])
+        return calculate(**kwargs)
+
+    monkeypatch.setattr(billing_module, "reservation_credits", capture_reservation)
     connection = _BillingConnection([
         {
             "id": "00000000-0000-0000-0000-000000000004",
@@ -205,6 +216,7 @@ def test_admin_reservation_bypasses_purchase_only_and_debits_real_credits() -> N
 
     reservation = _billing_for(connection).reserve(stage="dispatcher", prompt="bounded")
 
+    assert observed == [AGENT_OUTPUT_TOKEN_LIMIT] == [8192]
     assert reservation.paid_entitlement_source == "administrator"
     assert reservation.reserved_credits > 0
     assert connection.commits == 1

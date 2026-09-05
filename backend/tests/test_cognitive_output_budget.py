@@ -188,6 +188,26 @@ def test_free_single_agent_partial_length_result_is_returned_but_marked_truncate
     assert result["result"]["response_truncated"] is True
 
 
+def test_sdk_and_billing_share_reasoning_inclusive_output_ceiling():
+    from agent_runtime.cognitive_usage_billing import AgentStageBilling
+    from agent_runtime.cognitive_output_budget import AGENT_OUTPUT_TOKEN_LIMIT
+
+    billing = AgentStageBilling.__new__(AgentStageBilling)
+    assert billing.output_token_limit == swarm_module._AGENT_OUTPUT_TOKEN_LIMIT == AGENT_OUTPUT_TOKEN_LIMIT == 8192
+    partial = SimpleNamespace(usage={
+        "completion_tokens": 8192,
+        "completion_tokens_details": {"reasoning_tokens": 8100},
+    })
+    failure = swarm_module._output_budget_failure(partial, stage="dispatcher-output")
+    assert failure is not None
+    assert failure.safe_payload()["outputBudgetEvidence"]["outputTokenLimit"] == 8192
+    shorter = SimpleNamespace(usage={
+        "completion_tokens": 2048,
+        "completion_tokens_details": {"reasoning_tokens": 1900},
+    })
+    assert swarm_module._output_budget_failure(shorter, stage="dispatcher-output") is None
+
+
 def test_production_image_mirrors_output_budget_guard() -> None:
     source_guard = BACKEND / "agent_runtime" / "cognitive_output_budget.py"
     production_guard = PRODUCTION_BACKEND / "agent_runtime" / "cognitive_output_budget.py"
