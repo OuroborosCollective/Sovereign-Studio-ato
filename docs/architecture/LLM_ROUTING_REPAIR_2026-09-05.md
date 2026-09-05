@@ -69,9 +69,22 @@ OpenRouter documents that a negative account balance may reject even free models
 Independent FreeLLM routes therefore remain necessary. A configured key is not a
 successful authentication canary.
 
-The owner provided a dedicated Free execution credential through the protected
-input flow. The real activation attempt returned `openrouter_credentials_rejected`;
-the direct Free route remains disabled. The existing Paid key was not changed.
+The first dedicated Free credential was rejected. A replacement submitted through
+protected request `190ad752-5635-4c97-aca3-44a2d5c9de9b` passed key metadata
+authentication, but its completion returned `openrouter_free_canary_text_missing`.
+The route remains disabled pending real textual and zero-cost generation receipts.
+The dedicated OpenRouter canary now uses 512 output tokens and rejects truncated
+responses explicitly. It still requires two independently verified free-generation
+receipts. The Paid key was not changed.
+
+The same authenticated owner request authorizes the current repair mission,
+including merge and deployment after verified checks. No additional permission
+request is needed for those scoped actions.
+
+The supplemental UX gate exposed baseline distance-regex drift. The correction
+from PR #1856 at `ed7e399dc25497103179315a9256ba0410fbee8c` is included.
+Regression tests execute the real scanner against actual source and disconnected
+input/submit variants through isolated filesystem adapters; they are not live proof.
 
 ## Validation and outstanding runtime proof
 

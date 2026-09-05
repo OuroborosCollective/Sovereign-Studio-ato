@@ -331,3 +331,79 @@ def test_management_key_limit_is_fail_closed_to_zero(
 
     monkeypatch.setenv("SOVEREIGN_OPENROUTER_FREE_KEY_LIMIT_USD", "0")
     assert runtime._managed_key_limit() == 0
+
+
+class _CanarySession(_Session):
+    def __init__(self, completions, receipts, calls):
+        self.completions = completions
+        self.receipts = receipts
+        self.calls = calls
+        self.trust_env = True
+
+    def post(self, url, **kwargs):
+        self.calls.append(("POST", url, kwargs))
+        return _Response(200, self.completions.pop(0))
+
+    def get(self, url, **kwargs):
+        self.calls.append(("GET", url, kwargs))
+        return _Response(200, {"data": self.receipts.pop(0)})
+
+
+def _completion(content="OK", finish_reason="stop", generation="canary-generation"):
+    return {
+        "id": generation, "model": "example/model:free",
+        "choices": [{"message": {"content": content}, "finish_reason": finish_reason}],
+    }
+
+
+def test_double_canary_allows_reasoning_budget_and_requires_two_zero_cost_receipts(monkeypatch):
+    calls = []
+    completions = [_completion(generation="generation-one"), _completion(generation="generation-two")]
+    receipts = [{"total_cost": "0", "model": "example/model:free", "router": "openrouter/free"} for _ in range(2)]
+    monkeypatch.setattr(runtime.requests, "Session",
+                        lambda: _CanarySession(completions, receipts, calls))
+    result = runtime._double_canary(TEST_CREDENTIAL)
+    assert result["confirmationCount"] == 2
+    assert result["generationIds"] == ["generation-one", "generation-two"]
+    assert [method for method, _, _ in calls] == ["POST", "GET", "POST", "GET"]
+    for method, url, kwargs in calls:
+        assert url.startswith(runtime.OPENROUTER_BASE_URL + "/")
+        assert kwargs["allow_redirects"] is False
+        if method == "POST":
+            assert kwargs["json"]["model"] == "openrouter/free"
+            assert kwargs["json"]["max_tokens"] == 512
+            assert kwargs["timeout"] == 45
+    assert result["providerCostState"] == "zero"
+
+
+@pytest.mark.parametrize("content,finish_reason,family", [
+    ("", "length", "openrouter_free_canary_truncated"),
+    ("OK", "length", "openrouter_free_canary_truncated"),
+    ("", "stop", "openrouter_free_canary_text_missing"),
+    (None, "stop", "openrouter_free_canary_text_missing"),
+])
+def test_incomplete_or_nontextual_canary_never_activates(monkeypatch, content, finish_reason, family):
+    calls = []
+    completions = [_completion(content=content, finish_reason=finish_reason)]
+    monkeypatch.setattr(runtime.requests, "Session",
+                        lambda: _CanarySession(completions, [], calls))
+    with pytest.raises(runtime.OpenRouterFreeRuntimeError) as exc:
+        runtime._double_canary(TEST_CREDENTIAL)
+    assert exc.value.family == family
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("cost,model,router,family", [
+    ("0.001", "example/model:free", "openrouter/free", "openrouter_free_generation_cost_not_zero"),
+    ("0", "example/model", "other/router", "openrouter_free_generation_identity_unverified"),
+])
+def test_textual_canary_still_requires_free_generation_evidence(monkeypatch, cost, model, router, family):
+    calls = []
+    completions = [_completion()]
+    receipts = [{"total_cost": cost, "model": model, "router": router}]
+    monkeypatch.setattr(runtime.requests, "Session",
+                        lambda: _CanarySession(completions, receipts, calls))
+    with pytest.raises(runtime.OpenRouterFreeRuntimeError) as exc:
+        runtime._double_canary(TEST_CREDENTIAL)
+    assert exc.value.family == family
+    assert [method for method, _, _ in calls] == ["POST", "GET"]

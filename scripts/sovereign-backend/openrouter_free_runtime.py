@@ -380,7 +380,7 @@ def _completion_canary(key: str) -> dict[str, Any]:
             json={
                 "model": OPENROUTER_FREE_MODEL,
                 "messages": [{"role": "user", "content": "Reply with OK."}],
-                "max_tokens": 8,
+                "max_tokens": 512,
                 "stream": False,
                 "provider": dict(_FREE_PROVIDER_POLICY),
             },
@@ -398,6 +398,8 @@ def _completion_canary(key: str) -> dict[str, Any]:
     first = choices[0] if choices and isinstance(choices[0], dict) else {}
     message = first.get("message") if isinstance(first.get("message"), dict) else {}
     content = message.get("content")
+    if first.get("finish_reason") == "length":
+        raise OpenRouterFreeRuntimeError("openrouter_free_canary_truncated")
     if not isinstance(content, str) or not content.strip():
         raise OpenRouterFreeRuntimeError("openrouter_free_canary_text_missing")
     generation_id = str(payload.get("id") or "").strip()[:200]
