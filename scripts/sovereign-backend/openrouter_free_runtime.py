@@ -275,6 +275,8 @@ def _safe_error_family(response: requests.Response) -> str:
         return "openrouter_credentials_rejected"
     if response.status_code == 402:
         return "openrouter_account_credits_required"
+    if response.status_code == 404 and ("data policy" in material or "privacy" in material):
+        return "openrouter_data_policy_no_endpoints"
     if response.status_code >= 500 or response.status_code in {301, 302, 307, 308, 404}:
         return "openrouter_upstream_unavailable"
     return "openrouter_provider_rejected"
@@ -322,21 +324,23 @@ def _current_key_metadata(key: str) -> dict[str, Any]:
 
 def _generation_zero_cost(key: str, generation_id: str) -> dict[str, Any]:
     last_status = 0
-    for attempt in range(4):
-        if attempt:
-            time.sleep(0.4 * attempt)
+    # Generation metadata can lag the completed response. Poll only the same
+    # receipt; never spend another completion to recover missing billing evidence.
+    for delay in (0, 1, 2, 3, 4, 5):
+        if delay:
+            time.sleep(delay)
         with requests.Session() as session:
             session.trust_env = False
             with session.get(
                 f"{OPENROUTER_BASE_URL}/generation",
                 headers=_headers(key),
                 params={"id": generation_id},
-                timeout=15,
+                timeout=5,
                 allow_redirects=False,
                 stream=True,
             ) as response:
                 last_status = int(response.status_code)
-                if last_status == 404 and attempt < 3:
+                if last_status == 404:
                     continue
                 if last_status != 200:
                     raise OpenRouterFreeRuntimeError(
@@ -366,7 +370,7 @@ def _generation_zero_cost(key: str, generation_id: str) -> dict[str, Any]:
             "requestId": str(data.get("request_id") or "")[:200] or None,
         }
     raise OpenRouterFreeRuntimeError(
-        "openrouter_generation_receipt_unavailable", status_code=last_status or 503
+        "openrouter_generation_receipt_unavailable", status_code=503
     )
 
 

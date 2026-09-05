@@ -20,7 +20,10 @@ from llm_cost_policy import (
 )
 from llm_revolver import build_revolver_candidates, route_is_verified_free, route_quota_scope
 from llm_transport import (
+    FREELLM_BASE_URL,
     FREELLM_TRANSPORT,
+    route_api_base,
+    route_is_direct_freellm,
     OPENROUTER_TRANSPORT,
     route_is_openrouter_paid,
     route_provider_model,
@@ -629,6 +632,37 @@ def advance_free_revolver_resolution(
     )
 
 
+def _agents_sdk_routes(
+    routes: list[dict[str, Any]],
+    *,
+    requested_models: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    """Restrict SDK selection to implemented adapters, before quota ordering.
+
+    Direct chat has a separate transport path and keeps its broader route set.
+    Existing policy, entitlement and fresh-canary checks still run afterwards.
+    """
+    supported = []
+    for route in routes:
+        compatible = route_is_openrouter_paid(route) or (
+            route_is_direct_freellm(route)
+            and route_api_base(route) == FREELLM_BASE_URL
+        )
+        if compatible:
+            supported.append(route)
+        elif any(
+            str(requested or "").strip() and _route_matches(route, requested)
+            for requested in requested_models
+        ):
+            raise ExecutionResolutionError(
+                "agents_sdk_route_unsupported",
+                "The selected route has no supported Agents SDK adapter.",
+                status_code=422,
+                details={"routeId": _route_id(route), "secretValuesReturned": False},
+            )
+    return supported
+
+
 def load_execution_resolution(
     get_connection: Callable[[], Any],
     *,
@@ -638,7 +672,7 @@ def load_execution_resolution(
     requested_agent_model: str = "",
     requested_mode: str = AUTO_MODE,
 ) -> ExecutionResolution | None:
-    """Load account entitlement, active routes and revolver state from PostgreSQL."""
+    """Load entitlement and SDK-compatible routes with PostgreSQL revolver state."""
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
@@ -675,7 +709,10 @@ def load_execution_resolution(
                          IN ('openrouter', 'freellm')
                    ORDER BY priority ASC, model_name ASC"""
             )
-            routes = [dict(row) for row in cursor.fetchall()]
+            routes = _agents_sdk_routes(
+                [dict(row) for row in cursor.fetchall()],
+                requested_models=(requested_model, requested_main_model, requested_agent_model),
+            )
             scopes: list[str] = []
             for route in routes:
                 try:
