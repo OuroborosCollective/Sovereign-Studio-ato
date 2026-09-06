@@ -8176,6 +8176,16 @@ def public_llm_chat():
                     "error": "Keine verifizierte Route erfüllt den Codeauftragsvertrag",
                     "blocker": "llm_output_contract_route_unavailable",
                 }), 409
+            # Keep one bounded recovery attempt even when the catalog exposes
+            # only one verified FreeLLM route. Without a second candidate the
+            # revolver is disabled and a transient 5xx ends the code workflow
+            # before the provider can recover. Usage evidence in the attempt
+            # loop still prevents retries after provider work was reported.
+            if len(candidate_routes) == 1 and route_is_verified_free(dict(candidate_routes[0])):
+                candidate_routes.append({
+                    **candidate_routes[0],
+                    "_single_route_contract_retry": True,
+                })
         if policy["billingCategory"] == FREE_CATEGORY and not candidate_routes:
             return jsonify({
                 "error": "Alle unabhängigen Free-Routen sind blockiert oder in Abkühlung.",
