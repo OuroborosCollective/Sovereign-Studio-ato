@@ -212,12 +212,21 @@ def read_mcp_runtime_identity(*, expected_revision: str | None = None) -> McpRun
 
 def _git_bytes(workspace_root: Path, *args: str) -> bytes:
     try:
+        env = os.environ.copy()
+        try:
+            config_count = int(env.get("GIT_CONFIG_COUNT", "0"))
+        except ValueError:
+            config_count = 0
+        env[f"GIT_CONFIG_KEY_{config_count}"] = "safe.directory"
+        env[f"GIT_CONFIG_VALUE_{config_count}"] = str(workspace_root.resolve())
+        env["GIT_CONFIG_COUNT"] = str(config_count + 1)
         completed = subprocess.run(
             ["git", "-C", str(workspace_root), *args],
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=30,
+            env=env,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise ReceiptIdentityBlocked("GIT_READBACK_FAILED", f"authoritative Git readback failed for {' '.join(args)}") from exc
