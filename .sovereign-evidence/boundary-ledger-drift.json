@@ -1,0 +1,45 @@
+{
+  "bindingDrift": [
+    {
+      "candidateId": "llm-boundary:63d374caec76ef7bcaabd156",
+      "changedFields": [
+        "candidateId",
+        "line",
+        "fileSha256"
+      ],
+      "classificationPreserved": "STRUCTURED_POLICY",
+      "path": "src/features/product/runtime/generatedFileReview.ts",
+      "previousCandidateId": "llm-boundary:2bcebad09b0dc9bedd8e5804",
+      "symbol": "isPlanOnlyPath"
+    }
+  ],
+  "canonicalCandidateCount": 79,
+  "ledgerPath": null,
+  "ledgerSha256": "5ef6f0231cb0b35e2d7662672a246c74c13da5fa6402318ddec0d0b1128a58de",
+  "mutationPerformed": false,
+  "newCandidates": [],
+  "ok": true,
+  "onlyNewStructuredCandidates": false,
+  "ownerDecisionCandidateIds": [],
+  "preservedCandidates": 79,
+  "previousLedgerSha256": "835787526b52523a6ab3d4b29ce0cdc8f0ebd6848283e56cba7a5ab2c31fb2a1",
+  "rawCandidateCount": 100,
+  "removedCandidates": [],
+  "safeToApply": true,
+  "schemaVersion": "sovereign.boundary-ledger-reconciliation.v1",
+  "secretValuesReturned": false,
+  "sourceRevision": "22ec8f12e4216f330d62a0ede2b73dd180a1f589",
+  "status": "SAFE_RECONCILIATION_READY",
+  "truthNotice": "This reconciliation preserves reviewed classifications and updates static bindings only; it does not prove runtime language understanding, workflow success, or deployment.",
+  "validation": {
+    "canonicalCandidateCount": 79,
+    "findings": [],
+    "ledgerSha256": "5ef6f0231cb0b35e2d7662672a246c74c13da5fa6402318ddec0d0b1128a58de",
+    "mutationPerformed": false,
+    "ok": true,
+    "rawCandidateCount": 100,
+    "revision": "22ec8f12e4216f330d62a0ede2b73dd180a1f589",
+    "status": "LLM_BOUNDARY_LEDGER_VERIFIED",
+    "truthNotice": "The ledger classifies static candidates only; it does not claim runtime language understanding or execution success."
+  }
+}
