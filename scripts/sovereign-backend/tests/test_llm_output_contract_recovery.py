@@ -26,6 +26,7 @@ def _production_namespace():
     names = {
         "_code_action_contract_messages", "_code_action_contract_mode",
         "_llm_route_config", "_validate_code_action_contract",
+        "_llm_response_was_truncated",
     }
     constants = {
         "_SOVEREIGN_CODE_ACTION_RESPONSE_FORMAT", "_CODE_ACTION_CONTRACT_KEYS",
@@ -42,9 +43,12 @@ def _production_namespace():
     return namespace
 
 
-def _completion(valid=True, usage=True):
-    return {
-        "choices": [{"message": {"content": json.dumps(ACTION) if valid else "Plain prose, not JSON"}}],
+def _completion(valid=True, usage=True, truncated=False):
+    payload = {
+        "choices": [{
+            "message": {"content": json.dumps(ACTION) if valid else "Plain prose, not JSON"},
+            **({"finish_reason": "length"} if truncated else {}),
+        }],
         "_evidence": {
             "promptTokens": 503 if usage else 0,
             "completionTokens": 168 if usage else 0,
@@ -53,6 +57,9 @@ def _completion(valid=True, usage=True):
             "upstreamRequestId": "provider-receipt" if usage else None,
         },
     }
+    if truncated:
+        payload["usage"] = {"completion_tokens": 700}
+    return payload
 
 
 def _execute_attempts(completions, *, pinned=False, paid=False, recording_fails=False):
@@ -74,6 +81,9 @@ def _execute_attempts(completions, *, pinned=False, paid=False, recording_fails=
 
     namespace.update({
         "candidate_routes": routes[:1] if pinned else routes,
+        "max_tokens": 700,
+        "truncation_recovery_used": False,
+        "messages": [{"role": "user", "content": "Run the repository tests"}],
         "route": routes[0], "route_selection_mode": "pinned" if pinned else "auto",
         "resolver_enabled": not pinned, "output_contract_id": "sovereign-code-action-v1",
         "payload": {"messages": namespace["_code_action_contract_messages"]([
@@ -95,7 +105,12 @@ def _execute_attempts(completions, *, pinned=False, paid=False, recording_fails=
     loop = next(node for node in ast.walk(chat) if isinstance(node, ast.For)
                 and isinstance(node.target, ast.Tuple)
                 and [getattr(item, "id", "") for item in node.target.elts] == ["attempt_count", "candidate_route"])
-    runner = ast.parse("def run():\n    provider_usage_seen = False\n    fallback_route = None\n").body[0]
+    runner = ast.parse(
+        "def run():\n"
+        "    provider_usage_seen = False\n"
+        "    fallback_route = None\n"
+        "    truncation_recovery_used = False\n"
+    ).body[0]
     runner.body.append(copy.deepcopy(loop))
     runner.body.extend(ast.parse("return result, evidence, attempt_count, fallback_route\n").body)
     executable = ast.fix_missing_locations(ast.Module(body=[runner], type_ignores=[]))
@@ -164,6 +179,18 @@ def test_manual_pin_never_rotates_even_without_provider_usage():
     ], pinned=True)
     assert len(sent) == 1
     assert recorded[0]["outcome"] == "terminal_failure"
+
+
+def test_truncated_contract_gets_exactly_one_recovery_attempt():
+    result, sent, recorded, refunds, _failed = _execute_attempts([
+        _completion(valid=False, truncated=True), _completion()
+    ])
+    assert len(sent) == 2
+    assert [entry["outcome"] for entry in recorded] == ["retryable_failure", "success"]
+    assert recorded[0]["decision"]["blocker"] == "llm_output_truncated"
+    assert "previous completion was truncated" in sent[1][1]["messages"][-1]["content"]
+    assert result[2] == 2
+    assert refunds == []
 
 
 def test_attempt_record_failure_with_usage_cannot_refund_real_provider_work():

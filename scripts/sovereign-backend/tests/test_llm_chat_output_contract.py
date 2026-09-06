@@ -23,7 +23,8 @@ def load_contract_functions(namespace):
         "_SOVEREIGN_CODE_ACTION_CONTRACT_ID", "_SOVEREIGN_CODE_ACTION_RESPONSE_FORMAT",
         "_CODE_ACTION_CONTRACT_KEYS", "_CODE_ACTION_INTENTS", "_llm_route_config",
         "_code_action_contract_mode", "_route_supports_code_action_contract",
-        "_validate_code_action_contract", "_code_action_contract_messages", "public_llm_chat",
+        "_validate_code_action_contract", "_llm_response_was_truncated",
+        "_code_action_contract_messages", "public_llm_chat",
     }
     nodes = [
         node for node in tree.body
