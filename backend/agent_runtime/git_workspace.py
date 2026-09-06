@@ -76,6 +76,19 @@ def run_git_command(
 ) -> subprocess.CompletedProcess[str]:
     if not args or args[0] != "git":
         raise WorkspacePolicyError("only git commands are allowed in git workspace runtime")
+    command_env = os.environ.copy()
+    if env is not None:
+        command_env.update(env)
+    try:
+        config_count = int(command_env.get("GIT_CONFIG_COUNT", "0"))
+    except ValueError:
+        config_count = 0
+    # Workspace volumes can be owned by an unmapped host UID inside Docker.
+    # Scope Git's ownership exception to this already policy-validated cwd;
+    # never weaken Git globally or trust a caller-provided arbitrary path.
+    command_env[f"GIT_CONFIG_KEY_{config_count}"] = "safe.directory"
+    command_env[f"GIT_CONFIG_VALUE_{config_count}"] = str(cwd.resolve())
+    command_env["GIT_CONFIG_COUNT"] = str(config_count + 1)
     return subprocess.run(
         list(args),
         cwd=str(cwd),
@@ -84,7 +97,7 @@ def run_git_command(
         shell=False,
         timeout=timeout_seconds,
         check=False,
-        env=dict(env) if env is not None else None,
+        env=command_env,
     )
 
 
