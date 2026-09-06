@@ -98,7 +98,10 @@ from owner_input_runtime import register_owner_input_routes
 from proven_learning_runtime import register_proven_learning_routes
 from wolfram_cag_runtime import register_wolfram_cag_runtime
 from n_plus_one import register_n_plus_one_routes
-from openrouter_free_runtime import register_openrouter_free_runtime
+from openrouter_free_runtime import (
+    OPENROUTER_FREE_ROUTE_ALIAS,
+    register_openrouter_free_runtime,
+)
 from openrouter_provider_runtime import register_openrouter_provider_runtime
 from controller_board import register_controller_board_routes
 from enterprise_platform import register_enterprise_platform_routes
@@ -7326,17 +7329,35 @@ def _resolve_enabled_llm_route(model: str):
     normalized = str(model or "").strip()
     if not normalized:
         return None
-    routes = query(
-        """SELECT id::text, model_id, model_name, provider, base_url,
-                  credits_per_unit::float AS credits_per_unit, priority,
-                  runtime_kind, tier, config
-           FROM llm_routes
-           WHERE disabled=false
-             AND lower(COALESCE(runtime_kind, provider)) IN ('openrouter', 'freellm')
-             AND (model_id=%s OR id::text=%s)
-           ORDER BY priority ASC""",
-        (normalized, normalized),
-    )
+    if normalized == OPENROUTER_FREE_ROUTE_ALIAS:
+        # Older WebView bundles send the abstract free alias. Resolve it to
+        # the current verified free route instead of returning a false 404/502;
+        # prefer the managed FreeLLM revolver, then use OpenRouter-Free only
+        # when no verified FreeLLM candidate is available.
+        routes = query(
+            """SELECT id::text, model_id, model_name, provider, base_url,
+                      credits_per_unit::float AS credits_per_unit, priority,
+                      runtime_kind, tier, config
+               FROM llm_routes
+               WHERE disabled=false
+                 AND lower(COALESCE(runtime_kind, provider)) IN ('openrouter', 'freellm')
+                 AND lower(COALESCE(tier, '')) = 'free'
+               ORDER BY CASE WHEN lower(COALESCE(runtime_kind, provider)) = 'freellm'
+                             THEN 0 ELSE 1 END,
+                        priority ASC, id::text ASC""",
+        )
+    else:
+        routes = query(
+            """SELECT id::text, model_id, model_name, provider, base_url,
+                      credits_per_unit::float AS credits_per_unit, priority,
+                      runtime_kind, tier, config
+               FROM llm_routes
+               WHERE disabled=false
+                 AND lower(COALESCE(runtime_kind, provider)) IN ('openrouter', 'freellm')
+                 AND (model_id=%s OR id::text=%s)
+               ORDER BY priority ASC""",
+            (normalized, normalized),
+        )
     for route in routes or []:
         if not _is_runtime_selectable_llm_route(dict(route)):
             continue

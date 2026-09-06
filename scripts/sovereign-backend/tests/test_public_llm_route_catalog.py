@@ -242,6 +242,7 @@ def test_chat_route_resolution_rejects_stale_enabled_rows() -> None:
     namespace = _load_function(
         "_resolve_enabled_llm_route",
         {
+            "OPENROUTER_FREE_ROUTE_ALIAS": "sovereign-openrouter-free",
             "query": lambda *_args, **_kwargs: [stale],
             "_is_runtime_selectable_llm_route": lambda route: bool(route["selectable"]),
             "route_billing_policy": lambda route: {"billingCategory": "free"},
@@ -253,3 +254,28 @@ def test_chat_route_resolution_rejects_stale_enabled_rows() -> None:
     assert resolve("old-model") is None
     namespace["query"] = lambda *_args, **_kwargs: [stale, verified]
     assert resolve("new-model") == verified
+
+
+def test_legacy_free_alias_resolves_only_to_active_freellm_routes() -> None:
+    calls: list[tuple[str, object]] = []
+    namespace = _load_function(
+        "_resolve_enabled_llm_route",
+        {
+            "OPENROUTER_FREE_ROUTE_ALIAS": "sovereign-openrouter-free",
+            "query": lambda sql, params=None: calls.append((sql, params)) or [{
+                "id": "free-route",
+                "provider": "freellm",
+                "runtime_kind": "freellm",
+                "priority": 50,
+            }],
+            "_is_runtime_selectable_llm_route": lambda route: True,
+            "route_billing_policy": lambda route: {"billingCategory": "free"},
+            "BillingPolicyError": ValueError,
+        },
+    )
+    resolve = namespace["_resolve_enabled_llm_route"]
+
+    assert resolve("sovereign-openrouter-free")["id"] == "free-route"
+    assert calls and calls[0][1] is None
+    assert "IN ('openrouter', 'freellm')" in calls[0][0]
+    assert "= 'free'" in calls[0][0]
