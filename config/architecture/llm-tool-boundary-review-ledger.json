@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "22ec8f12e4216f330d62a0ede2b73dd180a1f589",
+  "sourceRevision": "a60d11bfdf43eaeb129e480f009a03fdbc942959",
   "rawCandidateCount": 100,
   "canonicalCandidateCount": 79,
   "entries": [
