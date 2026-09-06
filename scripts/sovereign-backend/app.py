@@ -8105,6 +8105,11 @@ def public_llm_chat():
             return jsonify({"error": "messages required"}), 400
         if not 1 <= max_tokens <= 32_000:
             return jsonify({"error": "max_tokens muss zwischen 1 und 32000 liegen"}), 400
+        if output_contract_id:
+            # Free/prompt-only routes need enough room for the complete
+            # server-owned JSON contract. Older clients sent 700, which can
+            # truncate a provider answer before the closing JSON brace.
+            max_tokens = max(max_tokens, 1_200)
 
         route = _resolve_enabled_llm_route(model)
         if not route:

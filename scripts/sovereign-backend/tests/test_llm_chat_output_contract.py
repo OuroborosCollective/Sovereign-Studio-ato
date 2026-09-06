@@ -107,6 +107,7 @@ def test_full_schema_reaches_provider_and_input_is_not_modified(pinned):
                       ensure_ascii=True, sort_keys=True, separators=(",", ":")) in instruction["content"]
     assert "confidence" in instruction["content"]
     assert sent[0]["messages"][1:] == original
+    assert sent[0]["max_tokens"] == 1200
     assert "response_format" not in sent[0]
 
 
