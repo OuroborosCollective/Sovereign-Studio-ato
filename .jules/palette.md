@@ -57,3 +57,7 @@
 ## 2025-08-13 - [Overriding Visible Buttons via ARIA Labels]
 **Learning:** Overriding a button's visible text (e.g., 'Repo-Snapshot laden') with an 'aria-label' that does not match or include that exact text violates the WCAG 'Label in Name' requirement. It also disrupts testing frameworks and standard selectors looking for the visible text.
 **Action:** For buttons with descriptive, dynamic text content, rely on the visible text for the accessible name, and use the 'title' attribute exclusively for stateful hover descriptions rather than using aria-label overrides.
+
+## 2026-07-08 - Keyboard accessibility on custom Tailwind components
+**Learning:** Custom interactive elements (like custom buttons styled with Tailwind) require explicit focus indicators for users relying on keyboard/tab navigation, as default browser focus rings might be overridden or difficult to see against custom dark backgrounds.
+**Action:** Always ensure that custom interactive components include `focus-visible:outline-none focus-visible:ring-2` (and an appropriate ring color) to guarantee visible focus states during keyboard navigation.
