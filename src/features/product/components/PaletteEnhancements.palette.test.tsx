@@ -527,6 +527,12 @@ describe('Palette Accessibility Enhancements', () => {
       const highBadge = screen.getByTitle('1 hohe Schwachstellen (HIGH)');
       expect(highBadge).toBeInTheDocument();
 
+      const severityList = screen.getByRole('list', { name: 'Schwachstellen Übersicht' });
+      expect(severityList).toBeInTheDocument();
+
+      const findingsList = screen.getByRole('list', { name: 'Gefundene Schwachstellen' });
+      expect(findingsList).toBeInTheDocument();
+
       const findingCard = screen.getByTitle('Schwachstelle in src/features/product/components/AutoCodeReviewCard.tsx (L10): Security (HIGH)');
       expect(findingCard).toBeInTheDocument();
 
