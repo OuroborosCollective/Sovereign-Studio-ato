@@ -43,7 +43,7 @@ def _production_namespace():
     return namespace
 
 
-def _completion(valid=True, usage=True, truncated=False):
+def _completion(valid=True, usage=True, truncated=False, http_status=200):
     payload = {
         "choices": [{
             "message": {"content": json.dumps(ACTION) if valid else "Plain prose, not JSON"},
@@ -59,28 +59,46 @@ def _completion(valid=True, usage=True, truncated=False):
     }
     if truncated:
         payload["usage"] = {"completion_tokens": 700}
+    payload["_http_status"] = http_status
     return payload
 
 
-def _execute_attempts(completions, *, pinned=False, paid=False, recording_fails=False):
+def _execute_attempts(
+    completions,
+    *,
+    pinned=False,
+    paid=False,
+    single_route=False,
+    recording_fails=False,
+):
     namespace = _production_namespace()
     routes = [{"id": "route-a", "transport": "openrouter" if paid else "freellm",
                "config": {"supportedParameters": ["response_format"]} if paid else {}},
               {"id": "route-b", "transport": "freellm", "config": {}}]
+    if single_route:
+        routes = routes[:1]
     sent, recorded, refunds, failed = [], [], [], []
     responses = iter(completions)
 
     def fetch(route, *, json_data):
         sent.append((route, copy.deepcopy(json_data)))
-        return SimpleNamespace(ok=True, status_code=200, payload=next(responses)), None
+        payload = next(responses)
+        status = payload.get("_http_status", 200)
+        return SimpleNamespace(ok=status < 400, status_code=status, payload=payload), None
 
     def record(**kwargs):
         if recording_fails:
             raise RuntimeError("database boundary unavailable")
         recorded.append(kwargs)
 
+    candidate_routes = routes[:1] if pinned else routes
+    if single_route and not pinned:
+        candidate_routes = [
+            *candidate_routes,
+            {**candidate_routes[0], "_single_route_contract_retry": True},
+        ]
     namespace.update({
-        "candidate_routes": routes[:1] if pinned else routes,
+        "candidate_routes": candidate_routes,
         "max_tokens": 700,
         "truncation_recovery_used": False,
         "messages": [{"role": "user", "content": "Run the repository tests"}],
@@ -91,6 +109,15 @@ def _execute_attempts(completions, *, pinned=False, paid=False, recording_fails=
         ]), "max_tokens": 700, "stream": False},
         "request_id": "test-request", "fetch_direct_llm": fetch,
         "_safe_upstream_json": lambda response: response.payload,
+        "classify_direct_llm_failure": lambda route, response, err: {
+            "blocker": "freellm_upstream_unavailable",
+        },
+        "failure_decision": lambda classified, usage_seen: {
+            "blocker": classified["blocker"],
+            "retryAllowed": not usage_seen,
+            "state": "cooldown" if not usage_seen else "blocked",
+            "cooldownSeconds": 30 if not usage_seen else 0,
+        },
         "extract_direct_llm_evidence": lambda response, payload, **kwargs: dict(payload["_evidence"]),
         "revolver_provider_usage_seen": lambda evidence: bool(
             evidence.get("totalTokens") or evidence.get("upstreamRequestId") or evidence.get("providerCostUsd")
@@ -170,6 +197,29 @@ def test_auto_free_contract_failure_can_rotate_only_before_provider_usage():
     assert len(sent) == 2
     assert [entry["outcome"] for entry in recorded] == ["retryable_failure", "success"]
     assert result[2] == 2 and result[3]["id"] == "route-b"
+    assert refunds == []
+
+
+def test_single_verified_free_route_gets_one_bounded_contract_recovery_attempt():
+    result, sent, recorded, refunds, _failed = _execute_attempts(
+        [_completion(valid=False, usage=False), _completion()],
+        single_route=True,
+    )
+    assert len(sent) == 2
+    assert [entry["outcome"] for entry in recorded] == ["retryable_failure", "success"]
+    assert result[2] == 2
+    assert result[3] is None
+    assert refunds == []
+
+
+def test_single_verified_free_route_retries_transient_http_502_before_blocking():
+    result, sent, recorded, refunds, _failed = _execute_attempts(
+        [_completion(usage=False, http_status=502), _completion()],
+        single_route=True,
+    )
+    assert len(sent) == 2
+    assert [entry["outcome"] for entry in recorded] == ["retryable_failure", "success"]
+    assert result[2] == 2
     assert refunds == []
 
 
