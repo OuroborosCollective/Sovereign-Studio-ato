@@ -8110,7 +8110,7 @@ def public_llm_chat():
             # Free/prompt-only routes need enough room for the complete
             # server-owned JSON contract. Older clients sent 700, which can
             # truncate a provider answer before the closing JSON brace.
-            max_tokens = max(max_tokens, 4_096)
+            max_tokens = max(max_tokens, 7_800)
 
         route = _resolve_enabled_llm_route(model)
         if not route:
