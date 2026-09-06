@@ -136,6 +136,18 @@ def test_quota_and_rate_limit_rotate_only_without_usage():
     )["retryAllowed"] is False
 
 
+def test_provider_rejection_rotates_only_before_usage():
+    rejected = failure_decision(
+        {"blocker": "provider_rejected"}, usage_seen=False
+    )
+    assert rejected["retryAllowed"] is True
+    assert rejected["state"] == "cooldown"
+    assert rejected["cooldownSeconds"] == 30
+    assert failure_decision(
+        {"blocker": "provider_rejected"}, usage_seen=True
+    )["retryAllowed"] is False
+
+
 def test_openrouter_402_permits_free_fallback_only_before_usage():
     from direct_llm_runtime import classify_direct_llm_failure
     import requests
