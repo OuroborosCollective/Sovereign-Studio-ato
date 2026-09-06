@@ -15,7 +15,7 @@
   "safeToApply": true,
   "schemaVersion": "sovereign.boundary-ledger-reconciliation.v1",
   "secretValuesReturned": false,
-  "sourceRevision": "a60d11bfdf43eaeb129e480f009a03fdbc942959",
+  "sourceRevision": "d26f4df2eb45374eaa569a677fe8f9d68f45de57",
   "status": "BOUNDARY_LEDGER_CURRENT",
   "truthNotice": "This reconciliation preserves reviewed classifications and updates static bindings only; it does not prove runtime language understanding, workflow success, or deployment.",
   "validation": {
@@ -25,7 +25,7 @@
     "mutationPerformed": false,
     "ok": true,
     "rawCandidateCount": 100,
-    "revision": "a60d11bfdf43eaeb129e480f009a03fdbc942959",
+    "revision": "d26f4df2eb45374eaa569a677fe8f9d68f45de57",
     "status": "LLM_BOUNDARY_LEDGER_VERIFIED",
     "truthNotice": "The ledger classifies static candidates only; it does not claim runtime language understanding or execution success."
   }
