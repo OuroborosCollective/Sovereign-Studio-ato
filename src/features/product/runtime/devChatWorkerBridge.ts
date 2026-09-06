@@ -109,7 +109,8 @@ export async function fetchSovereignLlmRouteCatalog(
     .sort((left, right) => (
       (left.billingCategory === 'free' ? 0 : 1) - (right.billingCategory === 'free' ? 0 : 1)
       || left.priority - right.priority
-      || left.label.localeCompare(right.label)
+      // ⚡ Bolt: Fast native lexicographical string comparison replacing slow localeCompare
+      || (left.label < right.label ? -1 : left.label > right.label ? 1 : 0)
     ));
 }
 
