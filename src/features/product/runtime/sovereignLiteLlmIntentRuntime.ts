@@ -530,7 +530,9 @@ export async function fetchSovereignDirectLlmInterpretation(
         // model from the persisted route.
         model: selected.routeId,
         messages,
-        max_tokens: 700,
+        // Leave enough completion budget for prompt-only FreeLLM routes to
+        // emit the complete server-owned JSON contract without truncation.
+        max_tokens: 7800,
         stream: false,
       }),
       signal,

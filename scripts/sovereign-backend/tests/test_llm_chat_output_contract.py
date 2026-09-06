@@ -23,7 +23,8 @@ def load_contract_functions(namespace):
         "_SOVEREIGN_CODE_ACTION_CONTRACT_ID", "_SOVEREIGN_CODE_ACTION_RESPONSE_FORMAT",
         "_CODE_ACTION_CONTRACT_KEYS", "_CODE_ACTION_INTENTS", "_llm_route_config",
         "_code_action_contract_mode", "_route_supports_code_action_contract",
-        "_validate_code_action_contract", "_code_action_contract_messages", "public_llm_chat",
+        "_validate_code_action_contract", "_llm_response_was_truncated",
+        "_code_action_contract_messages", "public_llm_chat",
     }
     nodes = [
         node for node in tree.body
@@ -107,6 +108,7 @@ def test_full_schema_reaches_provider_and_input_is_not_modified(pinned):
                       ensure_ascii=True, sort_keys=True, separators=(",", ":")) in instruction["content"]
     assert "confidence" in instruction["content"]
     assert sent[0]["messages"][1:] == original
+    assert sent[0]["max_tokens"] == 7800
     assert "response_format" not in sent[0]
 
 
@@ -146,3 +148,22 @@ def test_plain_chat_does_not_receive_an_action_schema():
     assert result["choices"][0]["message"]["content"] == "Hallo"
     assert sent[0]["messages"] == original
     assert "response_format" not in sent[0]
+
+
+@pytest.mark.parametrize("content", [
+    json.dumps(CONTRACT),
+    f"```json\n{json.dumps(CONTRACT)}\n```",
+])
+def test_validator_accepts_structural_provider_wrappers(content):
+    ns, _sent, _events, _original = handler(content)
+    assert ns["_validate_code_action_contract"]({
+        "choices": [{"message": {"content": [{"type": "text", "text": content}]}}],
+    }) == CONTRACT
+
+
+def test_validator_does_not_accept_additional_json_keys_in_wrapped_content():
+    ns, _sent, _events, _original = handler("unused")
+    invalid = {**CONTRACT, "extra": "must remain rejected"}
+    assert ns["_validate_code_action_contract"]({
+        "choices": [{"message": {"content": f"answer: {json.dumps(invalid)}"}}],
+    }) is None

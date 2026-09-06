@@ -98,7 +98,10 @@ from owner_input_runtime import register_owner_input_routes
 from proven_learning_runtime import register_proven_learning_routes
 from wolfram_cag_runtime import register_wolfram_cag_runtime
 from n_plus_one import register_n_plus_one_routes
-from openrouter_free_runtime import register_openrouter_free_runtime
+from openrouter_free_runtime import (
+    OPENROUTER_FREE_ROUTE_ALIAS,
+    register_openrouter_free_runtime,
+)
 from openrouter_provider_runtime import register_openrouter_provider_runtime
 from controller_board import register_controller_board_routes
 from enterprise_platform import register_enterprise_platform_routes
@@ -4122,7 +4125,8 @@ def _code_action_contract_messages(messages: list) -> list:
     """
     schema = _SOVEREIGN_CODE_ACTION_RESPONSE_FORMAT["json_schema"]["schema"]
     instruction = (
-        "Return exactly one JSON object matching this JSON Schema; no Markdown, "
+        "Return immediately exactly one JSON object matching this JSON Schema; "
+        "do not reason, explain, preface, or emit Markdown, "
         "prose or additional keys. The object proposes an action, never executes "
         "or authorizes one. action_disposition must always be review. "
         "For mode=action use an allowed action intent, clarification_code=none "
@@ -4163,12 +4167,36 @@ def _validate_code_action_contract(upstream_payload: dict) -> dict | None:
     first = choices[0]
     message = first.get("message") if isinstance(first, dict) else None
     content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, list):
+        content = "".join(
+            str(part.get("text") or "")
+            for part in content
+            if isinstance(part, dict) and str(part.get("type") or "text") == "text"
+        )
     if not isinstance(content, str) or not content.strip():
         return None
+    normalized_content = content.strip()
+    if normalized_content.startswith("```") and normalized_content.endswith("```"):
+        lines = normalized_content.splitlines()
+        if len(lines) >= 3 and lines[0].strip().lower() in {"```", "```json"}:
+            normalized_content = "\n".join(lines[1:-1]).strip()
     try:
-        payload = _json.loads(content)
+        payload = _json.loads(normalized_content)
     except (TypeError, ValueError):
-        return None
+        decoder = _json.JSONDecoder()
+        payload = None
+        for index, character in enumerate(normalized_content):
+            if character != "{":
+                continue
+            try:
+                candidate, _end = decoder.raw_decode(normalized_content[index:])
+            except (TypeError, ValueError):
+                continue
+            if isinstance(candidate, dict):
+                payload = candidate
+                break
+        if payload is None:
+            return None
     if not isinstance(payload, dict) or set(payload) != _CODE_ACTION_CONTRACT_KEYS:
         return None
 
@@ -4215,6 +4243,23 @@ def _validate_code_action_contract(upstream_payload: dict) -> dict | None:
         "confidence": float(confidence),
         "language": language.strip(),
     }
+
+
+def _llm_response_was_truncated(upstream_payload: dict, max_tokens: int) -> bool:
+    """Detect completion-budget exhaustion without interpreting provider prose."""
+    if not isinstance(upstream_payload, dict):
+        return False
+    choices = upstream_payload.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        return False
+    if str(choices[0].get("finish_reason") or "").strip().lower() == "length":
+        return True
+    usage = upstream_payload.get("usage")
+    completion_tokens = usage.get("completion_tokens") if isinstance(usage, dict) else None
+    try:
+        return int(completion_tokens) >= int(max_tokens)
+    except (TypeError, ValueError):
+        return False
 
 
 def _is_runtime_selectable_llm_route(route: dict) -> bool:
@@ -7326,17 +7371,35 @@ def _resolve_enabled_llm_route(model: str):
     normalized = str(model or "").strip()
     if not normalized:
         return None
-    routes = query(
-        """SELECT id::text, model_id, model_name, provider, base_url,
-                  credits_per_unit::float AS credits_per_unit, priority,
-                  runtime_kind, tier, config
-           FROM llm_routes
-           WHERE disabled=false
-             AND lower(COALESCE(runtime_kind, provider)) IN ('openrouter', 'freellm')
-             AND (model_id=%s OR id::text=%s)
-           ORDER BY priority ASC""",
-        (normalized, normalized),
-    )
+    if normalized == OPENROUTER_FREE_ROUTE_ALIAS:
+        # Older WebView bundles send the abstract free alias. Resolve it to
+        # the current verified free route instead of returning a false 404/502;
+        # prefer the managed FreeLLM revolver, then use OpenRouter-Free only
+        # when no verified FreeLLM candidate is available.
+        routes = query(
+            """SELECT id::text, model_id, model_name, provider, base_url,
+                      credits_per_unit::float AS credits_per_unit, priority,
+                      runtime_kind, tier, config
+               FROM llm_routes
+               WHERE disabled=false
+                 AND lower(COALESCE(runtime_kind, provider)) IN ('openrouter', 'freellm')
+                 AND lower(COALESCE(tier, '')) = 'free'
+               ORDER BY CASE WHEN lower(COALESCE(runtime_kind, provider)) = 'freellm'
+                             THEN 0 ELSE 1 END,
+                        priority ASC, id::text ASC""",
+        )
+    else:
+        routes = query(
+            """SELECT id::text, model_id, model_name, provider, base_url,
+                      credits_per_unit::float AS credits_per_unit, priority,
+                      runtime_kind, tier, config
+               FROM llm_routes
+               WHERE disabled=false
+                 AND lower(COALESCE(runtime_kind, provider)) IN ('openrouter', 'freellm')
+                 AND (model_id=%s OR id::text=%s)
+               ORDER BY priority ASC""",
+            (normalized, normalized),
+        )
     for route in routes or []:
         if not _is_runtime_selectable_llm_route(dict(route)):
             continue
@@ -8060,6 +8123,11 @@ def public_llm_chat():
             return jsonify({"error": "messages required"}), 400
         if not 1 <= max_tokens <= 32_000:
             return jsonify({"error": "max_tokens muss zwischen 1 und 32000 liegen"}), 400
+        if output_contract_id:
+            # Free/prompt-only routes need enough room for the complete
+            # server-owned JSON contract. Older clients sent 700, which can
+            # truncate a provider answer before the closing JSON brace.
+            max_tokens = max(max_tokens, 7_800)
 
         route = _resolve_enabled_llm_route(model)
         if not route:
@@ -8108,6 +8176,16 @@ def public_llm_chat():
                     "error": "Keine verifizierte Route erfüllt den Codeauftragsvertrag",
                     "blocker": "llm_output_contract_route_unavailable",
                 }), 409
+            # Keep one bounded recovery attempt even when the catalog exposes
+            # only one verified FreeLLM route. Without a second candidate the
+            # revolver is disabled and a transient 5xx ends the code workflow
+            # before the provider can recover. Usage evidence in the attempt
+            # loop still prevents retries after provider work was reported.
+            if len(candidate_routes) == 1 and route_is_verified_free(dict(candidate_routes[0])):
+                candidate_routes.append({
+                    **candidate_routes[0],
+                    "_single_route_contract_retry": True,
+                })
         if policy["billingCategory"] == FREE_CATEGORY and not candidate_routes:
             return jsonify({
                 "error": "Alle unabhängigen Free-Routen sind blockiert oder in Abkühlung.",
@@ -8243,6 +8321,7 @@ def public_llm_chat():
         evidence = {}
         resp = None
         attempt_count = 0
+        truncation_recovery_used = False
         revolver_enabled = policy["billingCategory"] == FREE_CATEGORY
         resolver_enabled = len(candidate_routes) > 1
         resolver_mode = (
@@ -8253,8 +8332,21 @@ def public_llm_chat():
             else "paid-to-free-fallback"
         )
         for attempt_count, candidate_route in enumerate(candidate_routes, start=1):
+            candidate_route = dict(candidate_route)
             candidate_transport = route_transport(dict(candidate_route))
             candidate_payload = dict(payload)
+            if candidate_route.pop("_contract_truncation_recovery", False):
+                candidate_payload["messages"] = [
+                    *messages,
+                    {
+                        "role": "system",
+                        "content": (
+                            "The previous completion was truncated by the output limit. "
+                            "Recover now: emit the complete JSON object immediately, with "
+                            "all required fields, no reasoning, prose, Markdown, or extra keys."
+                        ),
+                    },
+                ]
             if (
                 output_contract_id
                 and _code_action_contract_mode(dict(candidate_route)) == "provider-structured"
@@ -8286,6 +8378,15 @@ def public_llm_chat():
             attempt_usage_seen = revolver_provider_usage_seen(evidence)
             provider_usage_seen = provider_usage_seen or attempt_usage_seen
             if not err and resp is not None and resp.ok:
+                response_truncated = bool(
+                    output_contract_id
+                    and _llm_response_was_truncated(result, max_tokens)
+                )
+                truncation_retry = bool(
+                    response_truncated
+                    and not truncation_recovery_used
+                    and route_selection_mode in {"auto", "pinned"}
+                )
                 contract_invalid = bool(
                     output_contract_id
                     and _validate_code_action_contract(result) is None
@@ -8302,10 +8403,14 @@ def public_llm_chat():
                     and route_is_verified_free(dict(candidate_routes[attempt_count]))
                 )
                 contract_decision = {
-                    "blocker": "llm_output_contract_violation",
+                    "blocker": (
+                        "llm_output_truncated"
+                        if response_truncated
+                        else "llm_output_contract_violation"
+                    ),
                     "state": "ready",
                     "cooldownSeconds": 0,
-                    "retryAllowed": contract_retry,
+                    "retryAllowed": contract_retry or truncation_retry,
                 } if contract_invalid else None
                 if resolver_enabled or output_contract_id:
                     try:
@@ -8314,7 +8419,7 @@ def public_llm_chat():
                             attempt_number=attempt_count,
                             route=candidate_route,
                             outcome=(
-                                "retryable_failure" if contract_retry
+                                "retryable_failure" if contract_retry or truncation_retry
                                 else "terminal_failure" if contract_invalid
                                 else "success"
                             ),
@@ -8332,6 +8437,13 @@ def public_llm_chat():
                                 "requestId": request_id,
                             }), 500
                         return refund_failed_run("revolver_evidence_failed")
+                if truncation_retry:
+                    truncation_recovery_used = True
+                    candidate_routes.insert(
+                        attempt_count,
+                        {**candidate_route, "_contract_truncation_recovery": True},
+                    )
+                    continue
                 if contract_retry:
                     continue
                 if str(candidate_route["id"]) != str(route["id"]):

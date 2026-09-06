@@ -26,6 +26,7 @@ def _production_namespace():
     names = {
         "_code_action_contract_messages", "_code_action_contract_mode",
         "_llm_route_config", "_validate_code_action_contract",
+        "_llm_response_was_truncated",
     }
     constants = {
         "_SOVEREIGN_CODE_ACTION_RESPONSE_FORMAT", "_CODE_ACTION_CONTRACT_KEYS",
@@ -42,9 +43,12 @@ def _production_namespace():
     return namespace
 
 
-def _completion(valid=True, usage=True):
-    return {
-        "choices": [{"message": {"content": json.dumps(ACTION) if valid else "Plain prose, not JSON"}}],
+def _completion(valid=True, usage=True, truncated=False, http_status=200):
+    payload = {
+        "choices": [{
+            "message": {"content": json.dumps(ACTION) if valid else "Plain prose, not JSON"},
+            **({"finish_reason": "length"} if truncated else {}),
+        }],
         "_evidence": {
             "promptTokens": 503 if usage else 0,
             "completionTokens": 168 if usage else 0,
@@ -53,27 +57,52 @@ def _completion(valid=True, usage=True):
             "upstreamRequestId": "provider-receipt" if usage else None,
         },
     }
+    if truncated:
+        payload["usage"] = {"completion_tokens": 700}
+    payload["_http_status"] = http_status
+    return payload
 
 
-def _execute_attempts(completions, *, pinned=False, paid=False, recording_fails=False):
+def _execute_attempts(
+    completions,
+    *,
+    pinned=False,
+    paid=False,
+    single_route=False,
+    failure_blocker="freellm_upstream_unavailable",
+    recording_fails=False,
+):
     namespace = _production_namespace()
     routes = [{"id": "route-a", "transport": "openrouter" if paid else "freellm",
                "config": {"supportedParameters": ["response_format"]} if paid else {}},
               {"id": "route-b", "transport": "freellm", "config": {}}]
+    if single_route:
+        routes = routes[:1]
     sent, recorded, refunds, failed = [], [], [], []
     responses = iter(completions)
 
     def fetch(route, *, json_data):
         sent.append((route, copy.deepcopy(json_data)))
-        return SimpleNamespace(ok=True, status_code=200, payload=next(responses)), None
+        payload = next(responses)
+        status = payload.get("_http_status", 200)
+        return SimpleNamespace(ok=status < 400, status_code=status, payload=payload), None
 
     def record(**kwargs):
         if recording_fails:
             raise RuntimeError("database boundary unavailable")
         recorded.append(kwargs)
 
+    candidate_routes = routes[:1] if pinned else routes
+    if single_route and not pinned:
+        candidate_routes = [
+            *candidate_routes,
+            {**candidate_routes[0], "_single_route_contract_retry": True},
+        ]
     namespace.update({
-        "candidate_routes": routes[:1] if pinned else routes,
+        "candidate_routes": candidate_routes,
+        "max_tokens": 700,
+        "truncation_recovery_used": False,
+        "messages": [{"role": "user", "content": "Run the repository tests"}],
         "route": routes[0], "route_selection_mode": "pinned" if pinned else "auto",
         "resolver_enabled": not pinned, "output_contract_id": "sovereign-code-action-v1",
         "payload": {"messages": namespace["_code_action_contract_messages"]([
@@ -81,6 +110,15 @@ def _execute_attempts(completions, *, pinned=False, paid=False, recording_fails=
         ]), "max_tokens": 700, "stream": False},
         "request_id": "test-request", "fetch_direct_llm": fetch,
         "_safe_upstream_json": lambda response: response.payload,
+        "classify_direct_llm_failure": lambda route, response, err: {
+            "blocker": failure_blocker,
+        },
+        "failure_decision": lambda classified, usage_seen: {
+            "blocker": classified["blocker"],
+            "retryAllowed": not usage_seen,
+            "state": "cooldown" if not usage_seen else "blocked",
+            "cooldownSeconds": 30 if not usage_seen else 0,
+        },
         "extract_direct_llm_evidence": lambda response, payload, **kwargs: dict(payload["_evidence"]),
         "revolver_provider_usage_seen": lambda evidence: bool(
             evidence.get("totalTokens") or evidence.get("upstreamRequestId") or evidence.get("providerCostUsd")
@@ -95,7 +133,12 @@ def _execute_attempts(completions, *, pinned=False, paid=False, recording_fails=
     loop = next(node for node in ast.walk(chat) if isinstance(node, ast.For)
                 and isinstance(node.target, ast.Tuple)
                 and [getattr(item, "id", "") for item in node.target.elts] == ["attempt_count", "candidate_route"])
-    runner = ast.parse("def run():\n    provider_usage_seen = False\n    fallback_route = None\n").body[0]
+    runner = ast.parse(
+        "def run():\n"
+        "    provider_usage_seen = False\n"
+        "    fallback_route = None\n"
+        "    truncation_recovery_used = False\n"
+    ).body[0]
     runner.body.append(copy.deepcopy(loop))
     runner.body.extend(ast.parse("return result, evidence, attempt_count, fallback_route\n").body)
     executable = ast.fix_missing_locations(ast.Module(body=[runner], type_ignores=[]))
@@ -158,12 +201,58 @@ def test_auto_free_contract_failure_can_rotate_only_before_provider_usage():
     assert refunds == []
 
 
+def test_single_verified_free_route_gets_one_bounded_contract_recovery_attempt():
+    result, sent, recorded, refunds, _failed = _execute_attempts(
+        [_completion(valid=False, usage=False), _completion()],
+        single_route=True,
+    )
+    assert len(sent) == 2
+    assert [entry["outcome"] for entry in recorded] == ["retryable_failure", "success"]
+    assert result[2] == 2
+    assert result[3] is None
+    assert refunds == []
+
+
+def test_single_verified_free_route_retries_transient_http_502_before_blocking():
+    result, sent, recorded, refunds, _failed = _execute_attempts(
+        [_completion(usage=False, http_status=502), _completion()],
+        single_route=True,
+    )
+    assert len(sent) == 2
+    assert [entry["outcome"] for entry in recorded] == ["retryable_failure", "success"]
+    assert result[2] == 2
+    assert refunds == []
+
+
+def test_provider_rejected_free_route_rotates_before_usage():
+    result, sent, recorded, refunds, _failed = _execute_attempts(
+        [_completion(usage=False, http_status=400), _completion()],
+        failure_blocker="provider_rejected",
+    )
+    assert len(sent) == 2
+    assert [entry["outcome"] for entry in recorded] == ["retryable_failure", "success"]
+    assert result[2] == 2
+    assert refunds == []
+
+
 def test_manual_pin_never_rotates_even_without_provider_usage():
     _result, sent, recorded, _refunds, _failed = _execute_attempts([
         _completion(valid=False, usage=False), _completion()
     ], pinned=True)
     assert len(sent) == 1
     assert recorded[0]["outcome"] == "terminal_failure"
+
+
+def test_truncated_contract_gets_exactly_one_recovery_attempt():
+    result, sent, recorded, refunds, _failed = _execute_attempts([
+        _completion(valid=False, truncated=True), _completion()
+    ])
+    assert len(sent) == 2
+    assert [entry["outcome"] for entry in recorded] == ["retryable_failure", "success"]
+    assert recorded[0]["decision"]["blocker"] == "llm_output_truncated"
+    assert "previous completion was truncated" in sent[1][1]["messages"][-1]["content"]
+    assert result[2] == 2
+    assert refunds == []
 
 
 def test_attempt_record_failure_with_usage_cannot_refund_real_provider_work():
