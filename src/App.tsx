@@ -35,6 +35,7 @@ import {
 } from './features/knowledge/knowledgeApi';
 import { RescuePanel } from './features/rescue/RescuePanel';
 import { EvidenceObservatoryAtlas } from './features/evidence-observatory/EvidenceObservatoryAtlas';
+import { useUserStore } from './features/user/useUserStore';
 
 const CHAT_FIRST_STYLE: React.CSSProperties = {
   height: '100dvh',
@@ -44,6 +45,7 @@ const CHAT_FIRST_STYLE: React.CSSProperties = {
 
 function SovereignChatApp() {
   const [mission, setMission] = useState('GitHub-URL einfügen oder Auftrag an das LLM geben.');
+  const authUser = useUserStore((state) => state.user);
   const agentConfig = useMemo(() => resolveSovereignAgentConfig(), []);
   const agentClient = useMemo(
     () => createSovereignAgentClient({ config: agentConfig }),
@@ -100,7 +102,10 @@ function SovereignChatApp() {
   }, [engineState.sessionId]);
 
   useEffect(() => {
-    if (!agentConfig.ready || canonicalAgentJob.status !== 'idle') return;
+    // The canonical job list is session-protected. Do not poll it before the
+    // login/session restore has produced verified user evidence; otherwise a
+    // fresh app boot loops on HTTP 401 and can mask the actual code-task flow.
+    if (!agentConfig.ready || !authUser?.id || canonicalAgentJob.status !== 'idle') return;
     let cancelled = false;
     let loading = false;
     const restoreLatestJob = async () => {
@@ -128,7 +133,7 @@ function SovereignChatApp() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [agentConfig.ready, canonicalAgentJob.status, engineState.sessionId, runEngineCommand]);
+  }, [agentConfig.ready, authUser?.id, canonicalAgentJob.status, engineState.sessionId, runEngineCommand]);
 
   useEffect(() => {
     const jobId = canonicalAgentJob.jobId;
