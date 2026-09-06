@@ -532,7 +532,7 @@ export async function fetchSovereignDirectLlmInterpretation(
         messages,
         // Leave enough completion budget for prompt-only FreeLLM routes to
         // emit the complete server-owned JSON contract without truncation.
-        max_tokens: 1200,
+        max_tokens: 4096,
         stream: false,
       }),
       signal,

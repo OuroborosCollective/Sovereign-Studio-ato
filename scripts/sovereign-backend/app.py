@@ -4125,7 +4125,8 @@ def _code_action_contract_messages(messages: list) -> list:
     """
     schema = _SOVEREIGN_CODE_ACTION_RESPONSE_FORMAT["json_schema"]["schema"]
     instruction = (
-        "Return exactly one JSON object matching this JSON Schema; no Markdown, "
+        "Return immediately exactly one JSON object matching this JSON Schema; "
+        "do not reason, explain, preface, or emit Markdown, "
         "prose or additional keys. The object proposes an action, never executes "
         "or authorizes one. action_disposition must always be review. "
         "For mode=action use an allowed action intent, clarification_code=none "
@@ -8109,7 +8110,7 @@ def public_llm_chat():
             # Free/prompt-only routes need enough room for the complete
             # server-owned JSON contract. Older clients sent 700, which can
             # truncate a provider answer before the closing JSON brace.
-            max_tokens = max(max_tokens, 1_200)
+            max_tokens = max(max_tokens, 4_096)
 
         route = _resolve_enabled_llm_route(model)
         if not route:
