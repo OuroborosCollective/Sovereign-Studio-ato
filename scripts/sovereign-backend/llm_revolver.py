@@ -33,6 +33,9 @@ _OPENROUTER_FREE_RECEIPT_SCHEMA = "sovereign.openrouter-free-route-receipt.v1"
 _RETRY_WINDOWS_SECONDS = {
     "openrouter_account_credits_required": 3600,
     "provider_quota_exhausted": 3600,
+    # One provider/model can reject a request shape without consuming usage;
+    # auto/revolver mode may then try another verified route.
+    "provider_rejected": 30,
     "provider_rate_limited": 60,
     "litellm_upstream_unavailable": 30,
     "openrouter_rate_limited": 60,

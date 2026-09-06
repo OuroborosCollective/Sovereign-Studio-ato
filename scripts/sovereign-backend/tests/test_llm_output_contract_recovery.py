@@ -69,6 +69,7 @@ def _execute_attempts(
     pinned=False,
     paid=False,
     single_route=False,
+    failure_blocker="freellm_upstream_unavailable",
     recording_fails=False,
 ):
     namespace = _production_namespace()
@@ -110,7 +111,7 @@ def _execute_attempts(
         "request_id": "test-request", "fetch_direct_llm": fetch,
         "_safe_upstream_json": lambda response: response.payload,
         "classify_direct_llm_failure": lambda route, response, err: {
-            "blocker": "freellm_upstream_unavailable",
+            "blocker": failure_blocker,
         },
         "failure_decision": lambda classified, usage_seen: {
             "blocker": classified["blocker"],
@@ -216,6 +217,17 @@ def test_single_verified_free_route_retries_transient_http_502_before_blocking()
     result, sent, recorded, refunds, _failed = _execute_attempts(
         [_completion(usage=False, http_status=502), _completion()],
         single_route=True,
+    )
+    assert len(sent) == 2
+    assert [entry["outcome"] for entry in recorded] == ["retryable_failure", "success"]
+    assert result[2] == 2
+    assert refunds == []
+
+
+def test_provider_rejected_free_route_rotates_before_usage():
+    result, sent, recorded, refunds, _failed = _execute_attempts(
+        [_completion(usage=False, http_status=400), _completion()],
+        failure_blocker="provider_rejected",
     )
     assert len(sent) == 2
     assert [entry["outcome"] for entry in recorded] == ["retryable_failure", "success"]
