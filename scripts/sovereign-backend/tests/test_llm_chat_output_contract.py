@@ -146,3 +146,22 @@ def test_plain_chat_does_not_receive_an_action_schema():
     assert result["choices"][0]["message"]["content"] == "Hallo"
     assert sent[0]["messages"] == original
     assert "response_format" not in sent[0]
+
+
+@pytest.mark.parametrize("content", [
+    json.dumps(CONTRACT),
+    f"```json\n{json.dumps(CONTRACT)}\n```",
+])
+def test_validator_accepts_structural_provider_wrappers(content):
+    ns, _sent, _events, _original = handler(content)
+    assert ns["_validate_code_action_contract"]({
+        "choices": [{"message": {"content": [{"type": "text", "text": content}]}}],
+    }) == CONTRACT
+
+
+def test_validator_does_not_accept_additional_json_keys_in_wrapped_content():
+    ns, _sent, _events, _original = handler("unused")
+    invalid = {**CONTRACT, "extra": "must remain rejected"}
+    assert ns["_validate_code_action_contract"]({
+        "choices": [{"message": {"content": f"answer: {json.dumps(invalid)}"}}],
+    }) is None

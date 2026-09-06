@@ -4166,12 +4166,36 @@ def _validate_code_action_contract(upstream_payload: dict) -> dict | None:
     first = choices[0]
     message = first.get("message") if isinstance(first, dict) else None
     content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, list):
+        content = "".join(
+            str(part.get("text") or "")
+            for part in content
+            if isinstance(part, dict) and str(part.get("type") or "text") == "text"
+        )
     if not isinstance(content, str) or not content.strip():
         return None
+    normalized_content = content.strip()
+    if normalized_content.startswith("```") and normalized_content.endswith("```"):
+        lines = normalized_content.splitlines()
+        if len(lines) >= 3 and lines[0].strip().lower() in {"```", "```json"}:
+            normalized_content = "\n".join(lines[1:-1]).strip()
     try:
-        payload = _json.loads(content)
+        payload = _json.loads(normalized_content)
     except (TypeError, ValueError):
-        return None
+        decoder = _json.JSONDecoder()
+        payload = None
+        for index, character in enumerate(normalized_content):
+            if character != "{":
+                continue
+            try:
+                candidate, _end = decoder.raw_decode(normalized_content[index:])
+            except (TypeError, ValueError):
+                continue
+            if isinstance(candidate, dict):
+                payload = candidate
+                break
+        if payload is None:
+            return None
     if not isinstance(payload, dict) or set(payload) != _CODE_ACTION_CONTRACT_KEYS:
         return None
 
