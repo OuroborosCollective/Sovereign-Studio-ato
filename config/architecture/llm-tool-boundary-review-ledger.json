@@ -1,9 +1,9 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "3e8ce7e06216396815ec15546fc9964041bbbb4f",
-  "rawCandidateCount": 100,
-  "canonicalCandidateCount": 79,
+  "sourceRevision": "e0296f85b15efc55b7d07972227990060fd72073",
+  "rawCandidateCount": 99,
+  "canonicalCandidateCount": 78,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cognitive_llm_transport.py",
@@ -337,27 +337,14 @@
       "canonicalPath": "src/features/product/runtime/scanFindingRegistry.ts",
       "mirrorPaths": [],
       "symbol": "workflowText",
-      "line": 175,
+      "line": 203,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "b3ea0885b05373c5dd85e4d7f5295a7f68791a8b80f6d182dd9b818bcc9c510f",
+      "fileSha256": "4cdfc5600f3fb03ce5f9db085044827bd3215d8de41d9eb3e807ccee585da6bf",
       "anchorSha256": "e5878b86438b666f09ea33ea324146ef939f64d2be5eb2be67daf6b01317f0fc",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:ddf26223ee10b997ea61c52f",
+      "candidateId": "llm-boundary:d543e2f15154137d39699466",
       "classification": "TEST_OR_ANALYSIS",
       "rationale": "workflowText scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
-    },
-    {
-      "canonicalPath": "src/features/product/runtime/scanFindingRegistry.ts",
-      "mirrorPaths": [],
-      "symbol": "lower",
-      "line": 269,
-      "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "b3ea0885b05373c5dd85e4d7f5295a7f68791a8b80f6d182dd9b818bcc9c510f",
-      "anchorSha256": "276c97c3f8c98fce8b8c070117f2165ca6a96616a9c0d236e982c874907d7578",
-      "reopenOnChange": true,
-      "candidateId": "llm-boundary:663cfdce605e00768e120fd0",
-      "classification": "TEST_OR_ANALYSIS",
-      "rationale": "lower scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     },
     {
       "canonicalPath": "src/features/product/runtime/sovereignCapabilityRouter.ts",
@@ -1075,5 +1062,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "835787526b52523a6ab3d4b29ce0cdc8f0ebd6848283e56cba7a5ab2c31fb2a1"
+  "ledgerSha256": "b666e325fd86107119ed4391c1f4e3ddf2399559ccfe04685b3ab7730c7f12d1"
 }
