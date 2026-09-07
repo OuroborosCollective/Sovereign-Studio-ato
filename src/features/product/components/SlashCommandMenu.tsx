@@ -11,19 +11,26 @@ export function SlashCommandMenu({ commands, selectedIndex, onSelect }: SlashCom
   if (commands.length === 0) return null;
   return (
     <div role="listbox" aria-label="Sovereign Slash Commands" data-testid="slash-command-menu" style={{ border: '1px solid #232d3a', borderRadius: 12, background: '#161c24', padding: 6 }}>
-      {commands.map((command, index) => (
-        <button
-          key={command.cmd}
-          type="button"
-          role="option"
-          aria-selected={index === selectedIndex}
-          onClick={() => onSelect(command)}
-          style={{ width: '100%', textAlign: 'left', padding: '8px 10px', border: 0, borderRadius: 8, background: index === selectedIndex ? '#00d9b122' : 'transparent', color: '#cdd9e5', cursor: 'pointer' }}
-        >
-          <strong>{command.cmd}</strong>
-          <span style={{ marginLeft: 8, color: '#768390' }}>{command.description}</span>
-        </button>
-      ))}
+      {commands.map((command, index) => {
+        const optionLabel = `${command.cmd} – ${command.description}`;
+        const optionTitle = `Befehl ausführen: ${optionLabel}`;
+        return (
+          <button
+            key={command.cmd}
+            type="button"
+            role="option"
+            aria-selected={index === selectedIndex}
+            aria-label={optionLabel}
+            title={optionTitle}
+            onClick={() => onSelect(command)}
+            className="focus-visible:ring-2 focus-visible:ring-[#00d9b1] focus-visible:outline-none"
+            style={{ width: '100%', textAlign: 'left', padding: '8px 10px', border: 0, borderRadius: 8, background: index === selectedIndex ? '#00d9b122' : 'transparent', color: '#cdd9e5', cursor: 'pointer' }}
+          >
+            <strong>{command.cmd}</strong>
+            <span style={{ marginLeft: 8, color: '#768390' }}>{command.description}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }

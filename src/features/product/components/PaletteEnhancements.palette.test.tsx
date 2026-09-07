@@ -22,6 +22,7 @@ import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
+import { SlashCommandMenu } from './SlashCommandMenu';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1103,6 +1104,40 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(watchBtn);
       expect(onWatchChecks).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('SlashCommandMenu Accessibility and Micro-UX Enhancements', () => {
+    it('renders listbox with descriptive option titles, aria-labels, aria-selected, and focus-visible focus ring styling', () => {
+      const mockCommands = [
+        { cmd: '/help', description: 'Show available commands' },
+        { cmd: '/fix', description: 'Trigger automatic fix' },
+      ];
+      const onSelect = vi.fn();
+
+      render(
+        <SlashCommandMenu
+          commands={mockCommands}
+          selectedIndex={1}
+          onSelect={onSelect}
+        />
+      );
+
+      const listbox = screen.getByRole('listbox', { name: 'Sovereign Slash Commands' });
+      expect(listbox).toBeInTheDocument();
+
+      const option1 = screen.getByRole('option', { name: '/help – Show available commands' });
+      expect(option1).toHaveAttribute('title', 'Befehl ausführen: /help – Show available commands');
+      expect(option1).toHaveAttribute('aria-selected', 'false');
+      expect(option1).toHaveClass('focus-visible:ring-2');
+
+      const option2 = screen.getByRole('option', { name: '/fix – Trigger automatic fix' });
+      expect(option2).toHaveAttribute('title', 'Befehl ausführen: /fix – Trigger automatic fix');
+      expect(option2).toHaveAttribute('aria-selected', 'true');
+      expect(option2).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(option1);
+      expect(onSelect).toHaveBeenCalledWith(mockCommands[0]);
     });
   });
 });
