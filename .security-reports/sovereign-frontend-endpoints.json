@@ -19012,10 +19012,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "2205ba4b3b7199df590de7cee0036a879d274d6d53c1dfb3c0cee62dd5e5bd0f",
-  "revision": "4bb6348ae7adfdfa8a8cbe7bd4ddf52ad63b45b4",
+  "reportSha256": "f1a6bdbdb3611799c3d2e0067dd35548da0b46e3207f1229e227c2f803c29a91",
+  "revision": "a0bcb974e5555b91f3be69d96be0f0c4a698143a",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "02fe567b3a55acb20b0366798b0f8a010c3717845792f7c92d51e0238af493e8",
+  "sourceTreeSha256": "c3f2f804ade390cde6d4e34bbea4e158e7ed0a34934cb254f41fdc389ccc7690",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -19034,7 +19034,7 @@
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
-    "testFileCount": 763,
+    "testFileCount": 765,
     "unmatchedActiveRequestCount": 0
   },
   "truthBoundary": {

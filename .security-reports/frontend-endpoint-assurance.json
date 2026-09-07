@@ -1,0 +1,4415 @@
+{
+  "authoritativeRuntime": false,
+  "backendRoutes": [
+    {
+      "line": 2038,
+      "normalized": "/api/admin/api-keys",
+      "route": "/api/admin/api-keys",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 2066,
+      "normalized": "/api/admin/api-keys",
+      "route": "/api/admin/api-keys",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 1756,
+      "normalized": "/api/admin/audit-log",
+      "route": "/api/admin/audit-log",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 732,
+      "normalized": "/api/admin/billing/stats",
+      "route": "/api/admin/billing/stats",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3173,
+      "normalized": "/api/admin/credit-packages",
+      "route": "/api/admin/credit-packages",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3215,
+      "normalized": "/api/admin/credit-packages/<p>",
+      "route": "/api/admin/credit-packages/<pid>",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3285,
+      "normalized": "/api/admin/credit-packages/<p>",
+      "route": "/api/admin/credit-packages/<pid>",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3189,
+      "normalized": "/api/admin/credit-packages/init",
+      "route": "/api/admin/credit-packages/init",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 341,
+      "normalized": "/api/admin/evidence-observatory/v1/cases/<p>/verify",
+      "route": "/api/admin/evidence-observatory/v1/cases/<case_id>/verify",
+      "source": "scripts/sovereign-backend/evidence_observatory.py"
+    },
+    {
+      "line": 276,
+      "normalized": "/api/admin/evidence-observatory/v1/notion/import",
+      "route": "/api/admin/evidence-observatory/v1/notion/import",
+      "source": "scripts/sovereign-backend/evidence_observatory.py"
+    },
+    {
+      "line": 290,
+      "normalized": "/api/admin/evidence-observatory/v1/notion/status",
+      "route": "/api/admin/evidence-observatory/v1/notion/status",
+      "source": "scripts/sovereign-backend/evidence_observatory.py"
+    },
+    {
+      "line": 305,
+      "normalized": "/api/admin/evidence-observatory/v1/notion/sync",
+      "route": "/api/admin/evidence-observatory/v1/notion/sync",
+      "source": "scripts/sovereign-backend/evidence_observatory.py"
+    },
+    {
+      "line": 400,
+      "normalized": "/api/admin/evidence-observatory/v1/publish/huggingface",
+      "route": "/api/admin/evidence-observatory/v1/publish/huggingface",
+      "source": "scripts/sovereign-backend/evidence_observatory.py"
+    },
+    {
+      "line": 384,
+      "normalized": "/api/admin/evidence-observatory/v1/status",
+      "route": "/api/admin/evidence-observatory/v1/status",
+      "source": "scripts/sovereign-backend/evidence_observatory.py"
+    },
+    {
+      "line": 1588,
+      "normalized": "/api/admin/knowledge/catalogs/programming-languages/import",
+      "route": "/api/admin/knowledge/catalogs/programming-languages/import",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1588,
+      "normalized": "/api/admin/knowledge/catalogs/programming-languages/import",
+      "route": "/api/admin/knowledge/catalogs/programming-languages/import",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1658,
+      "normalized": "/api/admin/knowledge/repair",
+      "route": "/api/admin/knowledge/repair",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1658,
+      "normalized": "/api/admin/knowledge/repair",
+      "route": "/api/admin/knowledge/repair",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1751,
+      "normalized": "/api/admin/knowledge/search",
+      "route": "/api/admin/knowledge/search",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1751,
+      "normalized": "/api/admin/knowledge/search",
+      "route": "/api/admin/knowledge/search",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1540,
+      "normalized": "/api/admin/knowledge/sources",
+      "route": "/api/admin/knowledge/sources",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1540,
+      "normalized": "/api/admin/knowledge/sources",
+      "route": "/api/admin/knowledge/sources",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1720,
+      "normalized": "/api/admin/knowledge/sources/<p>",
+      "route": "/api/admin/knowledge/sources/<source_id>",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1720,
+      "normalized": "/api/admin/knowledge/sources/<p>",
+      "route": "/api/admin/knowledge/sources/<source_id>",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1637,
+      "normalized": "/api/admin/knowledge/sources/upload",
+      "route": "/api/admin/knowledge/sources/upload",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1637,
+      "normalized": "/api/admin/knowledge/sources/upload",
+      "route": "/api/admin/knowledge/sources/upload",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1555,
+      "normalized": "/api/admin/knowledge/sources/url",
+      "route": "/api/admin/knowledge/sources/url",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1555,
+      "normalized": "/api/admin/knowledge/sources/url",
+      "route": "/api/admin/knowledge/sources/url",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 758,
+      "normalized": "/api/admin/launcher/tools",
+      "route": "/api/admin/launcher/tools",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 770,
+      "normalized": "/api/admin/launcher/tools/<p>",
+      "route": "/api/admin/launcher/tools/<tid>",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 2329,
+      "normalized": "/api/admin/launcher/tools/<p>/healthcheck",
+      "route": "/api/admin/launcher/tools/<tid>/healthcheck",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 1167,
+      "normalized": "/api/admin/llm/freellm/provider-credentials",
+      "route": "/api/admin/llm/freellm/provider-credentials",
+      "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+    },
+    {
+      "line": 1323,
+      "normalized": "/api/admin/llm/freellm/provider-credentials/<p>/keyless",
+      "route": "/api/admin/llm/freellm/provider-credentials/<provider_id>/keyless",
+      "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+    },
+    {
+      "line": 1263,
+      "normalized": "/api/admin/llm/freellm/provider-credentials/<p>/owner-input",
+      "route": "/api/admin/llm/freellm/provider-credentials/<provider_id>/owner-input",
+      "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+    },
+    {
+      "line": 1188,
+      "normalized": "/api/admin/llm/freellm/provider-credentials/auto",
+      "route": "/api/admin/llm/freellm/provider-credentials/auto",
+      "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+    },
+    {
+      "line": 7013,
+      "normalized": "/api/admin/llm/gateway/providers",
+      "route": "/api/admin/llm/gateway/providers",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 7116,
+      "normalized": "/api/admin/llm/gateway/sync",
+      "route": "/api/admin/llm/gateway/sync",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 426,
+      "normalized": "/api/admin/llm/model-catalog",
+      "route": "/api/admin/llm/model-catalog",
+      "source": "scripts/sovereign-backend/llm_provider_runtime.py"
+    },
+    {
+      "line": 443,
+      "normalized": "/api/admin/llm/model-catalog/attach",
+      "route": "/api/admin/llm/model-catalog/attach",
+      "source": "scripts/sovereign-backend/llm_provider_runtime.py"
+    },
+    {
+      "line": 766,
+      "normalized": "/api/admin/llm/omniroute/refresh",
+      "route": "/api/admin/llm/omniroute/refresh",
+      "source": "scripts/sovereign-backend/omniroute_execution_runtime.py"
+    },
+    {
+      "line": 761,
+      "normalized": "/api/admin/llm/omniroute/status",
+      "route": "/api/admin/llm/omniroute/status",
+      "source": "scripts/sovereign-backend/omniroute_execution_runtime.py"
+    },
+    {
+      "line": 1094,
+      "normalized": "/api/admin/llm/openrouter/activate",
+      "route": "/api/admin/llm/openrouter/activate",
+      "source": "scripts/sovereign-backend/openrouter_provider_runtime.py"
+    },
+    {
+      "line": 1104,
+      "normalized": "/api/admin/llm/openrouter/catalog/refresh",
+      "route": "/api/admin/llm/openrouter/catalog/refresh",
+      "source": "scripts/sovereign-backend/openrouter_provider_runtime.py"
+    },
+    {
+      "line": 869,
+      "normalized": "/api/admin/llm/openrouter/free-key/owner-input",
+      "route": "/api/admin/llm/openrouter/free-key/owner-input",
+      "source": "scripts/sovereign-backend/openrouter_free_runtime.py"
+    },
+    {
+      "line": 858,
+      "normalized": "/api/admin/llm/openrouter/free/status",
+      "route": "/api/admin/llm/openrouter/free/status",
+      "source": "scripts/sovereign-backend/openrouter_free_runtime.py"
+    },
+    {
+      "line": 891,
+      "normalized": "/api/admin/llm/openrouter/management-key/owner-input",
+      "route": "/api/admin/llm/openrouter/management-key/owner-input",
+      "source": "scripts/sovereign-backend/openrouter_free_runtime.py"
+    },
+    {
+      "line": 1191,
+      "normalized": "/api/admin/llm/openrouter/models",
+      "route": "/api/admin/llm/openrouter/models",
+      "source": "scripts/sovereign-backend/openrouter_provider_runtime.py"
+    },
+    {
+      "line": 1210,
+      "normalized": "/api/admin/llm/openrouter/models/<p>/markup",
+      "route": "/api/admin/llm/openrouter/models/<route_id>/markup",
+      "source": "scripts/sovereign-backend/openrouter_provider_runtime.py"
+    },
+    {
+      "line": 1039,
+      "normalized": "/api/admin/llm/openrouter/owner-input",
+      "route": "/api/admin/llm/openrouter/owner-input",
+      "source": "scripts/sovereign-backend/openrouter_provider_runtime.py"
+    },
+    {
+      "line": 1163,
+      "normalized": "/api/admin/llm/openrouter/status",
+      "route": "/api/admin/llm/openrouter/status",
+      "source": "scripts/sovereign-backend/openrouter_provider_runtime.py"
+    },
+    {
+      "line": 593,
+      "normalized": "/api/admin/llm/provider-deployments",
+      "route": "/api/admin/llm/provider-deployments",
+      "source": "scripts/sovereign-backend/llm_provider_runtime.py"
+    },
+    {
+      "line": 1287,
+      "normalized": "/api/admin/llm/provider-deployments/<p>/activate",
+      "route": "/api/admin/llm/provider-deployments/<route_id>/activate",
+      "source": "scripts/sovereign-backend/llm_provider_runtime.py"
+    },
+    {
+      "line": 809,
+      "normalized": "/api/admin/llm/provider-deployments/<p>/owner-input",
+      "route": "/api/admin/llm/provider-deployments/<route_id>/owner-input",
+      "source": "scripts/sovereign-backend/llm_provider_runtime.py"
+    },
+    {
+      "line": 678,
+      "normalized": "/api/admin/llm/provider-deployments/prepare",
+      "route": "/api/admin/llm/provider-deployments/prepare",
+      "source": "scripts/sovereign-backend/llm_provider_runtime.py"
+    },
+    {
+      "line": 416,
+      "normalized": "/api/admin/llm/provider-presets",
+      "route": "/api/admin/llm/provider-presets",
+      "source": "scripts/sovereign-backend/llm_provider_runtime.py"
+    },
+    {
+      "line": 556,
+      "normalized": "/api/admin/llm/provider-radar/omniroute",
+      "route": "/api/admin/llm/provider-radar/omniroute",
+      "source": "scripts/sovereign-backend/omniroute_provider_radar.py"
+    },
+    {
+      "line": 599,
+      "normalized": "/api/admin/llm/provider-radar/omniroute/scan",
+      "route": "/api/admin/llm/provider-radar/omniroute/scan",
+      "source": "scripts/sovereign-backend/omniroute_provider_radar.py"
+    },
+    {
+      "line": 119,
+      "normalized": "/api/admin/llm/revolver-v3",
+      "route": "/api/admin/llm/revolver-v3",
+      "source": "scripts/sovereign-backend/free_revolver_runtime.py"
+    },
+    {
+      "line": 186,
+      "normalized": "/api/admin/llm/revolver-v3/profiles/<p>",
+      "route": "/api/admin/llm/revolver-v3/profiles/<profile_key>",
+      "source": "scripts/sovereign-backend/free_revolver_runtime.py"
+    },
+    {
+      "line": 1441,
+      "normalized": "/api/admin/llm/revolver-v3/providers",
+      "route": "/api/admin/llm/revolver-v3/providers",
+      "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+    },
+    {
+      "line": 1496,
+      "normalized": "/api/admin/llm/revolver-v3/providers",
+      "route": "/api/admin/llm/revolver-v3/providers",
+      "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+    },
+    {
+      "line": 3742,
+      "normalized": "/api/admin/llm/revolver-v3/providers/<p>",
+      "route": "/api/admin/llm/revolver-v3/providers/<source_id>",
+      "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+    },
+    {
+      "line": 1963,
+      "normalized": "/api/admin/llm/revolver-v3/providers/<p>/discover",
+      "route": "/api/admin/llm/revolver-v3/providers/<source_id>/discover",
+      "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+    },
+    {
+      "line": 1588,
+      "normalized": "/api/admin/llm/revolver-v3/providers/<p>/owner-input",
+      "route": "/api/admin/llm/revolver-v3/providers/<source_id>/owner-input",
+      "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+    },
+    {
+      "line": 3527,
+      "normalized": "/api/admin/llm/revolver-v3/providers/<p>/recheck",
+      "route": "/api/admin/llm/revolver-v3/providers/<source_id>/recheck",
+      "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+    },
+    {
+      "line": 836,
+      "normalized": "/api/admin/llm/revolver-v3/route-scanner",
+      "route": "/api/admin/llm/revolver-v3/route-scanner",
+      "source": "scripts/sovereign-backend/llm_route_scanner.py"
+    },
+    {
+      "line": 912,
+      "normalized": "/api/admin/llm/revolver-v3/route-scanner/scan",
+      "route": "/api/admin/llm/revolver-v3/route-scanner/scan",
+      "source": "scripts/sovereign-backend/llm_route_scanner.py"
+    },
+    {
+      "line": 1057,
+      "normalized": "/api/admin/llm/routes",
+      "route": "/api/admin/llm/routes",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 1162,
+      "normalized": "/api/admin/llm/routes/<p>",
+      "route": "/api/admin/llm/routes/<rid>",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 2102,
+      "normalized": "/api/admin/llm/routes/<p>/healthcheck",
+      "route": "/api/admin/llm/routes/<rid>/healthcheck",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 1378,
+      "normalized": "/api/admin/llm/routes/<p>/revolver-reset",
+      "route": "/api/admin/llm/routes/<rid>/revolver-reset",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 1608,
+      "normalized": "/api/admin/llm/worker-ai/models",
+      "route": "/api/admin/llm/worker-ai/models",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 1430,
+      "normalized": "/api/admin/llm/worker-ai/status",
+      "route": "/api/admin/llm/worker-ai/status",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 1486,
+      "normalized": "/api/admin/llm/worker-ai/sync",
+      "route": "/api/admin/llm/worker-ai/sync",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 219,
+      "normalized": "/api/admin/n-plus-one/status",
+      "route": "/api/admin/n-plus-one/status",
+      "source": "backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 219,
+      "normalized": "/api/admin/n-plus-one/status",
+      "route": "/api/admin/n-plus-one/status",
+      "source": "scripts/sovereign-backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 747,
+      "normalized": "/api/admin/owner-input/requests",
+      "route": "/api/admin/owner-input/requests",
+      "source": "scripts/sovereign-backend/owner_input_runtime.py"
+    },
+    {
+      "line": 773,
+      "normalized": "/api/admin/owner-input/requests/<p>/resolve",
+      "route": "/api/admin/owner-input/requests/<request_id>/resolve",
+      "source": "scripts/sovereign-backend/owner_input_runtime.py"
+    },
+    {
+      "line": 3076,
+      "normalized": "/api/admin/payment-methods",
+      "route": "/api/admin/payment-methods",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3103,
+      "normalized": "/api/admin/payment-methods/<p>",
+      "route": "/api/admin/payment-methods/<mid>",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3299,
+      "normalized": "/api/admin/payment-methods/crypto/confirm",
+      "route": "/api/admin/payment-methods/crypto/confirm",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3143,
+      "normalized": "/api/admin/payment-methods/init",
+      "route": "/api/admin/payment-methods/init",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 497,
+      "normalized": "/api/admin/ping",
+      "route": "/api/admin/ping",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 193,
+      "normalized": "/api/admin/platform/v1/canaries",
+      "route": "/api/admin/platform/v1/canaries",
+      "source": "backend/enterprise_platform/routes.py"
+    },
+    {
+      "line": 193,
+      "normalized": "/api/admin/platform/v1/canaries",
+      "route": "/api/admin/platform/v1/canaries",
+      "source": "scripts/sovereign-backend/enterprise_platform/routes.py"
+    },
+    {
+      "line": 165,
+      "normalized": "/api/admin/platform/v1/evidence",
+      "route": "/api/admin/platform/v1/evidence",
+      "source": "backend/enterprise_platform/routes.py"
+    },
+    {
+      "line": 165,
+      "normalized": "/api/admin/platform/v1/evidence",
+      "route": "/api/admin/platform/v1/evidence",
+      "source": "scripts/sovereign-backend/enterprise_platform/routes.py"
+    },
+    {
+      "line": 122,
+      "normalized": "/api/admin/platform/v1/identity",
+      "route": "/api/admin/platform/v1/identity",
+      "source": "backend/enterprise_platform/routes.py"
+    },
+    {
+      "line": 122,
+      "normalized": "/api/admin/platform/v1/identity",
+      "route": "/api/admin/platform/v1/identity",
+      "source": "scripts/sovereign-backend/enterprise_platform/routes.py"
+    },
+    {
+      "line": 150,
+      "normalized": "/api/admin/platform/v1/integrations",
+      "route": "/api/admin/platform/v1/integrations",
+      "source": "backend/enterprise_platform/routes.py"
+    },
+    {
+      "line": 150,
+      "normalized": "/api/admin/platform/v1/integrations",
+      "route": "/api/admin/platform/v1/integrations",
+      "source": "scripts/sovereign-backend/enterprise_platform/routes.py"
+    },
+    {
+      "line": 262,
+      "normalized": "/api/admin/platform/v1/openapi.json",
+      "route": "/api/admin/platform/v1/openapi.json",
+      "source": "backend/enterprise_platform/routes.py"
+    },
+    {
+      "line": 262,
+      "normalized": "/api/admin/platform/v1/openapi.json",
+      "route": "/api/admin/platform/v1/openapi.json",
+      "source": "scripts/sovereign-backend/enterprise_platform/routes.py"
+    },
+    {
+      "line": 132,
+      "normalized": "/api/admin/platform/v1/overview",
+      "route": "/api/admin/platform/v1/overview",
+      "source": "backend/enterprise_platform/routes.py"
+    },
+    {
+      "line": 132,
+      "normalized": "/api/admin/platform/v1/overview",
+      "route": "/api/admin/platform/v1/overview",
+      "source": "scripts/sovereign-backend/enterprise_platform/routes.py"
+    },
+    {
+      "line": 139,
+      "normalized": "/api/admin/platform/v1/statistics",
+      "route": "/api/admin/platform/v1/statistics",
+      "source": "backend/enterprise_platform/routes.py"
+    },
+    {
+      "line": 139,
+      "normalized": "/api/admin/platform/v1/statistics",
+      "route": "/api/admin/platform/v1/statistics",
+      "source": "scripts/sovereign-backend/enterprise_platform/routes.py"
+    },
+    {
+      "line": 1864,
+      "normalized": "/api/admin/runtime/config",
+      "route": "/api/admin/runtime/config",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 1877,
+      "normalized": "/api/admin/runtime/config",
+      "route": "/api/admin/runtime/config",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 2008,
+      "normalized": "/api/admin/runtime/health",
+      "route": "/api/admin/runtime/health",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 1956,
+      "normalized": "/api/admin/runtime/validate-cors",
+      "route": "/api/admin/runtime/validate-cors",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 1477,
+      "normalized": "/api/admin/system/health",
+      "route": "/api/admin/system/health",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 798,
+      "normalized": "/api/admin/toolchain/tools",
+      "route": "/api/admin/toolchain/tools",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 823,
+      "normalized": "/api/admin/toolchain/tools",
+      "route": "/api/admin/toolchain/tools",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 863,
+      "normalized": "/api/admin/toolchain/tools/<p>",
+      "route": "/api/admin/toolchain/tools/<tid>",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 897,
+      "normalized": "/api/admin/toolchain/tools/<p>",
+      "route": "/api/admin/toolchain/tools/<tid>",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 695,
+      "normalized": "/api/admin/transactions",
+      "route": "/api/admin/transactions",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 519,
+      "normalized": "/api/admin/users",
+      "route": "/api/admin/users",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 572,
+      "normalized": "/api/admin/users/<p>",
+      "route": "/api/admin/users/<uid>",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 613,
+      "normalized": "/api/admin/users/<p>/credit-adjustment",
+      "route": "/api/admin/users/<uid>/credit-adjustment",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 716,
+      "normalized": "/api/auth/account-key",
+      "route": "/api/auth/account-key",
+      "source": "backend/security_runtime.py"
+    },
+    {
+      "line": 716,
+      "normalized": "/api/auth/account-key",
+      "route": "/api/auth/account-key",
+      "source": "scripts/sovereign-backend/security_runtime.py"
+    },
+    {
+      "line": 5021,
+      "normalized": "/api/auth/github",
+      "route": "/api/auth/github",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 817,
+      "normalized": "/api/auth/github-app/callback",
+      "route": "/api/auth/github-app/callback",
+      "source": "backend/github_app.py"
+    },
+    {
+      "line": 817,
+      "normalized": "/api/auth/github-app/callback",
+      "route": "/api/auth/github-app/callback",
+      "source": "scripts/sovereign-backend/github_app.py"
+    },
+    {
+      "line": 5001,
+      "normalized": "/api/auth/github/callback-context",
+      "route": "/api/auth/github/callback-context",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 5198,
+      "normalized": "/api/auth/github/configured",
+      "route": "/api/auth/github/configured",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 5218,
+      "normalized": "/api/auth/github/init",
+      "route": "/api/auth/github/init",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 4926,
+      "normalized": "/api/auth/google",
+      "route": "/api/auth/google",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 4917,
+      "normalized": "/api/auth/google/configured",
+      "route": "/api/auth/google/configured",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 4798,
+      "normalized": "/api/auth/guest",
+      "route": "/api/auth/guest",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 4864,
+      "normalized": "/api/auth/login",
+      "route": "/api/auth/login",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 4910,
+      "normalized": "/api/auth/logout",
+      "route": "/api/auth/logout",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 4895,
+      "normalized": "/api/auth/me",
+      "route": "/api/auth/me",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 561,
+      "normalized": "/api/auth/passkey/options",
+      "route": "/api/auth/passkey/options",
+      "source": "backend/security_runtime.py"
+    },
+    {
+      "line": 561,
+      "normalized": "/api/auth/passkey/options",
+      "route": "/api/auth/passkey/options",
+      "source": "scripts/sovereign-backend/security_runtime.py"
+    },
+    {
+      "line": 604,
+      "normalized": "/api/auth/passkey/verify",
+      "route": "/api/auth/passkey/verify",
+      "source": "backend/security_runtime.py"
+    },
+    {
+      "line": 604,
+      "normalized": "/api/auth/passkey/verify",
+      "route": "/api/auth/passkey/verify",
+      "source": "scripts/sovereign-backend/security_runtime.py"
+    },
+    {
+      "line": 4832,
+      "normalized": "/api/auth/register",
+      "route": "/api/auth/register",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3351,
+      "normalized": "/api/billing",
+      "route": "/api/billing",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 4393,
+      "normalized": "/api/billing/credits",
+      "route": "/api/billing/credits",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 4416,
+      "normalized": "/api/billing/deduct",
+      "route": "/api/billing/deduct",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3978,
+      "normalized": "/api/billing/payment-methods",
+      "route": "/api/billing/payment-methods",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3995,
+      "normalized": "/api/billing/purchase",
+      "route": "/api/billing/purchase",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3805,
+      "normalized": "/api/billing/purchase/crypto/info",
+      "route": "/api/billing/purchase/crypto/info",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3845,
+      "normalized": "/api/billing/purchase/google-play/validate",
+      "route": "/api/billing/purchase/google-play/validate",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3542,
+      "normalized": "/api/billing/purchase/paypal/capture",
+      "route": "/api/billing/purchase/paypal/capture",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3479,
+      "normalized": "/api/billing/purchase/paypal/create-order",
+      "route": "/api/billing/purchase/paypal/create-order",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3691,
+      "normalized": "/api/billing/purchase/skrill/init",
+      "route": "/api/billing/purchase/skrill/init",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3631,
+      "normalized": "/api/billing/webhooks/paypal",
+      "route": "/api/billing/webhooks/paypal",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 3744,
+      "normalized": "/api/billing/webhooks/skrill",
+      "route": "/api/billing/webhooks/skrill",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 1431,
+      "normalized": "/api/controller/approvals",
+      "route": "/api/controller/approvals",
+      "source": "scripts/sovereign-backend/controller_board.py"
+    },
+    {
+      "line": 1462,
+      "normalized": "/api/controller/approvals/<p>/decision",
+      "route": "/api/controller/approvals/<approval_id>/decision",
+      "source": "scripts/sovereign-backend/controller_board.py"
+    },
+    {
+      "line": 1609,
+      "normalized": "/api/controller/github",
+      "route": "/api/controller/github",
+      "source": "scripts/sovereign-backend/controller_board.py"
+    },
+    {
+      "line": 1276,
+      "normalized": "/api/controller/overview",
+      "route": "/api/controller/overview",
+      "source": "scripts/sovereign-backend/controller_board.py"
+    },
+    {
+      "line": 1359,
+      "normalized": "/api/controller/runs/<p>",
+      "route": "/api/controller/runs/<run_id>",
+      "source": "scripts/sovereign-backend/controller_board.py"
+    },
+    {
+      "line": 512,
+      "normalized": "/api/evidence-observatory/v1/arena/cases/<p>/request",
+      "route": "/api/evidence-observatory/v1/arena/cases/<case_id>/request",
+      "source": "scripts/sovereign-backend/evidence_observatory.py"
+    },
+    {
+      "line": 605,
+      "normalized": "/api/evidence-observatory/v1/arena/leaderboard",
+      "route": "/api/evidence-observatory/v1/arena/leaderboard",
+      "source": "scripts/sovereign-backend/evidence_observatory.py"
+    },
+    {
+      "line": 531,
+      "normalized": "/api/evidence-observatory/v1/arena/score",
+      "route": "/api/evidence-observatory/v1/arena/score",
+      "source": "scripts/sovereign-backend/evidence_observatory.py"
+    },
+    {
+      "line": 111,
+      "normalized": "/api/evidence-observatory/v1/atlas",
+      "route": "/api/evidence-observatory/v1/atlas",
+      "source": "scripts/sovereign-backend/evidence_observatory.py"
+    },
+    {
+      "line": 147,
+      "normalized": "/api/evidence-observatory/v1/cases/<p>",
+      "route": "/api/evidence-observatory/v1/cases/<case_id>",
+      "source": "scripts/sovereign-backend/evidence_observatory.py"
+    },
+    {
+      "line": 162,
+      "normalized": "/api/evidence-observatory/v1/cases/<p>/source-dependency",
+      "route": "/api/evidence-observatory/v1/cases/<case_id>/source-dependency",
+      "source": "scripts/sovereign-backend/evidence_observatory.py"
+    },
+    {
+      "line": 181,
+      "normalized": "/api/evidence-observatory/v1/submissions",
+      "route": "/api/evidence-observatory/v1/submissions",
+      "source": "scripts/sovereign-backend/evidence_observatory.py"
+    },
+    {
+      "line": 886,
+      "normalized": "/api/github-app/configured",
+      "route": "/api/github-app/configured",
+      "source": "backend/github_app.py"
+    },
+    {
+      "line": 886,
+      "normalized": "/api/github-app/configured",
+      "route": "/api/github-app/configured",
+      "source": "scripts/sovereign-backend/github_app.py"
+    },
+    {
+      "line": 710,
+      "normalized": "/api/github-app/installations",
+      "route": "/api/github-app/installations",
+      "source": "backend/github_app.py"
+    },
+    {
+      "line": 710,
+      "normalized": "/api/github-app/installations",
+      "route": "/api/github-app/installations",
+      "source": "scripts/sovereign-backend/github_app.py"
+    },
+    {
+      "line": 728,
+      "normalized": "/api/github-app/installations/<p>",
+      "route": "/api/github-app/installations/<int:installation_id>",
+      "source": "backend/github_app.py"
+    },
+    {
+      "line": 728,
+      "normalized": "/api/github-app/installations/<p>",
+      "route": "/api/github-app/installations/<int:installation_id>",
+      "source": "scripts/sovereign-backend/github_app.py"
+    },
+    {
+      "line": 747,
+      "normalized": "/api/github-app/installations/<p>/credits",
+      "route": "/api/github-app/installations/<int:installation_id>/credits",
+      "source": "backend/github_app.py"
+    },
+    {
+      "line": 747,
+      "normalized": "/api/github-app/installations/<p>/credits",
+      "route": "/api/github-app/installations/<int:installation_id>/credits",
+      "source": "scripts/sovereign-backend/github_app.py"
+    },
+    {
+      "line": 771,
+      "normalized": "/api/github-app/installations/<p>/deduct",
+      "route": "/api/github-app/installations/<int:installation_id>/deduct",
+      "source": "backend/github_app.py"
+    },
+    {
+      "line": 771,
+      "normalized": "/api/github-app/installations/<p>/deduct",
+      "route": "/api/github-app/installations/<int:installation_id>/deduct",
+      "source": "scripts/sovereign-backend/github_app.py"
+    },
+    {
+      "line": 543,
+      "normalized": "/api/inference/are/evaluate",
+      "route": "/api/inference/are/evaluate",
+      "source": "backend/are_inference.py"
+    },
+    {
+      "line": 543,
+      "normalized": "/api/inference/are/evaluate",
+      "route": "/api/inference/are/evaluate",
+      "source": "scripts/sovereign-backend/are_inference.py"
+    },
+    {
+      "line": 593,
+      "normalized": "/api/inference/are/quarantine",
+      "route": "/api/inference/are/quarantine",
+      "source": "backend/are_inference.py"
+    },
+    {
+      "line": 602,
+      "normalized": "/api/inference/are/quarantine",
+      "route": "/api/inference/are/quarantine",
+      "source": "backend/are_inference.py"
+    },
+    {
+      "line": 593,
+      "normalized": "/api/inference/are/quarantine",
+      "route": "/api/inference/are/quarantine",
+      "source": "scripts/sovereign-backend/are_inference.py"
+    },
+    {
+      "line": 602,
+      "normalized": "/api/inference/are/quarantine",
+      "route": "/api/inference/are/quarantine",
+      "source": "scripts/sovereign-backend/are_inference.py"
+    },
+    {
+      "line": 625,
+      "normalized": "/api/inference/are/quarantine/<p>/promote",
+      "route": "/api/inference/are/quarantine/<candidate_id>/promote",
+      "source": "backend/are_inference.py"
+    },
+    {
+      "line": 625,
+      "normalized": "/api/inference/are/quarantine/<p>/promote",
+      "route": "/api/inference/are/quarantine/<candidate_id>/promote",
+      "source": "scripts/sovereign-backend/are_inference.py"
+    },
+    {
+      "line": 655,
+      "normalized": "/api/inference/are/quarantine/<p>/reject",
+      "route": "/api/inference/are/quarantine/<candidate_id>/reject",
+      "source": "backend/are_inference.py"
+    },
+    {
+      "line": 655,
+      "normalized": "/api/inference/are/quarantine/<p>/reject",
+      "route": "/api/inference/are/quarantine/<candidate_id>/reject",
+      "source": "scripts/sovereign-backend/are_inference.py"
+    },
+    {
+      "line": 563,
+      "normalized": "/api/inference/are/repair",
+      "route": "/api/inference/are/repair",
+      "source": "backend/are_inference.py"
+    },
+    {
+      "line": 563,
+      "normalized": "/api/inference/are/repair",
+      "route": "/api/inference/are/repair",
+      "source": "scripts/sovereign-backend/are_inference.py"
+    },
+    {
+      "line": 723,
+      "normalized": "/api/internal/controller/fleet/plan-preview",
+      "route": "/api/internal/controller/fleet/plan-preview",
+      "source": "scripts/sovereign-backend/controller_board.py"
+    },
+    {
+      "line": 759,
+      "normalized": "/api/internal/controller/fleet/projection-preview",
+      "route": "/api/internal/controller/fleet/projection-preview",
+      "source": "scripts/sovereign-backend/controller_board.py"
+    },
+    {
+      "line": 794,
+      "normalized": "/api/internal/controller/fleet/verdict-preview",
+      "route": "/api/internal/controller/fleet/verdict-preview",
+      "source": "scripts/sovereign-backend/controller_board.py"
+    },
+    {
+      "line": 288,
+      "normalized": "/api/internal/controller/runs",
+      "route": "/api/internal/controller/runs",
+      "source": "scripts/sovereign-backend/controller_board.py"
+    },
+    {
+      "line": 321,
+      "normalized": "/api/internal/controller/runs",
+      "route": "/api/internal/controller/runs",
+      "source": "scripts/sovereign-backend/controller_board.py"
+    },
+    {
+      "line": 841,
+      "normalized": "/api/internal/controller/runs/<p>",
+      "route": "/api/internal/controller/runs/<run_id>",
+      "source": "scripts/sovereign-backend/controller_board.py"
+    },
+    {
+      "line": 929,
+      "normalized": "/api/internal/controller/runs/<p>/events/external",
+      "route": "/api/internal/controller/runs/<run_id>/events/external",
+      "source": "scripts/sovereign-backend/controller_board.py"
+    },
+    {
+      "line": 983,
+      "normalized": "/api/internal/controller/runs/<p>/resume",
+      "route": "/api/internal/controller/runs/<run_id>/resume",
+      "source": "scripts/sovereign-backend/controller_board.py"
+    },
+    {
+      "line": 1370,
+      "normalized": "/api/internal/llm/freellm/provider-credentials/<p>/keyless",
+      "route": "/api/internal/llm/freellm/provider-credentials/<provider_id>/keyless",
+      "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+    },
+    {
+      "line": 2850,
+      "normalized": "/api/internal/llm/freellm/providers",
+      "route": "/api/internal/llm/freellm/providers",
+      "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+    },
+    {
+      "line": 2377,
+      "normalized": "/api/internal/llm/freellm/providers/<p>/discover",
+      "route": "/api/internal/llm/freellm/providers/<source_id>/discover",
+      "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+    },
+    {
+      "line": 2998,
+      "normalized": "/api/internal/llm/freellm/providers/<p>/reconcile",
+      "route": "/api/internal/llm/freellm/providers/<source_id>/reconcile",
+      "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+    },
+    {
+      "line": 1174,
+      "normalized": "/api/internal/llm/openrouter/activate",
+      "route": "/api/internal/llm/openrouter/activate",
+      "source": "scripts/sovereign-backend/openrouter_provider_runtime.py"
+    },
+    {
+      "line": 914,
+      "normalized": "/api/internal/llm/openrouter/free/activate",
+      "route": "/api/internal/llm/openrouter/free/activate",
+      "source": "scripts/sovereign-backend/openrouter_free_runtime.py"
+    },
+    {
+      "line": 863,
+      "normalized": "/api/internal/llm/openrouter/free/status",
+      "route": "/api/internal/llm/openrouter/free/status",
+      "source": "scripts/sovereign-backend/openrouter_free_runtime.py"
+    },
+    {
+      "line": 969,
+      "normalized": "/api/internal/llm/openrouter/management/rotate-free-key",
+      "route": "/api/internal/llm/openrouter/management/rotate-free-key",
+      "source": "scripts/sovereign-backend/openrouter_free_runtime.py"
+    },
+    {
+      "line": 1168,
+      "normalized": "/api/internal/llm/openrouter/status",
+      "route": "/api/internal/llm/openrouter/status",
+      "source": "scripts/sovereign-backend/openrouter_provider_runtime.py"
+    },
+    {
+      "line": 639,
+      "normalized": "/api/internal/llm/provider-deployments",
+      "route": "/api/internal/llm/provider-deployments",
+      "source": "scripts/sovereign-backend/llm_provider_runtime.py"
+    },
+    {
+      "line": 1292,
+      "normalized": "/api/internal/llm/provider-deployments/<p>/activate",
+      "route": "/api/internal/llm/provider-deployments/<route_id>/activate",
+      "source": "scripts/sovereign-backend/llm_provider_runtime.py"
+    },
+    {
+      "line": 503,
+      "normalized": "/api/internal/owner-input/requests",
+      "route": "/api/internal/owner-input/requests",
+      "source": "scripts/sovereign-backend/owner_input_runtime.py"
+    },
+    {
+      "line": 720,
+      "normalized": "/api/internal/owner-input/requests/<p>",
+      "route": "/api/internal/owner-input/requests/<request_id>",
+      "source": "scripts/sovereign-backend/owner_input_runtime.py"
+    },
+    {
+      "line": 528,
+      "normalized": "/api/internal/proven-learning/apply",
+      "route": "/api/internal/proven-learning/apply",
+      "source": "backend/proven_learning_runtime.py"
+    },
+    {
+      "line": 528,
+      "normalized": "/api/internal/proven-learning/apply",
+      "route": "/api/internal/proven-learning/apply",
+      "source": "scripts/sovereign-backend/proven_learning_runtime.py"
+    },
+    {
+      "line": 516,
+      "normalized": "/api/internal/proven-learning/plan",
+      "route": "/api/internal/proven-learning/plan",
+      "source": "backend/proven_learning_runtime.py"
+    },
+    {
+      "line": 516,
+      "normalized": "/api/internal/proven-learning/plan",
+      "route": "/api/internal/proven-learning/plan",
+      "source": "scripts/sovereign-backend/proven_learning_runtime.py"
+    },
+    {
+      "line": 243,
+      "normalized": "/api/internal/wolfram-cag/canary",
+      "route": "/api/internal/wolfram-cag/canary",
+      "source": "backend/wolfram_cag_runtime.py"
+    },
+    {
+      "line": 243,
+      "normalized": "/api/internal/wolfram-cag/canary",
+      "route": "/api/internal/wolfram-cag/canary",
+      "source": "scripts/sovereign-backend/wolfram_cag_runtime.py"
+    },
+    {
+      "line": 237,
+      "normalized": "/api/internal/wolfram-cag/status",
+      "route": "/api/internal/wolfram-cag/status",
+      "source": "backend/wolfram_cag_runtime.py"
+    },
+    {
+      "line": 237,
+      "normalized": "/api/internal/wolfram-cag/status",
+      "route": "/api/internal/wolfram-cag/status",
+      "source": "scripts/sovereign-backend/wolfram_cag_runtime.py"
+    },
+    {
+      "line": 1277,
+      "normalized": "/api/knowledge/catalogs/programming-languages/import",
+      "route": "/api/knowledge/catalogs/programming-languages/import",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1277,
+      "normalized": "/api/knowledge/catalogs/programming-languages/import",
+      "route": "/api/knowledge/catalogs/programming-languages/import",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1373,
+      "normalized": "/api/knowledge/objects/<p>/download",
+      "route": "/api/knowledge/objects/<object_id>/download",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1373,
+      "normalized": "/api/knowledge/objects/<p>/download",
+      "route": "/api/knowledge/objects/<object_id>/download",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1455,
+      "normalized": "/api/knowledge/search",
+      "route": "/api/knowledge/search",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1455,
+      "normalized": "/api/knowledge/search",
+      "route": "/api/knowledge/search",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1222,
+      "normalized": "/api/knowledge/sources",
+      "route": "/api/knowledge/sources",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1222,
+      "normalized": "/api/knowledge/sources",
+      "route": "/api/knowledge/sources",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1424,
+      "normalized": "/api/knowledge/sources/<p>",
+      "route": "/api/knowledge/sources/<source_id>",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1424,
+      "normalized": "/api/knowledge/sources/<p>",
+      "route": "/api/knowledge/sources/<source_id>",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1403,
+      "normalized": "/api/knowledge/sources/upload",
+      "route": "/api/knowledge/sources/upload",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1403,
+      "normalized": "/api/knowledge/sources/upload",
+      "route": "/api/knowledge/sources/upload",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1347,
+      "normalized": "/api/knowledge/sources/upload-confirm",
+      "route": "/api/knowledge/sources/upload-confirm",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1347,
+      "normalized": "/api/knowledge/sources/upload-confirm",
+      "route": "/api/knowledge/sources/upload-confirm",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1325,
+      "normalized": "/api/knowledge/sources/upload-ticket",
+      "route": "/api/knowledge/sources/upload-ticket",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1325,
+      "normalized": "/api/knowledge/sources/upload-ticket",
+      "route": "/api/knowledge/sources/upload-ticket",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1236,
+      "normalized": "/api/knowledge/sources/url",
+      "route": "/api/knowledge/sources/url",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1236,
+      "normalized": "/api/knowledge/sources/url",
+      "route": "/api/knowledge/sources/url",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 1492,
+      "normalized": "/api/knowledge/stats",
+      "route": "/api/knowledge/stats",
+      "source": "backend/knowledge_library.py"
+    },
+    {
+      "line": 1492,
+      "normalized": "/api/knowledge/stats",
+      "route": "/api/knowledge/stats",
+      "source": "scripts/sovereign-backend/knowledge_library.py"
+    },
+    {
+      "line": 7263,
+      "normalized": "/api/llm/auto-route",
+      "route": "/api/llm/auto-route",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 8018,
+      "normalized": "/api/llm/chat",
+      "route": "/api/llm/chat",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 4316,
+      "normalized": "/api/llm/routes",
+      "route": "/api/llm/routes",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 4364,
+      "normalized": "/api/llm/routes/<p>",
+      "route": "/api/llm/routes/<route_id>",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 194,
+      "normalized": "/api/n-plus-one/identity",
+      "route": "/api/n-plus-one/identity",
+      "source": "backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 194,
+      "normalized": "/api/n-plus-one/identity",
+      "route": "/api/n-plus-one/identity",
+      "source": "scripts/sovereign-backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 323,
+      "normalized": "/api/n-plus-one/learning-candidates",
+      "route": "/api/n-plus-one/learning-candidates",
+      "source": "backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 359,
+      "normalized": "/api/n-plus-one/learning-candidates",
+      "route": "/api/n-plus-one/learning-candidates",
+      "source": "backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 323,
+      "normalized": "/api/n-plus-one/learning-candidates",
+      "route": "/api/n-plus-one/learning-candidates",
+      "source": "scripts/sovereign-backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 359,
+      "normalized": "/api/n-plus-one/learning-candidates",
+      "route": "/api/n-plus-one/learning-candidates",
+      "source": "scripts/sovereign-backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 432,
+      "normalized": "/api/n-plus-one/linguistic/observe",
+      "route": "/api/n-plus-one/linguistic/observe",
+      "source": "backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 432,
+      "normalized": "/api/n-plus-one/linguistic/observe",
+      "route": "/api/n-plus-one/linguistic/observe",
+      "source": "scripts/sovereign-backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 213,
+      "normalized": "/api/n-plus-one/status",
+      "route": "/api/n-plus-one/status",
+      "source": "backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 213,
+      "normalized": "/api/n-plus-one/status",
+      "route": "/api/n-plus-one/status",
+      "source": "scripts/sovereign-backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 225,
+      "normalized": "/api/n-plus-one/voice-profile",
+      "route": "/api/n-plus-one/voice-profile",
+      "source": "backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 225,
+      "normalized": "/api/n-plus-one/voice-profile",
+      "route": "/api/n-plus-one/voice-profile",
+      "source": "scripts/sovereign-backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 262,
+      "normalized": "/api/n-plus-one/voice/synthesize",
+      "route": "/api/n-plus-one/voice/synthesize",
+      "source": "backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 262,
+      "normalized": "/api/n-plus-one/voice/synthesize",
+      "route": "/api/n-plus-one/voice/synthesize",
+      "source": "scripts/sovereign-backend/n_plus_one/routes.py"
+    },
+    {
+      "line": 643,
+      "normalized": "/api/owner-input/direct-upload-encrypted/<p>",
+      "route": "/api/owner-input/direct-upload-encrypted/<request_id>",
+      "source": "scripts/sovereign-backend/owner_input_runtime.py"
+    },
+    {
+      "line": 567,
+      "normalized": "/api/owner-input/direct-upload/<p>",
+      "route": "/api/owner-input/direct-upload/<request_id>",
+      "source": "scripts/sovereign-backend/owner_input_runtime.py"
+    },
+    {
+      "line": 668,
+      "normalized": "/api/security/account-keys",
+      "route": "/api/security/account-keys",
+      "source": "backend/security_runtime.py"
+    },
+    {
+      "line": 668,
+      "normalized": "/api/security/account-keys",
+      "route": "/api/security/account-keys",
+      "source": "scripts/sovereign-backend/security_runtime.py"
+    },
+    {
+      "line": 698,
+      "normalized": "/api/security/account-keys/<p>",
+      "route": "/api/security/account-keys/<key_id>",
+      "source": "backend/security_runtime.py"
+    },
+    {
+      "line": 698,
+      "normalized": "/api/security/account-keys/<p>",
+      "route": "/api/security/account-keys/<key_id>",
+      "source": "scripts/sovereign-backend/security_runtime.py"
+    },
+    {
+      "line": 363,
+      "normalized": "/api/security/overview",
+      "route": "/api/security/overview",
+      "source": "backend/security_runtime.py"
+    },
+    {
+      "line": 363,
+      "normalized": "/api/security/overview",
+      "route": "/api/security/overview",
+      "source": "scripts/sovereign-backend/security_runtime.py"
+    },
+    {
+      "line": 545,
+      "normalized": "/api/security/passkeys/<p>",
+      "route": "/api/security/passkeys/<passkey_id>",
+      "source": "backend/security_runtime.py"
+    },
+    {
+      "line": 545,
+      "normalized": "/api/security/passkeys/<p>",
+      "route": "/api/security/passkeys/<passkey_id>",
+      "source": "scripts/sovereign-backend/security_runtime.py"
+    },
+    {
+      "line": 442,
+      "normalized": "/api/security/passkeys/register/options",
+      "route": "/api/security/passkeys/register/options",
+      "source": "backend/security_runtime.py"
+    },
+    {
+      "line": 442,
+      "normalized": "/api/security/passkeys/register/options",
+      "route": "/api/security/passkeys/register/options",
+      "source": "scripts/sovereign-backend/security_runtime.py"
+    },
+    {
+      "line": 485,
+      "normalized": "/api/security/passkeys/register/verify",
+      "route": "/api/security/passkeys/register/verify",
+      "source": "backend/security_runtime.py"
+    },
+    {
+      "line": 485,
+      "normalized": "/api/security/passkeys/register/verify",
+      "route": "/api/security/passkeys/register/verify",
+      "source": "scripts/sovereign-backend/security_runtime.py"
+    },
+    {
+      "line": 392,
+      "normalized": "/api/security/policy",
+      "route": "/api/security/policy",
+      "source": "backend/security_runtime.py"
+    },
+    {
+      "line": 392,
+      "normalized": "/api/security/policy",
+      "route": "/api/security/policy",
+      "source": "scripts/sovereign-backend/security_runtime.py"
+    },
+    {
+      "line": 864,
+      "normalized": "/api/security/step-up/account-key",
+      "route": "/api/security/step-up/account-key",
+      "source": "backend/security_runtime.py"
+    },
+    {
+      "line": 864,
+      "normalized": "/api/security/step-up/account-key",
+      "route": "/api/security/step-up/account-key",
+      "source": "scripts/sovereign-backend/security_runtime.py"
+    },
+    {
+      "line": 756,
+      "normalized": "/api/security/step-up/options",
+      "route": "/api/security/step-up/options",
+      "source": "backend/security_runtime.py"
+    },
+    {
+      "line": 756,
+      "normalized": "/api/security/step-up/options",
+      "route": "/api/security/step-up/options",
+      "source": "scripts/sovereign-backend/security_runtime.py"
+    },
+    {
+      "line": 795,
+      "normalized": "/api/security/step-up/verify",
+      "route": "/api/security/step-up/verify",
+      "source": "backend/security_runtime.py"
+    },
+    {
+      "line": 795,
+      "normalized": "/api/security/step-up/verify",
+      "route": "/api/security/step-up/verify",
+      "source": "scripts/sovereign-backend/security_runtime.py"
+    },
+    {
+      "line": 5999,
+      "normalized": "/api/toolchain/apply-patch-worker",
+      "route": "/api/toolchain/apply-patch-worker",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 6101,
+      "normalized": "/api/toolchain/audit-log",
+      "route": "/api/toolchain/audit-log",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 5927,
+      "normalized": "/api/toolchain/create-draft-pr",
+      "route": "/api/toolchain/create-draft-pr",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 5688,
+      "normalized": "/api/toolchain/github/list-branches",
+      "route": "/api/toolchain/github/list-branches",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 5656,
+      "normalized": "/api/toolchain/github/list-directory",
+      "route": "/api/toolchain/github/list-directory",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 5744,
+      "normalized": "/api/toolchain/github/open-pr-review",
+      "route": "/api/toolchain/github/open-pr-review",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 5624,
+      "normalized": "/api/toolchain/github/read-file",
+      "route": "/api/toolchain/github/read-file",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 5707,
+      "normalized": "/api/toolchain/github/search-code",
+      "route": "/api/toolchain/github/search-code",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 5885,
+      "normalized": "/api/toolchain/preview-patch",
+      "route": "/api/toolchain/preview-patch",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 6060,
+      "normalized": "/api/toolchain/sandbox-plan",
+      "route": "/api/toolchain/sandbox-plan",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 6568,
+      "normalized": "/api/toolchain/skills/<p>",
+      "route": "/api/toolchain/skills/<skill_id>",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 6545,
+      "normalized": "/api/toolchain/skills/<p>/toggle",
+      "route": "/api/toolchain/skills/<skill_id>/toggle",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 6385,
+      "normalized": "/api/toolchain/skills/adapt",
+      "route": "/api/toolchain/skills/adapt",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 6436,
+      "normalized": "/api/toolchain/skills/install",
+      "route": "/api/toolchain/skills/install",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 6525,
+      "normalized": "/api/toolchain/skills/list",
+      "route": "/api/toolchain/skills/list",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 6349,
+      "normalized": "/api/toolchain/skills/read",
+      "route": "/api/toolchain/skills/read",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 6304,
+      "normalized": "/api/toolchain/skills/scan",
+      "route": "/api/toolchain/skills/scan",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 6854,
+      "normalized": "/api/toolchain/universal/briefing",
+      "route": "/api/toolchain/universal/briefing",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 6860,
+      "normalized": "/api/toolchain/universal/invoke",
+      "route": "/api/toolchain/universal/invoke",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 6819,
+      "normalized": "/api/toolchain/universal/manifest",
+      "route": "/api/toolchain/universal/manifest",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 6804,
+      "normalized": "/api/toolchain/universal/status",
+      "route": "/api/toolchain/universal/status",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 5588,
+      "normalized": "/api/toolchain/user-tools",
+      "route": "/api/toolchain/user-tools",
+      "source": "scripts/sovereign-backend/app.py"
+    },
+    {
+      "line": 1245,
+      "normalized": "/api/user/agent/github-access/scope",
+      "route": "/api/user/agent/github-access/scope",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1245,
+      "normalized": "/api/user/agent/github-access/scope",
+      "route": "/api/user/agent/github-access/scope",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1304,
+      "normalized": "/api/user/agent/github-access/validate",
+      "route": "/api/user/agent/github-access/validate",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1304,
+      "normalized": "/api/user/agent/github-access/validate",
+      "route": "/api/user/agent/github-access/validate",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1485,
+      "normalized": "/api/user/agent/jobs",
+      "route": "/api/user/agent/jobs",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1505,
+      "normalized": "/api/user/agent/jobs",
+      "route": "/api/user/agent/jobs",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1485,
+      "normalized": "/api/user/agent/jobs",
+      "route": "/api/user/agent/jobs",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1505,
+      "normalized": "/api/user/agent/jobs",
+      "route": "/api/user/agent/jobs",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1669,
+      "normalized": "/api/user/agent/jobs/<p>",
+      "route": "/api/user/agent/jobs/<job_id>",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1669,
+      "normalized": "/api/user/agent/jobs/<p>",
+      "route": "/api/user/agent/jobs/<job_id>",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2085,
+      "normalized": "/api/user/agent/jobs/<p>/cancel",
+      "route": "/api/user/agent/jobs/<job_id>/cancel",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2085,
+      "normalized": "/api/user/agent/jobs/<p>/cancel",
+      "route": "/api/user/agent/jobs/<job_id>/cancel",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2217,
+      "normalized": "/api/user/agent/jobs/<p>/changelog",
+      "route": "/api/user/agent/jobs/<job_id>/changelog",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2217,
+      "normalized": "/api/user/agent/jobs/<p>/changelog",
+      "route": "/api/user/agent/jobs/<job_id>/changelog",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2112,
+      "normalized": "/api/user/agent/jobs/<p>/cleanup",
+      "route": "/api/user/agent/jobs/<job_id>/cleanup",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2112,
+      "normalized": "/api/user/agent/jobs/<p>/cleanup",
+      "route": "/api/user/agent/jobs/<job_id>/cleanup",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2195,
+      "normalized": "/api/user/agent/jobs/<p>/diff-narration",
+      "route": "/api/user/agent/jobs/<job_id>/diff-narration",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2195,
+      "normalized": "/api/user/agent/jobs/<p>/diff-narration",
+      "route": "/api/user/agent/jobs/<job_id>/diff-narration",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2318,
+      "normalized": "/api/user/agent/jobs/<p>/draft-pr/create",
+      "route": "/api/user/agent/jobs/<job_id>/draft-pr/create",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2318,
+      "normalized": "/api/user/agent/jobs/<p>/draft-pr/create",
+      "route": "/api/user/agent/jobs/<job_id>/draft-pr/create",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2250,
+      "normalized": "/api/user/agent/jobs/<p>/draft-pr/prepare",
+      "route": "/api/user/agent/jobs/<job_id>/draft-pr/prepare",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2250,
+      "normalized": "/api/user/agent/jobs/<p>/draft-pr/prepare",
+      "route": "/api/user/agent/jobs/<job_id>/draft-pr/prepare",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2046,
+      "normalized": "/api/user/agent/jobs/<p>/editor/open",
+      "route": "/api/user/agent/jobs/<job_id>/editor/open",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2046,
+      "normalized": "/api/user/agent/jobs/<p>/editor/open",
+      "route": "/api/user/agent/jobs/<job_id>/editor/open",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1961,
+      "normalized": "/api/user/agent/jobs/<p>/evidence-anchors",
+      "route": "/api/user/agent/jobs/<job_id>/evidence-anchors",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1961,
+      "normalized": "/api/user/agent/jobs/<p>/evidence-anchors",
+      "route": "/api/user/agent/jobs/<job_id>/evidence-anchors",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1682,
+      "normalized": "/api/user/agent/jobs/<p>/live-workspace",
+      "route": "/api/user/agent/jobs/<job_id>/live-workspace",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1682,
+      "normalized": "/api/user/agent/jobs/<p>/live-workspace",
+      "route": "/api/user/agent/jobs/<job_id>/live-workspace",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1725,
+      "normalized": "/api/user/agent/jobs/<p>/live-workspace/desktop/activation",
+      "route": "/api/user/agent/jobs/<job_id>/live-workspace/desktop/activation",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1725,
+      "normalized": "/api/user/agent/jobs/<p>/live-workspace/desktop/activation",
+      "route": "/api/user/agent/jobs/<job_id>/live-workspace/desktop/activation",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1871,
+      "normalized": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
+      "route": "/api/user/agent/jobs/<job_id>/live-workspace/desktop/frame",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1871,
+      "normalized": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
+      "route": "/api/user/agent/jobs/<job_id>/live-workspace/desktop/frame",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1808,
+      "normalized": "/api/user/agent/jobs/<p>/live-workspace/desktop/give-back",
+      "route": "/api/user/agent/jobs/<job_id>/live-workspace/desktop/give-back",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1808,
+      "normalized": "/api/user/agent/jobs/<p>/live-workspace/desktop/give-back",
+      "route": "/api/user/agent/jobs/<job_id>/live-workspace/desktop/give-back",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1840,
+      "normalized": "/api/user/agent/jobs/<p>/live-workspace/desktop/input",
+      "route": "/api/user/agent/jobs/<job_id>/live-workspace/desktop/input",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1840,
+      "normalized": "/api/user/agent/jobs/<p>/live-workspace/desktop/input",
+      "route": "/api/user/agent/jobs/<job_id>/live-workspace/desktop/input",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1774,
+      "normalized": "/api/user/agent/jobs/<p>/live-workspace/desktop/takeover",
+      "route": "/api/user/agent/jobs/<job_id>/live-workspace/desktop/takeover",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1774,
+      "normalized": "/api/user/agent/jobs/<p>/live-workspace/desktop/takeover",
+      "route": "/api/user/agent/jobs/<job_id>/live-workspace/desktop/takeover",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2560,
+      "normalized": "/api/user/agent/jobs/<p>/patterns/learn",
+      "route": "/api/user/agent/jobs/<job_id>/patterns/learn",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2560,
+      "normalized": "/api/user/agent/jobs/<p>/patterns/learn",
+      "route": "/api/user/agent/jobs/<job_id>/patterns/learn",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1918,
+      "normalized": "/api/user/agent/jobs/<p>/projections",
+      "route": "/api/user/agent/jobs/<job_id>/projections",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1918,
+      "normalized": "/api/user/agent/jobs/<p>/projections",
+      "route": "/api/user/agent/jobs/<job_id>/projections",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2174,
+      "normalized": "/api/user/agent/jobs/<p>/review",
+      "route": "/api/user/agent/jobs/<job_id>/review",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2174,
+      "normalized": "/api/user/agent/jobs/<p>/review",
+      "route": "/api/user/agent/jobs/<job_id>/review",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2159,
+      "normalized": "/api/user/agent/jobs/<p>/tools/diff",
+      "route": "/api/user/agent/jobs/<job_id>/tools/diff",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2159,
+      "normalized": "/api/user/agent/jobs/<p>/tools/diff",
+      "route": "/api/user/agent/jobs/<job_id>/tools/diff",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2149,
+      "normalized": "/api/user/agent/jobs/<p>/tools/file",
+      "route": "/api/user/agent/jobs/<job_id>/tools/file",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2149,
+      "normalized": "/api/user/agent/jobs/<p>/tools/file",
+      "route": "/api/user/agent/jobs/<job_id>/tools/file",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2154,
+      "normalized": "/api/user/agent/jobs/<p>/tools/git-status",
+      "route": "/api/user/agent/jobs/<job_id>/tools/git-status",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2154,
+      "normalized": "/api/user/agent/jobs/<p>/tools/git-status",
+      "route": "/api/user/agent/jobs/<job_id>/tools/git-status",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2169,
+      "normalized": "/api/user/agent/jobs/<p>/tools/janitor",
+      "route": "/api/user/agent/jobs/<job_id>/tools/janitor",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2169,
+      "normalized": "/api/user/agent/jobs/<p>/tools/janitor",
+      "route": "/api/user/agent/jobs/<job_id>/tools/janitor",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2164,
+      "normalized": "/api/user/agent/jobs/<p>/tools/test",
+      "route": "/api/user/agent/jobs/<job_id>/tools/test",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2164,
+      "normalized": "/api/user/agent/jobs/<p>/tools/test",
+      "route": "/api/user/agent/jobs/<job_id>/tools/test",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1541,
+      "normalized": "/api/user/agent/live-workspace/chat-session",
+      "route": "/api/user/agent/live-workspace/chat-session",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1541,
+      "normalized": "/api/user/agent/live-workspace/chat-session",
+      "route": "/api/user/agent/live-workspace/chat-session",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1580,
+      "normalized": "/api/user/agent/live-workspace/chat-session/<p>/bubbles",
+      "route": "/api/user/agent/live-workspace/chat-session/<session_id>/bubbles",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1580,
+      "normalized": "/api/user/agent/live-workspace/chat-session/<p>/bubbles",
+      "route": "/api/user/agent/live-workspace/chat-session/<session_id>/bubbles",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1622,
+      "normalized": "/api/user/agent/live-workspace/chat-session/<p>/mission",
+      "route": "/api/user/agent/live-workspace/chat-session/<session_id>/mission",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1622,
+      "normalized": "/api/user/agent/live-workspace/chat-session/<p>/mission",
+      "route": "/api/user/agent/live-workspace/chat-session/<session_id>/mission",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2619,
+      "normalized": "/api/user/agent/memory/search",
+      "route": "/api/user/agent/memory/search",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2619,
+      "normalized": "/api/user/agent/memory/search",
+      "route": "/api/user/agent/memory/search",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2591,
+      "normalized": "/api/user/agent/patterns/predict",
+      "route": "/api/user/agent/patterns/predict",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 2591,
+      "normalized": "/api/user/agent/patterns/predict",
+      "route": "/api/user/agent/patterns/predict",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1386,
+      "normalized": "/api/user/agent/repository/read-file",
+      "route": "/api/user/agent/repository/read-file",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1386,
+      "normalized": "/api/user/agent/repository/read-file",
+      "route": "/api/user/agent/repository/read-file",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 621,
+      "normalized": "/api/user/agent/rescue/diagnose",
+      "route": "/api/user/agent/rescue/diagnose",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 621,
+      "normalized": "/api/user/agent/rescue/diagnose",
+      "route": "/api/user/agent/rescue/diagnose",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 598,
+      "normalized": "/api/user/agent/rescue/entitlement",
+      "route": "/api/user/agent/rescue/entitlement",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 598,
+      "normalized": "/api/user/agent/rescue/entitlement",
+      "route": "/api/user/agent/rescue/entitlement",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 660,
+      "normalized": "/api/user/agent/rescue/repair",
+      "route": "/api/user/agent/rescue/repair",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 660,
+      "normalized": "/api/user/agent/rescue/repair",
+      "route": "/api/user/agent/rescue/repair",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 898,
+      "normalized": "/api/user/agent/rescue/repairs/<p>",
+      "route": "/api/user/agent/rescue/repairs/<repair_id>",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 898,
+      "normalized": "/api/user/agent/rescue/repairs/<p>",
+      "route": "/api/user/agent/rescue/repairs/<repair_id>",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 999,
+      "normalized": "/api/user/agent/rescue/repairs/<p>/capsule",
+      "route": "/api/user/agent/rescue/repairs/<repair_id>/capsule",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 999,
+      "normalized": "/api/user/agent/rescue/repairs/<p>/capsule",
+      "route": "/api/user/agent/rescue/repairs/<repair_id>/capsule",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 921,
+      "normalized": "/api/user/agent/rescue/repairs/<p>/proof-pack",
+      "route": "/api/user/agent/rescue/repairs/<repair_id>/proof-pack",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 921,
+      "normalized": "/api/user/agent/rescue/repairs/<p>/proof-pack",
+      "route": "/api/user/agent/rescue/repairs/<repair_id>/proof-pack",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 38,
+      "normalized": "/api/user/agent/skills/resolve",
+      "route": "/api/user/agent/skills/resolve",
+      "source": "backend/agent_runtime/skills/routes.py"
+    },
+    {
+      "line": 38,
+      "normalized": "/api/user/agent/skills/resolve",
+      "route": "/api/user/agent/skills/resolve",
+      "source": "scripts/sovereign-backend/agent_runtime/skills/routes.py"
+    },
+    {
+      "line": 2525,
+      "normalized": "/api/user/agent/swarm/manifest",
+      "route": "/api/user/agent/swarm/manifest",
+      "source": "backend/agent_runtime/cognitive_swarm_routes.py"
+    },
+    {
+      "line": 2525,
+      "normalized": "/api/user/agent/swarm/manifest",
+      "route": "/api/user/agent/swarm/manifest",
+      "source": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+    },
+    {
+      "line": 1321,
+      "normalized": "/api/user/agent/swarm/models",
+      "route": "/api/user/agent/swarm/models",
+      "source": "scripts/sovereign-backend/openrouter_provider_runtime.py"
+    },
+    {
+      "line": 2586,
+      "normalized": "/api/user/agent/swarm/run",
+      "route": "/api/user/agent/swarm/run",
+      "source": "backend/agent_runtime/cognitive_swarm_routes.py"
+    },
+    {
+      "line": 2586,
+      "normalized": "/api/user/agent/swarm/run",
+      "route": "/api/user/agent/swarm/run",
+      "source": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+    },
+    {
+      "line": 2554,
+      "normalized": "/api/user/agent/swarm/runs/<p>",
+      "route": "/api/user/agent/swarm/runs/<run_id>",
+      "source": "backend/agent_runtime/cognitive_swarm_routes.py"
+    },
+    {
+      "line": 2554,
+      "normalized": "/api/user/agent/swarm/runs/<p>",
+      "route": "/api/user/agent/swarm/runs/<run_id>",
+      "source": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+    },
+    {
+      "line": 2570,
+      "normalized": "/api/user/agent/swarm/runs/<p>/resume",
+      "route": "/api/user/agent/swarm/runs/<run_id>/resume",
+      "source": "backend/agent_runtime/cognitive_swarm_routes.py"
+    },
+    {
+      "line": 2570,
+      "normalized": "/api/user/agent/swarm/runs/<p>/resume",
+      "route": "/api/user/agent/swarm/runs/<run_id>/resume",
+      "source": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+    },
+    {
+      "line": 2539,
+      "normalized": "/api/user/agent/swarm/runs/resumable",
+      "route": "/api/user/agent/swarm/runs/resumable",
+      "source": "backend/agent_runtime/cognitive_swarm_routes.py"
+    },
+    {
+      "line": 2539,
+      "normalized": "/api/user/agent/swarm/runs/resumable",
+      "route": "/api/user/agent/swarm/runs/resumable",
+      "source": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+    },
+    {
+      "line": 1113,
+      "normalized": "/api/user/agent/toolchain/diagnose",
+      "route": "/api/user/agent/toolchain/diagnose",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1113,
+      "normalized": "/api/user/agent/toolchain/diagnose",
+      "route": "/api/user/agent/toolchain/diagnose",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1164,
+      "normalized": "/api/user/agent/toolchain/handoff",
+      "route": "/api/user/agent/toolchain/handoff",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1164,
+      "normalized": "/api/user/agent/toolchain/handoff",
+      "route": "/api/user/agent/toolchain/handoff",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1108,
+      "normalized": "/api/user/agent/toolchain/manifest",
+      "route": "/api/user/agent/toolchain/manifest",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1108,
+      "normalized": "/api/user/agent/toolchain/manifest",
+      "route": "/api/user/agent/toolchain/manifest",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1142,
+      "normalized": "/api/user/agent/toolchain/rollback-preview",
+      "route": "/api/user/agent/toolchain/rollback-preview",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1142,
+      "normalized": "/api/user/agent/toolchain/rollback-preview",
+      "route": "/api/user/agent/toolchain/rollback-preview",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1470,
+      "normalized": "/api/user/agent/validate-mission",
+      "route": "/api/user/agent/validate-mission",
+      "source": "backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 1470,
+      "normalized": "/api/user/agent/validate-mission",
+      "route": "/api/user/agent/validate-mission",
+      "source": "scripts/sovereign-backend/agent_runtime/routes.py"
+    },
+    {
+      "line": 916,
+      "normalized": "/api/user/agent/verification/entitlement",
+      "route": "/api/user/agent/verification/entitlement",
+      "source": "backend/agent_runtime/verification_gateway.py"
+    },
+    {
+      "line": 916,
+      "normalized": "/api/user/agent/verification/entitlement",
+      "route": "/api/user/agent/verification/entitlement",
+      "source": "scripts/sovereign-backend/agent_runtime/verification_gateway.py"
+    },
+    {
+      "line": 965,
+      "normalized": "/api/user/agent/verification/receipts/<p>",
+      "route": "/api/user/agent/verification/receipts/<request_id>",
+      "source": "backend/agent_runtime/verification_gateway.py"
+    },
+    {
+      "line": 965,
+      "normalized": "/api/user/agent/verification/receipts/<p>",
+      "route": "/api/user/agent/verification/receipts/<request_id>",
+      "source": "scripts/sovereign-backend/agent_runtime/verification_gateway.py"
+    },
+    {
+      "line": 960,
+      "normalized": "/api/user/agent/verification/verify",
+      "route": "/api/user/agent/verification/verify",
+      "source": "backend/agent_runtime/verification_gateway.py"
+    },
+    {
+      "line": 960,
+      "normalized": "/api/user/agent/verification/verify",
+      "route": "/api/user/agent/verification/verify",
+      "source": "scripts/sovereign-backend/agent_runtime/verification_gateway.py"
+    },
+    {
+      "line": 912,
+      "normalized": "/api/verification/status",
+      "route": "/api/verification/status",
+      "source": "backend/agent_runtime/verification_gateway.py"
+    },
+    {
+      "line": 912,
+      "normalized": "/api/verification/status",
+      "route": "/api/verification/status",
+      "source": "scripts/sovereign-backend/agent_runtime/verification_gateway.py"
+    },
+    {
+      "line": 675,
+      "normalized": "/api/webhooks/github-app",
+      "route": "/api/webhooks/github-app",
+      "source": "backend/github_app.py"
+    },
+    {
+      "line": 675,
+      "normalized": "/api/webhooks/github-app",
+      "route": "/api/webhooks/github-app",
+      "source": "scripts/sovereign-backend/github_app.py"
+    }
+  ],
+  "counts": {
+    "backendRoutes": 397,
+    "backendSourceFiles": 340,
+    "externalServiceReferences": 5,
+    "frontendReferences": 164,
+    "frontendSourceFiles": 490,
+    "retiredOrNoncanonicalReferences": 5,
+    "uniqueActiveInternalEndpoints": 131,
+    "uniqueBackendRoutes": 271,
+    "uniqueUnboundActiveInternalEndpoints": 0
+  },
+  "references": [
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/audit-log?${q}",
+      "line": 1223,
+      "normalized": "/api/admin/audit-log",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/billing/stats",
+      "line": 1031,
+      "normalized": "/api/admin/billing/stats",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/credit-packages",
+      "line": 1257,
+      "normalized": "/api/admin/credit-packages",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/credit-packages/${id}",
+      "line": 1272,
+      "normalized": "/api/admin/credit-packages/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/credit-packages/${id}",
+      "line": 1279,
+      "normalized": "/api/admin/credit-packages/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/credit-packages/init",
+      "line": 1262,
+      "normalized": "/api/admin/credit-packages/init",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/launcher/tools",
+      "line": 1035,
+      "normalized": "/api/admin/launcher/tools",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/launcher/tools/${id}",
+      "line": 1039,
+      "normalized": "/api/admin/launcher/tools/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/freellm/provider-credentials/auto",
+      "line": 886,
+      "normalized": "/api/admin/llm/freellm/provider-credentials/auto",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/omniroute_execution_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/omniroute/refresh",
+      "line": 1087,
+      "normalized": "/api/admin/llm/omniroute/refresh",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/omniroute_execution_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/omniroute/status",
+      "line": 1083,
+      "normalized": "/api/admin/llm/omniroute/status",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/openrouter_provider_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/openrouter/catalog/refresh",
+      "line": 1213,
+      "normalized": "/api/admin/llm/openrouter/catalog/refresh",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/openrouter_free_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/openrouter/free/status",
+      "line": 1098,
+      "normalized": "/api/admin/llm/openrouter/free/status",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/openrouter_provider_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/openrouter/status",
+      "line": 1094,
+      "normalized": "/api/admin/llm/openrouter/status",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/revolver-v3/providers",
+      "line": 1079,
+      "normalized": "/api/admin/llm/revolver-v3/providers",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/revolver-v3/providers",
+      "line": 1142,
+      "normalized": "/api/admin/llm/revolver-v3/providers",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/revolver-v3/providers/${encodeURIComponent(sourceId)}",
+      "line": 1197,
+      "normalized": "/api/admin/llm/revolver-v3/providers/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/revolver-v3/providers/${encodeURIComponent(sourceId)}/discover",
+      "line": 1177,
+      "normalized": "/api/admin/llm/revolver-v3/providers/<p>/discover",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/revolver-v3/providers/${encodeURIComponent(sourceId)}/owner-input",
+      "line": 1150,
+      "normalized": "/api/admin/llm/revolver-v3/providers/<p>/owner-input",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/free_revolver_provider_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/revolver-v3/providers/${encodeURIComponent(sourceId)}/recheck",
+      "line": 1189,
+      "normalized": "/api/admin/llm/revolver-v3/providers/<p>/recheck",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/routes",
+      "line": 1054,
+      "normalized": "/api/admin/llm/routes",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/routes/${id}",
+      "line": 1058,
+      "normalized": "/api/admin/llm/routes/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/llm/routes/${id}/revolver-reset",
+      "line": 1066,
+      "normalized": "/api/admin/llm/routes/<p>/revolver-reset",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/owner_input_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/owner-input/requests/${encodeURIComponent(requestId)}/resolve?decision=yes",
+      "line": 824,
+      "normalized": "/api/admin/owner-input/requests/<p>/resolve",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/payment-methods",
+      "line": 1233,
+      "normalized": "/api/admin/payment-methods",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/payment-methods/${id}",
+      "line": 1240,
+      "normalized": "/api/admin/payment-methods/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/payment-methods/crypto/confirm",
+      "line": 1288,
+      "normalized": "/api/admin/payment-methods/crypto/confirm",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/payment-methods/init",
+      "line": 1247,
+      "normalized": "/api/admin/payment-methods/init",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/ping",
+      "line": 950,
+      "normalized": "/api/admin/ping",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/enterprise_platform/routes.py",
+        "scripts/sovereign-backend/enterprise_platform/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/platform/v1/canaries",
+      "line": 968,
+      "normalized": "/api/admin/platform/v1/canaries",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/enterprise_platform/routes.py",
+        "scripts/sovereign-backend/enterprise_platform/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/platform/v1/evidence?limit=${bounded}",
+      "line": 960,
+      "normalized": "/api/admin/platform/v1/evidence",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/enterprise_platform/routes.py",
+        "scripts/sovereign-backend/enterprise_platform/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/platform/v1/openapi.json",
+      "line": 979,
+      "normalized": "/api/admin/platform/v1/openapi.json",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/enterprise_platform/routes.py",
+        "scripts/sovereign-backend/enterprise_platform/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/platform/v1/overview",
+      "line": 954,
+      "normalized": "/api/admin/platform/v1/overview",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/toolchain/tools",
+      "line": 1342,
+      "normalized": "/api/admin/toolchain/tools",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/toolchain/tools",
+      "line": 1354,
+      "normalized": "/api/admin/toolchain/tools",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/toolchain/tools/${id}",
+      "line": 1369,
+      "normalized": "/api/admin/toolchain/tools/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/toolchain/tools/${id}",
+      "line": 1376,
+      "normalized": "/api/admin/toolchain/tools/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/transactions?${q}",
+      "line": 1022,
+      "normalized": "/api/admin/transactions",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/users?${q}",
+      "line": 987,
+      "normalized": "/api/admin/users",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/users/${id}",
+      "line": 991,
+      "normalized": "/api/admin/users/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/admin/users/${id}/credit-adjustment",
+      "line": 1008,
+      "normalized": "/api/admin/users/<p>/credit-adjustment",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": false,
+      "backend_sources": [],
+      "classification": "RETIRED_OR_NONCANONICAL",
+      "endpoint": "/api/ai/gemini",
+      "line": 127,
+      "normalized": "/api/ai/gemini",
+      "owner": "retired-direct-gemini-bridge",
+      "source": "src/features/ai/hooks/useGemini.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/security_runtime.py",
+        "scripts/sovereign-backend/security_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/account-key",
+      "line": 245,
+      "normalized": "/api/auth/account-key",
+      "owner": "sovereign-backend",
+      "source": "src/features/security/securityApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/github",
+      "line": 199,
+      "normalized": "/api/auth/github",
+      "owner": "sovereign-backend",
+      "source": "src/features/user/useUserStore.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/github/init",
+      "line": 86,
+      "normalized": "/api/auth/github/init",
+      "owner": "sovereign-backend",
+      "source": "src/features/github/githubOAuthLogin.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/google",
+      "line": 176,
+      "normalized": "/api/auth/google",
+      "owner": "sovereign-backend",
+      "source": "src/features/user/useUserStore.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/google/configured",
+      "line": 51,
+      "normalized": "/api/auth/google/configured",
+      "owner": "sovereign-backend",
+      "source": "src/features/user/googleOAuthLogin.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/guest",
+      "line": 288,
+      "normalized": "/api/auth/guest",
+      "owner": "sovereign-backend",
+      "source": "src/features/user/useUserStore.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/login",
+      "line": 153,
+      "normalized": "/api/auth/login",
+      "owner": "sovereign-backend",
+      "source": "src/features/user/useUserStore.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/logout",
+      "line": 271,
+      "normalized": "/api/auth/logout",
+      "owner": "sovereign-backend",
+      "source": "src/features/user/useUserStore.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/me",
+      "line": 13,
+      "normalized": "/api/auth/me",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/devChatWorkerBridge.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/me",
+      "line": 98,
+      "normalized": "/api/auth/me",
+      "owner": "sovereign-backend",
+      "source": "src/features/user/useUserStore.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/me",
+      "line": 286,
+      "normalized": "/api/auth/me",
+      "owner": "sovereign-backend",
+      "source": "src/features/user/useUserStore.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/me",
+      "line": 309,
+      "normalized": "/api/auth/me",
+      "owner": "sovereign-backend",
+      "source": "src/features/user/useUserStore.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/security_runtime.py",
+        "scripts/sovereign-backend/security_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/passkey/options",
+      "line": 218,
+      "normalized": "/api/auth/passkey/options",
+      "owner": "sovereign-backend",
+      "source": "src/features/security/securityApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/security_runtime.py",
+        "scripts/sovereign-backend/security_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/passkey/verify",
+      "line": 224,
+      "normalized": "/api/auth/passkey/verify",
+      "owner": "sovereign-backend",
+      "source": "src/features/security/securityApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/auth/register",
+      "line": 248,
+      "normalized": "/api/auth/register",
+      "owner": "sovereign-backend",
+      "source": "src/features/user/useUserStore.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/billing",
+      "line": 88,
+      "normalized": "/api/billing",
+      "owner": "sovereign-backend",
+      "source": "src/features/billing/billingSlice.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/billing/credits",
+      "line": 206,
+      "normalized": "/api/billing/credits",
+      "owner": "sovereign-backend",
+      "source": "src/features/billing/billingSlice.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/billing/deduct",
+      "line": 77,
+      "normalized": "/api/billing/deduct",
+      "owner": "sovereign-backend",
+      "source": "src/features/billing/useCreditGuard.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/billing/payment-methods",
+      "line": 174,
+      "normalized": "/api/billing/payment-methods",
+      "owner": "sovereign-backend",
+      "source": "src/features/billing/billingSlice.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/billing/purchase",
+      "line": 130,
+      "normalized": "/api/billing/purchase",
+      "owner": "sovereign-backend",
+      "source": "src/features/billing/billingSlice.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/billing/purchase/paypal/capture",
+      "line": 152,
+      "normalized": "/api/billing/purchase/paypal/capture",
+      "owner": "sovereign-backend",
+      "source": "src/features/billing/billingSlice.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/evidence_observatory.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/evidence-observatory/v1/arena/cases/${encodeURIComponent(caseId)}/request",
+      "line": 52,
+      "normalized": "/api/evidence-observatory/v1/arena/cases/<p>/request",
+      "owner": "sovereign-backend",
+      "source": "src/features/evidence-observatory/evidenceObservatoryApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/evidence_observatory.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/evidence-observatory/v1/arena/leaderboard",
+      "line": 107,
+      "normalized": "/api/evidence-observatory/v1/arena/leaderboard",
+      "owner": "sovereign-backend",
+      "source": "src/features/evidence-observatory/evidenceObservatoryApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/evidence_observatory.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/evidence-observatory/v1/arena/score",
+      "line": 100,
+      "normalized": "/api/evidence-observatory/v1/arena/score",
+      "owner": "sovereign-backend",
+      "source": "src/features/evidence-observatory/evidenceObservatoryApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/evidence_observatory.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/evidence-observatory/v1/atlas${suffix}",
+      "line": 22,
+      "normalized": "/api/evidence-observatory/v1/atlas",
+      "owner": "sovereign-backend",
+      "source": "src/features/evidence-observatory/evidenceObservatoryApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/evidence_observatory.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/evidence-observatory/v1/cases/${encodeURIComponent(caseId)}/source-dependency?${params.toString()}",
+      "line": 41,
+      "normalized": "/api/evidence-observatory/v1/cases/<p>/source-dependency",
+      "owner": "sovereign-backend",
+      "source": "src/features/evidence-observatory/evidenceObservatoryApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/evidence_observatory.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/evidence-observatory/v1/submissions",
+      "line": 33,
+      "normalized": "/api/evidence-observatory/v1/submissions",
+      "owner": "sovereign-backend",
+      "source": "src/features/evidence-observatory/evidenceObservatoryApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/are_inference.py",
+        "scripts/sovereign-backend/are_inference.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/inference/are/evaluate",
+      "line": 147,
+      "normalized": "/api/inference/are/evaluate",
+      "owner": "sovereign-backend",
+      "source": "src/features/inference/areInferenceApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/are_inference.py",
+        "scripts/sovereign-backend/are_inference.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/inference/are/quarantine",
+      "line": 205,
+      "normalized": "/api/inference/are/quarantine",
+      "owner": "sovereign-backend",
+      "source": "src/features/inference/areInferenceApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/are_inference.py",
+        "scripts/sovereign-backend/are_inference.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/inference/are/repair",
+      "line": 176,
+      "normalized": "/api/inference/are/repair",
+      "owner": "sovereign-backend",
+      "source": "src/features/inference/areInferenceApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/knowledge_library.py",
+        "scripts/sovereign-backend/knowledge_library.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/knowledge/catalogs/programming-languages/import",
+      "line": 182,
+      "normalized": "/api/knowledge/catalogs/programming-languages/import",
+      "owner": "sovereign-backend",
+      "source": "src/features/knowledge/knowledgeApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/knowledge_library.py",
+        "scripts/sovereign-backend/knowledge_library.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/knowledge/search",
+      "line": 267,
+      "normalized": "/api/knowledge/search",
+      "owner": "sovereign-backend",
+      "source": "src/features/knowledge/knowledgeApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/knowledge_library.py",
+        "scripts/sovereign-backend/knowledge_library.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/knowledge/sources",
+      "line": 156,
+      "normalized": "/api/knowledge/sources",
+      "owner": "sovereign-backend",
+      "source": "src/features/knowledge/knowledgeApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/knowledge_library.py",
+        "scripts/sovereign-backend/knowledge_library.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/knowledge/sources/${encodeURIComponent(id)}",
+      "line": 259,
+      "normalized": "/api/knowledge/sources/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/knowledge/knowledgeApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/knowledge_library.py",
+        "scripts/sovereign-backend/knowledge_library.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/knowledge/sources/upload-confirm",
+      "line": 241,
+      "normalized": "/api/knowledge/sources/upload-confirm",
+      "owner": "sovereign-backend",
+      "source": "src/features/knowledge/knowledgeApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/knowledge_library.py",
+        "scripts/sovereign-backend/knowledge_library.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/knowledge/sources/upload-ticket",
+      "line": 212,
+      "normalized": "/api/knowledge/sources/upload-ticket",
+      "owner": "sovereign-backend",
+      "source": "src/features/knowledge/knowledgeApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/knowledge_library.py",
+        "scripts/sovereign-backend/knowledge_library.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/knowledge/sources/url",
+      "line": 167,
+      "normalized": "/api/knowledge/sources/url",
+      "owner": "sovereign-backend",
+      "source": "src/features/knowledge/knowledgeApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/knowledge_library.py",
+        "scripts/sovereign-backend/knowledge_library.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/knowledge/stats",
+      "line": 162,
+      "normalized": "/api/knowledge/stats",
+      "owner": "sovereign-backend",
+      "source": "src/features/knowledge/knowledgeApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/llm/chat",
+      "line": 66,
+      "normalized": "/api/llm/chat",
+      "owner": "sovereign-backend",
+      "source": "src/features/evidence-observatory/evidenceObservatoryApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/llm/chat",
+      "line": 112,
+      "normalized": "/api/llm/chat",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/llm/adapters/primaryBridgeAdapter.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/llm/chat",
+      "line": 45,
+      "normalized": "/api/llm/chat",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/llm/primaryBridgeConfig.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/llm/chat",
+      "line": 51,
+      "normalized": "/api/llm/chat",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/llm/primaryBridgeConfig.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/llm/chat",
+      "line": 19,
+      "normalized": "/api/llm/chat",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/sovereignLiteLlmIntentRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/llm/chat",
+      "line": 68,
+      "normalized": "/api/llm/chat",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/sovereignRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/llm/routes",
+      "line": 74,
+      "normalized": "/api/llm/routes",
+      "owner": "sovereign-backend",
+      "source": "src/features/ai/useRouteResolver.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/llm/routes",
+      "line": 96,
+      "normalized": "/api/llm/routes",
+      "owner": "sovereign-backend",
+      "source": "src/features/billing/costConfig.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/llm/routes",
+      "line": 57,
+      "normalized": "/api/llm/routes",
+      "owner": "sovereign-backend",
+      "source": "src/features/evidence-observatory/evidenceObservatoryApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/llm/routes",
+      "line": 89,
+      "normalized": "/api/llm/routes",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/llm/adapters/primaryBridgeAdapter.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/llm/routes",
+      "line": 50,
+      "normalized": "/api/llm/routes",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/llm/primaryBridgeConfig.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/llm/routes",
+      "line": 17,
+      "normalized": "/api/llm/routes",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/sovereignLiteLlmIntentRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/llm/routes/${encodeURIComponent(routeId)}",
+      "line": 54,
+      "normalized": "/api/llm/routes/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/ai/useRouteResolver.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/security_runtime.py",
+        "scripts/sovereign-backend/security_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/security/account-keys",
+      "line": 234,
+      "normalized": "/api/security/account-keys",
+      "owner": "sovereign-backend",
+      "source": "src/features/security/securityApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/security_runtime.py",
+        "scripts/sovereign-backend/security_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/security/account-keys/${encodeURIComponent(id)}",
+      "line": 241,
+      "normalized": "/api/security/account-keys/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/security/securityApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/security_runtime.py",
+        "scripts/sovereign-backend/security_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/security/overview",
+      "line": 183,
+      "normalized": "/api/security/overview",
+      "owner": "sovereign-backend",
+      "source": "src/features/security/securityApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/security_runtime.py",
+        "scripts/sovereign-backend/security_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/security/passkeys/${encodeURIComponent(id)}",
+      "line": 213,
+      "normalized": "/api/security/passkeys/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/security/securityApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/security_runtime.py",
+        "scripts/sovereign-backend/security_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/security/passkeys/register/options",
+      "line": 196,
+      "normalized": "/api/security/passkeys/register/options",
+      "owner": "sovereign-backend",
+      "source": "src/features/security/securityApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/security_runtime.py",
+        "scripts/sovereign-backend/security_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/security/passkeys/register/verify",
+      "line": 202,
+      "normalized": "/api/security/passkeys/register/verify",
+      "owner": "sovereign-backend",
+      "source": "src/features/security/securityApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/security_runtime.py",
+        "scripts/sovereign-backend/security_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/security/policy",
+      "line": 187,
+      "normalized": "/api/security/policy",
+      "owner": "sovereign-backend",
+      "source": "src/features/security/securityApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/security_runtime.py",
+        "scripts/sovereign-backend/security_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/security/step-up/account-key",
+      "line": 270,
+      "normalized": "/api/security/step-up/account-key",
+      "owner": "sovereign-backend",
+      "source": "src/features/security/securityApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/security_runtime.py",
+        "scripts/sovereign-backend/security_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/security/step-up/options",
+      "line": 253,
+      "normalized": "/api/security/step-up/options",
+      "owner": "sovereign-backend",
+      "source": "src/features/security/securityApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/security_runtime.py",
+        "scripts/sovereign-backend/security_runtime.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/security/step-up/verify",
+      "line": 259,
+      "normalized": "/api/security/step-up/verify",
+      "owner": "sovereign-backend",
+      "source": "src/features/security/securityApi.ts"
+    },
+    {
+      "backed": false,
+      "backend_sources": [],
+      "classification": "EXTERNAL_SERVICE",
+      "endpoint": "/api/sovereign-memory/delete-user-data",
+      "line": 551,
+      "normalized": "/api/sovereign-memory/delete-user-data",
+      "owner": "external-memory-gateway",
+      "source": "src/features/product/runtime/externalMemorySync.ts"
+    },
+    {
+      "backed": false,
+      "backend_sources": [],
+      "classification": "EXTERNAL_SERVICE",
+      "endpoint": "/api/sovereign-memory/monitoring",
+      "line": 129,
+      "normalized": "/api/sovereign-memory/monitoring",
+      "owner": "external-memory-gateway",
+      "source": "src/features/product/runtime/externalMemoryMonitoring.ts"
+    },
+    {
+      "backed": false,
+      "backend_sources": [],
+      "classification": "EXTERNAL_SERVICE",
+      "endpoint": "/api/sovereign-memory/pull-updates",
+      "line": 521,
+      "normalized": "/api/sovereign-memory/pull-updates",
+      "owner": "external-memory-gateway",
+      "source": "src/features/product/runtime/externalMemorySync.ts"
+    },
+    {
+      "backed": false,
+      "backend_sources": [],
+      "classification": "EXTERNAL_SERVICE",
+      "endpoint": "/api/sovereign-memory/search",
+      "line": 504,
+      "normalized": "/api/sovereign-memory/search",
+      "owner": "external-memory-gateway",
+      "source": "src/features/product/runtime/externalMemorySync.ts"
+    },
+    {
+      "backed": false,
+      "backend_sources": [],
+      "classification": "EXTERNAL_SERVICE",
+      "endpoint": "/api/sovereign-memory/sync",
+      "line": 473,
+      "normalized": "/api/sovereign-memory/sync",
+      "owner": "external-memory-gateway",
+      "source": "src/features/product/runtime/externalMemorySync.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/apply-patch-worker",
+      "line": 287,
+      "normalized": "/api/toolchain/apply-patch-worker",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/toolchainApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/audit-log",
+      "line": 306,
+      "normalized": "/api/toolchain/audit-log",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/toolchainApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/create-draft-pr",
+      "line": 39,
+      "normalized": "/api/toolchain/create-draft-pr",
+      "owner": "sovereign-backend",
+      "source": "src/features/github/githubWriteProxyContract.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/create-draft-pr",
+      "line": 268,
+      "normalized": "/api/toolchain/create-draft-pr",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/toolchainApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/github/list-branches",
+      "line": 216,
+      "normalized": "/api/toolchain/github/list-branches",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/toolchainApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/github/list-directory",
+      "line": 205,
+      "normalized": "/api/toolchain/github/list-directory",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/toolchainApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/github/open-pr-review",
+      "line": 5,
+      "normalized": "/api/toolchain/github/open-pr-review",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/githubOpenPrReviewRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/github/read-file",
+      "line": 192,
+      "normalized": "/api/toolchain/github/read-file",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/toolchainApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/github/search-code",
+      "line": 228,
+      "normalized": "/api/toolchain/github/search-code",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/toolchainApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/preview-patch",
+      "line": 245,
+      "normalized": "/api/toolchain/preview-patch",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/toolchainApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/sandbox-plan",
+      "line": 298,
+      "normalized": "/api/toolchain/sandbox-plan",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/toolchainApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/skills/${id}",
+      "line": 138,
+      "normalized": "/api/toolchain/skills/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/skillsApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/skills/${id}/toggle",
+      "line": 130,
+      "normalized": "/api/toolchain/skills/<p>/toggle",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/skillsApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/skills/adapt",
+      "line": 99,
+      "normalized": "/api/toolchain/skills/adapt",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/skillsApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/skills/install",
+      "line": 117,
+      "normalized": "/api/toolchain/skills/install",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/skillsApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/skills/list",
+      "line": 125,
+      "normalized": "/api/toolchain/skills/list",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/skillsApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/skills/read",
+      "line": 83,
+      "normalized": "/api/toolchain/skills/read",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/skillsApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/skills/scan",
+      "line": 75,
+      "normalized": "/api/toolchain/skills/scan",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/skillsApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL_PREFIX",
+      "endpoint": "/api/toolchain/universal",
+      "line": 62,
+      "normalized": "/api/toolchain/universal",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/toolchainClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/universal/briefing",
+      "line": 1325,
+      "normalized": "/api/toolchain/universal/briefing",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/universal/invoke",
+      "line": 12,
+      "normalized": "/api/toolchain/universal/invoke",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/toolchainAutoCallingRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/universal/invoke",
+      "line": 174,
+      "normalized": "/api/toolchain/universal/invoke",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/toolchainApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/universal/manifest",
+      "line": 1308,
+      "normalized": "/api/toolchain/universal/manifest",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/universal/manifest",
+      "line": 169,
+      "normalized": "/api/toolchain/universal/manifest",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/toolchainApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/universal/status",
+      "line": 1316,
+      "normalized": "/api/toolchain/universal/status",
+      "owner": "sovereign-backend",
+      "source": "src/features/admin/api/adminApiClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/toolchain/user-tools",
+      "line": 182,
+      "normalized": "/api/toolchain/user-tools",
+      "owner": "sovereign-backend",
+      "source": "src/features/toolchain/toolchainApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/github-access/scope",
+      "line": 47,
+      "normalized": "/api/user/agent/github-access/scope",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/fileContentBrowserRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/github-access/scope",
+      "line": 121,
+      "normalized": "/api/user/agent/github-access/scope",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/githubAccessRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/github-access/validate",
+      "line": 78,
+      "normalized": "/api/user/agent/github-access/validate",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/fileContentBrowserRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/github-access/validate",
+      "line": 142,
+      "normalized": "/api/user/agent/github-access/validate",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/githubAccessRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/jobs",
+      "line": 532,
+      "normalized": "/api/user/agent/jobs",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/sovereignAgentClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/jobs?limit=20",
+      "line": 770,
+      "normalized": "/api/user/agent/jobs",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/sovereignAgentClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/jobs/${encodeURIComponent(jobId.trim())}",
+      "line": 532,
+      "normalized": "/api/user/agent/jobs/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/sovereignAgentClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/jobs/${encodeURIComponent(jobId)}/changelog",
+      "line": 18,
+      "normalized": "/api/user/agent/jobs/<p>/changelog",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/changelogRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/jobs/${encodeURIComponent(jobId)}/diff-narration",
+      "line": 22,
+      "normalized": "/api/user/agent/jobs/<p>/diff-narration",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/semanticDiffNarratorRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/jobs/${encodeURIComponent(jobId)}/review",
+      "line": 15,
+      "normalized": "/api/user/agent/jobs/<p>/review",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/autoCodeReviewRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/jobs/${encodeURIComponent(jobId)}/tools/file",
+      "line": 29,
+      "normalized": "/api/user/agent/jobs/<p>/tools/file",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/fileContentBrowserRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/jobs/${encodeURIComponent(jobId)}/tools/test",
+      "line": 23,
+      "normalized": "/api/user/agent/jobs/<p>/tools/test",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/testRunnerRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/live-workspace/chat-session",
+      "line": 155,
+      "normalized": "/api/user/agent/live-workspace/chat-session",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/sessionPersistenceRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/live-workspace/chat-session/${encodeURIComponent(sessionId)}/bubbles",
+      "line": 174,
+      "normalized": "/api/user/agent/live-workspace/chat-session/<p>/bubbles",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/sessionPersistenceRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/live-workspace/chat-session/${encodeURIComponent(session.sessionId)}/mission",
+      "line": 204,
+      "normalized": "/api/user/agent/live-workspace/chat-session/<p>/mission",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/sessionPersistenceRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/memory/search",
+      "line": 289,
+      "normalized": "/api/user/agent/memory/search",
+      "owner": "sovereign-backend",
+      "source": "src/features/knowledge/knowledgeApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/patterns/predict",
+      "line": 278,
+      "normalized": "/api/user/agent/patterns/predict",
+      "owner": "sovereign-backend",
+      "source": "src/features/knowledge/knowledgeApi.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/repository/read-file",
+      "line": 108,
+      "normalized": "/api/user/agent/repository/read-file",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/fileContentBrowserRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/rescue/diagnose",
+      "line": 158,
+      "normalized": "/api/user/agent/rescue/diagnose",
+      "owner": "sovereign-backend",
+      "source": "src/features/rescue/rescueClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/rescue/entitlement",
+      "line": 144,
+      "normalized": "/api/user/agent/rescue/entitlement",
+      "owner": "sovereign-backend",
+      "source": "src/features/rescue/rescueClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/rescue/repair",
+      "line": 175,
+      "normalized": "/api/user/agent/rescue/repair",
+      "owner": "sovereign-backend",
+      "source": "src/features/rescue/rescueClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL_PREFIX",
+      "endpoint": "/api/user/agent/rescue/repairs/",
+      "line": 216,
+      "normalized": "/api/user/agent/rescue/repairs",
+      "owner": "sovereign-backend",
+      "source": "src/features/rescue/rescueClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/rescue/repairs/${encodeURIComponent(repairId)}/proof-pack",
+      "line": 194,
+      "normalized": "/api/user/agent/rescue/repairs/<p>/proof-pack",
+      "owner": "sovereign-backend",
+      "source": "src/features/rescue/rescueClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/swarm/run",
+      "line": 726,
+      "normalized": "/api/user/agent/swarm/run",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/sovereignAgentClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/toolchain/handoff",
+      "line": 694,
+      "normalized": "/api/user/agent/toolchain/handoff",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/sovereignAgentClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/validate-mission",
+      "line": 84,
+      "normalized": "/api/user/agent/validate-mission",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/missionValidatorRuntime.ts"
+    },
+    {
+      "backed": false,
+      "backend_sources": [],
+      "classification": "RETIRED_OR_NONCANONICAL",
+      "endpoint": "/api/vps/connect",
+      "line": 66,
+      "normalized": "/api/vps/connect",
+      "owner": "retired-vps-browser-bridge",
+      "source": "src/features/launcher/tools/vps/useVpsConnection.ts"
+    },
+    {
+      "backed": false,
+      "backend_sources": [],
+      "classification": "RETIRED_OR_NONCANONICAL",
+      "endpoint": "/api/vps/disconnect",
+      "line": 125,
+      "normalized": "/api/vps/disconnect",
+      "owner": "retired-vps-browser-bridge",
+      "source": "src/features/launcher/tools/vps/useVpsConnection.ts"
+    },
+    {
+      "backed": false,
+      "backend_sources": [],
+      "classification": "RETIRED_OR_NONCANONICAL",
+      "endpoint": "/api/vps/exec",
+      "line": 103,
+      "normalized": "/api/vps/exec",
+      "owner": "retired-vps-browser-bridge",
+      "source": "src/features/launcher/tools/vps/useVpsConnection.ts"
+    },
+    {
+      "backed": false,
+      "backend_sources": [],
+      "classification": "RETIRED_OR_NONCANONICAL",
+      "endpoint": "/api/vps/tree?sessionId=${encodeURIComponent(state.sessionId)}&path=${encodeURIComponent(path)}",
+      "line": 115,
+      "normalized": "/api/vps/tree",
+      "owner": "retired-vps-browser-bridge",
+      "source": "src/features/launcher/tools/vps/useVpsConnection.ts"
+    }
+  ],
+  "runtimeConnectivityProven": false,
+  "schemaVersion": "sovereign.frontend-endpoint-assurance.v1",
+  "scope": {
+    "backend": [
+      "backend/**/*.py",
+      "scripts/sovereign-backend/**/*.py"
+    ],
+    "frontend": "src/**/*.{ts,tsx,js,jsx} excluding tests/specs/src-server"
+  },
+  "status": "PASS",
+  "truthClass": "STATIC_CONTRACT_EVIDENCE",
+  "truthNotice": "Route ownership is static repository evidence only. A passing report does not prove authentication, deployment, runtime health, target effects or endpoint semantics.",
+  "unbound": []
+}

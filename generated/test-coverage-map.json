@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-09-06T22:31:15.549Z",
+  "generatedAt": "2026-09-07T17:28:26.995Z",
   "discovery": {
     "scope": "tracked repository test conventions",
     "excludedDirectories": [
@@ -31,7 +31,7 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 751,
+  "totalTestFiles": 754,
   "testRoots": {
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
@@ -44,7 +44,8 @@
     "scripts/sovereign-backend/tests": 77,
     "scripts/tests": 3,
     "sovereign-studio-rn/e2e": 7,
-    "src": 358,
+    "src": 360,
+    "test_tools_skills.sh": 1,
     "tests": 1,
     "tests/e2e": 5,
     "tools": 3,
@@ -2823,6 +2824,25 @@
     },
     {
       "file": "src/features/ai/hooks/useGemini.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/ai/hooks/useProviderFallback.test.ts",
       "language": "javascript-typescript",
       "testRoot": "src",
       "gates": [
@@ -8338,6 +8358,25 @@
       "category": "release-gate"
     },
     {
+      "file": "src/features/toolchain/useToolchain.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
       "file": "src/features/toolchain/useToolchainStore.test.ts",
       "language": "javascript-typescript",
       "testRoot": "src",
@@ -9308,6 +9347,14 @@
         "sovereign-validation.yml"
       ],
       "category": "release-gate"
+    },
+    {
+      "file": "test_tools_skills.sh",
+      "language": "shell",
+      "testRoot": "test_tools_skills.sh",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "not-in-any-gate"
     },
     {
       "file": "tests/e2e/admin-typed-provider-surface.spec.ts",
