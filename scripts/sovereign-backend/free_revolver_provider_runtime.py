@@ -464,6 +464,23 @@ def _confirmed_completion_canary(
     }
 
 
+def _is_real_canary_request_id(value: Any) -> bool:
+    """Return true only for an upstream-generated, non-placeholder identifier."""
+
+    normalized = str(value or "").strip()
+    if not normalized or len(normalized) > 200:
+        return False
+    return normalized.casefold() not in {
+        "stub",
+        "placeholder",
+        "unknown",
+        "n/a",
+        "none",
+        "null",
+        "test",
+    }
+
+
 def _normalized_provider_cost(value: Any) -> float | None:
     if value is None or isinstance(value, bool):
         return None
@@ -1700,6 +1717,22 @@ def register_free_revolver_provider_runtime(
                 "latencyMs": canary.get("latencyMs"),
             }
         evidence = dict(canary.get("evidence") or {})
+        confirmation_ids = [
+            item.get("upstreamRequestId")
+            for item in evidence.get("confirmations") or []
+            if isinstance(item, dict)
+        ]
+        if (
+            not _is_real_canary_request_id(evidence.get("upstreamRequestId"))
+            or len(confirmation_ids) != 2
+            or not all(_is_real_canary_request_id(value) for value in confirmation_ids)
+        ):
+            return {
+                "ok": False,
+                "alias": alias,
+                "error": "free_revolver_canary_request_id_invalid",
+                "blocker": "real_double_canary_request_id_required",
+            }
         if evidence.get("textualChatResponseVerified") is not True:
             return {
                 "ok": False,

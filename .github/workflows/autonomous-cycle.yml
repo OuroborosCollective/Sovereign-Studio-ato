@@ -47,11 +47,20 @@ jobs:
           mkdir -p .ato/artifacts
 
       - name: Execute Autonomous Tuning & Optimization (v2)
+        # The ATO implementation is optional and must never be fabricated by the
+        # scheduler.  A missing implementation is a clean no-op, not a red run.
+        if: ${{ hashFiles('scripts/ato/autonomous-pipeline.ts') != '' }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           APP_ENV: production
           FORCE_OPT: ${{ github.event.inputs.force_optimization }}
         run: npx tsx scripts/ato/autonomous-pipeline.ts
+
+      - name: Record unavailable ATO implementation
+        if: ${{ hashFiles('scripts/ato/autonomous-pipeline.ts') == '' }}
+        run: |
+          set -Eeuo pipefail
+          echo 'ATO implementation is not present at scripts/ato/autonomous-pipeline.ts; no autonomous mutation was attempted.'
 
       - name: Run Quality Assurance & Mobile Validation
         run: |

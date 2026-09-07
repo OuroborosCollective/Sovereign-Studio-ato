@@ -262,6 +262,14 @@ def test_zero_cost_requires_complete_explicit_pricing() -> None:
     )
 
 
+def test_ready_state_requires_real_double_canary_request_ids() -> None:
+    runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
+    assert "def _is_real_canary_request_id(value: Any) -> bool:" in runtime
+    assert '"real_double_canary_request_id_required"' in runtime
+    assert '"stub"' in runtime
+    assert "len(confirmation_ids) != 2" in runtime
+
+
 def test_model_names_and_free_flags_never_activate_without_eligibility_evidence() -> None:
     models = normalize_models_payload({
         "data": [
