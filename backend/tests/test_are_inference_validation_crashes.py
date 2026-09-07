@@ -29,7 +29,12 @@ except RuntimeError:
     # Real flask proxy without context, ignore during collection
     pass
 
-# Stub psycopg2 to avoid external C dependencies
+# Stub requests and psycopg2 if missing
+if "requests" not in sys.modules:
+    requests_stub = ModuleType("requests")
+    requests_stub.Response = type("Response", (), {})
+    sys.modules["requests"] = requests_stub
+
 if "psycopg2" not in sys.modules:
     psycopg2_stub = ModuleType("psycopg2")
     psycopg2_extras_stub = ModuleType("psycopg2.extras")
