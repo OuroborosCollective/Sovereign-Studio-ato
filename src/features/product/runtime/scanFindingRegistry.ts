@@ -159,10 +159,38 @@ function emptySeverityCounts(): Record<ScanFindingSeverity, number> {
   return Object.fromEntries(SCAN_FINDING_SEVERITIES.map((severity) => [severity, 0])) as Record<ScanFindingSeverity, number>;
 }
 
-function categoryCounts(findings: ScanFinding[]): Record<ScanFindingCategory, number> {
-  const counts = emptyCategoryCounts();
-  for (const finding of findings) counts[finding.category] += 1;
-  return counts;
+function countCategoriesAndSeverities(findings: ScanFinding[]): {
+  byCategory: Record<ScanFindingCategory, number>;
+  bySeverity: Record<ScanFindingSeverity, number>;
+} {
+  const byCategory: Record<ScanFindingCategory, number> = {
+    architecture: 0,
+    'type-error': 0,
+    'build-logic': 0,
+    warning: 0,
+    'security-leak': 0,
+    'test-doubles': 0,
+    'build-artifact': 0,
+    'runtime-guard': 0,
+    auth: 0,
+    workflow: 0,
+    'ci-failure': 0,
+    'learning-memory': 0,
+    'diff-preview': 0,
+    'generated-file': 0,
+    docs: 0,
+  };
+  const bySeverity: Record<ScanFindingSeverity, number> = {
+    low: 0,
+    medium: 0,
+    high: 0,
+    critical: 0,
+  };
+  for (const finding of findings) {
+    byCategory[finding.category] += 1;
+    bySeverity[finding.severity] += 1;
+  }
+  return { byCategory, bySeverity };
 }
 
 function severityCounts(findings: ScanFinding[]): Record<ScanFindingSeverity, number> {
@@ -258,16 +286,24 @@ export function collectWorkflowWatchFindings(
 
 export function collectRepoPathFindings(files: RepoFile[], now = Date.now()): ScanFinding[] {
   const findings: ScanFinding[] = [];
-  const paths = files.map((file) => file.path);
-  const lowerPaths = paths.map((path) => path.toLowerCase());
-  const hasWorkflow = lowerPaths.some((path) => path.startsWith('.github/workflows/') && (path.endsWith('.yml') || path.endsWith('.yaml')));
-  const hasTests = lowerPaths.some((path) => /(?:\.test\.|\.spec\.|__tests__\/|\/test\/|\/tests\/)/.test(path));
-  const hasReadme = lowerPaths.includes('readme.md');
+  let hasWorkflow = false;
+  let hasTests = false;
+  let hasReadme = false;
 
   for (const file of files) {
     const path = file.path;
     const lower = path.toLowerCase();
     const size = file.size ?? 0;
+
+    if (!hasWorkflow && lower.startsWith('.github/workflows/') && (lower.endsWith('.yml') || lower.endsWith('.yaml'))) {
+      hasWorkflow = true;
+    }
+    if (!hasTests && /(?:\.test\.|\.spec\.|__tests__\/|\/test\/|\/tests\/)/.test(lower)) {
+      hasTests = true;
+    }
+    if (!hasReadme && lower === 'readme.md') {
+      hasReadme = true;
+    }
 
     if (/^\.env(?:\.|$)|(^|\/)(secrets?|credentials?|private-key|id_rsa)(\.|\/|$)/.test(lower)) {
       findings.push(createFinding({
@@ -450,8 +486,7 @@ export function assertScanFindingRegistryValid(registry: ScanFindingRegistry): v
 }
 
 export function createScanFindingRun(source: string, findings: ScanFinding[], startedAt: number, completedAt: number): ScanFindingRun {
-  const byCategory = categoryCounts(findings);
-  const bySeverity = severityCounts(findings);
+  const { byCategory, bySeverity } = countCategoriesAndSeverities(findings);
   const high = bySeverity.high + bySeverity.critical;
   return {
     id: `scan-${stableHash(`${source}|${startedAt}|${completedAt}|${findings.map((finding) => finding.id).join(',')}`)}`,
@@ -478,8 +513,16 @@ export function applyScanFindings(
     if (!report.valid) throw new Error(`Invalid scan finding ${finding.id}: ${report.errors.join(' | ')}`);
   }
 
+  // ⚡ Bolt: Fast O(1) Map lookup for incoming findings and existing ID tracking in a single pass
+  const incomingById = new Map<string, ScanFinding>();
+  for (const finding of findings) {
+    incomingById.set(finding.id, finding);
+  }
+
+  const existingIds = new Set<string>();
   const mergedExisting = registry.findings.map((existing) => {
-    const incoming = findings.find((finding) => finding.id === existing.id);
+    existingIds.add(existing.id);
+    const incoming = incomingById.get(existing.id);
     if (incoming) {
       return {
         ...incoming,
@@ -495,7 +538,6 @@ export function applyScanFindings(
     return existing;
   });
 
-  const existingIds = new Set(registry.findings.map((finding) => finding.id));
   const newFindings = findings.filter((finding) => !existingIds.has(finding.id));
   const nextFindings = [...newFindings, ...mergedExisting].slice(0, MAX_FINDINGS);
   const run = createScanFindingRun(source, findings, startedAt, completedAt);
