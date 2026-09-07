@@ -148,7 +148,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 2035,
+      "line": 2038,
       "methods": [
         "GET"
       ],
@@ -157,7 +157,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 2063,
+      "line": 2066,
       "methods": [
         "POST"
       ],
@@ -166,7 +166,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1753,
+      "line": 1756,
       "methods": [
         "GET"
       ],
@@ -175,7 +175,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 729,
+      "line": 732,
       "methods": [
         "GET"
       ],
@@ -184,7 +184,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3170,
+      "line": 3173,
       "methods": [
         "GET"
       ],
@@ -193,7 +193,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3282,
+      "line": 3285,
       "methods": [
         "DELETE"
       ],
@@ -202,7 +202,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3212,
+      "line": 3215,
       "methods": [
         "PATCH"
       ],
@@ -211,7 +211,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3186,
+      "line": 3189,
       "methods": [
         "POST"
       ],
@@ -400,7 +400,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 755,
+      "line": 758,
       "methods": [
         "GET"
       ],
@@ -409,7 +409,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 767,
+      "line": 770,
       "methods": [
         "PATCH"
       ],
@@ -418,7 +418,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 2326,
+      "line": 2329,
       "methods": [
         "POST"
       ],
@@ -463,7 +463,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6968,
+      "line": 7013,
       "methods": [
         "GET"
       ],
@@ -472,7 +472,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 7071,
+      "line": 7116,
       "methods": [
         "POST"
       ],
@@ -688,7 +688,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1054,
+      "line": 1057,
       "methods": [
         "GET"
       ],
@@ -697,7 +697,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1159,
+      "line": 1162,
       "methods": [
         "PATCH"
       ],
@@ -706,7 +706,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 2099,
+      "line": 2102,
       "methods": [
         "POST"
       ],
@@ -715,7 +715,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1375,
+      "line": 1378,
       "methods": [
         "POST"
       ],
@@ -724,7 +724,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1605,
+      "line": 1608,
       "methods": [
         "GET"
       ],
@@ -733,7 +733,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1427,
+      "line": 1430,
       "methods": [
         "GET"
       ],
@@ -742,7 +742,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1483,
+      "line": 1486,
       "methods": [
         "POST"
       ],
@@ -787,7 +787,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3073,
+      "line": 3076,
       "methods": [
         "GET"
       ],
@@ -796,7 +796,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3100,
+      "line": 3103,
       "methods": [
         "PATCH"
       ],
@@ -805,7 +805,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3296,
+      "line": 3299,
       "methods": [
         "POST"
       ],
@@ -814,7 +814,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3140,
+      "line": 3143,
       "methods": [
         "POST"
       ],
@@ -823,7 +823,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 494,
+      "line": 497,
       "methods": [
         "GET"
       ],
@@ -832,7 +832,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1861,
+      "line": 1864,
       "methods": [
         "GET"
       ],
@@ -841,7 +841,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1874,
+      "line": 1877,
       "methods": [
         "PATCH"
       ],
@@ -850,7 +850,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 2005,
+      "line": 2008,
       "methods": [
         "GET"
       ],
@@ -859,7 +859,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1953,
+      "line": 1956,
       "methods": [
         "POST"
       ],
@@ -868,7 +868,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1474,
+      "line": 1477,
       "methods": [
         "GET"
       ],
@@ -877,7 +877,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 795,
+      "line": 798,
       "methods": [
         "GET"
       ],
@@ -886,7 +886,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 820,
+      "line": 823,
       "methods": [
         "POST"
       ],
@@ -895,7 +895,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 894,
+      "line": 897,
       "methods": [
         "DELETE"
       ],
@@ -904,7 +904,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 860,
+      "line": 863,
       "methods": [
         "PATCH"
       ],
@@ -913,7 +913,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 692,
+      "line": 695,
       "methods": [
         "GET"
       ],
@@ -922,7 +922,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 516,
+      "line": 519,
       "methods": [
         "GET"
       ],
@@ -931,7 +931,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 569,
+      "line": 572,
       "methods": [
         "PATCH"
       ],
@@ -940,7 +940,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 610,
+      "line": 613,
       "methods": [
         "POST"
       ],
@@ -967,7 +967,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4976,
+      "line": 5021,
       "methods": [
         "POST"
       ],
@@ -994,7 +994,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4956,
+      "line": 5001,
       "methods": [
         "GET"
       ],
@@ -1003,7 +1003,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5153,
+      "line": 5198,
       "methods": [
         "GET"
       ],
@@ -1012,7 +1012,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5173,
+      "line": 5218,
       "methods": [
         "POST"
       ],
@@ -1021,7 +1021,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4881,
+      "line": 4926,
       "methods": [
         "POST"
       ],
@@ -1030,7 +1030,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4872,
+      "line": 4917,
       "methods": [
         "GET"
       ],
@@ -1039,7 +1039,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4753,
+      "line": 4798,
       "methods": [
         "POST"
       ],
@@ -1048,7 +1048,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4819,
+      "line": 4864,
       "methods": [
         "POST"
       ],
@@ -1057,7 +1057,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4865,
+      "line": 4910,
       "methods": [
         "POST"
       ],
@@ -1066,7 +1066,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4850,
+      "line": 4895,
       "methods": [
         "GET"
       ],
@@ -1111,7 +1111,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4787,
+      "line": 4832,
       "methods": [
         "POST"
       ],
@@ -1120,7 +1120,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3348,
+      "line": 3351,
       "methods": [
         "GET"
       ],
@@ -1129,7 +1129,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4348,
+      "line": 4393,
       "methods": [
         "GET"
       ],
@@ -1138,7 +1138,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4371,
+      "line": 4416,
       "methods": [
         "POST"
       ],
@@ -1147,7 +1147,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3975,
+      "line": 3978,
       "methods": [
         "GET"
       ],
@@ -1156,7 +1156,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3992,
+      "line": 3995,
       "methods": [
         "POST"
       ],
@@ -1165,7 +1165,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3802,
+      "line": 3805,
       "methods": [
         "POST"
       ],
@@ -1174,7 +1174,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3842,
+      "line": 3845,
       "methods": [
         "POST"
       ],
@@ -1183,7 +1183,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3539,
+      "line": 3542,
       "methods": [
         "POST"
       ],
@@ -1192,7 +1192,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3476,
+      "line": 3479,
       "methods": [
         "POST"
       ],
@@ -1201,7 +1201,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3688,
+      "line": 3691,
       "methods": [
         "POST"
       ],
@@ -1210,7 +1210,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3628,
+      "line": 3631,
       "methods": [
         "POST"
       ],
@@ -1219,7 +1219,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 3741,
+      "line": 3744,
       "methods": [
         "POST"
       ],
@@ -1957,7 +1957,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 7218,
+      "line": 7263,
       "methods": [
         "POST"
       ],
@@ -1966,7 +1966,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 7955,
+      "line": 8018,
       "methods": [
         "POST"
       ],
@@ -1975,7 +1975,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4271,
+      "line": 4316,
       "methods": [
         "GET"
       ],
@@ -1984,7 +1984,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 4319,
+      "line": 4364,
       "methods": [
         "GET"
       ],
@@ -2326,7 +2326,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5954,
+      "line": 5999,
       "methods": [
         "POST"
       ],
@@ -2335,7 +2335,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6056,
+      "line": 6101,
       "methods": [
         "GET"
       ],
@@ -2344,7 +2344,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5882,
+      "line": 5927,
       "methods": [
         "POST"
       ],
@@ -2353,7 +2353,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5643,
+      "line": 5688,
       "methods": [
         "POST"
       ],
@@ -2362,7 +2362,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5611,
+      "line": 5656,
       "methods": [
         "POST"
       ],
@@ -2371,7 +2371,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5699,
+      "line": 5744,
       "methods": [
         "POST"
       ],
@@ -2380,7 +2380,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5579,
+      "line": 5624,
       "methods": [
         "POST"
       ],
@@ -2389,7 +2389,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5662,
+      "line": 5707,
       "methods": [
         "POST"
       ],
@@ -2398,7 +2398,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5840,
+      "line": 5885,
       "methods": [
         "POST"
       ],
@@ -2407,7 +2407,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6015,
+      "line": 6060,
       "methods": [
         "POST"
       ],
@@ -2416,7 +2416,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6523,
+      "line": 6568,
       "methods": [
         "DELETE"
       ],
@@ -2425,7 +2425,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6500,
+      "line": 6545,
       "methods": [
         "POST"
       ],
@@ -2434,7 +2434,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6340,
+      "line": 6385,
       "methods": [
         "POST"
       ],
@@ -2443,7 +2443,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6391,
+      "line": 6436,
       "methods": [
         "POST"
       ],
@@ -2452,7 +2452,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6480,
+      "line": 6525,
       "methods": [
         "GET"
       ],
@@ -2461,7 +2461,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6304,
+      "line": 6349,
       "methods": [
         "POST"
       ],
@@ -2470,7 +2470,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6259,
+      "line": 6304,
       "methods": [
         "POST"
       ],
@@ -2479,7 +2479,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6809,
+      "line": 6854,
       "methods": [
         "GET"
       ],
@@ -2488,7 +2488,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6815,
+      "line": 6860,
       "methods": [
         "POST"
       ],
@@ -2497,7 +2497,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6774,
+      "line": 6819,
       "methods": [
         "GET"
       ],
@@ -2506,7 +2506,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6759,
+      "line": 6804,
       "methods": [
         "GET"
       ],
@@ -2515,7 +2515,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 5543,
+      "line": 5588,
       "methods": [
         "GET"
       ],
@@ -3565,7 +3565,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 1753,
+          "line": 1756,
           "methods": [
             "GET"
           ],
@@ -3594,7 +3594,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 729,
+          "line": 732,
           "methods": [
             "GET"
           ],
@@ -3623,7 +3623,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3170,
+          "line": 3173,
           "methods": [
             "GET"
           ],
@@ -3654,7 +3654,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3282,
+          "line": 3285,
           "methods": [
             "DELETE"
           ],
@@ -3663,7 +3663,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3212,
+          "line": 3215,
           "methods": [
             "PATCH"
           ],
@@ -3672,7 +3672,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3186,
+          "line": 3189,
           "methods": [
             "POST"
           ],
@@ -3703,7 +3703,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3282,
+          "line": 3285,
           "methods": [
             "DELETE"
           ],
@@ -3712,7 +3712,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3212,
+          "line": 3215,
           "methods": [
             "PATCH"
           ],
@@ -3721,7 +3721,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3186,
+          "line": 3189,
           "methods": [
             "POST"
           ],
@@ -3752,7 +3752,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3282,
+          "line": 3285,
           "methods": [
             "DELETE"
           ],
@@ -3761,7 +3761,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3212,
+          "line": 3215,
           "methods": [
             "PATCH"
           ],
@@ -3770,7 +3770,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3186,
+          "line": 3189,
           "methods": [
             "POST"
           ],
@@ -3799,7 +3799,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 755,
+          "line": 758,
           "methods": [
             "GET"
           ],
@@ -3830,7 +3830,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 767,
+          "line": 770,
           "methods": [
             "PATCH"
           ],
@@ -4297,7 +4297,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 1054,
+          "line": 1057,
           "methods": [
             "GET"
           ],
@@ -4330,7 +4330,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 1159,
+          "line": 1162,
           "methods": [
             "PATCH"
           ],
@@ -4363,7 +4363,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 1375,
+          "line": 1378,
           "methods": [
             "POST"
           ],
@@ -4427,7 +4427,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3073,
+          "line": 3076,
           "methods": [
             "GET"
           ],
@@ -4456,7 +4456,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3100,
+          "line": 3103,
           "methods": [
             "PATCH"
           ],
@@ -4465,7 +4465,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3140,
+          "line": 3143,
           "methods": [
             "POST"
           ],
@@ -4494,7 +4494,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3296,
+          "line": 3299,
           "methods": [
             "POST"
           ],
@@ -4523,7 +4523,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3100,
+          "line": 3103,
           "methods": [
             "PATCH"
           ],
@@ -4532,7 +4532,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3140,
+          "line": 3143,
           "methods": [
             "POST"
           ],
@@ -4561,7 +4561,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 494,
+          "line": 497,
           "methods": [
             "GET"
           ],
@@ -4683,7 +4683,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 795,
+          "line": 798,
           "methods": [
             "GET"
           ],
@@ -4692,7 +4692,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 820,
+          "line": 823,
           "methods": [
             "POST"
           ],
@@ -4721,7 +4721,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 795,
+          "line": 798,
           "methods": [
             "GET"
           ],
@@ -4730,7 +4730,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 820,
+          "line": 823,
           "methods": [
             "POST"
           ],
@@ -4759,7 +4759,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 894,
+          "line": 897,
           "methods": [
             "DELETE"
           ],
@@ -4768,7 +4768,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 860,
+          "line": 863,
           "methods": [
             "PATCH"
           ],
@@ -4797,7 +4797,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 894,
+          "line": 897,
           "methods": [
             "DELETE"
           ],
@@ -4806,7 +4806,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 860,
+          "line": 863,
           "methods": [
             "PATCH"
           ],
@@ -4835,7 +4835,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 692,
+          "line": 695,
           "methods": [
             "GET"
           ],
@@ -4864,7 +4864,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 516,
+          "line": 519,
           "methods": [
             "GET"
           ],
@@ -4893,7 +4893,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 569,
+          "line": 572,
           "methods": [
             "PATCH"
           ],
@@ -4922,7 +4922,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 610,
+          "line": 613,
           "methods": [
             "POST"
           ],
@@ -5361,7 +5361,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4976,
+          "line": 5021,
           "methods": [
             "POST"
           ],
@@ -5398,7 +5398,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5173,
+          "line": 5218,
           "methods": [
             "POST"
           ],
@@ -5429,7 +5429,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4881,
+          "line": 4926,
           "methods": [
             "POST"
           ],
@@ -5464,7 +5464,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4872,
+          "line": 4917,
           "methods": [
             "GET"
           ],
@@ -5496,7 +5496,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4753,
+          "line": 4798,
           "methods": [
             "POST"
           ],
@@ -5529,7 +5529,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4819,
+          "line": 4864,
           "methods": [
             "POST"
           ],
@@ -5581,7 +5581,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4865,
+          "line": 4910,
           "methods": [
             "POST"
           ],
@@ -5612,7 +5612,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4850,
+          "line": 4895,
           "methods": [
             "GET"
           ],
@@ -5650,7 +5650,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4850,
+          "line": 4895,
           "methods": [
             "GET"
           ],
@@ -5688,7 +5688,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4850,
+          "line": 4895,
           "methods": [
             "GET"
           ],
@@ -5726,7 +5726,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4850,
+          "line": 4895,
           "methods": [
             "GET"
           ],
@@ -5844,7 +5844,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4787,
+          "line": 4832,
           "methods": [
             "POST"
           ],
@@ -5876,7 +5876,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3348,
+          "line": 3351,
           "methods": [
             "GET"
           ],
@@ -5914,7 +5914,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3348,
+          "line": 3351,
           "methods": [
             "GET"
           ],
@@ -5952,7 +5952,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4348,
+          "line": 4393,
           "methods": [
             "GET"
           ],
@@ -5985,7 +5985,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4348,
+          "line": 4393,
           "methods": [
             "GET"
           ],
@@ -6018,7 +6018,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4371,
+          "line": 4416,
           "methods": [
             "POST"
           ],
@@ -6049,7 +6049,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4371,
+          "line": 4416,
           "methods": [
             "POST"
           ],
@@ -6080,7 +6080,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3975,
+          "line": 3978,
           "methods": [
             "GET"
           ],
@@ -6113,7 +6113,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3975,
+          "line": 3978,
           "methods": [
             "GET"
           ],
@@ -6146,7 +6146,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3992,
+          "line": 3995,
           "methods": [
             "POST"
           ],
@@ -6179,7 +6179,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3992,
+          "line": 3995,
           "methods": [
             "POST"
           ],
@@ -6212,7 +6212,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3539,
+          "line": 3542,
           "methods": [
             "POST"
           ],
@@ -6243,7 +6243,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 3539,
+          "line": 3542,
           "methods": [
             "POST"
           ],
@@ -7100,7 +7100,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 7955,
+          "line": 8018,
           "methods": [
             "POST"
           ],
@@ -7145,7 +7145,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 7955,
+          "line": 8018,
           "methods": [
             "POST"
           ],
@@ -7190,7 +7190,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 7955,
+          "line": 8018,
           "methods": [
             "POST"
           ],
@@ -7235,7 +7235,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 7955,
+          "line": 8018,
           "methods": [
             "POST"
           ],
@@ -7280,7 +7280,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 7955,
+          "line": 8018,
           "methods": [
             "POST"
           ],
@@ -7325,7 +7325,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 7955,
+          "line": 8018,
           "methods": [
             "POST"
           ],
@@ -7370,7 +7370,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 7955,
+          "line": 8018,
           "methods": [
             "POST"
           ],
@@ -7415,7 +7415,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4271,
+          "line": 4316,
           "methods": [
             "GET"
           ],
@@ -7453,7 +7453,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4271,
+          "line": 4316,
           "methods": [
             "GET"
           ],
@@ -7491,7 +7491,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4271,
+          "line": 4316,
           "methods": [
             "GET"
           ],
@@ -7529,7 +7529,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4271,
+          "line": 4316,
           "methods": [
             "GET"
           ],
@@ -7567,7 +7567,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4271,
+          "line": 4316,
           "methods": [
             "GET"
           ],
@@ -7605,7 +7605,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4271,
+          "line": 4316,
           "methods": [
             "GET"
           ],
@@ -7643,7 +7643,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 4319,
+          "line": 4364,
           "methods": [
             "GET"
           ],
@@ -8386,7 +8386,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5954,
+          "line": 5999,
           "methods": [
             "POST"
           ],
@@ -8417,7 +8417,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6056,
+          "line": 6101,
           "methods": [
             "GET"
           ],
@@ -8448,7 +8448,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5882,
+          "line": 5927,
           "methods": [
             "POST"
           ],
@@ -8479,7 +8479,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5882,
+          "line": 5927,
           "methods": [
             "POST"
           ],
@@ -8510,7 +8510,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5882,
+          "line": 5927,
           "methods": [
             "POST"
           ],
@@ -8541,7 +8541,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5643,
+          "line": 5688,
           "methods": [
             "POST"
           ],
@@ -8572,7 +8572,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5611,
+          "line": 5656,
           "methods": [
             "POST"
           ],
@@ -8603,7 +8603,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5611,
+          "line": 5656,
           "methods": [
             "POST"
           ],
@@ -8634,7 +8634,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5611,
+          "line": 5656,
           "methods": [
             "POST"
           ],
@@ -8665,7 +8665,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5611,
+          "line": 5656,
           "methods": [
             "POST"
           ],
@@ -8696,7 +8696,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5699,
+          "line": 5744,
           "methods": [
             "POST"
           ],
@@ -8727,7 +8727,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5579,
+          "line": 5624,
           "methods": [
             "POST"
           ],
@@ -8758,7 +8758,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5579,
+          "line": 5624,
           "methods": [
             "POST"
           ],
@@ -8789,7 +8789,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5579,
+          "line": 5624,
           "methods": [
             "POST"
           ],
@@ -8820,7 +8820,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5662,
+          "line": 5707,
           "methods": [
             "POST"
           ],
@@ -8851,7 +8851,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5840,
+          "line": 5885,
           "methods": [
             "POST"
           ],
@@ -8882,7 +8882,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5840,
+          "line": 5885,
           "methods": [
             "POST"
           ],
@@ -8913,7 +8913,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6015,
+          "line": 6060,
           "methods": [
             "POST"
           ],
@@ -8944,7 +8944,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6523,
+          "line": 6568,
           "methods": [
             "DELETE"
           ],
@@ -8953,7 +8953,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6340,
+          "line": 6385,
           "methods": [
             "POST"
           ],
@@ -8962,7 +8962,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6391,
+          "line": 6436,
           "methods": [
             "POST"
           ],
@@ -8971,7 +8971,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6480,
+          "line": 6525,
           "methods": [
             "GET"
           ],
@@ -8980,7 +8980,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6304,
+          "line": 6349,
           "methods": [
             "POST"
           ],
@@ -8989,7 +8989,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6259,
+          "line": 6304,
           "methods": [
             "POST"
           ],
@@ -9023,7 +9023,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6500,
+          "line": 6545,
           "methods": [
             "POST"
           ],
@@ -9057,7 +9057,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6523,
+          "line": 6568,
           "methods": [
             "DELETE"
           ],
@@ -9066,7 +9066,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6340,
+          "line": 6385,
           "methods": [
             "POST"
           ],
@@ -9097,7 +9097,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6523,
+          "line": 6568,
           "methods": [
             "DELETE"
           ],
@@ -9106,7 +9106,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6391,
+          "line": 6436,
           "methods": [
             "POST"
           ],
@@ -9137,7 +9137,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6523,
+          "line": 6568,
           "methods": [
             "DELETE"
           ],
@@ -9146,7 +9146,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6480,
+          "line": 6525,
           "methods": [
             "GET"
           ],
@@ -9179,7 +9179,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6523,
+          "line": 6568,
           "methods": [
             "DELETE"
           ],
@@ -9188,7 +9188,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6304,
+          "line": 6349,
           "methods": [
             "POST"
           ],
@@ -9219,7 +9219,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6523,
+          "line": 6568,
           "methods": [
             "DELETE"
           ],
@@ -9228,7 +9228,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6259,
+          "line": 6304,
           "methods": [
             "POST"
           ],
@@ -9284,7 +9284,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6809,
+          "line": 6854,
           "methods": [
             "GET"
           ],
@@ -9313,7 +9313,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6815,
+          "line": 6860,
           "methods": [
             "POST"
           ],
@@ -9344,7 +9344,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6815,
+          "line": 6860,
           "methods": [
             "POST"
           ],
@@ -9375,7 +9375,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6774,
+          "line": 6819,
           "methods": [
             "GET"
           ],
@@ -9408,7 +9408,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6774,
+          "line": 6819,
           "methods": [
             "GET"
           ],
@@ -9441,7 +9441,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6759,
+          "line": 6804,
           "methods": [
             "GET"
           ],
@@ -9472,7 +9472,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 5543,
+          "line": 5588,
           "methods": [
             "GET"
           ],
@@ -13681,6 +13681,14 @@
       "source": "src/App.tsx",
       "source_status": "active",
       "target": "src/features/rescue/RescuePanel.tsx",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 38,
+      "source": "src/App.tsx",
+      "source_status": "active",
+      "target": "src/features/user/useUserStore.ts",
       "target_status": "active"
     },
     {
@@ -19004,10 +19012,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "64af931dd3c8f7fb624be0f952e70f8d94682255f98d9acb3a0d1114e6f38a1b",
-  "revision": "22ec8f12e4216f330d62a0ede2b73dd180a1f589",
+  "reportSha256": "1727a8b342358bf3d571f7726a879864fbddf146d401ae21e7954d9d1fabb29a",
+  "revision": "4bb6348ae7adfdfa8a8cbe7bd4ddf52ad63b45b4",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "141459e861ea63a068cf884ce3a860a7b5f78315980ee0923a48cf51a549e22c",
+  "sourceTreeSha256": "f624b6406e061d14ca4a290916fda1c0e5925ca30ade65c27aa91ac6721f3dbd",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -19022,7 +19030,7 @@
     "externalRequestCount": 30,
     "frontendCallCount": 259,
     "frontendModuleCount": 530,
-    "importEdgeCount": 707,
+    "importEdgeCount": 708,
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
