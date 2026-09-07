@@ -5,6 +5,7 @@ import {
   Sparkle, Brain, Globe, Shield, Terminal, Layout, Columns
 } from 'lucide-react';
 import { ChatMessage, Suggestion } from '../types';
+import { ChatMarkdown } from './ChatMarkdown';
 import {
   canSubmitChatMessage,
   chatSidebarSummary,
@@ -276,7 +277,7 @@ const FloatingChatLayout: React.FC<{
               <div className={`rounded-2xl px-4 py-3 text-sm ${
                 msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-slate-800/80 text-slate-200 border border-cyan-500/10 rounded-tl-sm'
               }`}>
-                {msg.content}
+                {msg.role === 'assistant' ? <ChatMarkdown content={msg.content} /> : msg.content}
               </div>
               {msg.role === 'assistant' && msg.metadata?.modelId && msg.metadata.modelId !== selectedModel && (
                 <div className="text-[10px] text-slate-500 px-2 flex items-center gap-1">

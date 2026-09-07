@@ -57,3 +57,7 @@
 ## 2025-08-13 - [Overriding Visible Buttons via ARIA Labels]
 **Learning:** Overriding a button's visible text (e.g., 'Repo-Snapshot laden') with an 'aria-label' that does not match or include that exact text violates the WCAG 'Label in Name' requirement. It also disrupts testing frameworks and standard selectors looking for the visible text.
 **Action:** For buttons with descriptive, dynamic text content, rely on the visible text for the accessible name, and use the 'title' attribute exclusively for stateful hover descriptions rather than using aria-label overrides.
+
+## 2025-08-14 - [Markdown Rendering for AI Messages]
+**Learning:** Using raw text to render AI assistant responses leads to visually flat, hard-to-read chats because AI models natively output markdown (bold text, codeblocks, lists). Leveraging existing markdown components instead of raw `msg.content` is an essential structural UX win.
+**Action:** Always parse and render assistant message content using markdown renderers (like `ChatMarkdown`) to ensure structured, highly readable UI, rather than falling back to plain text wrappers.
