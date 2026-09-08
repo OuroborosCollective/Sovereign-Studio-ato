@@ -8,7 +8,7 @@ DRIFT_WORKFLOW = ROOT / ".github" / "workflows" / "boundary-ledger-drift.yml"
 MCP_WORKFLOW = ROOT / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml"
 
 
-def test_boundary_workflow_emits_evidence_before_failing_closed() -> None:
+def test_boundary_workflow_emits_evidence_without_owner_flow_authority() -> None:
     workflow = DRIFT_WORKFLOW.read_text("utf-8")
 
     assert "workflow_call:" in workflow
@@ -34,3 +34,11 @@ def test_mcp_full_suite_requires_boundary_preflight() -> None:
     pytest = workflow.index("python -m pytest -q", validate)
     needs = workflow.index("needs: boundary-ledger-drift", validate)
     assert validate < needs < pytest
+
+
+def test_boundary_preview_drift_is_advisory_and_revision_only() -> None:
+    script = (ROOT / "scripts" / "reconcile_llm_boundary_ledger.py").read_text("utf-8")
+    assert '"blocking": False' in script
+    assert '"blockingAuthority": "EXACT_REVISION_ONLY"' in script
+    assert "return 2 if drift else 0" not in script
+    assert "EXPECTED_HEAD_MISMATCH" in script

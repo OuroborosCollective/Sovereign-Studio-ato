@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "2d1ba058f3d1e2c47269ead086dda59e271d98ec",
+  "sourceRevision": "b48ad9a4d59f3618f2efeb0e00c169f89be0ef83",
   "rawCandidateCount": 100,
   "canonicalCandidateCount": 79,
   "entries": [
@@ -11,12 +11,12 @@
         "backend/agent_runtime/cognitive_llm_transport.py"
       ],
       "symbol": "_runtime_revision",
-      "line": 161,
+      "line": 155,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "3a1dbfefab7467482c6fc979796a3e14f77f4237f17dd45efc4c7a6d0abfde0a",
+      "fileSha256": "48ec473457a53cb3eeb250d2977ca3402f69001586ae1f72e069e3dc94b71266",
       "anchorSha256": "b5ecafe6efa98e0fa05f8144f4f9f2d12c5b868f09a9c8c10c94edc43694e6e9",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:45ef5daee526bafe0e44e963",
+      "candidateId": "llm-boundary:96acea8d186b6cf800854b8f",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_runtime_revision validates one explicit or environment-provided lowercase Git SHA-40 and fails closed before configuration; it does not interpret free language, select a route, or authorize an effect."
     },
@@ -1075,5 +1075,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "578f9d0413b7ecf9187f0ae7103120fa8afc4512e7a30dc9a82c0f86feea30c3"
+  "ledgerSha256": "97a6e42ff940bf87039699969d6fd76a0e062acc824bcce4a0555861766a9308"
 }

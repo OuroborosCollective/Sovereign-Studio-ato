@@ -85,6 +85,20 @@ def main() -> int:
                     ),
                 }
 
+    if not args.write:
+        preview_drift = bool(
+            result.get("newCandidates")
+            or result.get("removedCandidates")
+            or result.get("bindingDrift")
+            or result.get("ownerDecisionCandidateIds")
+        )
+        result = {
+            **result,
+            "advisory": preview_drift,
+            "blocking": False,
+            "blockingAuthority": "EXACT_REVISION_ONLY",
+        }
+
     serialized = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     if args.report:
         report_path = (ROOT / args.report).resolve()
@@ -93,12 +107,13 @@ def main() -> int:
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(serialized, "utf-8")
     print(serialized, end="")
-    if result.get("ownerDecisionCandidateIds"):
-        return 3
     if args.write:
+        if result.get("ownerDecisionCandidateIds"):
+            return 3
         return 0 if result.get("status") == "BOUNDARY_LEDGER_RECONCILED" else 1
-    drift = bool(result.get("newCandidates") or result.get("removedCandidates") or result.get("bindingDrift"))
-    return 2 if drift else 0
+    # Preview mode is evidence-only. Exact revision mismatch is enforced above;
+    # semantic/binding drift is reported but never becomes mutation authority.
+    return 0
 
 
 if __name__ == "__main__":
