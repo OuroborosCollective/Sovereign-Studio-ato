@@ -5,7 +5,7 @@ const MAIN_PATH = 'src/main.tsx';
 const APP_PATH = 'src/App.tsx';
 const WRAPPER_PATH = 'src/SovereignAppWrapper.tsx';
 const CSS_PATH = 'src/index.css';
-const WORKSPACE_COMMAND_PATH = 'src/features/product/runtime/sovereignWorkspaceCommand.ts';
+const RELEASE_PATH = 'src/features/release/PlayReleaseChat.tsx';
 
 const DOM_INSTALLER_TOKENS = [
   'installMobileAgentMonitor',
@@ -52,15 +52,11 @@ function read(path: string): string {
 }
 
 function expectContainsAll(source: string, tokens: string[]): void {
-  for (const token of tokens) {
-    expect(source, `expected source to contain: ${token}`).toContain(token);
-  }
+  for (const token of tokens) expect(source, `expected source to contain: ${token}`).toContain(token);
 }
 
 function expectContainsNone(source: string, tokens: string[]): void {
-  for (const token of tokens) {
-    expect(source, `expected source not to contain: ${token}`).not.toContain(token);
-  }
+  for (const token of tokens) expect(source, `expected source not to contain: ${token}`).not.toContain(token);
 }
 
 describe('current Sovereign app shell contract', () => {
@@ -69,7 +65,7 @@ describe('current Sovereign app shell contract', () => {
     expect(existsSync(APP_PATH)).toBe(true);
     expect(existsSync(WRAPPER_PATH)).toBe(true);
     expect(existsSync(CSS_PATH)).toBe(true);
-    expect(existsSync(WORKSPACE_COMMAND_PATH)).toBe(true);
+    expect(existsSync(RELEASE_PATH)).toBe(true);
   });
 
   it('boots the React wrapper and stable Android runtime helpers without global coach chrome', () => {
@@ -87,52 +83,41 @@ describe('current Sovereign app shell contract', () => {
       'installCodeWorkspacePersistenceRuntime();',
       'bootApp();',
     ]);
-
-    expectContainsAll(wrapper, [
-      "import App from './App'",
-      '<App />',
-      'export default function SovereignAppWrapper',
-    ]);
-
+    expectContainsAll(wrapper, ["import App from './App'", '<App />', 'export default function SovereignAppWrapper']);
     expectContainsNone(wrapper, REMOVED_WRAPPER_NAV_TOKENS);
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
-  it('makes App.tsx a chat-first live surface instead of a legacy workspace dashboard', () => {
+  it('makes PlayReleaseChat the current-session primary surface and keeps observatory truth separate', () => {
     const app = read(APP_PATH);
+    const release = read(RELEASE_PATH);
 
     expectContainsAll(app, [
-      'BuilderContainer',
+      'PlayReleaseChat',
       'data-testid="sovereign-chat-app"',
       'data-layout="chat-first-agent-zero-background"',
+      'data-primary-surface="play-release-chat"',
+      'data-truth-scope="current-chat-session-only"',
       'aria-label="Sovereign Chat"',
-      'CHAT_FIRST_STYLE',
-      'getDesktopFrame(jobId)',
+      'EvidenceObservatoryAtlas',
     ]);
-    expect(app).not.toContain('data-layout="monitor-first-live-workspace"');
+    expectContainsNone(app, [...REMOVED_VISIBLE_SHELL_TOKENS, 'RESTORE_LATEST_JOB', 'BuilderContainer']);
 
-    expectContainsNone(app, REMOVED_VISIBLE_SHELL_TOKENS);
-    expectContainsAll(app, [
-      'repoReady={repoReady}',
-      'repoBusy={repoBusy}',
-      'runtimeBusy={agentIsRunning}',
-      'sovereignSummary={runtimeSummary}',
-      'onPublishDraftPr={publishDraftPr}',
-      "setJanitorPreview('')",
+    expectContainsAll(release, [
+      'startRepositoryExecution',
+      'prepareDraftPr',
+      'createDraftPr',
+      'Draft PR erstellen',
+      'readbackHeadSha',
+      'GitHub-Änderungsentwurf erkannt',
     ]);
-    expect(app).not.toContain('repoReady={false}');
-    expect(app).not.toContain('runtimeBusy={false}');
-    expect(app).not.toContain("onPublishDraftPr={() => setMission('Draft PR')}");
+    expect(release).not.toContain('listJobs(');
   });
 
   it('keeps the wrapper free of visible chrome and navigation state', () => {
     const wrapper = read(WRAPPER_PATH);
 
-    expectContainsAll(wrapper, [
-      "import App from './App'",
-      'return <App />',
-    ]);
-
+    expectContainsAll(wrapper, ["import App from './App'", 'return <App />']);
     expectContainsNone(wrapper, REMOVED_WRAPPER_NAV_TOKENS);
     expect(wrapper).not.toContain('querySelector');
     expect(wrapper).not.toContain('localStorage');
