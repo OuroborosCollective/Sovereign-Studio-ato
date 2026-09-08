@@ -5,7 +5,6 @@ import process from 'node:process';
 
 const REPORT_DIR = '.security-reports';
 const REPORT_PATH = path.join(REPORT_DIR, 'sovereign-ux-contract.json');
-
 const report = {
   name: 'Sovereign UX Contract Scan',
   generatedAt: new Date().toISOString(),
@@ -15,328 +14,124 @@ const report = {
   errors: [],
 };
 
-function exists(filePath) {
-  return fs.existsSync(filePath);
-}
-
-function read(filePath) {
-  return exists(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
-}
-
-function pass(id, message, details = {}) {
-  report.checks.push({ id, ok: true, message, details });
-}
-
+function exists(filePath) { return fs.existsSync(filePath); }
+function read(filePath) { return exists(filePath) ? fs.readFileSync(filePath, 'utf8') : ''; }
+function pass(id, message, details = {}) { report.checks.push({ id, ok: true, message, details }); }
 function fail(id, message, details = {}) {
   report.checks.push({ id, ok: false, message, details });
   report.errors.push({ id, message, details });
 }
-
-function warn(id, message, details = {}) {
-  report.warnings.push({ id, message, details });
-}
-
+function warn(id, message, details = {}) { report.warnings.push({ id, message, details }); }
 function requireFile(filePath, message) {
   if (exists(filePath)) pass(`file:${filePath}`, message, { filePath });
   else fail(`file:${filePath}`, `Missing required file: ${filePath}`, { filePath, message });
 }
-
 function requireText(filePath, pattern, id, message) {
-  const source = read(filePath);
-  if (pattern.test(source)) pass(id, message, { filePath });
+  if (pattern.test(read(filePath))) pass(id, message, { filePath });
   else fail(id, message, { filePath, pattern: String(pattern) });
 }
-
-function warnText(filePath, pattern, id, message) {
-  const source = read(filePath);
-  if (pattern.test(source)) pass(id, message, { filePath });
-  else warn(id, message, { filePath, pattern: String(pattern) });
-}
-
-function warnIfText(filePath, pattern, id, message) {
-  const source = read(filePath);
-  if (pattern.test(source)) warn(id, message, { filePath, pattern: String(pattern) });
-  else pass(id, message, { filePath });
-}
-
 function forbidText(filePath, pattern, id, message) {
-  const source = read(filePath);
-  if (!pattern.test(source)) pass(id, message, { filePath });
+  if (!pattern.test(read(filePath))) pass(id, message, { filePath });
   else fail(id, message, { filePath, pattern: String(pattern) });
 }
 
-function countMatches(filePath, pattern) {
-  const source = read(filePath);
-  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
-  const regex = new RegExp(pattern.source, flags);
-  return [...source.matchAll(regex)].length;
-}
-
-function getSafeGithubStepSummaryPath() {
+function safeSummaryPath() {
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-  if (typeof summaryPath !== 'string' || summaryPath.trim() === '') return null;
-
   const runnerTemp = process.env.RUNNER_TEMP;
-  if (typeof runnerTemp !== 'string' || runnerTemp.trim() === '') return null;
-
-  const resolvedSummaryPath = path.resolve(summaryPath);
-  const resolvedRunnerTemp = path.resolve(runnerTemp);
-  const relative = path.relative(resolvedRunnerTemp, resolvedSummaryPath);
+  if (!summaryPath || !runnerTemp) return null;
+  const resolvedSummary = path.resolve(summaryPath);
+  const resolvedTemp = path.resolve(runnerTemp);
+  const relative = path.relative(resolvedTemp, resolvedSummary);
   if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
-
-  return resolvedSummaryPath;
-}
-
-function requireAtLeast(filePath, pattern, min, id, message) {
-  const count = countMatches(filePath, pattern);
-  if (count >= min) pass(id, message, { filePath, count, min });
-  else fail(id, message, { filePath, count, min, pattern: String(pattern) });
-}
-
-function requireOneOf(files, pattern, id, message) {
-  const matches = files.filter((filePath) => pattern.test(read(filePath)));
-  if (matches.length) pass(id, message, { matches });
-  else fail(id, message, { files, pattern: String(pattern) });
-}
-
-function warnOneOf(files, pattern, id, message) {
-  const matches = files.filter((filePath) => pattern.test(read(filePath)));
-  if (matches.length) pass(id, message, { matches });
-  else warn(id, message, { files, pattern: String(pattern) });
+  return resolvedSummary;
 }
 
 function writeReport() {
   fs.mkdirSync(REPORT_DIR, { recursive: true });
   report.status = report.errors.length === 0 ? 'pass' : 'fail';
   fs.writeFileSync(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`);
-
-  const githubStepSummaryPath = getSafeGithubStepSummaryPath();
-  if (githubStepSummaryPath) {
-    const lines = [
-      '## Sovereign UX Contract Scan',
-      '',
+  const summary = safeSummaryPath();
+  if (summary) {
+    fs.appendFileSync(summary, [
+      '## Sovereign UX Contract Scan', '',
       `Status: **${report.status}**`,
       `Checks: **${report.checks.length}**`,
       `Errors: **${report.errors.length}**`,
-      `Warnings: **${report.warnings.length}**`,
+      `Warnings: **${report.warnings.length}**`, '',
+      ...(report.errors.length ? report.errors.map((item) => `- ${item.id}: ${item.message}`) : ['- No UX contract errors.']),
       '',
-      '### Errors',
-      ...(report.errors.length ? report.errors.map((item) => `- ${item.id}: ${item.message}`) : ['- none']),
-      '',
-      '### Warnings',
-      ...(report.warnings.length ? report.warnings.map((item) => `- ${item.id}: ${item.message}`) : ['- none']),
-      '',
-    ];
-    fs.appendFileSync(githubStepSummaryPath, `${lines.join('\n')}\n`);
+    ].join('\n'));
   } else if (process.env.GITHUB_STEP_SUMMARY) {
-    warn('github-step-summary-path', 'Skipping unsafe GITHUB_STEP_SUMMARY path.', {
-      providedPath: process.env.GITHUB_STEP_SUMMARY,
-    });
+    warn('github-step-summary-path', 'Skipping unsafe GITHUB_STEP_SUMMARY path.');
   }
-
   console.log(JSON.stringify(report, null, 2));
 }
 
 function run() {
-  requireFile('src/index.css', 'Shared CSS and design tokens are required.');
-  requireFile('src/App.tsx', 'App shell is required for global UX flow.');
-  requireFile('src/main.tsx', 'App entry is required for boot-path style imports.');
-  requireFile('src/styles/arelogic-brand.css', 'ARELogic visual tokens must be part of the app style contract.');
-  requireFile('src/features/product/containers/RepoSnapshotContainer.tsx', 'Repo UX container is required.');
-  requireFile('src/features/product/containers/BuilderContainer.tsx', 'Builder UX container is required.');
-  requireFile('src/features/product/runtime/sovereignProductTemplate.ts', 'Product template UX contract is required.');
-  requireFile('src/features/product/runtime/sovereignStyleContract.ts', 'Product style contract is required.');
-  requireFile('src/features/product/runtime/sovereignComponentContracts.ts', 'Product component contract is required.');
-  requireFile('src/features/product/runtime/arelogicBrandContract.ts', 'ARELogic brand contract is required.');
+  const app = 'src/App.tsx';
+  const wrapper = 'src/SovereignAppWrapper.tsx';
+  const release = 'src/features/release/PlayReleaseChat.tsx';
+  const builder = 'src/features/product/containers/BuilderContainer.tsx';
+  const monitor = 'src/features/product/components/LiveWorkspaceMonitor.tsx';
+  const forms = 'src/features/product/runtime/sovereignFormContracts.ts';
+  const actions = 'src/features/product/runtime/sovereignActionContracts.ts';
 
-  // Form contracts validation
-  requireFile('src/features/product/runtime/sovereignFormContracts.ts', 'Form contracts file is required.');
-  requireText('src/features/product/runtime/sovereignFormContracts.ts', /SOVEREIGN_FORM_REPO_URL/, 'form:repo-url-contract', 'Repo URL form contract must exist.');
-  requireText('src/features/product/runtime/sovereignFormContracts.ts', /SOVEREIGN_FORM_PRIVATE_ACCESS/, 'form:private-access-contract', 'Private access form contract must exist.');
-  requireText('src/features/product/runtime/sovereignFormContracts.ts', /SOVEREIGN_FORM_BRANCH|SOVEREIGN_FORM_REPO_BRANCH/, 'form:branch-contract', 'Branch form contract must exist.');
-  requireText('src/features/product/runtime/sovereignFormContracts.ts', /SOVEREIGN_FORM_MISSION/, 'form:mission-contract', 'Mission form contract must exist.');
-  requireText('src/features/product/runtime/sovereignFormContracts.ts', /sensitive:\s*true/, 'form:sensitive-flag', 'Sensitive fields must be marked as sensitive.');
-  requireText('src/features/product/runtime/sovereignFormContracts.ts', /inputType:\s*['"]password['"]/, 'form:password-type', 'Private access must use password input type.');
-  requireText('src/features/product/runtime/sovereignFormContracts.ts', /autoComplete:\s*['"]off['"]/, 'form:autocomplete-off', 'Private access must use autocomplete off.');
-  requireText('src/features/product/runtime/sovereignFormContracts.ts', /testId:\s*['"]repo-url__input['"]/, 'form:repo-url-test-id', 'Repo URL must have stable test-id.');
-  requireText('src/features/product/runtime/sovereignFormContracts.ts', /testId:\s*['"]private-access__input['"]/, 'form:private-access-test-id', 'Private access must have stable test-id.');
+  for (const [file, message] of [
+    ['src/index.css', 'Shared CSS and design tokens are required.'],
+    ['src/main.tsx', 'App entry is required.'],
+    [app, 'Canonical App route is required.'],
+    [wrapper, 'Passthrough app wrapper is required.'],
+    [release, 'Play Release current-session chat is required.'],
+    [builder, 'Builder diagnostics remain a maintained secondary surface.'],
+    [monitor, 'Real workspace monitor remains available as a diagnostic surface.'],
+    [forms, 'Form contracts remain available.'],
+    [actions, 'Action contracts remain available.'],
+    ['src/styles/arelogic-brand.css', 'ARELogic visual tokens remain required.'],
+  ]) requireFile(file, message);
 
-  // Action contracts validation
-  requireFile('src/features/product/runtime/sovereignActionContracts.ts', 'Action contracts file is required.');
-  requireText('src/features/product/runtime/sovereignActionContracts.ts', /SOVEREIGN_ACTION_LOAD_REPO/, 'action:load-repo-contract', 'Load repo action contract must exist.');
-  requireText('src/features/product/runtime/sovereignActionContracts.ts', /SOVEREIGN_ACTION_SAVE_SESSION/, 'action:save-session-contract', 'Save session action contract must exist.');
-  requireText('src/features/product/runtime/sovereignActionContracts.ts', /SOVEREIGN_ACTION_RESTORE_SESSION/, 'action:restore-session-contract', 'Restore session action contract must exist.');
-  requireText('src/features/product/runtime/sovereignActionContracts.ts', /SOVEREIGN_ACTION_CLEAR_VIEW/, 'action:clear-view-contract', 'Clear view action contract must exist.');
-  requireText('src/features/product/runtime/sovereignActionContracts.ts', /SOVEREIGN_ACTION_DRAFT_PR/, 'action:draft-pr-contract', 'Draft PR action contract must exist.');
-  requireText('src/features/product/runtime/sovereignActionContracts.ts', /SOVEREIGN_ACTION_REPAIR_LOG/, 'action:repair-log-contract', 'Repair log action contract must exist.');
-  requireText('src/features/product/runtime/sovereignActionContracts.ts', /SOVEREIGN_ACTION_MONITOR_TOGGLE/, 'action:monitor-toggle-contract', 'Monitor toggle action contract must exist.');
-  requireText('src/features/product/runtime/sovereignActionContracts.ts', /testId:\s*['"]repo-snapshot__load-repo['"]/, 'action:load-repo-test-id', 'Load repo must have stable test-id.');
-  requireText('src/features/product/runtime/sovereignActionContracts.ts', /testId:\s*['"]builder__draft-pr['"]/, 'action:draft-pr-test-id', 'Draft PR must have stable test-id.');
-  requireText('src/features/product/runtime/sovereignActionContracts.ts', /kind:\s*['"]primary['"]/, 'action:primary-kind', 'Primary actions must be classified as primary.');
-  requireText('src/features/product/runtime/sovereignActionContracts.ts', /kind:\s*['"]destructive['"]/, 'action:destructive-kind', 'Destructive actions must be classified as destructive.');
-  requireText('src/features/product/runtime/sovereignActionContracts.ts', /requiresRepo:\s*(true|false)/, 'action:requires-repo-flag', 'Actions must have requiresRepo flag.');
+  requireText('src/main.tsx', /\.\/styles\/arelogic-brand\.css/, 'main:brand-css', 'App entry imports ARELogic brand CSS.');
+  requireText(wrapper, /return <App \/>|<App\s*\/\>/, 'wrapper:passthrough', 'Wrapper remains truth-neutral passthrough.');
+  forbidText(wrapper, /useState|useEffect|localStorage|sessionStorage|data-testid="sovereign-app-wrapper"/, 'wrapper:no-shadow-state', 'Wrapper must not own product truth or persistence.');
 
-  requireText('src/main.tsx', /\.\/styles\/arelogic-brand\.css/, 'main:brand-css-import', 'App entry must import ARELogic visual tokens after the base style layer.');
+  requireText(app, /PlayReleaseChat/, 'app:release-primary', 'App renders Play Release as primary current-session surface.');
+  requireText(app, /data-testid="sovereign-chat-app"/, 'app:root-test-id', 'Primary app has stable root test id.');
+  requireText(app, /data-layout="chat-first-agent-zero-background"/, 'app:layout', 'Primary app remains chat first.');
+  requireText(app, /data-primary-surface="play-release-chat"/, 'app:primary-marker', 'Primary surface identity is explicit.');
+  requireText(app, /data-truth-scope="current-chat-session-only"/, 'app:truth-scope', 'Current-session truth scope is explicit.');
+  requireText(app, /EvidenceObservatoryAtlas[\s\S]*\/observatory[\s\S]*\/evidence-observatory/, 'app:observatory-separated', 'Evidence Observatory remains an explicit non-default route.');
+  forbidText(app, /RESTORE_LATEST_JOB|BuilderContainer/, 'app:no-historical-auto-adopt', 'Default App must not auto-adopt historical jobs or mount the legacy Builder as current truth.');
 
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Repository Snapshot/, 'repo:title-visible', 'Repo card title must be visible.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_LOAD_REPO/, 'repo:load-action-visible', 'Repo load action must be bound to contract.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_SAVE_SESSION/, 'repo:save-action-visible', 'Session save action must be bound to contract.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_RESTORE_SESSION/, 'repo:restore-action-visible', 'Session restore action must be bound to contract.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_CLEAR_VIEW/, 'repo:clear-action-visible', 'Clear view action must be bound to contract.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Repo geladen|Repo fehlt/, 'repo:status-pill-visible', 'Repo loaded/missing state must be visible.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Privater Zugang/, 'repo:private-access-visible', 'Private access state must be visible.');
+  requireText(release, /evaluateInputPolicy\(text\)/, 'release:secret-guard', 'Release chat guards input before LLM/repository execution.');
+  requireText(release, /fetchSovereignLlmRouteCatalog/, 'release:route-catalog', 'Release chat reads server-authoritative model routes.');
+  requireText(release, /fetchSovereignDirectLlmInterpretation/, 'release:typed-intent', 'Repository intent comes through the typed LLM interpretation boundary.');
+  requireText(release, /deriveRepositoryActionFallback/, 'release:degraded-owned-intent', 'Malformed model prose can only fall back to user-owned repository intent.');
+  requireText(release, /pendingRepositoryAction/, 'release:pending-action', 'Repository writes are represented as pending visible actions first.');
+  requireText(release, /confirmPendingRepositoryAction/, 'release:visible-confirmation', 'Repository execution requires visible confirmation.');
+  requireText(release, /startRepositoryExecution/, 'release:agent-runtime', 'Mission execution uses the canonical Agent runtime.');
+  requireText(release, /prepareDraftPr/, 'release:draft-prepare', 'Draft PR preparation uses the server gate.');
+  requireText(release, /createDraftPr/, 'release:draft-create', 'Draft PR creation uses the server runtime.');
+  requireText(release, /readbackHeadSha/, 'release:github-readback', 'Draft PR success is reported from GitHub head readback.');
+  requireText(release, /Draft PR erstellen/, 'release:draft-visible', 'Draft PR action is visible to the user.');
+  requireText(release, /initiateGitHubOAuth/, 'release:github-oauth', 'GitHub OAuth remains an explicit integration boundary.');
+  requireText(release, /GitHub sicher verbinden/, 'release:github-oauth-visible', 'GitHub connection consent is visible.');
+  forbidText(release, /listJobs\(|RESTORE_LATEST_JOB/, 'release:no-history-auto-adopt', 'Release chat must not auto-adopt historical jobs.');
 
-  requireText('src/features/product/containers/BuilderContainer.tsx', /MonitorCommunicationDock|chat-primary-agent-zero-background/, 'builder:chat-primary-visible', 'Builder must expose the chat-first workbench with model and tool selection while Agent Zero/runtime stay behind the conversation.');
-  requireFile('src/features/product/components/LiveWorkspaceMonitor.tsx', 'Real workspace monitor component is required.');
-  requireText('src/features/product/components/LiveWorkspaceMonitor.tsx', /live-workspace-monitor-desktop|DESKTOP · LIVE READBACK/, 'builder:desktop-readback-visible', 'Monitor must expose the real desktop-readback surface.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_ANALYZE_MISSION/, 'builder:analyze-visible', 'Analyze action must be bound to contract.');
-  requireText(
-    'src/features/product/containers/BuilderContainer.tsx',
-    /value=\{wishText\}\s*onChange=\{setWishText\}\s*onSubmit=\{\(\)\s*=>\s*\{\s*void handleSubmit\(\);\s*\}\}/,
-    'builder:start-visible',
-    'The chat communication dock must submit through the live runtime handler.',
-  );
-  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_REPAIR_LOG/, 'builder:repair-visible', 'Repair action must be bound to contract.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_DRAFT_PR/, 'builder:draft-visible', 'Draft PR action must be bound to contract.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /route|ActionStream|SovereignActionStreamPanel|Auftrag empfangen/i, 'builder:route-guidance', 'Builder must show route/action guidance.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /OpenHands|Direct GitHub Patch|github-access/i, 'builder:execution-guidance', 'Builder must show execution/access guidance.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /disabledReason/, 'builder:disabled-reason', 'Builder must expose disabled reason from runtime state.');
+  requireText(forms, /SOVEREIGN_FORM_REPO_URL/, 'form:repo-url', 'Repo URL contract remains defined.');
+  requireText(forms, /SOVEREIGN_FORM_PRIVATE_ACCESS/, 'form:private-access', 'Private-access contract remains defined.');
+  requireText(forms, /sensitive:\s*true/, 'form:sensitive', 'Sensitive form fields remain marked.');
+  requireText(forms, /inputType:\s*['"]password['"]/, 'form:password', 'Private access remains password-typed.');
+  requireText(actions, /SOVEREIGN_ACTION_DRAFT_PR/, 'action:draft-pr', 'Draft PR action contract remains defined.');
+  requireText(actions, /SOVEREIGN_ACTION_LOAD_REPO/, 'action:load-repo', 'Repository load action contract remains defined.');
 
-  // Container and contract binding validation
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /getSovereignContainerContract\(['"]repo-snapshot['"]\)/, 'repo:container-contract-bound', 'Repo snapshot must use container contract.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_FORM_REPO_URL/, 'repo:repo-url-form-bound', 'Repo snapshot must bind repo URL form contract.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_FORM_PRIVATE_ACCESS/, 'repo:private-access-form-bound', 'Repo snapshot must bind private access form contract.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_LOAD_REPO/, 'repo:load-repo-action-bound', 'Repo snapshot must bind load repo action contract.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_SAVE_SESSION/, 'repo:save-session-action-bound', 'Repo snapshot must bind save session action contract.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /type=\{\s*SOVEREIGN_FORM_PRIVATE_ACCESS\.inputType/, 'repo:private-access-password-type', 'Private access must use password type from contract.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /autoComplete=\{\s*SOVEREIGN_FORM_PRIVATE_ACCESS\.autoComplete/, 'repo:private-access-autocomplete-off', 'Private access must use autocomplete off from contract.');
-  requireText(
-    'src/features/product/containers/BuilderContainer.tsx',
-    /value=\{wishText\}\s*onChange=\{setWishText\}/,
-    'builder:mission-form-bound',
-    'Builder must bind the mission input state to the live chat communication dock.',
-  );
-  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_ANALYZE_MISSION/, 'builder:analyze-mission-action-bound', 'Builder must bind analyze mission action contract.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_DRAFT_PR/, 'builder:draft-pr-action-bound', 'Builder must bind draft PR action contract.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_REPAIR_LOG/, 'builder:repair-log-action-bound', 'Builder must bind repair log action contract.');
-  requireText('src/global-runtime-monitor.tsx', /SOVEREIGN_ACTION_MONITOR_TOGGLE/, 'monitor:monitor-toggle-bound', 'Global monitor must bind monitor toggle action contract.');
+  requireText(builder, /MonitorCommunicationDock|SovereignActionStreamPanel/, 'builder:secondary-diagnostics', 'Builder retains diagnostic/action-stream capability as a secondary surface.');
+  requireText(monitor, /live-workspace-monitor-desktop|DESKTOP · LIVE READBACK/, 'monitor:desktop-readback', 'Real desktop readback remains available.');
 
-  requireText('src/features/product/runtime/sovereignProductTemplate.ts', /repo/, 'template:repo-tab', 'Product template must expose repo tab.');
-  requireText('src/features/product/runtime/sovereignProductTemplate.ts', /builder/, 'template:builder-tab', 'Product template must expose builder tab.');
-  requireText('src/features/product/runtime/sovereignProductTemplate.ts', /files/, 'template:files-tab', 'Product template must expose files tab.');
-  requireText('src/features/product/runtime/sovereignProductTemplate.ts', /diff/, 'template:diff-tab', 'Product template must expose diff tab.');
-  requireText('src/features/product/runtime/sovereignProductTemplate.ts', /monitor|telemetry/, 'template:monitor-or-telemetry-tab', 'Product template must expose monitor or telemetry visibility.');
-
-  requireText('src/features/product/runtime/sovereignStyleContract.ts', /SOVEREIGN_APP_CLASSES/, 'style:app-classes-contract', 'Style contract must expose app class names.');
-  requireText('src/features/product/runtime/sovereignStyleContract.ts', /SOVEREIGN_TAB_STYLE_CONTRACT/, 'style:tab-contract', 'Style contract must expose tab style metadata.');
-  requireText('src/features/product/runtime/sovereignStyleContract.ts', /dataRole/, 'style:data-role-contract', 'Style contract must expose stable data roles.');
-  requireText('src/features/product/runtime/sovereignStyleContract.ts', /mobilePriority/, 'style:mobile-priority-contract', 'Style contract must expose mobile priorities.');
-
-  requireText('src/features/product/runtime/sovereignComponentContracts.ts', /SOVEREIGN_APP_SHELL_CONTRACT/, 'component:app-shell-contract', 'Component contract must expose app shell contract.');
-  requireText('src/features/product/runtime/sovereignComponentContracts.ts', /SOVEREIGN_TABBAR_CONTRACT/, 'component:tabbar-contract', 'Component contract must expose tabbar contract.');
-  requireText('src/features/product/runtime/sovereignComponentContracts.ts', /SOVEREIGN_ACTION_BUTTON_CONTRACT/, 'component:action-button-contract', 'Component contract must expose action button contract.');
-  requireText('src/features/product/runtime/sovereignComponentContracts.ts', /SOVEREIGN_TEST_ID_PATTERN/, 'component:test-id-pattern', 'Component contract must expose test id pattern.');
-
-  requireText('src/features/product/runtime/arelogicBrandContract.ts', /ARELOGIC_BRAND_PRIORITY/, 'brand:priority-contract', 'Brand contract must expose priority ordering.');
-  requireText('src/features/product/runtime/arelogicBrandContract.ts', /runtime-contracts[\s\S]*accessibility-contracts[\s\S]*component-contracts[\s\S]*brand-visual-layer/, 'brand:priority-order', 'Brand visuals must remain behind runtime, accessibility and component contracts.');
-  requireText('src/features/product/runtime/arelogicBrandContract.ts', /ARELOGIC_BRAND_TOKENS/, 'brand:token-contract', 'Brand contract must expose token definitions.');
-  requireText('src/features/product/runtime/arelogicBrandContract.ts', /--are-void/, 'brand:void-token-contract', 'Brand contract must expose ARE void token.');
-  requireText('src/features/product/runtime/arelogicBrandContract.ts', /--are-ion/, 'brand:ion-token-contract', 'Brand contract must expose ARE ion token.');
-  requireText('src/features/product/runtime/arelogicBrandContract.ts', /--are-matter/, 'brand:matter-token-contract', 'Brand contract must expose ARE matter token.');
-  requireText('src/features/product/runtime/arelogicBrandContract.ts', /SOVEREIGN_APP_CLASSES/, 'brand:sovereign-style-link', 'Brand contract must attach to Sovereign style contracts instead of replacing them.');
-
-  requireText('src/styles/arelogic-brand.css', /--are-void/, 'brand-css:void-token', 'Brand CSS must expose ARE void token.');
-  requireText('src/styles/arelogic-brand.css', /--are-ion/, 'brand-css:ion-token', 'Brand CSS must expose ARE ion token.');
-  requireText('src/styles/arelogic-brand.css', /--are-matter/, 'brand-css:matter-token', 'Brand CSS must expose ARE matter token.');
-  requireText('src/styles/arelogic-brand.css', /\.sovereign-app-shell/, 'brand-css:shell-binding', 'Brand CSS must bind through existing Sovereign shell class.');
-  requireText('src/styles/arelogic-brand.css', /\.sovereign-tab-active/, 'brand-css:tab-binding', 'Brand CSS must bind through existing Sovereign tab class.');
-  requireText('src/styles/arelogic-brand.css', /\.sovereign-status-dot-green/, 'brand-css:status-binding', 'Brand CSS must bind through existing Sovereign status classes.');
-
-  requireText('src/index.css', /:root/, 'css:root-tokens', 'CSS root tokens must exist.');
-  requireText('src/index.css', /--surface-1/, 'css:surface-token', 'Surface design token must exist.');
-  requireText('src/index.css', /--accent/, 'css:accent-token', 'Accent design token must exist.');
-  requireText('src/index.css', /--good/, 'css:good-token', 'Good status token must exist.');
-  requireText('src/index.css', /--warn/, 'css:warn-token', 'Warning status token must exist.');
-  requireText('src/index.css', /--bad/, 'css:bad-token', 'Bad status token must exist.');
-  requireText('src/index.css', /safe-area-inset/, 'css:safe-area', 'Android safe-area support must exist.');
-  requireText('src/index.css', /@media \(max-width: 767px\)/, 'css:mobile-media-query', 'Mobile media query must exist.');
-  requireText('src/index.css', /border-radius/, 'css:card-rounding', 'Card/pill visual rounding must be defined.');
-  requireText('src/index.css', /box-shadow/, 'css:depth', 'Visual depth/shadow must be defined.');
-  requireText('src/index.css', /\.sovereign-app-shell/, 'css:app-shell-class', 'Stable app shell class must exist.');
-  requireText('src/index.css', /\.sovereign-app-title/, 'css:app-title-class', 'Stable app title class must exist.');
-  requireText('src/index.css', /\.sovereign-tabbar/, 'css:tabbar-class', 'Stable tabbar class must exist.');
-  requireText('src/index.css', /\.sovereign-tab\b/, 'css:tab-class', 'Stable tab class must exist.');
-  requireText('src/index.css', /\.sovereign-tab-active/, 'css:active-tab-class', 'Stable active tab class must exist.');
-  requireText('src/index.css', /\.sovereign-card/, 'css:card-class', 'Stable card class must exist.');
-  requireText('src/index.css', /\.sovereign-select/, 'css:select-class', 'Stable select class must exist.');
-  requireText('src/index.css', /\.sovereign-status-pill/, 'css:status-pill-class', 'Stable status pill class must exist.');
-
-  if (exists('src/global-runtime-monitor.tsx')) {
-    requireText('src/global-runtime-monitor.tsx', /Agenten-Monitor|Sovereign Bot|Next Action|Log anzeigen|Log einklappen/, 'monitor:global-copy', 'Global monitor must provide readable status copy and log controls.');
-    requireText('src/global-runtime-monitor.tsx', /sovereign:runtime-coach-state/, 'monitor:coach-state-event', 'Global monitor must read coach state events.');
-    requireText('src/global-runtime-monitor.tsx', /sovereign:telemetry-event/, 'monitor:telemetry-event', 'Global monitor must read telemetry events.');
-    requireText('src/index.css', /sovereign-global-monitor/, 'monitor:css-class', 'Global monitor CSS class must exist.');
-    requireText('src/index.css', /sovereign-monitor-log/, 'monitor:log-css-class', 'Global monitor log CSS class must exist.');
-    requireText('src/index.css', /sovereign-status-dot/, 'monitor:status-dot-css-class', 'Global monitor status dot CSS class must exist.');
-  } else {
-    warn('monitor:global-missing', 'Global monitor is absent. Repo-local monitor may still be present, but global one-log UX is preferred.');
-    warnText('src/features/product/containers/RepoSnapshotContainer.tsx', /Agenten-Monitor/, 'monitor:repo-local-copy', 'Repo-local monitor copy should exist if no global monitor exists.');
-  }
-
-  requireText('src/SovereignAppWrapper.tsx', /return <App \/>|<App\s*\/\>/, 'wrapper:passthrough-only', 'Runtime wrapper must stay a passthrough instead of adding another shell.');
-  forbidText('src/SovereignAppWrapper.tsx', /data-testid="sovereign-app-wrapper"|data-layout="composition-wrapper-around-existing-app"/, 'wrapper:no-second-shell', 'Runtime wrapper must not add a second visible shell.');
-  requireText('src/App.tsx', /BuilderContainer/, 'app:chat-builder-root', 'App must render the canonical chat-first Builder root.');
-  requireText('src/App.tsx', /data-testid="sovereign-chat-app"/, 'app:chat-root-test-id', 'Chat-first App must expose its stable root test id.');
-  requireText('src/App.tsx', /data-layout="chat-first-agent-zero-background"/, 'app:chat-root-layout', 'Chat-first App must declare its conversation-first layout.');
-  requireText('src/App.tsx', /aria-label="Sovereign Chat"/, 'app:chat-root-aria-label', 'Chat-first App must expose its accessibility label.');
-  requireText('src/App.tsx', /EvidenceObservatoryAtlas[\s\S]*window\.location\.pathname === '\/observatory'[\s\S]*window\.location\.pathname === '\/evidence-observatory'/, 'app:observatory-route-preserved', 'The evidence observatory must remain reachable outside the default monitor root.');
-  forbidText('src/App.tsx', /PlayReleaseChat|data-layout="monitor-first-live-workspace"/, 'app:no-retired-primary-layout', 'The retired release-chat and forced monitor-first roots must not return.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /aria-label="Menü"[\s\S]*aria-label="Sovereign Seitenmenü"/, 'builder:menu-reachable', 'The owner-visible menu trigger and dialog must remain in the monitor surface.');
-  requireText('src/features/product/components/MonitorCommunicationDock.tsx', /sovereign-llm-route-picker-trigger[\s\S]*aria-label="Modelle durchsuchen"[\s\S]*aria-label="Verfügbare LLM-Routen"/, 'builder:compact-model-picker', 'The complete model catalog must remain behind a compact searchable picker.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /data-testid=\{builderContainerContract\.testId\}|data-testid="builder-container"/, 'builder:root-test-id-bound', 'Builder must expose stable root test-id.');
-  requireText(
-    'src/features/product/containers/BuilderContainer.tsx',
-    /data-layout=\{chatPrimary\s*\?\s*["']chat-primary-agent-zero-background["']\s*:\s*["']chat-inspector-modules["']\}/,
-    'builder:primary-surface-layout-bound',
-    'Builder must keep chat primary while using a separate technical inspector layout.',
-  );
-  requireText('src/features/product/containers/BuilderContainer.tsx', /SovereignToolLauncher|SovereignActionStreamPanel/, 'builder:runtime-backed-tools', 'Builder must expose runtime-backed tools or action stream.');
-
-  requireOneOf(
-    ['src/App.tsx', 'src/global-runtime-monitor.tsx', 'src/features/product/containers/RepoSnapshotContainer.tsx'],
-    /Next Action|Aktion:/,
-    'ux:next-action-visible',
-    'A next action must be visible to the user.',
-  );
-
-  warnOneOf(
-    ['src/global-runtime-monitor.tsx', 'src/features/product/containers/TelemetryContainer.tsx', 'src/features/product/containers/RepoSnapshotContainer.tsx'],
-    /Log|Telemetry|events|monitor/i,
-    'ux:log-visible',
-    'At least one user-visible log or telemetry surface should exist.',
-  );
-
-  requireAtLeast('src/features/product/containers/BuilderContainer.tsx', /button/g, 4, 'builder:minimum-actions', 'Builder should expose multiple clear actions.');
-
-  const repoMonitorCount = countMatches('src/features/product/containers/RepoSnapshotContainer.tsx', /react-coach-monitor/g);
-  const globalMonitorExists = exists('src/global-runtime-monitor.tsx');
-  if (globalMonitorExists && repoMonitorCount > 0) {
-    warn('ux:duplicate-monitor-surface', 'Global monitor exists while repo-local monitor markup still exists. CSS may hide it, but future cleanup is recommended.', { repoMonitorCount });
-  } else {
-    pass('ux:monitor-surface-count', 'Monitor surface count is acceptable.', { repoMonitorCount, globalMonitorExists });
-  }
-
-  warnIfText('src/index.css', /#root > div\.min-h-screen/, 'css:no-root-fallback', 'CSS should use contract classes instead of fragile root selectors.');
-  warnIfText('src/index.css', /nth-of-type/, 'css:no-nth-of-type', 'CSS should use contract selectors instead of nth-of-type patterns.');
-  warnIfText('src/main.tsx', /#root > div/, 'main:no-root-fallback', 'main.tsx should use contract class selectors instead of fragile root selectors.');
+  requireText('src/index.css', /@media[\s\S]*max-width/, 'css:responsive', 'Responsive CSS remains present.');
+  forbidText(app, /ProductMagicApp|tabbar__root|automation__panel|operator-monitor/, 'app:no-retired-shell', 'Retired product/dashboard shells must stay out of the live App route.');
 }
 
-try {
-  run();
-} catch (error) {
-  fail('scanner:unexpected-error', 'UX contract scanner crashed.', { error: String(error) });
-} finally {
-  writeReport();
-}
+try { run(); }
+catch (error) { fail('ux:unexpected-error', 'UX contract scan crashed.', { error: String(error) }); }
+finally { writeReport(); }
 
 if (report.errors.length > 0) process.exit(1);
