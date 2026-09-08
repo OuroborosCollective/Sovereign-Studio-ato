@@ -44,7 +44,7 @@ const ENGLISH_MUTATION_PATTERN =
 const GERMAN_MUTATION_STEMS = [
   'füg', 'hinzufüg', 'bau', 'änder', 'aktualisier', 'erstell', 'lösch',
   'implementier', 'veröffentlich', 'refaktor', 'entfern', 'reparier',
-  'beheb', 'ersetz', 'schreib', 'mach',
+  'beheb', 'ersetz', 'schreib', 'mach', 'leg', 'här',
 ];
 
 const STATUS_QUESTION_TOKENS = [
@@ -150,6 +150,12 @@ export function classifyOfflineCapabilityIntent(text: string): IntentClassificat
 
   if (SOVEREIGN_AGENT_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
   if (CODE_GENERATION_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
+  // Degraded-only safety net: once a user clearly uses an imperative mutation
+  // verb, do not require a second magic keyword such as "patch" or "code".
+  // This keeps repository execution available through Agent One when the
+  // online structured LLM route is unavailable, while read-only/status/chat
+  // requests have already been excluded above.
+  if (hasExplicitMutationIntent(lower)) return 'code_generation';
   if (LOAD_REPO_TOKENS.some((token) => lower.includes(token))) return 'load_repo';
   return 'unknown';
 }

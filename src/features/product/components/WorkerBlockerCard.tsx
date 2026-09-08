@@ -72,7 +72,7 @@ function formatScope(diagnostic: DevChatWorkerDiagnostic): string {
   if (scope === 'network') return 'network';
   if (scope === 'client_request') return 'client';
   if (scope === 'authentication') return 'authentication';
-  if (scope === 'worker_config') return 'config';
+  if (scope === 'route_config') return 'backend-route';
   if (scope === 'worker_runtime') return 'runtime';
   if (scope === 'upstream_provider') return 'upstream';
   if (scope === 'step_up_required') return 'step-up';
@@ -113,8 +113,8 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
         ? 'Bestätigung erforderlich (Step-Up)'
         : diagnostic.scope === 'worker_runtime'
           ? 'LLM-Antwort konnte nicht verwendet werden'
-          : diagnostic.scope === 'worker_config'
-            ? 'LLM-Route nicht freigegeben'
+          : diagnostic.scope === 'route_config'
+            ? 'Backend-LLM-Route nicht freigegeben'
             : 'LLM-Runtime nicht erreichbar';
   const canAgent = Boolean(allowAgentAction && actionMessage && onAgentInstead);
   const canRetry = Boolean((onRetryWithMessage && actionMessage) || onRetry);

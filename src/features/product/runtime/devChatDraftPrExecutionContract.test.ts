@@ -53,24 +53,15 @@ describe('DevChat Draft PR execution contract', () => {
     expect(builder).toContain('githubAccessToken: githubTokenRef.current || undefined');
   });
 
-  it('keeps Rescue available through a current-session exact-job bridge', () => {
+  it('does not mount the retired Rescue/ReSecure overlay on the primary Play Release surface', () => {
     const app = source('src/App.tsx');
-    const overlay = source('src/features/rescue/SovereignRescueOverlay.tsx');
-    const rescue = source('src/features/rescue/RescuePanel.tsx');
+    const release = source('src/features/release/PlayReleaseChat.tsx');
 
-    expect(app).toContain("import { SovereignRescueOverlay } from './features/rescue/SovereignRescueOverlay';");
-    expect(app).toContain('<SovereignRescueOverlay />');
-    expect(overlay).toContain('aria-label="Sovereign Rescue öffnen"');
-    expect(overlay).toContain('<RescuePanel');
-    expect(overlay).toContain('client.getJob(jobId)');
-    expect(overlay).toContain('snapshot.jobId !== jobId');
-    expect(overlay).toContain('client.getJob(job.jobId)');
-    expect(overlay).toContain('client.prepareDraftPr(current.jobId)');
-    expect(overlay).toContain('client.createDraftPr(current.jobId)');
-    expect(overlay).toContain('created.draftPrCreate.readbackHeadSha');
-    expect(overlay).not.toContain('listJobs(');
-    expect(overlay).not.toContain('RESTORE_LATEST_JOB');
-    expect(rescue).toContain('RescuePanel');
+    expect(app).not.toContain('SovereignRescueOverlay');
+    expect(app).not.toContain('<RescuePanel');
+    expect(release).toContain('agentClient.startRepositoryExecution');
+    expect(release).toContain('agentClient.prepareDraftPr(snapshot.jobId)');
+    expect(release).toContain('agentClient.createDraftPr(snapshot.jobId');
   });
 
   it('requires a concrete action preview before menu or slash Draft PR publication in the deferred Builder', () => {
