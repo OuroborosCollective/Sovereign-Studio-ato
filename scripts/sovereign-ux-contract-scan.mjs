@@ -102,6 +102,9 @@ function run() {
   forbidText(app, /RESTORE_LATEST_JOB|BuilderContainer/, 'app:no-historical-auto-adopt', 'Default App must not auto-adopt historical jobs or mount the legacy Builder as current truth.');
 
   requireText(release, /evaluateInputPolicy\(text\)/, 'release:secret-guard', 'Release chat guards input before LLM/repository execution.');
+  requireText(release, /value=\{draft\}[\s\S]*onChange=\{\(event\) => setDraft\(event\.target\.value\)\}/, 'release:composer-bound', 'Visible composer is bound to the current-session draft state.');
+  requireText(release, /aria-label="Senden"[\s\S]*onClick=\{\(\) => \{ void submit\(\); \}\}/, 'release:send-visible', 'Visible send action invokes the guarded current-session submit handler.');
+  requireText(release, /onKeyDown=\{\(event\) => \{[\s\S]*event\.key === 'Enter'[\s\S]*void submit\(\);/, 'release:enter-send-bound', 'Enter submission uses the same guarded submit handler.');
   requireText(release, /fetchSovereignLlmRouteCatalog/, 'release:route-catalog', 'Release chat reads server-authoritative model routes.');
   requireText(release, /fetchSovereignDirectLlmInterpretation/, 'release:typed-intent', 'Repository intent comes through the typed LLM interpretation boundary.');
   requireText(release, /deriveRepositoryActionFallback/, 'release:degraded-owned-intent', 'Malformed model prose can only fall back to user-owned repository intent.');
