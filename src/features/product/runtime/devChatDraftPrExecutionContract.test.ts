@@ -16,24 +16,30 @@ describe('DevChat Draft PR execution contract', () => {
     expect(builder).toContain('Vorgemerktes Review-Preset wird direkt über den Repository-Executor wiederaufgenommen');
   });
 
-  it('preserves executable swarm, recovery, and publication behind the typed engine boundary in the chat-first root', () => {
+  it('keeps mission execution and Draft-PR publication on the current Play Release job identity', () => {
     const app = source('src/App.tsx');
-    const boundary = source('src/features/product/runtime/sovereignEngineBoundary.ts');
+    const release = source('src/features/release/PlayReleaseChat.tsx');
     const client = source('src/features/product/runtime/sovereignAgentClient.ts');
     const runtime = source('src/features/product/runtime/sovereignAgentRuntime.ts');
 
+    expect(app).toContain('PlayReleaseChat');
     expect(app).toContain('data-layout="chat-first-agent-zero-background"');
-    expect(app).toContain("'START_REPOSITORY_EXECUTION'");
-    expect(app).toContain("'CREATE_DRAFT_PR'");
-    expect(app).toContain('executeSovereignEngineCommand');
-    expect(boundary).toContain('await transport.startRepositoryExecution(command.payload.input)');
-    expect(boundary).toContain('await transport.createDraftPr(command.payload.jobId, command.payload.githubAccessToken)');
-    expect(boundary).toContain('await transport.getEvidenceAnchors(command.payload.jobId)');
-    expect(boundary).toContain("'CANONICAL_JOB_SNAPSHOT_ACCEPTED'");
-    expect(boundary).toContain("'CANONICAL_EVIDENCE_ANCHORS_ACCEPTED'");
+    expect(app).toContain('data-primary-surface="play-release-chat"');
+    expect(app).toContain('data-truth-scope="current-chat-session-only"');
+    expect(app).not.toContain('RESTORE_LATEST_JOB');
+    expect(app).not.toContain('BuilderContainer');
+
+    expect(release).toContain('createSovereignAgentClient');
+    expect(release).toContain('agentClient.startRepositoryExecution');
+    expect(release).toContain('agentClient.getJob(snapshot.jobId)');
+    expect(release).toContain('agentClient.prepareDraftPr(snapshot.jobId)');
+    expect(release).toContain('agentClient.createDraftPr(snapshot.jobId');
+    expect(release).toContain('created.draftPrCreate.readbackHeadSha');
+    expect(release).not.toContain('listJobs(');
+    expect(release).not.toContain('RESTORE_LATEST_JOB');
+
     expect(client).toContain("'/api/user/agent/swarm/run'");
     expect(client).toContain('expectedHeadSha: input.expectedHeadSha.trim()');
-    expect(client).toContain('async listJobs(): Promise<SovereignAgentJobSnapshot[]>');
     expect(runtime).toContain('readSameOriginBackendUrl()');
   });
 
@@ -47,13 +53,23 @@ describe('DevChat Draft PR execution contract', () => {
     expect(builder).toContain('githubAccessToken: githubTokenRef.current || undefined');
   });
 
-  it('keeps Rescue mounted behind the chat-first root failure affordance', () => {
+  it('keeps Rescue available through a current-session exact-job bridge', () => {
     const app = source('src/App.tsx');
+    const overlay = source('src/features/rescue/SovereignRescueOverlay.tsx');
     const rescue = source('src/features/rescue/RescuePanel.tsx');
 
-    expect(app).toContain("import { RescuePanel } from './features/rescue/RescuePanel';");
-    expect(app).toContain('aria-label="Sovereign Rescue öffnen"');
-    expect(app).toContain('<RescuePanel');
+    expect(app).toContain("import { SovereignRescueOverlay } from './features/rescue/SovereignRescueOverlay';");
+    expect(app).toContain('<SovereignRescueOverlay />');
+    expect(overlay).toContain('aria-label="Sovereign Rescue öffnen"');
+    expect(overlay).toContain('<RescuePanel');
+    expect(overlay).toContain('client.getJob(jobId)');
+    expect(overlay).toContain('snapshot.jobId !== jobId');
+    expect(overlay).toContain('client.getJob(job.jobId)');
+    expect(overlay).toContain('client.prepareDraftPr(current.jobId)');
+    expect(overlay).toContain('client.createDraftPr(current.jobId)');
+    expect(overlay).toContain('created.draftPrCreate.readbackHeadSha');
+    expect(overlay).not.toContain('listJobs(');
+    expect(overlay).not.toContain('RESTORE_LATEST_JOB');
     expect(rescue).toContain('RescuePanel');
   });
 
