@@ -34,10 +34,9 @@ def test_backend_serves_distinct_revision_bound_admin_and_user_app_routes() -> N
     assert "Stage revision-bound shared web artifact for backend image" in workflow
     assert 'data-testid="sovereign-chat-app"' in monitor_app
     assert 'data-layout="chat-first-agent-zero-background"' in monitor_app
-    assert (
-        'data-legacy-backend-image-marker="DevChat sovereign-release-chat play-release-chat"'
-        in monitor_app
-    )
+    assert 'data-primary-surface="play-release-chat"' in monitor_app
+    assert 'data-truth-scope="current-chat-session-only"' in monitor_app
+    assert 'data-legacy-backend-image-marker=' not in monitor_app
     image_gate_markers = (
         "CANONICAL_REACT_ADMIN",
         "sovereign-release-chat",
