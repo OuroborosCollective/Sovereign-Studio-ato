@@ -198,7 +198,7 @@ describe('devChatWorkerBridge', () => {
     }, { maxRetries: 0 });
 
     expect(result.ok).toBe(false);
-    expect(result.diagnostic?.scope).toBe('worker_config');
+    expect(result.diagnostic?.scope).toBe('route_config');
     expect(result.error).toContain('nicht aktiv');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -346,7 +346,7 @@ describe('devChatWorkerBridge', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toBe('Gateway exploded');
     expect(result.diagnostic?.status).toBe(500);
-    expect(result.diagnostic?.scope).toMatch(/worker_runtime|worker_config/);
+    expect(result.diagnostic?.scope).toMatch(/worker_runtime|route_config/);
     expect(result.diagnostic?.canClientFix).toBe(false);
   });
 

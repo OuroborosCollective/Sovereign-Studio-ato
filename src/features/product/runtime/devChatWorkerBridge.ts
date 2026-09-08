@@ -180,7 +180,7 @@ export interface DevChatWorkerReplyRequest {
 export type DevChatWorkerFailureScope =
   | 'client_request'
   | 'authentication'
-  | 'worker_config'
+  | 'route_config'
   | 'worker_runtime'
   | 'upstream_provider'
   | 'step_up_required'
@@ -577,7 +577,7 @@ function classifyWorkerFailure(args: {
 }): Pick<DevChatWorkerDiagnostic, 'scope' | 'canClientFix' | 'nextAction'> {
   const text = `${args.errorType ?? ''} ${args.errorCode ?? ''} ${args.bodySnippet ?? ''}`.toLowerCase();
   if (!args.status) {
-    return { scope: 'network', canClientFix: false, nextAction: 'Netzwerk, CORS oder Worker-Erreichbarkeit prüfen.' };
+    return { scope: 'network', canClientFix: false, nextAction: 'Netzwerk, CORS oder Sovereign-Backend-Erreichbarkeit prüfen.' };
   }
   if (args.status === 400) {
     return { scope: 'client_request', canClientFix: true, nextAction: 'Request-Payload, Modellname und Nachrichtenformat im App-Code prüfen.' };
@@ -627,7 +627,7 @@ function classifyWorkerFailure(args: {
   if (args.status >= 500) {
     const looksLikeConfig = text.includes('secret') || text.includes('token') || text.includes('not configured') || text.includes('unauthorized');
     return looksLikeConfig
-      ? { scope: 'worker_config', canClientFix: false, nextAction: 'Backend-eigene Providerkonfiguration prüfen; keine Zugangsdaten in die APK verlagern.' }
+      ? { scope: 'route_config', canClientFix: false, nextAction: 'Backend-eigene Provider- und Routen-Konfiguration prüfen; keine Zugangsdaten in die APK verlagern.' }
       : { scope: 'worker_runtime', canClientFix: false, nextAction: 'Sovereign Backend und direkten OpenRouter-/FreeLLM-Transport prüfen; App darf nicht blind erneut senden.' };
   }
   return { scope: 'unknown', canClientFix: false, nextAction: 'Worker-Antwort im Runtime-Diagnosepfad prüfen.' };
@@ -636,6 +636,11 @@ function classifyWorkerFailure(args: {
 export function explainDevChatWorkerDiagnostic(diagnostic: DevChatWorkerDiagnostic): string {
   const status = diagnostic.status ? `HTTP ${diagnostic.status}` : 'Netzwerkfehler';
   const origin = diagnostic.canClientFix ? 'durch eine Nutzer- oder App-Aktion behebbar' : 'nicht sicher im App-Code behebbar';
+  const scopeLabel = diagnostic.scope === 'route_config'
+    ? 'backend_route_config'
+    : diagnostic.scope === 'worker_runtime'
+      ? 'backend_runtime'
+      : diagnostic.scope;
   const title = diagnostic.scope === 'authentication'
     ? 'Backend-Session nicht bestätigt'
     : diagnostic.scope === 'step_up_required'
@@ -645,7 +650,7 @@ export function explainDevChatWorkerDiagnostic(diagnostic: DevChatWorkerDiagnost
     `${title}: ${status}.`,
     `Route: ${diagnostic.route}.`,
     `Modell: ${diagnostic.model} · Nachrichten: ${diagnostic.messageCount}.`,
-    `Einschätzung: ${diagnostic.scope} · ${origin}.`,
+    `Einschätzung: ${scopeLabel} · ${origin}.`,
     `Nächste erlaubte Aktion: ${diagnostic.nextAction}`,
     diagnostic.bodySnippet ? `Antwortauszug: ${diagnostic.bodySnippet}` : '',
   ].filter(Boolean).join('\n');
@@ -741,7 +746,7 @@ export async function fetchDevChatWorkerReply(
       route: SOVEREIGN_WORKER_CHAT,
       model: requestedModel,
       messageCount: messages.length,
-      scope: 'worker_config',
+      scope: 'route_config',
       canClientFix: false,
       nextAction: 'Im Admin eine owner-bestätigte OpenRouter-Paid- oder FreeLLM-Free-Route aktivieren.',
       bodySnippet: error instanceof Error ? error.message : undefined,
@@ -886,7 +891,7 @@ export async function fetchDevChatWorkerReply(
         messageCount: messages.length,
         scope: 'network',
         canClientFix: false,
-        nextAction: 'Netzwerk, CORS oder Worker-Erreichbarkeit prüfen.',
+        nextAction: 'Netzwerk, CORS oder Sovereign-Backend-Erreichbarkeit prüfen.',
         bodySnippet: error instanceof Error ? error.message : undefined,
       };
       return {

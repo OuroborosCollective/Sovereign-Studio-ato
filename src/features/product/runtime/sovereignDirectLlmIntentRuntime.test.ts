@@ -34,7 +34,7 @@ function actionEnvelope(overrides: Record<string, unknown> = {}) {
 describe('sovereignDirectLlmIntentRuntime code-action binding', () => {
   it.each([
     ['llm_output_contract_violation', 502, 'worker_runtime'],
-    ['llm_output_contract_route_unavailable', 409, 'worker_config'],
+    ['llm_output_contract_route_unavailable', 409, 'route_config'],
     ['freellm_upstream_unavailable', 502, 'upstream_provider'],
   ])('classifies %s from the structured blocker rather than HTTP alone', async (blocker, status, scope) => {
     const fetchImpl = vi.fn()

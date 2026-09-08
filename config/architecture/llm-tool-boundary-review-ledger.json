@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "3e8ce7e06216396815ec15546fc9964041bbbb4f",
+  "sourceRevision": "2d1ba058f3d1e2c47269ead086dda59e271d98ec",
   "rawCandidateCount": 100,
   "canonicalCandidateCount": 79,
   "entries": [
@@ -363,12 +363,12 @@
       "canonicalPath": "src/features/product/runtime/sovereignCapabilityRouter.ts",
       "mirrorPaths": [],
       "symbol": "intent",
-      "line": 297,
+      "line": 303,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "560fb32a73c20518bc77b38d577879496486dc8b6c2efa7ff3f7de54755e08b0",
+      "fileSha256": "068cb886200c70012b53305d2416393008f2ed444b41a22cc0aff95f7c08cac0",
       "anchorSha256": "a490975c1e173933ce9991cec7ccf4b49da41b0b3848b7032819fa73dd9f3b4d",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:32c9ab342094d42e06a5d246",
+      "candidateId": "llm-boundary:6a47aa57e4b2e360e939a022",
       "classification": "OFFLINE_FALLBACK",
       "rationale": "intent is explicitly constrained to an offline, fail-closed keyword fallback that emits only a bounded enum or diagnostic signal."
     },
@@ -1075,5 +1075,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "835787526b52523a6ab3d4b29ce0cdc8f0ebd6848283e56cba7a5ab2c31fb2a1"
+  "ledgerSha256": "578f9d0413b7ecf9187f0ae7103120fa8afc4512e7a30dc9a82c0f86feea30c3"
 }

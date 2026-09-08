@@ -11,6 +11,17 @@ describe('repository action degraded fallback', () => {
     });
   });
 
+  it('recovers generic imperative repository mutations when the structured LLM route is unavailable', () => {
+    expect(deriveRepositoryActionFallback('Bitte finde und behebe den kleinsten Fehler der dir im Repository auffällt!')).toEqual({
+      intent: 'code_execution',
+      actionTitle: 'Bitte finde und behebe den kleinsten Fehler der dir im Repository auffällt!',
+    });
+    expect(deriveRepositoryActionFallback('Bitte lege Runtime Checks da an wo noch welche fehlen!')).toEqual({
+      intent: 'code_execution',
+      actionTitle: 'Bitte lege Runtime Checks da an wo noch welche fehlen!',
+    });
+  });
+
   it('does not turn ordinary conversation into a repository mutation', () => {
     expect(deriveRepositoryActionFallback('Wie geht es dir heute?')).toBeNull();
   });

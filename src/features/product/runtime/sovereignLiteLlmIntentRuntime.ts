@@ -259,7 +259,7 @@ function createDiagnostic(args: {
       messageCount: args.messageCount,
       status,
       statusText: args.statusText,
-      scope: 'worker_config',
+      scope: 'route_config',
       canClientFix: false,
       nextAction: 'Keine freigegebene Route erfüllt den Codeauftragsvertrag. Modell- und Schema-Fähigkeit serverseitig prüfen; keine beliebige Ersatzroute ausführen.',
     };
@@ -485,7 +485,7 @@ export async function fetchSovereignDirectLlmInterpretation(
           route: SOVEREIGN_LITELLM_ROUTES,
           model: fallbackModel,
           messageCount: messages.length,
-          scope: 'worker_config',
+          scope: 'route_config',
           canClientFix: false,
           bodySnippet: boundedSnippet(routeText),
           nextAction: 'Aktivierte Backend-Route, Direkttransport und Default-Modell prüfen.',
