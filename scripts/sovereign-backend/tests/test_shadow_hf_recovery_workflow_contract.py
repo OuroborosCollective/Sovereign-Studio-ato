@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-REPO = ROOT.parent
+BACKEND = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[3]
 
 
 def test_shadow_hf_recovery_workflow_is_exact_revision_and_server_secret_bound():
     workflow = (REPO / ".github" / "workflows" / "sovereign-hf-shadow-recovery.yml").read_text("utf-8")
-    dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
-    requirements = (ROOT / "requirements.txt").read_text("utf-8")
+    dockerfile = (BACKEND / "Dockerfile").read_text("utf-8")
+    requirements = (BACKEND / "requirements.txt").read_text("utf-8")
 
     assert "EXPECTED_REVISION: ${{ github.sha }}" in workflow
     assert "EXPECTED_HF_REVISION: 59b21a247775b2931803f86c4514a8d245eeece8" in workflow
