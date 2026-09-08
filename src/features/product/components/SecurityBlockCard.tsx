@@ -43,7 +43,7 @@ export function SecurityBlockCard({
     >
       {/* Header row */}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 16 }}>🔒</span>
+        <span style={{ fontSize: 16 }} aria-hidden="true">🔒</span>
         <span
           style={{
             fontSize: 13,
@@ -81,6 +81,9 @@ export function SecurityBlockCard({
         <button
           type="button"
           onClick={onOpenSecureAccess}
+          aria-label={buttonLabel}
+          title={buttonLabel}
+          className="focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none"
           style={{
             padding: "8px 14px",
             borderRadius: 7,
@@ -99,6 +102,9 @@ export function SecurityBlockCard({
         <button
           type="button"
           onClick={onDismiss}
+          aria-label="Sicherheitswarnung schließen"
+          title="Sicherheitswarnung schließen"
+          className="focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none"
           style={{
             padding: "8px 12px",
             borderRadius: 7,

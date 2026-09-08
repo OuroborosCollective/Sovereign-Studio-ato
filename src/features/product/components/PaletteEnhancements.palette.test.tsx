@@ -22,6 +22,7 @@ import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
+import { SecurityBlockCard } from './SecurityBlockCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1103,6 +1104,46 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(watchBtn);
       expect(onWatchChecks).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('SecurityBlockCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders alert with aria-label, aria-hidden icon, focus-visible ring styles, and descriptive title tooltips', () => {
+      const onOpenSecureAccess = vi.fn();
+      const onDismiss = vi.fn();
+
+      render(
+        <SecurityBlockCard
+          title="GitHub Token erkannt"
+          text="In der Chat-Eingabe wurde ein persönlicher GitHub Token erkannt."
+          hint="Bitte geben Sie Tokens niemals im Chat ein."
+          buttonLabel="Sicheren GitHub-Zugang öffnen"
+          onOpenSecureAccess={onOpenSecureAccess}
+          onDismiss={onDismiss}
+        />
+      );
+
+      const alert = screen.getByRole('alert', { name: 'GitHub Token erkannt' });
+      expect(alert).toBeInTheDocument();
+
+      const lockIcon = screen.getByText('🔒');
+      expect(lockIcon).toHaveAttribute('aria-hidden', 'true');
+
+      const actionBtn = screen.getByRole('button', { name: 'Sicheren GitHub-Zugang öffnen' });
+      expect(actionBtn).toHaveAttribute('title', 'Sicheren GitHub-Zugang öffnen');
+      expect(actionBtn).toHaveAttribute('aria-label', 'Sicheren GitHub-Zugang öffnen');
+      expect(actionBtn).toHaveClass('focus-visible:ring-2');
+
+      const dismissBtn = screen.getByRole('button', { name: 'Sicherheitswarnung schließen' });
+      expect(dismissBtn).toHaveAttribute('title', 'Sicherheitswarnung schließen');
+      expect(dismissBtn).toHaveAttribute('aria-label', 'Sicherheitswarnung schließen');
+      expect(dismissBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(actionBtn);
+      expect(onOpenSecureAccess).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(dismissBtn);
+      expect(onDismiss).toHaveBeenCalledTimes(1);
     });
   });
 });
