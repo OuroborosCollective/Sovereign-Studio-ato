@@ -1,6 +1,7 @@
 -- Owner-approved retirement of OmniRoute from all live LLM execution surfaces.
 -- Historical OmniRoute migrations and evidence remain readable; only current
 -- execution eligibility, discovery and selection are disabled.
+-- Live routing authority remains FreeLLMAPI + Sovereign Revolver/Resolver + OpenRouter.
 BEGIN;
 
 DO $migration$
