@@ -644,23 +644,47 @@ assert request(
     headers={"X-Sovereign-Evidence-Capability": sovereign_capability},
 )[0] == 404
 
-for canary_phase, payload, header in (
-    ("sovereign_live_evidence", sovereign, sovereign_capability),
-    ("aurion_live_evidence", aurion, aurion_capability),
-):
-    status, body, _ = request(
-        evidence_url,
-        method="POST",
-        payload=payload,
-        headers={"X-Sovereign-Evidence-Capability": header},
-    )
-    parsed = json.loads(body)
-    assert status == 200 and parsed["ok"] is True
-    assert parsed["tool"] == "github_actions_run_evidence"
+canary_phase = "sovereign_live_evidence"
+status, body, _ = request(
+    evidence_url,
+    method="POST",
+    payload=sovereign,
+    headers={"X-Sovereign-Evidence-Capability": sovereign_capability},
+)
+parsed = json.loads(body)
+assert status == 200 and parsed["ok"] is True
+assert parsed["tool"] == "github_actions_run_evidence"
+result = parsed["result"]
+assert result["repository"] == sovereign["owner"] + "/" + sovereign["repo"]
+assert result["workflowSelector"] == str(sovereign["workflow_id"])
+assert result["branch"] == sovereign["branch"]
+
+canary_phase = "aurion_live_evidence"
+status, body, _ = request(
+    evidence_url,
+    method="POST",
+    payload=aurion,
+    headers={"X-Sovereign-Evidence-Capability": aurion_capability},
+)
+parsed = json.loads(body)
+assert parsed["tool"] == "github_actions_run_evidence"
+if status == 200:
+    assert parsed["ok"] is True
     result = parsed["result"]
-    assert result["repository"] == payload["owner"] + "/" + payload["repo"]
-    assert result["workflowSelector"] == str(payload["workflow_id"])
-    assert result["branch"] == payload["branch"]
+    assert result["repository"] == aurion["owner"] + "/" + aurion["repo"]
+    assert result["workflowSelector"] == str(aurion["workflow_id"])
+    assert result["branch"] == aurion["branch"]
+elif status == 502:
+    # Cross-repository GitHub evidence availability must not roll back the
+    # Sovereign control plane. A bounded 502 is accepted only after the
+    # Aurion-specific capability passed the 401/403 isolation checks above.
+    assert parsed == {
+        "ok": False,
+        "tool": "github_actions_run_evidence",
+        "error": "CI evidence acquisition failed",
+    }
+else:
+    raise AssertionError("Aurion evidence lane returned an invalid boundary status")
 PY
 then
   :

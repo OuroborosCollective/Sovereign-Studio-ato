@@ -9,46 +9,53 @@ DECLARE
     omniroute_base CONSTANT TEXT := 'http://omniroute:20128/v1';
     retirement_family CONSTANT TEXT := 'omniroute_retired_owner_simplification';
 BEGIN
-    UPDATE llm_revolver_provider_sources
-    SET enabled=false,
-        status='disabled',
-        last_error_code=retirement_family,
-        updated_at=NOW()
-    WHERE lower(api_base)=lower(omniroute_base);
+    IF to_regclass('public.llm_revolver_provider_sources') IS NOT NULL THEN
+        UPDATE llm_revolver_provider_sources
+        SET enabled=false,
+            status='disabled',
+            last_error_code=retirement_family,
+            updated_at=NOW()
+        WHERE lower(api_base)=lower(omniroute_base);
+    END IF;
 
-    UPDATE llm_revolver_provider_models AS model
-    SET enabled=false,
-        status='disabled',
-        free_verified=false,
-        free_eligible=false,
-        last_error_code=retirement_family,
-        eligibility_source='omniroute-retired-historical-only',
-        eligibility_verified_at=NULL,
-        updated_at=NOW()
-    WHERE EXISTS (
-        SELECT 1
-        FROM llm_revolver_provider_sources AS source
-        WHERE source.id=model.source_id
-          AND lower(source.api_base)=lower(omniroute_base)
-    );
+    IF to_regclass('public.llm_revolver_provider_models') IS NOT NULL
+       AND to_regclass('public.llm_revolver_provider_sources') IS NOT NULL THEN
+        UPDATE llm_revolver_provider_models AS model
+        SET enabled=false,
+            status='disabled',
+            free_verified=false,
+            free_eligible=false,
+            last_error_code=retirement_family,
+            eligibility_source='omniroute-retired-historical-only',
+            eligibility_verified_at=NULL,
+            updated_at=NOW()
+        WHERE EXISTS (
+            SELECT 1
+            FROM llm_revolver_provider_sources AS source
+            WHERE source.id=model.source_id
+              AND lower(source.api_base)=lower(omniroute_base)
+        );
+    END IF;
 
-    UPDATE llm_routes
-    SET disabled=true,
-        config=COALESCE(config, '{}'::jsonb) || jsonb_build_object(
-            'executionRetired', true,
-            'executionRetirementFamily', retirement_family,
-            'routeSource', 'omniroute',
-            'selectable', false,
-            'freeEligible', false,
-            'canaryVerified', false,
-            'transportCanaryVerified', false,
-            'repositoryExecutionAllowed', false,
-            'activationState', 'retired'
-        ),
-        updated_at=NOW()
-    WHERE lower(COALESCE(base_url, ''))=lower(omniroute_base)
-       OR lower(COALESCE(config->>'routeSource', ''))='omniroute'
-       OR lower(COALESCE(config->>'sourceType', ''))='omniroute';
+    IF to_regclass('public.llm_routes') IS NOT NULL THEN
+        UPDATE llm_routes
+        SET disabled=true,
+            config=COALESCE(config, '{}'::jsonb) || jsonb_build_object(
+                'executionRetired', true,
+                'executionRetirementFamily', retirement_family,
+                'routeSource', 'omniroute',
+                'selectable', false,
+                'freeEligible', false,
+                'canaryVerified', false,
+                'transportCanaryVerified', false,
+                'repositoryExecutionAllowed', false,
+                'activationState', 'retired'
+            ),
+            updated_at=NOW()
+        WHERE lower(COALESCE(base_url, ''))=lower(omniroute_base)
+           OR lower(COALESCE(config->>'routeSource', ''))='omniroute'
+           OR lower(COALESCE(config->>'sourceType', ''))='omniroute';
+    END IF;
 END
 $migration$;
 
