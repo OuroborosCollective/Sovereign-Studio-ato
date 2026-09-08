@@ -76,6 +76,9 @@ const KNOWN_NODES: LearningMemoryNode[] = [
   'draft-pr-publisher',
 ];
 
+// ⚡ Bolt: Fast O(1) set lookup table for known memory node validation
+const KNOWN_NODES_SET = new Set<string>(KNOWN_NODES);
+
 const SECRET_PATTERNS = [
   /ghp_[A-Za-z0-9_]{8,}/g,
   /github_pat_[A-Za-z0-9_]+/g,
@@ -83,6 +86,16 @@ const SECRET_PATTERNS = [
   /Bearer\s+[A-Za-z0-9._~+/=-]{10,}/gi,
   /password\s*[:=]\s*[^\s]+/gi,
   /token\s*[:=]\s*[^\s]+/gi,
+];
+
+// ⚡ Bolt: Non-global regexes for test() checks to avoid stateful lastIndex mutations and reset overhead
+const SECRET_TEST_PATTERNS = [
+  /ghp_[A-Za-z0-9_]{8,}/,
+  /github_pat_[A-Za-z0-9_]+/,
+  /sk-[A-Za-z0-9_-]{12,}/,
+  /Bearer\s+[A-Za-z0-9._~+/=-]{10,}/i,
+  /password\s*[:=]\s*[^\s]+/i,
+  /token\s*[:=]\s*[^\s]+/i,
 ];
 
 const MAX_PATTERNS = 250;
@@ -111,14 +124,18 @@ function normalizeTag(value: string): string {
 }
 
 function hasSecret(value: string): boolean {
-  return SECRET_PATTERNS.some((pattern) => {
-    pattern.lastIndex = 0;
-    return pattern.test(value);
-  });
+  // ⚡ Bolt: Use non-global SECRET_TEST_PATTERNS without resetting lastIndex on global regex objects
+  for (let i = 0; i < SECRET_TEST_PATTERNS.length; i += 1) {
+    if (SECRET_TEST_PATTERNS[i].test(value)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function knownNode(node: string): node is LearningMemoryNode {
-  return KNOWN_NODES.includes(node as LearningMemoryNode);
+  // ⚡ Bolt: O(1) set lookup replacing array .includes() O(N) scan
+  return KNOWN_NODES_SET.has(node);
 }
 
 export function createLearningMemoryStore(now = Date.now()): LearningMemoryStore {
@@ -249,19 +266,41 @@ export function queryLearningMemory(store: LearningMemoryStore, query: LearningM
   const minHits = query.minHits ?? 1;
   const limit = Math.max(1, Math.min(query.limit ?? 20, 100));
 
-  return store.patterns
-    .filter((pattern) => !query.outputNode || pattern.outputNodes.includes(query.outputNode))
-    .filter((pattern) => !query.kind || pattern.kind === query.kind)
-    .filter((pattern) => !query.tag || pattern.tags.includes(normalizeTag(query.tag)))
-    .filter((pattern) => pattern.hits >= minHits)
+  // ⚡ Bolt: Hoist normalized tag parsing outside query filter loop
+  const targetTag = query.tag ? normalizeTag(query.tag) : undefined;
+  const targetOutputNode = query.outputNode;
+  const targetKind = query.kind;
+
+  // ⚡ Bolt: Consolidate 4 chained .filter() array passes into a single-pass O(N) filtering loop
+  const matches: LearningMemoryPattern[] = [];
+  for (let i = 0; i < store.patterns.length; i += 1) {
+    const pattern = store.patterns[i];
+    if (pattern.hits < minHits) continue;
+    if (targetOutputNode && !pattern.outputNodes.includes(targetOutputNode)) continue;
+    if (targetKind && pattern.kind !== targetKind) continue;
+    if (targetTag && !pattern.tags.includes(targetTag)) continue;
+    matches.push(pattern);
+  }
+
+  return matches
     .sort((a, b) => b.updatedAt - a.updatedAt || b.hits - a.hits)
     .slice(0, limit);
 }
 
 export function buildLearningMemoryRuntimeSummary(store: LearningMemoryStore): string {
   const report = validateLearningMemoryStore(store);
-  const observed = store.patterns.filter((pattern) => pattern.confidence === 'observed').length;
-  const inferred = store.patterns.filter((pattern) => pattern.confidence === 'inferred').length;
-  const manual = store.patterns.filter((pattern) => pattern.confidence === 'manual').length;
+
+  // ⚡ Bolt: Single-pass accumulation loop replacing 3 separate .filter() array traversals
+  let observed = 0;
+  let inferred = 0;
+  let manual = 0;
+
+  for (let i = 0; i < store.patterns.length; i += 1) {
+    const confidence = store.patterns[i].confidence;
+    if (confidence === 'observed') observed += 1;
+    else if (confidence === 'inferred') inferred += 1;
+    else if (confidence === 'manual') manual += 1;
+  }
+
   return `${report.summary} Confidence: ${observed} observed, ${inferred} inferred, ${manual} manual.`;
 }
