@@ -93,12 +93,8 @@ export function FreeRevolverControlCenter({
 
   const totals = useMemo(() => {
     const models = genericProviders.flatMap(provider => provider.models);
-    const omniRouteReady = api.omniRoute?.ok === true
-      && api.omniRoute.disabled === false
-      && api.omniRoute.activationState === 'ready';
-    const omniRouteBlocked = Boolean(api.omniRoute) && !omniRouteReady;
     return {
-      providers: genericProviders.length + (api.omniRoute ? 1 : 0),
+      providers: genericProviders.length,
       revolverReady: models.filter(model => (
         model.status === 'ready'
         && model.enabled
@@ -110,15 +106,15 @@ export function FreeRevolverControlCenter({
         && model.enabled
         && hasRevisionBoundReceipt(model)
         && isEligibilityEvidenceFresh(model.eligibilityVerifiedAt, eligibilityEvidenceTtlHours)
-      )).length + Number(omniRouteReady),
+      )).length,
       deferred: models.filter(model => model.status === 'discovered').length,
-      blocked: models.filter(model => model.status === 'blocked').length + Number(omniRouteBlocked),
+      blocked: models.filter(model => model.status === 'blocked').length,
       verified: models.filter(model => (
         model.freeEligible
         && isEligibilityEvidenceFresh(model.eligibilityVerifiedAt, eligibilityEvidenceTtlHours)
-      )).length + Number(omniRouteReady),
+      )).length,
     };
-  }, [api.omniRoute, genericProviders, eligibilityEvidenceTtlHours]);
+  }, [genericProviders, eligibilityEvidenceTtlHours]);
 
   const run = async (id: string, action: () => Promise<void>, success: string) => {
     setBusyId(id);
@@ -257,47 +253,6 @@ export function FreeRevolverControlCenter({
             <div><span>Fallback nach Quota</span><strong>{api.openRouterFree.routingPolicy.fallbackAfterQuota}</strong></div>
             <div><span>Paid-Fallback</span><strong>{api.openRouterFree.routingPolicy.paidFallbackAllowed ? 'erlaubt' : 'gesperrt'}</strong></div>
             <div><span>Management-Evidence</span><strong>{api.openRouterFree.managementTableAvailable ? 'verfügbar' : api.openRouterFree.managementTableBlocker ?? 'nicht verfügbar'}</strong></div>
-          </div>
-        </section>
-      )}
-
-      {api.omniRoute && (
-        <section
-          className="llm-catalog"
-          data-testid="provider-surface-omniroute"
-          aria-label="OmniRoute Auto Runtime"
-        >
-          <div className="llm-section-title">
-            <div><Server size={21} /><div>
-              <h2>OmniRoute Auto</h2>
-              <p>Eigene keyless Laufzeit: nur der kanonische Doppel-Canary darf die Auto-Route ändern.</p>
-            </div></div>
-          </div>
-          <div className="free-revolver-provider__facts">
-            <div><span>Aktivierung</span><strong>{api.omniRoute.activationState}</strong></div>
-            <div><span>Bestätigungen</span><strong>{api.omniRoute.confirmationCount}/2</strong></div>
-            <div><span>Route</span><strong>{api.omniRoute.modelId}</strong></div>
-            <div><span>Blocker</span><strong>{api.omniRoute.blocker ?? '—'}</strong></div>
-          </div>
-          <p className="llm-catalog__evidence">
-            Die Kataloggröße ist kein Bereitstellungsversprechen einzelner Modelle: produktiv ist ausschließlich
-            <code> auto </code> auswählbar, und nur nach zwei erfolgreichen Completion-Canaries.
-          </p>
-          <div className="llm-route-card__actions">
-            <button
-              type="button"
-              className="llm-button llm-button--primary"
-              data-testid="provider-action-omniroute-refresh"
-              disabled={busyId !== null}
-              onClick={() => void run(
-                'omniroute-refresh',
-                () => api.refreshOmniRoute(),
-                'OmniRoute-Doppel-Canary wurde angefordert; die Ansicht übernimmt ausschließlich den Runtime-Readback.',
-              )}
-            >
-              <RefreshCw className={busyId === 'omniroute-refresh' ? 'llm-spin' : ''} size={17} />
-              OmniRoute-Doppel-Canary ausführen
-            </button>
           </div>
         </section>
       )}
@@ -475,10 +430,10 @@ export function FreeRevolverControlCenter({
               </article>
             );
           })}
-          {genericProviders.length === 0 && !api.omniRoute && !api.loading && (
+          {genericProviders.length === 0 && !api.loading && (
             <div className="llm-empty">Noch keine ausführbare Free-Revolver-Quelle verfügbar. Provider und sichere Zuordnung übernimmt das Backend.</div>
           )}
-          {api.loading && genericProviders.length === 0 && !api.omniRoute && (
+          {api.loading && genericProviders.length === 0 && (
             <div className="llm-empty"><RefreshCw className="llm-spin" /> Free-Revolver-Evidence wird geladen…</div>
           )}
         </div>
@@ -515,7 +470,7 @@ export function FreeRevolverControlCenter({
                   <span className="llm-badge">{provider.lastErrorCode ?? 'nicht ausführbar'}</span>
                 </div>
                 <p className="llm-route-card__evidence">
-                  Durch OmniRoute ersetzt. Keine Discovery, kein Healthcheck und keine Aktivierung sind über diese Referenz zulässig.
+                  Historisch stillgelegt. Keine Discovery, kein Healthcheck und keine Aktivierung sind über diese Referenz zulässig.
                 </p>
               </article>
             ))}

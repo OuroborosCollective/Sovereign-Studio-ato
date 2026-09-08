@@ -177,9 +177,8 @@ def classify_provider_surface(
 ) -> dict[str, str]:
     """Return the sole allowed admin control for a persisted provider surface.
 
-    This intentionally does not reuse the generic managed-provider URL allowlist:
-    OmniRoute has a dedicated runtime and must never become a generic discovery
-    target merely because it is visible in the free-provider read model.
+    Retired provider surfaces remain visible only as historical read models.
+    They never expose a live discovery or activation action.
     """
     normalized_base = str(api_base or "").strip().rstrip("/")
     error_code = str(last_error_code or "").strip()
@@ -194,9 +193,9 @@ def classify_provider_surface(
         }
     if normalized_base == _OMNIROUTE_API_BASE:
         return {
-            "providerSurfaceKind": "omniroute-auto",
-            "lifecycle": "active",
-            "canonicalAction": "omniroute-refresh",
+            "providerSurfaceKind": "retired-reference",
+            "lifecycle": "historical",
+            "canonicalAction": "none",
         }
     return {
         "providerSurfaceKind": "free-revolver",

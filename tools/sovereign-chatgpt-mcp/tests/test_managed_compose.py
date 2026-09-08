@@ -23,7 +23,6 @@ def test_managed_compose_stack_allowlist_is_exact() -> None:
         "patchmon-sovereign",
         "milvus-sovereign",
         "sovereign-freellmapi",
-        "sovereign-omniroute",
     }
     assert is_mutating_action("deploy_managed_compose_stack") is True
     assert is_mutating_action("memory_gateway_collection_canary") is True
@@ -212,6 +211,14 @@ def test_registered_but_missing_template_never_deploys(tmp_path: Path, monkeypat
     result = runtime.deploy("gpt-tools", "0" * 64)
     assert result["status"] == "BLOCKED"
     assert "kein geprüftes Compose-Template" in result["blocker"]
+
+
+def test_omniroute_stack_is_retired_from_managed_compose_and_cannot_be_reactivated(tmp_path: Path) -> None:
+    runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
+    with pytest.raises(ValueError, match="nicht freigegeben"):
+        runtime.plan("sovereign-omniroute")
+    with pytest.raises(ValueError, match="nicht freigegeben"):
+        runtime.deploy("sovereign-omniroute", "0" * 64)
 
 
 def test_litellm_stack_is_retired_from_managed_compose_and_cannot_be_reactivated(tmp_path: Path) -> None:

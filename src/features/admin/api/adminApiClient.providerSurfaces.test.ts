@@ -6,40 +6,13 @@ import {
   setAdminKey,
 } from './adminApiClient';
 
-const omniRoute = {
-  ok: false,
-  routeSource: 'omniroute',
-  routeId: 'sovereign-omniroute-auto',
-  modelId: 'sovereign-omniroute:auto',
-  apiBase: 'http://omniroute:20128/v1',
-  disabled: true,
-  activationState: 'blocked',
-  blocker: 'omniroute_canary_http_401',
-  confirmationCount: 0,
-  receiptSha256: null,
-  sourceRevision: 'a'.repeat(40),
-  imageDigest: `sha256:${'b'.repeat(64)}`,
-  freeLlmApiChanged: false,
-  rawProviderResponsesReturned: false,
-};
-
 afterEach(() => {
   clearAdminKey();
   vi.unstubAllGlobals();
 });
 
 describe('adminApiClient typed provider surface read model', () => {
-  it('preserves an OmniRoute blocker even when the upstream message is unknown', async () => {
-    setAdminKey('test-admin-key');
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
-      error: 'Unknown error', blocker: 'omniroute_canary_http_403',
-    }), { status: 502, headers: { 'Content-Type': 'application/json' } }));
-    vi.stubGlobal('fetch', fetchImpl);
-    await expect(adminApiClient.refreshOmniRoute()).rejects.toThrow('omniroute_canary_http_403 · HTTP 502');
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-  });
-
-  it('reads paid, free, OmniRoute, and generic provider evidence from their dedicated endpoints', async () => {
+  it('reads paid, OpenRouter-free, and FreeLLMAPI provider evidence from their dedicated endpoints', async () => {
     const calls: string[] = [];
     let useNonCanonicalEnvelope = false;
     setAdminKey('test-admin-key');
@@ -93,7 +66,6 @@ describe('adminApiClient typed provider surface read model', () => {
             },
           ] : [],
         },
-        '/api/admin/llm/omniroute/status': omniRoute,
         '/api/admin/llm/openrouter/status': {
           status: 'ready',
           deploymentStatus: 'ready',
@@ -135,11 +107,9 @@ describe('adminApiClient typed provider surface read model', () => {
     const result = await adminApiClient.getLlmProviderSurfaceReadModel();
 
     expect(result.freeRevolverMinimumReadyRoutes).toBe(7);
-    expect(result.omniRoute).toEqual(omniRoute);
     expect(result.openRouterPaid?.selectableModels).toBe(291);
     expect(result.openRouterFree?.routingPolicy.paidFallbackAllowed).toBe(false);
     expect(calls.sort()).toEqual([
-      '/api/admin/llm/omniroute/status',
       '/api/admin/llm/openrouter/free/status',
       '/api/admin/llm/openrouter/status',
       '/api/admin/llm/revolver-v3/providers',
@@ -161,7 +131,6 @@ describe('adminApiClient typed provider surface read model', () => {
       canonicalAction: 'none',
       enabled: false,
     });
-    expect(recovered.omniRoute).toEqual(omniRoute);
   });
 
   it('keeps Free Revolver visible when adjacent provider surfaces are stale or non-canonical', async () => {
@@ -194,7 +163,6 @@ describe('adminApiClient typed provider surface read model', () => {
             models: [],
           }],
         },
-        '/api/admin/llm/omniroute/status': { ok: true, routeSource: 'omniroute' },
         '/api/admin/llm/openrouter/status': { status: 'legacy' },
         '/api/admin/llm/openrouter/free/status': { ok: false },
       };
@@ -215,42 +183,47 @@ describe('adminApiClient typed provider surface read model', () => {
       canonicalAction: 'revolver-discover',
       enabled: true,
     });
-    expect(result.omniRoute).toBeNull();
     expect(result.openRouterPaid).toBeNull();
     expect(result.openRouterFree).toBeNull();
     expect(isAcceptedLlmProviderSurfaceReadModel(result)).toBe(true);
   });
 
-  it('sends the only accepted OmniRoute mutation to its dedicated runtime endpoint', async () => {
-    const calls: Array<{ path: string; method: string }> = [];
-    setAdminKey('test-admin-key');
-
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push({
-        path: new URL(String(input)).pathname,
-        method: init?.method ?? 'GET',
-      });
-      return new Response(JSON.stringify(omniRoute), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }));
-
-    await adminApiClient.refreshOmniRoute();
-
-    expect(calls).toEqual([
-      { path: '/api/admin/llm/omniroute/refresh', method: 'POST' },
-    ]);
+  it('normalizes a persisted OmniRoute source as historical and non-actionable', () => {
+    expect(isAcceptedLlmProviderSurfaceReadModel({
+      providers: [{
+        id: 'legacy-omniroute',
+        sourceType: 'omniroute',
+        label: 'OmniRoute (retired)',
+        apiBase: 'http://omniroute:20128/v1',
+        providerSurfaceKind: 'retired-reference',
+        lifecycle: 'historical',
+        canonicalAction: 'none',
+        modelsUrl: null,
+        authMode: 'none',
+        keyHint: null,
+        status: 'disabled',
+        lastHttpStatus: null,
+        lastErrorCode: 'omniroute_retired_owner_simplification',
+        lastDiscoveredAt: null,
+        lastCheckedAt: null,
+        enabled: false,
+        ownerRequestId: null,
+        models: [],
+      }],
+      freeRevolverMinimumReadyRoutes: 7,
+      openRouterPaid: null,
+      openRouterFree: null,
+    })).toBe(true);
   });
 
   it('fails closed when a provider readback pairs a surface with a non-canonical action', () => {
     expect(isAcceptedLlmProviderSurfaceReadModel({
       providers: [{
-        providerSurfaceKind: 'omniroute-auto',
-        lifecycle: 'active',
+        providerSurfaceKind: 'retired-reference',
+        lifecycle: 'historical',
         canonicalAction: 'revolver-discover',
       }],
-      omniRoute,
+      freeRevolverMinimumReadyRoutes: 7,
       openRouterPaid: {
         status: 'ready',
         deploymentStatus: 'ready',
@@ -289,7 +262,6 @@ describe('adminApiClient typed provider surface read model', () => {
     const valid = {
       providers: [],
       freeRevolverMinimumReadyRoutes: 7,
-      omniRoute,
       openRouterPaid: {
         status: 'ready',
         deploymentStatus: 'ready',
@@ -328,42 +300,12 @@ describe('adminApiClient typed provider surface read model', () => {
     staleQuotaScope.openRouterFree.routingPolicy.accountWideQuotaScope = 'openrouter-free';
     expect(isAcceptedLlmProviderSurfaceReadModel(staleQuotaScope)).toBe(false);
 
-    const readyOmniRoute = {
-      ...omniRoute,
-      ok: true,
-      disabled: false,
-      activationState: 'ready',
-      blocker: null,
-      confirmationCount: 2,
-      receiptSha256: 'c'.repeat(64),
-    };
-    expect(isAcceptedLlmProviderSurfaceReadModel({
-      ...valid,
-      omniRoute: readyOmniRoute,
-    })).toBe(true);
-    expect(isAcceptedLlmProviderSurfaceReadModel({
-      ...valid,
-      omniRoute: { ...readyOmniRoute, ok: false },
-    })).toBe(false);
-    expect(isAcceptedLlmProviderSurfaceReadModel({
-      ...valid,
-      omniRoute: { ...readyOmniRoute, receiptSha256: null },
-    })).toBe(false);
-    expect(isAcceptedLlmProviderSurfaceReadModel({
-      ...valid,
-      omniRoute: { ...readyOmniRoute, blocker: 'omniroute_canary_http_503' },
-    })).toBe(false);
-
     expect(isAcceptedLlmProviderSurfaceReadModel({
       providers: [],
-      omniRoute: { routeSource: 'omniroute' },
+      freeRevolverMinimumReadyRoutes: 7,
       openRouterPaid: { transport: 'openrouter' },
       openRouterFree: { routingPolicy: { paidFallbackAllowed: false } },
     })).toBe(false);
-
-    const wrongOmniRoute = structuredClone(valid);
-    wrongOmniRoute.omniRoute.routeId = 'wrong-route';
-    expect(isAcceptedLlmProviderSurfaceReadModel(wrongOmniRoute)).toBe(false);
 
     const secretBearingPaid = structuredClone(valid);
     secretBearingPaid.openRouterPaid.secretValuesReturned = true;

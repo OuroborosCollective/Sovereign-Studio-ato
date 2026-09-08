@@ -23,8 +23,6 @@ MILVUS_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/milvus-sovereign"
 MILVUS_TEMPLATE_SOURCE="$SOURCE_DIR/templates/milvus-sovereign"
 FREELLMAPI_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-freellmapi"
 FREELLMAPI_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-freellmapi"
-OMNIROUTE_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-omniroute"
-OMNIROUTE_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-omniroute"
 BACKEND_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-backend"
 BACKEND_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-backend"
 DOCKER_AUTH_DIR="$INSTALL_ROOT/docker-auth"
@@ -1146,7 +1144,6 @@ docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not ins
 [[ -f "$MILVUS_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "milvus compose template is missing"
 [[ -f "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "FreeLLM API compose template is missing"
 [[ -f "$FREELLMAPI_TEMPLATE_SOURCE/sovereign-freellm-bootstrap.mjs" ]] || fail "FreeLLM API bootstrap template is missing"
-[[ -f "$OMNIROUTE_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "OmniRoute compose template is missing"
 [[ -f "$BACKEND_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "Sovereign backend compose template is missing"
 [[ -f "$SOURCE_DIR/skills/sovereign-operational-governance/SKILL.md" ]] || fail "operational governance skill manifest is missing"
 [[ -f "$SOURCE_DIR/skills/sovereign-operational-assurance/SKILL.md" ]] || fail "operational assurance skill manifest is missing"
@@ -1170,8 +1167,8 @@ python3 -m py_compile "$SOURCE_DIR/deploy/run-coordinated-release-readback.py" \
   || fail "coordinated release reconciler timer is missing"
 
 getent group sovereign-mcp >/dev/null 2>&1 || groupadd --system sovereign-mcp
-install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$PGBACKWEB_TEMPLATE_DIR" "$PATCHMON_TEMPLATE_DIR" "$CODE_SERVER_TEMPLATE_DIR" "$MILVUS_TEMPLATE_DIR" "$FREELLMAPI_TEMPLATE_DIR" "$OMNIROUTE_TEMPLATE_DIR" "$BACKEND_TEMPLATE_DIR" "$INSTALL_ROOT/continuity-data" "$INSTALL_ROOT/tool-routing-state"
-for MANAGED_COMPOSE_ROOT in /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r /opt/patchmon-sovereign /opt/milvus-sovereign /opt/sovereign-freellmapi /opt/sovereign-omniroute /opt/sovereign-bytebase /opt/sovereign-metamcp; do
+install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$PGBACKWEB_TEMPLATE_DIR" "$PATCHMON_TEMPLATE_DIR" "$CODE_SERVER_TEMPLATE_DIR" "$MILVUS_TEMPLATE_DIR" "$FREELLMAPI_TEMPLATE_DIR" "$BACKEND_TEMPLATE_DIR" "$INSTALL_ROOT/continuity-data" "$INSTALL_ROOT/tool-routing-state"
+for MANAGED_COMPOSE_ROOT in /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r /opt/patchmon-sovereign /opt/milvus-sovereign /opt/sovereign-freellmapi /opt/sovereign-bytebase /opt/sovereign-metamcp; do
   if [[ -e "$MANAGED_COMPOSE_ROOT" || -L "$MANAGED_COMPOSE_ROOT" ]]; then
     [[ -d "$MANAGED_COMPOSE_ROOT" && ! -L "$MANAGED_COMPOSE_ROOT" ]] \
       || fail "managed compose root is not a regular directory: $MANAGED_COMPOSE_ROOT"
@@ -1278,7 +1275,7 @@ backup_managed_control_plane_file "$CODE_SERVER_TEMPLATE_DIR/docker-compose.yml"
 backup_managed_control_plane_file "$MILVUS_TEMPLATE_DIR/docker-compose.yml" "templates/milvus-sovereign/docker-compose.yml"
 backup_managed_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmapi/docker-compose.yml"
 backup_managed_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs" "templates/sovereign-freellmapi/sovereign-freellm-bootstrap.mjs"
-backup_managed_control_plane_file "$OMNIROUTE_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-omniroute/docker-compose.yml"
+remove_managed_legacy_file "$COMPOSE_TEMPLATE_ROOT/sovereign-omniroute/docker-compose.yml" "templates/sovereign-omniroute/docker-compose.yml"
 backup_managed_control_plane_file "$BACKEND_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-backend/docker-compose.yml"
 for file in deploy-sovereign-backend rollback-sovereign-backend bootstrap-database install-secure-tunnel validate-tunnel-doctor-report reconcile-main-release run-coordinated-release-readback; do
   backup_managed_control_plane_file "$BIN_DIR/$file" "bin/$file"
@@ -1301,7 +1298,7 @@ install_managed_control_plane_file 0640 "$CODE_SERVER_TEMPLATE_SOURCE/docker-com
 install_managed_control_plane_file 0640 "$MILVUS_TEMPLATE_SOURCE/docker-compose.yml" "$MILVUS_TEMPLATE_DIR/docker-compose.yml" "templates/milvus-sovereign/docker-compose.yml"
 install_managed_control_plane_file 0640 "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmapi/docker-compose.yml"
 install_managed_control_plane_file 0640 "$FREELLMAPI_TEMPLATE_SOURCE/sovereign-freellm-bootstrap.mjs" "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs" "templates/sovereign-freellmapi/sovereign-freellm-bootstrap.mjs"
-install_managed_control_plane_file 0640 "$OMNIROUTE_TEMPLATE_SOURCE/docker-compose.yml" "$OMNIROUTE_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-omniroute/docker-compose.yml"
+remove_managed_legacy_directory "$COMPOSE_TEMPLATE_ROOT/sovereign-omniroute" "templates/sovereign-omniroute"
 install_managed_control_plane_file 0640 "$BACKEND_TEMPLATE_SOURCE/docker-compose.yml" "$BACKEND_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-backend/docker-compose.yml"
 install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/deploy-sovereign-backend" "$BIN_DIR/deploy-sovereign-backend" "bin/deploy-sovereign-backend"
 install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/rollback-sovereign-backend" "$BIN_DIR/rollback-sovereign-backend" "bin/rollback-sovereign-backend"
@@ -1333,7 +1330,6 @@ set_managed_control_plane_directory_ownership "$PATCHMON_TEMPLATE_DIR" "template
 set_managed_control_plane_directory_ownership "$CODE_SERVER_TEMPLATE_DIR" "templates/code-server-46bq"
 set_managed_control_plane_directory_ownership "$MILVUS_TEMPLATE_DIR" "templates/milvus-sovereign"
 set_managed_control_plane_directory_ownership "$FREELLMAPI_TEMPLATE_DIR" "templates/sovereign-freellmapi"
-set_managed_control_plane_directory_ownership "$OMNIROUTE_TEMPLATE_DIR" "templates/sovereign-omniroute"
 set_managed_control_plane_directory_ownership "$BACKEND_TEMPLATE_DIR" "templates/sovereign-backend"
 
 INSTALL_STAGE="prepare_private_environment_files"
@@ -1479,7 +1475,7 @@ for REQUIRED_WORKFLOW in android.yml e2e-testing.yml sovereign-backend-image.yml
 done
 unset REQUIRED_WORKFLOW CURRENT_ALLOWED_WORKFLOWS
 
-for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless gpt-tika gpt-gotenberg gpt-dozzle code-server-46bq-code-server-1 pgbackweb-wq5r-pgbackweb-1 pgbackweb-wq5r-db-1 patchmon-sovereign-server-1 patchmon-sovereign-database-1 patchmon-sovereign-redis-1 patchmon-sovereign-guacd-1 sovereign-freellmapi sovereign-omniroute; do
+for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless gpt-tika gpt-gotenberg gpt-dozzle code-server-46bq-code-server-1 pgbackweb-wq5r-pgbackweb-1 pgbackweb-wq5r-db-1 patchmon-sovereign-server-1 patchmon-sovereign-database-1 patchmon-sovereign-redis-1 patchmon-sovereign-guacd-1 sovereign-freellmapi; do
   CURRENT_ALLOWED_CONTAINERS="$(read_mcp_value SOVEREIGN_MCP_ALLOWED_CONTAINERS)"
   if [[ -z "$CURRENT_ALLOWED_CONTAINERS" ]]; then
     set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER"
@@ -1487,7 +1483,7 @@ for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserles
     set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER,$CURRENT_ALLOWED_CONTAINERS"
   fi
 done
-remove_csv_values "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "sovereign-litellm-litellm-1,sovereign-litellm-db-1,sovereign-freellmpool"
+remove_csv_values "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "sovereign-litellm-litellm-1,sovereign-litellm-db-1,sovereign-freellmpool,sovereign-omniroute"
 unset REQUIRED_CONTAINER CURRENT_ALLOWED_CONTAINERS
 
 if [[ "$(read_mcp_value SOVEREIGN_MCP_BOOTSTRAP_DATABASE)" == "1" ]]; then
@@ -3613,4 +3609,4 @@ if [[ "$PREVIOUS_MCP_CONTAINER_PRESENT" == "1" ]]; then
     || SEMANTIC_COMPATIBILITY_VERIFIED_JSON=true
   FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON=false
 fi
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"neuro_runtime_tools":true,"foundation_runtime":true,"teaching_runtime_tools":true,"neuro_functional_canary":true,"neuro_tamper_detection":true,"neuro_selected_tools_executed":false,"registered_tool_surface_canary":true,"teaching_functional_canary":true,"teaching_source_provenance_canary":true,"teaching_package_mutated":false,"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only","read_only_tool_calls_persisted":false,"canary_persisted_outcome_tools":["neuro_event_commit"],"mcp_tool_count":%s,"predecessor_container_present":%s,"predecessor_registry_capture_mode":"%s","previous_tool_surface_compared":%s,"semantic_compatibility_verified":%s,"semantic_compatibility_blocking":false,"first_install_without_predecessor":%s,"first_install_attested":%s,"event_delta_projection":"incremental","operating_profile_enforced":true,"continuity_advisory":true,"github_app_repository_canary":true,"persistent_github_token_present":false,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"deployment_source_scope":"%s","toolchain_install_required":%s,"toolchain_revision":"%s","toolchain_revision_verified":%s,"toolchain_health_readback":%s,"toolchain_n8n_evidence_auth_canary":%s,"toolchain_rollback_capable":%s,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-omniroute"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE" "$EXPECTED_MCP_TOOL_COUNT" "$PREDECESSOR_CONTAINER_PRESENT_JSON" "$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE" "$PREVIOUS_TOOL_SURFACE_COMPARED_JSON" "$SEMANTIC_COMPATIBILITY_VERIFIED_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$DEPLOYMENT_SOURCE_SCOPE" "$TOOLCHAIN_INSTALL_REQUIRED_JSON" "$TOOLCHAIN_INSTALLED_REVISION" "$TOOLCHAIN_REVISION_VERIFIED_JSON" "$TOOLCHAIN_HEALTH_READBACK_JSON" "$TOOLCHAIN_AUTH_CANARY_JSON" "$TOOLCHAIN_ROLLBACK_CAPABLE_JSON"
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"neuro_runtime_tools":true,"foundation_runtime":true,"teaching_runtime_tools":true,"neuro_functional_canary":true,"neuro_tamper_detection":true,"neuro_selected_tools_executed":false,"registered_tool_surface_canary":true,"teaching_functional_canary":true,"teaching_source_provenance_canary":true,"teaching_package_mutated":false,"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only","read_only_tool_calls_persisted":false,"canary_persisted_outcome_tools":["neuro_event_commit"],"mcp_tool_count":%s,"predecessor_container_present":%s,"predecessor_registry_capture_mode":"%s","previous_tool_surface_compared":%s,"semantic_compatibility_verified":%s,"semantic_compatibility_blocking":false,"first_install_without_predecessor":%s,"first_install_attested":%s,"event_delta_projection":"incremental","operating_profile_enforced":true,"continuity_advisory":true,"github_app_repository_canary":true,"persistent_github_token_present":false,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"deployment_source_scope":"%s","toolchain_install_required":%s,"toolchain_revision":"%s","toolchain_revision_verified":%s,"toolchain_health_readback":%s,"toolchain_n8n_evidence_auth_canary":%s,"toolchain_rollback_capable":%s,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE" "$EXPECTED_MCP_TOOL_COUNT" "$PREDECESSOR_CONTAINER_PRESENT_JSON" "$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE" "$PREVIOUS_TOOL_SURFACE_COMPARED_JSON" "$SEMANTIC_COMPATIBILITY_VERIFIED_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$DEPLOYMENT_SOURCE_SCOPE" "$TOOLCHAIN_INSTALL_REQUIRED_JSON" "$TOOLCHAIN_INSTALLED_REVISION" "$TOOLCHAIN_REVISION_VERIFIED_JSON" "$TOOLCHAIN_HEALTH_READBACK_JSON" "$TOOLCHAIN_AUTH_CANARY_JSON" "$TOOLCHAIN_ROLLBACK_CAPABLE_JSON"

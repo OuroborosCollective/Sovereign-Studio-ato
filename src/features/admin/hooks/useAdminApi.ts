@@ -18,7 +18,6 @@ import {
   type LlmRevolverV3Status,
   type FreeRevolverProviderSource,
   type FreeRevolverProviderAuthMode,
-  type OmniRouteRuntimeStatus,
   type OpenRouterPaidRuntimeStatus,
   type OpenRouterFreeRuntimeStatus,
   type AuditEntry,
@@ -248,23 +247,9 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
 
 // ── useAdminFreeRevolverProviders ────────────────────────────────────────────
 
-export async function refreshOmniRouteAndReload(
-  refresh: () => Promise<unknown>,
-  reload: () => void,
-): Promise<void> {
-  try {
-    await refresh();
-  } finally {
-    // A failed double-canary is still a canonical runtime event. Always obtain
-    // the subsequent typed readback instead of leaving product state stale.
-    reload();
-  }
-}
-
 export interface UseAdminFreeRevolverProvidersResult {
   providers: FreeRevolverProviderSource[];
   minimumReadyRoutes: number;
-  omniRoute: OmniRouteRuntimeStatus | null;
   openRouterPaid: OpenRouterPaidRuntimeStatus | null;
   openRouterFree: OpenRouterFreeRuntimeStatus | null;
   loading: boolean;
@@ -281,13 +266,11 @@ export interface UseAdminFreeRevolverProvidersResult {
   discover: (sourceId: string) => Promise<void>;
   recheck: (sourceId: string) => Promise<void>;
   toggle: (sourceId: string, enabled: boolean) => Promise<void>;
-  refreshOmniRoute: () => Promise<void>;
 }
 
 export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersResult {
   const [providers, setProviders] = useState<FreeRevolverProviderSource[]>([]);
   const [minimumReadyRoutes, setMinimumReadyRoutes] = useState(0);
-  const [omniRoute, setOmniRoute] = useState<OmniRouteRuntimeStatus | null>(null);
   const [openRouterPaid, setOpenRouterPaid] = useState<OpenRouterPaidRuntimeStatus | null>(null);
   const [openRouterFree, setOpenRouterFree] = useState<OpenRouterFreeRuntimeStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -304,7 +287,6 @@ export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersRe
         if (cancelled) return;
         setProviders(result.providers);
         setMinimumReadyRoutes(result.freeRevolverMinimumReadyRoutes);
-        setOmniRoute(result.omniRoute);
         setOpenRouterPaid(result.openRouterPaid);
         setOpenRouterFree(result.openRouterFree);
       })
@@ -370,18 +352,9 @@ export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersRe
     reload();
   }, [reload]);
 
-  const refreshOmniRoute = useCallback(async () => {
-    setError(null);
-    await refreshOmniRouteAndReload(
-      () => adminApiClient.refreshOmniRoute(),
-      reload,
-    );
-  }, [reload]);
-
   return {
     providers,
     minimumReadyRoutes,
-    omniRoute,
     openRouterPaid,
     openRouterFree,
     loading,
@@ -393,7 +366,6 @@ export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersRe
     discover,
     recheck,
     toggle,
-    refreshOmniRoute,
   };
 }
 

@@ -33,15 +33,15 @@ def _route(base_url: str) -> dict[str, object]:
     }
 
 
-def test_free_llm_api_stays_live_while_omniroute_replaces_pool_routes() -> None:
+def test_free_llm_api_is_the_only_live_direct_freellm_route() -> None:
     assert FREELLM_BASE_URL in FREELLM_BASE_URLS
     assert FREELLMPOOL_BASE_URL in FREELLM_BASE_URLS
     assert FREELLM_BASE_URL in FREELLM_EXECUTION_BASE_URLS
-    assert OMNIROUTE_BASE_URL in FREELLM_EXECUTION_BASE_URLS
+    assert OMNIROUTE_BASE_URL not in FREELLM_EXECUTION_BASE_URLS
     assert FREELLMPOOL_BASE_URL not in FREELLM_EXECUTION_BASE_URLS
     assert route_is_direct_freellm(_route(FREELLM_BASE_URL)) is True
-    assert route_is_direct_freellm(_route(OMNIROUTE_BASE_URL)) is True
-    assert route_is_omniroute_source(_route(OMNIROUTE_BASE_URL)) is True
+    assert route_is_direct_freellm(_route(OMNIROUTE_BASE_URL)) is False
+    assert route_is_omniroute_source(_route(OMNIROUTE_BASE_URL)) is False
     assert route_is_direct_freellm(_route(FREELLMPOOL_BASE_URL)) is False
 
 
@@ -57,16 +57,23 @@ def test_omniroute_retirement_migration_canonical_and_production_mirror_are_byte
     assert canonical.read_bytes() == mirror.read_bytes()
 
 
-def test_omniroute_route_replacement_migration_is_mirrored_and_preserves_freellmapi() -> None:
+def test_omniroute_route_replacement_history_remains_mirrored() -> None:
     canonical = BACKEND_ROOT / "migrations/055_omniroute_replaces_freellmpool_routes.sql"
     mirror = REPO_ROOT / "scripts/sovereign-backend/migrations/055_omniroute_replaces_freellmpool_routes.sql"
     assert canonical.read_bytes() == mirror.read_bytes()
+
+
+def test_omniroute_retirement_migration_is_mirrored_and_disables_execution() -> None:
+    canonical = BACKEND_ROOT / "migrations/061_retire_omniroute_execution.sql"
+    mirror = REPO_ROOT / "scripts/sovereign-backend/migrations/061_retire_omniroute_execution.sql"
+    assert canonical.read_bytes() == mirror.read_bytes()
     sql = canonical.read_text("utf-8")
-    assert "http://freellmpool:8080/v1" in sql
     assert "http://omniroute:20128/v1" in sql
-    assert "http://freellmapi:3001/v1" not in sql
-    assert "freellmpool_replaced_by_omniroute" in sql
-    assert "runtime-double-canary-required" in sql
+    assert "omniroute_retired_owner_simplification" in sql
+    assert "enabled=false" in sql
+    assert "disabled=true" in sql
+    assert "'selectable', false" in sql
+    assert "'repositoryExecutionAllowed', false" in sql
 
 
 def test_draft_pr_authoritative_readback_gate_is_mirrored() -> None:

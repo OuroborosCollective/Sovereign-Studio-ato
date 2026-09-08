@@ -642,7 +642,7 @@ def _sdk_routes():
     return managed, omni
 
 
-def test_sdk_loader_skips_keyless_omniroute_but_direct_chat_keeps_it():
+def test_sdk_loader_and_direct_resolver_both_reject_retired_omniroute():
     managed, omni = _sdk_routes()
     connection = _SdkConnection([omni, managed])
     resolution = load_execution_resolution(
@@ -653,7 +653,8 @@ def test_sdk_loader_skips_keyless_omniroute_but_direct_chat_keeps_it():
     direct = resolve_execution_profile(
         routes=[omni, managed], state_by_scope={}, paid_purchase_verified=False,
         provider_funded_credits=0, credit_balance=25, requested_mode="free")
-    assert direct.primary_route["id"] == "omni"
+    assert direct.primary_route["id"] == "managed"
+    assert [item["id"] for item in direct.candidate_routes] == ["managed"]
 
 
 @pytest.mark.parametrize("pin", ["requested_model", "requested_main_model",

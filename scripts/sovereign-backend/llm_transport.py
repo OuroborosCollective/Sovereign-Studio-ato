@@ -19,11 +19,11 @@ OMNIROUTE_BASE_URL: Final[str] = "http://omniroute:20128/v1"
 FREELLM_BASE_URLS: Final[frozenset[str]] = frozenset(
     {FREELLM_BASE_URL, FREELLMPOOL_BASE_URL}
 )
-# Compatibility name: this is the allowlist for Sovereign's existing free-route
-# transport family. FreeLLMAPI remains live, FreeLLMPool remains retired, and
-# OmniRoute is the explicit replacement route source.
+# Execution allowlist: FreeLLMAPI is the sole direct FreeLLM transport.
+# FreeLLMPool and OmniRoute remain historical metadata only and are never
+# eligible for live execution.
 FREELLM_EXECUTION_BASE_URLS: Final[frozenset[str]] = frozenset(
-    {FREELLM_BASE_URL, OMNIROUTE_BASE_URL}
+    {FREELLM_BASE_URL}
 )
 SUPPORTED_EXECUTION_TRANSPORTS: Final[frozenset[str]] = frozenset(
     {OPENROUTER_TRANSPORT, FREELLM_TRANSPORT}
@@ -189,7 +189,7 @@ def route_is_openrouter_free(route: dict[str, Any]) -> bool:
 
 
 def route_is_direct_freellm(route: dict[str, Any]) -> bool:
-    """Accept the existing FreeLLMAPI route and its OmniRoute pool replacement."""
+    """Accept only the owner-managed FreeLLMAPI direct route."""
     config = route_config(route)
     return (
         not bool(route.get("disabled"))
@@ -201,7 +201,8 @@ def route_is_direct_freellm(route: dict[str, Any]) -> bool:
 
 
 def route_is_omniroute_source(route: dict[str, Any]) -> bool:
-    return route_is_direct_freellm(route) and route_api_base(route) == OMNIROUTE_BASE_URL
+    """Historical compatibility predicate; OmniRoute is permanently retired."""
+    return False
 
 
 def _snapshot_canonical(value: Any) -> Any:

@@ -1,5 +1,4 @@
 import { render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { FreeRevolverControlCenter } from './FreeRevolverControlCenter';
 import type { UseAdminFreeRevolverProvidersResult } from '../hooks/useAdminApi';
@@ -32,21 +31,21 @@ function apiFixture(): UseAdminFreeRevolverProvidersResult {
       },
       {
         id: sourceId,
-        sourceType: 'external-free-provider',
-        providerSurfaceKind: 'omniroute-auto',
-        lifecycle: 'active',
-        canonicalAction: 'omniroute-refresh',
-        label: 'OmniRoute Auto',
+        sourceType: 'omniroute',
+        providerSurfaceKind: 'retired-reference',
+        lifecycle: 'historical',
+        canonicalAction: 'none',
+        label: 'OmniRoute (retired)',
         apiBase: 'http://omniroute:20128/v1',
         modelsUrl: null,
         authMode: 'none',
-        keyHint: 'ohne Key',
-        status: 'degraded',
-        lastHttpStatus: 401,
-        lastErrorCode: 'omniroute_canary_http_401',
+        keyHint: null,
+        status: 'disabled',
+        lastHttpStatus: null,
+        lastErrorCode: 'omniroute_retired_owner_simplification',
         lastDiscoveredAt: null,
         lastCheckedAt: null,
-        enabled: true,
+        enabled: false,
         ownerRequestId: null,
         models: [],
       },
@@ -71,22 +70,6 @@ function apiFixture(): UseAdminFreeRevolverProvidersResult {
         models: [],
       },
     ],
-    omniRoute: {
-      ok: false,
-      routeSource: 'omniroute',
-      routeId: 'sovereign-omniroute-auto',
-      modelId: 'sovereign-omniroute:auto',
-      apiBase: 'http://omniroute:20128/v1',
-      disabled: true,
-      activationState: 'blocked',
-      blocker: 'omniroute_canary_http_401',
-      confirmationCount: 0,
-      receiptSha256: null,
-      sourceRevision: 'a'.repeat(40),
-      imageDigest: `sha256:${'b'.repeat(64)}`,
-      freeLlmApiChanged: false,
-      rawProviderResponsesReturned: false,
-    },
     openRouterPaid: {
       status: 'ready',
       deploymentStatus: 'ready',
@@ -127,37 +110,30 @@ function apiFixture(): UseAdminFreeRevolverProvidersResult {
     discover: vi.fn(),
     recheck: vi.fn(),
     toggle: vi.fn(),
-    refreshOmniRoute: vi.fn().mockResolvedValue(undefined),
   };
 }
 
 describe('FreeRevolverControlCenter typed provider action boundary', () => {
-  it('uses the dedicated OmniRoute refresh and never the generic discovery action', async () => {
-    const api = apiFixture();
-    const user = userEvent.setup();
-
+  it('shows FreeLLMAPI and OpenRouter while OmniRoute is historical-only', () => {
     render(
       <FreeRevolverControlCenter
-        api={api}
+        api={apiFixture()}
         eligibilityEvidenceTtlHours={24}
       />,
     );
 
     expect(screen.getByTestId('provider-surface-openrouter-free')).toBeVisible();
-    expect(screen.getByTestId('provider-surface-omniroute')).toBeVisible();
     expect(screen.getByTestId('provider-surface-freellm-api')).toBeVisible();
-
-    await user.click(screen.getByTestId('provider-action-omniroute-refresh'));
-
-    expect(api.refreshOmniRoute).toHaveBeenCalledTimes(1);
-    expect(api.discover).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('provider-surface-omniroute')).toBeNull();
+    const retired = screen.getByTestId('provider-surface-retired-reference');
+    expect(within(retired).getByText('OmniRoute (retired)')).toBeVisible();
+    expect(within(retired).queryAllByRole('button')).toHaveLength(0);
   });
 
-  it('counts accepted OmniRoute runtime truth in ready, verified, and blocked totals', () => {
-    const blockedApi = apiFixture();
-    const { rerender } = render(
+  it('does not count retired provider references as ready, verified, or blocked', () => {
+    render(
       <FreeRevolverControlCenter
-        api={blockedApi}
+        api={apiFixture()}
         eligibilityEvidenceTtlHours={24}
       />,
     );
@@ -165,28 +141,6 @@ describe('FreeRevolverControlCenter typed provider action boundary', () => {
     expect(within(screen.getByTestId('free-revolver-total-ready')).getByText('0')).toBeVisible();
     expect(within(screen.getByTestId('free-revolver-minimum-ready')).getByText('0/5')).toBeVisible();
     expect(within(screen.getByTestId('free-revolver-total-verified')).getByText('0')).toBeVisible();
-    expect(within(screen.getByTestId('free-revolver-total-blocked')).getByText('1')).toBeVisible();
-
-    const readyApi = apiFixture();
-    readyApi.omniRoute = {
-      ...readyApi.omniRoute!,
-      ok: true,
-      disabled: false,
-      activationState: 'ready',
-      blocker: null,
-      confirmationCount: 2,
-      receiptSha256: 'c'.repeat(64),
-    };
-    rerender(
-      <FreeRevolverControlCenter
-        api={readyApi}
-        eligibilityEvidenceTtlHours={24}
-      />,
-    );
-
-    expect(within(screen.getByTestId('free-revolver-total-ready')).getByText('1')).toBeVisible();
-    expect(within(screen.getByTestId('free-revolver-minimum-ready')).getByText('0/5')).toBeVisible();
-    expect(within(screen.getByTestId('free-revolver-total-verified')).getByText('1')).toBeVisible();
     expect(within(screen.getByTestId('free-revolver-total-blocked')).getByText('0')).toBeVisible();
   });
 

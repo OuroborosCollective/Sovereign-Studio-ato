@@ -1,8 +1,9 @@
-"""Runtime activation for the OmniRoute replacement of retired FreeLLMPool routes.
+"""Historical OmniRoute activation implementation retained for evidence replay.
 
-FreeLLMAPI remains an independent live route source. This module owns only the
-OmniRoute candidate seeded by migration 055 and promotes it after a bounded
-models readback plus two real keyless chat completions on the deployed revision.
+Production no longer registers this adapter and migration 061 permanently
+retires OmniRoute from execution. The module is kept only so historical receipts
+and pre-retirement regressions remain explainable; its registration entrypoint
+cannot create routes, background workers, or provider calls.
 """
 from __future__ import annotations
 
@@ -16,8 +17,6 @@ import uuid
 from typing import Any, Callable
 
 import requests
-from flask import jsonify
-
 from llm_revolver import verify_free_route_reason
 from llm_transport import OMNIROUTE_BASE_URL
 
@@ -752,25 +751,10 @@ def register_omniroute_execution_runtime(
     get_connection: Callable[[], Any],
     audit: Callable[..., Any],
 ) -> OmniRouteExecutionRuntime:
-    service = OmniRouteExecutionRuntime(
+    """Historical compatibility entrypoint; never registers or starts OmniRoute."""
+    del app, require_admin
+    return OmniRouteExecutionRuntime(
         query=query,
         get_connection=get_connection,
         audit=audit,
     )
-
-    @app.route("/api/admin/llm/omniroute/status", methods=["GET"])
-    @require_admin
-    def admin_omniroute_status():
-        return jsonify(service.status())
-
-    @app.route("/api/admin/llm/omniroute/refresh", methods=["POST"])
-    @require_admin
-    def admin_omniroute_refresh():
-        result = service.scan_once()
-        # Mutating execution evidence is never itself the UI state contract.
-        # Return the canonical status projection after the scan so success,
-        # degraded and busy outcomes all have one typed readback shape.
-        return jsonify(service.status()), 200 if result.get("ok") else 503
-
-    service.start()
-    return service

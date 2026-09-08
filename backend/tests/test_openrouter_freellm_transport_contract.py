@@ -113,14 +113,12 @@ def test_conflicting_transport_fields_fail_closed_instead_of_using_precedence() 
     assert route_is_direct_freellm(paid) is False
 
 
-def test_omniroute_keyless_transport_never_maps_to_a_protected_key_file() -> None:
+def test_omniroute_transport_is_rejected_by_the_agents_sdk_boundary() -> None:
     with pytest.raises(runtime.RouteRuntimeError) as captured:
         runtime._key_spec("freellm", OMNIROUTE_BASE_URL)
 
-    assert captured.value.family == "OMNIROUTE_KEYLESS_AGENTS_SDK_UNSUPPORTED"
-    assert captured.value.next_action == (
-        "USE_DIRECT_KEYLESS_OMNIROUTE_RUNTIME_OR_ADD_VERIFIED_KEYLESS_SDK_ADAPTER"
-    )
+    assert captured.value.family == "FREELLM_API_BASE_REJECTED"
+    assert captured.value.next_action == "SELECT_VERIFIED_MANAGED_FREELLM_SOURCE"
 
 
 def test_paid_and_free_transports_are_disjoint() -> None:

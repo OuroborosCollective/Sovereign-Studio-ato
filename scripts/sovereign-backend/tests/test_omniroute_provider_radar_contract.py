@@ -2,8 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+import types
 
 import pytest
+
+try:
+    import flask  # noqa: F401
+except ModuleNotFoundError:
+    flask_stub = types.ModuleType("flask")
+    flask_stub.jsonify = lambda *args, **kwargs: (args, kwargs)
+    sys.modules["flask"] = flask_stub
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parents[1]
@@ -54,15 +62,15 @@ def _source(*entries: str) -> CatalogSource:
     )
 
 
-def test_freellmapi_stays_live_pool_stays_retired_and_omniroute_is_replacement_source() -> None:
+def test_freellmapi_is_the_only_live_direct_free_source() -> None:
     assert FREELLMPOOL_BASE_URL in FREELLM_BASE_URLS
     assert FREELLMPOOL_BASE_URL not in FREELLM_EXECUTION_BASE_URLS
     assert FREELLM_BASE_URL in FREELLM_EXECUTION_BASE_URLS
-    assert OMNIROUTE_BASE_URL in FREELLM_EXECUTION_BASE_URLS
+    assert OMNIROUTE_BASE_URL not in FREELLM_EXECUTION_BASE_URLS
     assert route_is_direct_freellm(_freellm_route(FREELLM_BASE_URL)) is True
     assert route_is_direct_freellm(_freellm_route(FREELLMPOOL_BASE_URL)) is False
-    assert route_is_direct_freellm(_freellm_route(OMNIROUTE_BASE_URL)) is True
-    assert route_is_omniroute_source(_freellm_route(OMNIROUTE_BASE_URL)) is True
+    assert route_is_direct_freellm(_freellm_route(OMNIROUTE_BASE_URL)) is False
+    assert route_is_omniroute_source(_freellm_route(OMNIROUTE_BASE_URL)) is False
 
 
 def test_omniroute_catalog_candidates_are_quarantined_and_tos_avoid_is_blocked() -> None:
@@ -112,17 +120,13 @@ def test_radar_migration_is_mirrored_and_permanently_candidate_only() -> None:
     assert "status IN ('quarantined', 'blocked_tos', 'stale')" in sql
 
 
-def test_production_entrypoint_keeps_radar_and_execution_authority_separate() -> None:
+def test_production_entrypoint_does_not_register_omniroute_runtime() -> None:
     dockerfile = (BACKEND_ROOT / "Dockerfile").read_text("utf-8")
     production_app = (BACKEND_ROOT / "production_app.py").read_text("utf-8")
-    execution = (BACKEND_ROOT / "omniroute_execution_runtime.py").read_text("utf-8")
 
     assert "production_app:app" in dockerfile
-    assert "register_omniroute_provider_radar" in production_app
-    assert "omniroute_provider_radar_service" in production_app
-    assert "register_omniroute_execution_runtime" in production_app
-    assert "omniroute_execution_service" in production_app
-    assert "routing_eligible" not in execution
-    assert "_completion_canary(1)" in execution
-    assert "_completion_canary(2)" in execution
-    assert "freeLlmApiChanged" in execution
+    assert "register_omniroute_provider_radar" not in production_app
+    assert "omniroute_provider_radar_service" not in production_app
+    assert "register_omniroute_execution_runtime" not in production_app
+    assert "omniroute_execution_service" not in production_app
+    assert "OpenRouter + owner-managed FreeLLMAPI" in production_app

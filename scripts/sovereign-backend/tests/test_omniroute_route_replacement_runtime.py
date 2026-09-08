@@ -84,17 +84,17 @@ def _canonical_omniroute_route() -> dict:
     }
 
 
-def test_transport_keeps_freellmapi_retires_pool_and_adds_omniroute() -> None:
+def test_transport_keeps_only_owner_managed_freellmapi_live() -> None:
     assert FREELLM_BASE_URL in FREELLM_EXECUTION_BASE_URLS
-    assert OMNIROUTE_BASE_URL in FREELLM_EXECUTION_BASE_URLS
+    assert OMNIROUTE_BASE_URL not in FREELLM_EXECUTION_BASE_URLS
     assert FREELLMPOOL_BASE_URL not in FREELLM_EXECUTION_BASE_URLS
     assert route_is_direct_freellm(_route(FREELLM_BASE_URL, "free-model")) is True
-    assert route_is_direct_freellm(_route(OMNIROUTE_BASE_URL)) is True
-    assert route_is_omniroute_source(_route(OMNIROUTE_BASE_URL)) is True
+    assert route_is_direct_freellm(_route(OMNIROUTE_BASE_URL)) is False
+    assert route_is_omniroute_source(_route(OMNIROUTE_BASE_URL)) is False
     assert route_is_direct_freellm(_route(FREELLMPOOL_BASE_URL)) is False
 
 
-def test_omniroute_is_keyless_but_freellmapi_keeps_protected_key(
+def test_omniroute_authorization_is_rejected_before_key_lookup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[str, str]] = []
@@ -106,8 +106,9 @@ def test_omniroute_is_keyless_but_freellmapi_keeps_protected_key(
 
     monkeypatch.setattr(direct_llm_runtime, "_protected_key", protected)
 
-    with direct_llm_runtime._authorization_headers(_route(OMNIROUTE_BASE_URL)) as headers:
-        assert headers == {}
+    with pytest.raises(direct_llm_runtime.DirectLlmRuntimeError):
+        with direct_llm_runtime._authorization_headers(_route(OMNIROUTE_BASE_URL)):
+            pass
     assert calls == []
 
     with direct_llm_runtime._authorization_headers(
@@ -498,7 +499,7 @@ def test_audit_failure_after_committed_activation_does_not_project_rejection(
     assert "SET disabled=true" not in all_sql
 
 
-def test_status_is_ready_only_for_a_real_execution_verified_route(
+def test_historical_ready_receipt_cannot_reactivate_retired_omniroute(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     identity = {
@@ -557,10 +558,10 @@ def test_status_is_ready_only_for_a_real_execution_verified_route(
 
     status = service.status()
 
-    assert status["ok"] is True
-    assert status["disabled"] is False
-    assert status["activationState"] == "ready"
-    assert status["blocker"] is None
+    assert status["ok"] is False
+    assert status["disabled"] is True
+    assert status["activationState"] == "blocked"
+    assert status["blocker"] is not None
 
 
 def test_status_query_requires_executable_source_and_model_supporting_state() -> None:
@@ -794,91 +795,15 @@ class _RouteApp:
         return register
 
 
-def test_refresh_returns_canonical_status_projection_after_success_or_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    route = {
-        "id": "sovereign-omniroute-auto",
-        "model_id": "sovereign-omniroute:auto",
-        "provider": "freellm",
-        "runtime_kind": "freellm",
-        "base_url": OMNIROUTE_BASE_URL,
-        "disabled": True,
-        "source_present": True,
-        "model_present": True,
-        "config": {
-            "transport": "freellm",
-            "routeSource": "omniroute",
-            "sourceType": "omniroute",
-            "providerModel": "auto",
-            "executionProfile": "free_single_agent",
-            "billingCategory": "free",
-            "billingClass": "free",
-            "fundingMode": "provider_free_quota",
-            "pricingVerified": False,
-            "markupMultiplier": 0,
-            "minimumMultiplier": 0,
-            "userChargeCredits": 0,
-            "quotaScope": "freellm:omniroute:auto",
-            "quotaEvidence": {
-                "scope": "freellm:omniroute:auto",
-                "stateOwner": "postgresql-revolver-state",
-            },
-            "routingOwner": "free-revolver-v3",
-            "resolverMode": "revolver",
-            "direct": True,
-            "selectable": False,
-            "canaryVerified": False,
-            "activationState": "blocked",
-            "activationBlocker": "omniroute_canary_http_401",
-            "canaryConfirmationCount": 0,
-        },
-    }
-
-    def query(sql: str, _params=None, *, one=False, **_kwargs):
-        assert "FROM llm_routes WHERE id=%s" in sql
-        assert one is True
-        return route
-
+def test_historical_registration_entrypoint_creates_no_admin_routes_or_worker() -> None:
     app = _RouteApp()
-    monkeypatch.setattr(runtime, "jsonify", lambda payload: payload)
-    monkeypatch.setattr(runtime.OmniRouteExecutionRuntime, "start", lambda _self: None)
     service = runtime.register_omniroute_execution_runtime(
         app,
         require_admin=lambda handler: handler,
-        query=query,
+        query=lambda *_args, **_kwargs: None,
         get_connection=lambda: _Connection(),
         audit=lambda *_args, **_kwargs: None,
     )
-    refresh = app.routes[("/api/admin/llm/omniroute/refresh", ("POST",))]
-    assert callable(refresh)
 
-    expected_keys = {
-        "ok",
-        "routeSource",
-        "routeId",
-        "modelId",
-        "apiBase",
-        "disabled",
-        "activationState",
-        "blocker",
-        "confirmationCount",
-        "receiptSha256",
-        "sourceRevision",
-        "imageDigest",
-        "freeLlmApiChanged",
-        "rawProviderResponsesReturned",
-    }
-
-    monkeypatch.setattr(service, "scan_once", lambda: {"ok": True})
-    success_payload, success_status = refresh()
-    assert success_status == 200
-    assert expected_keys <= success_payload.keys()
-    assert success_payload["routeSource"] == "omniroute"
-    assert success_payload["activationState"] == "blocked"
-
-    monkeypatch.setattr(service, "scan_once", lambda: {"ok": False, "status": "degraded"})
-    failure_payload, failure_status = refresh()
-    assert failure_status == 503
-    assert expected_keys <= failure_payload.keys()
-    assert failure_payload["blocker"] == "omniroute_canary_http_401"
+    assert app.routes == {}
+    assert service._thread is None

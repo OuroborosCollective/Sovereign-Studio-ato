@@ -167,33 +167,13 @@ export type FreeRevolverProviderStatus =
 
 export type ProviderSurfaceKind =
   | 'free-revolver'
-  | 'omniroute-auto'
   | 'retired-reference';
 
 export type ProviderSurfaceLifecycle = 'active' | 'historical';
 
 export type ProviderCanonicalAction =
   | 'revolver-discover'
-  | 'omniroute-refresh'
   | 'none';
-
-export interface OmniRouteRuntimeStatus {
-  ok: boolean;
-  routeSource: 'omniroute';
-  routeId: string;
-  modelId: string;
-  apiBase: string;
-  disabled: boolean;
-  activationState: string;
-  blocker: string | null;
-  confirmationCount: number;
-  catalogModelCount?: number;
-  receiptSha256: string | null;
-  sourceRevision: string | null;
-  imageDigest: string | null;
-  freeLlmApiChanged: false;
-  rawProviderResponsesReturned?: false;
-}
 
 export interface OpenRouterPaidRuntimeStatus {
   status: string;
@@ -231,7 +211,6 @@ export interface OpenRouterFreeRuntimeStatus {
 export interface LlmProviderSurfaceReadModel {
   providers: FreeRevolverProviderSource[];
   freeRevolverMinimumReadyRoutes: number;
-  omniRoute: OmniRouteRuntimeStatus | null;
   openRouterPaid: OpenRouterPaidRuntimeStatus | null;
   openRouterFree: OpenRouterFreeRuntimeStatus | null;
 }
@@ -294,8 +273,6 @@ export interface FreeRevolverProviderSource {
 }
 
 const OMNIROUTE_API_BASE = 'http://omniroute:20128/v1';
-const OMNIROUTE_ROUTE_ID = 'sovereign-omniroute-auto';
-const OMNIROUTE_MODEL_ID = 'sovereign-omniroute:auto';
 const RETIRED_FREELLMPOOL_API_BASE = 'http://freellmpool:8080/v1';
 const FREE_REVOLVER_TRUTH_OWNER = 'postgresql-owner-input-direct-freellm';
 const FREE_REVOLVER_KEY_STORAGE = 'owner-managed-direct-freellm';
@@ -308,7 +285,6 @@ const providerStatuses = [
 ] as const;
 const providerModelStatuses = ['discovered', 'ready', 'blocked', 'disabled'] as const;
 const providerCostStates = ['zero', 'unreported', 'nonzero'] as const;
-const blockedOmniRouteActivationStates = ['blocked', 'degraded'] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -328,18 +304,6 @@ function isNullableFiniteNumber(value: unknown): value is number | null {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isCanonicalSha256(value: unknown): value is string {
-  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
-}
-
-function isCanonicalSourceRevision(value: unknown): value is string {
-  return typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
-}
-
-function isCanonicalImageDigest(value: unknown): value is string {
-  return typeof value === 'string' && /^sha256:[0-9a-f]{64}$/.test(value);
 }
 
 function isOneOf<T extends readonly string[]>(value: unknown, choices: T): value is T[number] {
@@ -407,18 +371,11 @@ function isAcceptedProviderControl(value: unknown): value is FreeRevolverProvide
   ) {
     return apiBase !== OMNIROUTE_API_BASE && apiBase !== RETIRED_FREELLMPOOL_API_BASE;
   }
-  if (
-    value.providerSurfaceKind === 'omniroute-auto'
-    && value.lifecycle === 'active'
-    && value.canonicalAction === 'omniroute-refresh'
-  ) {
-    return apiBase === OMNIROUTE_API_BASE && value.authMode === 'none';
-  }
   return (
     value.providerSurfaceKind === 'retired-reference'
     && value.lifecycle === 'historical'
     && value.canonicalAction === 'none'
-    && apiBase === RETIRED_FREELLMPOOL_API_BASE
+    && (apiBase === RETIRED_FREELLMPOOL_API_BASE || apiBase === OMNIROUTE_API_BASE)
     && value.enabled === false
   );
 }
@@ -462,8 +419,9 @@ function normalizeProviderControlReadback(value: unknown): FreeRevolverProviderS
   if (!isRecord(value) || !isNonEmptyString(value.id) || !isNonEmptyString(value.apiBase)) return null;
   const apiBase = value.apiBase.replace(/\/$/, '').toLowerCase();
   const retired = apiBase === RETIRED_FREELLMPOOL_API_BASE
-    || value.lastErrorCode === 'freellmpool_replaced_by_omniroute';
-  const omniRoute = apiBase === OMNIROUTE_API_BASE;
+    || apiBase === OMNIROUTE_API_BASE
+    || value.lastErrorCode === 'freellmpool_replaced_by_omniroute'
+    || value.lastErrorCode === 'omniroute_retired_owner_simplification';
   const models = Array.isArray(value.models)
     ? value.models
       .map(normalizeProviderModelReadback)
@@ -473,13 +431,13 @@ function normalizeProviderControlReadback(value: unknown): FreeRevolverProviderS
     ...value,
     sourceType: isNonEmptyString(value.sourceType)
       ? value.sourceType
-      : omniRoute ? 'omniroute' : retired ? 'freellmpool-private' : 'external-free-provider',
+      : retired ? 'retired-provider' : 'external-free-provider',
     label: isNonEmptyString(value.label) ? value.label : value.apiBase,
-    providerSurfaceKind: retired ? 'retired-reference' : omniRoute ? 'omniroute-auto' : 'free-revolver',
+    providerSurfaceKind: retired ? 'retired-reference' : 'free-revolver',
     lifecycle: retired ? 'historical' : 'active',
-    canonicalAction: retired ? 'none' : omniRoute ? 'omniroute-refresh' : 'revolver-discover',
+    canonicalAction: retired ? 'none' : 'revolver-discover',
     modelsUrl: isNullableString(value.modelsUrl) ? value.modelsUrl : null,
-    authMode: isOneOf(value.authMode, providerAuthModes) ? value.authMode : omniRoute ? 'none' : 'bearer',
+    authMode: isOneOf(value.authMode, providerAuthModes) ? value.authMode : 'bearer',
     keyHint: isNullableString(value.keyHint) ? value.keyHint : null,
     status: isOneOf(value.status, providerStatuses) ? value.status : retired ? 'disabled' : 'degraded',
     lastHttpStatus: isNullableFiniteNumber(value.lastHttpStatus) ? value.lastHttpStatus : null,
@@ -508,42 +466,6 @@ function normalizeFreeRevolverProviderReadback(value: unknown): {
       ? value.minimumReadyRoutes
       : DEFAULT_FREE_REVOLVER_MIN_READY_ROUTES,
   };
-}
-
-function isAcceptedOmniRouteStatus(value: unknown): value is OmniRouteRuntimeStatus {
-  if (!isRecord(value)) return false;
-  const catalogModelCount = value.catalogModelCount;
-  if (
-    typeof value.ok !== 'boolean'
-    || value.routeSource !== 'omniroute'
-    || value.routeId !== OMNIROUTE_ROUTE_ID
-    || value.modelId !== OMNIROUTE_MODEL_ID
-    || value.apiBase !== OMNIROUTE_API_BASE
-    || typeof value.disabled !== 'boolean'
-    || !isNonEmptyString(value.activationState)
-    || !isNullableString(value.blocker)
-    || !isNonNegativeInteger(value.confirmationCount)
-    || (catalogModelCount !== undefined && !isNonNegativeInteger(catalogModelCount))
-    || !isNullableString(value.receiptSha256)
-    || !isNullableString(value.sourceRevision)
-    || !isNullableString(value.imageDigest)
-    || value.freeLlmApiChanged !== false
-    || value.rawProviderResponsesReturned !== false
-  ) {
-    return false;
-  }
-  if (value.ok) {
-    return value.disabled === false
-      && value.activationState === 'ready'
-      && value.blocker === null
-      && value.confirmationCount >= 2
-      && isCanonicalSha256(value.receiptSha256)
-      && isCanonicalSourceRevision(value.sourceRevision)
-      && isCanonicalImageDigest(value.imageDigest);
-  }
-  return value.disabled === true
-    && isOneOf(value.activationState, blockedOmniRouteActivationStates)
-    && isNonEmptyString(value.blocker);
 }
 
 function isAcceptedOpenRouterPaidStatus(value: unknown): value is OpenRouterPaidRuntimeStatus {
@@ -600,7 +522,6 @@ export function isAcceptedLlmProviderSurfaceReadModel(
     && value.providers.every(isAcceptedProviderControl)
     && isNonNegativeInteger(value.freeRevolverMinimumReadyRoutes)
     && value.freeRevolverMinimumReadyRoutes > 0
-    && (value.omniRoute === null || isAcceptedOmniRouteStatus(value.omniRoute))
     && (value.openRouterPaid === null || isAcceptedOpenRouterPaidStatus(value.openRouterPaid))
     && (value.openRouterFree === null || isAcceptedOpenRouterFreeStatus(value.openRouterFree));
 }
@@ -801,8 +722,8 @@ async function req<T>(
       && /^[a-z][a-z0-9_:-]{0,159}$/i.test(body.blocker)
       ? body.blocker
       : null;
-    // Preserve the backend's bounded cause instead of reducing OmniRoute and
-    // other provider failures to an uncorrelated "Unknown error".
+    // Preserve the backend's bounded cause instead of reducing provider
+    // failures to an uncorrelated "Unknown error".
     throw new Error(blocker
       ? `${blocker} · HTTP ${res.status}${message ? ` · ${message}` : ''}`
       : message ?? `HTTP ${res.status}`);
@@ -1079,17 +1000,6 @@ export const adminApiClient = {
     }>('/api/admin/llm/revolver-v3/providers');
   },
 
-  getOmniRouteStatus() {
-    return req<OmniRouteRuntimeStatus>('/api/admin/llm/omniroute/status');
-  },
-
-  refreshOmniRoute() {
-    return req<OmniRouteRuntimeStatus>('/api/admin/llm/omniroute/refresh', {
-      method: 'POST',
-      body: '{}',
-    }, 180_000);
-  },
-
   getOpenRouterPaidStatus() {
     return req<OpenRouterPaidRuntimeStatus>('/api/admin/llm/openrouter/status');
   },
@@ -1099,9 +1009,8 @@ export const adminApiClient = {
   },
 
   async getLlmProviderSurfaceReadModel(): Promise<LlmProviderSurfaceReadModel> {
-    const [providerPayload, omniRoutePayload, openRouterPaidPayload, openRouterFreePayload] = await Promise.all([
+    const [providerPayload, openRouterPaidPayload, openRouterFreePayload] = await Promise.all([
       this.getFreeRevolverProviders().catch(() => null),
-      this.getOmniRouteStatus().catch(() => null),
       this.getOpenRouterPaidStatus().catch(() => null),
       this.getOpenRouterFreeStatus().catch(() => null),
     ]);
@@ -1114,7 +1023,6 @@ export const adminApiClient = {
     const readModel: unknown = {
       providers: providerReadback.providers,
       freeRevolverMinimumReadyRoutes: providerReadback.minimumReadyRoutes,
-      omniRoute: isAcceptedOmniRouteStatus(omniRoutePayload) ? omniRoutePayload : null,
       openRouterPaid: isAcceptedOpenRouterPaidStatus(openRouterPaidPayload) ? openRouterPaidPayload : null,
       openRouterFree: isAcceptedOpenRouterFreeStatus(openRouterFreePayload) ? openRouterFreePayload : null,
     };
