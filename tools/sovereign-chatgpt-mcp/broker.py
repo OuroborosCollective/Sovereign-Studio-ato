@@ -397,6 +397,8 @@ class BrokerRuntime:
             return self.n8n_host_maintenance.tagged_image_retention_cleanup_plan()
         if action == "bootstrap_local_fleet":
             return self.patchmon_fleet.bootstrap_plan(friendly_name="sovereign-vps")
+        if action == "retire_omniroute":
+            return self.fleet_maintenance.omniroute_retirement_plan()
         return self.patchmon.patch_action_plan(
             action=action,
             host_id=str(values.get("host_id") or ""),
@@ -429,6 +431,11 @@ class BrokerRuntime:
                 confirmation_sha256=str(values.get("confirmation_sha256") or ""),
                 friendly_name="sovereign-vps",
                 owner_approved=True,
+            )
+        if action == "retire_omniroute":
+            return self.fleet_maintenance.omniroute_retirement_apply(
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=self.private_owner_mode,
             )
         return self.patchmon.patch_action_apply(
             action=action,
