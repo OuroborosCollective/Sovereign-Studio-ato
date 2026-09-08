@@ -1,6 +1,7 @@
 import React from 'react';
 import { EvidenceObservatoryAtlas } from './features/evidence-observatory/EvidenceObservatoryAtlas';
 import { PlayReleaseChat } from './features/release/PlayReleaseChat';
+import { SovereignRescueOverlay } from './features/rescue/SovereignRescueOverlay';
 
 const CHAT_FIRST_STYLE: React.CSSProperties = {
   height: '100dvh',
@@ -15,6 +16,10 @@ const CHAT_FIRST_STYLE: React.CSSProperties = {
  * does not auto-adopt a previously persisted Agent job as current truth. Older
  * jobs remain backend history and must be explicitly read/adopted by a bounded
  * workflow before they can affect current product state.
+ *
+ * Rescue remains available through its own current-session job bridge. It may
+ * only publish a job returned through that overlay's exact job-id readback and
+ * never adopts a historical "latest job" implicitly.
  */
 export default function App() {
   const observatoryMode = typeof window !== 'undefined'
@@ -34,6 +39,7 @@ export default function App() {
       style={CHAT_FIRST_STYLE}
     >
       <PlayReleaseChat />
+      <SovereignRescueOverlay />
     </div>
   );
 }
