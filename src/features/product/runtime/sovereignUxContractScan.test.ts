@@ -2,8 +2,8 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
-const builderPath = 'src/features/product/containers/BuilderContainer.tsx';
-const builder = fs.readFileSync(builderPath, 'utf8');
+const releasePath = 'src/features/release/PlayReleaseChat.tsx';
+const release = fs.readFileSync(releasePath, 'utf8');
 const scannerPath = '../../../../scripts/sovereign-ux-contract-scan.mjs';
 
 async function scan(source: string) {
@@ -13,7 +13,7 @@ async function scan(source: string) {
   vi.doMock('node:fs', () => ({
     default: {
       ...fs,
-      readFileSync: (filePath: string) => filePath === builderPath
+      readFileSync: (filePath: string) => filePath === releasePath
         ? source : fs.readFileSync(filePath, 'utf8'),
       mkdirSync: () => undefined,
       writeFileSync: () => undefined,
@@ -38,28 +38,33 @@ async function scan(source: string) {
   }
 }
 
-describe('production UX scanner chat bindings', () => {
-  it('accepts the actual chat dock with its expanded empty-state markup', async () => {
-    const { report, exits } = await scan(builder);
+describe('production UX scanner current-session bindings', () => {
+  it('accepts the actual Play Release composer and guarded submit path', async () => {
+    const { report, exits } = await scan(release);
     expect(report.status).toBe('pass');
     expect(report.errors).toEqual([]);
     expect(exits).toEqual([]);
   });
 
-  it('rejects a changed submit handler even when the original name remains elsewhere', async () => {
-    const broken = builder.replace('onSubmit={() => { void handleSubmit(); }}',
-      'onSubmit={() => { void unrelatedHandler(); }}');
-    expect(broken).not.toBe(builder);
+  it('rejects a changed visible send handler even when submit still exists elsewhere', async () => {
+    const broken = release.replace(
+      'onClick={() => { void submit(); }}',
+      'onClick={() => { void unrelatedHandler(); }}',
+    );
+    expect(broken).not.toBe(release);
     const { report, exits } = await scan(broken);
-    expect(report.errors.map(error => error.id)).toContain('builder:start-visible');
+    expect(report.errors.map(error => error.id)).toContain('release:send-visible');
     expect(exits).toEqual([1]);
   });
 
-  it('rejects an input state disconnected from setWishText', async () => {
-    const broken = builder.replace('onChange={setWishText}', 'onChange={unrelatedHandler}');
-    expect(broken).not.toBe(builder);
+  it('rejects a composer disconnected from the current-session draft state', async () => {
+    const broken = release.replace(
+      'onChange={(event) => setDraft(event.target.value)}',
+      'onChange={(event) => unrelatedHandler(event.target.value)}',
+    );
+    expect(broken).not.toBe(release);
     const { report, exits } = await scan(broken);
-    expect(report.errors.map(error => error.id)).toContain('builder:mission-form-bound');
+    expect(report.errors.map(error => error.id)).toContain('release:composer-bound');
     expect(exits).toEqual([1]);
   });
 });

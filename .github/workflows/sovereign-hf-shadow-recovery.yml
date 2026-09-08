@@ -1,0 +1,94 @@
+name: Sovereign HF Shadow Recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/sovereign-backend/shadow_inference_hf_recovery.py'
+      - 'scripts/sovereign-backend/shadow_inference_hf_recover_cli.py'
+      - 'scripts/sovereign-backend/tests/test_shadow_inference_hf_recovery.py'
+      - '.github/workflows/sovereign-hf-shadow-recovery.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sovereign-hf-shadow-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover-after-exact-deploy:
+    name: Recover HF viewer after exact backend deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment:
+      name: production
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST || secrets.SSH_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER || secrets.SSH_USER }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.SSH_PW || secrets.SSH_PASSWORD }}
+      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
+      EXPECTED_REVISION: ${{ github.sha }}
+      EXPECTED_HF_REVISION: 59b21a247775b2931803f86c4514a8d245eeece8
+    steps:
+      - name: Validate immutable recovery inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = 'refs/heads/main'
+          [[ "${EXPECTED_REVISION}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXPECTED_HF_REVISION}" =~ ^[0-9a-f]{40}$ ]]
+          test -n "${VPS_HOST:-}"
+          test -n "${VPS_USER:-}"
+          test -n "${VPS_PASSWORD:-}"
+          [[ "${VPS_SSH_PORT}" =~ ^[0-9]+$ ]]
+
+      - name: Wait for exact backend revision and recover Hugging Face
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        env:
+          SUDO_PASSWORD: ${{ env.VPS_PASSWORD }}
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 35m
+          envs: SUDO_PASSWORD,EXPECTED_REVISION,EXPECTED_HF_REVISION
+          script: |
+            set -Eeuo pipefail
+            run_root() {
+              if [ "$(id -u)" -eq 0 ]; then
+                "$@"
+                return
+              fi
+              if sudo -n true >/dev/null 2>&1; then
+                sudo -n "$@"
+                return
+              fi
+              test -n "${SUDO_PASSWORD:-}" || { echo 'sudo password is unavailable.' >&2; exit 1; }
+              printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' "$@"
+            }
+
+            observed_revision=''
+            for _ in $(seq 1 90); do
+              if run_root docker inspect sovereign-backend >/dev/null 2>&1; then
+                image_id="$(run_root docker inspect sovereign-backend --format '{{.Image}}')"
+                observed_revision="$(run_root docker image inspect "$image_id" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+                running="$(run_root docker inspect sovereign-backend --format '{{.State.Running}}')"
+                health="$(run_root docker inspect sovereign-backend --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')"
+                if [ "$observed_revision" = "$EXPECTED_REVISION" ] && [ "$running" = 'true' ] && [ "$health" = 'healthy' ]; then
+                  break
+                fi
+              fi
+              sleep 20
+            done
+
+            test "$observed_revision" = "$EXPECTED_REVISION"
+            test "$(run_root docker inspect sovereign-backend --format '{{.State.Running}}')" = 'true'
+            test "$(run_root docker inspect sovereign-backend --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')" = 'healthy'
+
+            run_root docker exec sovereign-backend python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health/live', timeout=8).read()"
+            run_root docker exec sovereign-backend python /app/shadow_inference_hf_recover_cli.py \
+              --expected-hf-revision "$EXPECTED_HF_REVISION" \
+              --candidate-revision "$EXPECTED_REVISION" \
+              --owner-approved

@@ -17,7 +17,6 @@ interface EndpointContractReport {
     frontendModuleCount: number;
     importEdgeCount: number;
     legacyImportViolationCount: number;
-    frontendCallCount: number;
     activeRequestCount: number;
     boundActiveRequestCount: number;
     unmatchedActiveRequestCount: number;
@@ -29,7 +28,6 @@ interface EndpointContractReport {
     activeReadWithoutTestEvidenceCount: number;
     backendRouteCount: number;
     externalRequestCount: number;
-    activeExternalRequestCount: number;
     externalMethodUnknownCount: number;
   };
   bindings: Array<{
@@ -81,10 +79,10 @@ function compileEndpointContractReport(): EndpointContractReport {
   return JSON.parse(fs.readFileSync(REPORT_PATH, 'utf8')) as EndpointContractReport;
 }
 
-async function fulfillJson(route: Route, body: unknown): Promise<void> {
+async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
   const requestOrigin = route.request().headers()['origin'] || DEFAULT_APP_ORIGIN;
   await route.fulfill({
-    status: 200,
+    status,
     contentType: 'application/json',
     headers: {
       'Access-Control-Allow-Origin': requestOrigin,
@@ -97,7 +95,7 @@ async function fulfillJson(route: Route, body: unknown): Promise<void> {
 
 let report: EndpointContractReport;
 
-test.describe('Frontend endpoint contract and browser smoke', () => {
+test.describe('Frontend endpoint contract and current Play Release browser smoke', () => {
   test.beforeAll(() => {
     report = compileEndpointContractReport();
   });
@@ -157,7 +155,7 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     });
   });
 
-  test('the built chat-first surface executes the authenticated structured FreeLLM contract without an unconsented billing write', async ({ page }) => {
+  test('the built Play Release surface compiles a FreeLLM repository action without an unconsented write', async ({ page }) => {
     const observed: Array<{ method: string; path: string }> = [];
     const unexpectedApiRequests: Array<{ method: string; path: string }> = [];
     const llmChatBodies: Array<Record<string, unknown>> = [];
@@ -176,7 +174,7 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
       id: '00000000-0000-4000-8000-000000000777',
       defaultModelId: 'free/test-model',
       label: 'Verified Free Test Route',
-      description: 'Chat-first browser smoke',
+      description: 'Current Play Release browser smoke',
       provider: 'freellm',
       billingCategory: 'free',
       fundingMode: 'provider_free_quota',
@@ -202,78 +200,10 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
       const request = route.request();
       const url = new URL(request.url());
       unexpectedApiRequests.push({ method: request.method(), path: url.pathname });
-      await route.fulfill({
-        status: 501,
-        contentType: 'application/json',
-        headers: { 'Cache-Control': 'no-store' },
-        body: JSON.stringify({ error: 'unexpected_frontend_endpoint_smoke_request' }),
-      });
+      await fulfillJson(route, { error: 'unexpected_frontend_endpoint_smoke_request' }, 501);
     });
-
     await page.route('**/api/auth/me', route => fulfillJson(route, currentUser));
-    await page.route('**/api/billing', route => fulfillJson(route, {
-      subscription: null,
-      invoices: [],
-      availablePackages: [],
-      packages: [],
-    }));
-    await page.route('**/api/billing/payment-methods', route => fulfillJson(route, { methods: [] }));
     await page.route('**/api/llm/routes**', route => fulfillJson(route, { routes: [freeRoute] }));
-    await page.route('**/api/user/agent/live-workspace/chat-session', async route => {
-      const body = route.request().postDataJSON() as Record<string, unknown>;
-      await fulfillJson(route, {
-        session: {
-          schemaVersion: 'sovereign.live-workspace-chat-session.v1',
-          persistence: 'postgresql',
-          sessionId: 'livechat-0123456789abcdef01234567',
-          repositoryIdentity: typeof body.repositoryIdentity === 'string' ? body.repositoryIdentity : 'UNBOUND',
-          repositoryBranch: typeof body.repositoryBranch === 'string' ? body.repositoryBranch : 'main',
-          recordedAt: '2026-08-30T00:00:00.000Z',
-        },
-      });
-    });
-    await page.route('**/api/user/agent/live-workspace/chat-session/*/mission', async route => {
-      const body = route.request().postDataJSON() as Record<string, unknown>;
-      await fulfillJson(route, {
-        bubble: {
-          schemaVersion: 'sovereign.live-workspace-chat-bubble.v1',
-          sessionId: 'livechat-0123456789abcdef01234567',
-          clientMessageId: typeof body.clientMessageId === 'string' ? body.clientMessageId : 'mission-endpoint-smoke',
-          bubbleKind: 'MISSION_INPUT',
-          sourceKind: 'USER_INPUT',
-          text: typeof body.text === 'string' ? body.text : '',
-          canonicalReferenceHashes: [],
-          workflowState: 'RECORDED',
-          bubbleHash: '1'.repeat(64),
-          recordedAt: '2026-08-30T00:00:01.000Z',
-          authoritative: false,
-        },
-      });
-    });
-    await page.route('**/api/user/agent/jobs**', route => fulfillJson(route, { jobs: [] }));
-    await page.route('**/api/toolchain/user-tools', route => fulfillJson(route, {
-      tools: [],
-      allowed_repos: [],
-      rules: {
-        auto_load: true,
-        github_read: 'after_login',
-        auto_write: false,
-        push_to_main: false,
-        pr_mode: 'draft_only',
-        confirm_required: true,
-        audit_log: true,
-      },
-    }));
-    await page.route('**/api/toolchain/universal/manifest', route => fulfillJson(route, {
-      version: 'endpoint-smoke-v1',
-      runtime: 'browser',
-      tools: [],
-      policy: {
-        arbitraryShell: false,
-        directProductionRunner: false,
-      },
-    }));
-    await page.route('**/api/toolchain/skills/list', route => fulfillJson(route, { skills: [] }));
     await page.route('**/health/ready', route => fulfillJson(route, { ok: true, configured: true }));
     await page.route('**/api/llm/chat', async route => {
       llmChatBodies.push(route.request().postDataJSON() as Record<string, unknown>);
@@ -286,10 +216,10 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
         choices: [{
           message: {
             content: JSON.stringify({
-              mode: 'clarify',
-              intent: 'unknown',
+              mode: 'action',
+              intent: 'direct_patch',
               action_disposition: 'review',
-              clarification_code: 'repo_required',
+              clarification_code: 'none',
               is_startup: false,
               confidence: 0.96,
               language: 'de',
@@ -303,21 +233,16 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     const app = page.locator('[data-testid="sovereign-chat-app"]');
     await expect(app).toBeVisible({ timeout: 30_000 });
     await expect(app).toHaveAttribute('data-layout', 'chat-first-agent-zero-background');
-    await expect(page.locator('[data-layout="chat-primary-agent-zero-background"]')).toBeVisible();
-    await expect(page.locator('[data-testid="sovereign-chat-primary"]')).toBeVisible();
-    await expect(page.locator('[data-testid="sovereign-chat-body-window"]')).toBeVisible();
+    await expect(app).toHaveAttribute('data-primary-surface', 'play-release-chat');
+    await expect(app).toHaveAttribute('data-truth-scope', 'current-chat-session-only');
+    await expect(page.locator('[data-testid="sovereign-release-chat"]')).toBeVisible();
+    await expect(page.locator('[data-testid="play-release-menu-frame"]')).toBeVisible();
     await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="monitor-communication-dock"]')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Menü', exact: true })).toBeVisible();
 
-    const routeTrigger = page.locator('[data-testid="sovereign-llm-route-picker-trigger"]');
-    await expect(routeTrigger).toBeVisible();
-    await expect(routeTrigger).toHaveAttribute('aria-expanded', 'false');
-    await expect(page.getByText('Verified Free Test Route')).toHaveCount(0);
-    await routeTrigger.click();
-    await expect(page.getByRole('dialog', { name: 'LLM-Modell auswählen' })).toBeVisible();
-    await expect(page.getByRole('option', { name: /Verified Free Test Route/ })).toBeVisible();
-    await page.keyboard.press('Escape');
+    const routePicker = page.getByLabel('LLM Route');
+    await expect(routePicker).toBeVisible();
+    await expect(routePicker).toHaveValue('');
+    await expect(routePicker.locator(`option[value="${freeRoute.id}"]`)).toHaveText('FREE · Verified Free Test Route');
 
     const coverageResponse = await page.request.get('/generated/test-coverage-map.json');
     expect(coverageResponse.status()).toBe(200);
@@ -343,10 +268,14 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
       expect(coveragePayload.testRoots?.[root]).toBeGreaterThan(0);
     }
 
-    const composer = page.getByLabel('Codeauftrag an Sovereign');
-    await composer.fill('Bitte repariere den Build und führe noch nichts ohne Freigabe aus.');
+    const composer = page.getByLabel('Nachricht an Sovereign');
+    await composer.fill('Bitte repariere den Build in https://github.com/example/public-repo und führe noch nichts ohne Freigabe aus.');
     await composer.press('Enter');
-    await expect(page.getByText('Welches Repository soll ich ändern?')).toBeVisible({ timeout: 10_000 });
+
+    const actionPreview = page.locator('[data-testid="github-action-preview"]');
+    await expect(actionPreview).toBeVisible({ timeout: 10_000 });
+    await expect(actionPreview.getByText('Repository-Ausführungsvorschau')).toBeVisible();
+    await expect(actionPreview.getByRole('button', { name: 'Repository-Ausführung starten' })).toBeVisible();
 
     await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/auth/me')).toBe(true);
     await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/llm/routes')).toBe(true);
@@ -362,7 +291,9 @@ test.describe('Frontend endpoint contract and browser smoke', () => {
     expect(Array.isArray(llmChatBodies[0]?.messages)).toBe(true);
 
     const billingWrites = observed.filter(item => item.path.startsWith('/api/billing') && item.method !== 'GET');
+    const agentWrites = observed.filter(item => item.path.startsWith('/api/user/agent/') && item.method !== 'GET');
     expect(billingWrites).toEqual([]);
+    expect(agentWrites).toEqual([]);
     expect(observed.some(item => item.path === '/api/billing/cancel')).toBe(false);
     expect(observed.some(item => item.path === '/api/billing/restore')).toBe(false);
     expect(unexpectedApiRequests).toEqual([]);

@@ -25,7 +25,6 @@ const legacyMobileModules = [
   'mobile-operator-coach',
   'mobile-workbench-console',
 ];
-
 const ignoredDirs = new Set(['node_modules', 'dist', 'build', 'coverage', '.git', '.gradle']);
 const liveExtensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 const testPathPattern = /\.test\.[cm]?[tj]sx?$|\.spec\.[cm]?[tj]sx?$|__tests__|test-utils|testing/;
@@ -33,42 +32,18 @@ const oldBootMarker = /installMobile[A-Za-z0-9]+/;
 const placeholderMarker = /TODO_PLACEHOLDER|FAKE_IMPLEMENTATION|DUMMY_IMPLEMENTATION|not implemented/i;
 const testDoubleMarker = /vi\.mock\(|jest\.mock\(|mockImplementation\(/;
 
-function exists(filePath) {
-  return fs.existsSync(filePath);
-}
-
-function read(filePath) {
-  return exists(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
-}
-
-function normalize(filePath) {
-  return filePath.replaceAll(path.sep, '/');
-}
-
-function pass(id, message, details = {}) {
-  report.checks.push({ id, ok: true, message, details });
-}
-
+function exists(filePath) { return fs.existsSync(filePath); }
+function read(filePath) { return exists(filePath) ? fs.readFileSync(filePath, 'utf8') : ''; }
+function normalize(filePath) { return filePath.replaceAll(path.sep, '/'); }
+function pass(id, message, details = {}) { report.checks.push({ id, ok: true, message, details }); }
 function fail(id, message, details = {}) {
   report.checks.push({ id, ok: false, message, details });
   report.errors.push({ id, message, details });
 }
-
-function warn(id, message, details = {}) {
-  report.warnings.push({ id, message, details });
-}
-
-function isIgnored(filePath) {
-  return filePath.split(path.sep).some((part) => ignoredDirs.has(part));
-}
-
-function isLiveFile(filePath) {
-  return liveExtensions.has(path.extname(filePath));
-}
-
-function isTestFile(filePath) {
-  return testPathPattern.test(normalize(filePath));
-}
+function warn(id, message, details = {}) { report.warnings.push({ id, message, details }); }
+function isIgnored(filePath) { return filePath.split(path.sep).some((part) => ignoredDirs.has(part)); }
+function isLiveFile(filePath) { return liveExtensions.has(path.extname(filePath)); }
+function isTestFile(filePath) { return testPathPattern.test(normalize(filePath)); }
 
 function walk(dir) {
   if (!exists(dir)) return [];
@@ -84,10 +59,27 @@ function walk(dir) {
 
 function safeSummaryPath() {
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  const runnerTemp = process.env.RUNNER_TEMP;
+
   if (typeof summaryPath !== 'string' || !summaryPath.trim()) return null;
+  if (typeof runnerTemp !== 'string' || !runnerTemp.trim()) return null;
+
+  const trustedRoot = path.resolve(runnerTemp);
   const resolved = path.resolve(summaryPath);
-  if (!path.isAbsolute(resolved)) return null;
-  if (path.basename(resolved) !== 'summary.md') return null;
+  const relativeToRoot = path.relative(trustedRoot, resolved);
+
+  if (
+    relativeToRoot === '..'
+    || relativeToRoot.startsWith(`..${path.sep}`)
+    || path.isAbsolute(relativeToRoot)
+  ) {
+    return null;
+  }
+
+  if (!/^step_summary_[A-Za-z0-9-]+$/.test(path.basename(resolved))) {
+    return null;
+  }
+
   return resolved;
 }
 
@@ -95,56 +87,39 @@ function writeReport() {
   fs.mkdirSync(REPORT_DIR, { recursive: true });
   report.status = report.errors.length === 0 ? 'pass' : 'fail';
   fs.writeFileSync(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`);
-
   const summary = safeSummaryPath();
   if (summary) {
-    const lines = [
-      '## Sovereign Live Path Scan',
-      '',
+    fs.appendFileSync(summary, [
+      '## Sovereign Live Path Scan', '',
       `Status: **${report.status}**`,
       `Scanned files: **${report.scannedFiles}**`,
-      `Checks: **${report.checks.length}**`,
       `Errors: **${report.errors.length}**`,
-      `Warnings: **${report.warnings.length}**`,
-      '',
+      `Warnings: **${report.warnings.length}**`, '',
       '### Errors',
       ...(report.errors.length ? report.errors.map((item) => `- ${item.id}: ${item.message}`) : ['- none']),
       '',
-      '### Warnings',
-      ...(report.warnings.length ? report.warnings.map((item) => `- ${item.id}: ${item.message}`) : ['- none']),
-      '',
-    ];
-    fs.appendFileSync(summary, `${lines.join('\n')}\n`);
+    ].join('\n') + '\n');
   }
-
   console.log(JSON.stringify(report, null, 2));
 }
 
 function scanFiles(files) {
   report.scannedFiles = files.length;
-
   for (const filePath of files) {
     const source = read(filePath);
     const normalized = normalize(filePath);
     const isTest = isTestFile(filePath);
-    const isLegacyMobileModule = legacyMobileModules.some((moduleName) => normalized === `src/${moduleName}.ts`);
-
+    const isLegacyMobileModule = legacyMobileModules.some((name) => normalized === `src/${name}.ts`);
     if (!isTest && testDoubleMarker.test(source)) {
       fail(`test-double:${normalized}`, 'Test-double API appears in non-test live path.', { filePath: normalized });
     }
-
     if (!isTest && placeholderMarker.test(source)) {
       fail(`placeholder:${normalized}`, 'Placeholder implementation marker appears in non-test live path.', { filePath: normalized });
     }
-
     if (oldBootMarker.test(source)) {
-      if (isTest) {
-        pass(`legacy-marker-test:${normalized}`, 'Legacy mobile boot markers are allowed in regression tests.', { filePath: normalized });
-      } else if (isLegacyMobileModule) {
-        warn(`legacy-mobile-module:${normalized}`, 'Legacy mobile DOM module still exists. It is allowed only while absent from main.tsx boot path.', { filePath: normalized });
-      } else {
-        warn(`legacy-marker:${normalized}`, 'Legacy mobile marker appears outside boot path. Review before reusing it.', { filePath: normalized });
-      }
+      if (isTest) pass(`legacy-marker-test:${normalized}`, 'Legacy mobile boot markers are allowed in regression tests.');
+      else if (isLegacyMobileModule) warn(`legacy-mobile-module:${normalized}`, 'Legacy mobile DOM module exists but must stay outside main boot.');
+      else warn(`legacy-marker:${normalized}`, 'Legacy mobile marker appears outside the boot path.');
     }
   }
 }
@@ -155,110 +130,86 @@ function scanMainBootPath() {
     fail('main:missing', 'src/main.tsx is missing.');
     return;
   }
-
   const source = read(mainPath);
-
   for (const moduleName of legacyMobileModules) {
     const importToken = `./${moduleName}`;
-    if (source.includes(importToken)) {
-      fail(`main:legacy-import:${moduleName}`, `main.tsx must not import legacy mobile module ${moduleName}.`, { moduleName });
-    } else {
-      pass(`main:no-legacy-import:${moduleName}`, `main.tsx does not import ${moduleName}.`, { moduleName });
-    }
+    if (source.includes(importToken)) fail(`main:legacy-import:${moduleName}`, `main.tsx must not import ${moduleName}.`);
+    else pass(`main:no-legacy-import:${moduleName}`, `main.tsx does not import ${moduleName}.`);
   }
-
   if (/installViewportRuntime/.test(source)) pass('main:viewport-runtime', 'Viewport runtime is installed.');
   else fail('main:viewport-runtime', 'Viewport runtime installation is missing.');
-
   if (/installCodeWorkspacePersistenceRuntime/.test(source)) pass('main:persistence-runtime', 'Workspace persistence runtime is installed.');
   else fail('main:persistence-runtime', 'Workspace persistence runtime installation is missing.');
 }
 
 function scanRuntimeContracts() {
   const app = read('src/App.tsx');
+  const release = read('src/features/release/PlayReleaseChat.tsx');
   const builder = read('src/features/product/containers/BuilderContainer.tsx');
-  const dock = read('src/features/product/components/MonitorCommunicationDock.tsx');
-  const monitor = read('src/global-runtime-monitor.tsx');
 
   if (
-    /BuilderContainer/.test(app)
+    /PlayReleaseChat/.test(app)
     && /data-testid="sovereign-chat-app"/.test(app)
     && /data-layout="chat-first-agent-zero-background"/.test(app)
-    && /onStartAgent=\{startMonitorTask\}/.test(app)
+    && /data-primary-surface="play-release-chat"/.test(app)
+    && /data-truth-scope="current-chat-session-only"/.test(app)
     && /EvidenceObservatoryAtlas/.test(app)
     && /window\.location\.pathname === '\/observatory'/.test(app)
+    && !/RESTORE_LATEST_JOB/.test(app)
   ) {
-    pass('app:chat-first-live-path', 'App routes live work through the canonical chat Builder while preserving the evidence observatory.');
+    pass('app:current-session-live-path', 'App uses Play Release as current-session truth and keeps the observatory separate.');
   } else {
-    fail('app:chat-first-live-path', 'App must route the default client through the canonical chat Builder and preserve the observatory route.');
+    fail('app:current-session-live-path', 'Default App must use current-session Play Release truth without automatic historical job adoption.');
   }
 
   if (
-    /fetchSovereignDirectLlmInterpretation/.test(builder)
-    && /createStructuredIntegrationIntentDraft/.test(builder)
-    && /onConfirm=\{\(\) => \{[\s\S]{0,500}startAgentFromApprovedDraft/.test(builder)
-  ) {
-    pass('builder:structured-action-live-path', 'Builder turns structured LLM evidence into a visible review-gated action before any Agent start.');
-  } else {
-    fail('builder:structured-action-live-path', 'Builder must keep the LLM action contract and explicit draft confirmation on the live path.');
-  }
+    /evaluateInputPolicy\(text\)/.test(release)
+    && /fetchSovereignDirectLlmInterpretation/.test(release)
+    && /deriveRepositoryActionFallback/.test(release)
+    && /pendingRepositoryAction/.test(release)
+    && /confirmPendingRepositoryAction/.test(release)
+  ) pass('release:review-gated-action', 'Release chat guards input and requires a visible repository-action confirmation.');
+  else fail('release:review-gated-action', 'Release chat must keep input guard and visible action confirmation on the live path.');
 
   if (
-    /evaluateInputPolicy\(submittedText\)/.test(builder)
-    && /setShowGitHubAccessOverride\(true\)/.test(builder)
-    && /Repository-Auftrag bleibt unbestätigt/.test(builder)
-  ) {
-    pass('builder:input-and-access-boundary', 'Chat input is secret-guarded and opening GitHub access does not confirm the action.');
+    /startRepositoryExecution/.test(release)
+    && /prepareDraftPr/.test(release)
+    && /createDraftPr/.test(release)
+    && /readbackHeadSha/.test(release)
+    && /Draft PR erstellen/.test(release)
+  ) pass('release:draft-pr-runtime', 'Mission execution and Draft PR creation remain bound to backend/GitHub readback.');
+  else fail('release:draft-pr-runtime', 'Release chat must execute mission → Agent → Draft PR → readback on the live path.');
+
+  if (!/listJobs\(/.test(release) && !/RESTORE_LATEST_JOB/.test(release)) {
+    pass('release:no-implicit-history-adoption', 'Release chat does not auto-adopt historical jobs as current truth.');
   } else {
-    fail('builder:input-and-access-boundary', 'Chat input must be guarded and GitHub access must remain separate from action consent.');
+    fail('release:no-implicit-history-adoption', 'Historical jobs must not become current release-chat truth implicitly.');
   }
 
-  if (
-    /sovereign-llm-route-picker-trigger/.test(dock)
-    && /aria-label="Modelle durchsuchen"/.test(dock)
-    && /aria-label="Verfügbare LLM-Routen"/.test(dock)
-  ) {
-    pass('builder:compact-route-picker', 'The complete LLM catalog stays behind a compact searchable chat control.');
-  } else {
-    fail('builder:compact-route-picker', 'The chat must not expand the complete LLM catalog into the default surface.');
-  }
+  if (/fetchSovereignLlmRouteCatalog/.test(release) && /LLM Route/.test(release)) {
+    pass('release:runtime-route-catalog', 'Release chat exposes the server-authoritative route catalog.');
+  } else fail('release:runtime-route-catalog', 'Release chat must expose the live LLM route catalog.');
 
-  if (/appendActionEvent|SovereignActionStreamPanel/.test(builder)) pass('builder:action-stream-runtime', 'Builder publishes route/action state through the action stream.');
-  else fail('builder:action-stream-runtime', 'Builder must publish route/action state through the action stream.');
+  if (/initiateGitHubOAuth/.test(release) && /GitHub sicher verbinden/.test(release)) {
+    pass('release:github-consent', 'GitHub connection remains behind an explicit visible OAuth action.');
+  } else fail('release:github-consent', 'GitHub connection must remain explicitly user-visible.');
 
-  if (/addLog|appendRuntimeNotice|buildLocalExecutorStatusAnswer/.test(builder)) pass('builder:runtime-feedback', 'Builder keeps runtime feedback available from the chat and Inspector.');
-  else fail('builder:runtime-feedback', 'Builder must keep runtime feedback available from the chat and Inspector.');
-
-  if (/stripTokenFromText|stripSecrets|validateGitHubTokenForRepo|validateGitHubTokenFormat/.test(builder)) pass('builder:redaction-and-access-validation', 'Builder validates/redacts visible runtime access values.');
-  else fail('builder:redaction-and-access-validation', 'Builder must validate/redact visible runtime access values.');
-
-  if (monitor) {
-    if (/sovereign:runtime-coach-state/.test(monitor)) pass('monitor:coach-bus', 'Global monitor reads coach state events.');
-    else fail('monitor:coach-bus', 'Global monitor must read coach state events.');
-
-    if (/sovereign:telemetry-event/.test(monitor)) pass('monitor:telemetry-bus', 'Global monitor reads telemetry events.');
-    else fail('monitor:telemetry-bus', 'Global monitor must read telemetry events.');
-  } else {
-    warn('monitor:missing', 'Global monitor file is missing. One central monitor is preferred.');
-  }
+  if (/SovereignActionStreamPanel|MonitorCommunicationDock/.test(builder)) {
+    pass('builder:secondary-diagnostics-retained', 'Legacy Builder diagnostics remain available as a secondary maintained component.');
+  } else warn('builder:secondary-diagnostics-missing', 'Builder diagnostics were not detected; verify secondary tooling before removal.');
 }
 
 function run() {
   const files = walk(SRC_ROOT);
   if (!files.length) fail('scanner:no-files', 'No src live files found.', { root: SRC_ROOT });
   else pass('scanner:files-found', 'Src live files found for scan.', { count: files.length });
-
   scanFiles(files);
   scanMainBootPath();
   scanRuntimeContracts();
 }
 
-try {
-  run();
-} catch (error) {
-  fail('scanner:unexpected-error', 'Live path scanner crashed.', { error: String(error) });
-} finally {
-  writeReport();
-}
+try { run(); }
+catch (error) { fail('scanner:unexpected-error', 'Live path scanner crashed.', { error: String(error) }); }
+finally { writeReport(); }
 
 if (report.errors.length > 0) process.exit(1);
