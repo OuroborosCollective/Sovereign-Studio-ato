@@ -31,6 +31,16 @@ def test_omniroute_cannot_be_planned_or_deployed(tmp_path: Path) -> None:
         runtime.deploy("sovereign-omniroute", "0" * 64)
 
 
+def test_omniroute_template_is_an_inert_historical_tombstone() -> None:
+    root = Path(__file__).resolve().parents[1] / "templates" / "sovereign-omniroute"
+    template = (root / "docker-compose.yml").read_text("utf-8")
+
+    assert "services: {}" in template
+    assert "image:" not in template
+    assert "container_name:" not in template
+    assert "sovereign-omniroute-data" not in template
+
+
 def test_legacy_freellmpool_retirement_is_identity_bound_and_preserves_image_volume(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

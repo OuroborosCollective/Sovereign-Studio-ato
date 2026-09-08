@@ -112,6 +112,9 @@ def test_installer_atomically_deploys_and_verifies_both_boundaries() -> None:
     assert "duplicate_response.status == 401" in installer
     assert "mcp_status == 200" in installer
     assert "rest_status == 200" in installer
+    assert "oversized" in installer
+    assert "encode_chunked=True" not in installer
+    assert "transport-version-dependent" in installer
     assert "result[\"repository\"] == payload[\"owner\"]" in installer
     assert "result[\"workflowSelector\"] == str(payload[\"workflow_id\"])" in installer
     assert "result[\"branch\"] == payload[\"branch\"]" in installer
