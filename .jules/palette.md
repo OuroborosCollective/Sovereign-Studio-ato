@@ -57,3 +57,6 @@
 ## 2025-08-13 - [Overriding Visible Buttons via ARIA Labels]
 **Learning:** Overriding a button's visible text (e.g., 'Repo-Snapshot laden') with an 'aria-label' that does not match or include that exact text violates the WCAG 'Label in Name' requirement. It also disrupts testing frameworks and standard selectors looking for the visible text.
 **Action:** For buttons with descriptive, dynamic text content, rely on the visible text for the accessible name, and use the 'title' attribute exclusively for stateful hover descriptions rather than using aria-label overrides.
+## 2026-07-08 - Session Age Badge in Chat Sidebar
+**Learning:** Extracting string patterns using regex in React components can allow for sophisticated UI element construction without modifying the underlying domain model payload. The session restore text contains raw data like `(Alter: 2m)` which is better represented as an inline badge (`bg-emerald-500/20` etc) to match other visual components.
+**Action:** When handling system messages or standard text messages, write a specific regex check in the React rendering tree to extract standard parameters and wrap them in styled structural DOM tags (like `span` or `div`), rather than writing logic that rewrites the payload text prior to rendering.

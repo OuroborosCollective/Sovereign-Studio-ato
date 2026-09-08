@@ -261,7 +261,20 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                     : 'bg-slate-800/80 text-slate-200 border border-cyan-500/10 rounded-tl-sm'
                 }`}
               >
-                {isRestore ? `↻ ${msg.content}` : msg.content}
+                {isRestore ? (
+                  <div className="flex flex-col gap-2">
+                    <span>
+                      ↻ {msg.content.replace(/\s*\(Alter:\s*[^)]+\)/, '')}
+                    </span>
+                    {msg.content.match(/\(Alter:\s*([^)]+)\)/) && (
+                      <span className="inline-flex items-center self-start px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">
+                        Alter: {msg.content.match(/\(Alter:\s*([^)]+)\)/)?.[1]}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  msg.content
+                )}
               </div>
               {msg.role === 'assistant' && msg.metadata?.modelId && msg.metadata.modelId !== selectedModel && (
                 <div className="text-[10px] text-amber-500/70 px-2 flex items-center gap-1 opacity-80" title="Aufgrund eines Fehlers wurde auf ein alternatives Modell zurückgegriffen">
