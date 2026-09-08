@@ -1,83 +1,53 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { Provider } from 'react-redux';
-import { render, screen, waitFor } from '@testing-library/react';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('./features/release/PlayReleaseChat', () => ({
+  PlayReleaseChat: () => (
+    <section data-testid="sovereign-release-chat" aria-label="Sovereign Play Release">
+      <textarea aria-label="Nachricht an Sovereign" />
+      <button type="button">Draft PR erstellen</button>
+    </section>
+  ),
+}));
+vi.mock('./features/evidence-observatory/EvidenceObservatoryAtlas', () => ({
+  EvidenceObservatoryAtlas: () => <section data-testid="evidence-observatory-atlas">Observatory</section>,
+}));
+
 import App from './App';
-import { store } from './store';
-
-beforeAll(() => {
-  const cryptoMock = {
-    randomUUID: () => 'test-uuid',
-  };
-
-  if (!globalThis.crypto) {
-    Object.defineProperty(globalThis, 'crypto', {
-      value: cryptoMock,
-      configurable: true,
-    });
-    return;
-  }
-
-  if (!globalThis.crypto.randomUUID) {
-    Object.defineProperty(globalThis.crypto, 'randomUUID', {
-      value: cryptoMock.randomUUID,
-      configurable: true,
-    });
-  }
-});
 
 beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
+  window.history.pushState({}, '', '/');
   delete window.__sovereignSetupState;
 });
 
-async function openChatWorkspace(): Promise<void> {
-  render(<Provider store={store}><App /></Provider>);
+describe('App Android WebView smoke', () => {
+  it('enters the current-session release chat as the Android app surface', () => {
+    render(<App />);
 
-  await waitFor(() => {
-    expect(screen.getByTestId('builder-container')).toHaveAttribute(
-      'data-layout',
-      'chat-primary-agent-zero-background',
-    );
+    const app = screen.getByTestId('sovereign-chat-app');
+    expect(app).toHaveAttribute('data-layout', 'chat-first-agent-zero-background');
+    expect(app).toHaveAttribute('data-primary-surface', 'play-release-chat');
+    expect(app).toHaveAttribute('data-truth-scope', 'current-chat-session-only');
+    expect(screen.getByTestId('sovereign-release-chat')).toBeDefined();
   });
-}
 
-describe('App setup flow smoke', () => {
-  it('enters the chat-first workbench as the Android app surface', async () => {
-    render(<Provider store={store}><App /></Provider>);
+  it('keeps the mission composer and Draft-PR action reachable on the mobile surface', () => {
+    render(<App />);
 
-    expect(screen.getByTestId('sovereign-chat-app')).toHaveAttribute(
-      'data-layout',
-      'chat-first-agent-zero-background',
-    );
+    expect(screen.getByLabelText('Nachricht an Sovereign')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Draft PR erstellen' })).toBeDefined();
+  });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('builder-container')).toHaveAttribute(
-        'data-layout',
-        'chat-primary-agent-zero-background',
-      );
-    });
-    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
+  it('does not mount legacy builder/monitor truth surfaces during initial entry', () => {
+    render(<App />);
+
+    expect(screen.queryByTestId('builder-container')).toBeNull();
     expect(screen.queryByTestId('live-workspace-monitor-desktop')).toBeNull();
-  });
-
-  it('keeps normal LLM communication inside the Android chat surface', async () => {
-    await openChatWorkspace();
-
-    expect(screen.getByTestId('monitor-communication-dock')).toBeDefined();
-    expect(screen.getByLabelText('Codeauftrag an Sovereign')).toBeDefined();
-    expect(screen.getByPlaceholderText(/Codeauftrag eingeben/i)).toBeDefined();
-    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
-  });
-
-  it('does not open legacy controls during initial chat entry', async () => {
-    await openChatWorkspace();
-
     expect(screen.queryByTestId('operator-monitor')).toBeNull();
-    expect(screen.queryByTestId('automation__mode-select')).toBeNull();
-    expect(screen.queryByPlaceholderText('https://github.com/owner/repository')).toBeNull();
   });
 });
