@@ -12,6 +12,7 @@ export interface AndroidMessageBubbleProps {
 export function AndroidMessageBubble({ role, text, onQuote }: AndroidMessageBubbleProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const assistant = role === 'assistant';
 
@@ -36,6 +37,16 @@ export function AndroidMessageBubble({ role, text, onQuote }: AndroidMessageBubb
       // Ignored
     }
   }, [text]);
+
+  const getFocusStyle = (id: string) => ({
+    outline: focusedId === id ? `2px solid ${C.sky}` : 'none',
+    outlineOffset: 2,
+  });
+
+  const focusProps = (id: string) => ({
+    onFocus: () => setFocusedId(id),
+    onBlur: () => setFocusedId(null),
+  });
 
   return (
     <div
@@ -62,6 +73,7 @@ export function AndroidMessageBubble({ role, text, onQuote }: AndroidMessageBubb
           type="button"
           onClick={handleCopy}
           aria-label={copied ? 'Kopiert' : 'Nachricht kopieren'}
+          {...focusProps('copy-button')}
           style={{
             position: 'absolute',
             top: 6,
@@ -77,7 +89,8 @@ export function AndroidMessageBubble({ role, text, onQuote }: AndroidMessageBubb
             color: copied ? C.green : C.textMuted,
             fontSize: 14,
             cursor: 'pointer',
-            transition: 'all 0.2s ease'
+            transition: 'all 0.2s ease',
+            ...getFocusStyle('copy-button')
           }}
         >
           {copied ? '✓' : '📋'}
@@ -106,22 +119,25 @@ export function AndroidMessageBubble({ role, text, onQuote }: AndroidMessageBubb
         >
           <button 
             type="button" 
-            onClick={() => { navigator.clipboard?.writeText(text); setMenuOpen(false); }}
-            style={{ padding: '8px 12px', background: 'transparent', border: 'none', color: C.text, textAlign: 'left', fontSize: 13, borderRadius: 8 }}
+            onClick={() => { navigator.clipboard?.writeText(text); setMenuOpen(false); setFocusedId(null); }}
+            {...focusProps('menu-copy')}
+            style={{ padding: '8px 12px', background: 'transparent', border: 'none', color: C.text, textAlign: 'left', fontSize: 13, borderRadius: 8, ...getFocusStyle('menu-copy') }}
           >
             Kopieren
           </button>
           <button 
             type="button" 
-            onClick={() => { onQuote(text); setMenuOpen(false); }}
-            style={{ padding: '8px 12px', background: 'transparent', border: 'none', color: C.text, textAlign: 'left', fontSize: 13, borderRadius: 8 }}
+            onClick={() => { onQuote(text); setMenuOpen(false); setFocusedId(null); }}
+            {...focusProps('menu-quote')}
+            style={{ padding: '8px 12px', background: 'transparent', border: 'none', color: C.text, textAlign: 'left', fontSize: 13, borderRadius: 8, ...getFocusStyle('menu-quote') }}
           >
             Zitieren
           </button>
           <button 
             type="button" 
-            onClick={() => setMenuOpen(false)}
-            style={{ padding: '8px 12px', background: 'transparent', border: 'none', color: C.textMuted, textAlign: 'left', fontSize: 13, borderRadius: 8 }}
+            onClick={() => { setMenuOpen(false); setFocusedId(null); }}
+            {...focusProps('menu-cancel')}
+            style={{ padding: '8px 12px', background: 'transparent', border: 'none', color: C.textMuted, textAlign: 'left', fontSize: 13, borderRadius: 8, ...getFocusStyle('menu-cancel') }}
           >
             Abbrechen
           </button>

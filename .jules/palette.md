@@ -57,3 +57,7 @@
 ## 2025-08-13 - [Overriding Visible Buttons via ARIA Labels]
 **Learning:** Overriding a button's visible text (e.g., 'Repo-Snapshot laden') with an 'aria-label' that does not match or include that exact text violates the WCAG 'Label in Name' requirement. It also disrupts testing frameworks and standard selectors looking for the visible text.
 **Action:** For buttons with descriptive, dynamic text content, rely on the visible text for the accessible name, and use the 'title' attribute exclusively for stateful hover descriptions rather than using aria-label overrides.
+
+## 2024-05-24 - Focus States in Dynamically Rendered Inline-Styled Context Menus
+**Learning:** When using fully inline-styled components (like `AndroidMessageBubble`) rather than Tailwind CSS, focus styles cannot simply rely on classes like `focus-visible:ring-2`. Dynamic UI elements like context menus that conditionally render need explicit state management (e.g. `focusedId`) hooked into `onFocus` and `onBlur` to manually toggle CSS `outline` properties for keyboard accessibility.
+**Action:** Always implement explicit focus state tracking via `onFocus`/`onBlur` when dealing with custom interactive elements (buttons, menus) built purely with inline styles, ensuring a visible `outline` is provided for keyboard users.
