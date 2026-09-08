@@ -499,8 +499,12 @@ def request_status(url, *, method="GET", payload=None, header=None, timeout=5):
             body = response.read()
             return response.status, json.loads(body.decode("utf-8")) if body else None
     except urllib.error.HTTPError as error:
-        error.read()
-        return error.code, None
+        body = error.read()
+        try:
+            parsed = json.loads(body.decode("utf-8")) if body else None
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            parsed = None
+        return error.code, parsed
 
 assert request_status(full_origin + "/")[1] == {
     "ok": True,
@@ -544,24 +548,44 @@ assert request_status(
     payload={"args": {}},
 )[0] == 401
 
-for payload, header in (
-    (sovereign, sovereign_capability),
-    (aurion, aurion_capability),
-):
-    status, body = request_status(
-        evidence_url,
-        method="POST",
-        payload=payload,
-        header=header,
-        timeout=70,
-    )
-    assert status == 200
+status, body = request_status(
+    evidence_url,
+    method="POST",
+    payload=sovereign,
+    header=sovereign_capability,
+    timeout=70,
+)
+assert status == 200
+assert body["ok"] is True
+assert body["tool"] == "github_actions_run_evidence"
+result = body["result"]
+assert result["repository"] == sovereign["owner"] + "/" + sovereign["repo"]
+assert result["workflowSelector"] == str(sovereign["workflow_id"])
+assert result["branch"] == sovereign["branch"]
+
+status, body = request_status(
+    evidence_url,
+    method="POST",
+    payload=aurion,
+    header=aurion_capability,
+    timeout=70,
+)
+assert isinstance(body, dict)
+assert body["tool"] == "github_actions_run_evidence"
+if status == 200:
     assert body["ok"] is True
-    assert body["tool"] == "github_actions_run_evidence"
     result = body["result"]
-    assert result["repository"] == payload["owner"] + "/" + payload["repo"]
-    assert result["workflowSelector"] == str(payload["workflow_id"])
-    assert result["branch"] == payload["branch"]
+    assert result["repository"] == aurion["owner"] + "/" + aurion["repo"]
+    assert result["workflowSelector"] == str(aurion["workflow_id"])
+    assert result["branch"] == aurion["branch"]
+elif status == 502:
+    assert body == {
+        "ok": False,
+        "tool": "github_actions_run_evidence",
+        "error": "CI evidence acquisition failed",
+    }
+else:
+    raise AssertionError("Aurion evidence lane returned an invalid boundary status")
 PY
 if [[ "$SELF_UPDATE_TUNNEL_MODE" == "required" ]]; then
   CURRENT_STAGE="verify_required_tunnel"

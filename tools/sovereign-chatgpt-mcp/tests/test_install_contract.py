@@ -736,6 +736,12 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert 'docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock' in updater
     assert 'status=server.broker.status()' in updater
     assert 'mcp_protocol_health.py --url http://127.0.0.1:8090/mcp' in updater
+    assert 'elif status == 502:' in updater
+    assert '"error": "CI evidence acquisition failed"' in updater
+    assert 'Aurion evidence lane returned an invalid boundary status' in updater
+    assert 'body = error.read()' in updater
+    assert 'parsed = json.loads(body.decode("utf-8")) if body else None' in updater
+    assert updater.index('payload=sovereign') < updater.index('payload=aurion')
     assert 'if [[ "$SELF_UPDATE_TUNNEL_MODE" == "required" ]]; then' in updater
     assert 'systemctl is-active --quiet sovereign-openai-tunnel.service' in updater
     assert 'tunnel not required' in updater
