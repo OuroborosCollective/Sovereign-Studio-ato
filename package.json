@@ -26,7 +26,7 @@
     "lint": "eslint .",
     "test": "pnpm run test:smoke",
     "test:all": "vitest run",
-    "test:smoke:raw": "vitest run --exclude \"**/*.chat.test.ts\" --exclude \"**/*.integration.test.ts\" --exclude \"**/*.e2e.test.ts\" --exclude \"**/*.spec.ts\" --exclude \"**/*.sequential.test.ts\" --exclude \"**/ChatSidebar.test.tsx\" --exclude \"**/e2e/**\" --exclude \"**/api-fallback/**\" --exclude \"scripts/sovereign-agent-release-gate.test.mjs\" --exclude \"scripts/required-gate-priority.contract.test.cjs\" --exclude \"scripts/revision-guardian.contract.test.cjs\" --exclude \"scripts/neuro-architecture-graph.test.mjs\"",
+    "test:smoke:raw": "vitest run --exclude \"**/*.chat.test.ts\" --exclude \"**/*.integration.test.ts\" --exclude \"**/*.e2e.test.ts\" --exclude \"**/*.spec.ts\" --exclude \"**/*.sequential.test.ts\" --exclude \"**/ChatSidebar.test.tsx\" --exclude \"**/e2e/**\" --exclude \"**/api-fallback/**\" --exclude \"scripts/sovereign-agent-release-gate.test.mjs\" --exclude \"scripts/required-gate-priority.contract.test.cjs\" --exclude \"scripts/revision-guardian.contract.test.cjs\" --exclude \"scripts/neuro-architecture-graph.test.mjs\" --exclude \"scripts/sovereign-live-path-scan.test.mjs\"",
     "test:smoke": "python3 scripts/frontend_test_gate.py --mode smoke",
     "test:frontend-endpoints": "python3 scripts/frontend_endpoint_assurance.py --no-write && python3 scripts/frontend_test_gate.py --mode endpoint",
     "test:frontend-endpoints:python": "python3 scripts/frontend_test_gate.py --mode python",
