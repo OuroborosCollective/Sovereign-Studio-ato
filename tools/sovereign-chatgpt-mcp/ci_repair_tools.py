@@ -135,6 +135,13 @@ def _causal_test(text: str) -> str | None:
     pytest_failure = re.search(r"(?m)^FAILED\s+([^\s]+)", text)
     if pytest_failure:
         return pytest_failure.group(1)
+    playwright_failure = re.search(
+        r"(?m)^\s*\d+\)\s+\[[^\]\r\n]+\]\s+›\s+([^\r\n]+)$",
+        text,
+    )
+    if playwright_failure:
+        parts = [part.strip() for part in playwright_failure.group(1).split("›")]
+        return "::".join(part for part in parts if part)
     junit_failure = _JUNIT_FAILURE_RE.search(text)
     if not junit_failure:
         return None

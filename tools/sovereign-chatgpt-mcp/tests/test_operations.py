@@ -356,6 +356,7 @@ ON CONFLICT (id) DO NOTHING;
     assert action == "id_name_to_legacy_version"
     assert "INSERT INTO schema_migrations (version)" in adapted
     assert "VALUES ('061')" in adapted
+    assert "ON CONFLICT" not in adapted
     assert "(id, name)" not in adapted
 
 
@@ -432,11 +433,11 @@ def test_preview_hydrates_real_schema_without_copying_rows(tmp_path, monkeypatch
     assert "--schema-only" in dump_calls[0]["argv"]
     assert "--no-owner" in dump_calls[0]["argv"]
     assert "--no-privileges" in dump_calls[0]["argv"]
-    assert "--section=pre-data" not in dump_calls[0]["argv"]
+    assert "--section=pre-data" in dump_calls[0]["argv"]
     assert "--strict-names" in dump_calls[0]["argv"]
     assert "--table=public.agent_events" in dump_calls[0]["argv"]
-    # schema-only must retain post-data PK/UNIQUE/index contracts required by
-    # migrations while still excluding all production rows.
+    # Preview hydration keeps only table/column definitions; ledger conflict
+    # clauses are removed from the preview-only adapted insert instead.
     assert "--schema-only" in dump_calls[0]["argv"]
     assert dump_calls[0]["argv"][-1] == "postgres"
     assert len(calls) == 5

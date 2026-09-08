@@ -82,6 +82,37 @@ def test_failure_extractor_reads_junit_counts_and_first_causal_candidate() -> No
     assert result["causalTest"] == "tests.test_llm_boundary_ledger::test_current_review_ledger_is_complete_and_fresh"
 
 
+def test_failure_extractor_reads_playwright_causal_identity() -> None:
+    log = """
+  1) [chromium] › tests/e2e/frontend-endpoint-runtime.spec.ts:42:5 › provider retirement › hides OmniRoute
+
+  1 failed
+  9 passed
+  15 skipped
+"""
+    result = extract_workflow_failure_evidence(
+        workflow_run={"id": 8, "name": "Release Verification", "head_sha": "c" * 40, "conclusion": "failure"},
+        jobs=[
+            {
+                "id": 10,
+                "name": "Release Gate",
+                "conclusion": "failure",
+                "steps": [{"name": "Playwright Smoke Gate", "conclusion": "failure"}],
+            }
+        ],
+        sources=[{"name": "playwright.log", "text": log}],
+        artifact_receipts=[],
+    )
+
+    assert result["failedTests"] == 1
+    assert result["passedTests"] == 9
+    assert result["skippedTests"] == 15
+    assert result["causalTest"] == (
+        "tests/e2e/frontend-endpoint-runtime.spec.ts:42:5::"
+        "provider retirement::hides OmniRoute"
+    )
+
+
 def test_artifact_extraction_rejects_parent_traversal() -> None:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
