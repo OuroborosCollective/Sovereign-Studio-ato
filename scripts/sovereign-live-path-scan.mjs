@@ -59,9 +59,27 @@ function walk(dir) {
 
 function safeSummaryPath() {
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  const runnerTemp = process.env.RUNNER_TEMP;
+
   if (typeof summaryPath !== 'string' || !summaryPath.trim()) return null;
+  if (typeof runnerTemp !== 'string' || !runnerTemp.trim()) return null;
+
+  const trustedRoot = path.resolve(runnerTemp);
   const resolved = path.resolve(summaryPath);
-  if (!path.isAbsolute(resolved) || path.basename(resolved) !== 'summary.md') return null;
+  const relativeToRoot = path.relative(trustedRoot, resolved);
+
+  if (
+    relativeToRoot === '..'
+    || relativeToRoot.startsWith(`..${path.sep}`)
+    || path.isAbsolute(relativeToRoot)
+  ) {
+    return null;
+  }
+
+  if (!/^step_summary_[A-Za-z0-9-]+$/.test(path.basename(resolved))) {
+    return null;
+  }
+
   return resolved;
 }
 
