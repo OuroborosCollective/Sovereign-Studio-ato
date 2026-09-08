@@ -548,6 +548,12 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'callable(server.postgres_schema_inventory)' in installer
     assert 'callable(server.controller_run_external_event)' in installer
     assert 'INSTALL_STAGE="verify_host_worker_canary"' in installer
+    assert 'HOST_COMMAND_OUTCOME_UNCERTAIN_AFTER_WORKER_RESTART' in installer
+    assert 'HOST_COMMAND_QUEUE_TIMEOUT_BEFORE_CLAIM' in installer
+    assert 'for _attempt in range(5):' in installer
+    assert 'worker.get("execution_origin") == "host_worker"' in installer
+    assert 'host worker canary returned a non-transient failure' in installer
+    assert 'host worker canary remained transiently unavailable' in installer
     assert 'INSTALL_STAGE="verify_mcp_protocol_handshake"' in installer
     assert 'INSTALL_STAGE="verify_android_native_boundary"' in installer
     assert 'INSTALL_STAGE="verify_workspace_write_boundary"' in installer
