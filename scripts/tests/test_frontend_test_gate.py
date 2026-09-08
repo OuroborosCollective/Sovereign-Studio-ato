@@ -60,6 +60,7 @@ def test_smoke_mode_adds_broad_frontend_stage_with_existing_exclusions() -> None
     assert "**/*.e2e.test.ts" in broad.command
     assert "**/ChatSidebar.test.tsx" in broad.command
     assert "scripts/revision-guardian.contract.test.cjs" in broad.command
+    assert "scripts/sovereign-live-path-scan.test.mjs" in broad.command
 
 
 def test_successful_stage_emits_only_bounded_summary(tmp_path: Path, monkeypatch, capsys) -> None:

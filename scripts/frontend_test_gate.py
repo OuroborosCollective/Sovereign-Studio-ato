@@ -193,6 +193,8 @@ def build_stages(mode: str, *, python_executable: str | None = None) -> tuple[Ga
                     "scripts/revision-guardian.contract.test.cjs",
                     "--exclude",
                     "scripts/neuro-architecture-graph.test.mjs",
+                    "--exclude",
+                    "scripts/sovereign-live-path-scan.test.mjs",
                 ),
                 failure_identity="frontend-smoke::vitest_runner",
                 forward_causal_output=True,
