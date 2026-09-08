@@ -432,9 +432,12 @@ def test_preview_hydrates_real_schema_without_copying_rows(tmp_path, monkeypatch
     assert "--schema-only" in dump_calls[0]["argv"]
     assert "--no-owner" in dump_calls[0]["argv"]
     assert "--no-privileges" in dump_calls[0]["argv"]
-    assert "--section=pre-data" in dump_calls[0]["argv"]
+    assert "--section=pre-data" not in dump_calls[0]["argv"]
     assert "--strict-names" in dump_calls[0]["argv"]
     assert "--table=public.agent_events" in dump_calls[0]["argv"]
+    # schema-only must retain post-data PK/UNIQUE/index contracts required by
+    # migrations while still excluding all production rows.
+    assert "--schema-only" in dump_calls[0]["argv"]
     assert dump_calls[0]["argv"][-1] == "postgres"
     assert len(calls) == 5
     assert 'DROP DATABASE IF EXISTS "sovereign_migration_preview" WITH (FORCE);' in calls[0]["input"]

@@ -363,7 +363,10 @@ class OperationsRuntime:
             "--no-comments",
         ]
         if tables:
-            argv.extend(("--section=pre-data", "--strict-names"))
+            # --schema-only already excludes row data. Keep the post-data schema
+            # (PK/UNIQUE/index/constraint objects) because migrations may rely on
+            # those contracts, for example ON CONFLICT(version).
+            argv.append("--strict-names")
             argv.extend(f"--table={table}" for table in tables)
         argv.extend((
             "-h",
