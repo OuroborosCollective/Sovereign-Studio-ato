@@ -733,6 +733,15 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert 'wait_for_broker_ready()' in updater
     assert '"action": "broker_health"' in updater
     assert 'stage=${CURRENT_STAGE}; self-update command failed; recovery attempted' in updater
+    for stage in (
+        "verify_end_to_end_worker_services",
+        "verify_end_to_end_mcp_container",
+        "verify_end_to_end_toolchain_services",
+        "verify_end_to_end_toolchain_revision",
+        "verify_end_to_end_toolchain_units",
+        "verify_end_to_end_evidence_canary",
+    ):
+        assert f'CURRENT_STAGE="{stage}"' in updater
     assert 'docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock' in updater
     assert 'status=server.broker.status()' in updater
     assert 'mcp_protocol_health.py --url http://127.0.0.1:8090/mcp' in updater

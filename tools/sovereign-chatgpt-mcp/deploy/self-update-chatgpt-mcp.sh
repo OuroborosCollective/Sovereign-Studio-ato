@@ -424,23 +424,28 @@ for field, value in expected.items():
 PY
 rm -f "$INSTALL_LOG"
 
-CURRENT_STAGE="verify_end_to_end_control_plane"
+CURRENT_STAGE="verify_end_to_end_worker_services"
 systemctl is-active --quiet sovereign-chatgpt-command-worker.service
 systemctl is-active --quiet sovereign-chatgpt-broker.service
 wait_for_broker_ready
+CURRENT_STAGE="verify_end_to_end_mcp_container"
 docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-health{{end}}' | grep -qx 'running healthy'
 docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock
 docker exec sovereign-chatgpt-mcp python -c 'import server; status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
 docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
+CURRENT_STAGE="verify_end_to_end_toolchain_services"
 systemctl is-active --quiet sovereign-toolchain.service
 systemctl is-active --quiet sovereign-toolchain-n8n-evidence.service
 [[ "$(systemctl show --property DynamicUser --value sovereign-toolchain-n8n-evidence.service)" == "yes" ]]
 [[ "$(systemctl show --property ProtectSystem --value sovereign-toolchain-n8n-evidence.service)" == "strict" ]]
 [[ -z "$(systemctl show --property ReadWritePaths --value sovereign-toolchain-n8n-evidence.service)" ]]
+CURRENT_STAGE="verify_end_to_end_toolchain_revision"
 [[ -f "$TOOLCHAIN_REVISION_MARKER" && ! -L "$TOOLCHAIN_REVISION_MARKER" ]]
 [[ "$(tr -d '\r\n' < "$TOOLCHAIN_REVISION_MARKER")" == "$EXPECTED_REVISION" ]]
+CURRENT_STAGE="verify_end_to_end_toolchain_units"
 [[ "$(systemctl show --property ExecStart --value sovereign-toolchain.service)" == *"--host 127.0.0.1 --port 8001"* ]]
 [[ "$(systemctl show --property ExecStart --value sovereign-toolchain-n8n-evidence.service)" == *"--host 0.0.0.0 --port 8002"* ]]
+CURRENT_STAGE="verify_end_to_end_evidence_canary"
 python3 - "$TOOLCHAIN_N8N_EVIDENCE_KEY" <<'PY'
 from pathlib import Path
 import hashlib
