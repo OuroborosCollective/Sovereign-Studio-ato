@@ -19,25 +19,39 @@ describe('main app entry', () => {
     expect(wrapper).not.toContain('ProductMagicApp');
   });
 
-  it('makes App.tsx the chat-first live surface', () => {
+  it('makes the Play Release chat the current-session primary surface', () => {
     const app = readSource('./App.tsx');
 
-    expect(app).toContain('BuilderContainer');
+    expect(app).toContain('PlayReleaseChat');
     expect(app).toContain('data-testid="sovereign-chat-app"');
     expect(app).toContain('data-layout="chat-first-agent-zero-background"');
+    expect(app).toContain('data-primary-surface="play-release-chat"');
+    expect(app).toContain('data-truth-scope="current-chat-session-only"');
     expect(app).toContain('aria-label="Sovereign Chat"');
     expect(app).toContain('CHAT_FIRST_STYLE');
-    expect(app).not.toContain('data-layout="monitor-first-live-workspace"');
+    expect(app).not.toContain('BuilderContainer');
+    expect(app).not.toContain('RESTORE_LATEST_JOB');
   });
 
-  it('keeps the normal chat body and composer in the live builder', () => {
-    const builder = readSource('./features/product/containers/BuilderContainer.tsx');
+  it('keeps repository execution and Draft-PR publication on the visible release-chat path', () => {
+    const release = readSource('./features/release/PlayReleaseChat.tsx');
 
-    expect(builder).toContain('data-testid="sovereign-chat-primary"');
-    expect(builder).toContain('<MonitorCommunicationDock');
-    expect(builder).toContain('mode="chat"');
-    expect(builder).toContain('chat-primary-agent-zero-background');
-    expect(builder).not.toContain('liveMonitorPrimary');
+    expect(release).toContain('startRepositoryExecution');
+    expect(release).toContain('prepareDraftPr');
+    expect(release).toContain('createDraftPr');
+    expect(release).toContain('Draft PR erstellen');
+    expect(release).toContain('readbackHeadSha');
+    expect(release).toContain('GitHub-Änderungsentwurf erkannt');
+    expect(release).not.toContain('listJobs(');
+  });
+
+  it('preserves the evidence observatory as an explicit route instead of mixing it into live runtime truth', () => {
+    const app = readSource('./App.tsx');
+
+    expect(app).toContain('EvidenceObservatoryAtlas');
+    expect(app).toContain("window.location.pathname === '/observatory'");
+    expect(app).toContain("window.location.pathname === '/evidence-observatory'");
+    expect(app).toContain("new URLSearchParams(window.location.search).get('observatory') === '1'");
   });
 
   it('keeps the old dashboard shell out of the live app entry', () => {
@@ -50,24 +64,6 @@ describe('main app entry', () => {
     expect(app).not.toContain('operator-monitor');
     expect(app).not.toContain('RepoSnapshotContainer');
     expect(app).not.toContain('RepoInsightPanelBridge');
-  });
-
-  it('keeps runtime auto-routing behind the chat instead of driving visible app tabs', () => {
-    const app = readSource('./App.tsx');
-
-    expect(app).not.toContain('decideSovereignAutoView');
-    expect(app).not.toContain('setActiveTab(decision.tab)');
-    expect(app).not.toContain('workflowStatus: workflowReport?.status');
-    expect(app).toContain('onStartAgent={startMonitorTask}');
-  });
-
-  it('feeds canonical reusable memory into normal agent starts without making recall a start blocker', () => {
-    const app = readSource('./App.tsx');
-
-    expect(app).toContain('searchReusableMemory(query, 6)');
-    expect(app).toContain('reusableMemoryContext(memory)');
-    expect(app).toContain('evidenceText = await evidenceWithReusableMemory(nextMission)');
-    expect(app).toContain('return query;');
   });
 
   it('keeps the release shell styling contract in the Android web build', () => {
