@@ -56,6 +56,72 @@ interface PendingRepositoryAction {
   readonly job?: SovereignAgentJobSnapshot;
 }
 
+interface PersistedRepositoryAction {
+  readonly schemaVersion: 1;
+  readonly jobId: string;
+  readonly text: string;
+  readonly actionTitle: string;
+  readonly intent: string;
+  readonly target: ReleaseRepoTarget;
+}
+
+const ACTIVE_REPOSITORY_ACTION_STORAGE_KEY = 'sovereign.play-release.active-repository-action.v1';
+
+function persistRepositoryAction(action: Omit<PersistedRepositoryAction, 'schemaVersion'>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(ACTIVE_REPOSITORY_ACTION_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      ...action,
+    } satisfies PersistedRepositoryAction));
+  } catch {
+    // Session persistence is recovery-only. Runtime truth remains the backend job.
+  }
+}
+
+function readPersistedRepositoryAction(): PersistedRepositoryAction | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(ACTIVE_REPOSITORY_ACTION_STORAGE_KEY);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as Partial<PersistedRepositoryAction> & { target?: Partial<ReleaseRepoTarget> };
+    if (
+      value.schemaVersion !== 1
+      || typeof value.jobId !== 'string' || !value.jobId.trim()
+      || typeof value.text !== 'string' || !value.text.trim()
+      || typeof value.actionTitle !== 'string'
+      || typeof value.intent !== 'string' || !value.intent.trim()
+      || !value.target
+      || typeof value.target.repoUrl !== 'string' || !value.target.repoUrl.trim()
+      || typeof value.target.branch !== 'string' || !value.target.branch.trim()
+      || typeof value.target.label !== 'string' || !value.target.label.trim()
+    ) return null;
+    return {
+      schemaVersion: 1,
+      jobId: value.jobId.trim(),
+      text: value.text,
+      actionTitle: value.actionTitle,
+      intent: value.intent,
+      target: {
+        repoUrl: value.target.repoUrl.trim(),
+        branch: value.target.branch.trim(),
+        label: value.target.label.trim(),
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+function clearPersistedRepositoryAction(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.removeItem(ACTIVE_REPOSITORY_ACTION_STORAGE_KEY);
+  } catch {
+    // Nothing else owns runtime truth here.
+  }
+}
+
 const C = {
   bg: '#0b0f14',
   surface: '#121821',
@@ -140,6 +206,7 @@ export function PlayReleaseChat() {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const routeSelectRef = useRef<HTMLSelectElement>(null);
   const sequenceRef = useRef(0);
+  const restoredRepositoryActionRef = useRef(false);
   const agentClient = useMemo(() => createSovereignAgentClient({
     config: resolveSovereignAgentConfig(),
   }), []);
@@ -219,14 +286,102 @@ export function PlayReleaseChat() {
     setMessages((current) => [...current.slice(-79), entry]);
   };
 
+  useEffect(() => {
+    if (!user || restoredRepositoryActionRef.current) return;
+    restoredRepositoryActionRef.current = true;
+    const persisted = readPersistedRepositoryAction();
+    if (!persisted) return;
+
+    let cancelled = false;
+    setRepoTarget(persisted.target);
+    void agentClient.getJob(persisted.jobId).then((snapshot) => {
+      if (cancelled) return;
+      setAgentJob(snapshot);
+      const restoreMessage = (role: ChatRole, text: string) => {
+        sequenceRef.current += 1;
+        const entry: ChatEntry = {
+          id: `release-chat-${sequenceRef.current}`,
+          role,
+          text: text.trim(),
+          createdAt: Date.now(),
+        };
+        setMessages((current) => [...current.slice(-79), entry]);
+      };
+
+      if (snapshot.draftPrUrl) {
+        clearPersistedRepositoryAction();
+        restoreMessage('assistant', `Aktueller Session-Run ist bereits als Draft PR belegt:\n${snapshot.draftPrUrl}`);
+        return;
+      }
+      if (snapshot.status === 'blocked' || snapshot.status === 'failed') {
+        clearPersistedRepositoryAction();
+        restoreMessage('system', `Wiederhergestellter Repository-Run ist blockiert: ${snapshot.lastError || summarizeSovereignAgentJob(snapshot)}`);
+        return;
+      }
+      if (snapshot.status === 'waiting-for-user') {
+        restoreMessage('system', 'Der aktuelle Session-Run wartet weiterhin auf eine Nutzerentscheidung. Seine Job-ID bleibt gebunden.');
+        return;
+      }
+      if (isSovereignAgentTerminalStatus(snapshot.status)) {
+        if (snapshot.changedFiles.length === 0) {
+          clearPersistedRepositoryAction();
+          restoreMessage('system', 'Der wiederhergestellte Repository-Run ist abgeschlossen, aber ohne belegte Dateiänderung.');
+          return;
+        }
+        if (persisted.intent === 'draft_pr') {
+          setPendingRepositoryAction({
+            kind: 'draft-pr',
+            text: persisted.text,
+            actionTitle: persisted.actionTitle,
+            intent: persisted.intent,
+            target: persisted.target,
+            job: snapshot,
+          });
+          setActiveMenu('github');
+          restoreMessage('system', 'Der aktuelle Session-Run wurde wiederhergestellt. Die belegten Änderungen sind bereit für die sichtbare Draft-PR-Bestätigung.');
+          return;
+        }
+        clearPersistedRepositoryAction();
+        restoreMessage('assistant', `Repository-Run wiederhergestellt · ${snapshot.changedFiles.length} geänderte Datei(en). Kein externer GitHub-Write wurde ausgeführt.`);
+        return;
+      }
+
+      setPendingRepositoryAction({
+        kind: 'repository-execution',
+        text: persisted.text,
+        actionTitle: persisted.actionTitle,
+        intent: persisted.intent,
+        target: persisted.target,
+        job: snapshot,
+      });
+      setActiveMenu('github');
+      restoreMessage('system', `Aktiver Repository-Run ${snapshot.jobId || persisted.jobId} wurde aus der aktuellen Browser-Session wiederhergestellt. Fortsetzen liest denselben Backend-Job weiter.`);
+    }).catch((error) => {
+      if (cancelled) return;
+      setRuntimeState('degraded');
+      addMessage('system', `Aktiver Repository-Run konnte noch nicht zurückgelesen werden: ${error instanceof Error ? error.message : 'unbekannter Fehler'}`);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [agentClient, user]);
+
   const waitForRepositoryJob = async (initial: SovereignAgentJobSnapshot): Promise<SovereignAgentJobSnapshot> => {
     let snapshot = initial;
     if (!snapshot.jobId) throw new Error('Repository-Ausführung lieferte keine Job-ID.');
-    for (let attempt = 0; attempt < 24; attempt += 1) {
+    let consecutiveReadFailures = 0;
+    for (let attempt = 0; attempt < 480; attempt += 1) {
       if (isSovereignAgentTerminalStatus(snapshot.status) || snapshot.status === 'waiting-for-user') return snapshot;
       await new Promise((resolve) => window.setTimeout(resolve, 1250));
-      snapshot = await agentClient.getJob(snapshot.jobId);
-      setAgentJob(snapshot);
+      try {
+        snapshot = await agentClient.getJob(snapshot.jobId);
+        consecutiveReadFailures = 0;
+        setAgentJob(snapshot);
+      } catch {
+        consecutiveReadFailures += 1;
+        if (consecutiveReadFailures >= 4) return snapshot;
+        await new Promise((resolve) => window.setTimeout(resolve, consecutiveReadFailures * 750));
+      }
     }
     return snapshot;
   };
@@ -250,6 +405,7 @@ export function PlayReleaseChat() {
       setGitHubAccessState(completeGitHubAccessValidation(githubAccessState.maskedToken));
     }
     setAgentJob({ ...snapshot, draftPrUrl: created.draftPrCreate.prUrl });
+    clearPersistedRepositoryAction();
     addMessage(
       'assistant',
       `Draft PR erstellt und von GitHub zurückgelesen:\n${created.draftPrCreate.prUrl}\nHead: ${created.draftPrCreate.readbackHeadSha.slice(0, 12)} · CI: ${created.draftPrCreate.ciState}`,
@@ -261,18 +417,34 @@ export function PlayReleaseChat() {
     readonly actionTitle: string;
     readonly intent: string;
     readonly target: ReleaseRepoTarget;
+    readonly job?: SovereignAgentJobSnapshot;
   }): Promise<void> => {
     setActiveMenu('github');
-    addMessage('system', `GitHub-Auftrag erkannt · ${args.target.label} · Start nur über die revisionsgebundene Agent-Runtime.`);
     const githubAccessToken = githubTokenRef.current;
-    let snapshot = await agentClient.startRepositoryExecution({
-      repoUrl: args.target.repoUrl,
-      branch: args.target.branch,
-      mission: args.actionTitle || args.text,
-      evidenceText: args.text,
-      ...(githubAccessToken ? { githubAccessToken } : {}),
-    });
+    let snapshot: SovereignAgentJobSnapshot;
+    if (args.job?.jobId) {
+      addMessage('system', `Repository-Run ${args.job.jobId} wird weiter verfolgt · es wird kein zweiter Job gestartet.`);
+      snapshot = await agentClient.getJob(args.job.jobId);
+    } else {
+      addMessage('system', `GitHub-Auftrag erkannt · ${args.target.label} · Start nur über die revisionsgebundene Agent-Runtime.`);
+      snapshot = await agentClient.startRepositoryExecution({
+        repoUrl: args.target.repoUrl,
+        branch: args.target.branch,
+        mission: args.actionTitle || args.text,
+        evidenceText: args.text,
+        ...(githubAccessToken ? { githubAccessToken } : {}),
+      });
+    }
     setAgentJob(snapshot);
+    if (snapshot.jobId) {
+      persistRepositoryAction({
+        jobId: snapshot.jobId,
+        text: args.text,
+        actionTitle: args.actionTitle,
+        intent: args.intent,
+        target: args.target,
+      });
+    }
     snapshot = await waitForRepositoryJob(snapshot);
     setAgentJob(snapshot);
     if (
@@ -285,27 +457,39 @@ export function PlayReleaseChat() {
     }
 
     if (snapshot.status === 'waiting-for-user') {
-      addMessage('system', 'GitHub-Ausführung wartet auf eine Nutzerentscheidung. Es wurde kein Erfolg behauptet.');
+      addMessage('system', 'GitHub-Ausführung wartet auf eine Nutzerentscheidung. Die aktuelle Job-ID bleibt für diese Browser-Session gebunden.');
       return;
     }
     if (snapshot.status === 'blocked' || snapshot.status === 'failed') {
+      clearPersistedRepositoryAction();
       addMessage('system', `GitHub-Ausführung blockiert: ${snapshot.lastError || summarizeSovereignAgentJob(snapshot)}`);
       return;
     }
     if (!isSovereignAgentTerminalStatus(snapshot.status)) {
-      addMessage('system', `GitHub-Ausführung läuft weiter (${snapshot.status}). Noch kein Abschluss-Readback vorhanden.`);
+      setPendingRepositoryAction({
+        kind: 'repository-execution',
+        text: args.text,
+        actionTitle: args.actionTitle,
+        intent: args.intent,
+        target: args.target,
+        job: snapshot,
+      });
+      addMessage('system', `GitHub-Ausführung läuft weiter (${snapshot.status}). Derselbe Job bleibt gebunden; „Ausführung weiter verfolgen“ startet keinen zweiten Run.`);
       return;
     }
     if (snapshot.draftPrUrl) {
+      clearPersistedRepositoryAction();
       addMessage('assistant', `GitHub-Änderung ist als Draft PR belegt:\n${snapshot.draftPrUrl}`);
       return;
     }
     if (snapshot.changedFiles.length === 0) {
+      clearPersistedRepositoryAction();
       addMessage('system', 'Agent-Run ist abgeschlossen, aber es sind keine geänderten Dateien belegt. Kein Draft PR wurde erzeugt.');
       return;
     }
 
     if (args.intent !== 'draft_pr') {
+      clearPersistedRepositoryAction();
       addMessage('assistant', `Repository-Run abgeschlossen · ${snapshot.changedFiles.length} geänderte Datei(en) im Runtime-Readback. Kein externer GitHub-Write wurde ausgeführt. Für Veröffentlichung ausdrücklich „Draft PR erstellen“ beauftragen.`);
       return;
     }
@@ -336,6 +520,7 @@ export function PlayReleaseChat() {
         actionTitle: pending.actionTitle,
         intent: pending.intent,
         target: pending.target,
+        job: pending.job,
       });
     } catch (error) {
       setRuntimeState('degraded');
@@ -491,15 +676,23 @@ export function PlayReleaseChat() {
             role: entry.role as 'user' | 'assistant',
             content: entry.text,
           }));
-        const interpreted = await fetchSovereignDirectLlmInterpretation({
-          preferredModel: model,
-          text,
-          repoContext: `${nextRepoTarget.label} · ${nextRepoTarget.branch}`,
-          runtimeContext: agentJob
-            ? `Letzter belegter Agent-Status: ${agentJob.status}; Draft PR: ${agentJob.draftPrUrl || 'none'}`
-            : 'Noch kein Agent-Run in diesem Chat.',
-          recentMessages,
-        });
+        let interpreted: Awaited<ReturnType<typeof fetchSovereignDirectLlmInterpretation>>;
+        try {
+          interpreted = await fetchSovereignDirectLlmInterpretation({
+            preferredModel: model,
+            text,
+            repoContext: `${nextRepoTarget.label} · ${nextRepoTarget.branch}`,
+            runtimeContext: agentJob
+              ? `Letzter belegter Agent-Status: ${agentJob.status}; Draft PR: ${agentJob.draftPrUrl || 'none'}`
+              : 'Noch kein Agent-Run in diesem Chat.',
+            recentMessages,
+          });
+        } catch (error) {
+          interpreted = {
+            ok: false,
+            error: error instanceof Error ? error.message : 'repository intent runtime unavailable',
+          };
+        }
 
         if (interpreted.ok && interpreted.interpretation) {
           const interpretation = interpreted.interpretation;
@@ -826,11 +1019,18 @@ export function PlayReleaseChat() {
                     disabled={busy}
                     style={{ minHeight: 40, padding: '0 12px', borderRadius: 8, border: 'none', background: C.accent, color: C.bg, fontWeight: 800, cursor: busy ? 'wait' : 'pointer' }}
                   >
-                    {pendingRepositoryAction.kind === 'draft-pr' ? 'Draft PR erstellen' : 'Repository-Ausführung starten'}
+                    {pendingRepositoryAction.kind === 'draft-pr'
+                      ? 'Draft PR erstellen'
+                      : pendingRepositoryAction.job?.jobId
+                        ? 'Ausführung weiter verfolgen'
+                        : 'Repository-Ausführung starten'}
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPendingRepositoryAction(null)}
+                    onClick={() => {
+                      setPendingRepositoryAction(null);
+                      clearPersistedRepositoryAction();
+                    }}
                     disabled={busy}
                     style={{ minHeight: 40, padding: '0 12px', borderRadius: 8, border: '1px solid #263244', background: 'transparent', color: C.sub, cursor: busy ? 'not-allowed' : 'pointer' }}
                   >
