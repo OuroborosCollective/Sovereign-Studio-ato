@@ -287,7 +287,7 @@ export function PlayReleaseChat() {
   };
 
   useEffect(() => {
-    if (!user || restoredRepositoryActionRef.current) return;
+    if (!user?.id || restoredRepositoryActionRef.current) return;
     restoredRepositoryActionRef.current = true;
     const persisted = readPersistedRepositoryAction();
     if (!persisted) return;
@@ -364,7 +364,7 @@ export function PlayReleaseChat() {
     return () => {
       cancelled = true;
     };
-  }, [agentClient, user]);
+  }, [agentClient, user?.id]);
 
   const waitForRepositoryJob = async (initial: SovereignAgentJobSnapshot): Promise<SovereignAgentJobSnapshot> => {
     let snapshot = initial;
