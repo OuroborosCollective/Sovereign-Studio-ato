@@ -6,16 +6,19 @@ const ACCOUNT_KEY = process.env.SOVEREIGN_E2E_ACCOUNT_KEY?.trim() || '';
 const GITHUB_TOKEN = process.env.SOVEREIGN_E2E_GITHUB_TOKEN?.trim() || '';
 const REPO_URL = process.env.SOVEREIGN_E2E_REPO_URL?.trim() || '';
 const RUN_ID = process.env.GITHUB_RUN_ID?.trim() || `local-${Date.now()}`;
-const OWNED_TITLE_PREFIX = `[live-five-path:${RUN_ID}:`;
+const OWNED_MARKER_PREFIX = `[live-vnext:${RUN_ID}:`;
 
 interface DraftPrEvidence {
   path: string;
   marker: string;
+  persistedRunId: string;
   prNumber: number;
   prUrl: string;
   headRef: string;
+  readbackHeadSha: string;
   draft: true;
   stateAtVerification: 'open';
+  readmeVerified: true;
   closedAfterVerification: boolean;
   branchDeletedAfterVerification: boolean;
 }
@@ -36,7 +39,7 @@ function assertLiveConfig(): void {
     ['SOVEREIGN_E2E_REPO_URL', REPO_URL],
   ].filter(([, value]) => !value).map(([name]) => name);
   if (missing.length > 0) {
-    throw new Error(`Live five-path E2E configuration missing: ${missing.join(', ')}`);
+    throw new Error(`Live vNext E2E configuration missing: ${missing.join(', ')}`);
   }
   const parsed = new URL(REPO_URL);
   if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com' || parsed.pathname.split('/').filter(Boolean).length !== 2) {
@@ -122,124 +125,142 @@ async function cleanupOwnedRunPullRequests(request: APIRequestContext): Promise<
   );
   if (result.status !== 200 || !result.body) return;
   for (const pull of result.body) {
-    if (!pull.title.includes(OWNED_TITLE_PREFIX)) continue;
+    if (!pull.title.includes(OWNED_MARKER_PREFIX)) continue;
     if (!pull.head.ref.startsWith('sovereign/agent-')) continue;
     await closeOwnedDraftPr(request, pull.number, pull.head.ref);
   }
 }
 
-async function loginAsFirstTimeUser(page: Page): Promise<void> {
+async function authenticateVNext(page: Page): Promise<void> {
   await page.goto('/');
-  await expect(page.getByTestId('mission__textarea')).toBeVisible();
-  if (await page.getByRole('button', { name: 'Profil' }).count()) return;
-  await page.getByRole('button', { name: 'Anmelden', exact: true }).first().click();
-  await page.getByPlaceholder('Optional: svk_ Account Key').fill(ACCOUNT_KEY);
-  await page.getByRole('button', { name: 'Mit Account Key anmelden' }).click();
-  await expect(page.getByRole('button', { name: 'Profil' })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('sovereign-control-surface-vnext')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('operator-auth-btn').click();
+  const dialog = page.getByRole('dialog', { name: 'Sovereign account session' });
+  await expect(dialog).toBeVisible();
+
+  if (await dialog.getByText('AUTHENTICATED', { exact: true }).count()) {
+    await dialog.getByRole('button', { name: 'Close account session' }).click();
+    return;
+  }
+
+  const accountKey = dialog.locator('#vnext-account-key');
+  await expect(accountKey).toBeVisible({ timeout: 20_000 });
+  await accountKey.fill(ACCOUNT_KEY);
+  await dialog.getByRole('button', { name: 'AUTHENTICATE WITH ACCOUNT KEY' }).click();
+  await expect(dialog.getByText('AUTHENTICATED', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await dialog.getByRole('button', { name: 'Close account session' }).click();
 }
 
-async function submitComposer(page: Page, text: string): Promise<void> {
+function mission(pathId: string): { marker: string; text: string } {
+  const marker = `${OWNED_MARKER_PREFIX}${pathId}]`;
+  return {
+    marker,
+    text: [
+      `Repository: ${REPO_URL}`,
+      `Ändere ausschließlich README.md: Hänge ${marker} an die erste Markdown-Überschrift an.`,
+      'Erhalte den übrigen Inhalt, führe die passenden Regressionstests aus und erzeuge noch keinen Pull Request.',
+      'Stoppe nach belegtem Workspace-Diff und Test-Evidence, damit der sichtbare Publication-Gate den Draft PR separat freigeben kann.',
+    ].join('\n'),
+  };
+}
+
+async function submitMission(page: Page, text: string): Promise<string> {
   const composer = page.getByTestId('mission__textarea');
+  await expect(composer).toBeVisible();
   await composer.fill(text);
   await page.getByTestId('builder__start-task').click();
+  const accepted = page.getByText(/PERSISTED RUN ACCEPTED :: \[run-[0-9a-f]+\]/).last();
+  await expect(accepted).toBeVisible({ timeout: 45_000 });
+  const rendered = await accepted.innerText();
+  const match = rendered.match(/\[(run-[0-9a-f]+)\]/);
+  if (!match) throw new Error(`vNext did not expose the persisted run id: ${rendered}`);
+  return match[1];
 }
 
-async function waitForRepoReady(page: Page): Promise<void> {
-  await expect(page.getByRole('button', { name: 'Repo Inspector öffnen' })).toBeVisible({ timeout: 45_000 });
+async function approveDraftReadinessIfRequested(page: Page): Promise<boolean> {
+  const dialog = page.getByRole('dialog', { name: 'HUMAN-IN-THE-LOOP // OWNER DIRECTIVE REQUIRED' });
+  if (!await dialog.isVisible().catch(() => false)) return false;
+  const approve = dialog.getByRole('button', { name: /> approve/i });
+  if (!await approve.isVisible().catch(() => false)) {
+    const text = await dialog.innerText();
+    throw new Error(`Persisted run requested non-draft owner input during live vNext proof: ${text}`);
+  }
+  await approve.click();
+  await expect(dialog).toBeHidden({ timeout: 30_000 });
+  return true;
 }
 
-async function loadRepoFromSideMenu(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Menü' }).click();
-  const menu = page.getByTestId('sovereign-side-menu');
-  await expect(menu).toBeVisible();
-  await menu.getByRole('button').filter({ hasText: /Repo laden/ }).click();
-  const dialog = page.getByRole('dialog', { name: 'Repo Setup' });
-  await dialog.getByRole('textbox', { name: 'GitHub Repository URL' }).fill(REPO_URL);
-  await dialog.getByRole('button', { name: 'Repo-Snapshot laden' }).click();
-  await waitForRepoReady(page);
+async function openPublication(page: Page): Promise<void> {
+  const publishTab = page.getByRole('button', { name: /PUBLISH/ });
+  if (await publishTab.isVisible().catch(() => false)) await publishTab.click();
+  await expect(page.getByTestId('vnext-publication-inspector')).toBeVisible();
 }
 
-async function loadRepoFromLauncher(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Tool Launcher öffnen' }).click();
-  await page.getByRole('menuitem', { name: 'Repo', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Repo Setup' });
-  await dialog.getByRole('textbox', { name: 'GitHub Repository URL' }).fill(REPO_URL);
-  await dialog.getByRole('button', { name: 'Repo-Snapshot laden' }).click();
-  await waitForRepoReady(page);
+async function waitForPublicationGate(page: Page): Promise<void> {
+  const deadline = Date.now() + 210_000;
+  while (Date.now() < deadline) {
+    if (await approveDraftReadinessIfRequested(page)) {
+      await page.waitForTimeout(500);
+      continue;
+    }
+    await openPublication(page);
+    const gate = page.getByTestId('vnext-prepare-draft-pr');
+    if (await gate.isVisible().catch(() => false)) return;
+    await page.getByRole('button', { name: /COMMAND/ }).click();
+    await page.waitForTimeout(1_500);
+  }
+  throw new Error('vNext did not reach READY_TO_PUBLISH within the bounded live-test window.');
 }
 
-async function openGitHubAccessFromSideMenu(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Menü' }).click();
-  const menu = page.getByTestId('sovereign-side-menu');
-  await menu.getByRole('button').filter({ hasText: /GitHub Access/ }).click();
-  await expect(page.getByRole('button', { name: 'Zugang eingeben' })).toBeVisible();
+async function publishAndVerifyInUi(page: Page): Promise<{ prNumber: number; readbackHeadSha: string; prUrl: string }> {
+  await waitForPublicationGate(page);
+  await openPublication(page);
+  await page.getByTestId('vnext-prepare-draft-pr').click();
+  const consent = page.getByTestId('vnext-draft-pr-consent');
+  await expect(consent).toBeVisible({ timeout: 30_000 });
+  await expect(consent.getByText('EXTERNAL WRITE CONSENT')).toBeVisible();
+  await expect(consent.getByText(/No merge\. No push to main\./)).toBeVisible();
+  await page.getByTestId('vnext-create-draft-pr').click();
+
+  const panel = page.getByTestId('vnext-publication-inspector');
+  await expect(panel.getByText('GITHUB READBACK VERIFIED')).toBeVisible({ timeout: 180_000 });
+  await expect(panel.getByText('DRAFT PR VERIFIED')).toBeVisible();
+  const panelText = await panel.innerText();
+  const prMatch = panelText.match(/#(\d+)/);
+  const shaMatch = panelText.match(/\b[0-9a-f]{40}\b/);
+  const prUrl = await panel.getByRole('link', { name: 'OPEN VERIFIED DRAFT PR' }).getAttribute('href');
+  if (!prMatch || !shaMatch || !prUrl) throw new Error(`Verified publication panel lacked PR/head evidence: ${panelText}`);
+  return { prNumber: Number(prMatch[1]), readbackHeadSha: shaMatch[0], prUrl };
 }
 
-async function openGitHubAccessFromLauncher(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Tool Launcher öffnen' }).click();
-  await page.getByRole('menuitem', { name: 'GitHub Access', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Zugang eingeben' })).toBeVisible();
-}
-
-async function provideGitHubAccess(page: Page): Promise<void> {
+async function verifyReadmeAtHead(
+  request: APIRequestContext,
+  headSha: string,
+  marker: string,
+): Promise<void> {
   const { owner, repo } = repositoryCoordinates();
-  await page.getByRole('button', { name: 'Zugang eingeben' }).click();
-  await page.locator('#github-pat-input').fill(GITHUB_TOKEN);
-  const repoValidation = page.waitForResponse((response) =>
-    response.request().method() === 'GET'
-      && response.url() === `https://api.github.com/repos/${owner}/${repo}`,
+  const result = await githubJson<{ content?: string; encoding?: string }>(
+    request,
+    'GET',
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/README.md?ref=${encodeURIComponent(headSha)}`,
   );
-  await page.getByRole('button', { name: 'Übernehmen' }).click();
-  const response = await repoValidation;
-  expect(response.ok(), `GitHub UI validation returned HTTP ${response.status()}`).toBe(true);
-  await expect(page.getByText(/GitHub-Zugang ist bereit/).last()).toBeVisible({ timeout: 30_000 });
-}
-
-async function confirmIntegrationIntent(page: Page): Promise<void> {
-  const card = page.getByTestId('integration-intent-draft-card');
-  await expect(card).toBeVisible({ timeout: 20_000 });
-  const confirmButton = card.getByTestId('btn-confirm');
-  await expect(confirmButton).toBeEnabled();
-  await confirmButton.click();
-}
-
-async function confirmPatchDiff(page: Page): Promise<void> {
-  const dialog = page.getByRole('dialog', { name: 'Patch Diff' });
-  await expect(dialog).toBeVisible({ timeout: 45_000 });
-  const confirmButton = dialog.getByTestId('confirm-patch-diff');
-  await expect(confirmButton).toBeEnabled();
-  await confirmButton.click();
-  await expect(confirmButton).toHaveText(/Patch bestätigt/);
-  await dialog.getByRole('button', { name: 'Patch Diff schließen' }).click();
-  await expect(dialog).toBeHidden();
-}
-
-async function publishFromSideMenu(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Menü' }).click();
-  const action = page.getByTestId('builder__draft-pr');
-  await expect(action).toBeEnabled();
-  await action.click();
-}
-
-async function publishFromSlashCommand(page: Page): Promise<void> {
-  await submitComposer(page, '/pr');
+  if (result.status !== 200 || !result.body?.content || result.body.encoding !== 'base64') {
+    throw new Error(`GitHub README readback failed at ${headSha}: HTTP ${result.status}`);
+  }
+  const readme = Buffer.from(result.body.content.replace(/\s+/g, ''), 'base64').toString('utf8');
+  const firstHeading = readme.split(/\r?\n/).find((line) => /^#\s+/.test(line)) || '';
+  expect(firstHeading).toContain(marker);
 }
 
 async function verifyAndCleanDraftPr(
-  page: Page,
   request: APIRequestContext,
   pathName: string,
   marker: string,
+  persistedRunId: string,
   baselinePrNumber: number,
+  ui: { prNumber: number; readbackHeadSha: string; prUrl: string },
 ): Promise<void> {
-  const card = page.getByTestId('draft-pr-card');
-  await expect(card).toBeVisible({ timeout: 180_000 });
-  const cardText = await card.innerText();
-  const match = cardText.match(/PR #(\d+)/);
-  if (!match) throw new Error(`Draft PR card did not expose a PR number: ${cardText}`);
-  const prNumber = Number(match[1]);
-  expect(prNumber).toBeGreaterThan(baselinePrNumber);
-
+  expect(ui.prNumber).toBeGreaterThan(baselinePrNumber);
   const { owner, repo } = repositoryCoordinates();
   const result = await githubJson<{
     number: number;
@@ -248,8 +269,8 @@ async function verifyAndCleanDraftPr(
     state: string;
     draft: boolean;
     merged_at: string | null;
-    head: { ref: string };
-  }>(request, 'GET', `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}`);
+    head: { ref: string; sha: string };
+  }>(request, 'GET', `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${ui.prNumber}`);
   if (result.status !== 200 || !result.body) throw new Error(`GitHub PR verification failed: HTTP ${result.status}`);
 
   expect(result.body.title).toContain(marker);
@@ -257,39 +278,49 @@ async function verifyAndCleanDraftPr(
   expect(result.body.draft).toBe(true);
   expect(result.body.merged_at).toBeNull();
   expect(result.body.head.ref).toMatch(/^sovereign\/agent-/);
+  expect(result.body.head.sha).toBe(ui.readbackHeadSha);
+  expect(result.body.html_url).toBe(ui.prUrl);
+  await verifyReadmeAtHead(request, result.body.head.sha, marker);
 
-  const cleanup = await closeOwnedDraftPr(request, prNumber, result.body.head.ref);
+  const cleanup = await closeOwnedDraftPr(request, ui.prNumber, result.body.head.ref);
   expect(cleanup.closed).toBe(true);
   expect(cleanup.branchDeleted).toBe(true);
 
   evidence.push({
     path: pathName,
     marker,
-    prNumber,
+    persistedRunId,
+    prNumber: ui.prNumber,
     prUrl: result.body.html_url,
     headRef: result.body.head.ref,
+    readbackHeadSha: result.body.head.sha,
     draft: true,
     stateAtVerification: 'open',
+    readmeVerified: true,
     closedAfterVerification: cleanup.closed,
     branchDeletedAfterVerification: cleanup.branchDeleted,
   });
 }
 
-function instruction(pathId: string, emoji: string): { marker: string; text: string } {
-  const marker = `${OWNED_TITLE_PREFIX}${pathId}]`;
-  return {
-    marker,
-    text: `Füge ${emoji} in den README Titel ein. ${marker}`,
-  };
+async function executeCanonicalVNextRun(
+  page: Page,
+  request: APIRequestContext,
+  pathId: string,
+): Promise<void> {
+  const change = mission(pathId);
+  const baseline = await latestPullRequestNumber(request);
+  const persistedRunId = await submitMission(page, change.text);
+  const ui = await publishAndVerifyInUi(page);
+  await verifyAndCleanDraftPr(request, `vnext-${pathId}`, change.marker, persistedRunId, baseline, ui);
 }
 
-test.describe('real first-user UI reaches five verified Draft PRs', () => {
+test.describe('five canonical vNext repository runs reach independently verified Draft PRs', () => {
   test.describe.configure({ mode: 'serial' });
-  test.skip(!LIVE_ENABLED, 'Live five-path Draft-PR validation runs only through the explicit protected workflow.');
-  test.setTimeout(240_000);
+  test.skip(!LIVE_ENABLED, 'Live vNext Draft-PR validation runs only through the explicit protected workflow.');
+  test.setTimeout(300_000);
 
   test.beforeAll(() => assertLiveConfig());
-  test.beforeEach(async ({ page }) => loginAsFirstTimeUser(page));
+  test.beforeEach(async ({ page }) => authenticateVNext(page));
   test.afterEach(async ({ request }) => cleanupOwnedRunPullRequests(request));
   test.afterAll(async () => {
     await mkdir('test-results', { recursive: true });
@@ -299,75 +330,13 @@ test.describe('real first-user UI reaches five verified Draft PRs', () => {
       'utf8',
     );
     if (evidence.length !== 5) {
-      throw new Error(`Expected exactly five GitHub-verified Draft PR paths, received ${evidence.length}.`);
+      throw new Error(`Expected exactly five GitHub-verified vNext Draft PR runs, received ${evidence.length}.`);
     }
   });
 
-  test('path 1: repo URL in chat, intent first, access gate, side-menu Draft PR', async ({ page, request }) => {
-    const change = instruction('p1', '🧭');
-    const baseline = await latestPullRequestNumber(request);
-    await submitComposer(page, REPO_URL);
-    await waitForRepoReady(page);
-    await submitComposer(page, change.text);
-    await confirmIntegrationIntent(page);
-    await provideGitHubAccess(page);
-    await confirmPatchDiff(page);
-    await publishFromSideMenu(page);
-    await verifyAndCleanDraftPr(page, request, 'repo-url-intent-access-side-menu', change.marker, baseline);
-  });
-
-  test('path 2: slash repo, side-menu access first, integration confirmation, slash Draft PR', async ({ page, request }) => {
-    const change = instruction('p2', '🧪');
-    const baseline = await latestPullRequestNumber(request);
-    await submitComposer(page, `/repo ${REPO_URL}`);
-    await waitForRepoReady(page);
-    await openGitHubAccessFromSideMenu(page);
-    await provideGitHubAccess(page);
-    await submitComposer(page, change.text);
-    await confirmIntegrationIntent(page);
-    await confirmPatchDiff(page);
-    await publishFromSlashCommand(page);
-    await verifyAndCleanDraftPr(page, request, 'slash-repo-side-access-slash-pr', change.marker, baseline);
-  });
-
-  test('path 3: side-menu repo, intent then card access, side-menu Draft PR', async ({ page, request }) => {
-    const change = instruction('p3', '🔍');
-    const baseline = await latestPullRequestNumber(request);
-    await loadRepoFromSideMenu(page);
-    await submitComposer(page, change.text);
-    await confirmIntegrationIntent(page);
-    await provideGitHubAccess(page);
-    await confirmPatchDiff(page);
-    await publishFromSideMenu(page);
-    await verifyAndCleanDraftPr(page, request, 'side-repo-card-access-side-pr', change.marker, baseline);
-  });
-
-  test('path 4: launcher repo, launcher access first, slash Draft PR', async ({ page, request }) => {
-    const change = instruction('p4', '🚀');
-    const baseline = await latestPullRequestNumber(request);
-    await loadRepoFromLauncher(page);
-    await openGitHubAccessFromLauncher(page);
-    await provideGitHubAccess(page);
-    await submitComposer(page, change.text);
-    await confirmIntegrationIntent(page);
-    await confirmPatchDiff(page);
-    await publishFromSlashCommand(page);
-    await verifyAndCleanDraftPr(page, request, 'launcher-repo-launcher-access-slash-pr', change.marker, baseline);
-  });
-
-  test('path 5: task first, automatic repo/access resume, side-menu Draft PR', async ({ page, request }) => {
-    const change = instruction('p5', '🛡️');
-    const baseline = await latestPullRequestNumber(request);
-    await submitComposer(page, change.text);
-    const dialog = page.getByRole('dialog', { name: 'Repo Setup' });
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole('textbox', { name: 'GitHub Repository URL' }).fill(REPO_URL);
-    await dialog.getByRole('button', { name: 'Repo-Snapshot laden' }).click();
-    await waitForRepoReady(page);
-    await expect(page.getByRole('button', { name: 'Zugang eingeben' })).toBeVisible({ timeout: 20_000 });
-    await provideGitHubAccess(page);
-    await confirmPatchDiff(page);
-    await publishFromSideMenu(page);
-    await verifyAndCleanDraftPr(page, request, 'task-first-auto-resume-side-pr', change.marker, baseline);
-  });
+  for (const pathId of ['p1', 'p2', 'p3', 'p4', 'p5']) {
+    test(`canonical vNext ${pathId}: session → persisted run → evidence → consent → GitHub readback`, async ({ page, request }) => {
+      await executeCanonicalVNextRun(page, request, pathId);
+    });
+  }
 });
