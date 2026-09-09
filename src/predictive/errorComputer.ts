@@ -164,20 +164,22 @@ export class ErrorComputer {
       return newError;
     }
 
-    // Get recent errors
-    const recentErrors = history.slice(-this.smoothingWindow);
+    // ⚡ Bolt: Single-pass O(N) loop over recent history window avoiding array slicing (.slice)
+    // and dual .reduce() traversals. Computes exponential weights once per entry in O(1) space.
     const alpha = 0.3; // Smoothing factor
+    const totalCount = history.length;
+    const startIndex = Math.max(0, totalCount - this.smoothingWindow);
+    let smoothedError = 0;
+    let weightSum = 0;
 
-    // Calculate weighted average
-    const smoothedError = recentErrors.reduce((sum, e, i) => {
-      const weight = Math.pow(alpha, recentErrors.length - 1 - i);
-      return sum + e.error * weight;
-    }, 0);
+    for (let index = startIndex; index < totalCount; index += 1) {
+      const exponent = totalCount - 1 - index;
+      const weight = Math.pow(alpha, exponent);
+      smoothedError += history[index].error * weight;
+      weightSum += weight;
+    }
 
-    const weightSum = recentErrors.reduce((sum, _, i) => {
-      return sum + Math.pow(alpha, recentErrors.length - 1 - i);
-    }, 0);
-
+    if (weightSum === 0) return newError;
     const ema = smoothedError / weightSum;
 
     // Blend new error with EMA
