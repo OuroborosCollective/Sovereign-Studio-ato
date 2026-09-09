@@ -151,20 +151,21 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     ]) expect(live).not.toContain(retired);
   });
 
-  it('keeps the live five-path workflow owner-bound, same-repository, opt-in and exact-head pinned', () => {
+  it('keeps the live five-path workflow on the owner-only feature push lane and exact event SHA', () => {
     const workflow = source('.github/workflows/e2e-testing.yml');
     for (const required of [
-      'types: [edited]',
-      "github.event.pull_request.draft == true",
-      'github.event.pull_request.head.repo.full_name == github.repository',
+      "branches: [main, develop, 'feature/**']",
+      "github.event_name == 'push'",
+      "github.ref == 'refs/heads/feature/sovereign-live-five-owner'",
       'github.actor == github.repository_owner',
-      "contains(github.event.pull_request.body, '<!-- sovereign-live-five-path -->')",
-      'SOVEREIGN_E2E_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}',
+      "contains(github.event.head_commit.message, '[sovereign-live-five]')",
+      'SOVEREIGN_E2E_REVISION: ${{ github.sha }}',
       'ref: ${{ env.SOVEREIGN_E2E_REVISION }}',
       'ACTUAL_HEAD="$(git rev-parse HEAD)"',
       '[ "$ACTUAL_HEAD" = "$SOVEREIGN_E2E_REVISION" ]',
     ]) expect(workflow).toContain(required);
 
+    expect(workflow).not.toContain('pull_request:');
     expect(workflow).not.toContain('github.event.pull_request.number == 735');
   });
 
