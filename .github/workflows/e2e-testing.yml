@@ -112,6 +112,8 @@ jobs:
       SOVEREIGN_E2E_APP_URL: http://127.0.0.1:3000
       SOVEREIGN_E2E_BACKEND_PROXY_TARGET: https://sovereign-backend.arelorian.de
       VITE_SOVEREIGN_AGENT_API_URL: http://127.0.0.1:3000
+      # Auth, session readback and agent calls must share the preview cookie origin.
+      VITE_ADMIN_API_BASE: http://127.0.0.1:3000
 
     steps:
       - name: Checkout exact live-test revision

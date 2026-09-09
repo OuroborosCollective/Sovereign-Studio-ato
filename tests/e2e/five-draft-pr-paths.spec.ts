@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { expect, request as playwrightRequest, test, type APIRequestContext, type Page } from '@playwright/test';
+import { requireLoginAccountId, requireSameOrigin, requireVerifiedSessionIdentity } from './helpers/live-session-contract';
 
 const LIVE_ENABLED = process.env.SOVEREIGN_E2E_LIVE === '1';
 const CONFIGURED_ACCOUNT_KEY = process.env.SOVEREIGN_E2E_ACCOUNT_KEY?.trim() || '';
@@ -32,6 +33,7 @@ interface DraftPrEvidence {
 }
 
 const evidence: DraftPrEvidence[] = [];
+const authenticationReadbacks: Array<{ accountId: string; origin: string; sessionStatus: number }> = [];
 
 test.use({
   viewport: { width: 390, height: 844 },
@@ -153,7 +155,7 @@ async function provisionEphemeralAccountKey(): Promise<void> {
       data: { email, password, displayName: `Sovereign Live E2E ${RUN_ID}` },
     });
     if (registration.status() !== 200) {
-      throw new Error(`Real ephemeral account registration failed: HTTP ${registration.status()} ${await registration.text()}`);
+      throw new Error(`Real ephemeral account registration failed: HTTP ${registration.status()}`);
     }
     const user = await registration.json() as {
       id?: string;
@@ -169,7 +171,7 @@ async function provisionEphemeralAccountKey(): Promise<void> {
       data: { label: `Sovereign Live Five ${RUN_ID}` },
     });
     if (issued.status() !== 201) {
-      throw new Error(`Real ephemeral account-key issue failed: HTTP ${issued.status()} ${await issued.text()}`);
+      throw new Error(`Real ephemeral account-key issue failed: HTTP ${issued.status()}`);
     }
     const issuedBody = await issued.json() as { id?: string; key?: string };
     const key = String(issuedBody.key || '').trim();
@@ -214,15 +216,35 @@ async function authenticateVNext(page: Page): Promise<void> {
   const dialog = page.getByRole('dialog', { name: 'Sovereign account session' });
   await expect(dialog).toBeVisible();
 
-  if (await dialog.getByText('AUTHENTICATED', { exact: true }).count()) {
-    await dialog.getByRole('button', { name: 'Close account session' }).click();
-    return;
-  }
-
+  // A persisted user or an AUTHENTICATED label is not a browser-session proof.
   const accountKey = dialog.locator('#vnext-account-key');
   await expect(accountKey).toBeVisible({ timeout: 20_000 });
   await accountKey.fill(activeAccountKey);
-  await dialog.getByRole('button', { name: 'AUTHENTICATE WITH ACCOUNT KEY' }).click();
+  const authenticate = dialog.getByRole('button', { name: 'AUTHENTICATE WITH ACCOUNT KEY' });
+  await expect(authenticate).toBeEnabled();
+  const [login] = await Promise.all([
+    page.waitForResponse((response) =>
+      response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/auth/account-key',
+    { timeout: 30_000 }),
+    authenticate.click(),
+  ]);
+  requireSameOrigin(login.url(), page.url());
+  const accountId = requireLoginAccountId(login.status(), await login.json().catch(() => null));
+  if (ephemeralAccountId && accountId !== ephemeralAccountId) {
+    throw new Error('LIVE_AUTH_ISSUED_ACCOUNT_MISMATCH');
+  }
+
+  // page.request shares the actual browser cookie jar. No cookie injection or
+  // standalone API login can satisfy this readback for the preview agent origin.
+  const session = await page.request.get(new URL('/api/auth/me', page.url()).href, {
+    headers: { 'Cache-Control': 'no-store' },
+    maxRedirects: 0,
+  });
+  requireSameOrigin(session.url(), page.url());
+  requireVerifiedSessionIdentity(session.status(), await session.json().catch(() => null), accountId);
+  authenticationReadbacks.push({ accountId, origin: new URL(page.url()).origin, sessionStatus: session.status() });
+  console.log(`LIVE_SESSION_READBACK_OK account=${accountId} origin=${new URL(page.url()).origin}`);
   await expect(dialog.getByText('AUTHENTICATED', { exact: true })).toBeVisible({ timeout: 30_000 });
   await dialog.getByRole('button', { name: 'Close account session' }).click();
 }
@@ -420,6 +442,7 @@ test.describe('five canonical vNext repository runs reach independently verified
           ephemeralAccountKeyRevoked: ephemeralAccountKeyId ? ephemeralAccountKeyRevoked : null,
           protectedValuePersistedInEvidence: false,
         },
+        authenticationReadbacks,
         verifiedDraftPrCount: evidence.length,
         evidence,
       }, null, 2)}\n`,
