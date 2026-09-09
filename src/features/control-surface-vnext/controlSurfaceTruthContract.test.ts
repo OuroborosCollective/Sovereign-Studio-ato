@@ -77,7 +77,9 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     expect(adapter).toContain('/api/controller/approvals/${encodeURIComponent(interactionId)}/decision');
     expect(adapter).toContain("options: approval.requiresProtectedOwnerInput ? undefined : ['approve', 'reject']");
     expect(adapter).toContain("case 'READY_FOR_DRAFT_PR': return 'READY_TO_PUBLISH'");
-    expect(adapter).toContain("runPhase === 'AWAITING_OWNER_INPUT'");
+    expect(adapter).toContain('const phase = projectRunAndJobPhase(');
+    const phaseProjection = source('src/features/control-surface-vnext/fsm/runtimePhaseProjection.ts');
+    expect(phaseProjection).toContain("case 'AWAITING_OWNER_INPUT':");
     expect(ownerHook).toContain("invalidateQueries({ queryKey: ['sovereign-vnext-job', jobId] })");
     expect(backend).toContain('@app.route("/api/controller/approvals/<approval_id>/decision", methods=["POST"])');
     expect(backend).toContain('draft_pr_approval = approved and approval_kind == "draft_pr_readiness"');

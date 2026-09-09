@@ -17,6 +17,7 @@ import type {
   Toolchain,
 } from '../types/domain';
 import type { AdapterStatus, SovereignBackendAdapter } from './interface';
+import { projectRunAndJobPhase } from '../fsm/runtimePhaseProjection';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -315,9 +316,10 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       try { anchors = await this.client.getEvidenceAnchors(run.jobId); } catch { anchors = []; }
     }
     const runPhase = phaseFromRun(run.status);
-    const phase = runPhase === 'AWAITING_OWNER_INPUT'
-      ? runPhase
-      : snapshot ? phaseFromJob(snapshot, run) : runPhase;
+    const phase = projectRunAndJobPhase(
+      runPhase,
+      snapshot ? phaseFromJob(snapshot, run) : runPhase,
+    );
     const approval = phase === 'AWAITING_OWNER_INPUT'
       ? await this.getPendingApproval(run.runId)
       : undefined;
@@ -347,7 +349,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       id: run.runId,
       runId: run.runId,
       backendJobId: run.jobId,
-      phase: publication ? 'COMPLETED' : phase,
+      phase: projectRunAndJobPhase(runPhase, publication ? 'COMPLETED' : phase),
       createdAt: now,
       updatedAt: now,
       sourceStatus: run.status,
@@ -362,7 +364,11 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       draftPR: publication,
       publication: publication ? { draftPR: publication } : undefined,
       error: phase === 'BLOCKED' || phase === 'FAILED'
-        ? { message: snapshot?.lastError || run.reason || 'Runtime execution is blocked.', code: run.nextAction }
+        ? {
+            message: (runPhase === 'BLOCKED' || runPhase === 'FAILED' ? run.reason : snapshot?.lastError)
+              || run.reason || 'Runtime execution is blocked.',
+            code: run.nextAction,
+          }
         : undefined,
     };
   }
