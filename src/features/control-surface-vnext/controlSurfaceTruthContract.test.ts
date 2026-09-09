@@ -73,6 +73,22 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     expect(inspector).toContain('CREATE DRAFT PR');
   });
 
+  it('mounts exactly one responsive product tree instead of CSS-hiding duplicate desktop/mobile controls', () => {
+    const surface = source('src/features/control-surface-vnext/App.tsx');
+    const modal = source('src/features/control-surface-vnext/components/Modal.tsx');
+
+    expect(surface).toContain('function useDesktopLayout()');
+    expect(surface).toContain('const isDesktopLayout = useDesktopLayout()');
+    expect(surface).toContain('isDesktopLayout ? (');
+    expect(surface).toContain('data-testid="vnext-desktop-layout"');
+    expect(surface).toContain('data-testid="vnext-mobile-layout"');
+    expect(surface).not.toContain('hidden md:flex w-full h-full');
+    expect(surface).not.toContain('md:hidden flex flex-col w-full h-full');
+    expect(modal).toContain('role="dialog"');
+    expect(modal).toContain('aria-modal="true"');
+    expect(modal).toContain('aria-label={title}');
+  });
+
   it('keeps decorative biomodular effects explicitly non-authoritative', () => {
     const eye = source('src/features/control-surface-vnext/components/CyborgOcularMatrix/CyborgOcularMatrix.tsx');
     const neural = source('src/features/control-surface-vnext/components/RuntimeMonitor/NeuralLoadMonitor.tsx');

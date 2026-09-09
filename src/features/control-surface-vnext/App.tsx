@@ -29,6 +29,36 @@ import { cx } from './utils/cx';
 const MOBILE_TABS = ['chat', 'monitor', 'workspace', 'publication'] as const;
 type MobileTab = (typeof MOBILE_TABS)[number];
 
+function currentDesktopLayout(): boolean {
+  if (typeof window === 'undefined') return true;
+  if (typeof window.matchMedia === 'function') {
+    return window.matchMedia('(min-width: 768px)').matches;
+  }
+  return window.innerWidth >= 768;
+}
+
+function useDesktopLayout(): boolean {
+  const [isDesktop, setIsDesktop] = useState(currentDesktopLayout);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const media = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(min-width: 768px)')
+      : null;
+    const update = () => setIsDesktop(media ? media.matches : window.innerWidth >= 768);
+
+    update();
+    media?.addEventListener('change', update);
+    window.addEventListener('resize', update);
+    return () => {
+      media?.removeEventListener('change', update);
+      window.removeEventListener('resize', update);
+    };
+  }, []);
+
+  return isDesktop;
+}
+
 function Dashboard() {
   const adapter = useSovereignAdapter();
   const { user, ensureGuestSession } = useUserStore();
@@ -43,6 +73,7 @@ function Dashboard() {
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<MobileTab>('chat');
   const [fsmState, dispatchFsm] = useReducer(jobStateReducer, INITIAL_FSM_STATE);
+  const isDesktopLayout = useDesktopLayout();
 
   useEffect(() => {
     let mounted = true;
@@ -197,28 +228,30 @@ function Dashboard() {
       </header>
 
       <main className="flex-1 min-h-0 overflow-hidden">
-        <div className="hidden md:flex w-full h-full">
-          <div className="w-3/5 lg:w-3/4 min-w-0 h-full">{command}</div>
-          <aside className="w-2/5 lg:w-1/4 min-w-[290px] max-w-[460px] h-full bg-[var(--carbon-deep)] border-l border-[rgba(255,30,56,0.18)] flex flex-col overflow-hidden">
-            <div className="shrink-0">{<NeuralLoadMonitor job={job} phase={currentPhase} />}</div>
-            <div className="flex-1 min-h-0 border-b border-white/5">{<RuntimeMonitor job={job} isPolling={isPolling} />}</div>
-            <div className="h-[28%] min-h-[130px] border-b border-white/5">{workspacePanel}</div>
-            <div className="h-[31%] min-h-[150px]">{publicationPanel}</div>
-          </aside>
-        </div>
-
-        <div className="md:hidden flex flex-col w-full h-full">
-          <div className="flex-1 min-h-0 relative overflow-hidden">
-            <AnimatePresence mode="wait">
-              <motion.div key={mobileTab} initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -18 }} transition={{ duration: 0.18 }} className="absolute inset-0 overflow-hidden">
-                {mobileTab === 'chat' ? command : mobileTab === 'monitor' ? <div className="h-full flex flex-col">{monitor}</div> : mobileTab === 'workspace' ? workspacePanel : publicationPanel}
-              </motion.div>
-            </AnimatePresence>
+        {isDesktopLayout ? (
+          <div className="flex w-full h-full" data-testid="vnext-desktop-layout">
+            <div className="w-3/5 lg:w-3/4 min-w-0 h-full">{command}</div>
+            <aside className="w-2/5 lg:w-1/4 min-w-[290px] max-w-[460px] h-full bg-[var(--carbon-deep)] border-l border-[rgba(255,30,56,0.18)] flex flex-col overflow-hidden">
+              <div className="shrink-0"><NeuralLoadMonitor job={job} phase={currentPhase} /></div>
+              <div className="flex-1 min-h-0 border-b border-white/5"><RuntimeMonitor job={job} isPolling={isPolling} /></div>
+              <div className="h-[28%] min-h-[130px] border-b border-white/5">{workspacePanel}</div>
+              <div className="h-[31%] min-h-[150px]">{publicationPanel}</div>
+            </aside>
           </div>
-          <nav className="grid grid-cols-4 bg-[var(--carbon-surface)] border-t border-[rgba(255,30,56,0.2)] px-1 py-1 pb-[max(.25rem,env(safe-area-inset-bottom))] shrink-0" data-testid="mobile-bottom-nav">
-            {[{ id: 'chat', label: 'COMMAND', icon: Terminal }, { id: 'monitor', label: 'EVIDENCE', icon: Code }, { id: 'workspace', label: 'WORKSPACE', icon: FolderGit2 }, { id: 'publication', label: 'PUBLISH', icon: GitMerge }].map(({ id, label, icon: Icon }) => <button key={id} type="button" onClick={() => { playKeystrokeChirp(); setMobileTab(id as MobileTab); }} className={cx('relative min-h-12 rounded-lg flex flex-col items-center justify-center gap-0.5 font-mono text-[8px] font-bold', mobileTab === id ? 'text-[var(--red-laser)] bg-[rgba(255,30,56,0.1)] border border-[rgba(255,30,56,0.25)]' : 'text-[var(--text-muted)]')}><Icon size={15} /><span>{label}</span></button>)}
-          </nav>
-        </div>
+        ) : (
+          <div className="flex flex-col w-full h-full" data-testid="vnext-mobile-layout">
+            <div className="flex-1 min-h-0 relative overflow-hidden">
+              <AnimatePresence mode="wait">
+                <motion.div key={mobileTab} initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -18 }} transition={{ duration: 0.18 }} className="absolute inset-0 overflow-hidden">
+                  {mobileTab === 'chat' ? command : mobileTab === 'monitor' ? <div className="h-full flex flex-col">{monitor}</div> : mobileTab === 'workspace' ? workspacePanel : publicationPanel}
+                </motion.div>
+              </AnimatePresence>
+            </div>
+            <nav className="grid grid-cols-4 bg-[var(--carbon-surface)] border-t border-[rgba(255,30,56,0.2)] px-1 py-1 pb-[max(.25rem,env(safe-area-inset-bottom))] shrink-0" data-testid="mobile-bottom-nav">
+              {[{ id: 'chat', label: 'COMMAND', icon: Terminal }, { id: 'monitor', label: 'EVIDENCE', icon: Code }, { id: 'workspace', label: 'WORKSPACE', icon: FolderGit2 }, { id: 'publication', label: 'PUBLISH', icon: GitMerge }].map(({ id, label, icon: Icon }) => <button key={id} type="button" onClick={() => { playKeystrokeChirp(); setMobileTab(id as MobileTab); }} className={cx('relative min-h-12 rounded-lg flex flex-col items-center justify-center gap-0.5 font-mono text-[8px] font-bold', mobileTab === id ? 'text-[var(--red-laser)] bg-[rgba(255,30,56,0.1)] border border-[rgba(255,30,56,0.25)]' : 'text-[var(--text-muted)]')}><Icon size={15} /><span>{label}</span></button>)}
+            </nav>
+          </div>
+        )}
       </main>
 
       <ToolchainDock isOpen={toolchainOpen} onClose={() => setToolchainOpen(false)} toolchains={toolchains.data ?? []} selectedToolchainId={selectedToolchain?.id} />

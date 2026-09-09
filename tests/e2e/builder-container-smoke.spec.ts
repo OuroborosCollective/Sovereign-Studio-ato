@@ -82,22 +82,28 @@ test.describe('Sovereign Control Surface vNext browser smoke', () => {
 
   test('3. Toolchain and swarm panels are server-readback projections, not local switches', async ({ page }) => {
     await page.getByRole('button').filter({ hasText: 'TOOLCHAIN' }).click();
-    await expect(page.getByText('Sovereign Universal Toolchain')).toBeVisible();
-    await expect(page.getByText(/Read-only server-owned execution manifest/)).toBeVisible();
-    await page.keyboard.press('Escape');
+    const toolchainDialog = page.getByRole('dialog', { name: 'TOOLCHAIN CONFIGURATION // EXECUTION DRIVERS' });
+    await expect(toolchainDialog).toBeVisible();
+    await expect(toolchainDialog.getByText('Sovereign Universal Toolchain', { exact: true })).toBeVisible();
+    await expect(toolchainDialog.getByText(/Read-only server-owned execution manifest/)).toBeVisible();
+    await toolchainDialog.getByRole('button', { name: 'Close' }).click();
 
     await page.getByRole('button').filter({ hasText: 'SWARM' }).click();
-    await expect(page.getByText('The Dispatcher')).toBeVisible();
-    await expect(page.getByText('The Judge')).toBeVisible();
-    await expect(page.getByText(/does not locally enable or disable execution capabilities/)).toBeVisible();
+    const swarmDialog = page.getByRole('dialog', { name: 'SWARM REGISTRY // BIOMODULAR NODES' });
+    await expect(swarmDialog).toBeVisible();
+    await expect(swarmDialog.getByText('The Dispatcher', { exact: true })).toBeVisible();
+    await expect(swarmDialog.getByText('The Judge', { exact: true })).toBeVisible();
+    await expect(swarmDialog.getByText(/does not locally enable or disable execution capabilities/)).toBeVisible();
   });
 
   test('4. Architecture panel documents the exact production adapter truth boundary', async ({ page }) => {
     await page.getByTestId('open-architecture-btn').click();
-    await expect(page.getByText('NO AUTOMATIC SIMULATOR FALLBACK')).toBeVisible();
-    await expect(page.getByText('/api/user/agent/swarm/run')).toBeVisible();
-    await expect(page.getByText('/api/user/agent/jobs/:jobId/draft-pr/create')).toBeVisible();
-    await expect(page.getByText(/GitHub readback/)).toBeVisible();
+    const dialog = page.getByRole('dialog', { name: 'PRODUCTION ADAPTER // TRUTH BOUNDARY' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('NO AUTOMATIC SIMULATOR FALLBACK', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('/api/user/agent/swarm/run', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('/api/user/agent/jobs/:jobId/draft-pr/create', { exact: true })).toBeVisible();
+    await expect(dialog.getByText(/GitHub readback/).first()).toBeVisible();
   });
 
   test('5. vNext fixed projections remain reachable at phone width', async ({ page }) => {

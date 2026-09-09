@@ -24,6 +24,9 @@ export function Modal({ isOpen, onClose, title, children }: Props) {
         >
           <motion.div
             key="modal-chassis"
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
             onClick={(e) => e.stopPropagation()}
             initial={{ opacity: 0, scale: 0.94, y: 16, filter: 'brightness(1.25)' }}
             animate={{ opacity: 1, scale: 1, y: 0, filter: 'brightness(1)' }}
