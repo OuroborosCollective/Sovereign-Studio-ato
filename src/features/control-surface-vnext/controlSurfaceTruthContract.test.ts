@@ -151,6 +151,23 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     ]) expect(live).not.toContain(retired);
   });
 
+  it('keeps the live five-path workflow owner-bound, same-repository, opt-in and exact-head pinned', () => {
+    const workflow = source('.github/workflows/e2e-testing.yml');
+    for (const required of [
+      'types: [edited]',
+      "github.event.pull_request.draft == true",
+      'github.event.pull_request.head.repo.full_name == github.repository',
+      'github.actor == github.repository_owner',
+      "contains(github.event.pull_request.body, '<!-- sovereign-live-five-path -->')",
+      'SOVEREIGN_E2E_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}',
+      'ref: ${{ env.SOVEREIGN_E2E_REVISION }}',
+      'ACTUAL_HEAD="$(git rev-parse HEAD)"',
+      '[ "$ACTUAL_HEAD" = "$SOVEREIGN_E2E_REVISION" ]',
+    ]) expect(workflow).toContain(required);
+
+    expect(workflow).not.toContain('github.event.pull_request.number == 735');
+  });
+
   it('keeps decorative biomodular effects explicitly non-authoritative', () => {
     const eye = source('src/features/control-surface-vnext/components/CyborgOcularMatrix/CyborgOcularMatrix.tsx');
     const neural = source('src/features/control-surface-vnext/components/RuntimeMonitor/NeuralLoadMonitor.tsx');
