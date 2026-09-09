@@ -1,0 +1,16 @@
+{
+  "target": "tests/e2e/frontend-draft-pr-live.spec.ts",
+  "source_ref": "sovereign/chatgpt/frontend-draft-pr-end-to-end-fix",
+  "branch_base_ref": "sovereign/chatgpt/frontend-draft-pr-end-to-end-fix",
+  "branch": "sovereign/chatgpt/frontend-draft-pr-end-to-end-fix",
+  "expectedSha": "f30950233e1a8ab8bd76539183dd52321b92908e",
+  "commit_message": "test(e2e): assert real guest session by canonical session evidence",
+  "pr_title": "fix(frontend): make Draft PR flow survive real repository runs",
+  "pr_body": "Keeps one current-session repository job bound across long-running readback and reloads and proves the real frontend-to-Draft-PR path.",
+  "blocks": [
+    {
+      "search": "    await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });\n    await expect(page.getByText('Gastzugang', { exact: true })).toBeVisible({ timeout: 30_000 });",
+      "replace": "    await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });"
+    }
+  ]
+}
