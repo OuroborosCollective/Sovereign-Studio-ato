@@ -266,6 +266,16 @@ Learned: Real code for prepare/create plus green unit tests still does not prove
 Open: Exact live authenticated execution, workspace/test evidence, Draft PR creation, independent GitHub readback, and final production revision/PatchMon readback.
 Next safe step: Continue on #1893 without merge until the exact-head required gates and a real authenticated frontend mission produce the independent GitHub Draft-PR proof. Then append a new Memory entry with the successful or failed evidence before any merge.
 
+### 2026-09-09 — Historical Memory.md bootstrap
+Status: PARTIAL until Draft-PR checks complete
+Task: Create the first project-root append-only integration memory from retrievable Sovereign engineering history.
+Decisions: Keep project histories separated and future entries concise, append-only and evidence-bound.
+Touched surfaces: Root `Memory.md` only.
+Evidence: Draft PR #1896 was created from base `4d95c4525cfd43021e961cdfa4f0e7c3bda110be`; architecture inventory/snapshot/drift/assessment were executed; PatchMon readback showed 4/4 expected components running and HTTP 200; the fleet rollout gate remained closed because exact revision/workflow binding was not established.
+Learned: A useful learning memory is a curated provenance ledger rather than a raw transcript.
+Open: Draft-PR checks are still running; no merge is claimed.
+Next safe step: Re-read the final diff and exact-head checks before any merge.
+
 ---
 
 ## Backfill boundary
