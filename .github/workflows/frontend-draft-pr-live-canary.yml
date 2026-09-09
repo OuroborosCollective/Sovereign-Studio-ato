@@ -1,0 +1,84 @@
+name: Frontend Draft PR Live Canary
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: frontend-draft-pr-live-canary
+  cancel-in-progress: false
+
+jobs:
+  live-draft-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOVEREIGN_E2E_LIVE: '1'
+      SOVEREIGN_E2E_ACCOUNT_KEY: ${{ secrets.SOVEREIGN_E2E_ACCOUNT_KEY }}
+      SOVEREIGN_E2E_GITHUB_TOKEN: ${{ github.token }}
+      SOVEREIGN_E2E_REPO_URL: https://github.com/${{ github.repository }}
+      SOVEREIGN_E2E_APP_URL: http://127.0.0.1:3000
+      SOVEREIGN_E2E_BACKEND_PROXY_TARGET: https://sovereign-backend.arelorian.de
+      VITE_ADMIN_API_BASE: http://127.0.0.1:3000
+      VITE_SOVEREIGN_AGENT_API_URL: http://127.0.0.1:3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require protected live identity
+        shell: bash
+        run: |
+          if [ -z "$SOVEREIGN_E2E_ACCOUNT_KEY" ]; then
+            echo "Missing protected repository secret: SOVEREIGN_E2E_ACCOUNT_KEY" >&2
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '9.12.2'
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build exact branch frontend
+        run: pnpm run build:web
+
+      - name: Install Chromium
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Start same-origin preview proxy
+        shell: bash
+        run: |
+          pnpm exec vite preview --host 127.0.0.1 --port 3000 > /tmp/sovereign-vite-preview.log 2>&1 &
+          echo $! > /tmp/sovereign-vite-preview.pid
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3000/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/sovereign-vite-preview.log >&2
+          exit 1
+
+      - name: Run one real frontend to GitHub Draft PR canary
+        run: pnpm exec playwright test tests/e2e/frontend-draft-pr-live.spec.ts --project=chromium --workers=1 --reporter=list
+
+      - name: Upload Draft PR evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-draft-pr-live-evidence-${{ github.run_id }}
+          path: |
+            test-results/frontend-draft-pr-live-evidence.json
+            /tmp/sovereign-vite-preview.log
+          if-no-files-found: warn
+          retention-days: 14
