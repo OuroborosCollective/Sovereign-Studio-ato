@@ -281,3 +281,13 @@ Next safe step: Re-read the final diff and exact-head checks before any merge.
 ## Backfill boundary
 
 This file captures the retrievable Sovereign integration history that materially affects current architecture and future N+1 work. It intentionally does not pretend to contain every chat sentence. If an older work block is recovered later, append it as a new `Historical recovery` entry with its original date/evidence; do not rewrite the existing chronology.
+
+### 2026-09-09 — vNext authentication, safe evidence and run-blocker projection
+Status: PARTIAL; Draft-PR acceptance remains BLOCKED
+Task: Continue frontend replacement on #1894 without simulated success or automatic merge.
+Decisions: Share an HTTPS auth/agent origin; verify browser-cookie identity; replace credential-bearing HTML step reports with metadata-only evidence; let persisted run blockers override stale job activity. Preserve concurrent cleanup/diagnostic changes.
+Touched surfaces: vNext adapter/phase projection, live E2E TLS/session/reporting helpers and regressions.
+Evidence: `2c30e65ddb0149c2ad71ba208534fe19f7b1cbdf`, Release Verification `34413236398/102672270269` passed. Live `34412996576` on `5beadf98...` proved authenticated HTTPS identity but returned `CHANGED_FILES_MISSING`, zero changed files/diff/tests, tool calls without mutation, and zero Draft PRs; artifact `10128088804`, ZIP SHA256 `9e4f1cb6248996cb32220ef7ea05ef218ae58a09b276bf34c93fb4c8dc0367bf`. Local phase regression replayed 71 genuine run observations within 131 assertions. Detailed receipts: #1894 comment `5609776468`.
+Learned: HTTP-200 login is not a session proof; traces-off does not prevent HTML Fill-step credential leakage; a running linked job must not hide a blocked parent run.
+Open: Real workspace mutation/test evidence, five independently verified Draft PRs and production/PatchMon proof. Issued test keys were revoked; old credential-bearing HTML artifacts and test-account rows were not deleted.
+Next safe step: Read exact-head live run `34413640219`, inspect actual failed repository tool calls, and repair their cause. No merge/deploy until the full corridor is proven.
