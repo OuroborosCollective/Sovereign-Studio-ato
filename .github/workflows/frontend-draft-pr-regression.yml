@@ -1,0 +1,79 @@
+name: Frontend Draft PR Regression
+
+on:
+  pull_request:
+    paths:
+      - 'src/features/release/PlayReleaseChat.tsx'
+      - 'src/features/release/PlayReleaseChat.resumeDraftPr.test.tsx'
+      - 'src/features/product/runtime/sovereignAgentClient.ts'
+      - 'src/App.draftPrFlow.test.tsx'
+      - 'backend/agent_runtime/draft_pr_create_gate.py'
+      - 'backend/agent_runtime/routes.py'
+      - 'backend/tests/test_agent_draft_pr_create_gate.py'
+      - 'backend/tests/test_agent_draft_pr_create_routes.py'
+      - '.github/workflows/frontend-draft-pr-regression.yml'
+      - '.github/workflows/apply-frontend-draft-pr-resume.yml'
+      - 'scripts/patches/pending/frontend-draft-pr-runtime-resume.json'
+  push:
+    branches:
+      - 'sovereign/chatgpt/**'
+    paths:
+      - 'src/features/release/PlayReleaseChat.tsx'
+      - 'src/features/release/PlayReleaseChat.resumeDraftPr.test.tsx'
+      - 'src/features/product/runtime/sovereignAgentClient.ts'
+      - 'src/App.draftPrFlow.test.tsx'
+      - 'backend/agent_runtime/draft_pr_create_gate.py'
+      - 'backend/agent_runtime/routes.py'
+      - 'backend/tests/test_agent_draft_pr_create_gate.py'
+      - 'backend/tests/test_agent_draft_pr_create_routes.py'
+      - '.github/workflows/frontend-draft-pr-regression.yml'
+      - '.github/workflows/apply-frontend-draft-pr-resume.yml'
+      - 'scripts/patches/pending/frontend-draft-pr-runtime-resume.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-draft-pr-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '9.12.2'
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install locked frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck current frontend
+        run: pnpm run type-check
+      - name: Run Draft PR frontend regressions
+        run: >-
+          pnpm exec vitest run
+          src/App.draftPrFlow.test.tsx
+          src/features/release/PlayReleaseChat.resumeDraftPr.test.tsx
+          src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts
+          src/features/product/runtime/devChatDraftPrExecutionContract.test.ts
+
+  backend-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-backend-python
+      - name: Run real Draft PR backend contract tests
+        run: >-
+          python -m pytest
+          backend/tests/test_agent_draft_pr_create_gate.py
+          backend/tests/test_agent_draft_pr_create_routes.py
+          -q
