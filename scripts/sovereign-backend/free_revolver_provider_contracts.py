@@ -193,9 +193,9 @@ def classify_provider_surface(
         }
     if normalized_base == _OMNIROUTE_API_BASE:
         return {
-            "providerSurfaceKind": "retired-reference",
-            "lifecycle": "historical",
-            "canonicalAction": "none",
+            "providerSurfaceKind": "omniroute-auto",
+            "lifecycle": "active",
+            "canonicalAction": "omniroute-refresh",
         }
     return {
         "providerSurfaceKind": "free-revolver",

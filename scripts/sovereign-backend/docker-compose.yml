@@ -7,7 +7,7 @@
 # Networks:
 # - supabase_default: Network for PostgreSQL database access
 # - areloria_arelorian-network: Network for Areloria services
-# - sovereign-private: direct OpenRouter and owner-managed FreeLLMAPI routing network.
+# - sovereign-private: direct OpenRouter and FreeLLM routing network.
 # - sovereign-desktop: internal-only bridge to the per-attempt desktop worker.
 # - traefik-public: shared Docker bridge selected by Traefik's Docker provider
 #   for the backend service IP. It is not a provider or database network.
