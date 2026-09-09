@@ -58,10 +58,14 @@ export function validateGitHubTokenFormat(token: string): GitHubAccessValidation
   }
 
   const isFineGrainedPat = /^github_pat_[A-Za-z0-9_]{20,}$/.test(trimmed);
+  // Installation credentials are opaque: GitHub's 2026 ghs_APPID_JWT
+  // format contains dots/hyphens and exceeds the old 255-character limit.
+  // This is only input preflight, never JWT validation or write authority.
+  const isInstallationToken = /^ghs_[A-Za-z0-9._-]{36,4096}$/.test(trimmed);
   const isPrefixedGitHubToken = /^gh[pousr]_[A-Za-z0-9_]{20,}$/.test(trimmed);
   const isLegacyClassicPat = /^[a-zA-Z0-9]{40,}$/.test(trimmed);
   
-  if (!isFineGrainedPat && !isPrefixedGitHubToken && !isLegacyClassicPat) {
+  if (!isFineGrainedPat && !isInstallationToken && !isPrefixedGitHubToken && !isLegacyClassicPat) {
     return {
       isValid: false,
       maskedToken: maskGitHubToken(trimmed),

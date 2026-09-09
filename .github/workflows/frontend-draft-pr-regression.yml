@@ -6,6 +6,8 @@ on:
       - 'src/features/release/PlayReleaseChat.tsx'
       - 'src/features/release/PlayReleaseChat.resumeDraftPr.test.tsx'
       - 'src/features/product/runtime/sovereignAgentClient.ts'
+      - 'src/features/product/runtime/githubAccessRuntime*'
+      - 'src/features/product/components/GitHubAccessCard*'
       - 'src/App.draftPrFlow.test.tsx'
       - 'backend/agent_runtime/draft_pr_create_gate.py'
       - 'backend/agent_runtime/routes.py'
@@ -19,6 +21,8 @@ on:
       - 'src/features/release/PlayReleaseChat.tsx'
       - 'src/features/release/PlayReleaseChat.resumeDraftPr.test.tsx'
       - 'src/features/product/runtime/sovereignAgentClient.ts'
+      - 'src/features/product/runtime/githubAccessRuntime*'
+      - 'src/features/product/components/GitHubAccessCard*'
       - 'src/App.draftPrFlow.test.tsx'
       - 'backend/agent_runtime/draft_pr_create_gate.py'
       - 'backend/agent_runtime/routes.py'
@@ -60,6 +64,9 @@ jobs:
           src/features/release/PlayReleaseChat.resumeDraftPr.test.tsx
           src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts
           src/features/product/runtime/devChatDraftPrExecutionContract.test.ts
+          src/features/product/runtime/githubAccessRuntime.test.ts
+          src/features/product/runtime/githubAccessRuntime.statelessToken.test.ts
+          src/features/product/components/GitHubAccessCard.test.tsx
 
   backend-contract:
     runs-on: ubuntu-latest
