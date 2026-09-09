@@ -15,9 +15,6 @@ on:
       - 'vite.config.ts'
       - 'capacitor.config.*'
       - '.github/workflows/e2e-testing.yml'
-  pull_request:
-    branches: [main]
-    types: [edited]
   workflow_dispatch:
     inputs:
       live_five_path:
@@ -97,11 +94,10 @@ jobs:
     name: Five Real UI Paths to Draft PR
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.live_five_path == true) ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.draft == true &&
-       github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event_name == 'push' &&
+       github.ref == 'refs/heads/feature/sovereign-live-five-owner' &&
        github.actor == github.repository_owner &&
-       contains(github.event.pull_request.body, '<!-- sovereign-live-five-path -->'))
+       contains(github.event.head_commit.message, '[sovereign-live-five]'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -109,7 +105,7 @@ jobs:
       pull-requests: write
     env:
       SOVEREIGN_E2E_LIVE: '1'
-      SOVEREIGN_E2E_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      SOVEREIGN_E2E_REVISION: ${{ github.sha }}
       SOVEREIGN_E2E_ACCOUNT_KEY: ${{ secrets.SOVEREIGN_E2E_ACCOUNT_KEY }}
       SOVEREIGN_E2E_GITHUB_TOKEN: ${{ github.token }}
       SOVEREIGN_E2E_REPO_URL: https://github.com/${{ github.repository }}
