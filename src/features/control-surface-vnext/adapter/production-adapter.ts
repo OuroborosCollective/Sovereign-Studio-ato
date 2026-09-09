@@ -36,6 +36,15 @@ interface PersistedRun {
   resumeAvailable?: boolean;
 }
 
+interface PendingApproval {
+  approvalId: string;
+  runId: string;
+  kind: string;
+  reason: string;
+  nextAction?: string;
+  requiresProtectedOwnerInput: boolean;
+}
+
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null;
 }
@@ -50,6 +59,22 @@ function boolValue(value: unknown): boolean | undefined {
 }
 function endpoint(baseUrl: string, route: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/${route.replace(/^\/+/, '')}`;
+}
+
+export function extractGitHubRepositoryUrl(mission: string): string | undefined {
+  const candidates = mission.match(/https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/gi) ?? [];
+  for (const candidate of candidates) {
+    const cleaned = candidate.replace(/[),.;!?]+$/g, '').replace(/\.git$/i, '');
+    try {
+      const parsed = new URL(cleaned);
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com' || segments.length !== 2) continue;
+      return `https://github.com/${segments[0]}/${segments[1]}`;
+    } catch {
+      // Keep searching; a malformed URL never changes the execution intent.
+    }
+  }
+  return undefined;
 }
 
 function parseRun(value: unknown): PersistedRun {
@@ -74,15 +99,35 @@ function parseRun(value: unknown): PersistedRun {
   };
 }
 
+function parsePendingApproval(value: unknown): PendingApproval | undefined {
+  if (!isRecord(value)) return undefined;
+  const approvalId = stringValue(value.approval_id) || stringValue(value.approvalId);
+  const runId = stringValue(value.run_id) || stringValue(value.runId);
+  const kind = stringValue(value.kind);
+  const reason = stringValue(value.reason);
+  if (!approvalId || !runId || !kind || !reason) return undefined;
+  return {
+    approvalId,
+    runId,
+    kind,
+    reason,
+    nextAction: stringValue(value.next_action) || stringValue(value.nextAction),
+    requiresProtectedOwnerInput: value.requiresProtectedOwnerInput === true || value.requires_protected_owner_input === true,
+  };
+}
+
 function phaseFromRun(status: string): JobPhase {
   switch (status.toUpperCase()) {
     case 'RECEIVED': return 'DISPATCHING';
+    case 'QUEUED': return 'DISPATCHING';
     case 'RUNNING': return 'EXECUTING';
     case 'WAITING_FOR_OWNER': return 'AWAITING_OWNER_INPUT';
+    case 'READY_FOR_DRAFT_PR': return 'READY_TO_PUBLISH';
     case 'BLOCKED':
     case 'FAILED_RECOVERABLE': return 'BLOCKED';
     case 'FAILED_FINAL': return 'FAILED';
-    case 'SUCCEEDED': return 'COMPLETED';
+    case 'SUCCEEDED':
+    case 'COMPLETED': return 'COMPLETED';
     case 'CANCELLED': return 'CANCELLED';
     default: return 'DISPATCHING';
   }
@@ -201,6 +246,15 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
     return { body: payload, status: response.status, ok: response.ok };
   }
 
+  private async getPendingApproval(runId: string): Promise<PendingApproval | undefined> {
+    const result = await this.requestObject('/api/controller/approvals', { method: 'GET' });
+    if (!result.ok) throw new Error(`Sovereign approval readback HTTP ${result.status}.`);
+    const approvals = Array.isArray(result.body.approvals) ? result.body.approvals : [];
+    return approvals
+      .map(parsePendingApproval)
+      .find((approval): approval is PendingApproval => Boolean(approval && approval.runId === runId));
+  }
+
   async checkHealth(): Promise<{ status: string; latencyMs: number }> {
     const startedAt = performance.now();
     try {
@@ -221,9 +275,20 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
   async runSwarm(prompt: string, _toolchains: string[], _activeSkillIds: string[] = []): Promise<{ jobId: string }> {
     const mission = prompt.trim();
     if (!mission) throw new Error('Mission text is required.');
+    const repositoryUrl = extractGitHubRepositoryUrl(mission);
     const result = await this.requestObject('/api/user/agent/swarm/run', {
       method: 'POST',
-      body: JSON.stringify({ mission, mode: 'auto', intentMode: 'auto' }),
+      body: JSON.stringify(repositoryUrl ? {
+        mission,
+        mode: 'auto',
+        intentMode: 'repository_execution',
+        repositoryUrl,
+        repositoryBranch: 'main',
+      } : {
+        mission,
+        mode: 'auto',
+        intentMode: 'auto',
+      }),
     });
     const runId = stringValue(result.body.runId);
     if (runId) return { jobId: runId };
@@ -249,19 +314,34 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       snapshot = await this.client.getJob(run.jobId);
       try { anchors = await this.client.getEvidenceAnchors(run.jobId); } catch { anchors = []; }
     }
-    const phase = snapshot ? phaseFromJob(snapshot, run) : phaseFromRun(run.status);
+    const runPhase = phaseFromRun(run.status);
+    const phase = runPhase === 'AWAITING_OWNER_INPUT'
+      ? runPhase
+      : snapshot ? phaseFromJob(snapshot, run) : runPhase;
+    const approval = phase === 'AWAITING_OWNER_INPUT'
+      ? await this.getPendingApproval(run.runId)
+      : undefined;
     const currentRevision = newestEvidenceRevision(anchors);
     const publication = this.publications.get(runId);
     const now = new Date().toISOString();
     const pendingInteraction = phase === 'AWAITING_OWNER_INPUT'
-      ? {
-          id: run.runId,
-          prompt: run.reason || 'Sovereign requires an explicit owner response before the persisted run can continue.',
-          options: run.nextAction ? [run.nextAction] : undefined,
-          requiresText: true,
-          timestamp: now,
-          context: run.nextAction,
-        }
+      ? approval
+        ? {
+            id: approval.approvalId,
+            prompt: approval.reason,
+            options: approval.requiresProtectedOwnerInput ? undefined : ['approve', 'reject'],
+            requiresText: approval.requiresProtectedOwnerInput,
+            timestamp: now,
+            context: approval.nextAction || run.nextAction || approval.kind,
+          }
+        : {
+            id: run.runId,
+            prompt: run.reason || 'Sovereign requires an explicit owner response before the persisted run can continue.',
+            options: run.nextAction ? [run.nextAction] : undefined,
+            requiresText: true,
+            timestamp: now,
+            context: run.nextAction,
+          }
       : undefined;
     return {
       id: run.runId,
@@ -287,9 +367,25 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
     };
   }
 
-  async resumeJob(runId: string, _interactionId: string, response: string): Promise<void> {
+  async resumeJob(runId: string, interactionId: string, response: string): Promise<void> {
     const evidence = response.trim();
     if (!evidence) throw new Error('Owner response is required.');
+    if (interactionId.startsWith('approval-')) {
+      const decision = evidence.toLowerCase();
+      if (decision !== 'approve' && decision !== 'reject') {
+        throw new Error('Approval interactions accept only approve or reject.');
+      }
+      const result = await this.requestObject(`/api/controller/approvals/${encodeURIComponent(interactionId)}/decision`, {
+        method: 'POST',
+        body: JSON.stringify({ decision }),
+      });
+      if (!result.ok) {
+        throw new Error(stringValue(result.body.error) || stringValue(result.body.blocker) || `Sovereign approval decision HTTP ${result.status}.`);
+      }
+      const returnedRunId = stringValue(result.body.runId);
+      if (returnedRunId && returnedRunId !== runId) throw new Error('Sovereign approval decision returned a mismatched run identity.');
+      return;
+    }
     const result = await this.requestObject(`/api/user/agent/swarm/runs/${encodeURIComponent(runId)}/resume`, {
       method: 'POST',
       body: JSON.stringify({ evidence, mode: 'auto' }),
