@@ -670,6 +670,23 @@ def bootstrap_freellm_readiness():
         item for item in (provider_status.get("providers") or [])
         if isinstance(item, dict) and item.get("enabled") is True
     ]
+    verified_receipts = revision_bound_v3_chat_receipts(provider_status)
+    minimum_ready_routes = int(provider_status.get("minimumReadyRoutes") or 0)
+    if minimum_ready_routes < 1:
+        raise FreeLlmReadinessDegraded("FreeLLM provider status did not expose its canonical minimum-ready contract")
+    if len(verified_receipts) >= minimum_ready_routes:
+        return {
+            "ok": True,
+            "status": "FREELLM_ROUTE_READINESS_VERIFIED",
+            "providerCount": len(providers),
+            "revisionBoundV3ChatReadyCount": len(verified_receipts),
+            "minimumReadyRoutes": minimum_ready_routes,
+            "minimumReadySatisfied": True,
+            "receipts": verified_receipts[:20],
+            "attempts": [],
+            "statusEvidence": provider_status_evidence,
+            "protectedValuesReturned": False,
+        }
     for provider in providers:
         source_id = str(provider.get("sourceId") or "")
         if not source_id:

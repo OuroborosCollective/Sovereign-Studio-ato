@@ -394,6 +394,37 @@ def test_omniroute_plan_is_exact_and_preserves_volume(monkeypatch) -> None:
     assert len(result["confirmationSha256"]) == 64
 
 
+def test_omniroute_plan_accepts_exact_legacy_identity_without_compose_labels(monkeypatch) -> None:
+    runtime = FleetMaintenanceRuntime()
+    payload = _omniroute_inspect(
+        "docker.io/diegosouzapw/omniroute:3.8.48@sha256:" + "b" * 64
+    )
+    payload["Config"]["Labels"] = {}
+    monkeypatch.setattr(runtime, "_docker_inspect", lambda _name: payload)
+
+    result = runtime.omniroute_retirement_plan()
+
+    assert result["ok"] is True
+    assert result["status"] == "OMNIROUTE_RETIREMENT_PLAN_READY"
+    assert result["container"]["composeProject"] is None
+    assert result["container"]["composeService"] is None
+    assert len(result["confirmationSha256"]) == 64
+
+
+def test_omniroute_plan_blocks_partial_legacy_compose_identity(monkeypatch) -> None:
+    runtime = FleetMaintenanceRuntime()
+    payload = _omniroute_inspect()
+    payload["Config"]["Labels"] = {
+        "com.docker.compose.project": "sovereign-omniroute",
+    }
+    monkeypatch.setattr(runtime, "_docker_inspect", lambda _name: payload)
+
+    result = runtime.omniroute_retirement_plan()
+
+    assert result["ok"] is False
+    assert result["failureFamily"] == "TARGET_IDENTITY_MISMATCH"
+
+
 def test_omniroute_plan_blocks_reused_name_or_compose_identity(monkeypatch) -> None:
     runtime = FleetMaintenanceRuntime()
     payload = _omniroute_inspect()

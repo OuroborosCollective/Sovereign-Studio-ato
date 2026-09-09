@@ -504,10 +504,18 @@ class FleetMaintenanceRuntime:
             }
         summary = self._container_summary(inspect)
         image = str(summary.get("image") or "")
+        compose_project = summary.get("composeProject")
+        compose_service = summary.get("composeService")
+        compose_identity_matches = bool(
+            (
+                compose_project == OMNIROUTE_COMPOSE_PROJECT
+                and compose_service == OMNIROUTE_COMPOSE_SERVICE
+            )
+            or (compose_project is None and compose_service is None)
+        )
         identity_matches = bool(
             summary.get("name") == OMNIROUTE_CONTAINER
-            and summary.get("composeProject") == OMNIROUTE_COMPOSE_PROJECT
-            and summary.get("composeService") == OMNIROUTE_COMPOSE_SERVICE
+            and compose_identity_matches
             and any(image.startswith(prefix) for prefix in OMNIROUTE_IMAGE_PREFIXES)
         )
         if not identity_matches:

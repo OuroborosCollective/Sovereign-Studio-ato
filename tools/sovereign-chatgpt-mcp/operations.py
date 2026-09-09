@@ -130,8 +130,7 @@ def _adapt_schema_ledger_for_preview(sql: str, columns: set[str]) -> tuple[str, 
         applied_value = ", NOW()" if "applied_at" in columns else ""
         replacement = (
             f"INSERT INTO schema_migrations (version{applied_at})\n"
-            f"VALUES ('{migration_id:03d}'{applied_value})\n"
-            "ON CONFLICT (version) DO NOTHING;"
+            f"VALUES ('{migration_id:03d}'{applied_value});"
         )
         return _PREVIEW_LEDGER_ID_RE.sub(replacement, source, count=1), "id_name_to_legacy_version"
     if {"id", "name"}.issubset(columns) and "version" not in columns:
@@ -141,8 +140,7 @@ def _adapt_schema_ledger_for_preview(sql: str, columns: set[str]) -> tuple[str, 
         migration_id = int(match.group("version"))
         replacement = (
             "INSERT INTO schema_migrations (id, name)\n"
-            f"VALUES ({migration_id}, 'migration_{migration_id:03d}')\n"
-            "ON CONFLICT (id) DO NOTHING;"
+            f"VALUES ({migration_id}, 'migration_{migration_id:03d}');"
         )
         return _PREVIEW_LEDGER_VERSION_RE.sub(replacement, source, count=1), "legacy_version_to_id_name"
     if columns and not ({"version"}.issubset(columns) or {"id", "name"}.issubset(columns)):
@@ -363,10 +361,10 @@ class OperationsRuntime:
             "--no-comments",
         ]
         if tables:
-            # --schema-only already excludes row data. Keep the post-data schema
-            # (PK/UNIQUE/index/constraint objects) because migrations may rely on
-            # those contracts, for example ON CONFLICT(version).
-            argv.append("--strict-names")
+            # Hydrate only table/column definitions from production. The preview
+            # database is intentionally row-empty and may omit foreign-key targets;
+            # ledger ON CONFLICT clauses are adapted away only inside the preview.
+            argv.extend(("--section=pre-data", "--strict-names"))
             argv.extend(f"--table={table}" for table in tables)
         argv.extend((
             "-h",
