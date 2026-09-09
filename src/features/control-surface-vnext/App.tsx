@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useReducer, useState } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { Blocks, Code, Cpu, FolderGit2, GitMerge, Lock, Server, Terminal, Volume2, VolumeX } from 'lucide-react';
+import { Code, Cpu, FolderGit2, GitMerge, Lock, Server, Terminal, Volume2, VolumeX } from 'lucide-react';
 import { useUserStore } from '../user/useUserStore';
 import { SovereignAdapterProvider, useSovereignAdapter } from './adapter/context';
 import type { SovereignBackendAdapter } from './adapter/interface';
