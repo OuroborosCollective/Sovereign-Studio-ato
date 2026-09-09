@@ -56,7 +56,6 @@ function provider(
 }
 
 async function installAdminMock(page: Page, calls: Call[]): Promise<void> {
-  let omniRouteReady = false;
   await page.route('**/api/admin/**', async route => {
     const request = route.request();
     const method = request.method();
@@ -108,17 +107,19 @@ async function installAdminMock(page: Page, calls: Call[]): Promise<void> {
         providers: [
           provider('freellmapi-source'),
           provider('0609e75c-8c48-59db-80a4-3155b823205b', {
-            sourceType: 'external-free-provider',
-            providerSurfaceKind: 'omniroute-auto',
-            canonicalAction: 'omniroute-refresh',
-            label: 'OmniRoute Auto',
+            sourceType: 'omniroute',
+            providerSurfaceKind: 'retired-reference',
+            lifecycle: 'historical',
+            canonicalAction: 'none',
+            label: 'OmniRoute (retired)',
             apiBase: 'http://omniroute:20128/v1',
             modelsUrl: null,
             authMode: 'none',
-            keyHint: 'ohne Key',
-            status: 'degraded',
-            lastHttpStatus: 401,
-            lastErrorCode: 'omniroute_canary_http_401',
+            keyHint: null,
+            status: 'disabled',
+            enabled: false,
+            lastHttpStatus: null,
+            lastErrorCode: 'omniroute_retired_owner_simplification',
           }),
           provider('freellmpool-source', {
             sourceType: 'freellmpool-private',
@@ -134,68 +135,6 @@ async function installAdminMock(page: Page, calls: Call[]): Promise<void> {
             lastErrorCode: 'freellmpool_replaced_by_omniroute',
           }),
         ],
-      });
-      return;
-    }
-
-    if (method === 'GET' && path === '/api/admin/llm/omniroute/status') {
-      if (omniRouteReady) {
-        await json(route, {
-          ok: true,
-          routeSource: 'omniroute',
-          routeId: 'sovereign-omniroute-auto',
-          modelId: 'sovereign-omniroute:auto',
-          apiBase: 'http://omniroute:20128/v1',
-          disabled: false,
-          activationState: 'ready',
-          blocker: null,
-          confirmationCount: 2,
-          catalogModelCount: 42,
-          receiptSha256: 'c'.repeat(64),
-          sourceRevision: 'a'.repeat(40),
-          imageDigest: 'sha256:' + 'b'.repeat(64),
-          freeLlmApiChanged: false,
-          rawProviderResponsesReturned: false,
-        });
-        return;
-      }
-      await json(route, {
-        ok: false,
-        routeSource: 'omniroute',
-        routeId: 'sovereign-omniroute-auto',
-        modelId: 'sovereign-omniroute:auto',
-        apiBase: 'http://omniroute:20128/v1',
-        disabled: true,
-        activationState: 'blocked',
-        blocker: 'omniroute_canary_http_401',
-        confirmationCount: 0,
-        receiptSha256: null,
-        sourceRevision: 'a'.repeat(40),
-        imageDigest: `sha256:${'b'.repeat(64)}`,
-        freeLlmApiChanged: false,
-        rawProviderResponsesReturned: false,
-      });
-      return;
-    }
-
-    if (method === 'POST' && path === '/api/admin/llm/omniroute/refresh') {
-      omniRouteReady = true;
-      await json(route, {
-        ok: true,
-        routeSource: 'omniroute',
-        routeId: 'sovereign-omniroute-auto',
-        modelId: 'sovereign-omniroute:auto',
-        apiBase: 'http://omniroute:20128/v1',
-        disabled: false,
-        activationState: 'ready',
-        blocker: null,
-        confirmationCount: 2,
-        catalogModelCount: 42,
-        receiptSha256: 'c'.repeat(64),
-        sourceRevision: 'a'.repeat(40),
-        imageDigest: `sha256:${'b'.repeat(64)}`,
-        freeLlmApiChanged: false,
-        rawProviderResponsesReturned: false,
       });
       return;
     }
@@ -243,7 +182,7 @@ async function installAdminMock(page: Page, calls: Call[]): Promise<void> {
   });
 }
 
-test('renders every typed provider surface and invokes only the canonical OmniRoute action', async ({ page }) => {
+test('renders active provider surfaces while OmniRoute remains historical-only', async ({ page }) => {
   const calls: Call[] = [];
   await installAdminAssetRewrite(page);
   await installAdminMock(page, calls);
@@ -258,32 +197,17 @@ test('renders every typed provider surface and invokes only the canonical OmniRo
 
   await page.getByTestId('provider-surface-tab-free').click();
   await expect(page.getByTestId('provider-surface-openrouter-free')).toBeVisible();
-  await expect(page.getByTestId('provider-surface-omniroute')).toBeVisible();
+  await expect(page.getByTestId('provider-surface-omniroute')).toHaveCount(0);
   await expect(page.getByTestId('provider-surface-freellm-api')).toBeVisible();
   await expect(page.getByTestId('provider-surface-retired-freellmpool')).toBeVisible();
   await expect(page.getByTestId('free-revolver-minimum-ready')).toContainText('0/5');
 
-  await Promise.all([
-    page.waitForRequest(request => (
-      request.method() === 'POST'
-      && new URL(request.url()).pathname === '/api/admin/llm/omniroute/refresh'
-    )),
-    page.getByTestId('provider-action-omniroute-refresh').click(),
-  ]);
+  const retired = page.getByTestId('provider-surface-retired-reference');
+  await expect(retired).toContainText('OmniRoute (retired)');
+  await expect(retired.getByText('Historische Referenz')).toBeVisible();
+  await expect(retired.getByRole('button')).toHaveCount(0);
 
-  const omniSurface = page.getByTestId('provider-surface-omniroute');
-  await expect(omniSurface).toContainText('ready');
-  await expect(omniSurface).toContainText('2/2');
-
-  const refreshCallIndex = calls.findIndex(call => (
-    call.method === 'POST'
-    && call.path === '/api/admin/llm/omniroute/refresh'
-  ));
-  expect(refreshCallIndex).toBeGreaterThanOrEqual(0);
-  expect(calls.slice(refreshCallIndex + 1).some(call => (
-    call.method === 'GET'
-    && call.path === '/api/admin/llm/omniroute/status'
-  ))).toBe(true);
+  expect(calls.some(call => call.path.includes('/omniroute/'))).toBe(false);
   expect(calls.some(call => (
     call.method === 'POST'
     && call.path.endsWith('/revolver-v3/providers/0609e75c-8c48-59db-80a4-3155b823205b/discover')

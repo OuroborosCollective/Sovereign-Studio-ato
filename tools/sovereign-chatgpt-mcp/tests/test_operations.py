@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from operations import OperationsRuntime, _normalize_pg_dump_for_server
+from operations import (
+    OperationsRuntime,
+    _adapt_schema_ledger_for_preview,
+    _normalize_pg_dump_for_server,
+)
 
 
 DIGEST = "sha256:" + "a" * 64
@@ -342,6 +346,20 @@ def test_pg17_transaction_timeout_is_removed_only_for_pre17_server() -> None:
     assert repairs17 == ()
 
 
+def test_preview_schema_ledger_adapter_matches_version_only_production_layout() -> None:
+    sql = """INSERT INTO schema_migrations (id, name)
+VALUES (61, 'retire_omniroute_execution')
+ON CONFLICT (id) DO NOTHING;
+"""
+    adapted, action = _adapt_schema_ledger_for_preview(sql, {"version"})
+
+    assert action == "id_name_to_legacy_version"
+    assert "INSERT INTO schema_migrations (version)" in adapted
+    assert "VALUES ('061')" in adapted
+    assert "ON CONFLICT" not in adapted
+    assert "(id, name)" not in adapted
+
+
 def test_preview_hydrates_real_schema_without_copying_rows(tmp_path, monkeypatch) -> None:
     sql = "ALTER TABLE agent_events DROP CONSTRAINT IF EXISTS agent_events_source_check;\n"
     workspace_id, relative_path, checksum = _migration_workspace(tmp_path, sql)
@@ -418,6 +436,9 @@ def test_preview_hydrates_real_schema_without_copying_rows(tmp_path, monkeypatch
     assert "--section=pre-data" in dump_calls[0]["argv"]
     assert "--strict-names" in dump_calls[0]["argv"]
     assert "--table=public.agent_events" in dump_calls[0]["argv"]
+    # Preview hydration keeps only table/column definitions; ledger conflict
+    # clauses are removed from the preview-only adapted insert instead.
+    assert "--schema-only" in dump_calls[0]["argv"]
     assert dump_calls[0]["argv"][-1] == "postgres"
     assert len(calls) == 5
     assert 'DROP DATABASE IF EXISTS "sovereign_migration_preview" WITH (FORCE);' in calls[0]["input"]
@@ -445,6 +466,24 @@ ALTER TABLE agent_evidence ADD COLUMN IF NOT EXISTS external_ref text;
         "public.agent_runs",
     )
     assert "public.child_events" not in migration["preview_tables"]
+
+
+def test_preview_target_discovery_includes_aliased_update_tables(tmp_path, monkeypatch) -> None:
+    sql = """
+UPDATE llm_revolver_provider_models AS model
+SET enabled=false
+WHERE model.status='ready';
+UPDATE llm_revolver_provider_sources
+SET enabled=false;
+"""
+    workspace_id, relative_path, _checksum = _migration_workspace(tmp_path, sql)
+    monkeypatch.setenv("SOVEREIGN_MCP_WORKSPACE_ROOT", str(tmp_path))
+    migration = OperationsRuntime()._migration(workspace_id, relative_path)
+
+    assert migration["preview_tables"] == (
+        "public.llm_revolver_provider_models",
+        "public.llm_revolver_provider_sources",
+    )
 
 
 def test_preview_database_can_never_equal_production_database(tmp_path, monkeypatch) -> None:

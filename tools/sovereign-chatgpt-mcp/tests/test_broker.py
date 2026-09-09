@@ -277,6 +277,54 @@ def test_patchmon_bootstrap_compatibility_apply_preserves_confirmation_and_owner
     }
 
 
+def test_omniroute_retirement_reuses_patchmon_plan_and_apply_surfaces(monkeypatch) -> None:
+    runtime = BrokerRuntime()
+    runtime.private_owner_mode = True
+    observed = {}
+
+    monkeypatch.setattr(
+        runtime.fleet_maintenance,
+        "omniroute_retirement_plan",
+        lambda: {
+            "ok": True,
+            "status": "OMNIROUTE_RETIREMENT_PLAN_READY",
+            "confirmationSha256": "f" * 64,
+        },
+    )
+
+    def retirement_apply(*, confirmation_sha256, owner_approved):
+        observed.update(
+            confirmation_sha256=confirmation_sha256,
+            owner_approved=owner_approved,
+        )
+        return {"ok": True, "status": "OMNIROUTE_RETIRED_VERIFIED"}
+
+    monkeypatch.setattr(
+        runtime.fleet_maintenance,
+        "omniroute_retirement_apply",
+        retirement_apply,
+    )
+    monkeypatch.setattr(
+        runtime.patchmon,
+        "patch_action_plan",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("generic PatchMon plan must not execute")),
+    )
+    monkeypatch.setattr(
+        runtime.patchmon,
+        "patch_action_apply",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("generic PatchMon apply must not execute")),
+    )
+
+    plan = runtime.patchmon_action_plan({"action": "retire_omniroute"})
+    applied = runtime.patchmon_action_apply(
+        {"action": "retire_omniroute", "confirmation_sha256": "f" * 64}
+    )
+
+    assert plan["status"] == "OMNIROUTE_RETIREMENT_PLAN_READY"
+    assert applied["status"] == "OMNIROUTE_RETIRED_VERIFIED"
+    assert observed == {"confirmation_sha256": "f" * 64, "owner_approved": True}
+
+
 def test_docker_cache_cleanup_reuses_patchmon_plan_and_apply_surfaces(monkeypatch) -> None:
     runtime = BrokerRuntime()
     runtime.private_owner_mode = True

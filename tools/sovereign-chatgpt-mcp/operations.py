@@ -47,6 +47,18 @@ SCHEMA_DUMP_ROW_DATA = re.compile(r"(?im)^\s*(?:COPY\s+|INSERT\s+INTO\s+)")
 _PG17_TRANSACTION_TIMEOUT_SET = re.compile(
     r"(?m)^SET transaction_timeout = 0;(?:\r?\n|$)"
 )
+_PREVIEW_LEDGER_ID_RE = re.compile(
+    r"INSERT\s+INTO\s+schema_migrations\s*\(\s*id\s*,\s*name\s*\)\s*"
+    r"VALUES\s*\(\s*(?P<id>\d+)\s*,\s*'(?P<name>(?:''|[^'])*)'\s*\)\s*"
+    r"ON\s+CONFLICT\s*\(\s*id\s*\)\s*DO\s+NOTHING\s*;",
+    re.IGNORECASE | re.DOTALL,
+)
+_PREVIEW_LEDGER_VERSION_RE = re.compile(
+    r"INSERT\s+INTO\s+schema_migrations\s*\(\s*version(?:\s*,\s*applied_at)?\s*\)\s*"
+    r"VALUES\s*\(\s*'(?P<version>\d+)'(?:\s*,\s*NOW\(\))?\s*\)\s*"
+    r"ON\s+CONFLICT\s*\(\s*version\s*\)\s*DO\s+NOTHING\s*;",
+    re.IGNORECASE | re.DOTALL,
+)
 _SQL_RELATION = r'(?:public\.)?[A-Za-z_][A-Za-z0-9_]*'
 _PREVIEW_CREATED_TABLE_RE = re.compile(
     rf"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?({_SQL_RELATION})",
@@ -54,7 +66,7 @@ _PREVIEW_CREATED_TABLE_RE = re.compile(
 )
 _PREVIEW_EXISTING_TABLE_PATTERNS = (
     re.compile(rf"\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?({_SQL_RELATION})", re.IGNORECASE),
-    re.compile(rf"\bUPDATE\s+({_SQL_RELATION})\s+SET\b", re.IGNORECASE),
+    re.compile(rf"\bUPDATE\s+({_SQL_RELATION})(?:\s+AS\s+[A-Za-z_][A-Za-z0-9_]*)?\s+SET\b", re.IGNORECASE),
     re.compile(rf"\bINSERT\s+INTO\s+({_SQL_RELATION})\b", re.IGNORECASE),
     re.compile(rf"\bDELETE\s+FROM\s+({_SQL_RELATION})\b", re.IGNORECASE),
     re.compile(rf"\bREFERENCES\s+({_SQL_RELATION})\b", re.IGNORECASE),
@@ -104,6 +116,36 @@ def _normalize_pg_dump_for_server(sql: str, server_version_num: int) -> tuple[st
         if count:
             repairs.append("remove_pg17_transaction_timeout_for_pre17_server")
     return normalized, tuple(repairs)
+
+
+def _adapt_schema_ledger_for_preview(sql: str, columns: set[str]) -> tuple[str, str]:
+    """Mirror backend auto-migrate ledger adaptation inside rollback-only preview."""
+    source = str(sql)
+    if {"version"}.issubset(columns) and not {"id", "name"}.issubset(columns):
+        match = _PREVIEW_LEDGER_ID_RE.search(source)
+        if not match:
+            return source, "not_needed"
+        migration_id = int(match.group("id"))
+        applied_at = ", applied_at" if "applied_at" in columns else ""
+        applied_value = ", NOW()" if "applied_at" in columns else ""
+        replacement = (
+            f"INSERT INTO schema_migrations (version{applied_at})\n"
+            f"VALUES ('{migration_id:03d}'{applied_value});"
+        )
+        return _PREVIEW_LEDGER_ID_RE.sub(replacement, source, count=1), "id_name_to_legacy_version"
+    if {"id", "name"}.issubset(columns) and "version" not in columns:
+        match = _PREVIEW_LEDGER_VERSION_RE.search(source)
+        if not match:
+            return source, "not_needed"
+        migration_id = int(match.group("version"))
+        replacement = (
+            "INSERT INTO schema_migrations (id, name)\n"
+            f"VALUES ({migration_id}, 'migration_{migration_id:03d}');"
+        )
+        return _PREVIEW_LEDGER_VERSION_RE.sub(replacement, source, count=1), "legacy_version_to_id_name"
+    if columns and not ({"version"}.issubset(columns) or {"id", "name"}.issubset(columns)):
+        raise ValueError("Unsupported schema_migrations layout in migration preview")
+    return source, "not_needed"
 
 
 def _read_env_value(path: Path, key: str) -> str:
@@ -319,6 +361,9 @@ class OperationsRuntime:
             "--no-comments",
         ]
         if tables:
+            # Hydrate only table/column definitions from production. The preview
+            # database is intentionally row-empty and may omit foreign-key targets;
+            # ledger ON CONFLICT clauses are adapted away only inside the preview.
             argv.extend(("--section=pre-data", "--strict-names"))
             argv.extend(f"--table={table}" for table in tables)
         argv.extend((
@@ -510,11 +555,67 @@ class OperationsRuntime:
         if not preview_tables:
             compatibility_repairs = ()
 
+        preview_runtime_sql = str(migration["preview_sql"])
+        ledger_preview_adaptation = "not_needed"
+        if "public.schema_migrations" in preview_tables:
+            ledger_probe = self._run_input(
+                self._psql_argv(admin_host, admin_port, admin_db, admin_user),
+                (
+                    "SELECT 'SOVEREIGN_LEDGER_COLUMNS:' || COALESCE("
+                    "string_agg(column_name, ',' ORDER BY ordinal_position), '') "
+                    "FROM information_schema.columns "
+                    "WHERE table_schema=current_schema() AND table_name='schema_migrations';\n"
+                ),
+                password=admin_password,
+                timeout=30,
+            )
+            if not ledger_probe.get("ok"):
+                return self._sanitized_command_failure(
+                    "schema_ledger_columns", ledger_probe, checksum
+                )
+            ledger_match = re.search(
+                r"SOVEREIGN_LEDGER_COLUMNS:([A-Za-z0-9_,]*)",
+                str(ledger_probe.get("stdout") or ""),
+            )
+            if ledger_match is None:
+                return {
+                    "ok": False,
+                    "status": "BLOCKED",
+                    "blocker": "schema_migrations-Layout konnte für Preview nicht bestimmt werden",
+                    "failure_family": "PREVIEW_SCHEMA_LEDGER_COLUMNS_INVALID",
+                    "sha256": checksum,
+                    "rolled_back": True,
+                    "database_scope": "preview",
+                    "production_write_performed": False,
+                    "secretValuesReturned": False,
+                }
+            ledger_columns = {
+                item for item in ledger_match.group(1).split(",") if item
+            }
+            try:
+                preview_runtime_sql, ledger_preview_adaptation = (
+                    _adapt_schema_ledger_for_preview(
+                        preview_runtime_sql, ledger_columns
+                    )
+                )
+            except ValueError:
+                return {
+                    "ok": False,
+                    "status": "BLOCKED",
+                    "blocker": "schema_migrations-Layout wird vom Preview nicht unterstützt",
+                    "failure_family": "PREVIEW_SCHEMA_LEDGER_LAYOUT_UNSUPPORTED",
+                    "sha256": checksum,
+                    "rolled_back": True,
+                    "database_scope": "preview",
+                    "production_write_performed": False,
+                    "secretValuesReturned": False,
+                }
+
         preview_sql = (
             "BEGIN;\n"
             "SET LOCAL statement_timeout = '60s';\n"
             "SET LOCAL lock_timeout = '5s';\n"
-            f"{migration['preview_sql']}\n"
+            f"{preview_runtime_sql}\n"
             "ROLLBACK;\n"
         )
         preview = self._run_input(
@@ -576,6 +677,7 @@ class OperationsRuntime:
             "preview_tables": list(preview_tables),
             "server_version_num": server_version_num,
             "schema_compatibility_repairs": list(compatibility_repairs),
+            "schema_ledger_preview_adaptation": ledger_preview_adaptation,
             "production_rows_copied": False,
             "production_write_performed": False,
             "preview_cleanup_verified": True,

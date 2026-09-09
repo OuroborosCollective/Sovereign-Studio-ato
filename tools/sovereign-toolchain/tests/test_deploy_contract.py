@@ -115,9 +115,12 @@ def test_installer_atomically_deploys_and_verifies_both_boundaries() -> None:
     assert "oversized" in installer
     assert "encode_chunked=True" not in installer
     assert "transport-version-dependent" in installer
-    assert "result[\"repository\"] == payload[\"owner\"]" in installer
-    assert "result[\"workflowSelector\"] == str(payload[\"workflow_id\"])" in installer
-    assert "result[\"branch\"] == payload[\"branch\"]" in installer
+    assert 'result["repository"] == sovereign["owner"] + "/" + sovereign["repo"]' in installer
+    assert 'result["workflowSelector"] == str(sovereign["workflow_id"])' in installer
+    assert 'result["branch"] == sovereign["branch"]' in installer
+    assert 'result["repository"] == aurion["owner"] + "/" + aurion["repo"]' in installer
+    assert 'result["workflowSelector"] == str(aurion["workflow_id"])' in installer
+    assert 'result["branch"] == aurion["branch"]' in installer
     assert "listener socket boundary canary failed" in installer
     assert 'evidence_origin = "http://127.0.0.1:8002"' in installer
     assert 'evidence_url = evidence_origin + "/api/v1/n8n/ci-evidence"' in installer
@@ -207,6 +210,10 @@ def test_authenticated_boundary_canary_emits_bounded_phase_evidence() -> None:
     assert "str(_error)" not in canary
     assert "repr(_error)" not in canary
     assert "traceback.print" not in canary
+    assert "elif status == 502:" in canary
+    assert '"error": "CI evidence acquisition failed"' in canary
+    assert "Aurion evidence lane returned an invalid boundary status" in canary
+    assert canary.index('canary_phase = "sovereign_live_evidence"') < canary.index('canary_phase = "aurion_live_evidence"')
 
 
 def test_authenticated_boundary_canary_failure_bypasses_standing_err_trap(

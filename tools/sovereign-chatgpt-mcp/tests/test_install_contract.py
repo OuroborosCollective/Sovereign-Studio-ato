@@ -548,6 +548,12 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'callable(server.postgres_schema_inventory)' in installer
     assert 'callable(server.controller_run_external_event)' in installer
     assert 'INSTALL_STAGE="verify_host_worker_canary"' in installer
+    assert 'HOST_COMMAND_OUTCOME_UNCERTAIN_AFTER_WORKER_RESTART' in installer
+    assert 'HOST_COMMAND_QUEUE_TIMEOUT_BEFORE_CLAIM' in installer
+    assert 'for _attempt in range(5):' in installer
+    assert 'worker.get("execution_origin") == "host_worker"' in installer
+    assert 'host worker canary returned a non-transient failure' in installer
+    assert 'host worker canary remained transiently unavailable' in installer
     assert 'INSTALL_STAGE="verify_mcp_protocol_handshake"' in installer
     assert 'INSTALL_STAGE="verify_android_native_boundary"' in installer
     assert 'INSTALL_STAGE="verify_workspace_write_boundary"' in installer
@@ -727,9 +733,24 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert 'wait_for_broker_ready()' in updater
     assert '"action": "broker_health"' in updater
     assert 'stage=${CURRENT_STAGE}; self-update command failed; recovery attempted' in updater
+    for stage in (
+        "verify_end_to_end_worker_services",
+        "verify_end_to_end_mcp_container",
+        "verify_end_to_end_toolchain_services",
+        "verify_end_to_end_toolchain_revision",
+        "verify_end_to_end_toolchain_units",
+        "verify_end_to_end_evidence_canary",
+    ):
+        assert f'CURRENT_STAGE="{stage}"' in updater
     assert 'docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock' in updater
     assert 'status=server.broker.status()' in updater
     assert 'mcp_protocol_health.py --url http://127.0.0.1:8090/mcp' in updater
+    assert 'elif status == 502:' in updater
+    assert '"error": "CI evidence acquisition failed"' in updater
+    assert 'Aurion evidence lane returned an invalid boundary status' in updater
+    assert 'body = error.read()' in updater
+    assert 'parsed = json.loads(body.decode("utf-8")) if body else None' in updater
+    assert updater.index('payload=sovereign') < updater.index('payload=aurion')
     assert 'if [[ "$SELF_UPDATE_TUNNEL_MODE" == "required" ]]; then' in updater
     assert 'systemctl is-active --quiet sovereign-openai-tunnel.service' in updater
     assert 'tunnel not required' in updater

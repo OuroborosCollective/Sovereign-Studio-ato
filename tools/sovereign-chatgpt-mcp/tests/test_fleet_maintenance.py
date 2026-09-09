@@ -5,6 +5,7 @@ import json
 from command_contract import is_mutating_action
 from fleet_maintenance import (
     FILEBROWSER_CONTAINER,
+    OMNIROUTE_CONTAINER,
     FleetMaintenanceRuntime,
     _compatible_restore_toc,
     _manifest_difference,
@@ -335,6 +336,155 @@ def test_filebrowser_mutation_requires_owner_and_write_capability(monkeypatch) -
         owner_approved=False,
     )
     disabled = runtime.filebrowser_retirement_apply(
+        confirmation_sha256="a" * 64,
+        owner_approved=True,
+    )
+
+    assert no_owner["failureFamily"] == "OWNER_APPROVAL_REQUIRED"
+    assert disabled["failureFamily"] == "FLEET_MAINTENANCE_WRITE_DISABLED"
+
+
+def _omniroute_inspect(image: str = "docker.io/diegosouzapw/omniroute:3.8.48") -> dict:
+    return {
+        "Id": "e" * 64,
+        "Image": "sha256:" + "f" * 64,
+        "Name": "/" + OMNIROUTE_CONTAINER,
+        "Config": {
+            "Image": image,
+            "Labels": {
+                "com.docker.compose.project": "sovereign-omniroute",
+                "com.docker.compose.service": "omniroute",
+            },
+        },
+        "State": {
+            "Status": "running",
+            "Running": True,
+            "Health": {"Status": "healthy"},
+        },
+        "Mounts": [
+            {
+                "Type": "volume",
+                "Name": "sovereign-omniroute-data",
+                "Source": "/var/lib/docker/volumes/sovereign-omniroute-data/_data",
+                "Destination": "/app/data",
+                "RW": True,
+            },
+        ],
+        "NetworkSettings": {
+            "Networks": {"sovereign-private": {}},
+            "Ports": {},
+        },
+    }
+
+
+def test_omniroute_plan_is_exact_and_preserves_volume(monkeypatch) -> None:
+    runtime = FleetMaintenanceRuntime()
+    monkeypatch.setattr(runtime, "_docker_inspect", lambda _name: _omniroute_inspect())
+
+    result = runtime.omniroute_retirement_plan()
+
+    assert result["ok"] is True
+    assert result["status"] == "OMNIROUTE_RETIREMENT_PLAN_READY"
+    assert result["target"] == OMNIROUTE_CONTAINER
+    assert result["preserveImages"] is True
+    assert result["preserveVolumes"] is True
+    assert result["preservedNamedVolumes"] == ["sovereign-omniroute-data"]
+    assert result["container"]["composeProject"] == "sovereign-omniroute"
+    assert result["container"]["composeService"] == "omniroute"
+    assert len(result["confirmationSha256"]) == 64
+
+
+def test_omniroute_plan_accepts_exact_legacy_identity_without_compose_labels(monkeypatch) -> None:
+    runtime = FleetMaintenanceRuntime()
+    payload = _omniroute_inspect(
+        "docker.io/diegosouzapw/omniroute:3.8.48@sha256:" + "b" * 64
+    )
+    payload["Config"]["Labels"] = {}
+    monkeypatch.setattr(runtime, "_docker_inspect", lambda _name: payload)
+
+    result = runtime.omniroute_retirement_plan()
+
+    assert result["ok"] is True
+    assert result["status"] == "OMNIROUTE_RETIREMENT_PLAN_READY"
+    assert result["container"]["composeProject"] is None
+    assert result["container"]["composeService"] is None
+    assert len(result["confirmationSha256"]) == 64
+
+
+def test_omniroute_plan_blocks_partial_legacy_compose_identity(monkeypatch) -> None:
+    runtime = FleetMaintenanceRuntime()
+    payload = _omniroute_inspect()
+    payload["Config"]["Labels"] = {
+        "com.docker.compose.project": "sovereign-omniroute",
+    }
+    monkeypatch.setattr(runtime, "_docker_inspect", lambda _name: payload)
+
+    result = runtime.omniroute_retirement_plan()
+
+    assert result["ok"] is False
+    assert result["failureFamily"] == "TARGET_IDENTITY_MISMATCH"
+
+
+def test_omniroute_plan_blocks_reused_name_or_compose_identity(monkeypatch) -> None:
+    runtime = FleetMaintenanceRuntime()
+    payload = _omniroute_inspect()
+    payload["Config"]["Labels"]["com.docker.compose.project"] = "unexpected"
+    monkeypatch.setattr(runtime, "_docker_inspect", lambda _name: payload)
+
+    result = runtime.omniroute_retirement_plan()
+
+    assert result["ok"] is False
+    assert result["failureFamily"] == "TARGET_IDENTITY_MISMATCH"
+    assert result["mutationPerformed"] is False
+
+
+def test_omniroute_apply_removes_only_container_and_preserves_volume(monkeypatch) -> None:
+    runtime = FleetMaintenanceRuntime()
+    state = {"present": True}
+    calls: list[list[str]] = []
+
+    def inspect(_name):
+        return _omniroute_inspect() if state["present"] else None
+
+    def run(argv, timeout=120):
+        calls.append(argv)
+        if argv[:3] == ["docker", "rm", "--force"]:
+            state["present"] = False
+            return {"ok": True, "exit_code": 0, "stdout": OMNIROUTE_CONTAINER, "stderr": ""}
+        if argv[:3] == ["docker", "volume", "inspect"]:
+            return {"ok": True, "exit_code": 0, "stdout": "[]", "stderr": ""}
+        raise AssertionError(argv)
+
+    monkeypatch.setattr(runtime, "_docker_inspect", inspect)
+    monkeypatch.setattr(runtime, "_run_text", run)
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE", "1")
+    confirmation = runtime.omniroute_retirement_plan()["confirmationSha256"]
+
+    result = runtime.omniroute_retirement_apply(
+        confirmation_sha256=confirmation,
+        owner_approved=True,
+    )
+
+    assert result["status"] == "OMNIROUTE_RETIRED_VERIFIED"
+    assert result["containerAbsent"] is True
+    assert result["preservedVolumes"] == [
+        {"name": "sovereign-omniroute-data", "preserved": True}
+    ]
+    assert result["imageRemoved"] is False
+    assert ["docker", "rm", "--force", OMNIROUTE_CONTAINER] in calls
+    assert all("--volumes" not in call and "-v" not in call for call in calls)
+
+
+def test_omniroute_mutation_requires_owner_and_write_capability(monkeypatch) -> None:
+    runtime = FleetMaintenanceRuntime()
+    monkeypatch.delenv("SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE", raising=False)
+
+    no_owner = runtime.omniroute_retirement_apply(
+        confirmation_sha256="a" * 64,
+        owner_approved=False,
+    )
+    disabled = runtime.omniroute_retirement_apply(
         confirmation_sha256="a" * 64,
         owner_approved=True,
     )

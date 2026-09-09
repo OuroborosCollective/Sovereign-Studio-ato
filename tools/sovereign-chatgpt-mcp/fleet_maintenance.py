@@ -12,6 +12,13 @@ from typing import Any, Callable
 
 FILEBROWSER_CONTAINER = "file-browser-cunr-filebrowser-1"
 FILEBROWSER_IMAGE_PREFIX = "filebrowser/filebrowser:"
+OMNIROUTE_CONTAINER = "sovereign-omniroute"
+OMNIROUTE_COMPOSE_PROJECT = "sovereign-omniroute"
+OMNIROUTE_COMPOSE_SERVICE = "omniroute"
+OMNIROUTE_IMAGE_PREFIXES = (
+    "docker.io/diegosouzapw/omniroute:",
+    "diegosouzapw/omniroute:",
+)
 POSTGRES_CONTAINER = "supabase-db"
 POSTGRES_DATABASE = "postgres"
 POSTGRES_USER = "postgres"
@@ -467,6 +474,147 @@ class FleetMaintenanceRuntime:
             "target": FILEBROWSER_CONTAINER,
             "containerAbsent": absent,
             "publishedPort32832Absent": not published_32832,
+            "preservedVolumes": volume_checks,
+            "imageRemoved": False,
+            "readbackVerified": verified,
+            "mutationPerformed": True,
+            "secretValuesReturned": False,
+        }
+
+    def omniroute_retirement_plan(self) -> dict[str, Any]:
+        """Bind retirement to the exact owner-retired OmniRoute container identity."""
+        try:
+            inspect = self._docker_inspect(OMNIROUTE_CONTAINER)
+        except RuntimeError as exc:
+            return self._failure(
+                "OMNIROUTE_RETIREMENT_PLAN_BLOCKED",
+                "DOCKER_STATE_INVALID",
+                str(exc),
+            )
+        if inspect is None:
+            return {
+                "ok": True,
+                "status": "OMNIROUTE_ALREADY_RETIRED",
+                "target": OMNIROUTE_CONTAINER,
+                "confirmationRequired": False,
+                "preserveImages": True,
+                "preserveVolumes": True,
+                "mutationPerformed": False,
+                "secretValuesReturned": False,
+            }
+        summary = self._container_summary(inspect)
+        image = str(summary.get("image") or "")
+        compose_project = summary.get("composeProject")
+        compose_service = summary.get("composeService")
+        compose_identity_matches = bool(
+            (
+                compose_project == OMNIROUTE_COMPOSE_PROJECT
+                and compose_service == OMNIROUTE_COMPOSE_SERVICE
+            )
+            or (compose_project is None and compose_service is None)
+        )
+        identity_matches = bool(
+            summary.get("name") == OMNIROUTE_CONTAINER
+            and compose_identity_matches
+            and any(image.startswith(prefix) for prefix in OMNIROUTE_IMAGE_PREFIXES)
+        )
+        if not identity_matches:
+            return self._failure(
+                "OMNIROUTE_RETIREMENT_PLAN_BLOCKED",
+                "TARGET_IDENTITY_MISMATCH",
+                "The fixed OmniRoute container name no longer resolves to the retired Compose/image identity.",
+                observed={
+                    "name": summary.get("name"),
+                    "image": image,
+                    "composeProject": summary.get("composeProject"),
+                    "composeService": summary.get("composeService"),
+                },
+            )
+        named_volumes = sorted(
+            str(item.get("name"))
+            for item in summary.get("mounts", [])
+            if item.get("type") == "volume" and item.get("name")
+        )
+        state = {
+            "schemaVersion": "sovereign.omniroute-retirement.v1",
+            "action": "remove_exact_container_preserve_image_and_volumes",
+            "target": OMNIROUTE_CONTAINER,
+            "container": summary,
+            "preservedNamedVolumes": named_volumes,
+        }
+        return {
+            "ok": True,
+            "status": "OMNIROUTE_RETIREMENT_PLAN_READY",
+            "target": OMNIROUTE_CONTAINER,
+            "reason": "owner_retired_from_sovereign_llm_architecture",
+            "container": summary,
+            "preservedNamedVolumes": named_volumes,
+            "preserveImages": True,
+            "preserveVolumes": True,
+            "confirmationRequired": True,
+            "confirmationSha256": _canonical_sha256(state),
+            "mutationPerformed": False,
+            "secretValuesReturned": False,
+        }
+
+    def omniroute_retirement_apply(
+        self,
+        *,
+        confirmation_sha256: str,
+        owner_approved: bool,
+    ) -> dict[str, Any]:
+        if not owner_approved:
+            return self._failure(
+                "OMNIROUTE_RETIREMENT_BLOCKED",
+                "OWNER_APPROVAL_REQUIRED",
+                "owner_approved=true is required for the exact OmniRoute retirement.",
+            )
+        if not self._feature_enabled():
+            return self._failure(
+                "OMNIROUTE_RETIREMENT_BLOCKED",
+                "FLEET_MAINTENANCE_WRITE_DISABLED",
+                "PatchMon/fleet write capability is disabled on the host worker.",
+            )
+        plan = self.omniroute_retirement_plan()
+        if plan.get("status") == "OMNIROUTE_ALREADY_RETIRED":
+            return {**plan, "readbackVerified": True}
+        if not plan.get("ok"):
+            return plan
+        expected = str(plan.get("confirmationSha256") or "")
+        supplied = str(confirmation_sha256 or "").strip().lower()
+        if not _SHA256_RE.fullmatch(supplied) or supplied != expected:
+            return self._failure(
+                "OMNIROUTE_RETIREMENT_BLOCKED",
+                "CONFIRMATION_MISMATCH",
+                "The confirmation hash no longer matches the exact live OmniRoute container state.",
+                expectedConfirmationSha256=expected,
+            )
+        preserved = list(plan.get("preservedNamedVolumes") or [])
+        removal = self._run_text(
+            ["docker", "rm", "--force", OMNIROUTE_CONTAINER],
+            timeout=120,
+        )
+        if not removal.get("ok"):
+            return self._failure(
+                "OMNIROUTE_RETIREMENT_FAILED",
+                "DOCKER_REMOVE_FAILED",
+                "Docker did not remove the exact OmniRoute container.",
+            )
+        absent = self._docker_inspect(OMNIROUTE_CONTAINER) is None
+        volume_checks = []
+        for volume in preserved:
+            checked = self._run_text(
+                ["docker", "volume", "inspect", volume],
+                timeout=30,
+            )
+            volume_checks.append({"name": volume, "preserved": bool(checked.get("ok"))})
+        volumes_preserved = all(item["preserved"] for item in volume_checks)
+        verified = absent and volumes_preserved
+        return {
+            "ok": verified,
+            "status": "OMNIROUTE_RETIRED_VERIFIED" if verified else "OMNIROUTE_RETIREMENT_INCOMPLETE",
+            "target": OMNIROUTE_CONTAINER,
+            "containerAbsent": absent,
             "preservedVolumes": volume_checks,
             "imageRemoved": False,
             "readbackVerified": verified,

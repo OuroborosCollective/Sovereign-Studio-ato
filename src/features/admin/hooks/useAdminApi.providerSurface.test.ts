@@ -1,11 +1,27 @@
-import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { adminApiClient } from '../api/adminApiClient';
+import { useAdminFreeRevolverProviders } from './useAdminApi';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('admin provider surface retirement', () => {
-  it('does not expose an OmniRoute refresh action through the admin hook', () => {
-    const source = readFileSync(new URL('./useAdminApi.ts', import.meta.url), 'utf8');
+  it('does not expose an OmniRoute action or runtime state through the admin hook', () => {
+    vi.spyOn(adminApiClient, 'getLlmProviderSurfaceReadModel').mockResolvedValue({
+      providers: [],
+      freeRevolverMinimumReadyRoutes: 7,
+      openRouterPaid: null,
+      openRouterFree: null,
+    });
 
-    expect(source).not.toContain('refreshOmniRoute');
-    expect(source).not.toContain('OmniRouteRuntimeStatus');
+    const { result, unmount } = renderHook(() => useAdminFreeRevolverProviders());
+
+    expect(result.current).not.toHaveProperty('refreshOmniRoute');
+    expect(result.current).not.toHaveProperty('omniRoute');
+    expect(result.current).toHaveProperty('discover');
+    expect(result.current).toHaveProperty('recheck');
+    unmount();
   });
 });

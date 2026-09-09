@@ -3444,7 +3444,32 @@ print(
 PY
 
 INSTALL_STAGE="verify_host_worker_canary"
-docker exec sovereign-chatgpt-mcp python -c 'import server; worker=server.broker.call("host_worker_canary", {}, timeout=10); assert worker.get("status") == "HOST_WORKER_READY", worker; assert worker.get("execution_origin") == "host_worker", worker'
+docker exec -i sovereign-chatgpt-mcp python - <<'PY'
+import time
+
+import server
+
+transient_families = {
+    "HOST_COMMAND_QUEUE_TIMEOUT_BEFORE_CLAIM",
+    "HOST_COMMAND_STILL_RUNNING",
+    "HOST_COMMAND_OUTCOME_UNKNOWN",
+    "HOST_COMMAND_OUTCOME_UNCERTAIN_AFTER_WORKER_RESTART",
+}
+last = None
+for _attempt in range(5):
+    worker = server.broker.call("host_worker_canary", {}, timeout=10)
+    last = worker
+    if (
+        worker.get("status") == "HOST_WORKER_READY"
+        and worker.get("execution_origin") == "host_worker"
+    ):
+        break
+    if worker.get("failure_family") not in transient_families:
+        raise SystemExit("host worker canary returned a non-transient failure")
+    time.sleep(1)
+else:
+    raise SystemExit("host worker canary remained transiently unavailable")
+PY
 
 INSTALL_STAGE="verify_mcp_protocol_handshake"
 docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
