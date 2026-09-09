@@ -86,6 +86,13 @@ describe('maskSecrets', () => {
     expect(maskSecrets('client_id: client_id_12345')).toBe('client_id: ****');
     expect(maskSecrets('session_token=session_token_67890')).toBe('session_token=****');
     expect(maskSecrets('session_id: sess_123456789')).toBe('session_id: ****');
+    expect(maskSecrets('webhook_secret: hook_secret_123')).toBe('webhook_secret: ****');
+    expect(maskSecrets('webhook-token=hook_token_456')).toBe('webhook-token=****');
+    expect(maskSecrets('webhook_key: hook_key_789')).toBe('webhook_key: ****');
+    expect(maskSecrets('ssh_private_key=ssh_private_material_123')).toBe('ssh_private_key=****');
+    expect(maskSecrets('ssh-key: ssh_key_material_456')).toBe('ssh-key: ****');
+    expect(maskSecrets('signing_key=signing_material_789')).toBe('signing_key=****');
+    expect(maskSecrets('signing-secret: signing_secret_101')).toBe('signing-secret: ****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
