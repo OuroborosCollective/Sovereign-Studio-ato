@@ -11,6 +11,26 @@ function code(value: unknown): string | null {
   return /^[A-Za-z][A-Za-z0-9_:-]{1,119}$/.test(value) ? value : null;
 }
 
+function nonNegativeInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+// A model may quote a tool error, but its text is NEVER authoritative runtime evidence.
+function modelFailureHints(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  const known: Record<string, string> = {
+    MCP_RUNTIME_REVISION_MISMATCH: 'installed MCP revision differs from the backend source revision',
+    MCP_REVISION_UNVERIFIED: 'installed MCP revision is not authoritatively verified',
+    MCP_IMAGE_DIGEST_UNVERIFIED: 'installed MCP image digest is not authoritatively verified',
+    MCP_CONTROL_PLANE_NOT_READY: 'MCP protocol or broker readback is not ready',
+    BROKER_SOCKET_UNAVAILABLE: 'authoritative MCP broker socket is unavailable',
+    BROKER_SOCKET_PERMISSION_DENIED: 'backend cannot read the authoritative MCP broker socket',
+    BROKER_RPC_TIMEOUT: 'authoritative MCP revision readback timed out',
+    GIT_READBACK_FAILED: 'authoritative Git readback failed',
+  };
+  return Object.entries(known).filter(([code, message]) => value.includes(code) || value.includes(message)).map(([code]) => code);
+}
+
 function flag(value: unknown): boolean | null {
   return typeof value === 'boolean' ? value : null;
 }
@@ -51,6 +71,19 @@ export function runtimeObservation(path: string, method: string, httpStatus: num
     evidenceId: id(run.evidenceId ?? body.evidenceId, /^evidence-[0-9a-f]{32}$/),
     failureFamily: code(body.failureFamily ?? body.failure_family ?? body.blocker),
     nextAction: code(run.nextAction ?? run.next_action ?? body.nextAction),
+    toolDiagnostics: {
+      callCount: nonNegativeInteger(record(repositoryTools.callsByRole).free_single_agent),
+      mutationCount: nonNegativeInteger(record(repositoryTools.mutationsByRole).free_single_agent),
+      consecutiveFailureCount: nonNegativeInteger(record(repositoryTools.consecutiveFailuresByRole).free_single_agent),
+      circuitOpen: Array.isArray(repositoryTools.openCircuits)
+        ? repositoryTools.openCircuits.includes('free_single_agent') : null,
+      writeConfirmed: flag(repositoryTools.writeConfirmed),
+      jobEventCount: count(job.events ?? body.events),
+    },
+    nonAuthoritativeModelHints: {
+      source: 'model-output-not-runtime-proof',
+      failureFamilies: modelFailureHints(record(body.result).assistant_text),
+    },
     repositoryExecution: {
       performed: flag(body.repositoryExecutionPerformed),
       gatePassed: flag(jobEvidence.gatePassed),
