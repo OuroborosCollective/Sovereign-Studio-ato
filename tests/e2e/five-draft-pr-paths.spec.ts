@@ -1,12 +1,20 @@
+import { randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, request as playwrightRequest, test, type APIRequestContext, type Page } from '@playwright/test';
 
 const LIVE_ENABLED = process.env.SOVEREIGN_E2E_LIVE === '1';
-const ACCOUNT_KEY = process.env.SOVEREIGN_E2E_ACCOUNT_KEY?.trim() || '';
+const CONFIGURED_ACCOUNT_KEY = process.env.SOVEREIGN_E2E_ACCOUNT_KEY?.trim() || '';
 const GITHUB_TOKEN = process.env.SOVEREIGN_E2E_GITHUB_TOKEN?.trim() || '';
 const REPO_URL = process.env.SOVEREIGN_E2E_REPO_URL?.trim() || '';
+const BACKEND_URL = process.env.SOVEREIGN_E2E_BACKEND_PROXY_TARGET?.trim() || '';
 const RUN_ID = process.env.GITHUB_RUN_ID?.trim() || `local-${Date.now()}`;
 const OWNED_MARKER_PREFIX = `[live-vnext:${RUN_ID}:`;
+
+let activeAccountKey = CONFIGURED_ACCOUNT_KEY;
+let ephemeralAccountKeyId = '';
+let ephemeralAccountId = '';
+let ephemeralAccountKeyRevoked = false;
+let identitySource = CONFIGURED_ACCOUNT_KEY ? 'protected_repository_secret' : 'ephemeral_product_registration';
 
 interface DraftPrEvidence {
   path: string;
@@ -34,9 +42,9 @@ test.use({
 
 function assertLiveConfig(): void {
   const missing = [
-    ['SOVEREIGN_E2E_ACCOUNT_KEY', ACCOUNT_KEY],
     ['SOVEREIGN_E2E_GITHUB_TOKEN', GITHUB_TOKEN],
     ['SOVEREIGN_E2E_REPO_URL', REPO_URL],
+    ['SOVEREIGN_E2E_BACKEND_PROXY_TARGET', BACKEND_URL],
   ].filter(([, value]) => !value).map(([name]) => name);
   if (missing.length > 0) {
     throw new Error(`Live vNext E2E configuration missing: ${missing.join(', ')}`);
@@ -44,6 +52,10 @@ function assertLiveConfig(): void {
   const parsed = new URL(REPO_URL);
   if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com' || parsed.pathname.split('/').filter(Boolean).length !== 2) {
     throw new Error('SOVEREIGN_E2E_REPO_URL must be an exact https://github.com/owner/repository URL.');
+  }
+  const backend = new URL(BACKEND_URL);
+  if (backend.protocol !== 'https:' || !backend.hostname) {
+    throw new Error('SOVEREIGN_E2E_BACKEND_PROXY_TARGET must be an exact HTTPS backend origin.');
   }
 }
 
@@ -131,7 +143,71 @@ async function cleanupOwnedRunPullRequests(request: APIRequestContext): Promise<
   }
 }
 
+async function provisionEphemeralAccountKey(): Promise<void> {
+  if (activeAccountKey) return;
+  const api = await playwrightRequest.newContext({ baseURL: BACKEND_URL });
+  let password = `Sovereign-E2E-${randomBytes(32).toString('base64url')}!9a`;
+  const email = `live-e2e-${RUN_ID}-${randomBytes(8).toString('hex')}@tests.sovereign.invalid`;
+  try {
+    const registration = await api.post('/api/auth/register', {
+      data: { email, password, displayName: `Sovereign Live E2E ${RUN_ID}` },
+    });
+    if (registration.status() !== 200) {
+      throw new Error(`Real ephemeral account registration failed: HTTP ${registration.status()} ${await registration.text()}`);
+    }
+    const user = await registration.json() as {
+      id?: string;
+      isGuest?: boolean;
+      credits?: number;
+      creditStateVerified?: boolean;
+    };
+    if (!user.id || user.isGuest === true || user.creditStateVerified !== true || Number(user.credits || 0) <= 0) {
+      throw new Error('Real ephemeral account did not return a non-guest, credit-verified execution identity.');
+    }
+
+    const issued = await api.post('/api/security/account-keys', {
+      data: { label: `Sovereign Live Five ${RUN_ID}` },
+    });
+    if (issued.status() !== 201) {
+      throw new Error(`Real ephemeral account-key issue failed: HTTP ${issued.status()} ${await issued.text()}`);
+    }
+    const issuedBody = await issued.json() as { id?: string; key?: string };
+    const key = String(issuedBody.key || '').trim();
+    const keyId = String(issuedBody.id || '').trim();
+    if (!key.startsWith('svk_') || !keyId) {
+      throw new Error('Real ephemeral account-key issue returned incomplete evidence.');
+    }
+    activeAccountKey = key;
+    ephemeralAccountKeyId = keyId;
+    ephemeralAccountId = user.id;
+    identitySource = 'ephemeral_product_registration';
+  } finally {
+    password = '';
+    await api.dispose();
+  }
+}
+
+async function revokeEphemeralAccountKey(): Promise<void> {
+  if (!ephemeralAccountKeyId || !activeAccountKey) return;
+  const api = await playwrightRequest.newContext({ baseURL: BACKEND_URL });
+  try {
+    const login = await api.post('/api/auth/account-key', { data: { key: activeAccountKey } });
+    if (login.status() !== 200) {
+      throw new Error(`Ephemeral account-key cleanup login failed: HTTP ${login.status()}`);
+    }
+    const revoked = await api.delete(`/api/security/account-keys/${encodeURIComponent(ephemeralAccountKeyId)}`);
+    if (revoked.status() !== 200) {
+      throw new Error(`Ephemeral account-key revocation failed: HTTP ${revoked.status()}`);
+    }
+    ephemeralAccountKeyRevoked = true;
+  } finally {
+    activeAccountKey = '';
+    await api.dispose();
+  }
+}
+
 async function authenticateVNext(page: Page): Promise<void> {
+  if (!activeAccountKey) await provisionEphemeralAccountKey();
   await page.goto('/');
   await expect(page.getByTestId('sovereign-control-surface-vnext')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('operator-auth-btn').click();
@@ -145,7 +221,7 @@ async function authenticateVNext(page: Page): Promise<void> {
 
   const accountKey = dialog.locator('#vnext-account-key');
   await expect(accountKey).toBeVisible({ timeout: 20_000 });
-  await accountKey.fill(ACCOUNT_KEY);
+  await accountKey.fill(activeAccountKey);
   await dialog.getByRole('button', { name: 'AUTHENTICATE WITH ACCOUNT KEY' }).click();
   await expect(dialog.getByText('AUTHENTICATED', { exact: true })).toBeVisible({ timeout: 30_000 });
   await dialog.getByRole('button', { name: 'Close account session' }).click();
@@ -319,16 +395,37 @@ test.describe('five canonical vNext repository runs reach independently verified
   test.skip(!LIVE_ENABLED, 'Live vNext Draft-PR validation runs only through the explicit protected workflow.');
   test.setTimeout(300_000);
 
-  test.beforeAll(() => assertLiveConfig());
+  test.beforeAll(async () => {
+    assertLiveConfig();
+    await provisionEphemeralAccountKey();
+  });
   test.beforeEach(async ({ page }) => authenticateVNext(page));
   test.afterEach(async ({ request }) => cleanupOwnedRunPullRequests(request));
   test.afterAll(async () => {
+    let cleanupError: Error | null = null;
+    try {
+      await revokeEphemeralAccountKey();
+    } catch (error) {
+      cleanupError = error instanceof Error ? error : new Error(String(error));
+    }
     await mkdir('test-results', { recursive: true });
     await writeFile(
       'test-results/five-draft-pr-evidence.json',
-      `${JSON.stringify({ runId: RUN_ID, verifiedDraftPrCount: evidence.length, evidence }, null, 2)}\n`,
+      `${JSON.stringify({
+        runId: RUN_ID,
+        identity: {
+          source: identitySource,
+          accountId: ephemeralAccountId || null,
+          ephemeralAccountKeyIssued: Boolean(ephemeralAccountKeyId),
+          ephemeralAccountKeyRevoked: ephemeralAccountKeyId ? ephemeralAccountKeyRevoked : null,
+          protectedValuePersistedInEvidence: false,
+        },
+        verifiedDraftPrCount: evidence.length,
+        evidence,
+      }, null, 2)}\n`,
       'utf8',
     );
+    if (cleanupError) throw cleanupError;
     if (evidence.length !== 5) {
       throw new Error(`Expected exactly five GitHub-verified vNext Draft PR runs, received ${evidence.length}.`);
     }

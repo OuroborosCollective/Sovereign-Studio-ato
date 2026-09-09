@@ -133,6 +133,10 @@ describe('Sovereign Control Surface vNext truth contract', () => {
       'sovereign-control-surface-vnext',
       'operator-auth-btn',
       'vnext-account-key',
+      "api.post('/api/auth/register'",
+      "api.post('/api/security/account-keys'",
+      'revokeEphemeralAccountKey',
+      'protectedValuePersistedInEvidence: false',
       'PERSISTED RUN ACCEPTED',
       'vnext-prepare-draft-pr',
       'vnext-draft-pr-consent',
@@ -163,8 +167,10 @@ describe('Sovereign Control Surface vNext truth contract', () => {
       'ref: ${{ env.SOVEREIGN_E2E_REVISION }}',
       'ACTUAL_HEAD="$(git rev-parse HEAD)"',
       '[ "$ACTUAL_HEAD" = "$SOVEREIGN_E2E_REVISION" ]',
+      'Protected account-key secret is absent; the live test will provision one real ephemeral account',
     ]) expect(workflow).toContain(required);
 
+    expect(workflow).not.toContain('Missing protected repository secret: SOVEREIGN_E2E_ACCOUNT_KEY');
     expect(workflow).not.toContain('pull_request:');
     expect(workflow).not.toContain('github.event.pull_request.number == 735');
   });
