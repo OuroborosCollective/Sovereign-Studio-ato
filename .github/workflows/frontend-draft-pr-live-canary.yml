@@ -12,6 +12,7 @@ on:
       - 'src/main.tsx'
       - 'src/SovereignAppWrapper.tsx'
       - 'vite.config.ts'
+      - 'playwright.config.ts'
       - '.github/workflows/frontend-draft-pr-live-canary.yml'
 
 permissions:
@@ -31,12 +32,29 @@ jobs:
       SOVEREIGN_E2E_ACCOUNT_KEY: ${{ secrets.SOVEREIGN_E2E_ACCOUNT_KEY }}
       SOVEREIGN_E2E_GITHUB_TOKEN: ${{ github.token }}
       SOVEREIGN_E2E_REPO_URL: https://github.com/${{ github.repository }}
-      SOVEREIGN_E2E_APP_URL: http://127.0.0.1:3000
+      SOVEREIGN_E2E_APP_URL: https://127.0.0.1:3000
       SOVEREIGN_E2E_BACKEND_PROXY_TARGET: https://sovereign-backend.arelorian.de
-      VITE_ADMIN_API_BASE: http://127.0.0.1:3000
-      VITE_SOVEREIGN_AGENT_API_URL: http://127.0.0.1:3000
+      VITE_ADMIN_API_BASE: https://127.0.0.1:3000
+      VITE_SOVEREIGN_AGENT_API_URL: https://127.0.0.1:3000
     steps:
       - uses: actions/checkout@v4
+
+      - name: Prepare ephemeral loopback TLS identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          tls_dir=$(mktemp -d "$RUNNER_TEMP/sovereign-preview-tls.XXXXXX")
+          chmod 700 "$tls_dir"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj '/CN=127.0.0.1' \
+            -addext 'subjectAltName=IP:127.0.0.1,DNS:localhost' \
+            -keyout "$tls_dir/key.pem" -out "$tls_dir/cert.pem" 2>/dev/null
+          chmod 600 "$tls_dir/key.pem"
+          spki=$(openssl x509 -in "$tls_dir/cert.pem" -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A)
+          echo "SOVEREIGN_E2E_TLS_CERT_FILE=$tls_dir/cert.pem" >> "$GITHUB_ENV"
+          echo "SOVEREIGN_E2E_TLS_KEY_FILE=$tls_dir/key.pem" >> "$GITHUB_ENV"
+          echo "SOVEREIGN_E2E_TLS_SPKI=$spki" >> "$GITHUB_ENV"
+          echo "NODE_EXTRA_CA_CERTS=$tls_dir/cert.pem" >> "$GITHUB_ENV"
 
       - uses: pnpm/action-setup@v4
         with:

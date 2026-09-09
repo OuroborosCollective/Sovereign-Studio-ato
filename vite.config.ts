@@ -1,4 +1,5 @@
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'node:fs';
 import path from 'path';
 import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
@@ -6,6 +7,11 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig(() => {
   const enableSourcemaps = process.env.VITE_BUILD_SOURCEMAP === 'true';
   const e2eBackendProxyTarget = process.env.SOVEREIGN_E2E_BACKEND_PROXY_TARGET?.trim();
+  const e2eTlsCertFile = process.env.SOVEREIGN_E2E_TLS_CERT_FILE?.trim();
+  const e2eTlsKeyFile = process.env.SOVEREIGN_E2E_TLS_KEY_FILE?.trim();
+  if (Boolean(e2eTlsCertFile) !== Boolean(e2eTlsKeyFile)) {
+    throw new Error('Live preview TLS requires both certificate and key files.');
+  }
 
   return {
     base: './',
@@ -22,6 +28,10 @@ export default defineConfig(() => {
       host: '127.0.0.1',
       port: 3000,
       strictPort: true,
+      https: e2eTlsCertFile && e2eTlsKeyFile ? {
+        cert: readFileSync(e2eTlsCertFile),
+        key: readFileSync(e2eTlsKeyFile),
+      } : undefined,
       proxy: {
         '/api': {
           target: e2eBackendProxyTarget,

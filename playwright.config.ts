@@ -28,7 +28,13 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: liveFivePath && appUrl === 'https://127.0.0.1:3000'
+          && /^[A-Za-z0-9+/]{43}=$/.test(process.env.SOVEREIGN_E2E_TLS_SPKI || '')
+          ? { args: [`--ignore-certificate-errors-spki-list=${process.env.SOVEREIGN_E2E_TLS_SPKI}`] }
+          : undefined,
+      },
     },
   ],
   webServer: {

@@ -49,6 +49,15 @@ let createdPrNumber = 0;
 let createdHeadRef = '';
 let authMode: Evidence['authMode'] = ACCOUNT_KEY ? 'account-key' : 'guest';
 
+function redactDiagnostic(value: unknown): string {
+  let text = String(value);
+  for (const secret of [ACCOUNT_KEY, GITHUB_TOKEN]) {
+    if (secret) text = text.split(secret).join('[redacted]');
+  }
+  return text.replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]+)\b/g, '[redacted]')
+    .replace(/(Bearer\s+)\S+/gi, '$1[redacted]').slice(0, 1500);
+}
+
 test.use({
   viewport: { width: 390, height: 844 },
   trace: 'off',
@@ -117,24 +126,22 @@ async function authenticateRealFrontendSession(page: Page): Promise<void> {
     authMode = 'guest';
     await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
   }
+  await expect(page.getByTestId('sovereign-release-chat')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByLabel('Session bestätigt')).toBeVisible({ timeout: 30_000 });
+  const session = await page.context().request.get(`${APP_URL}/api/auth/me`);
+  expect(session.status(), 'Session must be independently confirmed by the real backend').toBe(200);
 }
 
-async function provideRealGitHubWriteAccess(page: Page): Promise<void> {
-  const { owner, repo } = repositoryCoordinates();
+async function provideGitHubCredential(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'GitHub', exact: true }).click();
   const card = page.getByRole('group', { name: 'GitHub-Zugang' });
   await expect(card).toBeVisible();
   await card.getByRole('button', { name: 'Zugang eingeben' }).click();
   await page.locator('#github-pat-input').fill(GITHUB_TOKEN);
-  const validation = page.waitForResponse((response) => (
-    response.request().method() === 'GET'
-    && response.url() === `https://api.github.com/repos/${owner}/${repo}`
-  ), { timeout: 30_000 });
   await page.getByRole('button', { name: 'Übernehmen' }).click();
-  const response = await validation;
-  expect(response.ok(), `GitHub token validation returned HTTP ${response.status()}`).toBe(true);
-  await expect(page.getByText(/GitHub .* nutzbar/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('github-access-modal')).toBeHidden();
+  // Input is not access evidence. The actual job and GitHub readback below
+  // must prove authorization; this UI callback does not perform a repo GET.
 }
 
 async function submitMission(page: Page): Promise<void> {
@@ -152,7 +159,19 @@ async function submitMission(page: Page): Promise<void> {
 }
 
 async function driveRepositoryRunToDraftReady(page: Page): Promise<void> {
+  const started = page.waitForResponse(response => (
+    response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/user/agent/jobs'
+  ), { timeout: 180_000 });
   await page.getByRole('button', { name: 'Repository-Ausführung starten' }).click();
+  const response = await started;
+  const payload = await response.json().catch(() => ({})) as {
+    error?: string;
+    reason?: string;
+    job?: { status?: string; lastError?: string };
+  };
+  expect(response.ok(), redactDiagnostic(payload.error || payload.reason || payload.job?.lastError || `Job HTTP ${response.status()}`)).toBe(true);
+  expect(['blocked', 'failed']).not.toContain(payload.job?.status);
   for (let continuation = 0; continuation < 3; continuation += 1) {
     const draft = page.getByRole('button', { name: 'Draft PR erstellen' });
     const follow = page.getByRole('button', { name: 'Ausführung weiter verfolgen' });
@@ -229,24 +248,40 @@ async function verifyDraftPrOnGitHub(request: APIRequestContext, prUrl: string):
 }
 
 async function cleanupOwnedDraftPr(request: APIRequestContext): Promise<void> {
-  if (!createdPrNumber || !createdHeadRef) return;
+  if (!evidence || !createdPrNumber || !createdHeadRef) return;
   const { owner, repo } = repositoryCoordinates();
+  const current = await githubJson<PullReadback>(request, 'GET', `/repos/${owner}/${repo}/pulls/${createdPrNumber}`);
+  expect(current.status).toBe(200);
+  expect(current.body?.head.sha, 'Refuse cleanup after another writer changed the canary head').toBe(evidence.headSha);
+  expect(current.body?.head.ref).toBe(evidence.headRef);
+  expect(current.body?.draft).toBe(true);
+  expect(current.body?.merged_at).toBeNull();
   const closed = await githubJson(request, 'PATCH', `/repos/${owner}/${repo}/pulls/${createdPrNumber}`, { state: 'closed' });
-  const encodedRef = createdHeadRef.split('/').map(encodeURIComponent).join('/');
-  const deleted = await githubJson(request, 'DELETE', `/repos/${owner}/${repo}/git/refs/heads/${encodedRef}`);
-  if (evidence) {
-    evidence.closedAfterVerification = closed.status === 200;
-    evidence.branchDeletedAfterVerification = deleted.status === 204 || deleted.status === 404 || deleted.status === 422;
-  }
   expect(closed.status).toBe(200);
-  expect([204, 404, 422]).toContain(deleted.status);
+  const closedReadback = await githubJson<PullReadback>(request, 'GET', `/repos/${owner}/${repo}/pulls/${createdPrNumber}`);
+  expect(closedReadback.body?.state).toBe('closed');
+  evidence.closedAfterVerification = closedReadback.status === 200 && closedReadback.body?.state === 'closed';
+  const encodedRef = createdHeadRef.split('/').map(encodeURIComponent).join('/');
+  const ref = await githubJson<{ object: { sha: string } }>(request, 'GET', `/repos/${owner}/${repo}/git/ref/heads/${encodedRef}`);
+  expect(ref.status).toBe(200);
+  expect(ref.body?.object.sha).toBe(evidence.headSha);
+  const deleted = await githubJson(request, 'DELETE', `/repos/${owner}/${repo}/git/refs/heads/${encodedRef}`);
+  expect(deleted.status).toBe(204);
+  const absent = await githubJson(request, 'GET', `/repos/${owner}/${repo}/git/ref/heads/${encodedRef}`);
+  expect(absent.status).toBe(404);
+  evidence.branchDeletedAfterVerification = true;
 }
 
 async function writeEvidence(): Promise<void> {
   await mkdir('test-results', { recursive: true });
   await writeFile(
     'test-results/frontend-draft-pr-live-evidence.json',
-    `${JSON.stringify({ verified: Boolean(evidence), evidence }, null, 2)}\n`,
+    `${JSON.stringify({
+      verified: Boolean(evidence && evidence.closedAfterVerification && evidence.branchDeletedAfterVerification),
+      frontendRevision: process.env.GITHUB_SHA || null,
+      testSurface: 'CI_PREVIEW_WITH_LIVE_BACKEND',
+      evidence,
+    }, null, 2)}\n`,
     'utf8',
   );
 }
@@ -254,6 +289,19 @@ async function writeEvidence(): Promise<void> {
 test.describe('current release frontend creates one GitHub-verified Draft PR', () => {
   test.skip(!LIVE_ENABLED, 'Real Draft-PR canary runs only in the protected live workflow.');
   test.beforeAll(() => assertLiveConfig());
+  test.beforeEach(async ({ page }) => {
+    page.on('pageerror', error => console.error('CANARY_PAGE_ERROR', redactDiagnostic(error.message)));
+    page.on('response', async response => {
+      const path = new URL(response.url()).pathname;
+      if (response.ok() || !path.startsWith('/api/')) return;
+      console.error('CANARY_HTTP_FAILURE', response.status(), path);
+      try {
+        const payload = await response.json();
+        const detail = payload.error || payload.reason || payload.blocker || payload.job?.lastError;
+        if (typeof detail === 'string') console.error('CANARY_FAILURE_DETAIL', redactDiagnostic(detail));
+      } catch { /* Diagnostic-only; assertions still decide the test result. */ }
+    });
+  });
   test.afterEach(async ({ request }) => {
     try {
       await cleanupOwnedDraftPr(request);
@@ -264,7 +312,7 @@ test.describe('current release frontend creates one GitHub-verified Draft PR', (
 
   test('frontend -> backend job -> workspace -> Draft PR -> GitHub readback', async ({ page, request }) => {
     await authenticateRealFrontendSession(page);
-    await provideRealGitHubWriteAccess(page);
+    await provideGitHubCredential(page);
     await submitMission(page);
     await driveRepositoryRunToDraftReady(page);
     const prUrl = await createDraftPrThroughFrontend(page);
