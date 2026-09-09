@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { expect, request as playwrightRequest, test, type APIRequestContext, type Page } from '@playwright/test';
 import { requireLoginAccountId, requireSameOrigin, requireVerifiedSessionIdentity } from './helpers/live-session-contract';
+import { runtimeObservation } from './helpers/live-runtime-observation';
 
 const LIVE_ENABLED = process.env.SOVEREIGN_E2E_LIVE === '1';
 const CONFIGURED_ACCOUNT_KEY = process.env.SOVEREIGN_E2E_ACCOUNT_KEY?.trim() || '';
@@ -33,6 +34,9 @@ interface DraftPrEvidence {
 }
 
 const evidence: DraftPrEvidence[] = [];
+const runtimeReadbacks: NonNullable<ReturnType<typeof runtimeObservation>>[] = [];
+const runtimeObservationTasks = new Set<Promise<void>>();
+let omittedRuntimeReadbacks = 0;
 const authenticationReadbacks: Array<{ accountId: string; origin: string; sessionStatus: number }> = [];
 
 test.use({
@@ -421,9 +425,29 @@ test.describe('five canonical vNext repository runs reach independently verified
     assertLiveConfig();
     await provisionEphemeralAccountKey();
   });
-  test.beforeEach(async ({ page }) => authenticateVNext(page));
+  test.beforeEach(async ({ page }) => {
+    page.on('response', response => {
+      const url = new URL(response.url());
+      if (url.origin !== new URL(page.url()).origin) return;
+      const path = url.pathname;
+      const method = response.request().method();
+      if (!runtimeObservation(path, method, response.status(), null)) return;
+      const task = (async () => {
+        const body = await response.json().catch(() => null);
+        const observed = runtimeObservation(path, method, response.status(), body);
+        if (observed) {
+          if (runtimeReadbacks.length < 2000) runtimeReadbacks.push(observed);
+          else omittedRuntimeReadbacks += 1;
+        }
+      })();
+      runtimeObservationTasks.add(task);
+      void task.finally(() => runtimeObservationTasks.delete(task));
+    });
+    await authenticateVNext(page);
+  });
   test.afterEach(async ({ request }) => cleanupOwnedRunPullRequests(request));
   test.afterAll(async () => {
+    await Promise.allSettled([...runtimeObservationTasks]);
     let cleanupError: Error | null = null;
     try {
       await revokeEphemeralAccountKey();
@@ -435,6 +459,8 @@ test.describe('five canonical vNext repository runs reach independently verified
       'test-results/five-draft-pr-evidence.json',
       `${JSON.stringify({
         runId: RUN_ID,
+        runAttempt: process.env.GITHUB_RUN_ATTEMPT || null,
+        sourceRevision: process.env.SOVEREIGN_E2E_REVISION || null,
         identity: {
           source: identitySource,
           accountId: ephemeralAccountId || null,
@@ -443,6 +469,8 @@ test.describe('five canonical vNext repository runs reach independently verified
           protectedValuePersistedInEvidence: false,
         },
         authenticationReadbacks,
+        runtimeReadbacks,
+        omittedRuntimeReadbacks,
         verifiedDraftPrCount: evidence.length,
         evidence,
       }, null, 2)}\n`,

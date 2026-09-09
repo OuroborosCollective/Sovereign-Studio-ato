@@ -171,7 +171,10 @@ jobs:
 
       - name: Run five serial first-user Draft-PR paths
         shell: bash
-        run: pnpm exec playwright test tests/e2e/five-draft-pr-paths.spec.ts --project=chromium --workers=1 --reporter=list,html
+        run: |
+          # Remove only this lane's generated receipts, not repository source files.
+          rm -f test-results/five-draft-pr-evidence.json test-results/live-safe-reporter.json
+          pnpm exec playwright test tests/e2e/five-draft-pr-paths.spec.ts --project=chromium --workers=1 --reporter=./tests/e2e/helpers/live-safe-reporter.ts
 
       - name: Upload five-path runtime evidence
         if: always()
@@ -180,8 +183,8 @@ jobs:
           name: five-draft-pr-runtime-evidence-${{ github.run_id }}
           path: |
             test-results/five-draft-pr-evidence.json
-            playwright-report/
-          if-no-files-found: warn
+            test-results/live-safe-reporter.json
+          if-no-files-found: error
           retention-days: 14
 
       - name: Write five-path summary
