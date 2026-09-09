@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[3]
 BACKEND = ROOT / "scripts" / "sovereign-backend"
@@ -108,7 +110,17 @@ def test_readiness_and_legacy_litellm_retirement_are_required() -> None:
     assert "traefik-public:\n    external: true" in backend_compose
     assert "LITELLM_BASE_URL" not in backend_compose
     assert "LITELLM_MASTER_KEY_FILE" not in backend_compose
-    assert "direct OpenRouter and FreeLLM routing network" in backend_compose
+    # Validate the deployed configuration structure, not an explanatory comment.
+    compose = yaml.safe_load(backend_compose)
+    backend_service = compose["services"]["sovereign-backend"]
+    assert "sovereign-private" in backend_service["networks"]
+    assert compose["networks"]["sovereign-private"]["external"] is True
+    assert backend_service["environment"]["SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE"] == (
+        "/opt/sovereign-owner-managed/freellmapi_unified_key.txt"
+    )
+    assert "SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE" not in backend_service["environment"]
+    assert "omniroute" not in compose["services"]
+    assert "litellm" not in compose["services"]
     assert 'RETIREMENT_BLOCKER = "legacy_litellm_runtime_retired"' in stack
     assert "raise RuntimeError(" in stack
     assert 'remove_managed_legacy_file "$BROKER_DIR/litellm_stack.py" "broker/litellm_stack.py"' in installer

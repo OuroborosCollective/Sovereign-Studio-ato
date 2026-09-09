@@ -97,10 +97,12 @@ def test_provider_surface_contract_routes_only_canonical_actions() -> None:
         "lifecycle": "active",
         "canonicalAction": "revolver-discover",
     }
+    # Migration 061 retires OmniRoute execution; historical visibility never
+    # grants a refresh or activation action.
     assert omniroute == {
-        "providerSurfaceKind": "omniroute-auto",
-        "lifecycle": "active",
-        "canonicalAction": "omniroute-refresh",
+        "providerSurfaceKind": "retired-reference",
+        "lifecycle": "historical",
+        "canonicalAction": "none",
     }
     assert retired == {
         "providerSurfaceKind": "retired-reference",
