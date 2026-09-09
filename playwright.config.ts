@@ -16,6 +16,8 @@ if (liveFivePath && (new URL(appUrl).origin !== 'https://127.0.0.1:3000' || !/^[
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // Live beforeAll/afterAll perform bounded real network operations; no retries.
+  timeout: liveFivePath ? 120_000 : 30_000,
   fullyParallel: !liveFivePath,
   forbidOnly: !!process.env.CI,
   retries: liveFivePath ? 0 : (process.env.CI ? 2 : 0),
