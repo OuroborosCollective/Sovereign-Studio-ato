@@ -41,13 +41,19 @@ def test_backend_deploy_bootstraps_revision_bound_v3_chat_receipts_before_readin
     assert '"/api/internal/llm/freellm/providers"' in deploy
     assert 'f"/api/internal/llm/freellm/providers/{encoded_source_id}/reconcile"' in deploy
     assert 'f"/api/internal/llm/freellm/providers/{encoded_source_id}/discover"' in deploy
+    ready_fast_path = deploy.index("if len(verified_receipts) >= minimum_ready_routes:")
+    reconcile_call = deploy.index('f"/api/internal/llm/freellm/providers/{encoded_source_id}/reconcile"')
+    assert ready_fast_path < reconcile_call
+    assert '"attempts": []' in deploy
     assert 'minimum_ready_routes = int(provider_status.get("minimumReadyRoutes") or 0)' in deploy
     assert "minimum_ready_routes = 7" not in deploy
     assert 'raise FreeLlmReadinessDegraded("FreeLLM provider status did not expose its canonical minimum-ready contract")' in deploy
     minimum_guard = "if len(verified_receipts) < minimum_ready_routes:"
     assert deploy.count(minimum_guard) >= 2
     assert '"minimumReadyRoutes": minimum_ready_routes' in deploy
-    assert deploy.rindex(minimum_guard) < deploy.index('"minimumReadySatisfied": True')
+    success_marker = '"minimumReadySatisfied": True'
+    assert ready_fast_path < deploy.index(success_marker)
+    assert deploy.rindex(minimum_guard) < deploy.rindex(success_marker)
     assert 'status_code not in {200, 409}' in deploy
     assert 'except urllib.error.HTTPError as exc:' in deploy
     assert 'timeout_seconds: int = 120' in deploy
