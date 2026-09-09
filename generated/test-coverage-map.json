@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-09-07T17:28:26.995Z",
+  "generatedAt": "2026-09-09T22:36:57.765Z",
   "discovery": {
     "scope": "tracked repository test conventions",
     "excludedDirectories": [
@@ -31,7 +31,7 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 754,
+  "totalTestFiles": 756,
   "testRoots": {
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
@@ -40,12 +40,11 @@
     "backend/tests/e2e": 1,
     "integrations/openhands/sovereign-mcp-toolset-plugin/tests": 1,
     "research": 1,
-    "scripts": 11,
-    "scripts/sovereign-backend/tests": 77,
+    "scripts": 12,
+    "scripts/sovereign-backend/tests": 79,
     "scripts/tests": 3,
     "sovereign-studio-rn/e2e": 7,
     "src": 360,
-    "test_tools_skills.sh": 1,
     "tests": 1,
     "tests/e2e": 5,
     "tools": 3,
@@ -2325,6 +2324,26 @@
       "category": "python-suite"
     },
     {
+      "file": "scripts/sovereign-backend/tests/test_shadow_hf_recovery_workflow_contract.py",
+      "language": "python",
+      "testRoot": "scripts/sovereign-backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
+      "file": "scripts/sovereign-backend/tests/test_shadow_inference_hf_recovery.py",
+      "language": "python",
+      "testRoot": "scripts/sovereign-backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
       "file": "scripts/sovereign-backend/tests/test_source_hygiene_contract.py",
       "language": "python",
       "testRoot": "scripts/sovereign-backend/tests",
@@ -2383,6 +2402,26 @@
         "sovereign-agent-backend.yml"
       ],
       "category": "python-suite"
+    },
+    {
+      "file": "scripts/sovereign-live-path-scan.test.mjs",
+      "language": "javascript-typescript",
+      "testRoot": "scripts",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-contract-scan.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
     },
     {
       "file": "scripts/sovereign-ux-primary-surface.contract.test.mjs",
@@ -9347,14 +9386,6 @@
         "sovereign-validation.yml"
       ],
       "category": "release-gate"
-    },
-    {
-      "file": "test_tools_skills.sh",
-      "language": "shell",
-      "testRoot": "test_tools_skills.sh",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "not-in-any-gate"
     },
     {
       "file": "tests/e2e/admin-typed-provider-surface.spec.ts",
