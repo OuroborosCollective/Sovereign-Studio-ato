@@ -95,7 +95,7 @@ async function fulfillJson(route: Route, body: unknown, status = 200): Promise<v
 
 let report: EndpointContractReport;
 
-test.describe('Frontend endpoint contract and current Play Release browser smoke', () => {
+test.describe('Frontend endpoint contract and vNext control-surface browser smoke', () => {
   test.beforeAll(() => {
     report = compileEndpointContractReport();
   });
@@ -155,10 +155,10 @@ test.describe('Frontend endpoint contract and current Play Release browser smoke
     });
   });
 
-  test('the built Play Release surface compiles a FreeLLM repository action without an unconsented write', async ({ page }) => {
+  test('the built vNext surface dispatches one persisted run and preserves a backend blocker without synthesizing publication', async ({ page }) => {
     const observed: Array<{ method: string; path: string }> = [];
     const unexpectedApiRequests: Array<{ method: string; path: string }> = [];
-    const llmChatBodies: Array<Record<string, unknown>> = [];
+    const swarmBodies: Array<Record<string, unknown>> = [];
     const pageErrors: string[] = [];
     const currentUser = {
       id: '00000000-0000-4000-8000-000000000001',
@@ -168,26 +168,13 @@ test.describe('Frontend endpoint contract and current Play Release browser smoke
       credits: 9,
       subscriptionStatus: 'free',
       isBanned: false,
+      isGuest: false,
       createdAt: 1_700_000_000_000,
     };
-    const freeRoute = {
-      id: '00000000-0000-4000-8000-000000000777',
-      defaultModelId: 'free/test-model',
-      label: 'Verified Free Test Route',
-      description: 'Current Play Release browser smoke',
-      provider: 'freellm',
-      billingCategory: 'free',
-      fundingMode: 'provider_free_quota',
-      priority: 1,
-      enabled: true,
-      capabilities: { codeActionContract: true },
-    };
+    const runId = 'run-endpoint-smoke';
 
     await page.addInitScript((user) => {
-      window.localStorage.setItem('sovereign-user', JSON.stringify({
-        state: { user },
-        version: 0,
-      }));
+      window.localStorage.setItem('sovereign-user', JSON.stringify({ state: { user }, version: 0 }));
     }, currentUser);
 
     page.on('pageerror', error => pageErrors.push(error.message));
@@ -203,46 +190,49 @@ test.describe('Frontend endpoint contract and current Play Release browser smoke
       await fulfillJson(route, { error: 'unexpected_frontend_endpoint_smoke_request' }, 501);
     });
     await page.route('**/api/auth/me', route => fulfillJson(route, currentUser));
-    await page.route('**/api/llm/routes**', route => fulfillJson(route, { routes: [freeRoute] }));
-    await page.route('**/health/ready', route => fulfillJson(route, { ok: true, configured: true }));
-    await page.route('**/api/llm/chat', async route => {
-      llmChatBodies.push(route.request().postDataJSON() as Record<string, unknown>);
-      await fulfillJson(route, {
-        model: freeRoute.defaultModelId,
-        outputContract: {
-          id: 'sovereign-code-action-v1',
-          validated: true,
-        },
-        choices: [{
-          message: {
-            content: JSON.stringify({
-              mode: 'action',
-              intent: 'direct_patch',
-              action_disposition: 'review',
-              clarification_code: 'none',
-              is_startup: false,
-              confidence: 0.96,
-              language: 'de',
-            }),
-          },
-        }],
-      });
+    await page.route('**/api/user/agent/toolchain/manifest', route => fulfillJson(route, {
+      ok: true,
+      name: 'Sovereign Universal Toolchain',
+      version: 'smoke',
+      runtime: 'embedded',
+      policy: { draftPrOnly: true, confirmRequired: true },
+    }));
+    await page.route('**/api/user/agent/swarm/manifest', route => fulfillJson(route, {
+      ok: true,
+      runtime: 'openai-agents-sdk',
+      manifest: {
+        releaseMode: 'draft_pr_only',
+        runtimeTruthRequired: true,
+        agents: [{ role: 'dispatcher', name: 'The Dispatcher', responsibility: 'Route the persisted mission.' }],
+      },
+    }));
+    await page.route('**/api/user/agent/swarm/run', async route => {
+      swarmBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+      await fulfillJson(route, { ok: true, runtime: 'openai-agents-sdk', runId, status: 'RUNNING' });
     });
+    await page.route(`**/api/user/agent/swarm/runs/${runId}`, route => fulfillJson(route, {
+      runtime: 'openai-agents-sdk',
+      run: {
+        runId,
+        status: 'BLOCKED',
+        source: 'agents-sdk',
+        reason: 'Smoke blocker preserved from persisted run.',
+        nextAction: 'REPAIR_SMOKE_DEPENDENCY',
+        iterationCount: 1,
+        maxIterations: 12,
+        leaseActive: false,
+        resumeAvailable: true,
+      },
+    }));
 
     await page.goto('/');
     const app = page.locator('[data-testid="sovereign-chat-app"]');
     await expect(app).toBeVisible({ timeout: 30_000 });
-    await expect(app).toHaveAttribute('data-layout', 'chat-first-agent-zero-background');
-    await expect(app).toHaveAttribute('data-primary-surface', 'play-release-chat');
-    await expect(app).toHaveAttribute('data-truth-scope', 'current-chat-session-only');
-    await expect(page.locator('[data-testid="sovereign-release-chat"]')).toBeVisible();
-    await expect(page.locator('[data-testid="play-release-menu-frame"]')).toBeVisible();
-    await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toHaveCount(0);
-
-    const routePicker = page.getByLabel('LLM Route');
-    await expect(routePicker).toBeVisible();
-    await expect(routePicker).toHaveValue('');
-    await expect(routePicker.locator(`option[value="${freeRoute.id}"]`)).toHaveText('FREE · Verified Free Test Route');
+    await expect(app).toHaveAttribute('data-layout', 'sovereign-control-surface-vnext');
+    await expect(app).toHaveAttribute('data-primary-surface', 'sovereign-control-surface-vnext');
+    await expect(app).toHaveAttribute('data-truth-scope', 'runtime-readback-only');
+    await expect(page.locator('[data-testid="sovereign-control-surface-vnext"]')).toBeVisible();
+    await expect(page.locator('[data-testid="vnext-runtime-monitor"]')).toBeVisible();
 
     const coverageResponse = await page.request.get('/generated/test-coverage-map.json');
     expect(coverageResponse.status()).toBe(200);
@@ -261,41 +251,27 @@ test.describe('Frontend endpoint contract and current Play Release browser smoke
       'backend/tests/test_agent_runtime_routes.py',
       'scripts/tests/test_frontend_test_gate.py',
       'tests/e2e/frontend-endpoint-contract-smoke.spec.ts',
-    ]) {
-      expect(publishedTestPaths.has(representative)).toBe(true);
-    }
-    for (const root of ['src', 'backend/tests', 'scripts/tests', 'tests/e2e']) {
-      expect(coveragePayload.testRoots?.[root]).toBeGreaterThan(0);
-    }
+    ]) expect(publishedTestPaths.has(representative)).toBe(true);
+    for (const root of ['src', 'backend/tests', 'scripts/tests', 'tests/e2e']) expect(coveragePayload.testRoots?.[root]).toBeGreaterThan(0);
 
-    const composer = page.getByLabel('Nachricht an Sovereign');
-    await composer.fill('Bitte repariere den Build in https://github.com/example/public-repo und führe noch nichts ohne Freigabe aus.');
+    const composer = page.getByLabel('Mission an Sovereign');
+    await composer.fill('Prüfe den aktuellen Build und ändere nichts ohne die bestehenden Runtime-Gates.');
     await composer.press('Enter');
 
-    const actionPreview = page.locator('[data-testid="github-action-preview"]');
-    await expect(actionPreview).toBeVisible({ timeout: 10_000 });
-    await expect(actionPreview.getByText('Repository-Ausführungsvorschau')).toBeVisible();
-    await expect(actionPreview.getByRole('button', { name: 'Repository-Ausführung starten' })).toBeVisible();
+    await expect.poll(() => observed.some(item => item.method === 'POST' && item.path === '/api/user/agent/swarm/run')).toBe(true);
+    await expect(page.getByText(/PERSISTED RUN ACCEPTED/)).toBeVisible({ timeout: 10_000 });
+    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === `/api/user/agent/swarm/runs/${runId}`)).toBe(true);
+    await expect(page.getByText('BLOCKED').first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/Smoke blocker preserved from persisted run/)).toBeVisible({ timeout: 10_000 });
 
-    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/auth/me')).toBe(true);
-    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === '/api/llm/routes')).toBe(true);
-    await expect.poll(() => observed.some(item => item.method === 'POST' && item.path === '/api/llm/chat')).toBe(true);
-
-    expect(llmChatBodies).toHaveLength(1);
-    expect(llmChatBodies[0]).toMatchObject({
-      outputContractId: 'sovereign-code-action-v1',
-      routeSelectionMode: 'auto',
-      model: freeRoute.id,
-      stream: false,
+    expect(swarmBodies).toHaveLength(1);
+    expect(swarmBodies[0]).toEqual({
+      mission: 'Prüfe den aktuellen Build und ändere nichts ohne die bestehenden Runtime-Gates.',
+      mode: 'auto',
+      intentMode: 'auto',
     });
-    expect(Array.isArray(llmChatBodies[0]?.messages)).toBe(true);
-
-    const billingWrites = observed.filter(item => item.path.startsWith('/api/billing') && item.method !== 'GET');
-    const agentWrites = observed.filter(item => item.path.startsWith('/api/user/agent/') && item.method !== 'GET');
-    expect(billingWrites).toEqual([]);
-    expect(agentWrites).toEqual([]);
-    expect(observed.some(item => item.path === '/api/billing/cancel')).toBe(false);
-    expect(observed.some(item => item.path === '/api/billing/restore')).toBe(false);
+    expect(observed.some(item => item.path.includes('/draft-pr/prepare'))).toBe(false);
+    expect(observed.some(item => item.path.includes('/draft-pr/create'))).toBe(false);
     expect(unexpectedApiRequests).toEqual([]);
     expect(pageErrors).toEqual([]);
   });

@@ -16,27 +16,31 @@ describe('DevChat Draft PR execution contract', () => {
     expect(builder).toContain('Vorgemerktes Review-Preset wird direkt über den Repository-Executor wiederaufgenommen');
   });
 
-  it('keeps mission execution and Draft-PR publication on the current Play Release job identity', () => {
+  it('keeps mission execution and Draft-PR publication on the vNext persisted run / linked-job identity', () => {
     const app = source('src/App.tsx');
-    const release = source('src/features/release/PlayReleaseChat.tsx');
+    const surface = source('src/features/control-surface-vnext/App.tsx');
+    const adapter = source('src/features/control-surface-vnext/adapter/production-adapter.ts');
     const client = source('src/features/product/runtime/sovereignAgentClient.ts');
     const runtime = source('src/features/product/runtime/sovereignAgentRuntime.ts');
 
-    expect(app).toContain('PlayReleaseChat');
-    expect(app).toContain('data-layout="chat-first-agent-zero-background"');
-    expect(app).toContain('data-primary-surface="play-release-chat"');
-    expect(app).toContain('data-truth-scope="current-chat-session-only"');
+    expect(app).toContain('SovereignControlSurfaceVNext');
+    expect(app).toContain('data-layout="sovereign-control-surface-vnext"');
+    expect(app).toContain('data-primary-surface="sovereign-control-surface-vnext"');
+    expect(app).toContain('data-truth-scope="runtime-readback-only"');
     expect(app).not.toContain('RESTORE_LATEST_JOB');
     expect(app).not.toContain('BuilderContainer');
 
-    expect(release).toContain('createSovereignAgentClient');
-    expect(release).toContain('agentClient.startRepositoryExecution');
-    expect(release).toContain('agentClient.getJob(snapshot.jobId)');
-    expect(release).toContain('agentClient.prepareDraftPr(snapshot.jobId)');
-    expect(release).toContain('agentClient.createDraftPr(snapshot.jobId');
-    expect(release).toContain('created.draftPrCreate.readbackHeadSha');
-    expect(release).not.toContain('listJobs(');
-    expect(release).not.toContain('RESTORE_LATEST_JOB');
+    expect(surface).toContain('setActiveRunId(accepted.jobId)');
+    expect(surface).toContain('prepareDraftPr');
+    expect(surface).toContain('publishDraftPr');
+    expect(adapter).toContain("'/api/user/agent/swarm/run'");
+    expect(adapter).toContain('/api/user/agent/swarm/runs/${encodeURIComponent(requested)}');
+    expect(adapter).toContain('run.jobId');
+    expect(adapter).toContain('this.client.prepareDraftPr(run.jobId)');
+    expect(adapter).toContain('this.client.createDraftPr(run.jobId)');
+    expect(adapter).toContain('readbackHeadSha: pr.readbackHeadSha');
+    expect(adapter).not.toContain('MockSovereignBackendAdapter');
+    expect(adapter).not.toContain('/api/config/');
 
     expect(client).toContain("'/api/user/agent/swarm/run'");
     expect(client).toContain('expectedHeadSha: input.expectedHeadSha.trim()');
@@ -53,15 +57,19 @@ describe('DevChat Draft PR execution contract', () => {
     expect(builder).toContain('githubAccessToken: githubTokenRef.current || undefined');
   });
 
-  it('does not mount the retired Rescue/ReSecure overlay on the primary Play Release surface', () => {
+  it('does not mount the retired Rescue/ReSecure overlay and does not fall back to a simulator on the primary vNext surface', () => {
     const app = source('src/App.tsx');
-    const release = source('src/features/release/PlayReleaseChat.tsx');
+    const surface = source('src/features/control-surface-vnext/App.tsx');
+    const adapter = source('src/features/control-surface-vnext/adapter/production-adapter.ts');
 
     expect(app).not.toContain('SovereignRescueOverlay');
     expect(app).not.toContain('<RescuePanel');
-    expect(release).toContain('agentClient.startRepositoryExecution');
-    expect(release).toContain('agentClient.prepareDraftPr(snapshot.jobId)');
-    expect(release).toContain('agentClient.createDraftPr(snapshot.jobId');
+    expect(surface).toContain('SovereignAdapterProvider');
+    expect(adapter).toContain('SovereignProductionAdapter');
+    expect(adapter).toContain("mode: 'live_http'");
+    expect(adapter).toContain('isFallback: false');
+    expect(adapter).not.toContain('fallbackMock');
+    expect(adapter).not.toContain('MockSovereignBackendAdapter');
   });
 
   it('requires a concrete action preview before menu or slash Draft PR publication in the deferred Builder', () => {

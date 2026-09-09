@@ -1,6 +1,6 @@
 import React from 'react';
 import { EvidenceObservatoryAtlas } from './features/evidence-observatory/EvidenceObservatoryAtlas';
-import { PlayReleaseChat } from './features/release/PlayReleaseChat';
+import SovereignControlSurfaceVNext from './features/control-surface-vnext/App';
 
 const CHAT_FIRST_STYLE: React.CSSProperties = {
   height: '100dvh',
@@ -11,14 +11,13 @@ const CHAT_FIRST_STYLE: React.CSSProperties = {
 /**
  * Canonical browser entry for Sovereign.
  *
- * The default client projects only the current Play Release chat session. It
- * does not auto-adopt a previously persisted Agent job as current truth. Older
- * jobs remain backend history and must be explicitly read/adopted by a bounded
- * workflow before they can affect current product state.
+ * The default client is the vNext control surface. It does not auto-adopt an
+ * unrelated persisted run as current truth: a mission handle becomes current
+ * only after this surface receives the real runId from the backend. Runtime,
+ * workspace and publication panels remain projections of server readback.
  *
- * Legacy Rescue/ReSecure overlays are intentionally not mounted on this
- * primary surface. Repository work is owned by the current-session Agent One
- * runtime and its explicit Draft-PR flow.
+ * Draft PR publication is a separate owner-visible action and remains bound to
+ * the existing backend prepare/create gates and strict GitHub readback.
  */
 export default function App() {
   const observatoryMode = typeof window !== 'undefined'
@@ -31,13 +30,13 @@ export default function App() {
   return (
     <div
       data-testid="sovereign-chat-app"
-      data-layout="chat-first-agent-zero-background"
-      data-primary-surface="play-release-chat"
-      data-truth-scope="current-chat-session-only"
-      aria-label="Sovereign Chat"
+      data-layout="sovereign-control-surface-vnext"
+      data-primary-surface="sovereign-control-surface-vnext"
+      data-truth-scope="runtime-readback-only"
+      aria-label="Sovereign Control Surface"
       style={CHAT_FIRST_STYLE}
     >
-      <PlayReleaseChat />
+      <SovereignControlSurfaceVNext />
     </div>
   );
 }

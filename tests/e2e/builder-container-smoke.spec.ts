@@ -3,23 +3,14 @@ import { test, expect, type Route } from '@playwright/test';
 const EXTENDED_TIMEOUT = { timeout: 30_000 };
 const CURRENT_USER = {
   id: '00000000-0000-4000-8000-000000000041',
-  email: 'play-release-smoke@example.test',
-  displayName: 'Play Release Smoke',
+  email: 'vnext-smoke@example.test',
+  displayName: 'vNext Smoke',
   role: 'user',
   credits: 9,
   subscriptionStatus: 'free',
   isBanned: false,
+  isGuest: false,
   createdAt: 1_700_000_000_000,
-};
-const FREE_ROUTE = {
-  id: '00000000-0000-4000-8000-000000000777',
-  defaultModelId: 'free/test-model',
-  label: 'Verified Free Test Route',
-  description: 'Play Release browser smoke',
-  provider: 'freellm',
-  billingCategory: 'free',
-  priority: 1,
-  enabled: true,
 };
 
 async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
@@ -36,97 +27,96 @@ async function fulfillJson(route: Route, body: unknown, status = 200): Promise<v
   });
 }
 
-test.describe('Current-session Play Release browser smoke', () => {
+async function installReadbackManifests(page: import('@playwright/test').Page): Promise<void> {
+  await page.route('**/api/user/agent/toolchain/manifest', route => fulfillJson(route, {
+    ok: true,
+    name: 'Sovereign Universal Toolchain',
+    version: 'smoke',
+    runtime: 'embedded',
+    policy: { draftPrOnly: true, confirmRequired: true },
+  }));
+  await page.route('**/api/user/agent/swarm/manifest', route => fulfillJson(route, {
+    ok: true,
+    runtime: 'openai-agents-sdk',
+    manifest: {
+      releaseMode: 'draft_pr_only',
+      runtimeTruthRequired: true,
+      agents: [
+        { role: 'dispatcher', name: 'The Dispatcher', responsibility: 'Plan and route the mission.' },
+        { role: 'judge', name: 'The Judge', responsibility: 'Reject unsupported publication claims.' },
+      ],
+    },
+  }));
+}
+
+test.describe('Sovereign Control Surface vNext browser smoke', () => {
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/auth/me', route => fulfillJson(route, CURRENT_USER));
-    await page.route('**/api/llm/routes**', route => fulfillJson(route, { routes: [FREE_ROUTE] }));
-    await page.route('**/health/ready', route => fulfillJson(route, { ok: true, configured: true }));
+    await installReadbackManifests(page);
     await page.goto('/');
     await expect(page.locator('[data-testid="sovereign-chat-app"]')).toBeVisible(EXTENDED_TIMEOUT);
   });
 
-  test('1. App loads the canonical current-session Play Release surface', async ({ page }) => {
+  test('1. App loads the canonical vNext runtime-readback surface', async ({ page }) => {
     const app = page.locator('[data-testid="sovereign-chat-app"]');
-    await expect(app).toHaveAttribute('data-layout', 'chat-first-agent-zero-background');
-    await expect(app).toHaveAttribute('data-primary-surface', 'play-release-chat');
-    await expect(app).toHaveAttribute('data-truth-scope', 'current-chat-session-only');
-    await expect(app).toHaveAttribute('aria-label', 'Sovereign Chat');
-
-    const release = page.locator('[data-testid="sovereign-release-chat"]');
-    await expect(release).toBeVisible();
-    await expect(release).toHaveAttribute('data-layout', 'play-release-chat');
-    await expect(page.locator('[data-testid="play-release-menu-frame"]')).toBeVisible();
-    await expect(page.getByLabel('Nachricht an Sovereign')).toBeVisible();
-    await expect(page.getByLabel('LLM Route')).toBeVisible();
-    await expect(page.locator('[data-testid="live-workspace-monitor-desktop"]')).toHaveCount(0);
-    await expect(page.locator('[data-layout="chat-primary-agent-zero-background"]')).toHaveCount(0);
+    await expect(app).toHaveAttribute('data-layout', 'sovereign-control-surface-vnext');
+    await expect(app).toHaveAttribute('data-primary-surface', 'sovereign-control-surface-vnext');
+    await expect(app).toHaveAttribute('data-truth-scope', 'runtime-readback-only');
+    await expect(app).toHaveAttribute('aria-label', 'Sovereign Control Surface');
+    await expect(page.locator('[data-testid="sovereign-control-surface-vnext"]')).toBeVisible();
+    await expect(page.locator('[data-testid="vnext-command-surface"]')).toBeVisible();
+    await expect(page.locator('[data-testid="vnext-runtime-monitor"]')).toBeVisible();
+    await expect(page.locator('[data-testid="vnext-workspace-projection"]')).toBeVisible();
+    await expect(page.locator('[data-testid="vnext-publication-inspector"]')).toBeVisible();
   });
 
-  test('2. GitHub access remains protected and separate from repository action consent', async ({ page }) => {
-    await page.getByRole('button', { name: 'GitHub', exact: true }).click();
+  test('2. Operator UI projects the real authenticated backend session instead of a frontend token', async ({ page }) => {
+    await page.getByTestId('operator-auth-btn').click();
+    const dialog = page.getByRole('dialog', { name: 'Sovereign account session' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('BACKEND SESSION READBACK')).toBeVisible();
+    await expect(dialog.getByText('vNext Smoke')).toBeVisible();
+    await expect(dialog.getByText('AUTHENTICATED')).toBeVisible();
+    await expect(dialog.locator('input[placeholder="svk_…"]')).toHaveCount(0);
+  });
 
-    const preview = page.locator('[data-testid="github-action-preview"]');
-    await expect(preview).toBeVisible();
-    await expect(page.getByRole('button', { name: 'GitHub sicher verbinden', exact: true })).toBeVisible();
-
-    const accessCard = page.getByRole('group', { name: 'GitHub-Zugang' });
-    await expect(accessCard).toBeVisible();
-    await accessCard.getByRole('button', { name: 'Zugang eingeben' }).click();
-
-    const accessDialog = page.getByRole('dialog', { name: 'GitHub-Zugang' });
-    await expect(accessDialog).toBeVisible();
-    await expect(accessDialog.getByLabel(/GitHub Token/)).toHaveAttribute('type', 'password');
-    await expect(page.getByRole('button', { name: 'Repository-Ausführung starten' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Draft PR erstellen' })).toHaveCount(0);
+  test('3. Toolchain and swarm panels are server-readback projections, not local switches', async ({ page }) => {
+    await page.getByRole('button').filter({ hasText: 'TOOLCHAIN' }).click();
+    await expect(page.getByText('Sovereign Universal Toolchain')).toBeVisible();
+    await expect(page.getByText(/Read-only server-owned execution manifest/)).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(accessDialog).toHaveCount(0);
+
+    await page.getByRole('button').filter({ hasText: 'SWARM' }).click();
+    await expect(page.getByText('The Dispatcher')).toBeVisible();
+    await expect(page.getByText('The Judge')).toBeVisible();
+    await expect(page.getByText(/does not locally enable or disable execution capabilities/)).toBeVisible();
   });
 
-  test('3. Composer and server-authoritative route picker stay compact and explicit', async ({ page }) => {
-    const composer = page.getByLabel('Nachricht an Sovereign');
-    await expect(composer).toBeVisible();
-
-    await composer.fill('');
-    await expect(page.getByRole('button', { name: 'Senden', exact: true })).toBeDisabled();
-    await composer.fill('Prüfe den Build und bereite nur einen Draft PR vor.');
-    await expect(page.getByRole('button', { name: 'Senden', exact: true })).toBeEnabled();
-
-    const routePicker = page.getByLabel('LLM Route');
-    await expect(routePicker).toBeVisible();
-    await expect(routePicker).toHaveValue('');
-    await expect(routePicker.locator('option')).toHaveCount(2);
-    await expect(routePicker.locator(`option[value="${FREE_ROUTE.id}"]`)).toHaveText('FREE · Verified Free Test Route');
-
-    await page.getByRole('button', { name: 'Modelle', exact: true }).click();
-    await routePicker.selectOption(FREE_ROUTE.id);
-    await expect(routePicker).toHaveValue(FREE_ROUTE.id);
-    await expect(page.getByText('Aktiv: FREE · Verified Free Test Route')).toBeVisible();
+  test('4. Architecture panel documents the exact production adapter truth boundary', async ({ page }) => {
+    await page.getByTestId('open-architecture-btn').click();
+    await expect(page.getByText('NO AUTOMATIC SIMULATOR FALLBACK')).toBeVisible();
+    await expect(page.getByText('/api/user/agent/swarm/run')).toBeVisible();
+    await expect(page.getByText('/api/user/agent/jobs/:jobId/draft-pr/create')).toBeVisible();
+    await expect(page.getByText(/GitHub readback/)).toBeVisible();
   });
 
-  test('4. Current-session navigation stays primary without resurrecting Builder history', async ({ page }) => {
-    for (const label of ['Chat', 'GitHub', 'Modelle', 'Konto']) {
-      await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible();
-    }
-    await expect(page.locator('[data-testid="sovereign-release-chat"]')).toBeVisible();
-    await expect(page.locator('[data-testid="monitor-runtime-action-trace"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="sovereign-chat-primary"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="monitor-communication-dock"]')).toHaveCount(0);
-  });
-
-  test('5. Play Release controls remain reachable at phone width', async ({ page }) => {
+  test('5. vNext fixed projections remain reachable at phone width', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.locator('[data-testid="sovereign-chat-app"]')).toBeVisible();
-    await expect(page.locator('[data-testid="sovereign-release-chat"]')).toBeVisible();
-    await expect(page.locator('[data-testid="play-release-menu-frame"]')).toBeVisible();
-    await expect(page.getByLabel('Nachricht an Sovereign')).toBeVisible();
-
-    await page.getByRole('button', { name: 'GitHub', exact: true }).click();
-    await expect(page.locator('[data-testid="github-action-preview"]')).toBeVisible();
-    await expect(page.getByRole('group', { name: 'GitHub-Zugang' })).toBeVisible();
+    await expect(page.locator('[data-testid="mobile-bottom-nav"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: /COMMAND/ })).toBeVisible();
+    await page.getByRole('button', { name: /EVIDENCE/ }).click();
+    await expect(page.locator('[data-testid="vnext-runtime-monitor"]')).toBeVisible();
+    await page.getByRole('button', { name: /WORKSPACE/ }).click();
+    await expect(page.locator('[data-testid="vnext-workspace-projection"]')).toBeVisible();
+    await page.getByRole('button', { name: /PUBLISH/ }).click();
+    await expect(page.locator('[data-testid="vnext-publication-inspector"]')).toBeVisible();
+    await expect(page.getByTestId('vnext-create-draft-pr')).toHaveCount(0);
   });
 
-  test('6. Missing session fails closed before LLM or repository execution', async ({ page }) => {
+  test('6. Missing session fails closed before any protected agent request', async ({ page }) => {
     await page.unroute('**/api/auth/me');
+    await page.unroute('**/api/user/agent/toolchain/manifest');
+    await page.unroute('**/api/user/agent/swarm/manifest');
     await page.route('**/api/auth/me', route => fulfillJson(route, { error: 'unauthorized' }, 401));
     await page.route('**/api/auth/guest', route => fulfillJson(route, { error: 'guest unavailable' }, 503));
     await page.evaluate(() => window.localStorage.clear());
@@ -134,19 +124,17 @@ test.describe('Current-session Play Release browser smoke', () => {
     const protectedRequests: string[] = [];
     page.on('request', request => {
       const pathname = new URL(request.url()).pathname;
-      if (pathname === '/api/llm/chat' || pathname.startsWith('/api/user/agent/')) {
-        protectedRequests.push(`${request.method()} ${pathname}`);
-      }
+      if (pathname.startsWith('/api/user/agent/')) protectedRequests.push(`${request.method()} ${pathname}`);
     });
 
     await page.reload();
-    const composer = page.getByLabel('Nachricht an Sovereign');
+    const composer = page.getByLabel('Mission an Sovereign');
     await expect(composer).toBeVisible(EXTENDED_TIMEOUT);
-    await composer.fill('https://github.com/example/public-repo');
-    await page.getByRole('button', { name: 'Senden', exact: true }).click();
+    await composer.fill('Prüfe das Repository.');
+    await page.getByTestId('builder__start-task').click();
 
-    await expect(page.getByText('Die pseudonyme Gast-Sitzung wird noch vorbereitet. Bitte den Auftrag gleich erneut senden.')).toBeVisible();
-    await expect(page.getByRole('dialog', { name: 'Anmelden', exact: true })).toHaveCount(0);
+    await expect(page.getByText(/Backend session readback is still pending|Repository execution requires an authenticated account/)).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Sovereign account session' })).toBeVisible();
     expect(protectedRequests).toEqual([]);
   });
 

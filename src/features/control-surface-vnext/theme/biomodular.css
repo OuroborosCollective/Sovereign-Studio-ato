@@ -1,0 +1,64 @@
+/* Sovereign Control Surface vNext biomodular cyber theme. */
+:root {
+  --bg-void: #050507;
+  --carbon-deep: #08080a;
+  --carbon-base: #0d0d11;
+  --carbon-surface: #131318;
+  --carbon-elevated: #1a1a22;
+  --carbon-facet: #22222d;
+  --red-laser: #ff1e38;
+  --red-crimson: #d90429;
+  --red-pulse: #800016;
+  --red-glow: rgba(255, 30, 56, 0.35);
+  --red-subtle: rgba(255, 30, 56, 0.12);
+  --red-deep: #1f0006;
+  --red-alert: #ff8c00;
+  --amber-pulse: rgba(255, 140, 0, 0.3);
+  --emerald-seal: #10b981;
+  --emerald-glow: rgba(16, 185, 129, 0.3);
+  --text-main: #f2f2f5;
+  --text-muted: #8b8b9e;
+  --text-dim: #545465;
+  --text-crimson: #ff2a44;
+  --diamond-border: 1px solid rgba(255, 30, 56, 0.22);
+  --diamond-border-subtle: 1px solid rgba(255, 255, 255, 0.07);
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Roboto Mono', monospace;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.carbon-mesh-bg {
+  background-color: var(--carbon-base);
+  background-image:
+    linear-gradient(45deg, rgba(0,0,0,.4) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(0,0,0,.4) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(0,0,0,.4) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(0,0,0,.4) 75%);
+  background-size: 6px 6px;
+  background-position: 0 0, 0 3px, 3px -3px, -3px 0;
+}
+
+.theme-diamond-cut {
+  background: var(--carbon-surface);
+  border: var(--diamond-border);
+  position: relative;
+  clip-path: polygon(0 4px,4px 0,calc(100% - 4px) 0,100% 4px,100% calc(100% - 4px),calc(100% - 4px) 100%,4px 100%,0 calc(100% - 4px));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05), inset 0 0 24px rgba(0,0,0,.7);
+}
+.theme-diamond-cut::after { content: ''; position: absolute; inset: 0; border: 1px solid rgba(255,30,56,.15); pointer-events: none; }
+
+@keyframes bio-respiration-slow {
+  0%,100% { box-shadow: inset 0 0 8px rgba(128,0,22,.3),0 0 2px rgba(255,30,56,.2); border-color: rgba(255,30,56,.18); }
+  50% { box-shadow: inset 0 0 22px rgba(255,30,56,.35),0 0 14px rgba(255,30,56,.25); border-color: rgba(255,30,56,.55); }
+}
+.breathing-machine { animation: bio-respiration-slow 3.8s infinite ease-in-out; }
+
+@keyframes laser-sweep-h { 0% { transform: translateY(-100%); opacity:.1 } 50% { opacity:.8 } 100% { transform:translateY(100%); opacity:.1 } }
+.laser-scan-overlay { background: linear-gradient(180deg,transparent,rgba(255,30,56,.3),transparent); animation: laser-sweep-h 2.4s infinite linear; }
+.circuit-line-x { background: linear-gradient(90deg,transparent,rgba(255,30,56,.4),transparent); }
+.circuit-line-y { background: linear-gradient(180deg,transparent,rgba(255,30,56,.4),transparent); }
+.micro-hud { font-family: var(--font-mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; }
+.micro-code { font-family:var(--font-mono); font-size:11.5px; line-height:1.5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .breathing-machine, .laser-scan-overlay { animation: none !important; }
+}
