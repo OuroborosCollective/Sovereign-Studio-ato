@@ -372,7 +372,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
   }
 
   async getIntegrations(): Promise<IntegrationAttachment[]> {
-    // No guessed /api/config/integrations contract. The control surface shows an empty,
+    // No guessed integration-list contract. The control surface shows an empty,
     // read-only attachment registry until a real server projection is introduced.
     return [];
   }

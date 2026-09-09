@@ -2,19 +2,19 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
-const releasePath = 'src/features/release/PlayReleaseChat.tsx';
-const release = fs.readFileSync(releasePath, 'utf8');
+const commandSurfacePath = 'src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx';
+const commandSurface = fs.readFileSync(commandSurfacePath, 'utf8');
 const scannerPath = '../../../../scripts/sovereign-ux-contract-scan.mjs';
 
-async function scan(source: string) {
+async function scan(overrides: Record<string, string> = {}) {
   let report: { status: string; errors: Array<{ id: string }> } | undefined;
   const exits: number[] = [];
   vi.resetModules();
   vi.doMock('node:fs', () => ({
     default: {
       ...fs,
-      readFileSync: (filePath: string) => filePath === releasePath
-        ? source : fs.readFileSync(filePath, 'utf8'),
+      readFileSync: (filePath: string) => Object.prototype.hasOwnProperty.call(overrides, filePath)
+        ? overrides[filePath] : fs.readFileSync(filePath, 'utf8'),
       mkdirSync: () => undefined,
       writeFileSync: () => undefined,
       appendFileSync: () => undefined,
@@ -38,33 +38,33 @@ async function scan(source: string) {
   }
 }
 
-describe('production UX scanner current-session bindings', () => {
-  it('accepts the actual Play Release composer and guarded submit path', async () => {
-    const { report, exits } = await scan(release);
+describe('production UX scanner vNext bindings', () => {
+  it('accepts the actual vNext command surface and production truth boundary', async () => {
+    const { report, exits } = await scan();
     expect(report.status).toBe('pass');
     expect(report.errors).toEqual([]);
     expect(exits).toEqual([]);
   });
 
-  it('rejects a changed visible send handler even when submit still exists elsewhere', async () => {
-    const broken = release.replace(
-      'onClick={() => { void submit(); }}',
-      'onClick={() => { void unrelatedHandler(); }}',
+  it('rejects a changed visible dispatch handler even when submit still exists elsewhere', async () => {
+    const broken = commandSurface.replace(
+      'onClick={submit}',
+      'onClick={() => unrelatedHandler()}',
     );
-    expect(broken).not.toBe(release);
-    const { report, exits } = await scan(broken);
-    expect(report.errors.map(error => error.id)).toContain('release:send-visible');
+    expect(broken).not.toBe(commandSurface);
+    const { report, exits } = await scan({ [commandSurfacePath]: broken });
+    expect(report.errors.map(error => error.id)).toContain('surface:send-visible');
     expect(exits).toEqual([1]);
   });
 
-  it('rejects a composer disconnected from the current-session draft state', async () => {
-    const broken = release.replace(
-      'onChange={(event) => setDraft(event.target.value)}',
-      'onChange={(event) => unrelatedHandler(event.target.value)}',
+  it('rejects a composer disconnected from the command draft state', async () => {
+    const broken = commandSurface.replace(
+      'onChange={(event) => { setText(event.target.value);',
+      'onChange={(event) => { unrelatedHandler(event.target.value);',
     );
-    expect(broken).not.toBe(release);
-    const { report, exits } = await scan(broken);
-    expect(report.errors.map(error => error.id)).toContain('release:composer-bound');
+    expect(broken).not.toBe(commandSurface);
+    const { report, exits } = await scan({ [commandSurfacePath]: broken });
+    expect(report.errors.map(error => error.id)).toContain('surface:composer-bound');
     expect(exits).toEqual([1]);
   });
 });

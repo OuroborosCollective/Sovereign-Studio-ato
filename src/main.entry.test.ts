@@ -36,6 +36,7 @@ describe('main app entry', () => {
   it('keeps repository execution and Draft-PR publication behind the single vNext production adapter', () => {
     const surface = readSource('./features/control-surface-vnext/App.tsx');
     const adapter = readSource('./features/control-surface-vnext/adapter/production-adapter.ts');
+    const client = readSource('./features/product/runtime/sovereignAgentClient.ts');
     const publication = readSource('./features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx');
 
     expect(surface).toContain('SovereignAdapterProvider');
@@ -44,9 +45,12 @@ describe('main app entry', () => {
     expect(adapter).toContain("'/api/user/agent/swarm/run'");
     expect(adapter).toContain("'/api/user/agent/toolchain/manifest'");
     expect(adapter).toContain("'/api/user/agent/swarm/manifest'");
-    expect(adapter).toContain("'/draft-pr/prepare'");
-    expect(adapter).toContain("'/draft-pr/create'");
+    expect(adapter).toContain('this.client.prepareDraftPr(run.jobId)');
+    expect(adapter).toContain('this.client.createDraftPr(run.jobId)');
     expect(adapter).toContain('readbackHeadSha');
+    expect(client).toContain("jobPath(jobId, '/draft-pr/prepare')");
+    expect(client).toContain("jobPath(jobId, '/draft-pr/create')");
+    expect(client).toContain("stringValue(signal.prStateVerified) === 'open'");
     expect(adapter).not.toContain('MockSovereignBackendAdapter');
     expect(publication).toContain('EXTERNAL WRITE CONSENT');
     expect(publication).toContain('Success is shown only after independent GitHub readback.');

@@ -103,7 +103,10 @@ function writeReport() {
 }
 
 function run() {
-  const release = 'src/features/release/PlayReleaseChat.tsx';
+  const surface = 'src/features/control-surface-vnext/App.tsx';
+  const adapter = 'src/features/control-surface-vnext/adapter/production-adapter.ts';
+  const publication = 'src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx';
+  const agentClient = 'src/features/product/runtime/sovereignAgentClient.ts';
   const builder = 'src/features/product/containers/BuilderContainer.tsx';
 
   for (const [file, message] of [
@@ -112,7 +115,10 @@ function run() {
     ['src/main.tsx', 'React entrypoint is required.'],
     ['src/App.tsx', 'App shell is required.'],
     ['src/SovereignAppWrapper.tsx', 'Passthrough wrapper is required.'],
-    [release, 'Current Play Release chat surface is required.'],
+    [surface, 'Sovereign Control Surface vNext is required.'],
+    [adapter, 'Sovereign vNext production adapter is required.'],
+    [publication, 'Sovereign vNext publication inspector is required.'],
+    [agentClient, 'Canonical Agent client is required.'],
     ['src/features/product/components/LiveWorkspaceMonitor.tsx', 'Live workspace monitor diagnostic surface is required.'],
     ['src/features/product/components/MonitorCommunicationDock.tsx', 'Compact monitor communication dock is required.'],
     ['src/index.css', 'Shared design CSS is required.'],
@@ -180,25 +186,27 @@ function run() {
   requireText('src/SovereignAppWrapper.tsx', /return <App \/>|<App\s*\/\>/, 'wrapper:passthrough-only', 'Wrapper is a passthrough and does not create product truth.');
   forbidText('src/SovereignAppWrapper.tsx', /useState|useEffect|localStorage|sessionStorage|querySelector/, 'wrapper:no-own-runtime-state', 'Wrapper must not own runtime state or inspect DOM.');
 
-  requireText('src/App.tsx', /PlayReleaseChat/, 'app:release-chat-root', 'App routes the authenticated root to the current-session Play Release chat.');
-  requireText('src/App.tsx', /data-testid="sovereign-chat-app"/, 'app:chat-root-test-id', 'Chat-first App exposes stable root test id.');
-  requireText('src/App.tsx', /data-layout="chat-first-agent-zero-background"/, 'app:chat-root-layout', 'Chat-first App exposes canonical conversation layout.');
-  requireText('src/App.tsx', /data-primary-surface="play-release-chat"/, 'app:primary-surface', 'Primary surface identity is explicit.');
-  requireText('src/App.tsx', /data-truth-scope="current-chat-session-only"/, 'app:truth-scope', 'Current-session truth scope is explicit.');
+  requireText('src/App.tsx', /SovereignControlSurfaceVNext/, 'app:vnext-root', 'App routes the authenticated root to Sovereign Control Surface vNext.');
+  requireText('src/App.tsx', /data-testid="sovereign-chat-app"/, 'app:vnext-root-test-id', 'vNext App exposes a stable root test id.');
+  requireText('src/App.tsx', /data-layout="sovereign-control-surface-vnext"/, 'app:vnext-root-layout', 'vNext App exposes its canonical control-surface layout.');
+  requireText('src/App.tsx', /data-primary-surface="sovereign-control-surface-vnext"/, 'app:primary-surface', 'vNext primary surface identity is explicit.');
+  requireText('src/App.tsx', /data-truth-scope="runtime-readback-only"/, 'app:truth-scope', 'Runtime-readback-only truth scope is explicit.');
   requireText('src/App.tsx', /EvidenceObservatoryAtlas/, 'app:observatory-preserved', 'Evidence Observatory remains an explicit secondary route.');
   requireText('src/App.tsx', /window\.location\.pathname === '\/observatory'[\s\S]*window\.location\.pathname === '\/evidence-observatory'[\s\S]*get\('observatory'\) === '1'/, 'app:observatory-route-contract', 'Both observatory paths and query compatibility remain reachable.');
-  forbidText('src/App.tsx', /RESTORE_LATEST_JOB|BuilderContainer/, 'app:no-implicit-historical-truth', 'Default App must not auto-adopt historical jobs or mount Builder as current truth.');
+  forbidText('src/App.tsx', /PlayReleaseChat|RESTORE_LATEST_JOB|BuilderContainer/, 'app:no-implicit-historical-truth', 'Default App must not mount the retired release chat, auto-adopt historical jobs, or mount Builder as current truth.');
 
-  requireText(release, /evaluateInputPolicy\(text\)[\s\S]*fetchSovereignDirectLlmInterpretation/, 'release:secret-before-intent', 'Release chat guards input before typed LLM interpretation.');
-  requireText(release, /fetchSovereignLlmRouteCatalog/, 'release:server-route-catalog', 'Release chat reads server-authoritative routes.');
-  requireText(release, /deriveRepositoryActionFallback/, 'release:bounded-degraded-intent', 'Malformed model prose can only degrade to user-owned repository intent.');
-  requireText(release, /pendingRepositoryAction[\s\S]*confirmPendingRepositoryAction/, 'release:visible-action-gate', 'Repository execution requires visible pending action confirmation.');
-  requireText(release, /startRepositoryExecution/, 'release:agent-execution', 'Repository mission uses canonical Agent runtime.');
-  requireText(release, /prepareDraftPr[\s\S]*createDraftPr/, 'release:draft-pr-gate', 'Draft PR flows through prepare then create.');
-  requireText(release, /readbackHeadSha/, 'release:draft-pr-readback', 'Draft PR success exposes GitHub head readback.');
-  requireText(release, /Draft PR erstellen/, 'release:draft-pr-visible', 'Draft PR action is visible.');
-  requireText(release, /initiateGitHubOAuth[\s\S]*GitHub sicher verbinden/, 'release:github-consent', 'GitHub connection stays behind explicit visible OAuth action.');
-  forbidText(release, /listJobs\(|RESTORE_LATEST_JOB/, 'release:no-history-auto-adopt', 'Release chat must not auto-adopt historical Agent jobs.');
+  requireText(surface, /ensureGuestSession\(\)[\s\S]*user\.isGuest[\s\S]*setAuthOpen\(true\)/, 'vnext:session-before-agent', 'vNext resolves backend session and fails guest execution closed into authentication.');
+  requireText(surface, /useSwarmRun[\s\S]*setActiveRunId\(accepted\.jobId\)/, 'vnext:accepted-run', 'Only a backend-accepted persisted run id becomes current.');
+  forbidText(surface, /listJobs\(|RESTORE_LATEST_JOB/, 'vnext:no-history-auto-adopt', 'vNext must not auto-adopt historical Agent runs.');
+  requireText(adapter, /credentials:\s*'include'/, 'vnext:http-only-session', 'vNext production requests use the backend HTTP-only session.');
+  requireText(adapter, /'\/api\/user\/agent\/swarm\/run'/, 'vnext:agent-execution', 'vNext mission dispatch uses the persisted Agents SDK run endpoint.');
+  requireText(adapter, /this\.client\.getJob\(run\.jobId\)[\s\S]*this\.client\.getEvidenceAnchors\(run\.jobId\)/, 'vnext:linked-job-evidence', 'vNext links persisted run identity to implementation-job and evidence readback.');
+  requireText(adapter, /this\.client\.prepareDraftPr\(run\.jobId\)[\s\S]*this\.client\.createDraftPr\(run\.jobId\)/, 'vnext:draft-pr-gate', 'Draft PR flows through the existing prepare and create client calls.');
+  forbidText(adapter, /MockSovereignBackendAdapter|fallbackMock|\/api\/config\/|sessionToken|Authorization:\s*`Bearer|localStorage/, 'vnext:no-simulator-truth', 'Production adapter must not contain simulator fallback, guessed config routes, or browser-owned bearer state.');
+  requireText(agentClient, /jobPath\(jobId, '\/draft-pr\/prepare'\)[\s\S]*jobPath\(jobId, '\/draft-pr\/create'\)/, 'vnext:draft-pr-endpoints', 'Canonical Agent client owns the Draft PR prepare/create endpoints.');
+  requireText(agentClient, /signal\.draftVerified === true[\s\S]*prStateVerified[\s\S]*signal\.readbackVerified === true[\s\S]*signal\.checksReadbackVerified === true/, 'vnext:draft-pr-readback', 'Draft PR success requires complete GitHub draft/open/head/check readback.');
+  requireText(publication, /READ DRAFT-PR GATE[\s\S]*EXTERNAL WRITE CONSENT[\s\S]*CREATE DRAFT PR/, 'vnext:draft-pr-visible', 'Draft PR gate and external-write consent are visible.');
+  requireText(publication, /No merge\. No push to main\.[\s\S]*independent GitHub readback/, 'vnext:draft-pr-consent', 'Publication explicitly excludes merge/main push and requires independent GitHub readback.');
 
   requireText(builder, /MonitorCommunicationDock|SovereignActionStreamPanel/, 'builder:secondary-diagnostics', 'Builder remains maintained as a secondary diagnostics surface.');
   forbidText(builder, retiredBuilderAgentPattern, 'builder:no-retired-agent-start-prop', 'Builder must not restore retired external-agent start prop.');

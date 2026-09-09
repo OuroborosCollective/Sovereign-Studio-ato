@@ -49,8 +49,8 @@ describe('Sovereign Control Surface vNext truth contract', () => {
       'checksReadbackVerified',
       'publishedHeadSha',
       'readbackHeadSha',
-      "pullRequestState !== 'open'",
-      'prDraft !== true',
+      "stringValue(signal.prStateVerified) === 'open'",
+      'signal.draftVerified === true',
     ]) expect(client).toContain(strictReadback);
   });
 

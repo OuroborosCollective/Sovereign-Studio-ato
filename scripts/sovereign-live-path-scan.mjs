@@ -144,55 +144,66 @@ function scanMainBootPath() {
 
 function scanRuntimeContracts() {
   const app = read('src/App.tsx');
-  const release = read('src/features/release/PlayReleaseChat.tsx');
+  const surface = read('src/features/control-surface-vnext/App.tsx');
+  const adapter = read('src/features/control-surface-vnext/adapter/production-adapter.ts');
+  const adapterContext = read('src/features/control-surface-vnext/adapter/context.tsx');
+  const publication = read('src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx');
+  const operatorAuth = read('src/features/control-surface-vnext/components/Auth/OperatorAuthModal.tsx');
+  const client = read('src/features/product/runtime/sovereignAgentClient.ts');
   const builder = read('src/features/product/containers/BuilderContainer.tsx');
 
   if (
-    /PlayReleaseChat/.test(app)
+    /SovereignControlSurfaceVNext/.test(app)
     && /data-testid="sovereign-chat-app"/.test(app)
-    && /data-layout="chat-first-agent-zero-background"/.test(app)
-    && /data-primary-surface="play-release-chat"/.test(app)
-    && /data-truth-scope="current-chat-session-only"/.test(app)
+    && /data-layout="sovereign-control-surface-vnext"/.test(app)
+    && /data-primary-surface="sovereign-control-surface-vnext"/.test(app)
+    && /data-truth-scope="runtime-readback-only"/.test(app)
     && /EvidenceObservatoryAtlas/.test(app)
     && /window\.location\.pathname === '\/observatory'/.test(app)
-    && !/RESTORE_LATEST_JOB/.test(app)
+    && !/PlayReleaseChat|RESTORE_LATEST_JOB/.test(app)
   ) {
-    pass('app:current-session-live-path', 'App uses Play Release as current-session truth and keeps the observatory separate.');
+    pass('app:vnext-live-path', 'App uses vNext runtime-readback truth and keeps the observatory separate.');
   } else {
-    fail('app:current-session-live-path', 'Default App must use current-session Play Release truth without automatic historical job adoption.');
+    fail('app:vnext-live-path', 'Default App must use vNext runtime-readback truth without mounting the retired release chat or automatic historical adoption.');
   }
 
   if (
-    /evaluateInputPolicy\(text\)/.test(release)
-    && /fetchSovereignDirectLlmInterpretation/.test(release)
-    && /deriveRepositoryActionFallback/.test(release)
-    && /pendingRepositoryAction/.test(release)
-    && /confirmPendingRepositoryAction/.test(release)
-  ) pass('release:review-gated-action', 'Release chat guards input and requires a visible repository-action confirmation.');
-  else fail('release:review-gated-action', 'Release chat must keep input guard and visible action confirmation on the live path.');
+    /new SovereignProductionAdapter\(\)/.test(adapterContext)
+    && /credentials:\s*'include'/.test(adapter)
+    && /'\/api\/user\/agent\/swarm\/run'/.test(adapter)
+    && /setActiveRunId\(accepted\.jobId\)/.test(surface)
+    && !/MockSovereignBackendAdapter|fallbackMock|\/api\/config\//.test(adapter)
+  ) pass('vnext:production-adapter', 'vNext dispatch is bound to the single authenticated production adapter without simulator fallback.');
+  else fail('vnext:production-adapter', 'vNext must use the live production adapter and only adopt the backend-accepted run id.');
 
   if (
-    /startRepositoryExecution/.test(release)
-    && /prepareDraftPr/.test(release)
-    && /createDraftPr/.test(release)
-    && /readbackHeadSha/.test(release)
-    && /Draft PR erstellen/.test(release)
-  ) pass('release:draft-pr-runtime', 'Mission execution and Draft PR creation remain bound to backend/GitHub readback.');
-  else fail('release:draft-pr-runtime', 'Release chat must execute mission → Agent → Draft PR → readback on the live path.');
+    /this\.client\.prepareDraftPr\(run\.jobId\)/.test(adapter)
+    && /this\.client\.createDraftPr\(run\.jobId\)/.test(adapter)
+    && /jobPath\(jobId, '\/draft-pr\/prepare'\)/.test(client)
+    && /jobPath\(jobId, '\/draft-pr\/create'\)/.test(client)
+    && /signal\.draftVerified === true/.test(client)
+    && /signal\.readbackVerified === true/.test(client)
+    && /signal\.checksReadbackVerified === true/.test(client)
+  ) pass('vnext:draft-pr-runtime', 'Draft PR publication remains bound to the existing server gate and strict GitHub readback client.');
+  else fail('vnext:draft-pr-runtime', 'vNext must preserve prepare → create → independent GitHub readback before publication success.');
 
-  if (!/listJobs\(/.test(release) && !/RESTORE_LATEST_JOB/.test(release)) {
-    pass('release:no-implicit-history-adoption', 'Release chat does not auto-adopt historical jobs as current truth.');
+  if (
+    /READ DRAFT-PR GATE/.test(publication)
+    && /EXTERNAL WRITE CONSENT/.test(publication)
+    && /No merge\. No push to main\./.test(publication)
+    && /CREATE DRAFT PR/.test(publication)
+  ) pass('vnext:draft-pr-consent', 'Draft PR external write remains a separate explicit owner action and excludes merge/main push.');
+  else fail('vnext:draft-pr-consent', 'Draft PR creation must remain behind a visible gate and explicit external-write consent.');
+
+  if (!/listJobs\(/.test(surface) && !/RESTORE_LATEST_JOB/.test(surface)) {
+    pass('vnext:no-implicit-history-adoption', 'vNext does not auto-adopt historical jobs as current truth.');
   } else {
-    fail('release:no-implicit-history-adoption', 'Historical jobs must not become current release-chat truth implicitly.');
+    fail('vnext:no-implicit-history-adoption', 'Historical jobs must not become current vNext truth implicitly.');
   }
 
-  if (/fetchSovereignLlmRouteCatalog/.test(release) && /LLM Route/.test(release)) {
-    pass('release:runtime-route-catalog', 'Release chat exposes the server-authoritative route catalog.');
-  } else fail('release:runtime-route-catalog', 'Release chat must expose the live LLM route catalog.');
-
-  if (/initiateGitHubOAuth/.test(release) && /GitHub sicher verbinden/.test(release)) {
-    pass('release:github-consent', 'GitHub connection remains behind an explicit visible OAuth action.');
-  } else fail('release:github-consent', 'GitHub connection must remain explicitly user-visible.');
+  if (/useUserStore/.test(operatorAuth) && /loginWithAccountKey/.test(operatorAuth) && !/sessionToken|localStorage/.test(operatorAuth)) {
+    pass('vnext:backend-session-auth', 'Operator authentication stays on the canonical backend HTTP-only session boundary.');
+  } else fail('vnext:backend-session-auth', 'Operator authentication must not reintroduce a browser-owned bearer session.');
 
   if (/SovereignActionStreamPanel|MonitorCommunicationDock/.test(builder)) {
     pass('builder:secondary-diagnostics-retained', 'Legacy Builder diagnostics remain available as a secondary maintained component.');

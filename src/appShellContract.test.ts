@@ -7,6 +7,7 @@ const WRAPPER_PATH = 'src/SovereignAppWrapper.tsx';
 const CSS_PATH = 'src/index.css';
 const CONTROL_SURFACE_PATH = 'src/features/control-surface-vnext/App.tsx';
 const PRODUCTION_ADAPTER_PATH = 'src/features/control-surface-vnext/adapter/production-adapter.ts';
+const AGENT_CLIENT_PATH = 'src/features/product/runtime/sovereignAgentClient.ts';
 
 const DOM_INSTALLER_TOKENS = [
   'installMobileAgentMonitor',
@@ -68,6 +69,7 @@ describe('current Sovereign app shell contract', () => {
     expect(existsSync(CSS_PATH)).toBe(true);
     expect(existsSync(CONTROL_SURFACE_PATH)).toBe(true);
     expect(existsSync(PRODUCTION_ADAPTER_PATH)).toBe(true);
+    expect(existsSync(AGENT_CLIENT_PATH)).toBe(true);
   });
 
   it('boots the React wrapper and stable Android runtime helpers without global coach chrome', () => {
@@ -94,6 +96,7 @@ describe('current Sovereign app shell contract', () => {
     const app = read(APP_PATH);
     const controlSurface = read(CONTROL_SURFACE_PATH);
     const productionAdapter = read(PRODUCTION_ADAPTER_PATH);
+    const agentClient = read(AGENT_CLIENT_PATH);
 
     expectContainsAll(app, [
       'SovereignControlSurfaceVNext',
@@ -117,10 +120,18 @@ describe('current Sovereign app shell contract', () => {
       "'/api/user/agent/swarm/run'",
       "'/api/user/agent/toolchain/manifest'",
       "'/api/user/agent/swarm/manifest'",
-      "'/draft-pr/prepare'",
-      "'/draft-pr/create'",
+      'this.client.prepareDraftPr(run.jobId)',
+      'this.client.createDraftPr(run.jobId)',
       'credentials: \'include\'',
       'createSovereignAgentClient',
+    ]);
+    expectContainsAll(agentClient, [
+      "jobPath(jobId, '/draft-pr/prepare')",
+      "jobPath(jobId, '/draft-pr/create')",
+      'signal.draftVerified === true',
+      "stringValue(signal.prStateVerified) === 'open'",
+      'signal.readbackVerified === true',
+      'signal.checksReadbackVerified === true',
     ]);
     expectContainsNone(productionAdapter, ['MockSovereignBackendAdapter', '/api/config/', 'sessionToken', 'localStorage']);
   });
