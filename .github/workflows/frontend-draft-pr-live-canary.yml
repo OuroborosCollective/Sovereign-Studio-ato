@@ -53,20 +53,6 @@ jobs:
       - name: Install Chromium
         run: pnpm exec playwright install chromium --with-deps
 
-      - name: Start same-origin preview proxy
-        shell: bash
-        run: |
-          pnpm exec vite preview --host 127.0.0.1 --port 3000 > /tmp/sovereign-vite-preview.log 2>&1 &
-          echo $! > /tmp/sovereign-vite-preview.pid
-          for attempt in $(seq 1 60); do
-            if curl --fail --silent http://127.0.0.1:3000/ >/dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
-          cat /tmp/sovereign-vite-preview.log >&2
-          exit 1
-
       - name: Run one real frontend to GitHub Draft PR canary
         run: pnpm exec playwright test tests/e2e/frontend-draft-pr-live.spec.ts --project=chromium --workers=1 --reporter=list
 
@@ -75,8 +61,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frontend-draft-pr-live-evidence-${{ github.run_id }}
-          path: |
-            test-results/frontend-draft-pr-live-evidence.json
-            /tmp/sovereign-vite-preview.log
+          path: test-results/frontend-draft-pr-live-evidence.json
           if-no-files-found: warn
           retention-days: 14
