@@ -181,7 +181,9 @@ def register_evidence_observatory_routes(
     @app.route("/api/evidence-observatory/v1/submissions", methods=["POST"])
     @require_session
     def observatory_submission():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "payload_dictionary_required"}), 400
         claim = normalized_claim(body.get("claim"))
         source_url = str(body.get("sourceUrl") or "").strip()
         if not claim:
@@ -276,8 +278,11 @@ def register_evidence_observatory_routes(
     @app.route("/api/admin/evidence-observatory/v1/notion/import", methods=["POST"])
     @require_admin
     def observatory_notion_import():
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "payload_dictionary_required"}), 400
         try:
-            normalized = normalize_notion_export(request.get_json(force=True) or {})
+            normalized = normalize_notion_export(body)
             admin_id = _admin_id(get_current_admin)
         except (ValueError, RuntimeError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
@@ -305,8 +310,11 @@ def register_evidence_observatory_routes(
     @app.route("/api/admin/evidence-observatory/v1/notion/sync", methods=["POST"])
     @require_admin
     def observatory_notion_sync():
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "payload_dictionary_required", "truthPromotions": 0}), 400
         try:
-            normalized = sync_notion_research(request.get_json(force=True) or {})
+            normalized = sync_notion_research(body)
             admin_id = _admin_id(get_current_admin)
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc), "truthPromotions": 0}), 400
@@ -348,7 +356,9 @@ def register_evidence_observatory_routes(
         candidate = _candidate_case(query, normalized_id)
         if not candidate:
             return jsonify({"ok": False, "error": "case_not_found"}), 404
-        payload = request.get_json(force=True) or {}
+        payload = request.get_json(force=True, silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"ok": False, "error": "payload_dictionary_required"}), 400
         claim = normalized_claim(payload.get("claim"))
         if claim != normalized_claim(candidate.get("claim")):
             return jsonify({"ok": False, "error": "candidate_claim_mismatch",
@@ -531,7 +541,9 @@ def register_evidence_observatory_routes(
     @app.route("/api/evidence-observatory/v1/arena/score", methods=["POST"])
     @require_session
     def observatory_arena_score():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "payload_dictionary_required"}), 400
         try:
             case_id = _safe_case_id(body.get("caseId"))
             llm_request_id = str(uuid.UUID(str(body.get("llmRequestId") or "").strip()))

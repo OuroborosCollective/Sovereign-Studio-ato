@@ -262,3 +262,60 @@ def test_notion_direct_sync_combines_search_and_data_source_without_truth_promot
 def test_hugging_face_publisher_never_writes_directly_to_main():
     with pytest.raises(RuntimeError, match="huggingface_direct_main_publish_forbidden"):
         publish_huggingface_batch(rows=[{"caseId": "case-1"}], repo_id="owner/repo", revision="main")
+
+
+def test_post_routes_reject_non_dictionary_json_payloads():
+    flask = pytest.importorskip("flask")
+    Flask = flask.Flask
+    from evidence_observatory import register_evidence_observatory_routes
+
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+
+    def mock_decorator(f):
+        return f
+
+    def mock_query(*args, **kwargs):
+        if "FROM evidence_observatory_cases" in str(args[0]):
+            return {
+                "id": "12345678-1234-5678-1234-567812345678",
+                "claim": "Test claim",
+                "claim_sha256": sha256_text("Test claim"),
+            }
+        return None
+
+    def mock_get_admin():
+        return {"id": "12345678-1234-5678-1234-567812345678"}
+
+    def mock_audit(*args, **kwargs):
+        pass
+
+    register_evidence_observatory_routes(
+        app,
+        require_session=mock_decorator,
+        require_admin=mock_decorator,
+        query=mock_query,
+        get_current_admin=mock_get_admin,
+        audit=mock_audit,
+    )
+
+    client = app.test_client()
+
+    routes = [
+        "/api/evidence-observatory/v1/submissions",
+        "/api/admin/evidence-observatory/v1/notion/import",
+        "/api/admin/evidence-observatory/v1/notion/sync",
+        "/api/admin/evidence-observatory/v1/cases/12345678-1234-5678-1234-567812345678/verify",
+        "/api/evidence-observatory/v1/arena/score",
+    ]
+
+    for route in routes:
+        response = client.post(
+            route,
+            data="[1, 2, 3]",
+            content_type="application/json",
+        )
+        assert response.status_code == 400, f"Expected 400 for {route}, got {response.status_code}"
+        json_data = response.get_json()
+        assert json_data["ok"] is False
+        assert json_data["error"] == "payload_dictionary_required"
