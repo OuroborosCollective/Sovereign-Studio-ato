@@ -13,10 +13,28 @@ describe('live vNext authentication and agent session boundary', () => {
     const envBlock = liveJob.split('    env:\n')[1].split('    steps:')[0];
     const value = (key: string) => envBlock.match(new RegExp(`^      ${key}: (.+)$`, 'm'))?.[1].trim();
     const appUrl = value('SOVEREIGN_E2E_APP_URL');
-    expect(appUrl).toBe('http://127.0.0.1:3000');
+    expect(appUrl).toBe('https://127.0.0.1:3000');
     expect(value('VITE_ADMIN_API_BASE')).toBe(appUrl);
     expect(value('VITE_SOVEREIGN_AGENT_API_URL')).toBe(appUrl);
     expect(value('SOVEREIGN_E2E_BACKEND_PROXY_TARGET')).toMatch(/^https:\/\//);
+  });
+
+  it('preserves Secure cookies using real loopback TLS and narrowly pinned test trust', () => {
+    const workflow = readFileSync('.github/workflows/e2e-testing.yml', 'utf8');
+    const vite = readFileSync('vite.config.ts', 'utf8');
+    const browser = readFileSync('playwright.config.ts', 'utf8');
+    const prepare = readFileSync('scripts/prepare-live-e2e-tls.sh', 'utf8');
+    expect(workflow).toContain('bash scripts/prepare-live-e2e-tls.sh');
+    expect(vite).toContain('LIVE_PREVIEW_TLS_CONFIGURATION_REQUIRED');
+    expect(vite).toContain('cert: readFileSync(tlsCert), key: readFileSync(tlsKey)');
+    expect(vite).toContain('secure: true');
+    expect(browser).toContain('LIVE_PREVIEW_HTTPS_AND_EXACT_CERTIFICATE_PIN_REQUIRED');
+    expect(browser).toContain('--ignore-certificate-errors-spki-list=${localTlsSpki}');
+    expect(browser).not.toContain('ignoreHTTPSErrors: true');
+    expect(browser).not.toContain("'--ignore-certificate-errors'");
+    expect(prepare).toContain('NODE_EXTRA_CA_CERTS=$CERT');
+    expect(prepare).toContain('umask 077');
+    expect(prepare).toContain('-verify_ip 127.0.0.1');
   });
 
   it('rejects a login-only success without a matching browser-session readback', () => {

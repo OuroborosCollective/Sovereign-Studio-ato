@@ -109,11 +109,11 @@ jobs:
       SOVEREIGN_E2E_ACCOUNT_KEY: ${{ secrets.SOVEREIGN_E2E_ACCOUNT_KEY }}
       SOVEREIGN_E2E_GITHUB_TOKEN: ${{ github.token }}
       SOVEREIGN_E2E_REPO_URL: https://github.com/${{ github.repository }}
-      SOVEREIGN_E2E_APP_URL: http://127.0.0.1:3000
+      SOVEREIGN_E2E_APP_URL: https://127.0.0.1:3000
       SOVEREIGN_E2E_BACKEND_PROXY_TARGET: https://sovereign-backend.arelorian.de
-      VITE_SOVEREIGN_AGENT_API_URL: http://127.0.0.1:3000
+      VITE_SOVEREIGN_AGENT_API_URL: https://127.0.0.1:3000
       # Auth, session readback and agent calls must share the preview cookie origin.
-      VITE_ADMIN_API_BASE: http://127.0.0.1:3000
+      VITE_ADMIN_API_BASE: https://127.0.0.1:3000
 
     steps:
       - name: Checkout exact live-test revision
@@ -140,6 +140,10 @@ jobs:
             echo "Live-test checkout $ACTUAL_HEAD does not match $SOVEREIGN_E2E_REVISION" >&2
             exit 1
           }
+
+      - name: Prepare isolated HTTPS preview trust
+        shell: bash
+        run: bash scripts/prepare-live-e2e-tls.sh
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
