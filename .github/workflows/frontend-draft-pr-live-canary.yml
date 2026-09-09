@@ -2,6 +2,12 @@ name: Frontend Draft PR Live Canary
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - sovereign/chatgpt/frontend-draft-pr-end-to-end-fix
+    paths:
+      - 'tests/e2e/frontend-draft-pr-live.spec.ts'
+      - '.github/workflows/frontend-draft-pr-live-canary.yml'
 
 permissions:
   contents: write
