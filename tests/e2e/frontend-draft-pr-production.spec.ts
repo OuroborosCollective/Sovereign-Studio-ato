@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { assertCanarySession, requireCanaryAccountKey } from '../../scripts/frontend-draft-pr-production-auth.cjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 
@@ -74,21 +75,41 @@ test('deployed /app/ creates an independently GitHub-verified Draft PR', async (
   expect(EXPECTED_REVISION).toMatch(/^[0-9a-f]{40}$/);
   expect(RUN_ID).toMatch(/^\d+$/);
   expect(TOKEN.length).toBeGreaterThan(0);
+  requireCanaryAccountKey(ACCOUNT_KEY);
   reached('revision-preflight');
   await verifyServedRevision(request);
   const initialArtifact = JSON.stringify([record.htmlSha256, record.servedEntryAssets]);
-  if (ACCOUNT_KEY) {
-    const login = await page.context().request.post(`${API_ORIGIN}/api/auth/account-key`, { data: { key: ACCOUNT_KEY }, maxRedirects: 0 });
-    expect(login.status()).toBe(200);
-  }
+  const login = await page.context().request.post(`${API_ORIGIN}/api/auth/account-key`, { data: { key: ACCOUNT_KEY }, maxRedirects: 0 });
+  expect(login.status()).toBe(200);
+  const initialSessionResponse = await page.context().request.get(`${API_ORIGIN}/api/auth/me`, { maxRedirects: 0 });
+  expect(initialSessionResponse.status()).toBe(200);
+  const initialSession = await initialSessionResponse.json();
+  assertCanarySession(initialSession, initialSession.id);
+  record.authMode = 'account-key';
+  record.sessionUserId = initialSession.id;
   const navigation = await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
   expect(navigation?.status()).toBe(200);
   expect(page.url()).toBe(APP_URL);
   expect(navigation?.headers()['x-sovereign-source-revision']).toBe(EXPECTED_REVISION);
   await expect(page.getByTestId('sovereign-release-chat')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByLabel('Session bestätigt')).toBeVisible({ timeout: 30_000 });
-  expect((await page.context().request.get(`${API_ORIGIN}/api/auth/me`)).status()).toBe(200);
+  const sessionResponse = await page.context().request.get(`${API_ORIGIN}/api/auth/me`, { maxRedirects: 0 });
+  expect(sessionResponse.status()).toBe(200);
+  const session = await sessionResponse.json();
+  assertCanarySession(session, initialSession.id);
+  record.sessionIsGuest = session.isGuest;
+  record.creditStateVerified = session.creditStateVerified;
+  record.creditsBeforeExecution = session.credits;
   reached('real-session-verified');
+  const routeSelect = page.getByLabel('LLM Route', { exact: true });
+  await expect(routeSelect).toBeEnabled();
+  const freeOptions = routeSelect.locator('option').filter({ hasText: /^FREE · / });
+  await expect(freeOptions.first(), 'A real catalog-backed Free route is required').toBeAttached({ timeout: 60_000 });
+  const freeRoute = await freeOptions.first().getAttribute('value');
+  expect(freeRoute).toBeTruthy();
+  await routeSelect.selectOption(freeRoute!);
+  await expect(routeSelect).toHaveValue(freeRoute!);
+  record.selectedFreeRoute = freeRoute;
   await page.getByRole('button', { name: 'GitHub', exact: true }).click();
   await page.getByRole('group', { name: 'GitHub-Zugang' }).getByRole('button', { name: 'Zugang eingeben' }).click();
   await page.locator('#github-pat-input').fill(TOKEN);
