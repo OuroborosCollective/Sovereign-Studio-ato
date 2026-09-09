@@ -30,6 +30,7 @@ interface Evidence {
   runId: string;
   marker: string;
   path: string;
+  authMode: 'account-key' | 'guest';
   prNumber: number;
   prUrl: string;
   headRef: string;
@@ -46,6 +47,7 @@ interface Evidence {
 let evidence: Evidence | null = null;
 let createdPrNumber = 0;
 let createdHeadRef = '';
+let authMode: Evidence['authMode'] = ACCOUNT_KEY ? 'account-key' : 'guest';
 
 test.use({
   viewport: { width: 390, height: 844 },
@@ -59,7 +61,6 @@ test.setTimeout(1_500_000);
 
 function assertLiveConfig(): void {
   const missing = [
-    ['SOVEREIGN_E2E_ACCOUNT_KEY', ACCOUNT_KEY],
     ['SOVEREIGN_E2E_GITHUB_TOKEN', GITHUB_TOKEN],
     ['SOVEREIGN_E2E_REPO_URL', REPO_URL],
   ].filter(([, value]) => !value).map(([name]) => name);
@@ -102,15 +103,22 @@ async function githubJson<T>(
   return { status: response.status(), body: text.trim() ? JSON.parse(text) as T : null };
 }
 
-async function authenticateWithProtectedAccountKey(page: Page): Promise<void> {
-  const response = await page.context().request.post(`${APP_URL}/api/auth/account-key`, {
-    data: { key: ACCOUNT_KEY },
-    headers: { 'Content-Type': 'application/json' },
-  });
-  expect(response.status(), 'Protected account-key login must create a real backend session').toBe(200);
-  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
+async function authenticateRealFrontendSession(page: Page): Promise<void> {
+  if (ACCOUNT_KEY) {
+    const response = await page.context().request.post(`${APP_URL}/api/auth/account-key`, {
+      data: { key: ACCOUNT_KEY },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(response.status(), 'Protected account-key login must create a real backend session').toBe(200);
+    authMode = 'account-key';
+    await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('button', { name: 'Abmelden' })).toBeVisible({ timeout: 30_000 });
+  } else {
+    authMode = 'guest';
+    await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('Gastzugang', { exact: true })).toBeVisible({ timeout: 30_000 });
+  }
   await expect(page.getByLabel('Session bestätigt')).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole('button', { name: 'Abmelden' })).toBeVisible({ timeout: 30_000 });
 }
 
 async function provideRealGitHubWriteAccess(page: Page): Promise<void> {
@@ -206,6 +214,7 @@ async function verifyDraftPrOnGitHub(request: APIRequestContext, prUrl: string):
     runId: RUN_ID,
     marker: MARKER,
     path: CANARY_PATH,
+    authMode,
     prNumber: body.number,
     prUrl: body.html_url,
     headRef: body.head.ref,
@@ -255,7 +264,7 @@ test.describe('current release frontend creates one GitHub-verified Draft PR', (
   });
 
   test('frontend -> backend job -> workspace -> Draft PR -> GitHub readback', async ({ page, request }) => {
-    await authenticateWithProtectedAccountKey(page);
+    await authenticateRealFrontendSession(page);
     await provideRealGitHubWriteAccess(page);
     await submitMission(page);
     await driveRepositoryRunToDraftReady(page);
