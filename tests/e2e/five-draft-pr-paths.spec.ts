@@ -156,8 +156,8 @@ function mission(pathId: string): { marker: string; text: string } {
   return {
     marker,
     text: [
-      `Repository: ${REPO_URL}`,
-      `Ändere ausschließlich README.md: Hänge ${marker} an die erste Markdown-Überschrift an.`,
+      `${marker} Repository: ${REPO_URL}`,
+      'Ändere ausschließlich README.md: Hänge den Marker aus der ersten Missionszeile an die erste Markdown-Überschrift an.',
       'Erhalte den übrigen Inhalt, führe die passenden Regressionstests aus und erzeuge noch keinen Pull Request.',
       'Stoppe nach belegtem Workspace-Diff und Test-Evidence, damit der sichtbare Publication-Gate den Draft PR separat freigeben kann.',
     ].join('\n'),
