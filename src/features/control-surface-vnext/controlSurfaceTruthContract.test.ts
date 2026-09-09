@@ -54,6 +54,44 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     ]) expect(client).toContain(strictReadback);
   });
 
+  it('turns an explicit GitHub repository URL into the backend repository-execution contract instead of free conversation mode', () => {
+    const adapter = source('src/features/control-surface-vnext/adapter/production-adapter.ts');
+    const backend = source('backend/agent_runtime/cognitive_swarm_routes.py');
+
+    expect(adapter).toContain('extractGitHubRepositoryUrl(mission)');
+    expect(adapter).toContain("intentMode: 'repository_execution'");
+    expect(adapter).toContain('repositoryUrl,');
+    expect(adapter).toContain("repositoryBranch: 'main'");
+    expect(backend).toContain('if free_profile and selected == "auto":');
+    expect(backend).toContain('return "conversation"');
+    expect(backend).toContain('mission_intent.mode == "repository_execution"');
+    expect(backend).toContain('normalized_repository_url');
+  });
+
+  it('projects real pending owner approvals and writes decisions through the canonical approval endpoint', () => {
+    const adapter = source('src/features/control-surface-vnext/adapter/production-adapter.ts');
+    const ownerHook = source('src/features/control-surface-vnext/hooks/useOwnerInteraction.ts');
+    const backend = source('scripts/sovereign-backend/controller_board.py');
+
+    expect(adapter).toContain("'/api/controller/approvals'");
+    expect(adapter).toContain('/api/controller/approvals/${encodeURIComponent(interactionId)}/decision');
+    expect(adapter).toContain("options: approval.requiresProtectedOwnerInput ? undefined : ['approve', 'reject']");
+    expect(adapter).toContain("case 'READY_FOR_DRAFT_PR': return 'READY_TO_PUBLISH'");
+    expect(adapter).toContain("runPhase === 'AWAITING_OWNER_INPUT'");
+    expect(ownerHook).toContain("invalidateQueries({ queryKey: ['sovereign-vnext-job', jobId] })");
+    expect(backend).toContain('@app.route("/api/controller/approvals/<approval_id>/decision", methods=["POST"])');
+    expect(backend).toContain('draft_pr_approval = approved and approval_kind == "draft_pr_readiness"');
+  });
+
+  it('allows a backend guest session to upgrade directly to authenticated execution without token storage', () => {
+    const auth = source('src/features/control-surface-vnext/components/Auth/OperatorAuthModal.tsx');
+    expect(auth).toContain('user && !user.isGuest');
+    expect(auth).toContain('GUEST SESSION ACTIVE');
+    expect(auth).toContain('AUTHENTICATE WITH ACCOUNT KEY');
+    expect(auth).toContain('HTTP-ONLY COOKIE · NO FRONTEND TOKEN STORAGE');
+    expect(auth).not.toContain('localStorage');
+  });
+
   it('does not elevate an observed job Draft-PR URL into verified publication state', () => {
     const adapter = source('src/features/control-surface-vnext/adapter/production-adapter.ts');
     expect(adapter).toContain('OBSERVED: backend job reports Draft PR URL');
@@ -87,6 +125,30 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     expect(modal).toContain('role="dialog"');
     expect(modal).toContain('aria-modal="true"');
     expect(modal).toContain('aria-label={title}');
+  });
+
+  it('keeps the protected five-run evidence lane on vNext instead of historical side-menu or PAT choreography', () => {
+    const live = source('tests/e2e/five-draft-pr-paths.spec.ts');
+    for (const required of [
+      'sovereign-control-surface-vnext',
+      'operator-auth-btn',
+      'vnext-account-key',
+      'PERSISTED RUN ACCEPTED',
+      'vnext-prepare-draft-pr',
+      'vnext-draft-pr-consent',
+      'vnext-create-draft-pr',
+      'GITHUB READBACK VERIFIED',
+      'result.body.head.sha).toBe(ui.readbackHeadSha)',
+      'verifyReadmeAtHead',
+    ]) expect(live).toContain(required);
+
+    for (const retired of [
+      'sovereign-side-menu',
+      'github-pat-input',
+      'Tool Launcher öffnen',
+      'Repo Inspector öffnen',
+      "submitComposer(page, '/pr')",
+    ]) expect(live).not.toContain(retired);
   });
 
   it('keeps decorative biomodular effects explicitly non-authoritative', () => {
