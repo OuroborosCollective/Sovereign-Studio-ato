@@ -33,14 +33,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Require protected live identity
-        shell: bash
-        run: |
-          if [ -z "$SOVEREIGN_E2E_ACCOUNT_KEY" ]; then
-            echo "Missing protected repository secret: SOVEREIGN_E2E_ACCOUNT_KEY" >&2
-            exit 1
-          fi
-
       - uses: pnpm/action-setup@v4
         with:
           version: '9.12.2'
