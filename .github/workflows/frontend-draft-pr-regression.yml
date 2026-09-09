@@ -1,24 +1,6 @@
 name: Frontend Draft PR Regression
 
 on:
-  pull_request:
-    paths:
-      - 'src/features/release/PlayReleaseChat.tsx'
-      - 'src/features/release/PlayReleaseChat.resumeDraftPr.test.tsx'
-      - 'src/features/product/runtime/sovereignAgentClient.ts'
-      - 'src/features/product/runtime/githubAccessRuntime*'
-      - 'src/features/product/components/GitHubAccessCard*'
-      - 'src/App.draftPrFlow.test.tsx'
-      - 'backend/agent_runtime/draft_pr_create_gate.py'
-      - 'backend/agent_runtime/routes.py'
-      - 'backend/agent_runtime/git_workspace.py'
-      - 'backend/agent_runtime/contracts.py'
-      - 'scripts/sovereign-backend/agent_runtime/git_workspace.py'
-      - 'scripts/sovereign-backend/agent_runtime/contracts.py'
-      - 'backend/tests/test_github_installation_token_compatibility.py'
-      - 'backend/tests/test_agent_draft_pr_create_gate.py'
-      - 'backend/tests/test_agent_draft_pr_create_routes.py'
-      - '.github/workflows/frontend-draft-pr-regression.yml'
   push:
     branches:
       - 'sovereign/chatgpt/**'
@@ -77,6 +59,26 @@ jobs:
           src/features/product/runtime/githubAccessRuntime.test.ts
           src/features/product/runtime/githubAccessRuntime.statelessToken.test.ts
           src/features/product/components/GitHubAccessCard.test.tsx
+
+      - name: Archive exact tracked source for offline verification
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          mkdir -p "$RUNNER_TEMP/draft-pr-source"
+          git archive --format=tar --output="$RUNNER_TEMP/draft-pr-source/source.tar" HEAD
+          git ls-tree -r HEAD > "$RUNNER_TEMP/draft-pr-source/git-tree.txt"
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/draft-pr-source/revision.txt"
+          (cd "$RUNNER_TEMP/draft-pr-source" && sha256sum source.tar > source.tar.sha256)
+      - name: Upload exact tracked source archive
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: draft-pr-source-${{ github.sha }}
+          path: ${{ runner.temp }}/draft-pr-source/
+          if-no-files-found: error
+          retention-days: 3
 
   backend-contract:
     runs-on: ubuntu-latest

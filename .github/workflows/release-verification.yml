@@ -165,7 +165,19 @@ jobs:
       - name: Required Gate Priority Contract Tests
         id: required_gate_priority
         shell: bash
-        run: node --test scripts/required-gate-priority.contract.test.cjs scripts/revision-guardian.contract.test.cjs scripts/sovereign-coordinated-release.contract.cjs
+        run: node --test scripts/required-gate-priority.contract.test.cjs scripts/revision-guardian.contract.test.cjs scripts/sovereign-coordinated-release.contract.cjs scripts/frontend-draft-pr-gate.contract.test.cjs
+
+      - name: Draft PR Frontend Regression Gate
+        id: draft_pr_frontend
+        run: >-
+          pnpm exec vitest run
+          src/App.draftPrFlow.test.tsx
+          src/features/release/PlayReleaseChat.resumeDraftPr.test.tsx
+          src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts
+          src/features/product/runtime/devChatDraftPrExecutionContract.test.ts
+          src/features/product/runtime/githubAccessRuntime.test.ts
+          src/features/product/runtime/githubAccessRuntime.statelessToken.test.ts
+          src/features/product/components/GitHubAccessCard.test.tsx
 
       - name: Neuro Architecture Graph Node Test Suite
         id: neuro_architecture_graph_node_tests
@@ -247,6 +259,7 @@ jobs:
             echo "| Required Gate and Coordinated Release Contracts | ${{ steps.required_gate_priority.outcome }} |"
             echo "| Neuro Architecture Graph Node Tests | ${{ steps.neuro_architecture_graph_node_tests.outcome }} |"
             echo "| Canary Release Evidence | ${{ steps.runtime_canary_release.outcome }} |"
+            echo "| Draft PR Frontend Regressions | ${{ steps.draft_pr_frontend.outcome }} |"
             echo "| Type Check | ${{ steps.type_check.outcome }} |"
             echo "| Runtime Unit Tests | ${{ steps.unit_tests.outcome }} |"
             echo "| Build Web + Android Sync | ${{ steps.build_sync.outcome }} |"

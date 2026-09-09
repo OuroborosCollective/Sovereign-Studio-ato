@@ -32,7 +32,13 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
+
+      - name: Verify exact source revision
+        env:
+          EXPECTED_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_REVISION"
 
       - name: Setup verified backend Python runtime
         uses: ./.github/actions/setup-backend-python
@@ -45,6 +51,9 @@ jobs:
           set +e
           pytest scripts/sovereign-backend/tests \
             backend/tests/test_agent_runtime_routes.py \
+            backend/tests/test_agent_draft_pr_create_gate.py \
+            backend/tests/test_agent_draft_pr_create_routes.py \
+            backend/tests/test_github_installation_token_compatibility.py \
             backend/tests/test_desktop_worker.py \
             backend/tests/test_execution_transparency_statement.py \
             backend/tests/test_configuration_provenance.py \
