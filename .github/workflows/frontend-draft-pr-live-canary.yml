@@ -2,6 +2,15 @@ name: Frontend Draft PR Live Canary
 
 on:
   workflow_dispatch:
+    inputs:
+      production:
+        description: Exercise the deployed /app/ instead of the CI preview
+        type: boolean
+        default: false
+      expected_revision:
+        description: Exact deployed source revision required for production
+        type: string
+        default: ''
   push:
     branches:
       - sovereign/chatgpt/frontend-draft-pr-end-to-end-fix
@@ -20,11 +29,12 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: frontend-draft-pr-live-canary
+  group: frontend-draft-pr-live-canary-${{ inputs.production && 'production' || 'preview' }}
   cancel-in-progress: false
 
 jobs:
   live-draft-pr:
+    if: ${{ inputs.production != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -89,4 +99,63 @@ jobs:
           name: frontend-draft-pr-live-evidence-${{ github.run_id }}
           path: test-results/frontend-draft-pr-live-evidence.json
           if-no-files-found: warn
+          retention-days: 14
+
+  production-draft-pr:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.production == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOVEREIGN_E2E_PRODUCTION: '1'
+      SOVEREIGN_E2E_EXPECTED_REVISION: ${{ inputs.expected_revision }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '9.12.2'
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Validate explicit production revision and harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$SOVEREIGN_E2E_EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]]
+          node --test scripts/frontend-draft-pr-production.contract.cjs
+      - name: Install locked browser-test dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install chromium --with-deps
+      - name: Exercise deployed application through real UI and GitHub readback
+        env:
+          SOVEREIGN_E2E_ACCOUNT_KEY: ${{ secrets.SOVEREIGN_E2E_ACCOUNT_KEY }}
+          SOVEREIGN_E2E_GITHUB_TOKEN: ${{ github.token }}
+        run: pnpm exec playwright test --config=playwright.production.config.ts
+      - name: Require independently verified production receipt
+        run: |
+          node - <<'JS'
+          const assert = require('node:assert/strict');
+          const receipt = require('./test-results/frontend-draft-pr-production-evidence.json');
+          assert.equal(receipt.verified, true);
+          assert.equal(receipt.surface, 'PRODUCTION_APP');
+          assert.equal(receipt.harnessRevision, process.env.GITHUB_SHA);
+          assert.equal(receipt.observedRuntimeRevision, process.env.SOVEREIGN_E2E_EXPECTED_REVISION);
+          assert.equal(receipt.githubVerified, true);
+          assert.equal(receipt.finalRevisionVerified, true);
+          assert.ok(Number.isSafeInteger(receipt.prNumber) && receipt.prNumber > 0);
+          JS
+      - name: Upload production evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-draft-pr-production-evidence-${{ github.run_id }}
+          path: test-results/frontend-draft-pr-production-evidence.json
+          if-no-files-found: error
           retention-days: 14
