@@ -89,7 +89,10 @@ def test_overlay_fix_does_not_override_canonical_deploy_readiness_or_request_bou
     assert '"minimumReadyRoutes": minimum_ready_routes' in deploy
     minimum_guard = "if len(verified_receipts) < minimum_ready_routes:"
     assert deploy.count(minimum_guard) >= 2
-    assert deploy.rindex(minimum_guard) < deploy.index('"minimumReadySatisfied": True')
+    ready_fast_path = deploy.index("if len(verified_receipts) >= minimum_ready_routes:")
+    success_marker = '"minimumReadySatisfied": True'
+    assert ready_fast_path < deploy.index(success_marker)
+    assert deploy.rindex(minimum_guard) < deploy.rindex(success_marker)
     assert 'payload={"maxModels": 20}' in deploy
     assert "timeout_seconds=45" in deploy
     assert "provider_request_timeout_or_network_error" in deploy
