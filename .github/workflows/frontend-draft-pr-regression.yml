@@ -11,6 +11,11 @@ on:
       - 'src/App.draftPrFlow.test.tsx'
       - 'backend/agent_runtime/draft_pr_create_gate.py'
       - 'backend/agent_runtime/routes.py'
+      - 'backend/agent_runtime/git_workspace.py'
+      - 'backend/agent_runtime/contracts.py'
+      - 'scripts/sovereign-backend/agent_runtime/git_workspace.py'
+      - 'scripts/sovereign-backend/agent_runtime/contracts.py'
+      - 'backend/tests/test_github_installation_token_compatibility.py'
       - 'backend/tests/test_agent_draft_pr_create_gate.py'
       - 'backend/tests/test_agent_draft_pr_create_routes.py'
       - '.github/workflows/frontend-draft-pr-regression.yml'
@@ -26,6 +31,11 @@ on:
       - 'src/App.draftPrFlow.test.tsx'
       - 'backend/agent_runtime/draft_pr_create_gate.py'
       - 'backend/agent_runtime/routes.py'
+      - 'backend/agent_runtime/git_workspace.py'
+      - 'backend/agent_runtime/contracts.py'
+      - 'scripts/sovereign-backend/agent_runtime/git_workspace.py'
+      - 'scripts/sovereign-backend/agent_runtime/contracts.py'
+      - 'backend/tests/test_github_installation_token_compatibility.py'
       - 'backend/tests/test_agent_draft_pr_create_gate.py'
       - 'backend/tests/test_agent_draft_pr_create_routes.py'
       - '.github/workflows/frontend-draft-pr-regression.yml'
@@ -74,9 +84,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-backend-python
-      - name: Run real Draft PR backend contract tests
+      - name: Run Draft PR and installation credential regressions
         run: >-
           python -m pytest
           backend/tests/test_agent_draft_pr_create_gate.py
           backend/tests/test_agent_draft_pr_create_routes.py
+          backend/tests/test_github_installation_token_compatibility.py
           -q
+      - name: Verify issued GitHub credential compatibility without exposing its value
+        env:
+          ISSUED_GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: backend
+        run: |
+          python - <<'PY'
+          import os
+          from agent_runtime.git_workspace import normalize_ephemeral_github_token
+          from agent_runtime.contracts import sanitize_agent_text
+          token = os.environ['ISSUED_GITHUB_TOKEN']
+          assert token, 'No GitHub-issued credential supplied'
+          assert normalize_ephemeral_github_token(token) == token, 'Issued credential rejected by production normalizer'
+          masked = sanitize_agent_text(token)
+          assert token not in masked and '[redacted]' in masked, 'Credential was not fully redacted'
+          if token.startswith('ghs_'):
+              assert masked == 'ghs_[redacted]', 'Installation credential suffix survived redaction'
+          print('ISSUED_CREDENTIAL_PREFLIGHT=PASS (format and redaction only; not authorization or Draft-PR evidence)')
+          PY
