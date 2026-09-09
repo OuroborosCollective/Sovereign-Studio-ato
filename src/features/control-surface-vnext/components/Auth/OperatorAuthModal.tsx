@@ -53,7 +53,7 @@ export function OperatorAuthModal({ isOpen, onClose }: Props) {
         <div className="p-5 space-y-4 font-mono">
           {error && <div className="p-3 rounded border border-[var(--red-alert)] bg-[rgba(255,30,56,0.1)] text-[var(--red-alert)] text-xs flex gap-2"><AlertTriangle size={14} className="shrink-0" /><span>{error}</span></div>}
 
-          {user ? (
+          {user && !user.isGuest ? (
             <div className="space-y-4">
               <div className="p-4 rounded-lg border border-[rgba(16,185,129,0.35)] bg-[rgba(16,185,129,0.07)]">
                 <div className="flex items-center gap-2 text-[var(--emerald-seal)] text-[10px] font-bold tracking-widest"><ShieldCheck size={14} /> BACKEND SESSION READBACK</div>
@@ -61,13 +61,14 @@ export function OperatorAuthModal({ isOpen, onClose }: Props) {
                   <span className="text-[var(--text-dim)]">IDENTITY</span><span className="text-white truncate">{user.displayName}</span>
                   <span className="text-[var(--text-dim)]">ACCOUNT</span><span className="text-[var(--text-muted)] truncate">{user.email}</span>
                   <span className="text-[var(--text-dim)]">ROLE</span><span className="text-white">{user.role}</span>
-                  <span className="text-[var(--text-dim)]">SESSION</span><span className={user.isGuest ? 'text-[var(--red-alert)]' : 'text-[var(--emerald-seal)]'}>{user.isGuest ? 'GUEST · EXECUTION MAY BE GATED' : 'AUTHENTICATED'}</span>
+                  <span className="text-[var(--text-dim)]">SESSION</span><span className="text-[var(--emerald-seal)]">AUTHENTICATED</span>
                 </div>
               </div>
               <button type="button" disabled={isLoading} onClick={() => { playKeystrokeChirp(); void logout(); }} className="w-full min-h-11 rounded-lg border border-[rgba(255,30,56,0.35)] bg-[rgba(255,30,56,0.1)] text-[var(--red-laser)] hover:bg-[var(--red-laser)] hover:text-white font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50"><LogOut size={14} /> END BACKEND SESSION</button>
             </div>
           ) : (
             <>
+              {user?.isGuest && <div className="p-3 rounded border border-white/10 bg-[var(--carbon-surface)] text-[var(--text-muted)] text-[10px]">GUEST SESSION ACTIVE · Authenticate below to upgrade this backend session before repository execution.</div>}
               <form onSubmit={submitAccountKey} className="space-y-2 p-3.5 rounded-lg bg-[var(--carbon-surface)] border border-white/10">
                 <label htmlFor="vnext-account-key" className="text-[9.5px] text-[var(--text-muted)] tracking-wider">ACCOUNT KEY · SENT ONCE TO BACKEND, NEVER PERSISTED HERE</label>
                 <div className="relative"><KeyRound size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--red-laser)]" /><input id="vnext-account-key" type="password" autoComplete="off" value={accountKey} onChange={(e) => setAccountKey(e.target.value)} placeholder="svk_…" className="w-full min-h-11 pl-9 pr-3 rounded bg-[var(--carbon-deep)] border border-white/10 focus:border-[var(--red-laser)] outline-none text-xs text-white" /></div>
