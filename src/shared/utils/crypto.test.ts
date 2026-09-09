@@ -93,6 +93,11 @@ describe('maskSecrets', () => {
     expect(maskSecrets('ssh-key: ssh_key_material_456')).toBe('ssh-key: ****');
     expect(maskSecrets('signing_key=signing_material_789')).toBe('signing_key=****');
     expect(maskSecrets('signing-secret: signing_secret_101')).toBe('signing-secret: ****');
+    expect(maskSecrets('admin_key: admin_key_material_202')).toBe('admin_key: ****');
+    expect(maskSecrets('admin-secret=admin_secret_material_303')).toBe('admin-secret=****');
+    expect(maskSecrets('admin_token=admin_token_material_404')).toBe('admin_token=****');
+    expect(maskSecrets('auth_key: auth_key_material_505')).toBe('auth_key: ****');
+    expect(maskSecrets('access_secret=access_secret_material_606')).toBe('access_secret=****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
