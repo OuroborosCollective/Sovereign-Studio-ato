@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { expect, request as playwrightRequest, test, type APIRequestContext, type Page } from '@playwright/test';
 import { requireLoginAccountId, requireSameOrigin, requireVerifiedSessionIdentity } from './helpers/live-session-contract';
 import { runtimeObservation } from './helpers/live-runtime-observation';
+import { verifyOwnedDraftCleanup } from './helpers/live-draft-cleanup';
 
 const LIVE_ENABLED = process.env.SOVEREIGN_E2E_LIVE === '1';
 const CONFIGURED_ACCOUNT_KEY = process.env.SOVEREIGN_E2E_ACCOUNT_KEY?.trim() || '';
@@ -112,22 +113,10 @@ async function closeOwnedDraftPr(
   headRef: string,
 ): Promise<{ closed: boolean; branchDeleted: boolean }> {
   const { owner, repo } = repositoryCoordinates();
-  const closed = await githubJson(
-    request,
-    'PATCH',
-    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}`,
-    { state: 'closed' },
+  return verifyOwnedDraftCleanup(
+    (method, path, data) => githubJson(request, method, path, data),
+    { owner, repo, prNumber, headRef, markerPrefix: OWNED_MARKER_PREFIX },
   );
-  const encodedRef = headRef.split('/').map(encodeURIComponent).join('/');
-  const deleted = await githubJson(
-    request,
-    'DELETE',
-    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/refs/heads/${encodedRef}`,
-  );
-  return {
-    closed: closed.status === 200,
-    branchDeleted: deleted.status === 204 || deleted.status === 404 || deleted.status === 422,
-  };
 }
 
 async function cleanupOwnedRunPullRequests(request: APIRequestContext): Promise<void> {
@@ -141,7 +130,8 @@ async function cleanupOwnedRunPullRequests(request: APIRequestContext): Promise<
     'GET',
     `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls?state=open&per_page=100`,
   );
-  if (result.status !== 200 || !result.body) return;
+  if (result.status !== 200 || !result.body) throw new Error('LIVE_CLEANUP_PR_LIST_UNVERIFIED');
+  if (result.body.length >= 100) throw new Error('LIVE_CLEANUP_PR_LIST_PAGINATION_REQUIRED');
   for (const pull of result.body) {
     if (!pull.title.includes(OWNED_MARKER_PREFIX)) continue;
     if (!pull.head.ref.startsWith('sovereign/agent-')) continue;
