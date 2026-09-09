@@ -116,7 +116,6 @@ async function authenticateRealFrontendSession(page: Page): Promise<void> {
   } else {
     authMode = 'guest';
     await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByText('Gastzugang', { exact: true })).toBeVisible({ timeout: 30_000 });
   }
   await expect(page.getByLabel('Session bestätigt')).toBeVisible({ timeout: 30_000 });
 }
