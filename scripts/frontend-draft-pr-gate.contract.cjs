@@ -38,7 +38,7 @@ test('every Draft PR executes frontend regressions inside the existing required 
   assert.doesNotMatch(gate, /\n\s+(?:if|continue-on-error):|\|\|\s*true|--passWithNoTests/);
   for (const file of frontendFiles) assert.ok(gate.includes(file), `Required frontend regression is missing: ${file}`);
   assert.match(workflow, /ref: \$\{\{ env\.SOVEREIGN_REVISION \}\}/);
-  assert.ok(step(workflow, 'Required Gate Priority Contract Tests').includes('scripts/frontend-draft-pr-gate.contract.test.cjs'));
+  assert.ok(step(workflow, 'Required Gate Priority Contract Tests').includes('scripts/frontend-draft-pr-gate.contract.cjs'));
 });
 
 test('existing mandatory backend runner executes Draft PR and credential contracts on the exact PR head', () => {

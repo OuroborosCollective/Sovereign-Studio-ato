@@ -165,7 +165,7 @@ jobs:
       - name: Required Gate Priority Contract Tests
         id: required_gate_priority
         shell: bash
-        run: node --test scripts/required-gate-priority.contract.test.cjs scripts/revision-guardian.contract.test.cjs scripts/sovereign-coordinated-release.contract.cjs scripts/frontend-draft-pr-gate.contract.test.cjs
+        run: node --test scripts/required-gate-priority.contract.test.cjs scripts/revision-guardian.contract.test.cjs scripts/sovereign-coordinated-release.contract.cjs scripts/frontend-draft-pr-gate.contract.cjs
 
       - name: Draft PR Frontend Regression Gate
         id: draft_pr_frontend
