@@ -7,6 +7,11 @@ on:
       - sovereign/chatgpt/frontend-draft-pr-end-to-end-fix
     paths:
       - 'tests/e2e/frontend-draft-pr-live.spec.ts'
+      - 'scripts/check-release-browser-boot.mjs'
+      - 'src/features/release/PlayReleaseChat.tsx'
+      - 'src/main.tsx'
+      - 'src/SovereignAppWrapper.tsx'
+      - 'vite.config.ts'
       - '.github/workflows/frontend-draft-pr-live-canary.yml'
 
 permissions:
@@ -52,6 +57,9 @@ jobs:
 
       - name: Install Chromium
         run: pnpm exec playwright install chromium --with-deps
+
+      - name: Verify real release browser boot before credentials
+        run: node scripts/check-release-browser-boot.mjs
 
       - name: Run one real frontend to GitHub Draft PR canary
         run: pnpm exec playwright test tests/e2e/frontend-draft-pr-live.spec.ts --project=chromium --workers=1 --reporter=list
