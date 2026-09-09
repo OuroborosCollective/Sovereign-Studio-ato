@@ -1,13 +1,9 @@
 /**
- * Playwright configuration for Sovereign Studio smoke tests.
- * 
- * These tests verify real user-visible behavior:
- * 1. App loads with BuilderContainer shell
- * 2. Composer is usable
- * 3. Chat intent does not route to OpenHands by default
- * 4. Worker failure shows local runtime diagnostic
- * 
- * Issue #477
+ * Playwright configuration for Sovereign Studio browser evidence.
+ *
+ * The default suite verifies the shipped vNext control surface, its authenticated
+ * backend boundary, runtime projections and publication gates. The live five-path
+ * lane remains separately opt-in because it performs real repository effects.
  */
 import { defineConfig, devices } from '@playwright/test';
 
@@ -20,7 +16,9 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: liveFivePath ? 0 : (process.env.CI ? 2 : 0),
   workers: process.env.CI ? 1 : undefined,
-  reporter: 'html',
+  reporter: process.env.CI
+    ? [['line'], ['html', { open: 'never', outputFolder: 'playwright-report' }]]
+    : [['html', { open: 'never', outputFolder: 'playwright-report' }]],
   use: {
     baseURL: appUrl,
     trace: 'on-first-retry',
