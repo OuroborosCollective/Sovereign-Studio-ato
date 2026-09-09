@@ -15,6 +15,9 @@ on:
       - 'vite.config.ts'
       - 'capacitor.config.*'
       - '.github/workflows/e2e-testing.yml'
+  pull_request:
+    branches: [main]
+    types: [edited]
   workflow_dispatch:
     inputs:
       live_five_path:
@@ -25,7 +28,7 @@ on:
 
 env:
   NODE_VERSION: '22'
-  PNPM_VERSION: '9.12.2'
+  PNPM_VERSION: 9.12.2
   CI: 'true'
   VITE_ADMIN_API_BASE: https://sovereign-backend.arelorian.de
 
@@ -94,7 +97,11 @@ jobs:
     name: Five Real UI Paths to Draft PR
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.live_five_path == true) ||
-      (github.event_name == 'pull_request' && github.event.pull_request.number == 735 && github.event.pull_request.draft == true)
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.draft == true &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.actor == github.repository_owner &&
+       contains(github.event.pull_request.body, '<!-- sovereign-live-five-path -->'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -102,6 +109,7 @@ jobs:
       pull-requests: write
     env:
       SOVEREIGN_E2E_LIVE: '1'
+      SOVEREIGN_E2E_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
       SOVEREIGN_E2E_ACCOUNT_KEY: ${{ secrets.SOVEREIGN_E2E_ACCOUNT_KEY }}
       SOVEREIGN_E2E_GITHUB_TOKEN: ${{ github.token }}
       SOVEREIGN_E2E_REPO_URL: https://github.com/${{ github.repository }}
@@ -110,16 +118,29 @@ jobs:
       VITE_SOVEREIGN_AGENT_API_URL: http://127.0.0.1:3000
 
     steps:
-      - name: Checkout repository
+      - name: Checkout exact live-test revision
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOVEREIGN_E2E_REVISION }}
+          fetch-depth: 1
 
-      - name: Require protected live-test identity
+      - name: Require protected live-test identity and revision
         shell: bash
         run: |
+          set -Eeuo pipefail
           if [ -z "$SOVEREIGN_E2E_ACCOUNT_KEY" ]; then
             echo "Missing protected repository secret: SOVEREIGN_E2E_ACCOUNT_KEY" >&2
             exit 1
           fi
+          [[ "$SOVEREIGN_E2E_REVISION" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "SOVEREIGN_E2E_REVISION is not a full lowercase Git SHA" >&2
+            exit 1
+          }
+          ACTUAL_HEAD="$(git rev-parse HEAD)"
+          [ "$ACTUAL_HEAD" = "$SOVEREIGN_E2E_REVISION" ] || {
+            echo "Live-test checkout $ACTUAL_HEAD does not match $SOVEREIGN_E2E_REVISION" >&2
+            exit 1
+          }
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -167,6 +188,7 @@ jobs:
           {
             echo "## Five real first-user Draft-PR paths"
             echo ""
+            echo "- Exact source revision: $SOVEREIGN_E2E_REVISION"
             echo "- Current branch UI served locally at 390×844"
             echo "- Real production API reached through same-origin preview proxy"
             echo "- Real account-key session; no authentication bypass"
