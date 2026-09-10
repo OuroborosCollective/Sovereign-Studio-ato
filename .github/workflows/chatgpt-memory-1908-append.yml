@@ -1,0 +1,56 @@
+name: ChatGPT Memory 1908 Append
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/single-agent-default-swarm-feature
+    paths:
+      - .github/workflows/chatgpt-memory-1908-append.yml
+
+permissions:
+  contents: write
+
+jobs:
+  append-once:
+    if: contains(github.event.head_commit.message, 'bootstrap #1908 integration entry')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sovereign/chatgpt/single-agent-default-swarm-feature
+          fetch-depth: 1
+      - name: Append exactly one evidence-bound entry
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          marker='### 2026-09-10 — FreeLLM single-agent default with opt-in swarm'
+          if grep -Fqx "$marker" Memory.md; then
+            echo 'Memory entry already exists; refusing duplicate append.' >&2
+            exit 1
+          fi
+          cat >> Memory.md <<'EOF'
+
+### 2026-09-10 — FreeLLM single-agent default with opt-in swarm
+Status: PARTIAL; source/regression verified, production live proof pending
+Task: Make normal vNext write/repository jobs run as one FreeLLM foreground agent while keeping the multi-agent swarm as an explicit feature.
+Decisions: vNext defaults to `mode=free` + `agentMode=single`; single-agent preserves FreeLLM revolver candidates with zero background agents; swarm is opt-in and fails closed with `SWARM_CAPACITY_NOT_READY`; no Free→Paid fallback.
+Touched surfaces: vNext execution selector/request adapter; cognitive swarm start contract and shipping mirror; backend/frontend/Playwright regression contracts.
+Evidence: Draft PR #1908 exact head before this append `a182bdbee024b3f404f170fe1a8a1d14fadcc9ed`; Agent Runtime and full Release Verification passed including typecheck, runtime units, Web/Android build, Artifact Smoke, Playwright Smoke and Integration Gate. Earlier production Five-Path runs `34535312135` and `34536426012` both reproduced `FREELLM_RATE_LIMITED` before repository mutation, motivating a normal single-agent path independent of swarm readiness.
+Learned: Swarm capacity is an optional acceleration capability, not a prerequisite for an ordinary repository-writing product path; free transport and agent topology must be separately selectable and evidenced.
+Open: Merge/deploy exact revision, then prove deployed vNext single-agent workspace mutation/tests and five independently read-back GitHub Draft PRs; provider backoff may still require an explicit new-run retry UX.
+Next safe step: Re-run exact-head gates with this Memory entry, merge only if green, deploy exact merge revision, then execute the protected Five Real UI Paths as single-agent.
+EOF
+      - name: Remove one-shot workflow and verify diff
+        run: |
+          rm .github/workflows/chatgpt-memory-1908-append.yml
+          git diff --check
+          test "$(git diff --name-only | sort)" = 'Memory.md'
+      - name: Commit memory entry
+        run: |
+          git config user.name 'Ouroboros Collective'
+          git config user.email 'projectouroboroscollective@gmail.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'docs(memory): record single-agent default integration evidence'
+          git push origin HEAD:sovereign/chatgpt/single-agent-default-swarm-feature
