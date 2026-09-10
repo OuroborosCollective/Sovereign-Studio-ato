@@ -194,14 +194,27 @@ export function extractFeatures(
     return a.metadata.sequence - b.metadata.sequence;
   });
 
-  const values = sortedSignals.map((s) => s.value);
+  // ⚡ Bolt: Single-pass iteration over sortedSignals to construct values array while concurrently
+  // accumulating sum, min, and max. Completely avoids array allocations from .map() and eliminates
+  // redundant array traversals from .reduce() and toMinMax().
+  const len = sortedSignals.length;
+  const values = new Array<number>(len);
+  let sum = 0;
+  let min = len > 0 ? sortedSignals[0].value : 0;
+  let max = len > 0 ? sortedSignals[0].value : 0;
 
-  // Basic statistics
-  const mean = cfg.includeStats ? computeMean(values) : 0;
+  for (let i = 0; i < len; i++) {
+    const val = sortedSignals[i].value;
+    values[i] = val;
+    sum += val;
+    if (val < min) min = val;
+    if (val > max) max = val;
+  }
+
+  const minMax: [number, number] | undefined = len > 0 ? [min, max] : undefined;
+  const mean = cfg.includeStats && len > 0 ? sum / len : 0;
   const stdDev = cfg.includeStats ? computeStdDev(values) : 0;
-  const minMax = toMinMax(values);
   const range = minMax ? minMax[1] - minMax[0] : 0;
-  const sum = cfg.includeStats ? values.reduce((a, b) => a + b, 0) : 0;
 
   // Temporal features
   const deltas = cfg.includeDeltas ? [...runningDifference(values)] : [];
@@ -256,16 +269,22 @@ function computeHistogram(values: number[], min: number, max: number, bins: numb
 
 /**
  * Computes per-node statistics.
+ * ⚡ Bolt: Optimized with direct list retention to eliminate duplicate .has() and .get() Map lookups per signal.
  */
 function computeNodeStats(
   signals: OrderedSignal[],
 ): Map<string, { mean: number; stdDev: number; count: number }> {
   const byNode = new Map<string, number[]>();
 
-  for (const signal of signals) {
+  for (let i = 0; i < signals.length; i++) {
+    const signal = signals[i];
     const node = signal.node;
-    if (!byNode.has(node)) byNode.set(node, []);
-    byNode.get(node)!.push(signal.value);
+    let list = byNode.get(node);
+    if (list === undefined) {
+      list = [];
+      byNode.set(node, list);
+    }
+    list.push(signal.value);
   }
 
   const stats = new Map<string, { mean: number; stdDev: number; count: number }>();
