@@ -381,19 +381,34 @@ export async function fetchDevChatRepoTree(parsed: ParsedDevChatGithubUrl): Prom
 
     const [data, commit] = await Promise.all([treeResponse.json(), commitResponse.json()]);
     const tree = Array.isArray(data.tree) ? data.tree : [];
-    const files = tree
-      .filter((entry: { type?: string }) => entry.type === 'blob' || entry.type === 'tree')
-      .slice(0, 500)
-      .map((entry: { path: string; type: 'blob' | 'tree'; size?: number; sha?: string }) => ({
-        path: entry.path,
-        type: entry.type,
-        size: entry.size,
-        sha: typeof entry.sha === 'string' ? entry.sha : undefined,
-      }));
 
-    const blobPaths = files.filter((file: DevChatRepoTreeFile) => file.type === 'blob').map((file: DevChatRepoTreeFile) => file.path);
-    const topLevelDirs = blobPaths.map((path: string) => path.split('/')[0]).filter((dir: string): dir is string => Boolean(dir));
-    const dirs = Array.from(new Set<string>(topLevelDirs)).slice(0, 12);
+    // ⚡ Bolt: Single-pass optimization avoids multiple O(N) array allocations
+    // from chained .filter().map() and string .split() when processing tree paths.
+    const files: DevChatRepoTreeFile[] = [];
+    const blobPaths: string[] = [];
+    const topLevelDirsSet = new Set<string>();
+
+    for (const entry of tree) {
+      if (files.length >= 500) break;
+      if (entry.type === 'blob' || entry.type === 'tree') {
+        files.push({
+          path: entry.path,
+          type: entry.type,
+          size: entry.size,
+          sha: typeof entry.sha === 'string' ? entry.sha : undefined,
+        });
+
+        if (entry.type === 'blob' && typeof entry.path === 'string') {
+          blobPaths.push(entry.path);
+          const slashIdx = entry.path.indexOf('/');
+          const dir = slashIdx >= 0 ? entry.path.substring(0, slashIdx) : entry.path;
+          if (dir) {
+            topLevelDirsSet.add(dir);
+          }
+        }
+      }
+    }
+    const dirs = Array.from(topLevelDirsSet).slice(0, 12);
     const lastPath = lastPreferredSourcePath(blobPaths);
     const slash = lastPath ? lastPath.lastIndexOf('/') : -1;
 
