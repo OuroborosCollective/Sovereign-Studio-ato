@@ -98,7 +98,7 @@ def test_provider_surface_contract_routes_only_canonical_actions() -> None:
         "canonicalAction": "revolver-discover",
     }
     assert omniroute == {
-        "providerSurfaceKind": "omniroute-auto",
+        "providerSurfaceKind": "omniroute",
         "lifecycle": "active",
         "canonicalAction": "omniroute-refresh",
     }

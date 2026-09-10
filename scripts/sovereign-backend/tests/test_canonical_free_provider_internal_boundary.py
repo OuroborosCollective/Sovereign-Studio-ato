@@ -115,7 +115,7 @@ def test_internal_retired_pool_mutations_fail_before_any_write(monkeypatch, path
 @pytest.mark.skipif(Flask is None, reason="Flask is validated in the full backend CI image")
 @pytest.mark.parametrize(("api_base", "surface_kind", "canonical_action"), [
     ("http://freellmpool:8080/v1", "retired-reference", "none"),
-    ("http://omniroute:20128/v1", "omniroute-auto", "omniroute-refresh"),
+    ("http://omniroute:20128/v1", "omniroute", "omniroute-refresh"),
 ])
 def test_non_generic_provider_owner_input_cannot_mutate_source(
     monkeypatch,
