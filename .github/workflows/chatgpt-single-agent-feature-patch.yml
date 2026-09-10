@@ -1,0 +1,47 @@
+name: ChatGPT Single Agent Feature Patch
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/single-agent-default-swarm-feature
+    paths:
+      - .github/workflows/chatgpt-single-agent-feature-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-once:
+    if: contains(github.event.head_commit.message, 'bootstrap single-agent feature patch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout patch branch
+        uses: actions/checkout@v4
+        with:
+          ref: sovereign/chatgpt/single-agent-default-swarm-feature
+          fetch-depth: 1
+
+      - name: Apply bounded source patch
+        run: python scripts/apply_single_agent_swarm_feature.py
+
+      - name: Verify Python syntax and mirror parity
+        run: |
+          python -m py_compile backend/agent_runtime/cognitive_swarm_routes.py
+          python -m py_compile scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py
+          cmp -s backend/agent_runtime/cognitive_swarm_routes.py scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py
+          git diff --check
+
+      - name: Remove one-shot patch machinery
+        run: |
+          rm scripts/apply_single_agent_swarm_feature.py
+          rm .github/workflows/chatgpt-single-agent-feature-patch.yml
+
+      - name: Commit patched product and tests
+        run: |
+          git config user.name 'Ouroboros Collective'
+          git config user.email 'projectouroboroscollective@gmail.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat(agent): make FreeLLM single-agent the vNext default'
+          git push origin HEAD:sovereign/chatgpt/single-agent-default-swarm-feature
