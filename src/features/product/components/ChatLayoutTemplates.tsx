@@ -134,15 +134,15 @@ const TerminalChatLayout: React.FC<{
           type="text"
           value={inputValue}
           onChange={(e) => onInputChange(e.target.value)}
-          className="flex-1 bg-transparent border-0 text-slate-200 font-mono text-sm outline-none placeholder-slate-600"
-          placeholder="Befehl eingeben..."
+          className="flex-1 bg-transparent border-0 text-slate-200 font-mono text-sm outline-none placeholder-slate-600 focus-visible:ring-2 focus-visible:ring-cyan-500/20 transition-all rounded"
+          placeholder="Type a message..."
         />
         <button
           type="submit"
           disabled={!canSubmit}
-          aria-label="Senden"
-          title="Senden"
-          className="text-cyan-400 disabled:opacity-30"
+          aria-label="Send"
+          title="Send"
+          className="text-cyan-400 disabled:opacity-30 focus-visible:ring-2 focus-visible:ring-cyan-500/20 focus-visible:outline-none transition-all active:scale-95 disabled:cursor-not-allowed rounded"
         >
           <Send size={16} />
         </button>
@@ -215,8 +215,8 @@ const FloatingChatLayout: React.FC<{
                 onClick={() => setShowModelPicker(!showModelPicker)}
                 aria-expanded={showModelPicker}
                 aria-haspopup="true"
-                aria-label="Modell auswählen"
-                title="Modell auswählen"
+                aria-label="Select model"
+                title="Select model"
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-cyan-500/20 hover:border-cyan-500/40 transition-colors text-xs"
               >
                 <Globe size={12} className="text-cyan-400" />
@@ -338,15 +338,15 @@ const FloatingChatLayout: React.FC<{
               value={inputValue}
               onChange={(e) => onInputChange(e.target.value)}
               placeholder="Ask or describe what you need..."
-              className="w-full px-4 py-3 pr-10 bg-slate-800/80 border border-cyan-500/20 rounded-2xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
+              className="w-full px-4 py-3 pr-10 bg-slate-800/80 border border-cyan-500/20 rounded-2xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus-visible:ring-2 focus-visible:ring-cyan-500/20 transition-all"
             />
             {inputValue && (
               <button
                 type="button"
                 onClick={() => onInputChange('')}
-                aria-label="Eingabe löschen"
-                title="Eingabe löschen"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                aria-label="Clear input"
+                title="Clear input"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 focus-visible:ring-2 focus-visible:ring-cyan-500/20 focus-visible:outline-none rounded-full p-1"
               >
                 <CircleX size={16} />
               </button>
@@ -355,9 +355,9 @@ const FloatingChatLayout: React.FC<{
           <button
             type="submit"
             disabled={!canSubmit}
-            aria-label="Senden"
-            title="Senden"
-            className="px-4 py-3 bg-cyan-500/20 border border-cyan-500/30 rounded-2xl text-cyan-400 hover:bg-cyan-500/30 disabled:opacity-30"
+            aria-label="Send"
+            title="Send"
+            className="px-4 py-3 bg-cyan-500/20 border border-cyan-500/30 rounded-2xl text-cyan-400 hover:bg-cyan-500/30 disabled:opacity-30 focus-visible:ring-2 focus-visible:ring-cyan-500/20 focus-visible:outline-none transition-all active:scale-95 disabled:cursor-not-allowed"
           >
             <Send size={18} />
           </button>
@@ -423,15 +423,15 @@ const SplitViewLayout: React.FC<{
               type="text"
               value={inputValue}
               onChange={(e) => onInputChange(e.target.value)}
-              className="flex-1 px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-lg text-sm text-slate-200 outline-none focus:border-cyan-500/50"
+              className="flex-1 px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-lg text-sm text-slate-200 outline-none focus:border-cyan-500/50 focus-visible:ring-2 focus-visible:ring-cyan-500/20 transition-all"
               placeholder="Type a message..."
             />
             <button
               type="submit"
               disabled={!canSubmit}
-              aria-label="Senden"
-              title="Senden"
-              className="px-3 py-2 bg-cyan-500/20 border border-cyan-500/30 rounded-lg text-cyan-400 disabled:opacity-30"
+              aria-label="Send"
+              title="Send"
+              className="px-3 py-2 bg-cyan-500/20 border border-cyan-500/30 rounded-lg text-cyan-400 disabled:opacity-30 focus-visible:ring-2 focus-visible:ring-cyan-500/20 focus-visible:outline-none transition-all active:scale-95 disabled:cursor-not-allowed"
             >
               <Send size={16} />
             </button>

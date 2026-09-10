@@ -34,16 +34,16 @@ describe('ChatLayoutTemplates Palette Accessibility', () => {
 
   it('FloatingChatLayout Send button has aria-label and title', () => {
     render(<ChatLayoutTemplates {...baseProps} layout="floating" />);
-    const sendButton = screen.getByRole('button', { name: /Senden/i });
-    expect(sendButton).toHaveAttribute('aria-label', 'Senden');
-    expect(sendButton).toHaveAttribute('title', 'Senden');
+    const sendButton = screen.getByRole('button', { name: /Send/i });
+    expect(sendButton).toHaveAttribute('aria-label', 'Send');
+    expect(sendButton).toHaveAttribute('title', 'Send');
   });
 
   it('FloatingChatLayout Model Picker has aria attributes', () => {
     render(<ChatLayoutTemplates {...baseProps} layout="floating" />);
-    const modelPicker = screen.getByRole('button', { name: /Modell auswählen/i });
-    expect(modelPicker).toHaveAttribute('aria-label', 'Modell auswählen');
-    expect(modelPicker).toHaveAttribute('title', 'Modell auswählen');
+    const modelPicker = screen.getByRole('button', { name: /Select model/i });
+    expect(modelPicker).toHaveAttribute('aria-label', 'Select model');
+    expect(modelPicker).toHaveAttribute('title', 'Select model');
     expect(modelPicker).toHaveAttribute('aria-haspopup', 'true');
     expect(modelPicker).toHaveAttribute('aria-expanded', 'false');
   });
@@ -56,15 +56,15 @@ describe('ChatLayoutTemplates Palette Accessibility', () => {
 
   it('TerminalChatLayout Send button has aria-label and title', () => {
     render(<ChatLayoutTemplates {...baseProps} layout="terminal" />);
-    const sendButton = screen.getByRole('button', { name: /Senden/i });
-    expect(sendButton).toHaveAttribute('aria-label', 'Senden');
-    expect(sendButton).toHaveAttribute('title', 'Senden');
+    const sendButton = screen.getByRole('button', { name: /Send/i });
+    expect(sendButton).toHaveAttribute('aria-label', 'Send');
+    expect(sendButton).toHaveAttribute('title', 'Send');
   });
 
   it('SplitViewLayout Send button has aria-label and title', () => {
     render(<ChatLayoutTemplates {...baseProps} layout="split-view" />);
-    const sendButton = screen.getByRole('button', { name: /Senden/i });
-    expect(sendButton).toHaveAttribute('aria-label', 'Senden');
-    expect(sendButton).toHaveAttribute('title', 'Senden');
+    const sendButton = screen.getByRole('button', { name: /Send/i });
+    expect(sendButton).toHaveAttribute('aria-label', 'Send');
+    expect(sendButton).toHaveAttribute('title', 'Send');
   });
 });
