@@ -267,7 +267,8 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     expect(swarmBodies).toHaveLength(1);
     expect(swarmBodies[0]).toEqual({
       mission: 'Prüfe den aktuellen Build und ändere nichts ohne die bestehenden Runtime-Gates.',
-      mode: 'auto',
+      mode: 'free',
+      agentMode: 'single',
       intentMode: 'auto',
     });
     expect(observed.some(item => item.path.includes('/draft-pr/prepare'))).toBe(false);

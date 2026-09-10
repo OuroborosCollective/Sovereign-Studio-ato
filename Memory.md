@@ -291,3 +291,14 @@ Evidence: `2c30e65ddb0149c2ad71ba208534fe19f7b1cbdf`, Release Verification `3441
 Learned: HTTP-200 login is not a session proof; traces-off does not prevent HTML Fill-step credential leakage; a running linked job must not hide a blocked parent run.
 Open: Real workspace mutation/test evidence, five independently verified Draft PRs and production/PatchMon proof. Issued test keys were revoked; old credential-bearing HTML artifacts and test-account rows were not deleted.
 Next safe step: Read exact-head live run `34413640219`, inspect actual failed repository tool calls, and repair their cause. No merge/deploy until the full corridor is proven.
+
+
+### 2026-09-10 — FreeLLM single-agent default with opt-in swarm
+Status: PARTIAL; source/regression verified, production live proof pending
+Task: Make normal vNext write/repository jobs run as one FreeLLM foreground agent while keeping the multi-agent swarm as an explicit feature.
+Decisions: vNext defaults to `mode=free` + `agentMode=single`; single-agent preserves FreeLLM revolver candidates with zero background agents; swarm is opt-in and fails closed with `SWARM_CAPACITY_NOT_READY`; no automatic Free-to-Paid fallback.
+Touched surfaces: vNext execution selector/request adapter; cognitive swarm start contract and shipping mirror; backend/frontend/Playwright regression contracts.
+Evidence: Draft PR #1908 exact head before this append `a182bdbee024b3f404f170fe1a8a1d14fadcc9ed`; Agent Runtime and full Release Verification passed including typecheck, runtime units, Web/Android build, Artifact Smoke, Playwright Smoke and Integration Gate. Earlier production Five-Path runs `34535312135` and `34536426012` both reproduced `FREELLM_RATE_LIMITED` before repository mutation, motivating a normal single-agent path independent of swarm readiness.
+Learned: Swarm capacity is an optional acceleration capability, not a prerequisite for an ordinary repository-writing product path; free transport and agent topology must be separately selectable and evidenced.
+Open: Merge/deploy exact revision, then prove deployed vNext single-agent workspace mutation/tests and five independently read-back GitHub Draft PRs; provider backoff may still require an explicit new-run retry UX.
+Next safe step: Re-run exact-head gates with this Memory entry, merge only if green, deploy exact merge revision, then execute the protected Five Real UI Paths as single-agent.

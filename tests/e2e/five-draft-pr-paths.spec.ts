@@ -260,6 +260,7 @@ async function submitMission(page: Page, text: string): Promise<string> {
   const composer = page.getByTestId('mission__textarea');
   await expect(composer).toBeVisible();
   await composer.fill(text);
+  await expect(page.getByTestId('agent-mode-single')).toHaveAttribute('aria-pressed', 'true');
   await page.getByTestId('builder__start-task').click();
   const accepted = page.getByText(/PERSISTED RUN ACCEPTED :: \[run-[0-9a-f]+\]/).last();
   await expect(accepted).toBeVisible({ timeout: 45_000 });

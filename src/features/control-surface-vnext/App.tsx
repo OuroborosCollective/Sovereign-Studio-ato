@@ -22,7 +22,7 @@ import { useOwnerInteraction } from './hooks/useOwnerInteraction';
 import { useSovereignJob } from './hooks/useSovereignJob';
 import { useSwarmRun } from './hooks/useSwarmRun';
 import './theme/biomodular.css';
-import type { ChatMessage, OwnerInteractionResponse } from './types/domain';
+import type { AgentMode, ChatMessage, OwnerInteractionResponse } from './types/domain';
 import { getAudioMuted, playKeystrokeChirp, toggleAudioMute } from './utils/audio';
 import { cx } from './utils/cx';
 
@@ -72,6 +72,7 @@ function Dashboard() {
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<MobileTab>('chat');
+  const [agentMode, setAgentMode] = useState<AgentMode>('single');
   const [fsmState, dispatchFsm] = useReducer(jobStateReducer, INITIAL_FSM_STATE);
   const isDesktopLayout = useDesktopLayout();
 
@@ -152,7 +153,7 @@ function Dashboard() {
     dispatchFsm({ type: 'SUBMIT_ORDER', payload: { objective: mission } });
     setMessages((current) => [...current, { id: `owner-${Date.now()}`, role: 'human', sender: 'HUMAN', content: mission, timestamp: new Date().toISOString() }]);
     try {
-      const accepted = await swarmRun.mutateAsync({ prompt: mission, toolchains: selectedToolchain ? [selectedToolchain.id] : [], activeSkillIds });
+      const accepted = await swarmRun.mutateAsync({ prompt: mission, toolchains: selectedToolchain ? [selectedToolchain.id] : [], activeSkillIds, agentMode });
       setActiveRunId(accepted.jobId);
       dispatchFsm({ type: 'BACKEND_ACCEPTED', payload: { jobId: accepted.jobId } });
       setMessages((current) => [...current, {
@@ -192,6 +193,8 @@ function Dashboard() {
       activeToolchainName={selectedToolchain?.name ?? 'MANIFEST NOT YET VERIFIED'}
       activeSkillsCount={activeSkillIds.length}
       activeIntegrationsCount={(integrations.data ?? []).length}
+      agentMode={agentMode}
+      onAgentModeChange={setAgentMode}
     />
   );
   const monitor = <><NeuralLoadMonitor job={job} phase={currentPhase} /><RuntimeMonitor job={job} isPolling={isPolling} /></>;

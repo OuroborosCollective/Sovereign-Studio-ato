@@ -80,7 +80,7 @@ test.describe('Sovereign Control Surface vNext browser smoke', () => {
     await expect(dialog.locator('input[placeholder="svk_…"]')).toHaveCount(0);
   });
 
-  test('3. Toolchain and swarm panels are server-readback projections, not local switches', async ({ page }) => {
+  test('3. Toolchain and agent-registry panels are server-readback projections, not local switches', async ({ page }) => {
     await page.getByRole('button').filter({ hasText: 'TOOLCHAIN' }).click();
     const toolchainDialog = page.getByRole('dialog', { name: 'TOOLCHAIN CONFIGURATION // EXECUTION DRIVERS' });
     await expect(toolchainDialog).toBeVisible();
@@ -88,7 +88,7 @@ test.describe('Sovereign Control Surface vNext browser smoke', () => {
     await expect(toolchainDialog.getByText(/Read-only server-owned execution manifest/)).toBeVisible();
     await toolchainDialog.getByRole('button', { name: 'Close' }).click();
 
-    await page.getByRole('button').filter({ hasText: 'SWARM' }).click();
+    await page.getByRole('button').filter({ hasText: 'AGENTS' }).click();
     const swarmDialog = page.getByRole('dialog', { name: 'SWARM REGISTRY // BIOMODULAR NODES' });
     await expect(swarmDialog).toBeVisible();
     await expect(swarmDialog.getByText('The Dispatcher', { exact: true })).toBeVisible();

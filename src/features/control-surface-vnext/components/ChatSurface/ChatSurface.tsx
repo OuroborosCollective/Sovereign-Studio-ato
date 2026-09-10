@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { Blocks, Bot, BrainCircuit, Cpu, Send, Square, Terminal, User, Wrench } from 'lucide-react';
-import type { ChatMessage, JobPhase, SovereignJob } from '../../types/domain';
+import type { AgentMode, ChatMessage, JobPhase, SovereignJob } from '../../types/domain';
 import { playDispatchBlast, playKeystrokeChirp } from '../../utils/audio';
 
 interface Props {
@@ -18,6 +18,8 @@ interface Props {
   activeToolchainName?: string;
   activeSkillsCount?: number;
   activeIntegrationsCount?: number;
+  agentMode?: AgentMode;
+  onAgentModeChange?: (mode: AgentMode) => void;
 }
 
 const ACTIVE_PHASES: JobPhase[] = ['DISPATCHING', 'PROVISIONING', 'EXECUTING', 'FINALIZING'];
@@ -37,7 +39,7 @@ function MessageCard({ message }: { message: ChatMessage }) {
   );
 }
 
-export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase = 'IDLE', activeJob, onOpenToolchain, onOpenSkills, onOpenIntegrations, onAbortJob, onTypingStateChange, activeToolchainName, activeSkillsCount = 0, activeIntegrationsCount = 0 }: Props) {
+export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase = 'IDLE', activeJob, onOpenToolchain, onOpenSkills, onOpenIntegrations, onAbortJob, onTypingStateChange, activeToolchainName, activeSkillsCount = 0, activeIntegrationsCount = 0, agentMode = 'single', onAgentModeChange }: Props) {
   const [text, setText] = useState('');
   const executing = ACTIVE_PHASES.includes(jobPhase);
   const canSend = text.trim().length > 0 && !executing;
@@ -65,8 +67,15 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
       <div className="shrink-0 px-3 sm:px-4 pb-3 sm:pb-4 pt-2 bg-gradient-to-t from-[var(--carbon-base)] via-[var(--carbon-base)] to-transparent">
         <div className="mb-2 grid grid-cols-3 gap-1.5">
           <button type="button" onClick={() => { playKeystrokeChirp(); onOpenToolchain(); }} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] text-left px-2 font-mono"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><Wrench size={10} /> TOOLCHAIN</span><span className="block truncate text-[9px] text-white mt-0.5">{activeToolchainName || 'UNVERIFIED'}</span></button>
-          <button type="button" onClick={() => { playKeystrokeChirp(); onOpenSkills(); }} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] px-2 font-mono"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><BrainCircuit size={10} /> SWARM</span><span className="block text-[9px] text-white mt-0.5">{activeSkillsCount} MANIFEST NODES</span></button>
+          <button type="button" onClick={() => { playKeystrokeChirp(); onOpenSkills(); }} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] px-2 font-mono"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><BrainCircuit size={10} /> AGENTS</span><span className="block text-[9px] text-white mt-0.5">{activeSkillsCount} MANIFEST NODES</span></button>
           <button type="button" onClick={() => { playKeystrokeChirp(); onOpenIntegrations(); }} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] px-2 font-mono"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><Blocks size={10} /> ATTACHMENTS</span><span className="block text-[9px] text-white mt-0.5">{activeIntegrationsCount} OBSERVED</span></button>
+        </div>
+
+        <div data-testid="agent-mode-selector" className="mb-2 flex items-center gap-1.5 rounded-lg border border-white/5 bg-[var(--carbon-deep)] p-1.5 font-mono">
+          <span className="px-1 text-[8px] text-[var(--text-dim)]">EXECUTION</span>
+          <button type="button" data-testid="agent-mode-single" aria-pressed={agentMode === 'single'} disabled={executing} onClick={() => { playKeystrokeChirp(); onAgentModeChange?.('single'); }} className={`min-h-8 flex-1 rounded border px-2 text-[8.5px] font-black ${agentMode === 'single' ? 'border-[var(--emerald-seal)] bg-[rgba(16,185,129,0.12)] text-[var(--emerald-seal)]' : 'border-white/5 bg-[var(--carbon-surface)] text-[var(--text-muted)]'} disabled:opacity-50`}>1 AGENT · FREELLM</button>
+          <button type="button" data-testid="agent-mode-swarm" aria-pressed={agentMode === 'swarm'} disabled={executing} onClick={() => { playKeystrokeChirp(); onAgentModeChange?.('swarm'); }} className={`min-h-8 flex-1 rounded border px-2 text-[8.5px] font-black ${agentMode === 'swarm' ? 'border-[var(--red-laser)] bg-[rgba(255,30,56,0.12)] text-[var(--red-laser)]' : 'border-white/5 bg-[var(--carbon-surface)] text-[var(--text-muted)]'} disabled:opacity-50`}>SWARM · OPT-IN</button>
+          <span className="hidden sm:inline px-1 text-[8px] text-[var(--text-dim)]">SERVER-GATED</span>
         </div>
 
         <div className="theme-diamond-cut rounded-xl border border-[rgba(255,30,56,0.28)] bg-[var(--carbon-deep)] p-2 shadow-[0_0_24px_rgba(255,30,56,0.08)]">

@@ -1,4 +1,5 @@
 import type {
+  AgentMode,
   DraftPR,
   DraftPrPreparation,
   IntegrationAttachment,
@@ -16,7 +17,7 @@ export interface AdapterStatus {
 }
 
 export interface SovereignBackendAdapter {
-  runSwarm(prompt: string, toolchains: string[], activeSkillIds?: string[]): Promise<{ jobId: string }>;
+  runSwarm(prompt: string, toolchains: string[], activeSkillIds?: string[], agentMode?: AgentMode): Promise<{ jobId: string }>;
   getJob(runId: string): Promise<SovereignJob>;
   resumeJob(runId: string, interactionId: string, response: string): Promise<void>;
   abortJob(runId: string): Promise<void>;
