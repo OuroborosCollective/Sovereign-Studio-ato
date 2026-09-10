@@ -191,6 +191,12 @@ def classify_provider_surface(
             "lifecycle": "historical",
             "canonicalAction": "none",
         }
+    if normalized_base == "http://omniroute:20128/v1":
+        return {
+            "providerSurfaceKind": "omniroute-auto",
+            "lifecycle": "active",
+            "canonicalAction": "omniroute-refresh",
+        }
     if normalized_base == _OMNIROUTE_API_BASE:
         return {
             "providerSurfaceKind": "retired-reference",

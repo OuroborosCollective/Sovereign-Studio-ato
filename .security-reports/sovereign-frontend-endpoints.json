@@ -3895,6 +3895,7 @@
       "status": "LITERAL_BOUND",
       "testReferences": {
         "backend": [
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py"
         ],
         "e2e": [],
@@ -4001,6 +4002,7 @@
       "status": "LITERAL_BOUND",
       "testReferences": {
         "backend": [
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_canonical_free_provider_internal_boundary.py",
           "scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py"
@@ -4047,6 +4049,7 @@
       "status": "LITERAL_BOUND",
       "testReferences": {
         "backend": [
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_canonical_free_provider_internal_boundary.py",
           "scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py"
@@ -4084,6 +4087,7 @@
       "status": "LITERAL_BOUND",
       "testReferences": {
         "backend": [
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_canonical_free_provider_internal_boundary.py",
           "scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py"
@@ -4121,6 +4125,7 @@
       "status": "LITERAL_BOUND",
       "testReferences": {
         "backend": [
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_canonical_free_provider_internal_boundary.py",
           "scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py"
@@ -4158,6 +4163,7 @@
       "status": "LITERAL_BOUND",
       "testReferences": {
         "backend": [
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_canonical_free_provider_internal_boundary.py",
           "scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py"
@@ -4195,6 +4201,7 @@
       "status": "LITERAL_BOUND",
       "testReferences": {
         "backend": [
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_canonical_free_provider_internal_boundary.py",
           "scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py"
@@ -7051,6 +7058,7 @@
         "backend": [
           "backend/tests/test_knowledge_security_contracts.py",
           "backend/tests/test_llm_chat_billing_truth_contract.py",
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_credit_state_verification_source_contracts.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_runtime_truth_source_contracts.py"
@@ -7096,6 +7104,7 @@
         "backend": [
           "backend/tests/test_knowledge_security_contracts.py",
           "backend/tests/test_llm_chat_billing_truth_contract.py",
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_credit_state_verification_source_contracts.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_runtime_truth_source_contracts.py"
@@ -7141,6 +7150,7 @@
         "backend": [
           "backend/tests/test_knowledge_security_contracts.py",
           "backend/tests/test_llm_chat_billing_truth_contract.py",
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_credit_state_verification_source_contracts.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_runtime_truth_source_contracts.py"
@@ -7186,6 +7196,7 @@
         "backend": [
           "backend/tests/test_knowledge_security_contracts.py",
           "backend/tests/test_llm_chat_billing_truth_contract.py",
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_credit_state_verification_source_contracts.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_runtime_truth_source_contracts.py"
@@ -7231,6 +7242,7 @@
         "backend": [
           "backend/tests/test_knowledge_security_contracts.py",
           "backend/tests/test_llm_chat_billing_truth_contract.py",
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_credit_state_verification_source_contracts.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_runtime_truth_source_contracts.py"
@@ -7276,6 +7288,7 @@
         "backend": [
           "backend/tests/test_knowledge_security_contracts.py",
           "backend/tests/test_llm_chat_billing_truth_contract.py",
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_credit_state_verification_source_contracts.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_runtime_truth_source_contracts.py"
@@ -7321,6 +7334,7 @@
         "backend": [
           "backend/tests/test_knowledge_security_contracts.py",
           "backend/tests/test_llm_chat_billing_truth_contract.py",
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_credit_state_verification_source_contracts.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_runtime_truth_source_contracts.py"
@@ -7365,6 +7379,7 @@
       "testReferences": {
         "backend": [
           "backend/tests/test_frontend_endpoint_assurance.py",
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py"
         ],
         "e2e": [
@@ -7404,6 +7419,7 @@
       "testReferences": {
         "backend": [
           "backend/tests/test_frontend_endpoint_assurance.py",
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py"
         ],
         "e2e": [
@@ -7443,6 +7459,7 @@
       "testReferences": {
         "backend": [
           "backend/tests/test_frontend_endpoint_assurance.py",
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py"
         ],
         "e2e": [
@@ -7482,6 +7499,7 @@
       "testReferences": {
         "backend": [
           "backend/tests/test_frontend_endpoint_assurance.py",
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py"
         ],
         "e2e": [
@@ -7521,6 +7539,7 @@
       "testReferences": {
         "backend": [
           "backend/tests/test_frontend_endpoint_assurance.py",
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py"
         ],
         "e2e": [
@@ -7560,6 +7579,7 @@
       "testReferences": {
         "backend": [
           "backend/tests/test_frontend_endpoint_assurance.py",
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py"
         ],
         "e2e": [
@@ -7599,6 +7619,7 @@
       "testReferences": {
         "backend": [
           "backend/tests/test_frontend_endpoint_assurance.py",
+          "backend/tests/test_private_litellm_provider_contract.py",
           "scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py"
         ],
         "e2e": [
@@ -18849,10 +18870,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "b3b0b826e67054bfc3e9d4145e6ad98cbd24eebf5773f159851476b9201154ca",
-  "revision": "4d95c4525cfd43021e961cdfa4f0e7c3bda110be",
+  "reportSha256": "f16e6ecedbe29db266fdc2b3c3996d6c82ceeb7d0ca74dea9941ecb9f0e69306",
+  "revision": "a84047a038d6aef8ea09c69b6c150a6a66162828",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "6d0bc0ad0c41e9cfec41f883b9fdb5e1be9e56acfec2c11d3a163bb4b657f7ee",
+  "sourceTreeSha256": "048ab54fa8ca931dc4a34a878f0ba59377259a2bf36cdf432ae16144f759ceec",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -18871,7 +18892,7 @@
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
-    "testFileCount": 768,
+    "testFileCount": 769,
     "unmatchedActiveRequestCount": 0
   },
   "truthBoundary": {
