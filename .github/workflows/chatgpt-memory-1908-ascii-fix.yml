@@ -1,0 +1,44 @@
+name: ChatGPT Memory 1908 ASCII Fix
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/single-agent-default-swarm-feature
+    paths:
+      - .github/workflows/chatgpt-memory-1908-ascii-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  correct-once:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sovereign/chatgpt/single-agent-default-swarm-feature
+          fetch-depth: 1
+      - name: Normalize current unmerged Memory decision line and self-remove
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('Memory.md')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          prefix = 'Decisions: vNext defaults to `mode=free` + `agentMode=single`'
+          matches = [i for i, line in enumerate(lines) if line.startswith(prefix)]
+          if len(matches) != 1:
+              raise SystemExit(f'expected one current #1908 Decisions line, found {len(matches)}')
+          lines[matches[0]] = 'Decisions: vNext defaults to `mode=free` + `agentMode=single`; single-agent preserves FreeLLM revolver candidates with zero background agents; swarm is opt-in and fails closed with `SWARM_CAPACITY_NOT_READY`; no automatic Free-to-Paid fallback.'
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+          rm .github/workflows/chatgpt-memory-1908-ascii-fix.yml
+          git diff --check
+          git config user.name 'Ouroboros Collective'
+          git config user.email 'projectouroboroscollective@gmail.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'docs(memory): normalize #1908 evidence text'
+          git push origin HEAD:sovereign/chatgpt/single-agent-default-swarm-feature
