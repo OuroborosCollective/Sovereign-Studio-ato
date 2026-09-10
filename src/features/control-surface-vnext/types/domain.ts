@@ -1,3 +1,5 @@
+export type AgentMode = 'single' | 'swarm';
+
 export type JobPhase =
   | 'IDLE'
   | 'AWAKENING'

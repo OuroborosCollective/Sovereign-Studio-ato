@@ -80,6 +80,7 @@ from llm_transport import route_provider_model, route_transport
 ConnectionFactory = Callable[[], Any]
 _REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _INTENT_MODES = frozenset({"auto", "conversation", "read_only_analysis", "repository_execution"})
+_AGENT_MODES = frozenset({"auto", "single", "swarm"})
 
 
 _SECRET_MARKERS = (
@@ -104,6 +105,39 @@ def _normalize_intent_mode(value: str, *, free_profile: bool) -> str:
     if free_profile and selected == "auto":
         return "conversation"
     return selected
+
+
+def _normalize_agent_mode(value: str) -> str:
+    selected = str(value or "auto").strip().casefold().replace("-", "_").replace(" ", "_")
+    if selected not in _AGENT_MODES:
+        raise ValueError("agentMode must be auto, single or swarm")
+    return selected
+
+
+def _single_agent_resolution(resolution: ExecutionResolution) -> ExecutionResolution:
+    """Project a free swarm-capable resolution onto one foreground agent.
+
+    Candidate routes stay intact so the existing FreeLLM revolver may fail over
+    between independent quota scopes. Only the execution shape changes.
+    """
+    if resolution.profile_id != FREE_SWARM_PROFILE:
+        return resolution
+    return ExecutionResolution(
+        profile_id=FREE_SINGLE_AGENT_PROFILE,
+        primary_route=resolution.primary_route,
+        agent_route=resolution.primary_route,
+        candidate_routes=resolution.candidate_routes,
+        max_foreground_agents=1,
+        max_background_agents=0,
+        repository_execution_allowed=resolution.repository_execution_allowed,
+        paid_purchase_verified=resolution.paid_purchase_verified,
+        paid_entitlement_verified=resolution.paid_entitlement_verified,
+        paid_entitlement_source=resolution.paid_entitlement_source,
+        provider_funded_credits=resolution.provider_funded_credits,
+        requested_mode=resolution.requested_mode,
+        reason="explicit_single_agent_feature_selected",
+        fallback_from_transport=resolution.fallback_from_transport,
+    )
 
 
 def _explicit_mission_intent(intent_mode: str, mission: str) -> MissionIntent | None:
@@ -1010,6 +1044,7 @@ def start_cognitive_swarm_run(
     agent_model: str | None = None,
     mode: str = "auto",
     intent_mode: str = "auto",
+    agent_mode: str = "auto",
     run_id: str | None = None,
     session_key: str | None = None,
     a2a_context_id: str | None = None,
@@ -1039,6 +1074,10 @@ def start_cognitive_swarm_run(
         agent_model or normalized_model or normalized_main_model or ""
     ).strip() or None
     normalized_mode = str(mode or "auto").strip().lower()
+    try:
+        normalized_agent_mode = _normalize_agent_mode(agent_mode)
+    except ValueError as exc:
+        return {"error": str(exc)}, 400
     normalized_repository_url = str(repository_url or "").strip()
     normalized_repository_branch = str(repository_branch or "main").strip()
     normalized_expected_head_sha = str(expected_head_sha or "").strip().lower()
@@ -1105,7 +1144,11 @@ def start_cognitive_swarm_run(
                 "errorType": type(exc).__name__,
             }, 503
 
-    resolver_mode = "free" if _force_free_profile else normalized_mode
+    resolver_mode = (
+        "free"
+        if _force_free_profile or normalized_agent_mode == "single"
+        else normalized_mode
+    )
     try:
         execution_resolution = (
             _free_resolution_override
@@ -1263,6 +1306,42 @@ def start_cognitive_swarm_run(
                 "reason": state["reason"],
                 "nextAction": state["nextAction"],
             }, 503
+    if normalized_agent_mode == "single":
+        execution_resolution = _single_agent_resolution(execution_resolution)
+    elif (
+        normalized_agent_mode == "swarm"
+        and execution_resolution.profile_id not in {FREE_SWARM_PROFILE, PAID_SWARM_PROFILE}
+    ):
+        state = _persist_execution_resolution_blocker(
+            get_connection,
+            user_id=user_id,
+            run_id=resolved_run_id,
+            trace_id=resolved_trace_id,
+            status="BLOCKED",
+            blocker="SWARM_CAPACITY_NOT_READY",
+            reason=(
+                "Swarm mode is an explicit feature and requires a verified multi-agent "
+                "execution profile. Normal single-agent FreeLLM work remains available."
+            ),
+            next_action="USE_SINGLE_AGENT_OR_RETRY_SWARM_WHEN_CAPACITY_READY",
+        )
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": resolved_run_id,
+            "traceId": resolved_trace_id,
+            "status": state["status"],
+            "source": state["source"],
+            "evidenceId": state["evidenceId"],
+            "receivedEvidenceId": received_state["evidenceId"],
+            "blocker": "SWARM_CAPACITY_NOT_READY",
+            "reason": state["reason"],
+            "nextAction": state["nextAction"],
+            "requestedAgentMode": normalized_agent_mode,
+            "singleAgentAvailable": True,
+            "secretValuesReturned": False,
+        }, 409
+
     try:
         _validate_execution_resolution_snapshot(execution_resolution)
     except (TypeError, ValueError) as exc:
@@ -1604,6 +1683,7 @@ def start_cognitive_swarm_run(
                         model=next_model,
                         mode=normalized_mode,
                         intent_mode=normalized_intent_mode,
+                        agent_mode=normalized_agent_mode,
                         run_id=resolved_run_id,
                         session_key=resolved_session_key,
                         a2a_context_id=a2a_context_id,
@@ -1739,6 +1819,7 @@ def start_cognitive_swarm_run(
                     model=fallback_model,
                     mode=execution_resolution.requested_mode,
                     intent_mode=normalized_intent_mode,
+                    agent_mode=normalized_agent_mode,
                     run_id=resolved_run_id,
                     session_key=resolved_session_key,
                     a2a_context_id=a2a_context_id,
@@ -1819,6 +1900,7 @@ def start_cognitive_swarm_run(
                     model=fallback_model,
                     mode=execution_resolution.requested_mode,
                     intent_mode=normalized_intent_mode,
+                    agent_mode=normalized_agent_mode,
                     run_id=resolved_run_id,
                     session_key=resolved_session_key,
                     a2a_context_id=a2a_context_id,
@@ -2531,6 +2613,10 @@ def register_cognitive_swarm_routes(
             "configured": None,
             "configurationResolution": "request-time-persisted-route",
             "executionModes": ["auto", "paid", "free"],
+            "agentModes": ["single", "swarm"],
+            "defaultAgentMode": "single",
+            "singleAgentTransport": "freellm",
+            "swarmRequiresExplicitOptIn": True,
             "allowedModels": [],
             "modelsResolvedFromDatabase": True,
             "manifest": manifest_payload(),
@@ -2597,6 +2683,7 @@ def register_cognitive_swarm_routes(
             agent_model=str(body.get("agentModel") or "") or None,
             mode=str(body.get("mode") or "auto"),
             intent_mode=str(body.get("intentMode") or "auto"),
+            agent_mode=str(body.get("agentMode") or "auto"),
             repository_url=str(body.get("repositoryUrl") or body.get("repoUrl") or "") or None,
             repository_branch=str(body.get("repositoryBranch") or body.get("branch") or "main"),
             expected_head_sha=str(body.get("expectedHeadSha") or "") or None,

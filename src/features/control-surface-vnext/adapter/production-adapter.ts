@@ -8,6 +8,7 @@ import {
   type SovereignWorkspaceEvidenceAnchor,
 } from '../../product/runtime/sovereignAgentRuntime';
 import type {
+  AgentMode,
   DraftPR,
   DraftPrPreparation,
   IntegrationAttachment,
@@ -76,6 +77,20 @@ export function extractGitHubRepositoryUrl(mission: string): string | undefined 
     }
   }
   return undefined;
+}
+
+export function buildRunRequest(mission: string, agentMode: AgentMode = 'single'): JsonRecord {
+  const repositoryUrl = extractGitHubRepositoryUrl(mission);
+  const base = { mission, mode: 'free', agentMode };
+  return repositoryUrl ? {
+    ...base,
+    intentMode: 'repository_execution',
+    repositoryUrl,
+    repositoryBranch: 'main',
+  } : {
+    ...base,
+    intentMode: 'auto',
+  };
 }
 
 function parseRun(value: unknown): PersistedRun {
@@ -273,23 +288,17 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
     }
   }
 
-  async runSwarm(prompt: string, _toolchains: string[], _activeSkillIds: string[] = []): Promise<{ jobId: string }> {
+  async runSwarm(
+    prompt: string,
+    _toolchains: string[],
+    _activeSkillIds: string[] = [],
+    agentMode: AgentMode = 'single',
+  ): Promise<{ jobId: string }> {
     const mission = prompt.trim();
     if (!mission) throw new Error('Mission text is required.');
-    const repositoryUrl = extractGitHubRepositoryUrl(mission);
     const result = await this.requestObject('/api/user/agent/swarm/run', {
       method: 'POST',
-      body: JSON.stringify(repositoryUrl ? {
-        mission,
-        mode: 'auto',
-        intentMode: 'repository_execution',
-        repositoryUrl,
-        repositoryBranch: 'main',
-      } : {
-        mission,
-        mode: 'auto',
-        intentMode: 'auto',
-      }),
+      body: JSON.stringify(buildRunRequest(mission, agentMode)),
     });
     const runId = stringValue(result.body.runId);
     if (runId) return { jobId: runId };
