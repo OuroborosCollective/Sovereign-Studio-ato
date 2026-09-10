@@ -49,7 +49,9 @@ def test_paid_model_pair_and_free_forced_fallback_are_wired_through_user_routes(
 
     assert 'main_model=str(body.get("mainModel") or "") or None' in routes
     assert 'agent_model=str(body.get("agentModel") or "") or None' in routes
-    assert 'resolver_mode = "free" if _force_free_profile else normalized_mode' in routes
+    assert 'if _force_free_profile or normalized_agent_mode == "single"' in routes
+    assert 'agent_mode=str(body.get("agentMode") or "auto")' in routes
+    assert 'blocker="SWARM_CAPACITY_NOT_READY"' in routes
     assert "main_route=execution_resolution.primary_route" in routes
     assert "agent_route=execution_resolution.agent_route" in routes
     assert '"resolvedMainModelId": resolved_model' in routes
