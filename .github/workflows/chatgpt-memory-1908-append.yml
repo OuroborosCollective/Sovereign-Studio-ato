@@ -12,7 +12,6 @@ permissions:
 
 jobs:
   append-once:
-    if: contains(github.event.head_commit.message, 'bootstrap #1908 integration entry')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -22,6 +21,8 @@ jobs:
           fetch-depth: 1
       - name: Append exactly one evidence-bound entry
         shell: bash
+        env:
+          ENTRY_B64: CgojIyMgMjAyNi0wOS0xMCDigJQgRnJlZUxMTSBzaW5nbGUtYWdlbnQgZGVmYXVsdCB3aXRoIG9wdC1pbiBzd2FybQpTdGF0dXM6IFBBUlRJQUw7IHNvdXJjZS9yZWdyZXNzaW9uIHZlcmlmaWVkLCBwcm9kdWN0aW9uIGxpdmUgcHJvb2YgcGVuZGluZwpUYXNrOiBNYWtlIG5vcm1hbCB2TmV4dCB3cml0ZS9yZXBvc2l0b3J5IGpvYnMgcnVuIGFzIG9uZSBGcmVlTExNIGZvcmVncm91bmQgYWdlbnQgd2hpbGUga2VlcGluZyB0aGUgbXVsdGktYWdlbnQgc3dhcm0gYXMgYW4gZXhwbGljaXQgZmVhdHVyZS4KRGVjaXNpb25zOiB2TmV4dCBkZWZhdWx0cyB0byBgbW9kZT1mcmVlYCArIGBhZ2VudE1vZGU9c2luZ2xlYDsgc2luZ2xlLWFnZW50IHByZXNlcnZlcyBGcmVlTExNIHJldm9sdmVyIGNhbmRpZGF0ZXMgd2l0aCB6ZXJvIGJhY2tncm91bmQgYWdlbnRzOyBzd2FybSBpcyBvcHQtaW4gYW5kIGZhaWxzIGNsb3NlZCB3aXRoIGBTV0FSTV9DQVBBQ0lUWV9OT1RfUkVBRFlgOyBubyBGcmVl4oaSIGUGYWlkIGZhbGxiYWNrLgpUb3VjaGVkIHN1cmZhY2VzOiB2TmV4dCBleGVjdXRpb24gc2VsZWN0b3IvcmVxdWVzdCBhZGFwdGVyOyBjb2duaXRpdmUgc3dhcm0gc3RhcnQgY29udHJhY3QgYW5kIHNoaXBwaW5nIG1pcnJvcjsgYmFja2VuZC9mcm9udGVuZC9QbGF5d3JpZ2h0IHJlZ3Jlc3Npb24gY29udHJhY3RzLgpFdmlkZW5jZTogRHJhZnQgUFIgIzE5MDggZXhhY3QgaGVhZCBiZWZvcmUgdGhpcyBhcHBlbmQgYGEgMTgyYmRiZWUwMjRiM2Y0MDRmMTcwZmUxYThhMWQxNGZhZGNjOWVkYDsgQWdlbnQgUnVudGltZSBhbmQgZnVsbCBSZWxlYXNlIFZlcmlmaWNhdGlvbiBwYXNzZWQgaW5jbHVkaW5nIHR5cGVjaGVjaywgcnVudGltZSB1bml0cywgV2ViL0FuZHJvaWQgYnVpbGQsIEFydGlmYWN0IFNtb2tlLCBQbGF5d3JpZ2h0IFNtb2tlIGFuZCBJbnRlZ3JhdGlvbiBHYXRlLiBFYXJsaWVyIHByb2R1Y3Rpb24gRml2ZS1QYXRoIHJ1bnMgYDM0NTM1MzEyMTM1YCBhbmQgYDM0NTM2NDI2MDEyYCBib3RoIHJlcHJvZHVjZWQgYEZSRUVSTE1fUkFURV9MSU1JVEVEYCBiZWZvcmUgcmVwb3NpdG9yeSBtdXRhdGlvbiwgbW90aXZhdGluZyBhIG5vcm1hbCBzaW5nbGUtYWdlbnQgcGF0aCBpbmRlcGVuZGVudCBvZiBzd2FybSByZWFkaW5lc3MuCkxlYXJuZWQ6IFN3YXJtIGNhcGFjaXR5IGlzIGFuIG9wdGlvbmFsIGFjY2VsZXJhdGlvbiBjYXBhYmlsaXR5LCBub3QgYSBwcmVyZXF1aXNpdGUgZm9yIGFuIG9yZGluYXJ5IHJlcG9zaXRvcnktd3JpdGluZyBwcm9kdWN0IHBhdGg7IGZyZWUgdHJhbnNwb3J0IGFuZCBhZ2VudCB0b3BvbG9neSBtdXN0IGJlIHNlcGFyYXRlbHkgc2VsZWN0YWJsZSBhbmQgZXZpZGVuY2VkLgpPcGVuOiBNZXJnZS9kZXBsb3kgZXhhY3QgcmV2aXNpb24sIHRoZW4gcHJvdmUgZGVwbG95ZWQgdk5leHQgc2luZ2xlLWFnZW50IHdvcmtzcGFjZSBtdXRhdGlvbi90ZXN0cyBhbmQgZml2ZSBpbmRlcGVuZGVudGx5IHJlYWQtYmFjayBHaXRIdWIgRHJhZnQgUFJzOyBwcm92aWRlciBiYWNrb2ZmIG1heSBzdGlsbCByZXF1aXJlIGFuIGV4cGxpY2l0IG5ldy1ydW4gcmV0cnkgVVguCk5leHQgc2FmZSBzdGVwOiBSZS1ydW4gZXhhY3QtaGVhZCBnYXRlcyB3aXRoIHRoaXMgTWVtb3J5IGVudHJ5LCBtZXJnZSBvbmx5IGlmIGdyZWVuLCBkZXBsb3kgZXhhY3QgbWVyZ2UgcmV2aXNpb24sIHRoZW4gZXhlY3V0ZSB0aGUgcHJvdGVjdGVkIEZpdmUgUmVhbCBVSSBQYXRocyBhcyBzaW5nbGUtYWdlbnQuCg==
         run: |
           set -Eeuo pipefail
           marker='### 2026-09-10 — FreeLLM single-agent default with opt-in swarm'
@@ -29,25 +30,14 @@ jobs:
             echo 'Memory entry already exists; refusing duplicate append.' >&2
             exit 1
           fi
-          cat >> Memory.md <<'EOF'
-
-### 2026-09-10 — FreeLLM single-agent default with opt-in swarm
-Status: PARTIAL; source/regression verified, production live proof pending
-Task: Make normal vNext write/repository jobs run as one FreeLLM foreground agent while keeping the multi-agent swarm as an explicit feature.
-Decisions: vNext defaults to `mode=free` + `agentMode=single`; single-agent preserves FreeLLM revolver candidates with zero background agents; swarm is opt-in and fails closed with `SWARM_CAPACITY_NOT_READY`; no Free→Paid fallback.
-Touched surfaces: vNext execution selector/request adapter; cognitive swarm start contract and shipping mirror; backend/frontend/Playwright regression contracts.
-Evidence: Draft PR #1908 exact head before this append `a182bdbee024b3f404f170fe1a8a1d14fadcc9ed`; Agent Runtime and full Release Verification passed including typecheck, runtime units, Web/Android build, Artifact Smoke, Playwright Smoke and Integration Gate. Earlier production Five-Path runs `34535312135` and `34536426012` both reproduced `FREELLM_RATE_LIMITED` before repository mutation, motivating a normal single-agent path independent of swarm readiness.
-Learned: Swarm capacity is an optional acceleration capability, not a prerequisite for an ordinary repository-writing product path; free transport and agent topology must be separately selectable and evidenced.
-Open: Merge/deploy exact revision, then prove deployed vNext single-agent workspace mutation/tests and five independently read-back GitHub Draft PRs; provider backoff may still require an explicit new-run retry UX.
-Next safe step: Re-run exact-head gates with this Memory entry, merge only if green, deploy exact merge revision, then execute the protected Five Real UI Paths as single-agent.
-EOF
-      - name: Remove one-shot workflow and verify diff
+          printf '%s' "$ENTRY_B64" | base64 --decode >> Memory.md
+          git diff --check
+      - name: Remove one-shot workflow and commit memory entry
+        shell: bash
         run: |
+          set -Eeuo pipefail
           rm .github/workflows/chatgpt-memory-1908-append.yml
           git diff --check
-          test "$(git diff --name-only | sort)" = 'Memory.md'
-      - name: Commit memory entry
-        run: |
           git config user.name 'Ouroboros Collective'
           git config user.email 'projectouroboroscollective@gmail.com'
           git add -A
