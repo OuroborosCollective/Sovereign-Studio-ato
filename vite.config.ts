@@ -1,11 +1,18 @@
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(() => {
   const enableSourcemaps = process.env.VITE_BUILD_SOURCEMAP === 'true';
   const e2eBackendProxyTarget = process.env.SOVEREIGN_E2E_BACKEND_PROXY_TARGET?.trim();
+  const liveFivePath = process.env.SOVEREIGN_E2E_LIVE === '1';
+  const tlsCert = process.env.SOVEREIGN_E2E_TLS_CERT?.trim();
+  const tlsKey = process.env.SOVEREIGN_E2E_TLS_KEY?.trim();
+  if (liveFivePath && (!e2eBackendProxyTarget || !tlsCert || !tlsKey)) {
+    throw new Error('LIVE_PREVIEW_TLS_CONFIGURATION_REQUIRED');
+  }
 
   return {
     base: './',
@@ -22,6 +29,9 @@ export default defineConfig(() => {
       host: '127.0.0.1',
       port: 3000,
       strictPort: true,
+      https: liveFivePath && tlsCert && tlsKey
+        ? { cert: readFileSync(tlsCert), key: readFileSync(tlsKey) }
+        : undefined,
       proxy: {
         '/api': {
           target: e2eBackendProxyTarget,

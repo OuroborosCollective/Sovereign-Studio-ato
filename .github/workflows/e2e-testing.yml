@@ -25,7 +25,7 @@ on:
 
 env:
   NODE_VERSION: '22'
-  PNPM_VERSION: '9.12.2'
+  PNPM_VERSION: 9.12.2
   CI: 'true'
   VITE_ADMIN_API_BASE: https://sovereign-backend.arelorian.de
 
@@ -94,7 +94,10 @@ jobs:
     name: Five Real UI Paths to Draft PR
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.live_five_path == true) ||
-      (github.event_name == 'pull_request' && github.event.pull_request.number == 735 && github.event.pull_request.draft == true)
+      (github.event_name == 'push' &&
+       github.ref == 'refs/heads/feature/sovereign-live-five-owner' &&
+       github.actor == github.repository_owner &&
+       contains(github.event.head_commit.message, '[sovereign-live-five]'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -102,24 +105,45 @@ jobs:
       pull-requests: write
     env:
       SOVEREIGN_E2E_LIVE: '1'
+      SOVEREIGN_E2E_REVISION: ${{ github.sha }}
       SOVEREIGN_E2E_ACCOUNT_KEY: ${{ secrets.SOVEREIGN_E2E_ACCOUNT_KEY }}
       SOVEREIGN_E2E_GITHUB_TOKEN: ${{ github.token }}
       SOVEREIGN_E2E_REPO_URL: https://github.com/${{ github.repository }}
-      SOVEREIGN_E2E_APP_URL: http://127.0.0.1:3000
+      SOVEREIGN_E2E_APP_URL: https://127.0.0.1:3000
       SOVEREIGN_E2E_BACKEND_PROXY_TARGET: https://sovereign-backend.arelorian.de
-      VITE_SOVEREIGN_AGENT_API_URL: http://127.0.0.1:3000
+      VITE_SOVEREIGN_AGENT_API_URL: https://127.0.0.1:3000
+      # Auth, session readback and agent calls must share the preview cookie origin.
+      VITE_ADMIN_API_BASE: https://127.0.0.1:3000
 
     steps:
-      - name: Checkout repository
+      - name: Checkout exact live-test revision
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOVEREIGN_E2E_REVISION }}
+          fetch-depth: 1
 
-      - name: Require protected live-test identity
+      - name: Require live-test revision and real identity contract
         shell: bash
         run: |
+          set -Eeuo pipefail
           if [ -z "$SOVEREIGN_E2E_ACCOUNT_KEY" ]; then
-            echo "Missing protected repository secret: SOVEREIGN_E2E_ACCOUNT_KEY" >&2
-            exit 1
+            echo "Protected account-key secret is absent; the live test will provision one real ephemeral account through /api/auth/register and issue/revoke a one-run account key."
+          else
+            echo "Protected repository account-key identity is configured."
           fi
+          [[ "$SOVEREIGN_E2E_REVISION" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "SOVEREIGN_E2E_REVISION is not a full lowercase Git SHA" >&2
+            exit 1
+          }
+          ACTUAL_HEAD="$(git rev-parse HEAD)"
+          [ "$ACTUAL_HEAD" = "$SOVEREIGN_E2E_REVISION" ] || {
+            echo "Live-test checkout $ACTUAL_HEAD does not match $SOVEREIGN_E2E_REVISION" >&2
+            exit 1
+          }
+
+      - name: Prepare isolated HTTPS preview trust
+        shell: bash
+        run: bash scripts/prepare-live-e2e-tls.sh
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -147,7 +171,10 @@ jobs:
 
       - name: Run five serial first-user Draft-PR paths
         shell: bash
-        run: pnpm exec playwright test tests/e2e/five-draft-pr-paths.spec.ts --project=chromium --workers=1 --reporter=list,html
+        run: |
+          # Remove only this lane's generated receipts, not repository source files.
+          rm -f test-results/five-draft-pr-evidence.json test-results/live-safe-reporter.json
+          pnpm exec playwright test tests/e2e/five-draft-pr-paths.spec.ts --project=chromium --workers=1 --reporter=./tests/e2e/helpers/live-safe-reporter.ts
 
       - name: Upload five-path runtime evidence
         if: always()
@@ -156,8 +183,8 @@ jobs:
           name: five-draft-pr-runtime-evidence-${{ github.run_id }}
           path: |
             test-results/five-draft-pr-evidence.json
-            playwright-report/
-          if-no-files-found: warn
+            test-results/live-safe-reporter.json
+          if-no-files-found: error
           retention-days: 14
 
       - name: Write five-path summary
@@ -167,9 +194,10 @@ jobs:
           {
             echo "## Five real first-user Draft-PR paths"
             echo ""
+            echo "- Exact source revision: $SOVEREIGN_E2E_REVISION"
             echo "- Current branch UI served locally at 390×844"
             echo "- Real production API reached through same-origin preview proxy"
-            echo "- Real account-key session; no authentication bypass"
+            echo "- Real account-key session; protected key when configured, otherwise one-run product registration + issued/revoked account key; no authentication bypass"
             echo "- GitHub verifies every PR as open and draft before cleanup"
             echo "- Every owned test PR is closed and its sovereign/agent-* branch deleted"
             echo "- Evidence: five-draft-pr-runtime-evidence-${{ github.run_id }}"

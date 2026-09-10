@@ -5,7 +5,9 @@ const MAIN_PATH = 'src/main.tsx';
 const APP_PATH = 'src/App.tsx';
 const WRAPPER_PATH = 'src/SovereignAppWrapper.tsx';
 const CSS_PATH = 'src/index.css';
-const RELEASE_PATH = 'src/features/release/PlayReleaseChat.tsx';
+const CONTROL_SURFACE_PATH = 'src/features/control-surface-vnext/App.tsx';
+const PRODUCTION_ADAPTER_PATH = 'src/features/control-surface-vnext/adapter/production-adapter.ts';
+const AGENT_CLIENT_PATH = 'src/features/product/runtime/sovereignAgentClient.ts';
 
 const DOM_INSTALLER_TOKENS = [
   'installMobileAgentMonitor',
@@ -65,7 +67,9 @@ describe('current Sovereign app shell contract', () => {
     expect(existsSync(APP_PATH)).toBe(true);
     expect(existsSync(WRAPPER_PATH)).toBe(true);
     expect(existsSync(CSS_PATH)).toBe(true);
-    expect(existsSync(RELEASE_PATH)).toBe(true);
+    expect(existsSync(CONTROL_SURFACE_PATH)).toBe(true);
+    expect(existsSync(PRODUCTION_ADAPTER_PATH)).toBe(true);
+    expect(existsSync(AGENT_CLIENT_PATH)).toBe(true);
   });
 
   it('boots the React wrapper and stable Android runtime helpers without global coach chrome', () => {
@@ -88,30 +92,48 @@ describe('current Sovereign app shell contract', () => {
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
-  it('makes PlayReleaseChat the current-session primary surface and keeps observatory truth separate', () => {
+  it('makes the vNext control surface primary and keeps runtime truth behind one production adapter', () => {
     const app = read(APP_PATH);
-    const release = read(RELEASE_PATH);
+    const controlSurface = read(CONTROL_SURFACE_PATH);
+    const productionAdapter = read(PRODUCTION_ADAPTER_PATH);
+    const agentClient = read(AGENT_CLIENT_PATH);
 
     expectContainsAll(app, [
-      'PlayReleaseChat',
+      'SovereignControlSurfaceVNext',
       'data-testid="sovereign-chat-app"',
-      'data-layout="chat-first-agent-zero-background"',
-      'data-primary-surface="play-release-chat"',
-      'data-truth-scope="current-chat-session-only"',
-      'aria-label="Sovereign Chat"',
+      'data-layout="sovereign-control-surface-vnext"',
+      'data-primary-surface="sovereign-control-surface-vnext"',
+      'data-truth-scope="runtime-readback-only"',
+      'aria-label="Sovereign Control Surface"',
       'EvidenceObservatoryAtlas',
     ]);
     expectContainsNone(app, [...REMOVED_VISIBLE_SHELL_TOKENS, 'RESTORE_LATEST_JOB', 'BuilderContainer']);
 
-    expectContainsAll(release, [
-      'startRepositoryExecution',
-      'prepareDraftPr',
-      'createDraftPr',
-      'Draft PR erstellen',
-      'readbackHeadSha',
-      'GitHub-Änderungsentwurf erkannt',
+    expectContainsAll(controlSurface, [
+      'SovereignAdapterProvider',
+      'useSovereignJob',
+      'PublicationInspector',
+      'RuntimeMonitor',
+      'WorkspaceProjection',
     ]);
-    expect(release).not.toContain('listJobs(');
+    expectContainsAll(productionAdapter, [
+      "'/api/user/agent/swarm/run'",
+      "'/api/user/agent/toolchain/manifest'",
+      "'/api/user/agent/swarm/manifest'",
+      'this.client.prepareDraftPr(run.jobId)',
+      'this.client.createDraftPr(run.jobId)',
+      'credentials: \'include\'',
+      'createSovereignAgentClient',
+    ]);
+    expectContainsAll(agentClient, [
+      "jobPath(jobId, '/draft-pr/prepare')",
+      "jobPath(jobId, '/draft-pr/create')",
+      'signal.draftVerified === true',
+      "stringValue(signal.prStateVerified) === 'open'",
+      'signal.readbackVerified === true',
+      'signal.checksReadbackVerified === true',
+    ]);
+    expectContainsNone(productionAdapter, ['MockSovereignBackendAdapter', '/api/config/', 'sessionToken', 'localStorage']);
   });
 
   it('keeps the wrapper free of visible chrome and navigation state', () => {

@@ -19,30 +19,41 @@ describe('main app entry', () => {
     expect(wrapper).not.toContain('ProductMagicApp');
   });
 
-  it('makes the Play Release chat the current-session primary surface', () => {
+  it('makes the vNext runtime-readback control surface primary', () => {
     const app = readSource('./App.tsx');
 
-    expect(app).toContain('PlayReleaseChat');
+    expect(app).toContain('SovereignControlSurfaceVNext');
     expect(app).toContain('data-testid="sovereign-chat-app"');
-    expect(app).toContain('data-layout="chat-first-agent-zero-background"');
-    expect(app).toContain('data-primary-surface="play-release-chat"');
-    expect(app).toContain('data-truth-scope="current-chat-session-only"');
-    expect(app).toContain('aria-label="Sovereign Chat"');
+    expect(app).toContain('data-layout="sovereign-control-surface-vnext"');
+    expect(app).toContain('data-primary-surface="sovereign-control-surface-vnext"');
+    expect(app).toContain('data-truth-scope="runtime-readback-only"');
+    expect(app).toContain('aria-label="Sovereign Control Surface"');
     expect(app).toContain('CHAT_FIRST_STYLE');
     expect(app).not.toContain('BuilderContainer');
     expect(app).not.toContain('RESTORE_LATEST_JOB');
   });
 
-  it('keeps repository execution and Draft-PR publication on the visible release-chat path', () => {
-    const release = readSource('./features/release/PlayReleaseChat.tsx');
+  it('keeps repository execution and Draft-PR publication behind the single vNext production adapter', () => {
+    const surface = readSource('./features/control-surface-vnext/App.tsx');
+    const adapter = readSource('./features/control-surface-vnext/adapter/production-adapter.ts');
+    const client = readSource('./features/product/runtime/sovereignAgentClient.ts');
+    const publication = readSource('./features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx');
 
-    expect(release).toContain('startRepositoryExecution');
-    expect(release).toContain('prepareDraftPr');
-    expect(release).toContain('createDraftPr');
-    expect(release).toContain('Draft PR erstellen');
-    expect(release).toContain('readbackHeadSha');
-    expect(release).toContain('GitHub-Änderungsentwurf erkannt');
-    expect(release).not.toContain('listJobs(');
+    expect(surface).toContain('SovereignAdapterProvider');
+    expect(surface).toContain('useSwarmRun');
+    expect(surface).toContain('useSovereignJob');
+    expect(adapter).toContain("'/api/user/agent/swarm/run'");
+    expect(adapter).toContain("'/api/user/agent/toolchain/manifest'");
+    expect(adapter).toContain("'/api/user/agent/swarm/manifest'");
+    expect(adapter).toContain('this.client.prepareDraftPr(run.jobId)');
+    expect(adapter).toContain('this.client.createDraftPr(run.jobId)');
+    expect(adapter).toContain('readbackHeadSha');
+    expect(client).toContain("jobPath(jobId, '/draft-pr/prepare')");
+    expect(client).toContain("jobPath(jobId, '/draft-pr/create')");
+    expect(client).toContain("stringValue(signal.prStateVerified) === 'open'");
+    expect(adapter).not.toContain('MockSovereignBackendAdapter');
+    expect(publication).toContain('EXTERNAL WRITE CONSENT');
+    expect(publication).toContain('Success is shown only after independent GitHub readback.');
   });
 
   it('preserves the evidence observatory as an explicit route instead of mixing it into live runtime truth', () => {

@@ -4,11 +4,16 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./features/release/PlayReleaseChat', () => ({
-  PlayReleaseChat: () => (
-    <section data-testid="sovereign-release-chat" aria-label="Sovereign Play Release">
-      <textarea aria-label="Nachricht an Sovereign" />
-      <button type="button">Draft PR erstellen</button>
+vi.mock('./features/control-surface-vnext/App', () => ({
+  default: () => (
+    <section data-testid="sovereign-control-surface-vnext" aria-label="Sovereign Control Surface vNext">
+      <textarea aria-label="Mission an Sovereign" />
+      <nav data-testid="mobile-bottom-nav">
+        <button type="button">COMMAND</button>
+        <button type="button">EVIDENCE</button>
+        <button type="button">WORKSPACE</button>
+        <button type="button">PUBLISH</button>
+      </nav>
     </section>
   ),
 }));
@@ -26,21 +31,24 @@ beforeEach(() => {
 });
 
 describe('App Android WebView smoke', () => {
-  it('enters the current-session release chat as the Android app surface', () => {
+  it('enters the runtime-readback vNext control surface as the Android app surface', () => {
     render(<App />);
 
     const app = screen.getByTestId('sovereign-chat-app');
-    expect(app).toHaveAttribute('data-layout', 'chat-first-agent-zero-background');
-    expect(app).toHaveAttribute('data-primary-surface', 'play-release-chat');
-    expect(app).toHaveAttribute('data-truth-scope', 'current-chat-session-only');
-    expect(screen.getByTestId('sovereign-release-chat')).toBeDefined();
+    expect(app).toHaveAttribute('data-layout', 'sovereign-control-surface-vnext');
+    expect(app).toHaveAttribute('data-primary-surface', 'sovereign-control-surface-vnext');
+    expect(app).toHaveAttribute('data-truth-scope', 'runtime-readback-only');
+    expect(screen.getByTestId('sovereign-control-surface-vnext')).toBeDefined();
   });
 
-  it('keeps the mission composer and Draft-PR action reachable on the mobile surface', () => {
+  it('keeps the mission composer and fixed mobile projections reachable without exposing publication before a gate', () => {
     render(<App />);
 
-    expect(screen.getByLabelText('Nachricht an Sovereign')).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Draft PR erstellen' })).toBeDefined();
+    expect(screen.getByLabelText('Mission an Sovereign')).toBeDefined();
+    expect(screen.getByTestId('mobile-bottom-nav')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'COMMAND' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'PUBLISH' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'CREATE DRAFT PR' })).toBeNull();
   });
 
   it('does not mount legacy builder/monitor truth surfaces during initial entry', () => {

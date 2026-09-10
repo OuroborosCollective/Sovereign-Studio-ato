@@ -212,9 +212,26 @@ jobs:
 
       - name: Playwright Smoke Gate
         id: playwright_smoke
-        run: pnpm run test:e2e
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p .security-reports
+          pnpm run test:e2e 2>&1 | tee .security-reports/playwright-smoke.log
         env:
           CI: true
+
+      - name: Upload Playwright Smoke Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .security-reports/playwright-smoke.log
+            playwright-report
+            test-results
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Integration Gate
         id: integration

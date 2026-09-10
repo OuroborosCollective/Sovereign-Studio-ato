@@ -108,7 +108,7 @@ def test_readiness_and_legacy_litellm_retirement_are_required() -> None:
     assert "traefik-public:\n    external: true" in backend_compose
     assert "LITELLM_BASE_URL" not in backend_compose
     assert "LITELLM_MASTER_KEY_FILE" not in backend_compose
-    assert "direct OpenRouter and FreeLLM routing network" in backend_compose
+    assert "direct OpenRouter and owner-managed FreeLLMAPI routing network" in backend_compose
     assert 'RETIREMENT_BLOCKER = "legacy_litellm_runtime_retired"' in stack
     assert "raise RuntimeError(" in stack
     assert 'remove_managed_legacy_file "$BROKER_DIR/litellm_stack.py" "broker/litellm_stack.py"' in installer
