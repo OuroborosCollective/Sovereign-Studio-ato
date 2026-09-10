@@ -1,0 +1,47 @@
+name: ChatGPT Memory 1908 Correction
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/single-agent-default-swarm-feature
+    paths:
+      - .github/workflows/chatgpt-memory-1908-correct.yml
+
+permissions:
+  contents: write
+
+jobs:
+  correct-once:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sovereign/chatgpt/single-agent-default-swarm-feature
+          fetch-depth: 1
+      - name: Correct current unmerged Memory entry and remove one-shot workflow
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('Memory.md')
+          text = path.read_text(encoding='utf-8')
+          fixes = {
+              '`a 182bdbee024b3f404f170fe1a8a1d14fadcc9ed`': '`a182bdbee024b3f404f170fe1a8a1d14fadcc9ed`',
+              '`FREERLM_RATE_LIMITED`': '`FREELLM_RATE_LIMITED`',
+          }
+          for old, new in fixes.items():
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected exactly one current-entry occurrence: {old}')
+              text = text.replace(old, new)
+          path.write_text(text, encoding='utf-8')
+          PY
+          rm .github/workflows/chatgpt-memory-1908-correct.yml
+          git diff --check
+          git config user.name 'Ouroboros Collective'
+          git config user.email 'projectouroboroscollective@gmail.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'docs(memory): correct #1908 exact evidence identifiers'
+          git push origin HEAD:sovereign/chatgpt/single-agent-default-swarm-feature
