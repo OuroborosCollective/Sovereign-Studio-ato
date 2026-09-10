@@ -2570,7 +2570,11 @@ def register_cognitive_swarm_routes(
     @app.route("/api/user/agent/swarm/runs/<run_id>/resume", methods=["POST"])
     @require_session
     def user_resume_cognitive_run(run_id: str):
-        body: dict[str, Any] = request.get_json(force=True) or {}
+        body = request.get_json(force=True, silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         payload, status_code = resume_cognitive_swarm_run(
             get_connection=get_connection,
             user_id=_current_session_user_id(),
@@ -2586,7 +2590,11 @@ def register_cognitive_swarm_routes(
     @app.route("/api/user/agent/swarm/run", methods=["POST"])
     @require_session
     def user_run_cognitive_swarm():
-        body: dict[str, Any] = request.get_json(force=True) or {}
+        body = request.get_json(force=True, silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         payload, status_code = _start_run_with_session_github_token(
             get_connection=get_connection,
             user_id=_current_session_user_id(),
