@@ -342,3 +342,13 @@ Evidence: Main `423d57e641adc105971adbb8437af43940a3290b` failed LLM Runtime Bou
 Learned: Table-count parity and an `APPLIED` status do not prove a migration; the live column/constraint/index readback is the causal database evidence.
 Open: Current main is still not runtime-equal to its immutable backend image; coordinated release, PatchMon equality and 5/5 real vNext Single-Agent Draft-PR paths remain required.
 Next safe step: Re-run #1917 on the Memory-appended head; merge only after the exact head is green and Owner authorization is satisfied, then prove immutable deployment/runtime equality before Five Real UI Paths.
+
+### 2026-09-11 — Make Five Real UI Paths causally prove free single-agent Draft PR publication
+Status: VERIFIED source/regression; production rollout and 5/5 live proof pending
+Task: Close the remaining Five-Path evidence gap so the new vNext frontend proves its actual free single-agent request, internal job/workspace execution and GitHub Draft-PR publication chain.
+Decisions: Observe only allowlisted request/runtime fields and never mission/credentials; require `mode=free` + `agentMode=single`, `free_single_agent` foreground=1/background=0, real mutation/diff/tests and exact job/workspace identity; label the EXTERNAL WRITE CONSENT inline group; independently fail closed on the emitted five-path evidence artifact.
+Touched surfaces: Five-path Playwright lane, secret-safe runtime/request observer, runtime-evidence verifier, vNext PublicationInspector consent accessibility and focused regressions.
+Evidence: PR #1918 code head `3a57f98d0095831276afb8282f706b9447d42517`; Release Verification `34593780545`, Agent Backend `34593780471`, Integration Plan `34593780498` and Continuity `34593780552` all completed successfully on that exact head; seven code/test/workflow files changed before this append and no review threads were open.
+Learned: Five successful Draft PR objects are insufficient unless every one is causally bound to the browser request and backend execution topology; the exported evidence also needs an independent fail-closed verifier.
+Open: Merge the exact Memory-appended head, deploy the resulting main revision immutably, prove Migration 062/PatchMon/runtime equality, then run and independently inspect the protected five-path workflow.
+Next safe step: Re-run all exact-head gates after this Memory append; merge only when terminal green, then perform revision-equal release/deploy before the live 5/5 proof.
