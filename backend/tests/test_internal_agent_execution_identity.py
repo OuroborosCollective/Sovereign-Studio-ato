@@ -87,4 +87,5 @@ def test_runtime_identity_migration_preserves_historical_rows_without_update() -
     assert "sovereign.agent-execution-receipt.v1" in canonical
     assert "execution_runtime_kind IN ('backend', 'mcp')" in canonical
     assert "ALTER COLUMN mcp_revision DROP NOT NULL" in canonical
+    assert "base_commit_sha ~ '^[0-9a-f]{40}$'" in canonical
     assert "UPDATE agent_run_receipts" not in canonical
