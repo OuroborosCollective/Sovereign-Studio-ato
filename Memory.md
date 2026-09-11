@@ -302,3 +302,13 @@ Evidence: Draft PR #1908 exact head before this append `a182bdbee024b3f404f170fe
 Learned: Swarm capacity is an optional acceleration capability, not a prerequisite for an ordinary repository-writing product path; free transport and agent topology must be separately selectable and evidenced.
 Open: Merge/deploy exact revision, then prove deployed vNext single-agent workspace mutation/tests and five independently read-back GitHub Draft PRs; provider backoff may still require an explicit new-run retry UX.
 Next safe step: Re-run exact-head gates with this Memory entry, merge only if green, deploy exact merge revision, then execute the protected Five Real UI Paths as single-agent.
+
+### 2026-09-11 — Internal Agent Job toolplane decoupled from external MCP broker
+Status: VERIFIED source/regression; production live proof pending
+Task: Remove the external ChatGPT MCP/broker as a prerequisite for normal backend Agent Job repository reads, writes, diffs and tests.
+Decisions: Internal repository tools bind evidence to the executing backend revision/image plus the target workspace Git base as separate identities; ChatGPT MCP identity remains only for true external MCP/operator effects; historical v1 MCP receipts remain append-only while new internal calls use `sovereign.agent-execution-receipt.v1`.
+Touched surfaces: Agent run receipts, repository tool execution, run-store receipt persistence, live-workspace receipt projection, migration 062 and the Required Agent Backend test lane; canonical/deployment mirrors remain paired.
+Evidence: Deployed baseline `64bbf428c5646b922cad0e9499c5de3b5457fd0a`; Five Real UI Paths run `34542861497` reached FreeLLM single-agent repository execution but failed three pre-tool attempts with zero persisted tool rows; PR #1912 head before this append `c1da1ae313a23e7bc921e2887f8b9524aa82d23c`; Agent Backend run `34548069921` passed with 1269 tests + 1 skipped including five new internal-toolplane identity regressions; Release Verification `34548069971` passed Runtime Units, Typecheck, Web/Android, Artifact Smoke, Playwright and Integration Gate.
+Learned: A backend Agent Job already owns an isolated workspace and must not call the hardened external ChatGPT MCP merely to prove its own file/Git/test execution; repository provenance, backend runtime provenance and external MCP provenance are distinct trust boundaries.
+Open: Merge/deploy the exact reviewed revision, apply/read back migration 062, prove backend runtime/image equality, then rerun Five Real UI Paths and require 5/5 independently verified Draft PRs.
+Next safe step: Re-run exact-head gates after this append; merge only with explicit Owner authorization, then immutable deploy + PatchMon/runtime readback + protected Five-Path proof.
