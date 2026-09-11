@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-09-07T17:28:26.995Z",
+  "generatedAt": "2026-09-11T21:30:58.320Z",
   "discovery": {
     "scope": "tracked repository test conventions",
     "excludedDirectories": [
@@ -31,21 +31,20 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 754,
+  "totalTestFiles": 773,
   "testRoots": {
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
     "backend": 1,
-    "backend/tests": 164,
+    "backend/tests": 168,
     "backend/tests/e2e": 1,
     "integrations/openhands/sovereign-mcp-toolset-plugin/tests": 1,
     "research": 1,
-    "scripts": 11,
-    "scripts/sovereign-backend/tests": 77,
+    "scripts": 12,
+    "scripts/sovereign-backend/tests": 80,
     "scripts/tests": 3,
     "sovereign-studio-rn/e2e": 7,
-    "src": 360,
-    "test_tools_skills.sh": 1,
+    "src": 372,
     "tests": 1,
     "tests/e2e": 5,
     "tools": 3,
@@ -210,6 +209,14 @@
     },
     {
       "file": "backend/tests/test_agent_mcp_integration.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_agent_mode_contract.py",
       "language": "python",
       "testRoot": "backend/tests",
       "gates": [],
@@ -772,6 +779,14 @@
       "category": "python-suite"
     },
     {
+      "file": "backend/tests/test_github_installation_token_compatibility.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
       "file": "backend/tests/test_github_write_evidence_gate.py",
       "language": "python",
       "testRoot": "backend/tests",
@@ -840,6 +855,16 @@
       "gates": [],
       "ciWorkflows": [
         "integration-plan-lane-gate.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_internal_agent_execution_identity.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
       ],
       "category": "python-suite"
     },
@@ -1183,6 +1208,14 @@
     },
     {
       "file": "backend/tests/test_provider_neutral_agent_runtime.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_provider_neutral_effect_parameter_bridge.py",
       "language": "python",
       "testRoot": "backend/tests",
       "gates": [],
@@ -2285,6 +2318,16 @@
       "category": "python-suite"
     },
     {
+      "file": "scripts/sovereign-backend/tests/test_provider_neutral_effect_parameter_bridge.py",
+      "language": "python",
+      "testRoot": "scripts/sovereign-backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
       "file": "scripts/sovereign-backend/tests/test_public_llm_route_catalog.py",
       "language": "python",
       "testRoot": "scripts/sovereign-backend/tests",
@@ -2316,6 +2359,26 @@
     },
     {
       "file": "scripts/sovereign-backend/tests/test_schema_migration_ledger_reconciliation.py",
+      "language": "python",
+      "testRoot": "scripts/sovereign-backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
+      "file": "scripts/sovereign-backend/tests/test_shadow_hf_recovery_workflow_contract.py",
+      "language": "python",
+      "testRoot": "scripts/sovereign-backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
+      "file": "scripts/sovereign-backend/tests/test_shadow_inference_hf_recovery.py",
       "language": "python",
       "testRoot": "scripts/sovereign-backend/tests",
       "gates": [],
@@ -2383,6 +2446,26 @@
         "sovereign-agent-backend.yml"
       ],
       "category": "python-suite"
+    },
+    {
+      "file": "scripts/sovereign-live-path-scan.test.mjs",
+      "language": "javascript-typescript",
+      "testRoot": "scripts",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-contract-scan.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
     },
     {
       "file": "scripts/sovereign-ux-primary-surface.contract.test.mjs",
@@ -2995,6 +3078,215 @@
     },
     {
       "file": "src/features/config/components/ConfigBar.test.tsx",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/adapter/production-adapter.agent-mode.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/adapter/production-adapter.repository-intent.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/fsm/runtimePhaseProjection.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/liveDraftCleanup.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/liveSessionContract.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/liveSetupBudget.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/liveToolDiagnostics.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/liveWorkspaceObservation.test.ts",
       "language": "javascript-typescript",
       "testRoot": "src",
       "gates": [
@@ -5866,6 +6158,25 @@
     },
     {
       "file": "src/features/product/runtime/palRunGate.smoke.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/product/runtime/patternMemoryContainerRuntime.test.ts",
       "language": "javascript-typescript",
       "testRoot": "src",
       "gates": [
@@ -9347,14 +9658,6 @@
         "sovereign-validation.yml"
       ],
       "category": "release-gate"
-    },
-    {
-      "file": "test_tools_skills.sh",
-      "language": "shell",
-      "testRoot": "test_tools_skills.sh",
-      "gates": [],
-      "ciWorkflows": [],
-      "category": "not-in-any-gate"
     },
     {
       "file": "tests/e2e/admin-typed-provider-surface.spec.ts",

@@ -208,6 +208,7 @@ function tokenizeContent(input: string): Segment[] {
  */
 const CopyButton = React.memo(function CopyButton({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -225,6 +226,8 @@ const CopyButton = React.memo(function CopyButton({ code }: { code: string }) {
     <button
       type="button"
       onClick={handleCopy}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
       aria-label={label}
       title={label}
       style={{
@@ -236,6 +239,8 @@ const CopyButton = React.memo(function CopyButton({ code }: { code: string }) {
         fontSize: 11,
         cursor: 'pointer',
         transition: 'all 0.15s ease',
+        outline: isFocused ? '2px solid #00d9b1' : 'none',
+        outlineOffset: '2px',
       }}
     >
       {copied ? '✓ Copied' : 'Copy'}

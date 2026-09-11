@@ -3,8 +3,9 @@
  * Tests for markdown rendering (bold, code, links, code blocks)
  */
 
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ChatMarkdown } from './ChatMarkdown';
 
 describe('ChatMarkdown', () => {
@@ -90,5 +91,25 @@ describe('ChatMarkdown', () => {
     expect(text).toContain('bold');
     expect(text).toContain('normal');
     expect(text).toContain('code');
+  });
+
+  it('renders a copy button for code blocks that copies text', async () => {
+    const user = userEvent.setup();
+    const mockWriteText = vi.fn().mockResolvedValue(undefined);
+
+    // Polyfill or mock the clipboard for jsdom
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: mockWriteText },
+      writable: true,
+    });
+
+    // Code blocks must have the markers on separate lines to match the implementation
+    render(<ChatMarkdown content={`\`\`\`javascript\nconsole.log('test');\n\`\`\``} />);
+
+    const copyButton = screen.getByRole('button', { name: /Copy code/i });
+    expect(copyButton).toBeTruthy();
+
+    await user.click(copyButton);
+    expect(mockWriteText).toHaveBeenCalledWith("console.log('test');");
   });
 });
