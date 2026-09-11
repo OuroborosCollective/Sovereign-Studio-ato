@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Check, Copy, ExternalLink, GitPullRequestDraft, Lock, ShieldAlert, ShieldCheck, Sparkles, X } from 'lucide-react';
 import type { DraftPR, DraftPrPreparation, JobPhase, PublicationState } from '../../types/domain';
+import { safeHttpsUrl } from '../../../product/runtime/builderContainerHelpers';
 import { playVerificationChime } from '../../utils/audio';
 
 interface Props {
@@ -53,7 +54,9 @@ export function PublicationInspector({ publication, draftPR: directDraftPR, jobP
               <div className="flex justify-between gap-3"><span className="text-[var(--text-dim)]">BRANCH</span><span className="text-white truncate">{draftPR.branch} → {draftPR.baseBranch}</span></div>
               <div className="flex justify-between gap-3"><span className="text-[var(--text-dim)]">CI</span><span className={draftPR.ciState === 'failure' ? 'text-[var(--red-alert)]' : draftPR.ciState === 'success' ? 'text-[var(--emerald-seal)]' : 'text-[var(--text-main)]'}>{draftPR.ciState.toUpperCase()} · {draftPR.checksSuccessCount}/{draftPR.checkRunCount} success</span></div>
               <div className="pt-2 border-t border-white/5"><div className="text-[9px] text-[var(--text-dim)]">READBACK HEAD SHA</div><button type="button" onClick={copyHash} className="mt-1 w-full flex items-center justify-between gap-2 p-2 rounded bg-[var(--carbon-base)] border border-white/5 text-[var(--emerald-seal)] text-left"><span className="truncate">{draftPR.readbackHeadSha}</span>{copiedHash ? <Check size={11} /> : <Copy size={11} />}</button></div>
-              <a href={draftPR.url} target="_blank" rel="noreferrer" className="min-h-10 flex items-center justify-center gap-2 rounded bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] text-[var(--emerald-seal)] font-bold">OPEN VERIFIED DRAFT PR <ExternalLink size={12} /></a>
+              {safeHttpsUrl(draftPR.url) ? (
+                <a href={safeHttpsUrl(draftPR.url)} target="_blank" rel="noopener noreferrer" className="min-h-10 flex items-center justify-center gap-2 rounded bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] text-[var(--emerald-seal)] font-bold">OPEN VERIFIED DRAFT PR <ExternalLink size={12} /></a>
+              ) : null}
             </div>
           </>
         ) : (
