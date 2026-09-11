@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "2193e7e85ac21422e75bdce6bfb8df39f0fdf61f",
+  "sourceRevision": "423d57e641adc105971adbb8437af43940a3290b",
   "rawCandidateCount": 100,
   "canonicalCandidateCount": 79,
   "entries": [
@@ -41,12 +41,12 @@
         "backend/agent_runtime/contracts.py"
       ],
       "symbol": "sanitize_agent_text",
-      "line": 141,
+      "line": 144,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "fe3f2897e272f84f58f645f05a7295ab59d81b8925c5dba46b9d719169c93339",
+      "fileSha256": "08ad68f60cb97ffb7f7380c2b1f4b110dd5de80d56932f065c9c844c51134595",
       "anchorSha256": "a1202b8f4301c0118f17f9645a5ad234a0f2e42fb967bfd723274b3808522861",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:5b381d6bffb457d94575ec36",
+      "candidateId": "llm-boundary:d2b8b8ae6f1514e5c160862f",
       "classification": "STRUCTURED_POLICY",
       "rationale": "sanitize_agent_text evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -56,12 +56,12 @@
         "backend/agent_runtime/contracts.py"
       ],
       "symbol": "is_valid_github_repo_url",
-      "line": 182,
+      "line": 185,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "fe3f2897e272f84f58f645f05a7295ab59d81b8925c5dba46b9d719169c93339",
+      "fileSha256": "08ad68f60cb97ffb7f7380c2b1f4b110dd5de80d56932f065c9c844c51134595",
       "anchorSha256": "9383cb5e84e0a908778c3f4c21c2760c8c1f4a02b77a0de2498fb2ca18b30067",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:5208f5066a45f74cd3948f61",
+      "candidateId": "llm-boundary:676d688ed2863b95dcd7f353",
       "classification": "STRUCTURED_POLICY",
       "rationale": "is_valid_github_repo_url evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -71,12 +71,12 @@
         "backend/agent_runtime/contracts.py"
       ],
       "symbol": "is_actionable_evidence_file",
-      "line": 196,
+      "line": 199,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "fe3f2897e272f84f58f645f05a7295ab59d81b8925c5dba46b9d719169c93339",
+      "fileSha256": "08ad68f60cb97ffb7f7380c2b1f4b110dd5de80d56932f065c9c844c51134595",
       "anchorSha256": "3d856663fa76298492facadd2989c388e03ba45ca48f46f7272c5a1e7f2a000f",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:d8b78e74d383055c2a6fb926",
+      "candidateId": "llm-boundary:1d4ee32d11b7dcb373c0bd23",
       "classification": "STRUCTURED_POLICY",
       "rationale": "is_actionable_evidence_file evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -324,12 +324,12 @@
       "canonicalPath": "src/features/product/runtime/generatedFileReview.ts",
       "mirrorPaths": [],
       "symbol": "isPlanOnlyPath",
-      "line": 56,
+      "line": 63,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "77c508ff4b1cf91a4db65ea79adf3dc7347d0622f7c2a9c711bbdf0e7706792c",
+      "fileSha256": "ca3b8e28a13f1b9df5110f4cfb93b3db4923c3fbb2e04c307dfa390f8cee10e1",
       "anchorSha256": "4e5bb75bc7289edbe1ae753016ca154d3ac76fe3d7c3c7e0550a4c563afe091e",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:2bcebad09b0dc9bedd8e5804",
+      "candidateId": "llm-boundary:63d374caec76ef7bcaabd156",
       "classification": "STRUCTURED_POLICY",
       "rationale": "isPlanOnlyPath evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -1075,5 +1075,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "01377a9725c6ad28a52cff90d2b9dbf0658db3049e6e2b80a4b3135b36afca0a"
+  "ledgerSha256": "21371ef8c4621bcf00ecc41d088c9cb949bf347a9d5ca65d4cd1f516d7f3bef6"
 }
