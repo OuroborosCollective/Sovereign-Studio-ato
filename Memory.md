@@ -332,3 +332,13 @@ Evidence: PR #1916 source head `da203c110a2f6b3a04c07dfba8a56dd6c6658700`; exact
 Learned: Old bot PR branches are not safe merge units after long-lived main drift; GitHub PR file identity plus exact-current source reapplication is the reliable boundary, while historical generated evidence must be regenerated rather than imported.
 Open: Final code+Memory head still requires exact-head gates before merge; dependency PRs #1903–#1906 remain to be integrated/closed, followed by a zero-open-PR readback and then coordinated production/runtime evidence including migration 062 and Five Real UI Paths.
 Next safe step: Re-run all exact-head gates on the Memory-appended #1916 head, merge on success under the standing Owner zero-open-PR authorization, then complete the dependency wave and prove the open PR list is empty.
+
+### 2026-09-11 — Restore current-main LLM boundary gate and activate Migration 062
+Status: VERIFIED source/regression and live DB schema; production rollout pending
+Task: Repair the exact-current-main LLM boundary ledger drift and close the live Migration 062 contract gap before production/Five-Path proof.
+Decisions: Preserve all 79 reviewed boundary classifications; update only four deterministic SHA/line bindings; apply Migration 062 only after rollback-only preview; do not infer production green from image availability or healthy old containers.
+Touched surfaces: `config/architecture/llm-tool-boundary-review-ledger.json`; live `agent_run_receipts` schema/constraints/index.
+Evidence: Main `423d57e641adc105971adbb8437af43940a3290b` failed LLM Runtime Boundary run `34577290992`; deterministic reconcile found 4 binding drifts, 0 new/removed candidates, ledger `21371ef8c4621bcf00ecc41d088c9cb949bf347a9d5ca65d4cd1f516d7f3bef6`; PR #1917 pre-Memory head `2267567957d9eb0c98dc2e3cb82c21768b3a43bc` completed all exact-head checks with no pending/failed gates; Migration 062 SHA-256 `2945c62de6dfb8bcbf0bcbe4c9958c0b8b994ca6465bf77e88fcd7182c72b7a2` previewed with rollback, then live readback showed all five `execution_*` columns, nullable legacy MCP fields, dual receipt constraints and `idx_agent_run_receipts_execution_revision`.
+Learned: Table-count parity and an `APPLIED` status do not prove a migration; the live column/constraint/index readback is the causal database evidence.
+Open: Current main is still not runtime-equal to its immutable backend image; coordinated release, PatchMon equality and 5/5 real vNext Single-Agent Draft-PR paths remain required.
+Next safe step: Re-run #1917 on the Memory-appended head; merge only after the exact head is green and Owner authorization is satisfied, then prove immutable deployment/runtime equality before Five Real UI Paths.
