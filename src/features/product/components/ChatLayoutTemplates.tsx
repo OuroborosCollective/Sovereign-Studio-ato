@@ -362,7 +362,7 @@ const FloatingChatLayout: React.FC<{
             <Send size={18} />
           </button>
         </form>
-        <button onClick={onClear} className="w-full mt-2 py-2 text-[11px] text-slate-500 hover:text-slate-400 flex items-center justify-center gap-2">
+        <button onClick={onClear} title="Clear conversation" className="w-full mt-2 py-2 text-[11px] text-slate-500 hover:text-slate-400 flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 rounded-lg">
           <Trash2 size={12} />
           Clear conversation
         </button>
