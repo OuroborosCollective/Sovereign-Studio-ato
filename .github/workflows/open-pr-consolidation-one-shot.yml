@@ -57,6 +57,9 @@ jobs:
               ':(exclude)generated/**' \
               ':(exclude).jules/**' \
               ':(exclude)Memory.md' \
+              ':(exclude)config/architecture/llm-tool-boundary-review-ledger.json' \
+              ':(exclude)docs/sovereign-continuity/LEDGER.jsonl' \
+              ':(exclude)tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl' \
               > "$patch"
             if [ ! -s "$patch" ]; then
               echo "PR #$pr: no source/test delta after exclusions" | tee -a .sovereign-artifacts/consolidation.log
