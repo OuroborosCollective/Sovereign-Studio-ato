@@ -1,0 +1,51 @@
+name: Open PR Consolidation Memory One-Shot
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/open-pr-consolidation-runner-20260911
+    paths:
+      - .github/workflows/open-pr-consolidation-memory-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  append:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_BRANCH: sovereign/chatgpt/open-pr-consolidation-20260911
+      HELPER_BRANCH: sovereign/chatgpt/open-pr-consolidation-runner-20260911
+    steps:
+      - name: Checkout exact consolidation branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 1
+
+      - name: Checkout helper script separately
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HELPER_BRANCH }}
+          path: .helper
+          fetch-depth: 1
+
+      - name: Append exactly one Memory entry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .helper/.github/scripts/append_open_pr_consolidation_memory.py
+          rm -rf .helper
+          git diff --check
+          test "$(git diff --name-only)" = 'Memory.md'
+
+      - name: Commit and push Memory only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Ouroboros Memory Recorder'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Memory.md
+          test "$(git diff --cached --name-only)" = 'Memory.md'
+          git commit -m 'docs(memory): record stale PR consolidation'
+          git push origin "HEAD:$TARGET_BRANCH"
