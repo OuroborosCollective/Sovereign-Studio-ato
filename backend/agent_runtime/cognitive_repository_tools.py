@@ -22,7 +22,7 @@ from typing import Any, Final, Iterator, Mapping
 from .agent_run_receipts import (
     canonical_sha256,
     read_git_workspace_identity,
-    read_mcp_runtime_identity,
+    read_backend_runtime_identity,
 )
 from .cognitive_run_store import (
     create_agent_task,
@@ -1106,7 +1106,7 @@ class BoundRepositoryToolset:
         tool_call_id = ""
         job: Any = None
         before_git: Any = None
-        mcp_identity: Any = None
+        execution_identity: Any = None
         assignment: FleetWorkerAssignment | None = None
         attempt: FleetWorkerAttempt | None = None
         attempt_workspace: AttemptWorkspace | None = None
@@ -1132,9 +1132,7 @@ class BoundRepositoryToolset:
                 repository_path,
                 repository=job.repo_url,
             )
-            mcp_identity = read_mcp_runtime_identity(
-                expected_revision=before_git.base_commit_sha,
-            )
+            execution_identity = read_backend_runtime_identity()
             receipt_arguments = dict(parameters)
             if assignment is not None:
                 receipt_arguments["fleetBinding"] = {
@@ -1210,9 +1208,11 @@ class BoundRepositoryToolset:
                 },
                 repository=job.repo_url,
                 base_commit_sha=before_git.base_commit_sha,
-                mcp_revision=mcp_identity.revision,
-                mcp_image_digest=mcp_identity.image_digest,
-                mcp_revision_verified=mcp_identity.revision_verified,
+                execution_runtime_kind="backend",
+                execution_revision=execution_identity.revision,
+                execution_image_digest=execution_identity.image_digest,
+                execution_revision_verified=execution_identity.revision_verified,
+                execution_image_digest_verified=execution_identity.image_digest_verified,
                 operation_identity=(
                     f"agent-repository-tool:{role}:{action}:fleet:{assignment.plan_hash}:assignment:{assignment.assignment_hash}:attempt:{attempt.attempt_id if attempt else 'missing'}:worktree:{attempt_workspace.binding_hash if attempt_workspace else 'missing'}"
                     if assignment is not None
@@ -1297,7 +1297,7 @@ class BoundRepositoryToolset:
                     pass
         except Exception as exc:
             self._record_call(role, mutation=False, failed=True)
-            if tool_call_id and job is not None and before_git is not None and mcp_identity is not None and repository_path is not None:
+            if tool_call_id and job is not None and before_git is not None and execution_identity is not None and repository_path is not None:
                 try:
                     failed_git = read_git_workspace_identity(
                         repository_path,
@@ -1310,9 +1310,11 @@ class BoundRepositoryToolset:
                         result_summary={"errorType": type(exc).__name__},
                         repository=job.repo_url,
                         base_commit_sha=before_git.base_commit_sha,
-                        mcp_revision=mcp_identity.revision,
-                        mcp_image_digest=mcp_identity.image_digest,
-                        mcp_revision_verified=mcp_identity.revision_verified,
+                        execution_runtime_kind="backend",
+                execution_revision=execution_identity.revision,
+                        execution_image_digest=execution_identity.image_digest,
+                        execution_revision_verified=execution_identity.revision_verified,
+                execution_image_digest_verified=execution_identity.image_digest_verified,
                         operation_identity=(
                             f"agent-repository-tool:{role}:{action}:fleet:{assignment.plan_hash}:assignment:{assignment.assignment_hash}:attempt:{attempt.attempt_id if attempt else 'missing'}:worktree:{attempt_workspace.binding_hash if attempt_workspace else 'missing'}"
                             if assignment is not None

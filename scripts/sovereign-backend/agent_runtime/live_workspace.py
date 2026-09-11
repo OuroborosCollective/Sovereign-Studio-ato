@@ -860,7 +860,10 @@ class WorkspaceEvidenceAnchorV1:
         body_hash = _hash(body.pop("receipt_sha256", None), "agent_run_receipt.body_hash")
         if stored_hash != body_hash or canonical_sha256(body) != stored_hash:
             raise FleetContractError("agent run receipt hash is invalid")
-        if body.get("schema_version") != "sovereign.agent-run-receipt.v1":
+        if body.get("schema_version") not in {
+            "sovereign.agent-run-receipt.v1",
+            "sovereign.agent-execution-receipt.v1",
+        }:
             raise FleetContractError("agent run receipt schema is invalid")
         if _text(body.get("agent_run_id"), "agent_run_id", 160) != session.run_id:
             raise FleetContractError("agent run receipt belongs to another run")

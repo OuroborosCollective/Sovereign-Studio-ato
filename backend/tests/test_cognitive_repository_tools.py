@@ -274,7 +274,7 @@ def test_fleet_repository_tool_receipt_uses_only_its_active_attempt_worktree(mon
     role = WORKER_ROLES[0]
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr(repository_tools, "read_mcp_runtime_identity", lambda **_kwargs: SimpleNamespace(
+    monkeypatch.setattr(repository_tools, "read_backend_runtime_identity", lambda **_kwargs: SimpleNamespace(
         revision=head,
         image_digest="sha256:" + ("a" * 64),
         revision_verified=True,
