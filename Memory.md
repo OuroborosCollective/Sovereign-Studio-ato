@@ -352,3 +352,13 @@ Evidence: PR #1918 code head `3a57f98d0095831276afb8282f706b9447d42517`; Release
 Learned: Five successful Draft PR objects are insufficient unless every one is causally bound to the browser request and backend execution topology; the exported evidence also needs an independent fail-closed verifier.
 Open: Merge the exact Memory-appended head, deploy the resulting main revision immutably, prove Migration 062/PatchMon/runtime equality, then run and independently inspect the protected five-path workflow.
 Next safe step: Re-run all exact-head gates after this Memory append; merge only when terminal green, then perform revision-equal release/deploy before the live 5/5 proof.
+
+### 2026-09-11 — Bind Five Real UI Paths to the deployed backend revision
+Status: VERIFIED source/regression; live 5/5 proof pending
+Task: Prevent the Five-Path evidence artifact from passing on a valid but non-deployed Git SHA.
+Decisions: Read `/health` through the configured production backend origin; require live `sourceRevision` plus immutable `imageDigest`; fail closed unless the evidence SHA equals the running backend revision.
+Touched surfaces: `scripts/verify-five-draft-pr-runtime-evidence.mjs` only.
+Evidence: PR #1920 code head `dddcd6b9882093c3a6ea08b52e45bf3ca37a2100`; Agent Runtime, Revision Guardian, Integration Plan and Continuity succeeded; Release Gate typecheck, runtime units, Web/Android build, Artifact Smoke, Playwright Smoke, Integration Gate and Release Summary all succeeded on the same head. The preceding main `435339195e8c0fc6d5e43fefc10db9c705d6105f` was independently deployed with exact backend/MCP digests and PatchMon verification after coordinated-release attempt 2.
+Learned: A syntactically valid source SHA is not deployment evidence; the browser evidence must be bound to the runtime identity it actually exercised.
+Open: Re-run exact-head gates on this Memory-appended head, merge, deploy the resulting new main revisionsame, then execute and independently verify the real 5/5 Draft-PR paths plus cleanup.
+Next safe step: Merge only after the Memory head is terminal green; then coordinated release and the protected owner-triggered Five Real UI Paths on the exact deployed main.
