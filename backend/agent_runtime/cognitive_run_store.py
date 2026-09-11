@@ -1593,7 +1593,7 @@ def finish_agent_tool_call(
                     %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s,
-                    %s, %s, %s, %s,
+                    %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s,

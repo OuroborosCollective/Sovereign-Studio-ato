@@ -1311,10 +1311,10 @@ class BoundRepositoryToolset:
                         repository=job.repo_url,
                         base_commit_sha=before_git.base_commit_sha,
                         execution_runtime_kind="backend",
-                execution_revision=execution_identity.revision,
+                        execution_revision=execution_identity.revision,
                         execution_image_digest=execution_identity.image_digest,
                         execution_revision_verified=execution_identity.revision_verified,
-                execution_image_digest_verified=execution_identity.image_digest_verified,
+                        execution_image_digest_verified=execution_identity.image_digest_verified,
                         operation_identity=(
                             f"agent-repository-tool:{role}:{action}:fleet:{assignment.plan_hash}:assignment:{assignment.assignment_hash}:attempt:{attempt.attempt_id if attempt else 'missing'}:worktree:{attempt_workspace.binding_hash if attempt_workspace else 'missing'}"
                             if assignment is not None
