@@ -49,3 +49,5 @@ jobs:
           test "$(git diff --cached --name-only)" = 'Memory.md'
           git commit -m 'docs(memory): record stale PR consolidation'
           git push origin "HEAD:$TARGET_BRANCH"
+
+# retry: canonical single-newline EOF
