@@ -14,7 +14,7 @@ import re
 from typing import Any, Final, Mapping, Sequence
 import uuid
 
-from .agent_run_receipts import build_agent_run_receipt, canonical_sha256
+from .agent_run_receipts import build_agent_execution_receipt, canonical_sha256
 from .contracts import sanitize_agent_text
 
 
@@ -1499,9 +1499,11 @@ def finish_agent_tool_call(
     result_summary: Mapping[str, object],
     repository: str,
     base_commit_sha: str,
-    mcp_revision: str,
-    mcp_image_digest: str,
-    mcp_revision_verified: bool,
+    execution_runtime_kind: str,
+    execution_revision: str,
+    execution_image_digest: str,
+    execution_revision_verified: bool,
+    execution_image_digest_verified: bool,
     operation_identity: str,
     diff_sha256: str,
     test_evidence_sha256: str,
@@ -1550,13 +1552,15 @@ def finish_agent_tool_call(
             previous_row = cur.fetchone()
             sequence = int(previous_row["sequence"]) + 1 if previous_row else 0
             previous_hash = str(previous_row["receipt_sha256"]) if previous_row else "0" * 64
-            receipt = build_agent_run_receipt(
+            receipt = build_agent_execution_receipt(
                 sequence=sequence,
                 repository=repository,
                 base_commit_sha=base_commit_sha,
-                mcp_revision=mcp_revision,
-                mcp_image_digest=mcp_image_digest,
-                mcp_revision_verified=mcp_revision_verified,
+                execution_runtime_kind=execution_runtime_kind,
+                execution_revision=execution_revision,
+                execution_image_digest=execution_image_digest,
+                execution_revision_verified=execution_revision_verified,
+                execution_image_digest_verified=execution_image_digest_verified,
                 agent_run_id=run_id,
                 tool_name=str(tool_call["tool_name"]),
                 call_id=normalized_id,
@@ -1578,8 +1582,9 @@ def finish_agent_tool_call(
                 """
                 INSERT INTO agent_run_receipts (
                     receipt_sha256, schema_version, sequence, repository,
-                    base_commit_sha, mcp_revision, mcp_image_digest,
-                    mcp_revision_verified, agent_run_id, tool_name, call_id,
+                    base_commit_sha, execution_runtime_kind, execution_revision,
+                    execution_image_digest, execution_revision_verified,
+                    execution_image_digest_verified, agent_run_id, tool_name, call_id,
                     operation_identity, input_sha256, output_sha256, diff_sha256,
                     test_evidence_sha256, evidence_gate_result, mutation_performed,
                     observed_effect, authoritative_readback_sha256,
@@ -1587,7 +1592,8 @@ def finish_agent_tool_call(
                 ) VALUES (
                     %s, %s, %s, %s,
                     %s, %s, %s,
-                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s,
@@ -1596,8 +1602,9 @@ def finish_agent_tool_call(
                 """,
                 (
                     body["receipt_sha256"], body["schema_version"], body["sequence"], body["repository"],
-                    body["base_commit_sha"], body["mcp_revision"], body["mcp_image_digest"],
-                    body["mcp_revision_verified"], body["agent_run_id"], body["tool_name"], body["call_id"],
+                    body["base_commit_sha"], body["execution_runtime_kind"], body["execution_revision"],
+                    body["execution_image_digest"], body["execution_revision_verified"],
+                    body["execution_image_digest_verified"], body["agent_run_id"], body["tool_name"], body["call_id"],
                     body["operation_identity"], body["input_sha256"], body["output_sha256"], body["diff_sha256"],
                     body["test_evidence_sha256"], body["evidence_gate_result"], body["mutation_performed"],
                     body["observed_effect"], body["authoritative_readback_sha256"],

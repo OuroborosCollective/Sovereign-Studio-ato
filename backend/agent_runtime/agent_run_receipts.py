@@ -1,8 +1,10 @@
 """Canonical, revision-bound receipts for real Sovereign agent tool calls.
 
 The module contains no UI or telemetry truth. It canonicalizes bounded metadata,
-reads the installed MCP identity through the existing host broker, derives a real
-Git workspace diff identity, and builds tamper-evident receipt bodies. Raw prompts,
+reads the executing backend runtime identity from revision-bound container metadata,
+derives a real Git workspace diff identity, and builds tamper-evident receipt bodies.
+External MCP/host identity remains a separate trust boundary and is never required by
+normal backend workspace tools. Raw prompts,
 file contents, database rows and secret-shaped fields are never returned.
 """
 
@@ -73,6 +75,14 @@ class McpRuntimeIdentity:
     image_digest_verified: bool
     protocol_ready: bool
     broker_ready: bool
+
+
+@dataclass(frozen=True, slots=True)
+class BackendRuntimeIdentity:
+    revision: str
+    image_digest: str
+    revision_verified: bool
+    image_digest_verified: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,6 +217,29 @@ def read_mcp_runtime_identity(*, expected_revision: str | None = None) -> McpRun
         image_digest_verified=True,
         protocol_ready=True,
         broker_ready=True,
+    )
+
+
+def read_backend_runtime_identity() -> BackendRuntimeIdentity:
+    """Verify the runtime executing the internal Agent Job without external MCP I/O."""
+
+    revision = str(os.getenv("SOVEREIGN_SOURCE_REVISION", "")).strip().lower()
+    image_digest = str(os.getenv("SOVEREIGN_IMAGE_DIGEST", "")).strip().lower()
+    if not _SHA40.fullmatch(revision):
+        raise ReceiptIdentityBlocked(
+            "BACKEND_RUNTIME_REVISION_UNVERIFIED",
+            "executing backend source revision is not a full Git SHA",
+        )
+    if not _IMAGE_DIGEST.fullmatch(image_digest):
+        raise ReceiptIdentityBlocked(
+            "BACKEND_RUNTIME_IMAGE_DIGEST_UNVERIFIED",
+            "executing backend image digest is not an immutable sha256 digest",
+        )
+    return BackendRuntimeIdentity(
+        revision=revision,
+        image_digest=image_digest,
+        revision_verified=True,
+        image_digest_verified=True,
     )
 
 
@@ -398,12 +431,96 @@ def build_agent_run_receipt(
     }
 
 
+def build_agent_execution_receipt(
+    *,
+    sequence: int,
+    repository: str,
+    base_commit_sha: str,
+    execution_runtime_kind: str,
+    execution_revision: str,
+    execution_image_digest: str,
+    execution_revision_verified: bool,
+    execution_image_digest_verified: bool,
+    agent_run_id: str,
+    tool_name: str,
+    call_id: str,
+    operation_identity: str,
+    input_sha256: str,
+    output_sha256: str,
+    diff_sha256: str,
+    test_evidence_sha256: str,
+    evidence_gate_result: str,
+    mutation_performed: bool,
+    observed_effect: str,
+    authoritative_readback_sha256: str,
+    previous_receipt_sha256: str,
+    test_execution_kind: str = "none",
+    changed_paths: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Build a generic execution-runtime receipt without conflating MCP and backend identity."""
+
+    runtime_kind = str(execution_runtime_kind or "").strip().lower()
+    runtime_revision = str(execution_revision or "").strip().lower()
+    runtime_digest = str(execution_image_digest or "").strip().lower()
+    if runtime_kind not in {"backend", "mcp"}:
+        raise ReceiptContractError("unsupported execution runtime kind")
+    if not execution_revision_verified or not _SHA40.fullmatch(runtime_revision):
+        raise ReceiptContractError("execution receipt requires a verified runtime revision")
+    if not execution_image_digest_verified or not _IMAGE_DIGEST.fullmatch(runtime_digest):
+        raise ReceiptContractError("execution receipt requires a verified immutable runtime image digest")
+
+    legacy = build_agent_run_receipt(
+        sequence=sequence,
+        repository=repository,
+        base_commit_sha=base_commit_sha,
+        mcp_revision=runtime_revision,
+        mcp_image_digest=runtime_digest,
+        mcp_revision_verified=True,
+        agent_run_id=agent_run_id,
+        tool_name=tool_name,
+        call_id=call_id,
+        operation_identity=operation_identity,
+        input_sha256=input_sha256,
+        output_sha256=output_sha256,
+        diff_sha256=diff_sha256,
+        test_evidence_sha256=test_evidence_sha256,
+        evidence_gate_result=evidence_gate_result,
+        mutation_performed=mutation_performed,
+        observed_effect=observed_effect,
+        authoritative_readback_sha256=authoritative_readback_sha256,
+        previous_receipt_sha256=previous_receipt_sha256,
+        test_execution_kind=test_execution_kind,
+        changed_paths=changed_paths,
+    )
+    body = dict(legacy["body"])
+    body.pop("receipt_sha256", None)
+    body.pop("mcp_revision", None)
+    body.pop("mcp_image_digest", None)
+    body.pop("mcp_revision_verified", None)
+    body["schema_version"] = "sovereign.agent-execution-receipt.v1"
+    body["execution_runtime_kind"] = runtime_kind
+    body["execution_revision"] = runtime_revision
+    body["execution_image_digest"] = runtime_digest
+    body["execution_revision_verified"] = True
+    body["execution_image_digest_verified"] = True
+    receipt_sha256 = canonical_sha256(body)
+    return {
+        "header": {
+            "algorithm": "sha256",
+            "canonicalization": _CANONICALIZATION,
+            "hash": receipt_sha256,
+        },
+        "body": {**body, "receipt_sha256": receipt_sha256},
+    }
+
+
 def verify_agent_run_receipt_chain(
     receipts: Sequence[Mapping[str, Any]],
     *,
     expected_repository: str = "",
     expected_base_commit_sha: str = "",
     expected_mcp_revision: str = "",
+    expected_execution_revision: str = "",
     expected_start_sequence: int = 0,
     anchor_previous_receipt_sha256: str = _ZERO_SHA256,
 ) -> dict[str, Any]:
@@ -432,6 +549,8 @@ def verify_agent_run_receipt_chain(
             findings.append({"index": index, "family": "BASE_REVISION_MISMATCH"})
         if expected_mcp_revision and body.get("mcp_revision") != expected_mcp_revision:
             findings.append({"index": index, "family": "MCP_REVISION_MISMATCH"})
+        if expected_execution_revision and body.get("execution_revision") != expected_execution_revision:
+            findings.append({"index": index, "family": "EXECUTION_REVISION_MISMATCH"})
         previous = stored_hash
     return {
         "ok": not findings,
