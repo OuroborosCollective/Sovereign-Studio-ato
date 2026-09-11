@@ -64,17 +64,19 @@ export const IdleLiveAwarenessSettingsCard: React.FC = () => {
         Die Freigabe kann hier jederzeit sofort entzogen werden.
       </p>
 
-      <label className="block text-[10px] font-bold text-stone-700">
+      <label htmlFor="idle-awareness-pr-url" className="block text-[10px] font-bold text-stone-700">
         Beobachteter Pull Request
         <input
+          id="idle-awareness-pr-url"
           type="url"
           inputMode="url"
           value={prUrl}
           onChange={(event) => updateTarget(event.target.value)}
           placeholder="https://github.com/owner/repo/pull/123"
+          title="GitHub Pull Request URL"
           aria-invalid={!targetValid}
           aria-describedby="idle-awareness-target-help"
-          className="mt-1 w-full rounded-lg border border-sky-200 bg-white p-2 font-mono text-[10px] text-stone-900 outline-none focus:ring-2 focus:ring-sky-500"
+          className="mt-1 w-full rounded-lg border border-sky-200 bg-white p-2 font-mono text-[10px] text-stone-900 outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus:ring-2 focus:ring-sky-500"
         />
       </label>
       <p id="idle-awareness-target-help" className={`text-[9px] ${targetValid ? 'text-stone-500' : 'text-rose-700'}`}>
@@ -85,14 +87,19 @@ export const IdleLiveAwarenessSettingsCard: React.FC = () => {
 
       <div className="space-y-2" role="radiogroup" aria-label="Idle Live Awareness Berechtigung">
         {OPTIONS.map((option) => (
-          <label key={option.mode} className="flex cursor-pointer items-start gap-3 rounded-lg border border-sky-100 bg-white p-3">
+          <label
+            key={option.mode}
+            title={`Berechtigung wählen: ${option.title}`}
+            className="flex cursor-pointer items-start gap-3 rounded-lg border border-sky-100 bg-white p-3 transition-colors hover:border-sky-300"
+          >
             <input
               type="radio"
               name="idle-live-awareness-mode"
               value={option.mode}
               checked={mode === option.mode}
               onChange={() => selectMode(option.mode)}
-              className="mt-0.5"
+              aria-label={`Berechtigung: ${option.title}`}
+              className="mt-0.5 accent-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1"
             />
             <span className="min-w-0">
               <strong className="block text-[11px] text-stone-900">{option.title}</strong>
