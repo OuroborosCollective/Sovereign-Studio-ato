@@ -22,6 +22,7 @@ from .provider_neutral_runtime import (
 from .tools import get_tool_registry, ToolResult, ToolCall
 from .tool_events import ToolEventLog
 from .workspace_policy import repo_dir_for_workspace
+from .git_environment import workspace_git_environment
 
 
 @dataclass
@@ -253,6 +254,7 @@ def _workspace_revision(workspace_path: str | None) -> str:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                env=workspace_git_environment(workspace_path),
             )
             revision = completed.stdout.strip().lower()
             if len(revision) == 40 and all(character in "0123456789abcdef" for character in revision):
