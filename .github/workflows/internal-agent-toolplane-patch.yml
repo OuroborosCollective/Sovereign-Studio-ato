@@ -1,0 +1,184 @@
+name: Internal Agent Toolplane One-Shot
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/internal-agent-toolplane-20260911
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: contains(github.event.head_commit.message, '[apply-internal-toolplane]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sovereign/chatgpt/internal-agent-toolplane-20260911
+          fetch-depth: 0
+      - name: Apply exact architecture patch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text('utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, got {count}')
+              p.write_text(text.replace(old, new, 1), 'utf-8')
+
+          receipt_paths = [
+              'backend/agent_runtime/agent_run_receipts.py',
+              'scripts/sovereign-backend/agent_runtime/agent_run_receipts.py',
+          ]
+          for path in receipt_paths:
+              replace_once(
+                  path,
+                  'reads the installed MCP identity through the existing host broker, derives a real\nGit workspace diff identity, and builds tamper-evident receipt bodies.',
+                  'reads the executing backend runtime identity from revision-bound container metadata,\nderives a real Git workspace diff identity, and builds tamper-evident receipt bodies.\nExternal MCP/host identity remains a separate trust boundary and is never required by\nnormal backend workspace tools.',
+              )
+              replace_once(
+                  path,
+                  '@dataclass(frozen=True, slots=True)\nclass GitWorkspaceIdentity:',
+                  '@dataclass(frozen=True, slots=True)\nclass BackendRuntimeIdentity:\n    revision: str\n    image_digest: str\n    revision_verified: bool\n    image_digest_verified: bool\n\n\n@dataclass(frozen=True, slots=True)\nclass GitWorkspaceIdentity:',
+              )
+              replace_once(
+                  path,
+                  '\n\ndef _git_bytes(workspace_root: Path, *args: str) -> bytes:',
+                  '''\n\ndef read_backend_runtime_identity() -> BackendRuntimeIdentity:\n    """Verify the runtime executing the internal Agent Job without external MCP I/O."""\n\n    revision = str(os.getenv("SOVEREIGN_SOURCE_REVISION", "")).strip().lower()\n    image_digest = str(os.getenv("SOVEREIGN_IMAGE_DIGEST", "")).strip().lower()\n    if not _SHA40.fullmatch(revision):\n        raise ReceiptIdentityBlocked(\n            "BACKEND_RUNTIME_REVISION_UNVERIFIED",\n            "executing backend source revision is not a full Git SHA",\n        )\n    if not _IMAGE_DIGEST.fullmatch(image_digest):\n        raise ReceiptIdentityBlocked(\n            "BACKEND_RUNTIME_IMAGE_DIGEST_UNVERIFIED",\n            "executing backend image digest is not an immutable sha256 digest",\n        )\n    return BackendRuntimeIdentity(\n        revision=revision,\n        image_digest=image_digest,\n        revision_verified=True,\n        image_digest_verified=True,\n    )\n\n\ndef _git_bytes(workspace_root: Path, *args: str) -> bytes:''',
+              )
+              replace_once(
+                  path,
+                  '\n\ndef verify_agent_run_receipt_chain(\n',
+                  '''\n\ndef build_agent_execution_receipt(\n    *,\n    sequence: int,\n    repository: str,\n    base_commit_sha: str,\n    execution_runtime_kind: str,\n    execution_revision: str,\n    execution_image_digest: str,\n    execution_revision_verified: bool,\n    execution_image_digest_verified: bool,\n    agent_run_id: str,\n    tool_name: str,\n    call_id: str,\n    operation_identity: str,\n    input_sha256: str,\n    output_sha256: str,\n    diff_sha256: str,\n    test_evidence_sha256: str,\n    evidence_gate_result: str,\n    mutation_performed: bool,\n    observed_effect: str,\n    authoritative_readback_sha256: str,\n    previous_receipt_sha256: str,\n    test_execution_kind: str = "none",\n    changed_paths: Sequence[str] = (),\n) -> dict[str, Any]:\n    """Build a generic execution-runtime receipt without conflating MCP and backend identity."""\n\n    runtime_kind = str(execution_runtime_kind or "").strip().lower()\n    runtime_revision = str(execution_revision or "").strip().lower()\n    runtime_digest = str(execution_image_digest or "").strip().lower()\n    if runtime_kind not in {"backend", "mcp"}:\n        raise ReceiptContractError("unsupported execution runtime kind")\n    if not execution_revision_verified or not _SHA40.fullmatch(runtime_revision):\n        raise ReceiptContractError("execution receipt requires a verified runtime revision")\n    if not execution_image_digest_verified or not _IMAGE_DIGEST.fullmatch(runtime_digest):\n        raise ReceiptContractError("execution receipt requires a verified immutable runtime image digest")\n\n    legacy = build_agent_run_receipt(\n        sequence=sequence,\n        repository=repository,\n        base_commit_sha=base_commit_sha,\n        mcp_revision=runtime_revision,\n        mcp_image_digest=runtime_digest,\n        mcp_revision_verified=True,\n        agent_run_id=agent_run_id,\n        tool_name=tool_name,\n        call_id=call_id,\n        operation_identity=operation_identity,\n        input_sha256=input_sha256,\n        output_sha256=output_sha256,\n        diff_sha256=diff_sha256,\n        test_evidence_sha256=test_evidence_sha256,\n        evidence_gate_result=evidence_gate_result,\n        mutation_performed=mutation_performed,\n        observed_effect=observed_effect,\n        authoritative_readback_sha256=authoritative_readback_sha256,\n        previous_receipt_sha256=previous_receipt_sha256,\n        test_execution_kind=test_execution_kind,\n        changed_paths=changed_paths,\n    )\n    body = dict(legacy["body"])\n    body.pop("receipt_sha256", None)\n    body.pop("mcp_revision", None)\n    body.pop("mcp_image_digest", None)\n    body.pop("mcp_revision_verified", None)\n    body["schema_version"] = "sovereign.agent-execution-receipt.v1"\n    body["execution_runtime_kind"] = runtime_kind\n    body["execution_revision"] = runtime_revision\n    body["execution_image_digest"] = runtime_digest\n    body["execution_revision_verified"] = True\n    body["execution_image_digest_verified"] = True\n    receipt_sha256 = canonical_sha256(body)\n    return {\n        "header": {\n            "algorithm": "sha256",\n            "canonicalization": _CANONICALIZATION,\n            "hash": receipt_sha256,\n        },\n        "body": {**body, "receipt_sha256": receipt_sha256},\n    }\n\n\ndef verify_agent_run_receipt_chain(\n''',
+              )
+              replace_once(
+                  path,
+                  '    expected_mcp_revision: str = "",\n    expected_start_sequence: int = 0,',
+                  '    expected_mcp_revision: str = "",\n    expected_execution_revision: str = "",\n    expected_start_sequence: int = 0,',
+              )
+              replace_once(
+                  path,
+                  '        if expected_mcp_revision and body.get("mcp_revision") != expected_mcp_revision:\n            findings.append({"index": index, "family": "MCP_REVISION_MISMATCH"})\n        previous = stored_hash',
+                  '        if expected_mcp_revision and body.get("mcp_revision") != expected_mcp_revision:\n            findings.append({"index": index, "family": "MCP_REVISION_MISMATCH"})\n        if expected_execution_revision and body.get("execution_revision") != expected_execution_revision:\n            findings.append({"index": index, "family": "EXECUTION_REVISION_MISMATCH"})\n        previous = stored_hash',
+              )
+
+          tool_paths = [
+              'backend/agent_runtime/cognitive_repository_tools.py',
+              'scripts/sovereign-backend/agent_runtime/cognitive_repository_tools.py',
+          ]
+          for path in tool_paths:
+              replace_once(path, '    read_mcp_runtime_identity,\n', '    read_backend_runtime_identity,\n')
+              replace_once(path, '        mcp_identity: Any = None\n', '        execution_identity: Any = None\n')
+              replace_once(
+                  path,
+                  '            mcp_identity = read_mcp_runtime_identity(\n                expected_revision=before_git.base_commit_sha,\n            )\n',
+                  '            execution_identity = read_backend_runtime_identity()\n',
+              )
+              text = Path(path).read_text('utf-8')
+              if text.count('mcp_identity.') != 6 or text.count('mcp_identity is not None') != 1:
+                  raise SystemExit(f'{path}: unexpected MCP identity reference count')
+              text = text.replace('mcp_identity is not None', 'execution_identity is not None')
+              text = text.replace('mcp_identity.', 'execution_identity.')
+              text = text.replace('mcp_revision=execution_identity.revision,', 'execution_runtime_kind="backend",\n                execution_revision=execution_identity.revision,')
+              text = text.replace('mcp_image_digest=execution_identity.image_digest,', 'execution_image_digest=execution_identity.image_digest,')
+              text = text.replace('mcp_revision_verified=execution_identity.revision_verified,', 'execution_revision_verified=execution_identity.revision_verified,\n                execution_image_digest_verified=execution_identity.image_digest_verified,')
+              Path(path).write_text(text, 'utf-8')
+
+          store_paths = [
+              'backend/agent_runtime/cognitive_run_store.py',
+              'scripts/sovereign-backend/agent_runtime/cognitive_run_store.py',
+          ]
+          for path in store_paths:
+              replace_once(
+                  path,
+                  'from .agent_run_receipts import build_agent_run_receipt, canonical_sha256',
+                  'from .agent_run_receipts import build_agent_execution_receipt, canonical_sha256',
+              )
+              replace_once(
+                  path,
+                  '    mcp_revision: str,\n    mcp_image_digest: str,\n    mcp_revision_verified: bool,\n',
+                  '    execution_runtime_kind: str,\n    execution_revision: str,\n    execution_image_digest: str,\n    execution_revision_verified: bool,\n    execution_image_digest_verified: bool,\n',
+              )
+              replace_once(path, '            receipt = build_agent_run_receipt(\n', '            receipt = build_agent_execution_receipt(\n')
+              replace_once(
+                  path,
+                  '                mcp_revision=mcp_revision,\n                mcp_image_digest=mcp_image_digest,\n                mcp_revision_verified=mcp_revision_verified,\n',
+                  '                execution_runtime_kind=execution_runtime_kind,\n                execution_revision=execution_revision,\n                execution_image_digest=execution_image_digest,\n                execution_revision_verified=execution_revision_verified,\n                execution_image_digest_verified=execution_image_digest_verified,\n',
+              )
+              replace_once(
+                  path,
+                  '                    base_commit_sha, mcp_revision, mcp_image_digest,\n                    mcp_revision_verified, agent_run_id, tool_name, call_id,\n',
+                  '                    base_commit_sha, execution_runtime_kind, execution_revision,\n                    execution_image_digest, execution_revision_verified,\n                    execution_image_digest_verified, agent_run_id, tool_name, call_id,\n',
+              )
+              replace_once(
+                  path,
+                  '                    %s, %s, %s,\n                    %s, %s, %s, %s,\n',
+                  '                    %s, %s, %s,\n                    %s, %s, %s,\n                    %s, %s, %s, %s,\n',
+              )
+              replace_once(
+                  path,
+                  '                    body["base_commit_sha"], body["mcp_revision"], body["mcp_image_digest"],\n                    body["mcp_revision_verified"], body["agent_run_id"], body["tool_name"], body["call_id"],\n',
+                  '                    body["base_commit_sha"], body["execution_runtime_kind"], body["execution_revision"],\n                    body["execution_image_digest"], body["execution_revision_verified"],\n                    body["execution_image_digest_verified"], body["agent_run_id"], body["tool_name"], body["call_id"],\n',
+              )
+
+          workspace_paths = [
+              'backend/agent_runtime/live_workspace.py',
+              'scripts/sovereign-backend/agent_runtime/live_workspace.py',
+          ]
+          for path in workspace_paths:
+              replace_once(
+                  path,
+                  '        if body.get("schema_version") != "sovereign.agent-run-receipt.v1":\n            raise FleetContractError("agent run receipt schema is invalid")',
+                  '        if body.get("schema_version") not in {\n            "sovereign.agent-run-receipt.v1",\n            "sovereign.agent-execution-receipt.v1",\n        }:\n            raise FleetContractError("agent run receipt schema is invalid")',
+              )
+
+          test_path = 'backend/tests/test_cognitive_repository_tools.py'
+          text = Path(test_path).read_text('utf-8')
+          count = text.count('"read_mcp_runtime_identity"')
+          if count != 1:
+              raise SystemExit(f'{test_path}: expected one read_mcp_runtime_identity monkeypatch, got {count}')
+          Path(test_path).write_text(text.replace('"read_mcp_runtime_identity"', '"read_backend_runtime_identity"', 1), 'utf-8')
+
+          migration = '''-- Separate internal backend Agent Job identity from external ChatGPT MCP identity.\n-- Historical v1 rows remain append-only and untouched. New execution receipts\n-- store generic runtime identity in dedicated columns and leave legacy MCP fields NULL.\nBEGIN;\n\nALTER TABLE agent_run_receipts\n    ADD COLUMN IF NOT EXISTS execution_runtime_kind TEXT,\n    ADD COLUMN IF NOT EXISTS execution_revision CHAR(40),\n    ADD COLUMN IF NOT EXISTS execution_image_digest TEXT,\n    ADD COLUMN IF NOT EXISTS execution_revision_verified BOOLEAN,\n    ADD COLUMN IF NOT EXISTS execution_image_digest_verified BOOLEAN;\n\nALTER TABLE agent_run_receipts\n    ALTER COLUMN mcp_revision DROP NOT NULL,\n    ALTER COLUMN mcp_image_digest DROP NOT NULL,\n    ALTER COLUMN mcp_revision_verified DROP NOT NULL;\n\nALTER TABLE agent_run_receipts\n    DROP CONSTRAINT IF EXISTS agent_run_receipts_schema_check,\n    DROP CONSTRAINT IF EXISTS agent_run_receipts_revision_check;\n\nALTER TABLE agent_run_receipts\n    ADD CONSTRAINT agent_run_receipts_schema_check CHECK (\n        schema_version IN (\n            'sovereign.agent-run-receipt.v1',\n            'sovereign.agent-execution-receipt.v1'\n        )\n    ),\n    ADD CONSTRAINT agent_run_receipts_revision_check CHECK (\n        (\n            schema_version = 'sovereign.agent-run-receipt.v1'\n            AND mcp_revision ~ '^[0-9a-f]{40}$'\n            AND mcp_image_digest ~ '^sha256:[0-9a-f]{64}$'\n            AND mcp_revision_verified = TRUE\n            AND execution_runtime_kind IS NULL\n            AND execution_revision IS NULL\n            AND execution_image_digest IS NULL\n            AND execution_revision_verified IS NULL\n            AND execution_image_digest_verified IS NULL\n        )\n        OR\n        (\n            schema_version = 'sovereign.agent-execution-receipt.v1'\n            AND mcp_revision IS NULL\n            AND mcp_image_digest IS NULL\n            AND mcp_revision_verified IS NULL\n            AND execution_runtime_kind IN ('backend', 'mcp')\n            AND execution_revision ~ '^[0-9a-f]{40}$'\n            AND execution_image_digest ~ '^sha256:[0-9a-f]{64}$'\n            AND execution_revision_verified = TRUE\n            AND execution_image_digest_verified = TRUE\n        )\n    );\n\nCREATE INDEX IF NOT EXISTS idx_agent_run_receipts_execution_revision\n    ON agent_run_receipts (repository, base_commit_sha, execution_runtime_kind, execution_revision);\n\nCOMMENT ON COLUMN agent_run_receipts.mcp_revision IS\n    'Historical v1 MCP identity only. Internal backend execution receipts use execution_revision.';\nCOMMENT ON COLUMN agent_run_receipts.mcp_image_digest IS\n    'Historical v1 MCP identity only. Internal backend execution receipts use execution_image_digest.';\nCOMMENT ON COLUMN agent_run_receipts.execution_runtime_kind IS\n    'Runtime that executed the tool call: backend for normal Agent Job workspace tools; mcp only for true external MCP execution.';\n\nCOMMIT;\n'''
+          for path in (
+              'backend/migrations/062_agent_execution_runtime_identity.sql',
+              'scripts/sovereign-backend/migrations/062_agent_execution_runtime_identity.sql',
+          ):
+              p = Path(path)
+              if p.exists():
+                  raise SystemExit(f'{path}: migration already exists')
+              p.write_text(migration, 'utf-8')
+
+          focused_test = '''from __future__ import annotations\n\nfrom pathlib import Path\n\nimport pytest\n\nimport backend.agent_runtime.agent_run_receipts as receipts\n\n\nREVISION = "a" * 40\nDIGEST = "sha256:" + "b" * 64\n\n\ndef test_internal_backend_identity_requires_no_mcp_broker(monkeypatch) -> None:\n    monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", REVISION)\n    monkeypatch.setenv("SOVEREIGN_IMAGE_DIGEST", DIGEST)\n    monkeypatch.setattr(\n        receipts,\n        "_broker_call",\n        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("MCP broker must not be called")),\n    )\n\n    identity = receipts.read_backend_runtime_identity()\n\n    assert identity.revision == REVISION\n    assert identity.image_digest == DIGEST\n    assert identity.revision_verified is True\n    assert identity.image_digest_verified is True\n\n\ndef test_internal_backend_identity_fails_closed_on_unbound_runtime(monkeypatch) -> None:\n    monkeypatch.delenv("SOVEREIGN_SOURCE_REVISION", raising=False)\n    monkeypatch.delenv("SOVEREIGN_IMAGE_DIGEST", raising=False)\n    with pytest.raises(receipts.ReceiptIdentityBlocked) as error:\n        receipts.read_backend_runtime_identity()\n    assert error.value.failure_family == "BACKEND_RUNTIME_REVISION_UNVERIFIED"\n\n\ndef test_execution_receipt_names_backend_identity_without_mcp_aliases() -> None:\n    receipt = receipts.build_agent_execution_receipt(\n        sequence=0,\n        repository="OuroborosCollective/Sovereign-Studio-ato",\n        base_commit_sha=REVISION,\n        execution_runtime_kind="backend",\n        execution_revision=REVISION,\n        execution_image_digest=DIGEST,\n        execution_revision_verified=True,\n        execution_image_digest_verified=True,\n        agent_run_id="run-internal-runtime",\n        tool_name="git-status",\n        call_id="tool-call-internal-runtime",\n        operation_identity="agent-repository-tool:free_single_agent:git-status",\n        input_sha256="1" * 64,\n        output_sha256="2" * 64,\n        diff_sha256="3" * 64,\n        test_evidence_sha256="4" * 64,\n        evidence_gate_result="PASS",\n        mutation_performed=False,\n        observed_effect="read",\n        authoritative_readback_sha256="5" * 64,\n        previous_receipt_sha256="0" * 64,\n    )\n    body = receipt["body"]\n    assert body["schema_version"] == "sovereign.agent-execution-receipt.v1"\n    assert body["execution_runtime_kind"] == "backend"\n    assert body["execution_revision"] == REVISION\n    assert body["execution_image_digest"] == DIGEST\n    assert "mcp_revision" not in body\n    assert "mcp_image_digest" not in body\n\n\ndef test_repository_toolplane_is_backend_bound_and_mirrored() -> None:\n    root = Path(__file__).resolve().parents[2]\n    canonical = (root / "backend/agent_runtime/cognitive_repository_tools.py").read_text("utf-8")\n    mirror = (root / "scripts/sovereign-backend/agent_runtime/cognitive_repository_tools.py").read_text("utf-8")\n    assert canonical == mirror\n    assert "read_backend_runtime_identity" in canonical\n    assert "read_mcp_runtime_identity" not in canonical\n    assert "SOVEREIGN_MCP_BROKER_SOCKET" not in canonical\n\n\ndef test_runtime_identity_migration_preserves_historical_rows_without_update() -> None:\n    root = Path(__file__).resolve().parents[2]\n    canonical = (root / "backend/migrations/062_agent_execution_runtime_identity.sql").read_text("utf-8")\n    mirror = (root / "scripts/sovereign-backend/migrations/062_agent_execution_runtime_identity.sql").read_text("utf-8")\n    assert canonical == mirror\n    assert "sovereign.agent-execution-receipt.v1" in canonical\n    assert "execution_runtime_kind IN ('backend', 'mcp')" in canonical\n    assert "ALTER COLUMN mcp_revision DROP NOT NULL" in canonical\n    assert "UPDATE agent_run_receipts" not in canonical\n'''
+          new_test = Path('backend/tests/test_internal_agent_execution_identity.py')
+          if new_test.exists():
+              raise SystemExit('focused test already exists')
+          new_test.write_text(focused_test, 'utf-8')
+          PY
+
+          python3 -m py_compile \
+            backend/agent_runtime/agent_run_receipts.py \
+            backend/agent_runtime/cognitive_repository_tools.py \
+            backend/agent_runtime/cognitive_run_store.py \
+            backend/agent_runtime/live_workspace.py \
+            backend/tests/test_internal_agent_execution_identity.py
+          cmp backend/agent_runtime/agent_run_receipts.py scripts/sovereign-backend/agent_runtime/agent_run_receipts.py
+          cmp backend/agent_runtime/cognitive_repository_tools.py scripts/sovereign-backend/agent_runtime/cognitive_repository_tools.py
+          cmp backend/agent_runtime/cognitive_run_store.py scripts/sovereign-backend/agent_runtime/cognitive_run_store.py
+          cmp backend/agent_runtime/live_workspace.py scripts/sovereign-backend/agent_runtime/live_workspace.py
+          cmp backend/migrations/062_agent_execution_runtime_identity.sql scripts/sovereign-backend/migrations/062_agent_execution_runtime_identity.sql
+          git diff --check
+
+          git rm .github/workflows/internal-agent-toolplane-patch.yml
+          git config user.name "Ouroboros Toolplane Repair"
+          git config user.email "actions@users.noreply.github.com"
+          git add backend scripts/sovereign-backend
+          git commit -m "fix(agent): keep internal workspace tools off external MCP broker"
+          git push origin HEAD:sovereign/chatgpt/internal-agent-toolplane-20260911
