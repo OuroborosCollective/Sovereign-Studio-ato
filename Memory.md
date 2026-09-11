@@ -362,3 +362,13 @@ Evidence: PR #1920 code head `dddcd6b9882093c3a6ea08b52e45bf3ca37a2100`; Agent R
 Learned: A syntactically valid source SHA is not deployment evidence; the browser evidence must be bound to the runtime identity it actually exercised.
 Open: Re-run exact-head gates on this Memory-appended head, merge, deploy the resulting new main revisionsame, then execute and independently verify the real 5/5 Draft-PR paths plus cleanup.
 Next safe step: Merge only after the Memory head is terminal green; then coordinated release and the protected owner-triggered Five Real UI Paths on the exact deployed main.
+
+### 2026-09-11 — Restore JSON-native parameters at the repository-tool effect boundary
+Status: VERIFIED source/regression; production rerun pending
+Task: Repair the provider-neutral repository-tool bridge after the live Five-Path run opened its circuit with seven tool calls, three consecutive failures and zero confirmed mutations.
+Decisions: Keep canonical parameter snapshots immutable for policy/hash/evidence, but recursively thaw mappings/arrays to JSON-native `dict`/`list` only immediately before the authorized ToolRegistry effect; preserve canonical/shipping mirror parity.
+Touched surfaces: `backend/agent_runtime/tools/base.py`, shipping mirror, and provider-neutral real-Janitor regressions.
+Evidence: Live Five-Path run `34597592175`, artifact SHA-256 `cc0d64e05080e490318c17333f40bae6810c02c2156869c1352bd5a041c3b695`; PR #1924 pre-Memory head `5488a63ffa25f003902f3d697e79168e705d7f74`; Agent Backend `34599803085` executed the new real `DynamicJanitorTool` bridge regression within `1270 passed, 1 skipped`; Release Verification `34599803118`, Code Quality, Security, Android and CodeQL all succeeded; canonical/shipping `base.py` blobs matched.
+Learned: Immutable evidence containers cannot be passed shallowly into JSON-contract tools; a frozen array becoming a tuple is enough to turn an authorized valid tool call into a policy failure and contribute to the circuit breaker.
+Open: This source fix does not prove that all three original live tool failures shared the same cause; exact-main deployment plus a fresh real Free-Single-Agent repository mutation readback must decide that.
+Next safe step: Re-run every exact-head gate on this Memory-appended head, merge only when terminal green, deploy the resulting main immutably, then rerun one bounded real repository mission before continuing to deterministic backend closeout and simplified Draft-PR consent.
