@@ -17,4 +17,4 @@ Learned: Old bot PR branches are not safe merge units after long-lived main drif
 Open: Final code+Memory head still requires exact-head gates before merge; dependency PRs #1903–#1906 remain to be integrated/closed, followed by a zero-open-PR readback and then coordinated production/runtime evidence including migration 062 and Five Real UI Paths.
 Next safe step: Re-run all exact-head gates on the Memory-appended #1916 head, merge on success under the standing Owner zero-open-PR authorization, then complete the dependency wave and prove the open PR list is empty.
 '''
-path.write_text(text.rstrip() + entry + '\n', 'utf-8')
+path.write_text(text.rstrip() + entry.rstrip() + '\n', 'utf-8')
