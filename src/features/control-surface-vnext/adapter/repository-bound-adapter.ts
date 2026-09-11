@@ -5,7 +5,7 @@ import {
 import type { AgentMode } from '../types/domain';
 import {
   extractGitHubRepositoryUrl,
-  SovereignProductionAdapter,
+  SovereignProductionAdapter as SovereignProductionAdapterBase,
 } from './production-adapter';
 
 type JsonRecord = Record<string, unknown>;
@@ -43,14 +43,15 @@ export function buildRepositoryBoundRunRequest(
 }
 
 /**
- * Product-specific vNext adapter.
+ * The single vNext production adapter.
  *
- * vNext is the repository mission surface. The repository capability therefore
- * comes from product/server context, not from whether the user repeats a GitHub
- * URL in natural-language prose. An explicit GitHub URL remains a bounded
+ * It inherits the existing live HTTP truth boundary and narrows only mission
+ * policy: this product surface is repository/Draft-PR first, so repository
+ * capability comes from product/server context rather than from whether the user
+ * repeats a GitHub URL in prose. An explicit GitHub URL remains a bounded target
  * override; otherwise the backend resolves its configured Sovereign repository.
  */
-export class RepositoryBoundSovereignProductionAdapter extends SovereignProductionAdapter {
+export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
   private readonly repositoryConfig: SovereignAgentConfig;
   private readonly repositoryFetcher: typeof fetch;
 
