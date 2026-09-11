@@ -43,9 +43,16 @@ function normalizePath(path: string): string {
   return path.trim().replace(/^\/+/, '');
 }
 
+// ⚡ Bolt: Use direct character scan instead of splitting to avoid intermediate array allocations and GC pressure.
 function lineCount(content: string): number {
   if (!content) return 0;
-  return content.split(/\r?\n/).length;
+  let count = 1;
+  for (let i = 0; i < content.length; i++) {
+    if (content.charCodeAt(i) === 10) {
+      count++;
+    }
+  }
+  return count;
 }
 
 function previewOf(content: string, maxChars = 1200): string {
@@ -149,13 +156,27 @@ export function reviewGeneratedFile(file: ImplementationFile): GeneratedFileRevi
 }
 
 export function reviewGeneratedFiles(files: ImplementationFile[]): GeneratedFileReviewReport {
-  const reviewed = files.map(reviewGeneratedFile);
-  const totalLines = reviewed.reduce((sum, file) => sum + file.lineCount, 0);
-  const totalChars = reviewed.reduce((sum, file) => sum + file.charCount, 0);
-  const highRiskCount = reviewed.filter((file) => file.risk === 'high').length;
-  const mediumRiskCount = reviewed.filter((file) => file.risk === 'medium').length;
-  const planOnlyCount = reviewed.filter((file) => file.flags.includes('plan-only-output')).length;
-  const actionableFileCount = reviewed.filter((file) => file.flags.includes('actionable-output')).length;
+  // ⚡ Bolt: Consolidate sequential .map(), .reduce(), and .filter() calls into a single-pass loop
+  // to eliminate multiple array iterations and intermediate allocations.
+  const reviewed: GeneratedFileReviewItem[] = [];
+  let totalLines = 0;
+  let totalChars = 0;
+  let highRiskCount = 0;
+  let mediumRiskCount = 0;
+  let planOnlyCount = 0;
+  let actionableFileCount = 0;
+
+  for (const file of files) {
+    const rev = reviewGeneratedFile(file);
+    reviewed.push(rev);
+    totalLines += rev.lineCount;
+    totalChars += rev.charCount;
+    if (rev.risk === 'high') highRiskCount++;
+    if (rev.risk === 'medium') mediumRiskCount++;
+    if (rev.flags.includes('plan-only-output')) planOnlyCount++;
+    if (rev.flags.includes('actionable-output')) actionableFileCount++;
+  }
+
   const selfReview = buildSelfReview({ totalFiles: reviewed.length, highRiskCount, planOnlyCount, actionableFileCount });
 
   return {
