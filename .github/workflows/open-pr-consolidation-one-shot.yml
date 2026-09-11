@@ -1,0 +1,93 @@
+name: Open PR Consolidation One-Shot
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/open-pr-consolidation-runner-20260911
+    paths:
+      - .github/workflows/open-pr-consolidation-one-shot.yml
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_BRANCH: sovereign/chatgpt/open-pr-consolidation-20260911
+      PRS: "1767 1770 1774 1780 1785 1811 1819 1830 1845 1847 1848 1854 1857 1909 1910 1915"
+    steps:
+      - name: Checkout target branch with history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Configure Git
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Ouroboros PR Consolidator'
+          git config user.email 'actions@users.noreply.github.com'
+
+      - name: Fast-forward consolidation base with current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git merge --no-edit origin/main
+
+      - name: Port source and test changes from stale PRs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .sovereign-artifacts
+          : > .sovereign-artifacts/consolidation.log
+          for pr in $PRS; do
+            echo "=== PR #$pr ===" | tee -a .sovereign-artifacts/consolidation.log
+            sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq '.head.sha')"
+            git fetch origin "$sha"
+            parent="$(git rev-parse "${sha}^")"
+            patch="/tmp/pr-${pr}.patch"
+            git diff --binary "$parent" "$sha" -- . \
+              ':(exclude).security-reports/**' \
+              ':(exclude)generated/**' \
+              ':(exclude).jules/**' \
+              ':(exclude)Memory.md' \
+              > "$patch"
+            if [ ! -s "$patch" ]; then
+              echo "PR #$pr: no source/test delta after exclusions" | tee -a .sovereign-artifacts/consolidation.log
+              continue
+            fi
+            if ! git apply --3way --index "$patch"; then
+              echo "PR #$pr: CONFLICT" | tee -a .sovereign-artifacts/consolidation.log
+              git diff --name-only --diff-filter=U | tee -a .sovereign-artifacts/consolidation.log
+              exit 20
+            fi
+            if git diff --cached --quiet; then
+              echo "PR #$pr: already represented" | tee -a .sovereign-artifacts/consolidation.log
+              continue
+            fi
+            git diff --cached --check
+            git commit -m "chore(consolidation): port useful changes from PR #$pr"
+            echo "PR #$pr: PORTED" | tee -a .sovereign-artifacts/consolidation.log
+          done
+          git status --short
+
+      - name: Push consolidated branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin "HEAD:$TARGET_BRANCH"
+
+      - name: Upload bounded consolidation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-pr-consolidation-${{ github.run_id }}
+          path: .sovereign-artifacts/consolidation.log
+          if-no-files-found: warn
+          retention-days: 3
