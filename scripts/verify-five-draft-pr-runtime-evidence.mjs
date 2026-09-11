@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 
-const path = process.argv[2] || 'test-results/five-draft-pr-evidence.json';
-const document = JSON.parse(readFileSync(path, 'utf8'));
+const EVIDENCE_PATH = 'test-results/five-draft-pr-evidence.json';
+const document = JSON.parse(readFileSync(EVIDENCE_PATH, 'utf8'));
 const fail = (message) => { throw new Error(`FIVE_PATH_RUNTIME_EVIDENCE_INVALID: ${message}`); };
 
 if (!/^[0-9a-f]{40}$/.test(String(document.sourceRevision || ''))) fail('sourceRevision is not an exact Git SHA');
