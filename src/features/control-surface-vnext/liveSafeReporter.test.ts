@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { safeFailure, safeTestResult } from '../../../tests/e2e/helpers/live-safe-reporter';
-import { runtimeObservation } from '../../../tests/e2e/helpers/live-runtime-observation';
+import { runRequestObservation, runtimeObservation } from '../../../tests/e2e/helpers/live-runtime-observation';
 
 describe('live reporter credential-recording regression', () => {
   it('never copies the credential-bearing step title or raw failure content into the safe result', () => {
@@ -69,5 +69,26 @@ describe('live runtime observation projection', () => {
       expect(JSON.stringify(result)).not.toContain(secret);
     }
     expect(runtimeObservation('/api/auth/account-key', 'POST', 200, { key: 'not-for-reporter' })).toBeNull();
+  });
+  it('captures only allowlisted run-request contract fields and drops mission/credentials', () => {
+    const secret = 'svk_' + 'synthetic-request-secret'.repeat(3);
+    const result = runRequestObservation('/api/user/agent/swarm/run', 'POST', {
+      mission: `do not persist ${secret}`,
+      mode: 'free',
+      agentMode: 'single',
+      intentMode: 'repository_execution',
+      repositoryUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      repositoryBranch: 'main',
+      githubAccessToken: secret,
+    });
+    expect(result).toEqual({
+      route: 'swarm.start.request',
+      mode: 'free',
+      agentMode: 'single',
+      intentMode: 'repository_execution',
+      repositoryUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      repositoryBranch: 'main',
+    });
+    expect(JSON.stringify(result)).not.toContain(secret);
   });
 });

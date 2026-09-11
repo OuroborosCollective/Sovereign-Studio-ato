@@ -62,8 +62,15 @@ export function PublicationInspector({ publication, draftPR: directDraftPR, jobP
             {jobPhase === 'READY_TO_PUBLISH' && !preparation && <button type="button" data-testid="vnext-prepare-draft-pr" onClick={() => void prepare()} disabled={isPreparing} className="w-full min-h-11 rounded-lg bg-[rgba(255,30,56,0.12)] border border-[var(--red-laser)] text-[var(--red-laser)] hover:bg-[var(--red-laser)] hover:text-white font-black tracking-wider disabled:opacity-40">{isPreparing ? 'READING DRAFT-PR GATE…' : 'READ DRAFT-PR GATE'}</button>}
             {preparation && !preparation.allowed && <div className="p-3 rounded-lg border border-[var(--red-alert)] bg-[rgba(255,140,0,0.08)] text-[var(--red-alert)] space-y-1"><div className="font-bold flex items-center gap-1.5"><ShieldAlert size={13} /> PUBLICATION BLOCKED</div><div>{preparation.blockers.join('; ') || preparation.summary || preparation.nextAction || preparation.decision}</div></div>}
             {preparation?.allowed && consentVisible && (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="p-3.5 rounded-lg border border-[var(--red-laser)] bg-[rgba(255,30,56,0.08)] shadow-[0_0_18px_rgba(255,30,56,0.12)]" data-testid="vnext-draft-pr-consent">
-                <div className="text-white font-black tracking-wider mb-2">EXTERNAL WRITE CONSENT</div>
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-3.5 rounded-lg border border-[var(--red-laser)] bg-[rgba(255,30,56,0.08)] shadow-[0_0_18px_rgba(255,30,56,0.12)]"
+                data-testid="vnext-draft-pr-consent"
+                role="group"
+                aria-labelledby="vnext-draft-pr-consent-title"
+              >
+                <div id="vnext-draft-pr-consent-title" className="text-white font-black tracking-wider mb-2">EXTERNAL WRITE CONSENT</div>
                 <div className="text-[var(--text-muted)] leading-relaxed space-y-1"><div>Action: create exactly one GitHub <strong className="text-white">Draft PR</strong>.</div><div>Branch: <span className="text-white">{preparation.headBranch || 'backend-selected'}</span> → <span className="text-white">{preparation.baseBranch || 'main'}</span>.</div><div>No merge. No push to main. Success is shown only after independent GitHub readback.</div></div>
                 <div className="grid grid-cols-2 gap-2 mt-3"><button type="button" onClick={() => setConsentVisible(false)} className="min-h-10 rounded border border-white/10 text-[var(--text-muted)] hover:text-white flex items-center justify-center gap-1"><X size={12} /> DECLINE</button><button type="button" data-testid="vnext-create-draft-pr" onClick={() => void onPublish?.()} disabled={isPublishing} className="min-h-10 rounded bg-[var(--red-pulse)] text-white font-black disabled:opacity-40">{isPublishing ? 'CREATING + VERIFYING…' : 'CREATE DRAFT PR'}</button></div>
               </motion.div>
