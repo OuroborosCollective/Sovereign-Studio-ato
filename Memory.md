@@ -372,3 +372,13 @@ Evidence: Live Five-Path run `34597592175`, artifact SHA-256 `cc0d64e05080e49031
 Learned: Immutable evidence containers cannot be passed shallowly into JSON-contract tools; a frozen array becoming a tuple is enough to turn an authorized valid tool call into a policy failure and contribute to the circuit breaker.
 Open: This source fix does not prove that all three original live tool failures shared the same cause; exact-main deployment plus a fresh real Free-Single-Agent repository mutation readback must decide that.
 Next safe step: Re-run every exact-head gate on this Memory-appended head, merge only when terminal green, deploy the resulting main immutably, then rerun one bounded real repository mission before continuing to deterministic backend closeout and simplified Draft-PR consent.
+
+### 2026-09-11 — Bind vNext missions to product repository context
+Status: VERIFIED source/regression; production rollout pending
+Task: Prevent normal vNext repository mutations from degrading to conversation merely because the user did not repeat a GitHub URL in the mission text.
+Decisions: Bind the control-surface repository context to `mode=free`, `agentMode=single`, `intentMode=repository_execution`; allow only an explicit GitHub URL as a bounded target override; keep swarm/worker/queue expansion out of this Draft-PR-first fix.
+Touched surfaces: vNext repository-bound production adapter, adapter context, focused repository-binding regression.
+Evidence: PR #1925 pre-Memory head `9b4f2d2166306279d3bed88ba7739b35f60bdd5b`; Sovereign Agent Backend, Continuity and Integration Plan workflows succeeded; Release Verification passed revision integrity, runtime canary contracts, typecheck, Runtime Unit Tests and Artifact Smoke on the same head.
+Learned: Prompt text must not decide repository capability when the product already owns a repository context; otherwise a valid mutation request deterministically collapses to conversation.
+Open: Agent Zero A2A/shared-workspace execution, deterministic backend closeout and the real UI-to-GitHub Draft-PR proof remain separate runtime obligations.
+Next safe step: Re-run relevant gates on the Memory-appended head, merge #1925, then integrate Agent Zero A2A against the shared Sovereign workspace and prove one real Draft PR before scaling to 5/5.
