@@ -16,7 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TARGET_BRANCH: sovereign/chatgpt/open-pr-consolidation-20260911
-      PRS: "1767 1770 1774 1780 1785 1811 1819 1830 1845 1847 1848 1909 1910 1915"
     steps:
       - name: Checkout target branch with history
         uses: actions/checkout@v4
@@ -24,69 +23,121 @@ jobs:
           ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 0
 
-      - name: Configure Git
+      - name: Configure Git and bind current main
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'Ouroboros PR Consolidator'
           git config user.email 'actions@users.noreply.github.com'
-
-      - name: Fast-forward consolidation base with current main
-        shell: bash
-        run: |
-          set -euo pipefail
           git fetch origin main
           git merge --no-edit origin/main
 
-      - name: Port source and test changes from stale PRs
+      - name: Port only allowlisted GitHub PR file patches
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p .sovereign-artifacts
-          : > .sovereign-artifacts/consolidation.log
-          conflicts=0
-          for pr in $PRS; do
-            echo "=== PR #$pr ===" | tee -a .sovereign-artifacts/consolidation.log
-            pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}")"
-            sha="$(printf '%s' "$pr_json" | jq -r '.head.sha')"
-            base="$(printf '%s' "$pr_json" | jq -r '.base.sha')"
-            git fetch origin "$sha" "$base"
-            patch="/tmp/pr-${pr}.patch"
-            git diff --binary "$base" "$sha" -- . \
-              ':(exclude).security-reports/**' \
-              ':(exclude)generated/**' \
-              ':(exclude).jules/**' \
-              ':(exclude)Memory.md' \
-              ':(exclude)config/architecture/llm-tool-boundary-review-ledger.json' \
-              ':(exclude)docs/sovereign-continuity/LEDGER.jsonl' \
-              ':(exclude)tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl' \
-              > "$patch"
-            if [ ! -s "$patch" ]; then
-              echo "PR #$pr: no source/test delta after exclusions" | tee -a .sovereign-artifacts/consolidation.log
-              continue
-            fi
-            if ! git apply --3way --index --check "$patch"; then
-              echo "PR #$pr: SOURCE_CONFLICT" | tee -a .sovereign-artifacts/consolidation.log
-              conflicts=$((conflicts + 1))
-              continue
-            fi
-            git apply --3way --index "$patch"
-            if git diff --cached --quiet; then
-              echo "PR #$pr: already represented" | tee -a .sovereign-artifacts/consolidation.log
-              continue
-            fi
-            git diff --cached --check
-            git commit -m "chore(consolidation): port useful changes from PR #$pr"
-            echo "PR #$pr: PORTED" | tee -a .sovereign-artifacts/consolidation.log
-          done
-          echo "SOURCE_CONFLICT_COUNT=$conflicts" | tee -a .sovereign-artifacts/consolidation.log
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          mapping = {
+              1767: ['src/features/product/runtime/sovereignAgentClient.ts'],
+              1770: ['src/features/product/runtime/patternMemoryRuntime.ts'],
+              1774: ['src/mobile-workflow-pattern-rules.ts'],
+              1780: [
+                  'src/features/product/runtime/builderContainerHelpers.ts',
+                  'src/features/product/runtime/builderContainerHelpers.test.ts',
+              ],
+              1785: [
+                  'src/features/product/runtime/patternMemoryContainerRuntime.ts',
+                  'src/features/product/runtime/patternMemoryContainerRuntime.test.ts',
+              ],
+              1811: ['src/features/product/runtime/brownfieldExplorer.ts'],
+              1819: ['src/predictive/pipeline/tickWindow.ts'],
+              1830: ['src/features/product/runtime/sovereignTelemetry.ts'],
+              1845: ['src/features/product/runtime/sovereignActionStreamRuntime.ts'],
+              1847: [
+                  'src/features/product/components/ModelHealthPanel.tsx',
+                  'src/features/product/components/ModelHealthPanel.test.tsx',
+              ],
+              1848: ['src/features/product/runtime/generatedFileReview.ts'],
+              1910: [
+                  'backend/agent_runtime/cognitive_swarm_routes.py',
+                  'scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py',
+                  'backend/tests/test_cognitive_swarm_routes.py',
+              ],
+              1915: ['src/features/product/components/ErrorCategoriesPanel.tsx'],
+          }
+
+          log = []
+          conflicts = []
+          for pr, allowed in mapping.items():
+              print(f'=== PR #{pr} ===', flush=True)
+              raw = subprocess.check_output([
+                  'gh', 'api', f'repos/{repo}/pulls/{pr}/files?per_page=100'
+              ], text=True)
+              files = json.loads(raw)
+              by_name = {str(item.get('filename')): item for item in files}
+              missing = [path for path in allowed if path not in by_name]
+              if missing:
+                  raise SystemExit(f'PR #{pr}: allowlisted file missing from GitHub PR file list: {missing}')
+              pieces = []
+              for path in allowed:
+                  item = by_name[path]
+                  patch = item.get('patch')
+                  if not isinstance(patch, str) or not patch.strip():
+                      raise SystemExit(f'PR #{pr}: GitHub patch unavailable for {path}')
+                  status = str(item.get('status') or 'modified')
+                  previous = str(item.get('previous_filename') or path)
+                  old_path = previous
+                  new_path = path
+                  old_header = '/dev/null' if status == 'added' else f'a/{old_path}'
+                  new_header = '/dev/null' if status == 'removed' else f'b/{new_path}'
+                  pieces.append(
+                      f'diff --git a/{old_path} b/{new_path}\n'
+                      f'--- {old_header}\n'
+                      f'+++ {new_header}\n'
+                      f'{patch.rstrip()}\n'
+                  )
+              patch_path = Path(f'/tmp/pr-{pr}-allowlisted.patch')
+              patch_path.write_text(''.join(pieces), encoding='utf-8')
+              check = subprocess.run(['git', 'apply', '--index', '--check', str(patch_path)], text=True, capture_output=True)
+              if check.returncode != 0:
+                  message = ' '.join((check.stderr or check.stdout or '').split())[:600]
+                  line = f'PR #{pr}: SOURCE_CONFLICT: {message}'
+                  print(line, flush=True)
+                  log.append(line)
+                  conflicts.append(pr)
+                  continue
+              subprocess.run(['git', 'apply', '--index', str(patch_path)], check=True)
+              staged = subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines()
+              unexpected = sorted(set(staged) - set(allowed))
+              if unexpected:
+                  raise SystemExit(f'PR #{pr}: unexpected staged paths: {unexpected}')
+              if not staged:
+                  line = f'PR #{pr}: ALREADY_REPRESENTED'
+                  print(line, flush=True)
+                  log.append(line)
+                  continue
+              subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
+              subprocess.run(['git', 'commit', '-m', f'chore(consolidation): port useful changes from PR #{pr}'], check=True)
+              line = f'PR #{pr}: PORTED: {",".join(staged)}'
+              print(line, flush=True)
+              log.append(line)
+
+          log.append(f'SOURCE_CONFLICT_COUNT={len(conflicts)}')
+          log.append('SOURCE_CONFLICT_PRS=' + ','.join(map(str, conflicts)))
+          Path('.sovereign-artifacts/consolidation.log').write_text('\n'.join(log) + '\n', encoding='utf-8')
+          print('\n'.join(log), flush=True)
+          PY
           git status --short
           git push origin "HEAD:$TARGET_BRANCH"
-          if [ "$conflicts" -ne 0 ]; then
-            exit 20
-          fi
 
       - name: Upload bounded consolidation evidence
         if: always()
