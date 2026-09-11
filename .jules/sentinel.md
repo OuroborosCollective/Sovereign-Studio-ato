@@ -87,3 +87,8 @@
 **Vulnerability:** Opening external draft PR links via `window.open(draftPrUrl, '_blank')` lacked window feature flags (`noopener,noreferrer`) and protocol scheme validation. This exposed the app to reverse tabnabbing (where target windows access `window.opener.location`) and potential protocol scheme injection (such as `javascript:` execution).
 **Learning:** `window.open()` with `_blank` defaults to granting `window.opener` access unless `noopener,noreferrer` is explicitly set. Furthermore, user-supplied or dynamic URLs must be validated for a safe transport scheme (e.g. `https://`) before passing them to `window.open()`.
 **Prevention:** Always filter external URLs through `safeHttpsUrl` (or equivalent `https://` scheme validator) and always supply `'noopener,noreferrer'` as the features argument in all `window.open()` calls.
+
+## 2026-08-07 - Universal Scheme Sanitization and rel="noopener noreferrer" on External Link Components
+**Vulnerability:** External link `<a>` tags in `OutcomeHints` and `PublicationInspector` rendered user- or agent-supplied URLs directly in `href` with `rel="noreferrer"` missing `noopener`. Malformed or non-HTTPS URLs (e.g. `javascript:`) could trigger script execution upon click or expose windows to reverse tabnabbing.
+**Learning:** Checking for `rel="noreferrer"` alone is insufficient without `noopener`, and dynamic URLs rendered in `<a>` tags should always be filtered through a strict scheme sanitizer like `safeHttpsUrl` before being assigned to `href`.
+**Prevention:** Always wrap dynamic URL properties in `safeHttpsUrl(url)` before rendering in `href` and enforce `rel="noopener noreferrer"` on all `target="_blank"` link elements.
