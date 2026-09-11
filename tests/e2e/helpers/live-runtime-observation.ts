@@ -10,6 +10,21 @@ function code(value: unknown): string | null {
   if (typeof value !== 'string' || /^(?:svk_|sva_|sk_|sk-|ghp_|ghs_|gho_|github_pat_|hf_|eyJ)/i.test(value)) return null;
   return /^[A-Za-z][A-Za-z0-9_:-]{1,119}$/.test(value) ? value : null;
 }
+function boundedIdentifier(value: unknown): string | null {
+  if (typeof value !== 'string' || /^(?:svk_|sva_|sk_|sk-|ghp_|ghs_|gho_|github_pat_|hf_|eyJ)/i.test(value)) return null;
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{1,159}$/.test(value) ? value : null;
+}
+function exactGithubRepositoryUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = new URL(value);
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com' || segments.length !== 2) return null;
+    return `https://github.com/${segments[0]}/${segments[1].replace(/\.git$/i, '')}`;
+  } catch {
+    return null;
+  }
+}
 
 function nonNegativeInteger(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
@@ -28,7 +43,7 @@ function modelFailureHints(value: unknown): string[] {
     BROKER_RPC_TIMEOUT: 'authoritative MCP revision readback timed out',
     GIT_READBACK_FAILED: 'authoritative Git readback failed',
   };
-  return Object.entries(known).filter(([code, message]) => value.includes(code) || value.includes(message)).map(([code]) => code);
+  return Object.entries(known).filter(([failureCode, message]) => value.includes(failureCode) || value.includes(message)).map(([failureCode]) => failureCode);
 }
 
 function flag(value: unknown): boolean | null {
@@ -47,6 +62,20 @@ function gateFailure(value: unknown): string | null {
   return typeof value === 'string' && Object.hasOwn(reasons, value) ? reasons[value] : null;
 }
 
+/** Secret-safe projection of the actual browser request. Mission/evidence/credentials are never serialized. */
+export function runRequestObservation(path: string, method: string, payload: unknown) {
+  if (path !== '/api/user/agent/swarm/run' || method !== 'POST') return null;
+  const body = record(payload);
+  return {
+    route: 'swarm.start.request',
+    mode: code(body.mode),
+    agentMode: code(body.agentMode),
+    intentMode: code(body.intentMode),
+    repositoryUrl: exactGithubRepositoryUrl(body.repositoryUrl),
+    repositoryBranch: code(body.repositoryBranch),
+  };
+}
+
 export function runtimeObservation(path: string, method: string, httpStatus: number, payload: unknown) {
   let route: string;
   let requestedRunId: string | null = null;
@@ -61,6 +90,7 @@ export function runtimeObservation(path: string, method: string, httpStatus: num
   const job = record(body.job);
   const jobEvidence = record(body.jobEvidence);
   const repositoryTools = record(body.repositoryTools);
+  const executionResolution = record(body.executionResolution);
   const returnedRunId = id(body.runId ?? run.runId ?? run.run_id, /^run-[0-9a-f]{32}$/);
   const approvals = Array.isArray(body.approvals) ? body.approvals.map(record) : [];
   return {
@@ -68,9 +98,23 @@ export function runtimeObservation(path: string, method: string, httpStatus: num
     identityMatches: requestedRunId && returnedRunId ? requestedRunId === returnedRunId : null,
     status: code(run.status ?? job.status ?? body.status),
     jobId: id(run.jobId ?? run.job_id ?? body.jobId ?? job.jobId ?? job.id ?? body.id, /^(?:agent|job)-[0-9a-f-]{4,100}$/),
+    workspaceId: boundedIdentifier(body.workspaceId ?? job.workspaceId),
     evidenceId: id(run.evidenceId ?? body.evidenceId, /^evidence-[0-9a-f]{32}$/),
     failureFamily: code(body.failureFamily ?? body.failure_family ?? body.blocker),
     nextAction: code(run.nextAction ?? run.next_action ?? body.nextAction),
+    execution: {
+      profileId: code(executionResolution.profileId),
+      requestedMode: code(executionResolution.requestedMode),
+      resolvedTransport: code(executionResolution.resolvedTransport),
+      resolvedTransportClass: code(executionResolution.resolvedTransportClass),
+      billingCategory: code(executionResolution.billingCategory),
+      candidateRouteCount: count(executionResolution.candidateRouteIds),
+      maxForegroundAgents: nonNegativeInteger(executionResolution.maxForegroundAgents),
+      maxBackgroundAgents: nonNegativeInteger(executionResolution.maxBackgroundAgents),
+      repositoryExecutionAllowed: flag(executionResolution.repositoryExecutionAllowed),
+      secretValuesReturned: flag(executionResolution.secretValuesReturned),
+      responseMaxBackgroundAgents: nonNegativeInteger(body.maxBackgroundAgents),
+    },
     toolDiagnostics: {
       callCount: nonNegativeInteger(record(repositoryTools.callsByRole).free_single_agent),
       mutationCount: nonNegativeInteger(record(repositoryTools.mutationsByRole).free_single_agent),
