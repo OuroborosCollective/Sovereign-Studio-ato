@@ -28,7 +28,11 @@ from .workspace_policy import (
 )
 
 GitOperationStatus = Literal["done", "blocked", "failed"]
-_GITHUB_EPHEMERAL_TOKEN = re.compile(r"^(?:(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{8,255}|[A-Za-z0-9]{40,255})$")
+# GitHub installation credentials are opaque and may use ghs_APPID_JWT.
+# Accept the bounded transport alphabet; GitHub still verifies authority.
+_GITHUB_EPHEMERAL_TOKEN = re.compile(
+    r"^(?:ghs_[A-Za-z0-9._-]{36,4096}|(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{8,255}|[A-Za-z0-9]{40,255})$"
+)
 
 
 @dataclass(frozen=True)

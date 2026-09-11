@@ -55,6 +55,9 @@ _SAFE_BRANCH = re.compile(r"^[\w./-]{1,160}$")
 _SAFE_RELATIVE_PATH = re.compile(r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$))(?!.*\0)[\w .@/+~=-]+$")
 _GITHUB_REPO_HOSTS = {"github.com"}
 _SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
+    # Mask the entire opaque installation credential before legacy prefix rules.
+    # The JWT-shaped suffix must not survive as an unmasked event fragment.
+    re.compile(r"(ghs_)[A-Za-z0-9._-]{8,}", re.IGNORECASE),
     # GitHub (classic, fine-grained, app, etc.)
     re.compile(r"((?:gh[pousr])_)[a-zA-Z0-9_]{8,100}", re.IGNORECASE),
     re.compile(r"(github_pat_)[a-zA-Z0-9_]{20,200}", re.IGNORECASE),
