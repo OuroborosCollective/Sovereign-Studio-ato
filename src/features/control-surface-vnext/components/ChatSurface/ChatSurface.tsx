@@ -1,8 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { Blocks, Bot, BrainCircuit, Cpu, Send, Square, Terminal, User, Wrench } from 'lucide-react';
 import type { AgentMode, ChatMessage, JobPhase, SovereignJob } from '../../types/domain';
 import { playDispatchBlast, playKeystrokeChirp } from '../../utils/audio';
+import {
+  composeMissionWithRepositoryTarget,
+  normalizeGitHubRepositoryTarget,
+  readInitialRepositoryTarget,
+  REPOSITORY_TARGET_STORAGE_KEY,
+} from './repositoryTarget';
 
 interface Props {
   messages: ChatMessage[];
@@ -24,6 +30,15 @@ interface Props {
 
 const ACTIVE_PHASES: JobPhase[] = ['DISPATCHING', 'PROVISIONING', 'EXECUTING', 'FINALIZING'];
 
+function initialRepositoryTarget(): string {
+  if (typeof window === 'undefined') return readInitialRepositoryTarget();
+  try {
+    return readInitialRepositoryTarget(window.localStorage);
+  } catch {
+    return readInitialRepositoryTarget();
+  }
+}
+
 function MessageCard({ message }: { message: ChatMessage }) {
   const human = message.sender === 'HUMAN' || message.role === 'human';
   const system = message.sender === 'SYSTEM' || message.role === 'system';
@@ -41,16 +56,33 @@ function MessageCard({ message }: { message: ChatMessage }) {
 
 export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase = 'IDLE', activeJob, onOpenToolchain, onOpenSkills, onOpenIntegrations, onAbortJob, onTypingStateChange, activeToolchainName, activeSkillsCount = 0, activeIntegrationsCount = 0, agentMode = 'single', onAgentModeChange }: Props) {
   const [text, setText] = useState('');
+  const [repositoryTarget, setRepositoryTarget] = useState(initialRepositoryTarget);
   const executing = ACTIVE_PHASES.includes(jobPhase);
-  const canSend = text.trim().length > 0 && !executing;
+  const normalizedRepositoryTarget = useMemo(() => normalizeGitHubRepositoryTarget(repositoryTarget), [repositoryTarget]);
+  const repositoryTargetInvalid = repositoryTarget.trim().length > 0 && !normalizedRepositoryTarget;
+  const canSend = text.trim().length > 0 && !executing && !repositoryTargetInvalid;
   const phaseTone = jobPhase === 'FAILED' || jobPhase === 'BLOCKED' ? 'text-[var(--red-alert)]' : jobPhase === 'COMPLETED' ? 'text-[var(--emerald-seal)]' : 'text-white';
   const latestRun = useMemo(() => activeJob?.runId || activeJob?.id, [activeJob?.runId, activeJob?.id]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (!repositoryTarget.trim()) {
+        window.localStorage.setItem(REPOSITORY_TARGET_STORAGE_KEY, '');
+      } else if (normalizedRepositoryTarget) {
+        window.localStorage.setItem(REPOSITORY_TARGET_STORAGE_KEY, normalizedRepositoryTarget);
+      }
+    } catch {
+      // Repository persistence is convenience only; request routing remains explicit in-memory.
+    }
+  }, [normalizedRepositoryTarget, repositoryTarget]);
+
   const submit = () => {
     const mission = text.trim();
-    if (!mission || executing) return;
+    if (!mission || executing || repositoryTargetInvalid) return;
+    const routedMission = composeMissionWithRepositoryTarget(mission, repositoryTarget);
     playDispatchBlast();
-    (onSendMessage ?? onSubmitOrder)?.(mission);
+    (onSendMessage ?? onSubmitOrder)?.(routedMission);
     setText('');
     onTypingStateChange?.(false);
   };
@@ -69,6 +101,33 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
           <button type="button" onClick={() => { playKeystrokeChirp(); onOpenToolchain(); }} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] text-left px-2 font-mono"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><Wrench size={10} /> TOOLCHAIN</span><span className="block truncate text-[9px] text-white mt-0.5">{activeToolchainName || 'UNVERIFIED'}</span></button>
           <button type="button" onClick={() => { playKeystrokeChirp(); onOpenSkills(); }} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] px-2 font-mono"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><BrainCircuit size={10} /> AGENTS</span><span className="block text-[9px] text-white mt-0.5">{activeSkillsCount} MANIFEST NODES</span></button>
           <button type="button" onClick={() => { playKeystrokeChirp(); onOpenIntegrations(); }} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] px-2 font-mono"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><Blocks size={10} /> ATTACHMENTS</span><span className="block text-[9px] text-white mt-0.5">{activeIntegrationsCount} OBSERVED</span></button>
+        </div>
+
+        <div data-testid="repository-target-selector" className="mb-2 rounded-lg border border-white/5 bg-[var(--carbon-deep)] p-2 font-mono">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <label htmlFor="vnext-repository-target" className="text-[8px] font-black tracking-wide text-[var(--text-dim)]">REPOSITORY TARGET</label>
+            <span data-testid="repository-route-mode" className={`text-[8px] font-black ${normalizedRepositoryTarget ? 'text-[var(--emerald-seal)]' : 'text-[var(--text-dim)]'}`}>{normalizedRepositoryTarget ? 'REPOSITORY EXECUTION' : 'CONVERSATION'}</span>
+          </div>
+          <input
+            id="vnext-repository-target"
+            data-testid="vnext-repository-target"
+            aria-label="GitHub repository target"
+            aria-invalid={repositoryTargetInvalid}
+            value={repositoryTarget}
+            onChange={(event) => setRepositoryTarget(event.target.value)}
+            disabled={executing}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="https://github.com/owner/repository — clear for conversation only"
+            className={`w-full rounded border bg-[var(--carbon-surface)] px-2 py-1.5 text-[9.5px] text-white outline-none disabled:opacity-50 ${repositoryTargetInvalid ? 'border-[var(--red-alert)]' : normalizedRepositoryTarget ? 'border-[rgba(16,185,129,0.35)]' : 'border-white/10'}`}
+          />
+          <div data-testid="repository-target-evidence" className={`mt-1 text-[8px] ${repositoryTargetInvalid ? 'text-[var(--red-alert)]' : 'text-[var(--text-dim)]'}`}>
+            {repositoryTargetInvalid
+              ? 'INVALID TARGET · exact https://github.com/owner/repository required; dispatch blocked.'
+              : normalizedRepositoryTarget
+                ? `BOUND // ${normalizedRepositoryTarget}`
+                : 'No repository bound. Free mode stays conversation-only until a target is explicit.'}
+          </div>
         </div>
 
         <div data-testid="agent-mode-selector" className="mb-2 flex items-center gap-1.5 rounded-lg border border-white/5 bg-[var(--carbon-deep)] p-1.5 font-mono">
