@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { expect, request as playwrightRequest, test, type APIRequestContext, type Page } from '@playwright/test';
 import { requireLoginAccountId, requireSameOrigin, requireVerifiedSessionIdentity } from './helpers/live-session-contract';
-import { runtimeObservation } from './helpers/live-runtime-observation';
+import { runRequestObservation, runtimeObservation } from './helpers/live-runtime-observation';
 import { verifyOwnedDraftCleanup } from './helpers/live-draft-cleanup';
 
 const LIVE_ENABLED = process.env.SOVEREIGN_E2E_LIVE === '1';
@@ -19,10 +19,32 @@ let ephemeralAccountId = '';
 let ephemeralAccountKeyRevoked = false;
 let identitySource = CONFIGURED_ACCOUNT_KEY ? 'protected_repository_secret' : 'ephemeral_product_registration';
 
-interface DraftPrEvidence {
+interface LiveRunProof {
+  persistedRunId: string;
+  request: {
+    mode: 'free';
+    agentMode: 'single';
+    intentMode: 'repository_execution';
+    repositoryUrl: string;
+    repositoryBranch: 'main';
+  };
+  execution: {
+    jobId: string;
+    workspaceId: string;
+    profileId: 'free_single_agent';
+    resolvedTransportClass: 'FREELLM_FREE' | 'OPENROUTER_FREE';
+    billingCategory: 'free';
+    maxForegroundAgents: 1;
+    maxBackgroundAgents: 0;
+    changedFileCount: number;
+    toolCallCount: number;
+    mutationCount: number;
+  };
+}
+
+interface DraftPrEvidence extends LiveRunProof {
   path: string;
   marker: string;
-  persistedRunId: string;
   prNumber: number;
   prUrl: string;
   headRef: string;
@@ -210,7 +232,6 @@ async function authenticateVNext(page: Page): Promise<void> {
   const dialog = page.getByRole('dialog', { name: 'Sovereign account session' });
   await expect(dialog).toBeVisible();
 
-  // A persisted user or an AUTHENTICATED label is not a browser-session proof.
   const accountKey = dialog.locator('#vnext-account-key');
   await expect(accountKey).toBeVisible({ timeout: 20_000 });
   await accountKey.fill(activeAccountKey);
@@ -229,8 +250,6 @@ async function authenticateVNext(page: Page): Promise<void> {
     throw new Error('LIVE_AUTH_ISSUED_ACCOUNT_MISMATCH');
   }
 
-  // page.request shares the actual browser cookie jar. No cookie injection or
-  // standalone API login can satisfy this readback for the preview agent origin.
   const session = await page.request.get(new URL('/api/auth/me', page.url()).href, {
     headers: { 'Cache-Control': 'no-store' },
     maxRedirects: 0,
@@ -256,18 +275,106 @@ function mission(pathId: string): { marker: string; text: string } {
   };
 }
 
-async function submitMission(page: Page, text: string): Promise<string> {
+async function submitMission(page: Page, text: string): Promise<LiveRunProof> {
   const composer = page.getByTestId('mission__textarea');
   await expect(composer).toBeVisible();
   await composer.fill(text);
   await expect(page.getByTestId('agent-mode-single')).toHaveAttribute('aria-pressed', 'true');
-  await page.getByTestId('builder__start-task').click();
+
+  const [startResponse] = await Promise.all([
+    page.waitForResponse((response) =>
+      response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/user/agent/swarm/run',
+    { timeout: 210_000 }),
+    page.getByTestId('builder__start-task').click(),
+  ]);
+  requireSameOrigin(startResponse.url(), page.url());
+  const requestBody = startResponse.request().postDataJSON();
+  const requestProof = runRequestObservation('/api/user/agent/swarm/run', 'POST', requestBody);
+  if (!requestProof) throw new Error('LIVE_RUN_REQUEST_EVIDENCE_MISSING');
+  expect(requestProof).toMatchObject({
+    mode: 'free',
+    agentMode: 'single',
+    intentMode: 'repository_execution',
+    repositoryUrl: REPO_URL,
+    repositoryBranch: 'main',
+  });
+
+  const startBody = await startResponse.json().catch(() => null);
+  const executionProof = runtimeObservation('/api/user/agent/swarm/run', 'POST', startResponse.status(), startBody);
+  if (!executionProof) throw new Error('LIVE_RUN_RESPONSE_EVIDENCE_MISSING');
+  expect(startResponse.status()).toBe(200);
+
   const accepted = page.getByText(/PERSISTED RUN ACCEPTED :: \[run-[0-9a-f]+\]/).last();
   await expect(accepted).toBeVisible({ timeout: 45_000 });
   const rendered = await accepted.innerText();
   const match = rendered.match(/\[(run-[0-9a-f]+)\]/);
   if (!match) throw new Error(`vNext did not expose the persisted run id: ${rendered}`);
-  return match[1];
+  const persistedRunId = match[1];
+
+  expect(executionProof.returnedRunId).toBe(persistedRunId);
+  expect(executionProof.jobId).toBeTruthy();
+  expect(executionProof.workspaceId).toBeTruthy();
+  expect(executionProof.execution).toMatchObject({
+    profileId: 'free_single_agent',
+    requestedMode: 'free',
+    billingCategory: 'free',
+    maxForegroundAgents: 1,
+    maxBackgroundAgents: 0,
+    repositoryExecutionAllowed: true,
+    secretValuesReturned: false,
+    responseMaxBackgroundAgents: 0,
+  });
+  expect(['FREELLM_FREE', 'OPENROUTER_FREE']).toContain(executionProof.execution.resolvedTransportClass);
+  expect(executionProof.repositoryExecution).toMatchObject({
+    performed: true,
+    gatePassed: true,
+    canPrepareDraftPr: true,
+    hasDiff: true,
+    hasTests: true,
+    freeAgentCalledTools: true,
+  });
+  expect(executionProof.repositoryExecution.changedFileCount).toBeGreaterThan(0);
+  expect(executionProof.toolDiagnostics.callCount).toBeGreaterThan(0);
+  expect(executionProof.toolDiagnostics.mutationCount).toBeGreaterThan(0);
+  expect(executionProof.toolDiagnostics.writeConfirmed).toBe(true);
+
+  return {
+    persistedRunId,
+    request: {
+      mode: 'free',
+      agentMode: 'single',
+      intentMode: 'repository_execution',
+      repositoryUrl: REPO_URL,
+      repositoryBranch: 'main',
+    },
+    execution: {
+      jobId: executionProof.jobId!,
+      workspaceId: executionProof.workspaceId!,
+      profileId: 'free_single_agent',
+      resolvedTransportClass: executionProof.execution.resolvedTransportClass as 'FREELLM_FREE' | 'OPENROUTER_FREE',
+      billingCategory: 'free',
+      maxForegroundAgents: 1,
+      maxBackgroundAgents: 0,
+      changedFileCount: executionProof.repositoryExecution.changedFileCount!,
+      toolCallCount: executionProof.toolDiagnostics.callCount!,
+      mutationCount: executionProof.toolDiagnostics.mutationCount!,
+    },
+  };
+}
+
+async function verifyLinkedJobReadback(page: Page, proof: LiveRunProof): Promise<void> {
+  const response = await page.request.get(new URL(`/api/user/agent/jobs/${encodeURIComponent(proof.execution.jobId)}`, page.url()).href, {
+    headers: { 'Cache-Control': 'no-store' },
+    maxRedirects: 0,
+  });
+  requireSameOrigin(response.url(), page.url());
+  expect(response.status()).toBe(200);
+  const body = await response.json().catch(() => null);
+  const observed = runtimeObservation(`/api/user/agent/jobs/${proof.execution.jobId}`, 'GET', response.status(), body);
+  if (!observed) throw new Error('LIVE_LINKED_JOB_READBACK_MISSING');
+  expect(observed.jobId).toBe(proof.execution.jobId);
+  expect(observed.workspaceId).toBe(proof.execution.workspaceId);
 }
 
 async function approveDraftReadinessIfRequested(page: Page): Promise<boolean> {
@@ -311,7 +418,10 @@ async function publishAndVerifyInUi(page: Page): Promise<{ prNumber: number; rea
   await page.getByTestId('vnext-prepare-draft-pr').click();
   const consent = page.getByTestId('vnext-draft-pr-consent');
   await expect(consent).toBeVisible({ timeout: 30_000 });
+  await expect(consent).toHaveAttribute('role', 'group');
+  await expect(consent).toHaveAttribute('aria-labelledby', 'vnext-draft-pr-consent-title');
   await expect(consent.getByText('EXTERNAL WRITE CONSENT')).toBeVisible();
+  await expect(consent.getByText(/create exactly one GitHub/)).toBeVisible();
   await expect(consent.getByText(/No merge\. No push to main\./)).toBeVisible();
   await page.getByTestId('vnext-create-draft-pr').click();
 
@@ -349,7 +459,7 @@ async function verifyAndCleanDraftPr(
   request: APIRequestContext,
   pathName: string,
   marker: string,
-  persistedRunId: string,
+  proof: LiveRunProof,
   baselinePrNumber: number,
   ui: { prNumber: number; readbackHeadSha: string; prUrl: string },
 ): Promise<void> {
@@ -382,7 +492,7 @@ async function verifyAndCleanDraftPr(
   evidence.push({
     path: pathName,
     marker,
-    persistedRunId,
+    ...proof,
     prNumber: ui.prNumber,
     prUrl: result.body.html_url,
     headRef: result.body.head.ref,
@@ -402,9 +512,10 @@ async function executeCanonicalVNextRun(
 ): Promise<void> {
   const change = mission(pathId);
   const baseline = await latestPullRequestNumber(request);
-  const persistedRunId = await submitMission(page, change.text);
+  const proof = await submitMission(page, change.text);
+  await verifyLinkedJobReadback(page, proof);
   const ui = await publishAndVerifyInUi(page);
-  await verifyAndCleanDraftPr(request, `vnext-${pathId}`, change.marker, persistedRunId, baseline, ui);
+  await verifyAndCleanDraftPr(request, `vnext-${pathId}`, change.marker, proof, baseline, ui);
 }
 
 test.describe('five canonical vNext repository runs reach independently verified Draft PRs', () => {
@@ -471,10 +582,17 @@ test.describe('five canonical vNext repository runs reach independently verified
     if (evidence.length !== 5) {
       throw new Error(`Expected exactly five GitHub-verified vNext Draft PR runs, received ${evidence.length}.`);
     }
+    for (const item of evidence) {
+      expect(item.request).toMatchObject({ mode: 'free', agentMode: 'single', intentMode: 'repository_execution', repositoryBranch: 'main' });
+      expect(item.execution).toMatchObject({ profileId: 'free_single_agent', billingCategory: 'free', maxForegroundAgents: 1, maxBackgroundAgents: 0 });
+      expect(item.execution.changedFileCount).toBeGreaterThan(0);
+      expect(item.execution.toolCallCount).toBeGreaterThan(0);
+      expect(item.execution.mutationCount).toBeGreaterThan(0);
+    }
   });
 
   for (const pathId of ['p1', 'p2', 'p3', 'p4', 'p5']) {
-    test(`canonical vNext ${pathId}: session → persisted run → evidence → consent → GitHub readback`, async ({ page, request }) => {
+    test(`canonical vNext ${pathId}: free single-agent → persisted job/workspace → consent → GitHub readback`, async ({ page, request }) => {
       await executeCanonicalVNextRun(page, request, pathId);
     });
   }
