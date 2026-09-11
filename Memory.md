@@ -312,3 +312,13 @@ Evidence: Deployed baseline `64bbf428c5646b922cad0e9499c5de3b5457fd0a`; Five Rea
 Learned: A backend Agent Job already owns an isolated workspace and must not call the hardened external ChatGPT MCP merely to prove its own file/Git/test execution; repository provenance, backend runtime provenance and external MCP provenance are distinct trust boundaries.
 Open: Merge/deploy the exact reviewed revision, apply/read back migration 062, prove backend runtime/image equality, then rerun Five Real UI Paths and require 5/5 independently verified Draft PRs.
 Next safe step: Re-run exact-head gates after this append; merge only with explicit Owner authorization, then immutable deploy + PatchMon/runtime readback + protected Five-Path proof.
+
+### 2026-09-11 — Refresh LLM boundary bindings after internal toolplane split
+Status: VERIFIED static integration; production rerun pending
+Task: Refresh the two reopen-on-change LLM boundary bindings changed by #1912 without changing runtime behavior or reviewed classifications.
+Decisions: Preserve both candidates as STRUCTURED_POLICY; update only deterministic file-hash bindings with the repository reconciler; no new/removed candidates and no Owner classification decisions.
+Touched surfaces: `config/architecture/llm-tool-boundary-review-ledger.json` only.
+Evidence: Source `2193e7e85ac21422e75bdce6bfb8df39f0fdf61f`; reconciliation preserved 79 candidates with 2 `fileSha256` drifts, 0 new, 0 removed, 0 Owner decisions, `safeToApply=true`; ledger SHA-256 `01377a9725c6ad28a52cff90d2b9dbf0658db3049e6e2b80a4b3135b36afca0a`; PR #1914 code head `c6f2dac0f91aba30859cf41a40dd34dc03fadb9e` passed all five exact-head workflow families including Release Verification.
+Learned: `reopenOnChange` correctly catches static evidence drift after legitimate structured-policy source edits; reviewed classifications should be preserved while bindings are refreshed, not bypassed.
+Open: After merge, the new exact main still requires coordinated immutable release, migration-062/runtime readback, PatchMon/Fleet revision equality, and the protected 5/5 Single-Agent Draft-PR proof.
+Next safe step: Re-run all exact-head gates with this Memory entry and merge only after a specific Owner approval.
