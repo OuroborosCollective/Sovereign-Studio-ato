@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TARGET_BRANCH: sovereign/chatgpt/open-pr-consolidation-20260911
-      PRS: "1767 1770 1774 1780 1785 1811 1819 1830 1845 1847 1848 1854 1857 1909 1910 1915"
+      PRS: "1767 1770 1774 1780 1785 1811 1819 1830 1845 1847 1848 1909 1910 1915"
     steps:
       - name: Checkout target branch with history
         uses: actions/checkout@v4
@@ -46,13 +46,15 @@ jobs:
           set -euo pipefail
           mkdir -p .sovereign-artifacts
           : > .sovereign-artifacts/consolidation.log
+          conflicts=0
           for pr in $PRS; do
             echo "=== PR #$pr ===" | tee -a .sovereign-artifacts/consolidation.log
-            sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq '.head.sha')"
-            git fetch origin "$sha"
-            parent="$(git rev-parse "${sha}^")"
+            pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}")"
+            sha="$(printf '%s' "$pr_json" | jq -r '.head.sha')"
+            base="$(printf '%s' "$pr_json" | jq -r '.base.sha')"
+            git fetch origin "$sha" "$base"
             patch="/tmp/pr-${pr}.patch"
-            git diff --binary "$parent" "$sha" -- . \
+            git diff --binary "$base" "$sha" -- . \
               ':(exclude).security-reports/**' \
               ':(exclude)generated/**' \
               ':(exclude).jules/**' \
@@ -65,11 +67,12 @@ jobs:
               echo "PR #$pr: no source/test delta after exclusions" | tee -a .sovereign-artifacts/consolidation.log
               continue
             fi
-            if ! git apply --3way --index "$patch"; then
-              echo "PR #$pr: CONFLICT" | tee -a .sovereign-artifacts/consolidation.log
-              git diff --name-only --diff-filter=U | tee -a .sovereign-artifacts/consolidation.log
-              exit 20
+            if ! git apply --3way --index --check "$patch"; then
+              echo "PR #$pr: SOURCE_CONFLICT" | tee -a .sovereign-artifacts/consolidation.log
+              conflicts=$((conflicts + 1))
+              continue
             fi
+            git apply --3way --index "$patch"
             if git diff --cached --quiet; then
               echo "PR #$pr: already represented" | tee -a .sovereign-artifacts/consolidation.log
               continue
@@ -78,13 +81,12 @@ jobs:
             git commit -m "chore(consolidation): port useful changes from PR #$pr"
             echo "PR #$pr: PORTED" | tee -a .sovereign-artifacts/consolidation.log
           done
+          echo "SOURCE_CONFLICT_COUNT=$conflicts" | tee -a .sovereign-artifacts/consolidation.log
           git status --short
-
-      - name: Push consolidated branch
-        shell: bash
-        run: |
-          set -euo pipefail
           git push origin "HEAD:$TARGET_BRANCH"
+          if [ "$conflicts" -ne 0 ]; then
+            exit 20
+          fi
 
       - name: Upload bounded consolidation evidence
         if: always()
