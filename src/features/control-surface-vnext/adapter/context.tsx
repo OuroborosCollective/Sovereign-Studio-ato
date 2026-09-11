@@ -1,8 +1,8 @@
 import React, { createContext, useContext, type ReactNode } from 'react';
 import type { SovereignBackendAdapter } from './interface';
-import { SovereignProductionAdapter } from './production-adapter';
+import { RepositoryBoundSovereignProductionAdapter } from './repository-bound-adapter';
 
-const defaultAdapter = new SovereignProductionAdapter();
+const defaultAdapter = new RepositoryBoundSovereignProductionAdapter();
 const SovereignAdapterContext = createContext<SovereignBackendAdapter>(defaultAdapter);
 
 export function SovereignAdapterProvider({ children, adapter }: { children: ReactNode; adapter?: SovereignBackendAdapter }) {
