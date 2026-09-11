@@ -1,0 +1,43 @@
+name: Append Memory 1925
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/async-run-repo-context-20260911
+
+permissions:
+  contents: write
+
+jobs:
+  append:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sovereign/chatgpt/async-run-repo-context-20260911
+          fetch-depth: 0
+      - name: Append exactly one integration-memory entry and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >> Memory.md <<'EOF'
+
+### 2026-09-11 — Bind vNext missions to product repository context
+Status: VERIFIED source/regression; production rollout pending
+Task: Prevent normal vNext repository mutations from degrading to conversation merely because the user did not repeat a GitHub URL in the mission text.
+Decisions: Bind the control-surface repository context to `mode=free`, `agentMode=single`, `intentMode=repository_execution`; allow only an explicit GitHub URL as a bounded target override; keep swarm/worker/queue expansion out of this Draft-PR-first fix.
+Touched surfaces: vNext repository-bound production adapter, adapter context, focused repository-binding regression.
+Evidence: PR #1925 pre-Memory head `9b4f2d2166306279d3bed88ba7739b35f60bdd5b`; Sovereign Agent Backend, Continuity and Integration Plan workflows succeeded; Release Verification passed revision integrity, runtime canary contracts, typecheck, Runtime Unit Tests and Artifact Smoke on the same head.
+Learned: Prompt text must not decide repository capability when the product already owns a repository context; otherwise a valid mutation request deterministically collapses to conversation.
+Open: Agent Zero A2A/shared-workspace execution, deterministic backend closeout and the real UI-to-GitHub Draft-PR proof remain separate runtime obligations.
+Next safe step: Re-run relevant gates on the Memory-appended head, merge #1925, then integrate Agent Zero A2A against the shared Sovereign workspace and prove one real Draft PR before scaling to 5/5.
+EOF
+          rm .github/workflows/append-memory-1925.yml
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add Memory.md .github/workflows/append-memory-1925.yml
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort | tr '\n' ' ')" = ".github/workflows/append-memory-1925.yml Memory.md "
+          git commit -m "docs(memory): record vNext repository-context repair"
+          git push origin HEAD:sovereign/chatgpt/async-run-repo-context-20260911
