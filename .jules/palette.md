@@ -57,3 +57,11 @@
 ## 2025-08-13 - [Overriding Visible Buttons via ARIA Labels]
 **Learning:** Overriding a button's visible text (e.g., 'Repo-Snapshot laden') with an 'aria-label' that does not match or include that exact text violates the WCAG 'Label in Name' requirement. It also disrupts testing frameworks and standard selectors looking for the visible text.
 **Action:** For buttons with descriptive, dynamic text content, rely on the visible text for the accessible name, and use the 'title' attribute exclusively for stateful hover descriptions rather than using aria-label overrides.
+
+## 2025-08-14 - [Redundant ARIA Labels on Buttons with Visible Text]
+**Learning:** Adding an `aria-label` to a button that already has visible text (e.g., "Clear conversation") overrides the visible text for screen readers. This violates WCAG 2.1 Success Criterion 2.5.3 (Label in Name) and can break voice-control software that relies on the visible text.
+**Action:** Do not use `aria-label` on buttons that already contain descriptive visible text. Rely on the visible text for accessibility, and use the `title` attribute for supplementary hover tooltips.
+
+## 2025-08-14 - [Excluding Auto-Generated Test Artifacts from PRs]
+**Learning:** Running test suites or linters (like `pnpm run test:smoke`) in this repository automatically updates thousands of lines in auto-generated files (e.g., `.security-reports/` and `generated/test-coverage-map.json`). Committing these files violates the "under 50 lines" micro-UX constraint.
+**Action:** Always verify the `git status` after running tests and explicitly restore or reset (e.g., `git restore`) any auto-generated artifacts before creating the final PR commit.
