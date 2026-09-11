@@ -22,6 +22,7 @@ import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
+import { TestRunnerResultCard } from './TestRunnerResultCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1103,6 +1104,57 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(watchBtn);
       expect(onWatchChecks).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('TestRunnerResultCard Enhancements', () => {
+    it('renders with region landmark, statistics list, accessible output toggle, scrollable pre block, and repair button tooltip', () => {
+      const mockResult = {
+        framework: 'vitest',
+        status: 'failed' as const,
+        summary: '2 tests failed out of 10',
+        counts: { passed: 8, failed: 2, errors: 0, skipped: 0 },
+        output: 'FAIL src/App.test.tsx > App > renders header\nAssertionError: expected true to be false',
+        hasRepairHint: true,
+      };
+
+      const onRepair = vi.fn();
+
+      render(<TestRunnerResultCard result={mockResult} onRepair={onRepair} />);
+
+      const region = screen.getByRole('region', { name: 'Test-Runner Ergebnis' });
+      expect(region).toBeInTheDocument();
+
+      const statsList = screen.getByRole('list', { name: 'Test-Statistik' });
+      expect(statsList).toBeInTheDocument();
+
+      const statsItems = screen.getAllByRole('listitem');
+      expect(statsItems).toHaveLength(4);
+
+      const toggleBtn = screen.getByRole('button', { name: 'Echte Test-Ausgabe anzeigen' });
+      expect(toggleBtn).toHaveAttribute('aria-expanded', 'false');
+      expect(toggleBtn).toHaveAttribute('aria-controls', 'test-runner-output');
+      expect(toggleBtn).toHaveAttribute('title', 'Echte Test-Ausgabe anzeigen');
+      expect(toggleBtn).toHaveClass('focus-visible:ring-2');
+
+      // Expand output
+      fireEvent.click(toggleBtn);
+
+      expect(toggleBtn).toHaveAttribute('aria-expanded', 'true');
+      expect(toggleBtn).toHaveAttribute('title', 'Echte Test-Ausgabe ausblenden');
+      expect(screen.getByRole('button', { name: 'Echte Test-Ausgabe ausblenden' })).toBeInTheDocument();
+
+      const preBlock = screen.getByLabelText('Test-Runner Ausgabe-Protokoll');
+      expect(preBlock).toHaveAttribute('id', 'test-runner-output');
+      expect(preBlock).toHaveAttribute('tabIndex', '0');
+      expect(preBlock).toHaveClass('focus-visible:ring-2');
+
+      const repairBtn = screen.getByRole('button', { name: 'Fehlgeschlagene Tests reparieren' });
+      expect(repairBtn).toHaveAttribute('title', 'Fehlgeschlagene Tests mit Reparatur-Mission im Builder beheben');
+      expect(repairBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(repairBtn);
+      expect(onRepair).toHaveBeenCalledTimes(1);
     });
   });
 });
