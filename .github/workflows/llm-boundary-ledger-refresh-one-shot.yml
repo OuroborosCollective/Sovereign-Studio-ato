@@ -1,0 +1,102 @@
+name: LLM Boundary Ledger Refresh One-Shot
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/llm-boundary-ledger-runner-20260911
+    paths:
+      - .github/workflows/llm-boundary-ledger-refresh-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_SOURCE: 2193e7e85ac21422e75bdce6bfb8df39f0fdf61f
+      TARGET_BRANCH: sovereign/chatgpt/llm-boundary-ledger-refresh-20260911
+      LEDGER: config/architecture/llm-tool-boundary-review-ledger.json
+    steps:
+      - name: Checkout clean target branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 1
+
+      - name: Verify exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          test -z "$(git status --porcelain)"
+
+      - name: Preview classification-preserving reconciliation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .sovereign-artifacts
+          python3 scripts/reconcile_llm_boundary_ledger.py \
+            --expected-head "$EXPECTED_SOURCE" \
+            --report .sovereign-artifacts/llm-boundary-preview.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = json.loads(Path('.sovereign-artifacts/llm-boundary-preview.json').read_text('utf-8'))
+          assert p.get('ownerDecisionCandidateIds') == [], p
+          assert p.get('newCandidates') == [], p
+          assert p.get('removedCandidates') == [], p
+          drift = p.get('bindingDrift') or []
+          assert len(drift) == 2, drift
+          encoded = json.dumps(drift, sort_keys=True)
+          for candidate in (
+              'llm-boundary:17ab29f34803d5c9bccb8b48',
+              'llm-boundary:bed0cf62d9083ca42e547ff9',
+          ):
+              assert candidate in encoded, encoded
+          assert 'fileSha256' in encoded, encoded
+          print(json.dumps({
+              'status': p.get('status'),
+              'bindingDriftCount': len(drift),
+              'newCandidateCount': 0,
+              'removedCandidateCount': 0,
+              'ownerDecisionCount': 0,
+          }, sort_keys=True))
+          PY
+
+      - name: Apply deterministic reconciliation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/reconcile_llm_boundary_ledger.py \
+            --expected-head "$EXPECTED_SOURCE" \
+            --write \
+            --report .sovereign-artifacts/llm-boundary-write.json
+          python3 scripts/verify_llm_boundary_ledger.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = json.loads(Path('.sovereign-artifacts/llm-boundary-write.json').read_text('utf-8'))
+          assert p.get('status') == 'BOUNDARY_LEDGER_RECONCILED', p
+          assert p.get('ownerDecisionCandidateIds') == [], p
+          assert p.get('newCandidates') == [], p
+          assert p.get('removedCandidates') == [], p
+          PY
+          git diff --check
+          python3 - <<'PY'
+          import subprocess
+          changed = subprocess.check_output(['git', 'status', '--porcelain'], text=True).splitlines()
+          tracked = [line[3:] for line in changed if len(line) >= 4 and not line[3:].startswith('.sovereign-artifacts/')]
+          assert tracked == ['config/architecture/llm-tool-boundary-review-ledger.json'], tracked
+          PY
+
+      - name: Commit only reconciled ledger to target branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Ouroboros Ledger Reconciler'
+          git config user.email 'actions@users.noreply.github.com'
+          git add "$LEDGER"
+          git diff --cached --check
+          git commit -m 'fix(architecture): refresh boundary bindings after internal toolplane split'
+          git push origin "HEAD:$TARGET_BRANCH"
