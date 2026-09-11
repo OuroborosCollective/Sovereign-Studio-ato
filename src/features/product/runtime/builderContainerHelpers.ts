@@ -118,9 +118,19 @@ export function buildAnalyzedMission(args: {
   ].join('\n');
 }
 
+/**
+ * Safely validates and normalizes HTTPS URLs using WHATWG URL parsing.
+ * Rejects non-HTTPS protocols, malformed URLs, control characters, and invalid host syntax.
+ */
 export function safeHttpsUrl(value: string | undefined): string | undefined {
   const clean = value?.trim();
-  return clean && clean.startsWith('https://') ? clean : undefined;
+  if (!clean || !clean.startsWith('https://')) return undefined;
+  try {
+    const parsed = new URL(clean);
+    return parsed.protocol === 'https:' ? parsed.href : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function splitFilePath(filePath: string | undefined): {

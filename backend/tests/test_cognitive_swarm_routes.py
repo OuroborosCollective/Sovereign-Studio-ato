@@ -1010,3 +1010,17 @@ def test_swarm_does_not_start_model_when_persistence_is_unavailable(monkeypatch)
     assert payload["blocker"] == "AGENT_RUN_PERSISTENCE_UNAVAILABLE"
     assert "status" not in payload
     assert "evidenceId" not in payload
+
+
+def test_cognitive_swarm_routes_reject_non_dict_payloads() -> None:
+    client = _app().test_client()
+    invalid_payloads = [[1, 2, 3], "just string", 12345, True]
+    endpoints = [
+        "/api/user/agent/swarm/runs/run-123/resume",
+        "/api/user/agent/swarm/run",
+    ]
+    for endpoint in endpoints:
+        for payload in invalid_payloads:
+            response = client.post(endpoint, json=payload)
+            assert response.status_code == 400
+            assert response.get_json() == {"error": "A JSON object is required"}

@@ -98,6 +98,15 @@ describe('maskSecrets', () => {
     expect(maskSecrets('admin_token=admin_token_material_404')).toBe('admin_token=****');
     expect(maskSecrets('auth_key: auth_key_material_505')).toBe('auth_key: ****');
     expect(maskSecrets('access_secret=access_secret_material_606')).toBe('access_secret=****');
+    expect(maskSecrets('account_key: acc_key_val_12345')).toBe('account_key: ****');
+    expect(maskSecrets('account_secret: acc_sec_val_67890')).toBe('account_secret: ****');
+    expect(maskSecrets('account-key=acc_key_val_99999')).toBe('account-key=****');
+    expect(maskSecrets('database_password: db_secret_pass_123')).toBe('database_password: ****');
+    expect(maskSecrets('db_password=db_secret_pass_456')).toBe('db_password=****');
+    expect(maskSecrets('db_pass: db_secret_pass_789')).toBe('db_pass: ****');
+    expect(maskSecrets('master_password=master_pass_101')).toBe('master_password=****');
+    expect(maskSecrets('master_key: master_key_val_202')).toBe('master_key: ****');
+    expect(maskSecrets('secret_key=secret_key_val_303')).toBe('secret_key=****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {

@@ -16,14 +16,26 @@ export interface PatternMemoryContainerState {
 
 export function derivePatternMemoryContainerState(store: SolutionPatternStore): PatternMemoryContainerState {
   const validation = validateSolutionPatternStore(store);
-  const active = store.patterns.filter((pattern) => pattern.status === 'active');
+  let activePatterns = 0;
+  let completedPatterns = 0;
+  let reportedPatterns = 0;
+  let totalHits = 0;
+
+  for (const pattern of store.patterns) {
+    if (pattern.status !== 'active') continue;
+    activePatterns += 1;
+    if (pattern.confidence === 'completed') completedPatterns += 1;
+    else if (pattern.confidence === 'reported') reportedPatterns += 1;
+    totalHits += pattern.hits;
+  }
+
   return {
     valid: validation.valid,
-    activePatterns: active.length,
+    activePatterns,
     rejectedItems: store.rejections.length,
-    completedPatterns: active.filter((pattern) => pattern.confidence === 'completed').length,
-    reportedPatterns: active.filter((pattern) => pattern.confidence === 'reported').length,
-    totalHits: active.reduce((sum, pattern) => sum + pattern.hits, 0),
+    completedPatterns,
+    reportedPatterns,
+    totalHits,
     summary: validation.valid ? buildSolutionPatternRuntimeSummary(store) : validation.summary,
   };
 }

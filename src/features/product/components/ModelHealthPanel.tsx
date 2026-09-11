@@ -56,10 +56,10 @@ export function ModelHealthPanel({
   const unknownCount = models.filter((m) => m.status === 'unknown').length;
 
   return (
-    <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
+    <section aria-labelledby="model-health-title" className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-bold">Model Health Monitor</h2>
+          <h2 id="model-health-title" className="font-bold">Model Health Monitor</h2>
           <p className="mt-1 text-xs text-slate-400">
             {models.length} model(s) · {healthyCount} healthy · {degradedCount} degraded · {unknownCount} unknown
           </p>
@@ -70,9 +70,11 @@ export function ModelHealthPanel({
           </span>
           {showRefresh && onRefresh && (
             <button
+              type="button"
               onClick={onRefresh}
               disabled={isChecking}
-              className="rounded border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-50"
+              title={isChecking ? 'Model-Health Status wird geprüft...' : 'Model-Health Status aktualisieren'}
+              className="rounded border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-300 transition-all hover:bg-cyan-500/20 focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isChecking ? 'Checking...' : 'Refresh'}
             </button>
@@ -83,14 +85,15 @@ export function ModelHealthPanel({
       {models.length === 0 ? (
         <p className="mt-4 text-xs text-slate-500">Keine LLM-Health-Daten vorhanden. Adapter werden erst angezeigt, wenn echte Runtime-Daten geliefert werden.</p>
       ) : (
-        <div className="mt-4 space-y-2">
+        <ul role="list" className="mt-4 space-y-2">
           {models.map((model) => (
-            <div
+            <li
               key={model.id}
+              title={`${model.name} (${model.isEnabled ? 'Enabled' : 'Disabled'}) - Status: ${model.status}`}
               className="flex items-center justify-between rounded border border-slate-800 bg-slate-900/70 p-3"
             >
               <div className="flex items-center gap-3">
-                <span className="text-lg" role="img" aria-label={model.status}>
+                <span className="text-lg" role="img" aria-label={`Status: ${model.status}`} title={`Status: ${model.status}`}>
                   {statusIcon(model.status)}
                 </span>
                 <div>
@@ -110,18 +113,18 @@ export function ModelHealthPanel({
                   {model.successCount}/{model.successCount + model.errorCount} success
                 </p>
               </div>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
 
       <div className="mt-4 rounded border border-slate-800 bg-slate-900/70 p-3">
         <h3 className="font-bold text-xs text-slate-400">Health Legend</h3>
-        <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
-          <span>🟢 Healthy: Latency &lt; 2s</span>
-          <span>🟡 Degraded: Latency &gt; 2s</span>
-          <span>⚪ Unknown: Not checked or failed</span>
-        </div>
+        <ul role="list" className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
+          <li>🟢 Healthy: Latency &lt; 2s</li>
+          <li>🟡 Degraded: Latency &gt; 2s</li>
+          <li>⚪ Unknown: Not checked or failed</li>
+        </ul>
       </div>
     </section>
   );

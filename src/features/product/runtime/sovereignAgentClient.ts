@@ -317,7 +317,14 @@ function integerValue(value: unknown): number | undefined {
 }
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim());
+  // ⚡ Bolt: Single-pass loop avoids intermediate array allocations
+  const result: string[] = [];
+  for (const item of value) {
+    if (typeof item === 'string' && item.trim().length > 0) {
+      result.push(item.trim());
+    }
+  }
+  return result;
 }
 function projectionArray(
   value: unknown,
@@ -329,18 +336,21 @@ function projectionArray(
   },
 ): SovereignLiveProjection[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(isObject).flatMap((item): SovereignLiveProjection[] => {
-    if (stringValue(item.schemaVersion) !== 'sovereign.visual-projection-event.v1') return [];
+  // ⚡ Bolt: Single-pass loop avoids intermediate array allocations
+  const results: SovereignLiveProjection[] = [];
+  for (const item of value) {
+    if (!isObject(item)) continue;
+    if (stringValue(item.schemaVersion) !== 'sovereign.visual-projection-event.v1') continue;
     const kind = stringValue(item.projectionKind);
     const state = stringValue(item.projectionState);
     const source = stringValue(item.sourceKind);
     const claim = stringValue(item.claim);
     const payload = isObject(item.payload) ? item.payload : undefined;
     const authoritative = item.authoritative === false;
-    if (!kind || !state || !source || !payload || !authoritative || claim !== 'OBSERVED') return [];
-    if (!['IDE_FILE', 'IDE_DIFF', 'TERMINAL', 'BROWSER', 'WINDOW_FOCUS'].includes(kind)) return [];
-    if (!['REQUESTED', 'VISIBLE', 'UNAVAILABLE', 'STALE'].includes(state)) return [];
-    if (!['MCP', 'REPOSITORY', 'GIT', 'PROCESS', 'PLAYWRIGHT', 'RUNTIME', 'GUI'].includes(source)) return [];
+    if (!kind || !state || !source || !payload || !authoritative || claim !== 'OBSERVED') continue;
+    if (!['IDE_FILE', 'IDE_DIFF', 'TERMINAL', 'BROWSER', 'WINDOW_FOCUS'].includes(kind)) continue;
+    if (!['REQUESTED', 'VISIBLE', 'UNAVAILABLE', 'STALE'].includes(state)) continue;
+    if (!['MCP', 'REPOSITORY', 'GIT', 'PROCESS', 'PLAYWRIGHT', 'RUNTIME', 'GUI'].includes(source)) continue;
     const projectionId = stringValue(item.projectionId) || stringValue(item.eventId);
     const eventId = stringValue(item.eventId) || projectionId;
     const sessionId = stringValue(item.sessionId);
@@ -352,14 +362,14 @@ function projectionArray(
     const sourceReceiptRef = stringValue(item.sourceReceiptRef);
     const sourceIdentityHash = stringValue(item.sourceIdentityHash);
     const projectionHash = stringValue(item.projectionHash);
-    if (!projectionId || !eventId || !sessionId || !sessionBindingHash || !attemptId || !workspaceId || !actionId || !sourceReceiptRef || !sourceIdentityHash || !projectionHash) return [];
+    if (!projectionId || !eventId || !sessionId || !sessionBindingHash || !attemptId || !workspaceId || !actionId || !sourceReceiptRef || !sourceIdentityHash || !projectionHash) continue;
     if (
       (itemJobId && itemJobId !== binding.jobId)
       || workspaceId !== binding.workspaceId
       || sessionBindingHash !== binding.sessionBindingHash
       || attemptId !== binding.attemptId
-    ) return [];
-    return [{
+    ) continue;
+    results.push({
       projectionId,
       eventId,
       sessionId,
@@ -380,8 +390,9 @@ function projectionArray(
       projectionHash,
       authoritative: false,
       claim: 'OBSERVED',
-    }];
-  });
+    });
+  }
+  return results;
 }
 
 const EVIDENCE_VERDICTS = new Set(['OBSERVED', 'UNVERIFIED', 'VERIFIED', 'BLOCKED', 'CONTRADICTED', 'STALE']);
@@ -401,8 +412,11 @@ function evidenceAnchorArray(
   },
 ): SovereignWorkspaceEvidenceAnchor[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(isObject).flatMap((item): SovereignWorkspaceEvidenceAnchor[] => {
-    if (stringValue(item.schemaVersion) !== 'sovereign.workspace-evidence-anchor.v1' || item.authoritative !== false) return [];
+  // ⚡ Bolt: Single-pass loop avoids intermediate array allocations
+  const results: SovereignWorkspaceEvidenceAnchor[] = [];
+  for (const item of value) {
+    if (!isObject(item)) continue;
+    if (stringValue(item.schemaVersion) !== 'sovereign.workspace-evidence-anchor.v1' || item.authoritative !== false) continue;
     const anchorId = stringValue(item.anchorId);
     const claimKind = stringValue(item.claimKind)?.toUpperCase();
     const verdict = stringValue(item.verdict)?.toUpperCase();
@@ -426,7 +440,7 @@ function evidenceAnchorArray(
       || !scope || FORBIDDEN_EVIDENCE_TEXT.some((marker) => foldedText.includes(marker))
       || sourceRefs.length === 0 || sourceRefs.length > 32 || sourceRefs.some((entry) => !SHA256_RE.test(entry))
       || (sourceKind === 'FRAME_OBSERVATION' && verdict === 'VERIFIED')
-    ) return [];
+    ) continue;
     const runId = stringValue(item.runId);
     const taskId = stringValue(item.taskId);
     const attemptId = stringValue(item.attemptId);
@@ -434,20 +448,20 @@ function evidenceAnchorArray(
     const itemWorkspaceId = stringValue(item.workspaceId);
     const actionId = stringValue(item.actionId);
     const observedAt = stringValue(item.observedAt);
-    if (!runId || !taskId || !attemptId || !actionId || !observedAt || !Number.isFinite(Date.parse(observedAt))) return [];
+    if (!runId || !taskId || !attemptId || !actionId || !observedAt || !Number.isFinite(Date.parse(observedAt))) continue;
     if (
       (itemJobId && itemJobId !== binding.jobId)
       || (itemWorkspaceId && itemWorkspaceId !== binding.workspaceId)
       || sessionBindingHash !== binding.sessionBindingHash
       || attemptId !== binding.attemptId
-    ) return [];
+    ) continue;
     const targetRevision = stringValue(item.targetRevision)?.toLowerCase();
     const imageDigest = stringValue(item.imageDigest)?.toLowerCase();
     const runtimeIdentityHash = stringValue(item.runtimeIdentityHash)?.toLowerCase();
-    if (targetRevision && !REVISION_RE.test(targetRevision)) return [];
-    if (imageDigest && !IMAGE_DIGEST_RE.test(imageDigest)) return [];
-    if (runtimeIdentityHash && !SHA256_RE.test(runtimeIdentityHash)) return [];
-    return [{
+    if (targetRevision && !REVISION_RE.test(targetRevision)) continue;
+    if (imageDigest && !IMAGE_DIGEST_RE.test(imageDigest)) continue;
+    if (runtimeIdentityHash && !SHA256_RE.test(runtimeIdentityHash)) continue;
+    results.push({
       anchorId,
       jobId: binding.jobId,
       workspaceId: binding.workspaceId,
@@ -471,18 +485,25 @@ function evidenceAnchorArray(
       freshnessReasons: stringArray(item.freshnessReasons),
       evidenceHash,
       authoritative: false,
-    }];
-  });
+    });
+  }
+  return results;
 }
 
 function eventArray(value: unknown, now: () => number): SovereignAgentRuntimeEvent[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(isObject).map((item): SovereignAgentRuntimeEvent => ({
+  // ⚡ Bolt: Single-pass loop avoids intermediate array allocations
+  const results: SovereignAgentRuntimeEvent[] = [];
+  for (const item of value) {
+    if (!isObject(item)) continue;
+    results.push({
     at: typeof item.at === 'number' && Number.isFinite(item.at) ? item.at : now(),
     level: item.level === 'warning' || item.level === 'error' || item.level === 'success' ? item.level : 'info',
     stage: stringValue(item.stage) || 'sovereign-agent',
     message: stringValue(item.message) || 'Sovereign Agent runtime event.',
-  }));
+    });
+  }
+  return results;
 }
 function normalizeStatus(value: unknown): SovereignAgentJobSnapshot['status'] {
   if (value === 'queued' || value === 'provisioning' || value === 'running' || value === 'waiting-for-user' || value === 'validating' || value === 'blocked' || value === 'failed' || value === 'completed' || value === 'cleaned') return value;
@@ -574,20 +595,36 @@ function patternLearningEvidence(body: Record<string, unknown>): SovereignPatter
 function diagnosisValue(value: unknown): SovereignToolchainDiagnosis {
   const raw = isObject(value) ? value : {};
   const families = Array.isArray(raw.failureFamilies)
-    ? raw.failureFamilies.filter(isObject).map((item): SovereignToolchainFailureFamily => ({
+    ? (() => {
+        // ⚡ Bolt: Single-pass loop avoids intermediate array allocations
+        const results: SovereignToolchainFailureFamily[] = [];
+        for (const item of raw.failureFamilies) {
+          if (!isObject(item)) continue;
+          results.push({
         code: stringValue(item.code) || 'unknown',
         title: stringValue(item.title) || 'Unknown failure family',
         severity: stringValue(item.severity) || 'unknown',
         score: typeof item.score === 'number' && Number.isFinite(item.score) ? item.score : 0,
         checks: stringArray(item.checks),
-      }))
+          });
+        }
+        return results;
+      })()
     : [];
   const followups = Array.isArray(raw.nextLogicalFailures)
-    ? raw.nextLogicalFailures.filter(isObject).map((item): SovereignToolchainFollowup => ({
+    ? (() => {
+        // ⚡ Bolt: Single-pass loop avoids intermediate array allocations
+        const results: SovereignToolchainFollowup[] = [];
+        for (const item of raw.nextLogicalFailures) {
+          if (!isObject(item)) continue;
+          results.push({
         fromFamily: stringValue(item.fromFamily) || 'runtime_state_neighbour',
         prediction: stringValue(item.prediction) || 'Unknown neighbouring runtime risk.',
         checkNext: stringValue(item.checkNext) || 'verify runtime evidence',
-      }))
+          });
+        }
+        return results;
+      })()
     : [];
   return {
     evidenceHash: stringValue(raw.evidenceHash),
@@ -773,7 +810,12 @@ export class SovereignAgentClient {
       fallback: 'Sovereign Agent job list',
     });
     const jobs = Array.isArray(body.jobs) ? body.jobs : [];
-    return jobs.filter(isObject).map((job) => sanitizeSnapshot(job, this.now));
+    // ⚡ Bolt: Single-pass loop avoids intermediate array allocations
+    const results: SovereignAgentJobSnapshot[] = [];
+    for (const job of jobs) {
+      if (isObject(job)) results.push(sanitizeSnapshot(job, this.now));
+    }
+    return results;
   }
   async getJob(jobId: string): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);
