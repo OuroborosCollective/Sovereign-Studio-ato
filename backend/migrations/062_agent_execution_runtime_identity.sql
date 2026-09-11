@@ -27,28 +27,31 @@ ALTER TABLE agent_run_receipts
         )
     ),
     ADD CONSTRAINT agent_run_receipts_revision_check CHECK (
-        (
-            schema_version = 'sovereign.agent-run-receipt.v1'
-            AND mcp_revision ~ '^[0-9a-f]{40}$'
-            AND mcp_image_digest ~ '^sha256:[0-9a-f]{64}$'
-            AND mcp_revision_verified = TRUE
-            AND execution_runtime_kind IS NULL
-            AND execution_revision IS NULL
-            AND execution_image_digest IS NULL
-            AND execution_revision_verified IS NULL
-            AND execution_image_digest_verified IS NULL
-        )
-        OR
-        (
-            schema_version = 'sovereign.agent-execution-receipt.v1'
-            AND mcp_revision IS NULL
-            AND mcp_image_digest IS NULL
-            AND mcp_revision_verified IS NULL
-            AND execution_runtime_kind IN ('backend', 'mcp')
-            AND execution_revision ~ '^[0-9a-f]{40}$'
-            AND execution_image_digest ~ '^sha256:[0-9a-f]{64}$'
-            AND execution_revision_verified = TRUE
-            AND execution_image_digest_verified = TRUE
+        base_commit_sha ~ '^[0-9a-f]{40}$'
+        AND (
+            (
+                schema_version = 'sovereign.agent-run-receipt.v1'
+                AND mcp_revision ~ '^[0-9a-f]{40}$'
+                AND mcp_image_digest ~ '^sha256:[0-9a-f]{64}$'
+                AND mcp_revision_verified = TRUE
+                AND execution_runtime_kind IS NULL
+                AND execution_revision IS NULL
+                AND execution_image_digest IS NULL
+                AND execution_revision_verified IS NULL
+                AND execution_image_digest_verified IS NULL
+            )
+            OR
+            (
+                schema_version = 'sovereign.agent-execution-receipt.v1'
+                AND mcp_revision IS NULL
+                AND mcp_image_digest IS NULL
+                AND mcp_revision_verified IS NULL
+                AND execution_runtime_kind IN ('backend', 'mcp')
+                AND execution_revision ~ '^[0-9a-f]{40}$'
+                AND execution_image_digest ~ '^sha256:[0-9a-f]{64}$'
+                AND execution_revision_verified = TRUE
+                AND execution_image_digest_verified = TRUE
+            )
         )
     );
 
