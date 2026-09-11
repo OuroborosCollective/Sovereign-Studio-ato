@@ -20,6 +20,7 @@ describe('DevChat Draft PR execution contract', () => {
     const app = source('src/App.tsx');
     const surface = source('src/features/control-surface-vnext/App.tsx');
     const adapter = source('src/features/control-surface-vnext/adapter/production-adapter.ts');
+    const repositoryAdapter = source('src/features/control-surface-vnext/adapter/repository-bound-adapter.ts');
     const client = source('src/features/product/runtime/sovereignAgentClient.ts');
     const runtime = source('src/features/product/runtime/sovereignAgentRuntime.ts');
 
@@ -33,16 +34,21 @@ describe('DevChat Draft PR execution contract', () => {
     expect(surface).toContain('setActiveRunId(accepted.jobId)');
     expect(surface).toContain('prepareDraftPr');
     expect(surface).toContain('publishDraftPr');
-    expect(adapter).toContain("'/api/user/agent/swarm/run'");
-    expect(adapter).toContain('/api/user/agent/swarm/runs/${encodeURIComponent(requested)}');
-    expect(adapter).toContain('run.jobId');
-    expect(adapter).toContain('this.client.prepareDraftPr(run.jobId)');
-    expect(adapter).toContain('this.client.createDraftPr(run.jobId)');
+    expect(repositoryAdapter).toContain("'/api/user/agent/repository/run'");
+    expect(repositoryAdapter).not.toContain("'/api/user/agent/swarm/run'");
+    expect(repositoryAdapter).toContain("agentMode: 'single'");
+    expect(adapter).toContain('if (isDirectRepositoryJobId(runId)) return this.getDirectRepositoryJob(runId);');
+    expect(adapter).toContain("? runId\n      : (await this.getRun(runId)).jobId");
+    expect(adapter).toContain('this.client.prepareDraftPr(jobId)');
+    expect(adapter).toContain('this.client.createDraftPr(jobId)');
     expect(adapter).toContain('readbackHeadSha: pr.readbackHeadSha');
     expect(adapter).not.toContain('MockSovereignBackendAdapter');
     expect(adapter).not.toContain('/api/config/');
 
-    expect(client).toContain("'/api/user/agent/swarm/run'");
+    expect(client).toContain("'/api/user/agent/repository/run'");
+    expect(client).not.toContain("'/api/user/agent/swarm/run'");
+    expect(client).toContain("mode: 'free'");
+    expect(client).toContain("agentMode: 'single'");
     expect(client).toContain('expectedHeadSha: input.expectedHeadSha.trim()');
     expect(runtime).toContain('readSameOriginBackendUrl()');
   });

@@ -28,7 +28,7 @@ from .productivity_insights import (
     narrate_diff,
     validate_mission,
 )
-from .contracts import SovereignAgentEvent, normalize_agent_job_result
+from .contracts import SovereignAgentEvent, normalize_agent_job_result, sanitize_agent_text
 from .cognitive_run_store import read_agent_run_receipts
 from .cognitive_swarm_routes import start_cognitive_swarm_run
 from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal
@@ -47,6 +47,13 @@ from .github_access import (
 )
 from .job_lifecycle import create_sovereign_agent_job, generate_agent_job_id
 from .job_store import append_agent_evidence_anchor, append_agent_event, append_agent_github_draft_pr_readback, list_agent_evidence_anchors, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
+from .repository_execution import (
+    RepositoryExecutionError,
+    RepositoryExecutionTransientError,
+    is_repository_a2a_job,
+    reconcile_repository_execution,
+    start_repository_execution,
+)
 from .fleet_supervisor import FleetContractError
 from .live_workspace_chat_store import (
     LiveWorkspaceChatStoreError,
@@ -290,6 +297,7 @@ def register_sovereign_agent_routes(
     - POST /api/user/agent/live-workspace/chat-session/<session_id>/mission
     - GET  /api/user/agent/jobs
     - POST /api/user/agent/jobs
+    - POST /api/user/agent/repository/run
     - GET  /api/user/agent/jobs/<job_id>
     - GET  /api/user/agent/jobs/<job_id>/live-workspace
     - GET  /api/user/agent/jobs/<job_id>/evidence-anchors
@@ -1502,6 +1510,46 @@ def register_sovereign_agent_routes(
         finally:
             _close(conn)
 
+    @app.route("/api/user/agent/repository/run", methods=["POST"])
+    @require_session
+    def user_start_repository_execution():
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        github_token, token_error = _github_access_token_for_session(body, user_id)
+        if token_error is not None:
+            return token_error
+        payload = {**body}
+        payload.pop("githubAccessToken", None)
+        conn = _connection()
+        try:
+            try:
+                job = start_repository_execution(
+                    conn,
+                    user_id=user_id,
+                    body=payload,
+                    github_access_token=github_token,
+                    workspace_root=_workspace_root(),
+                )
+            except RepositoryExecutionError as exc:
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "execution": "repository-single-a2a",
+                    "error": sanitize_agent_text(str(exc), 400),
+                }), 400
+            ok = job.status not in ("blocked", "failed")
+            return jsonify({
+                "ok": ok,
+                "runtime": "sovereign-agent",
+                "execution": "repository-single-a2a",
+                "jobId": job.job_id,
+                "job": _job_to_api(job),
+            }), 202 if ok else 409
+        finally:
+            _close(conn)
+
     @app.route("/api/user/agent/jobs", methods=["POST"])
     @require_session
     def user_create_sovereign_agent_job():
@@ -1675,6 +1723,21 @@ def register_sovereign_agent_routes(
             job = _read_owned_job(conn, user_id, job_id)
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
+            try:
+                job = reconcile_repository_execution(
+                    conn,
+                    user_id=user_id,
+                    job_id=job_id,
+                    workspace_root=_workspace_root(),
+                ) or job
+            except RepositoryExecutionTransientError as exc:
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "job": _job_to_api(job),
+                    "blocker": "AGENT_ZERO_A2A_READBACK_UNAVAILABLE",
+                    "error": sanitize_agent_text(str(exc), 400),
+                }), 503
             return jsonify({"runtime": "sovereign-agent", "job": _job_to_api(job)})
         finally:
             _close(conn)
@@ -2093,6 +2156,15 @@ def register_sovereign_agent_routes(
                 return jsonify({"error": "Job nicht gefunden"}), 404
             if job.status in ("completed", "failed", "blocked", "cleaned"):
                 return jsonify({"error": "Job ist bereits terminal", "status": job.status}), 400
+            if is_repository_a2a_job(job):
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "status": job.status,
+                    "blocker": "AGENT_ZERO_A2A_CANCEL_NOT_PROVEN",
+                    "error": "The active Agent Zero A2A task cannot be marked cancelled until upstream task cancellation has an exact readback contract.",
+                }), 409
             update_agent_job_state(
                 conn,
                 job_id=job_id,

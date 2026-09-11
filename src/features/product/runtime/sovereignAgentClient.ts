@@ -187,6 +187,8 @@ interface RawSovereignAgentJobResponse {
   repoUrl?: unknown;
   branch?: unknown;
   branchName?: unknown;
+  externalRef?: unknown;
+  prState?: unknown;
   draftPrUrl?: unknown;
   changedFiles?: unknown;
   events?: unknown;
@@ -537,6 +539,8 @@ function sanitizeSnapshot(rawInput: RawSovereignAgentJobResponse, now: () => num
     repoUrl: stringValue(raw.repoUrl),
     branch: stringValue(raw.branch),
     branchName: stringValue(raw.branchName),
+    externalRef: stringValue(raw.externalRef),
+    prState: stringValue(raw.prState),
     draftPrUrl: stringValue(raw.draftPrUrl),
     changedFiles: stringArray(raw.changedFiles),
     events: eventArray(raw.events, now),
@@ -760,15 +764,15 @@ export class SovereignAgentClient {
   async startRepositoryExecution(input: SovereignRepositoryExecutionInput): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);
     const response = await this.fetcher(
-      endpoint(this.config.agentApiUrl, '/api/user/agent/swarm/run'),
+      endpoint(this.config.agentApiUrl, '/api/user/agent/repository/run'),
       {
         method: 'POST',
         headers: headers(),
         credentials: 'include',
         body: JSON.stringify({
           mission: input.mission.trim(),
-          evidenceText: input.evidenceText || '',
-          mode: 'auto',
+          mode: 'free',
+          agentMode: 'single',
           intentMode: 'repository_execution',
           repositoryUrl: input.repoUrl,
           repositoryBranch: input.branch || 'main',
@@ -781,10 +785,10 @@ export class SovereignAgentClient {
     const body = isObject(rawBody) ? rawBody : {};
     const jobId = stringValue(body.jobId);
 
-    // A repository execution can be accepted, persisted and then fail closed
-    // with HTTP 503 because the selected agent produced no tool/diff/test
-    // evidence. A linked job id is authoritative evidence that execution did
-    // start; fetch its snapshot instead of misreporting a transport failure.
+    // Repository execution may persist a job and then fail closed during
+    // Agent-Zero submission or reconciliation. A linked job id is authoritative
+    // evidence that the neutral job exists; read it back instead of turning a
+    // persisted repository state into a generic transport failure.
     if (!response.ok && !jobId) {
       throw buildSovereignAgentHttpError({
         status: response.status,

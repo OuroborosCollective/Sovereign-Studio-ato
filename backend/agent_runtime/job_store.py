@@ -463,6 +463,46 @@ def update_agent_job_state(
     conn.commit()
 
 
+def compare_and_swap_agent_job_external_ref(
+    conn: Any,
+    *,
+    job_id: str,
+    expected_ref: str | None,
+    new_ref: str,
+) -> bool:
+    """Atomically replace one executor reference only from the expected value.
+
+    ``external_ref`` is not the job truth id, but it is the exclusive binding to
+    the one external executor task.  Pollers therefore compete through this CAS
+    instead of trusting a previously read row and accidentally submitting twice.
+    """
+
+    normalized_new = sanitize_agent_text(str(new_ref or ""), 240)
+    normalized_expected = (
+        sanitize_agent_text(str(expected_ref), 240)
+        if expected_ref is not None
+        else None
+    )
+    if not normalized_new or normalized_new != str(new_ref or "").strip():
+        raise ValueError("new external_ref is invalid")
+    if expected_ref is not None and normalized_expected != str(expected_ref).strip():
+        raise ValueError("expected external_ref is invalid")
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE sovereign_agent_jobs
+            SET external_ref = %s
+            WHERE job_id = %s
+              AND external_ref IS NOT DISTINCT FROM %s
+            RETURNING job_id
+            """,
+            (normalized_new, job_id, normalized_expected),
+        )
+        won = cur.fetchone() is not None
+    conn.commit()
+    return won
+
+
 def mark_draft_pr_prepared(
     conn: Any,
     *,

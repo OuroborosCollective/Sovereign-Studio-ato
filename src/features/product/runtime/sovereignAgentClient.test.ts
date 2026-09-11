@@ -205,7 +205,7 @@ describe('SovereignAgentClient', () => {
     ]);
   });
 
-  it('starts repository repair through the executable swarm route and reads the linked job', async () => {
+  it('starts repository repair through the single-A2A repository route and reads the persisted job', async () => {
     const requestInits: RequestInit[] = [];
     const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
       requestInits.push(init || {});
@@ -240,16 +240,18 @@ describe('SovereignAgentClient', () => {
       githubAccessToken: 'not-a-real-github-token',
     });
 
-    expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/swarm/run');
+    expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/repository/run');
     expect(fetcher.mock.calls[1][0]).toBe('https://agent.example.test/api/user/agent/jobs/job-repository');
     expect(JSON.parse(String(requestInits[0].body))).toMatchObject({
-      mode: 'auto',
+      mode: 'free',
+      agentMode: 'single',
       intentMode: 'repository_execution',
       repositoryUrl: 'https://github.com/acme/repo',
       repositoryBranch: 'main',
       expectedHeadSha: 'c'.repeat(40),
       githubAccessToken: 'not-a-real-github-token',
     });
+    expect(JSON.parse(String(requestInits[0].body))).not.toHaveProperty('evidenceText');
     expect(snapshot).toMatchObject({
       jobId: 'job-repository',
       workspaceId: 'ws-repository',
@@ -258,7 +260,7 @@ describe('SovereignAgentClient', () => {
     });
   });
 
-  it('reads a persisted blocked job when the swarm route returns HTTP 503 with a job id', async () => {
+  it('reads a persisted blocked job when the repository route returns a non-2xx response with a job id', async () => {
     const fetcher = vi.fn(async (_url: RequestInfo | URL) => {
       if (fetcher.mock.calls.length === 1) {
         return new Response(JSON.stringify({
@@ -266,8 +268,8 @@ describe('SovereignAgentClient', () => {
           status: 'BLOCKED',
           jobId: 'job-evidence-blocked',
           workspaceId: 'ws-evidence-blocked',
-          blocker: 'The free single-agent workspace execution lacks required tool, diff or test evidence.',
-        }), { status: 503 });
+          blocker: 'The single-Agent-Zero repository execution is blocked by evidence.',
+        }), { status: 409 });
       }
       return new Response(JSON.stringify({
         job: {
