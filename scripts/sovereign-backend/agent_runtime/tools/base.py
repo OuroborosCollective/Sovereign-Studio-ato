@@ -23,6 +23,21 @@ def _thaw_immutable_metadata(value: Any) -> Any:
     return value
 
 
+def _thaw_tool_parameters(value: Any) -> Any:
+    """Restore frozen canonical JSON parameters before crossing the effect boundary.
+
+    Provider-neutral authorization snapshots intentionally freeze JSON arrays as
+    tuples and mappings as immutable wrappers. Tool implementations own ordinary
+    JSON-shaped contracts, so the effect adapter must receive recursively mutable
+    ``dict``/``list`` containers without changing scalar values.
+    """
+    if isinstance(value, Mapping):
+        return {key: _thaw_tool_parameters(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_thaw_tool_parameters(item) for item in value]
+    return value
+
+
 @dataclass
 class ToolResult:
     """Result of a tool execution.
@@ -220,7 +235,7 @@ class ToolRegistry:
         params: dict[str, Any],
         workspace_path: str | None = None,
     ) -> ToolResult:
-        """Execute a tool by name with given parameters."""
+        """Execute a tool by name with JSON-native parameters."""
         tool = self.get(tool_name)
         if not tool:
             return ToolResult(
@@ -230,8 +245,11 @@ class ToolRegistry:
                 predictive_signal="agent_tool_unknown",
             )
         try:
-            tool.validate(params)
-            result = tool.execute(params, workspace_path)
+            effect_params = _thaw_tool_parameters(params)
+            if not isinstance(effect_params, dict):
+                raise ToolPolicyError("Tool parameters must resolve to a JSON object")
+            tool.validate(effect_params)
+            result = tool.execute(effect_params, workspace_path)
             result.tool = tool_name
             return result
         except ToolPolicyError as e:

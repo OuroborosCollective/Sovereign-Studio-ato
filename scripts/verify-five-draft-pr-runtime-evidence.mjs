@@ -11,6 +11,36 @@ if (document.verifiedDraftPrCount !== 5 || !Array.isArray(document.evidence) || 
 if (!Array.isArray(document.runtimeReadbacks)) fail('runtimeReadbacks missing');
 if (document.omittedRuntimeReadbacks !== 0) fail(`runtime readbacks were truncated: ${document.omittedRuntimeReadbacks}`);
 
+const backendOrigin = String(process.env.SOVEREIGN_E2E_BACKEND_PROXY_TARGET || '').trim();
+let backendHealthUrl;
+try {
+  const parsed = new URL(backendOrigin);
+  if (parsed.protocol !== 'https:' || !parsed.hostname || parsed.pathname !== '/') fail('backend proxy target must be an exact HTTPS origin');
+  backendHealthUrl = new URL('/health', parsed);
+} catch (error) {
+  if (String(error?.message || '').startsWith('FIVE_PATH_RUNTIME_EVIDENCE_INVALID:')) throw error;
+  fail('backend proxy target is invalid');
+}
+let runtimeHealthResponse;
+try {
+  runtimeHealthResponse = await fetch(backendHealthUrl, {
+    headers: { 'Cache-Control': 'no-store' },
+    signal: AbortSignal.timeout(30_000),
+  });
+} catch (error) {
+  fail(`backend runtime identity readback failed: ${error?.name || 'FetchError'}`);
+}
+if (runtimeHealthResponse.status !== 200) fail(`backend runtime identity HTTP ${runtimeHealthResponse.status}`);
+const runtimeHealth = await runtimeHealthResponse.json().catch(() => null);
+if (!runtimeHealth || typeof runtimeHealth !== 'object' || runtimeHealth.status !== 'live') fail('backend runtime identity is not live');
+const deployedRevision = String(runtimeHealth.sourceRevision || '').toLowerCase();
+const deployedImageDigest = String(runtimeHealth.imageDigest || '').toLowerCase();
+if (!/^[0-9a-f]{40}$/.test(deployedRevision)) fail('backend runtime sourceRevision is unverified');
+if (!/^sha256:[0-9a-f]{64}$/.test(deployedImageDigest)) fail('backend runtime imageDigest is unverified');
+if (deployedRevision !== document.sourceRevision) {
+  fail(`evidence/runtime revision mismatch: evidence=${document.sourceRevision} runtime=${deployedRevision}`);
+}
+
 const seenRuns = new Set();
 for (const item of document.evidence) {
   const runId = String(item?.persistedRunId || '');
@@ -64,6 +94,8 @@ for (const item of document.evidence) {
 console.log(JSON.stringify({
   ok: true,
   sourceRevision: document.sourceRevision,
+  runtimeSourceRevision: deployedRevision,
+  runtimeImageDigest: deployedImageDigest,
   verifiedRuns: seenRuns.size,
-  invariant: 'browser-request-free-single -> runtime-free-single -> internal-workspace -> mutation/diff/tests -> consent -> verified-draft-pr -> cleanup',
+  invariant: 'exact-deployed-revision -> browser-request-free-single -> runtime-free-single -> internal-workspace -> mutation/diff/tests -> consent -> verified-draft-pr -> cleanup',
 }, null, 2));
