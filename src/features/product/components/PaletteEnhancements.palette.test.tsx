@@ -23,6 +23,7 @@ import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
 import { TestRunnerResultCard } from './TestRunnerResultCard';
+import { IdleLiveAwarenessSettingsCard } from './IdleLiveAwarenessSettingsCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1155,6 +1156,29 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(repairBtn);
       expect(onRepair).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('IdleLiveAwarenessSettingsCard Enhancements', () => {
+    it('associates input label and renders accessible option radios with titles and aria-labels', () => {
+      render(<IdleLiveAwarenessSettingsCard />);
+
+      const urlInput = screen.getByLabelText('Beobachteter Pull Request');
+      expect(urlInput).toHaveAttribute('id', 'idle-awareness-pr-url');
+      expect(urlInput).toHaveAttribute('title', 'GitHub Pull Request URL');
+      expect(urlInput).toHaveClass('focus-visible:ring-2');
+
+      const radioOff = screen.getByRole('radio', { name: 'Berechtigung: Aus' });
+      expect(radioOff).toHaveClass('focus-visible:ring-2');
+
+      const radioObserve = screen.getByRole('radio', { name: 'Berechtigung: Beobachten' });
+      expect(radioObserve).toHaveClass('focus-visible:ring-2');
+
+      const radioNotify = screen.getByRole('radio', { name: 'Berechtigung: Beobachten + melden' });
+      expect(radioNotify).toHaveClass('focus-visible:ring-2');
+
+      const observeLabel = screen.getByTitle('Berechtigung wählen: Beobachten');
+      expect(observeLabel).toBeInTheDocument();
     });
   });
 });
