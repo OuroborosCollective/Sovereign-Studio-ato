@@ -50,26 +50,43 @@ function normalizeTag(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9:_-]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 }
 
+// ⚡ Bolt: Fast pattern matching scoring using Set lookups instead of O(N*M) includes()
 function scoreMatch(entry: LearnedPatternEntry, queryTokens: string[], queryTags: string[]): { score: number; reasons: string[] } {
   const reasons: string[] = [];
   let score = 0;
 
-  const titleTokens = tokenize(entry.title);
-  const summaryTokens = tokenize(entry.summary);
+  const titleTokenSet = new Set(tokenize(entry.title));
+  const summaryTokenSet = new Set(tokenize(entry.summary));
+  const entryTagSet = new Set(entry.tags);
 
-  const titleOverlap = queryTokens.filter((t) => titleTokens.includes(t)).length;
+  let titleOverlap = 0;
+  for (let i = 0; i < queryTokens.length; i++) {
+    if (titleTokenSet.has(queryTokens[i])) {
+      titleOverlap++;
+    }
+  }
   if (titleOverlap > 0) {
     score += titleOverlap * 3;
     reasons.push(`${titleOverlap} Titel-Token übereinstimmend`);
   }
 
-  const summaryOverlap = queryTokens.filter((t) => summaryTokens.includes(t)).length;
+  let summaryOverlap = 0;
+  for (let i = 0; i < queryTokens.length; i++) {
+    if (summaryTokenSet.has(queryTokens[i])) {
+      summaryOverlap++;
+    }
+  }
   if (summaryOverlap > 0) {
     score += summaryOverlap;
     reasons.push(`${summaryOverlap} Beschreibungs-Token übereinstimmend`);
   }
 
-  const tagOverlap = queryTags.filter((t) => entry.tags.includes(t)).length;
+  let tagOverlap = 0;
+  for (let i = 0; i < queryTags.length; i++) {
+    if (entryTagSet.has(queryTags[i])) {
+      tagOverlap++;
+    }
+  }
   if (tagOverlap > 0) {
     score += tagOverlap * 2;
     reasons.push(`${tagOverlap} Tag(s) übereinstimmend`);
@@ -99,16 +116,30 @@ function scoreMatch(entry: LearnedPatternEntry, queryTokens: string[], queryTags
 export function planPatternReuse(entries: LearnedPatternEntry[], query: PatternReuseQuery): PatternReusePlanResult {
   const limit = Math.max(1, Math.min(query.limit ?? 5, MAX_MATCHES));
   const queryTokens = tokenize(query.intentText);
-  const queryTags = (query.tags ?? []).map(normalizeTag).filter(Boolean);
 
-  const filtered = entries
-    .filter((e) => !query.requireVerified || e.verified)
-    .filter((e) => !query.requireLocalExecutable || e.localExecutable);
+  // ⚡ Bolt: Single pass tag normalization eliminating filter array allocations
+  const rawTags = query.tags ?? [];
+  const queryTags: string[] = [];
+  for (let i = 0; i < rawTags.length; i++) {
+    const normalized = normalizeTag(rawTags[i]);
+    if (normalized) {
+      queryTags.push(normalized);
+    }
+  }
 
-  const scored: PatternReuseMatch[] = filtered
-    .map((e) => {
-      const { score, reasons } = scoreMatch(e, queryTokens, queryTags);
-      return {
+  // ⚡ Bolt: Consolidated single-pass filtering & scoring loop replacing multi-pass .filter().map().filter() chains
+  const scored: PatternReuseMatch[] = [];
+  const requireVerified = Boolean(query.requireVerified);
+  const requireLocalExecutable = Boolean(query.requireLocalExecutable);
+
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    if (requireVerified && !e.verified) continue;
+    if (requireLocalExecutable && !e.localExecutable) continue;
+
+    const { score, reasons } = scoreMatch(e, queryTokens, queryTags);
+    if (score >= MIN_SCORE) {
+      scored.push({
         patternId: e.id,
         title: e.title,
         summary: e.summary,
@@ -117,13 +148,22 @@ export function planPatternReuse(entries: LearnedPatternEntry[], query: PatternR
         reuseCount: e.reuseCount,
         score,
         matchReasons: reasons,
-      };
-    })
-    .filter((m) => m.score >= MIN_SCORE)
-    .sort((a, b) => b.score - a.score || b.reuseCount - a.reuseCount)
-    .slice(0, limit);
+      });
+    }
+  }
 
-  const localExecutableCount = scored.filter((m) => m.localExecutable).length;
+  scored.sort((a, b) => b.score - a.score || b.reuseCount - a.reuseCount);
+  if (scored.length > limit) {
+    scored.length = limit;
+  }
+
+  // ⚡ Bolt: Direct loop pass for localExecutable count eliminating array allocations from .filter()
+  let localExecutableCount = 0;
+  for (let i = 0; i < scored.length; i++) {
+    if (scored[i].localExecutable) {
+      localExecutableCount++;
+    }
+  }
   const localPrepareAvailable = localExecutableCount > 0;
 
   const chatHint = buildChatHint(scored, localPrepareAvailable);
