@@ -167,7 +167,7 @@ jobs:
 
       - name: Emit secret-safe CodeQL finding metadata
         if: always()
-        shell: python
+        shell: bash
         env:
           CODEQL_SARIF_DIR: ${{ github.workspace }}/.security-reports/codeql/${{ matrix.language }}
           CODEQL_LANGUAGE: ${{ matrix.language }}
