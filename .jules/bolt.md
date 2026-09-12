@@ -71,3 +71,7 @@
 ## 2026-08-26 - [Consolidating Multi-Pass Array Traversals in Summary Computations]
 **Learning:** Computing summary statistics and extracting unique tags using chained `.filter()`, `.reduce()`, and `[...new Set(filtered.map(...))]` methods incurs severe CPU and garbage collection pressure due to multiple $O(N)$ passes and continuous intermediate array allocations on every invocation. Replacing these method chains with a single-pass `for...of` loop completely avoids multiple traversals and eliminates intermediate arrays, keeping computations flat and extremely fast.
 **Action:** Always refactor sequential array method chains (like `.filter().reduce()` or `.filter().map()`) into a single-pass loop when dealing with frequent or large-scale data summary computations to avoid intermediate allocations and reduce iteration overhead.
+
+## 2026-09-12 - [Array Native sort for Files and objects]
+**Learning:** Re-evaluating sorting performance shows that `localeCompare` produces extremely slow performance due to javascript engine C++/JS boundary crossings compared to a simple native lexicographic string comparison operators (`<` and `>`) when sorting file names or path. Even within React components.
+**Action:** Replace `localeCompare` with native sort options like `.sort((a,b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)` within data preparation loops for Refactor tasks rendering.
