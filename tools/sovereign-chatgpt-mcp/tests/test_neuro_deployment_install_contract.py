@@ -162,7 +162,7 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
         'docker compose up -d --no-build --force-recreate --remove-orphans'
     )
 
-    assert 'EXPECTED_MCP_TOOL_COUNT="251"' in script
+    assert 'EXPECTED_MCP_TOOL_COUNT="253"' in script
     assert 'EXPECTED_MCP_TOOL_COUNT="256"' in script.split('INSTALL_STAGE="configure_private_owner_mode"', 1)[1]
     assert 'INSTALL_STAGE="capture_previous_mcp_tool_surface"' in script
     assert 'INSTALL_STAGE="verify_mcp_tool_surface_preservation"' in script
@@ -1148,6 +1148,42 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
     assert "Traceback" not in (failed.stdout + failed.stderr)
 
 
+def test_exact_ci_launcher_import_runs_with_the_default_registry(tmp_path: Path) -> None:
+    workflow = yaml.safe_load(WORKFLOW.read_text("utf-8"))
+    steps = workflow["jobs"]["validate"]["steps"]
+    step = next(item for item in steps if item.get("name") == "Import MCP launcher and inspect contracts")
+    embedded = step["run"].split("python - <<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+    environment = {
+        **os.environ,
+        "SOVEREIGN_MCP_GITHUB_APP_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE": "",
+        "PYTHONPATH": str(ROOT),
+        "SOVEREIGN_MCP_ENABLE_AURION_OPERATOR": "0",
+        "SOVEREIGN_MCP_ENABLE_AURION_WRITE": "0",
+        "SOVEREIGN_NEURO_RUNTIME_TRACKING_ENABLED": "0",
+        "SOVEREIGN_MCP_WORKSPACE_ROOT": str(tmp_path / "workspaces"),
+        "SOVEREIGN_TOOL_RANKING_STATE_ROOT": str(tmp_path / "tool-ranking"),
+        "SOVEREIGN_NEURO_RUNTIME_STATE_ROOT": str(tmp_path / "neuro-runtime"),
+        "SOVEREIGN_MCP_HOST": "127.0.0.1",
+        "SOVEREIGN_MCP_PORT": "8090",
+        "SOVEREIGN_MCP_REPOSITORY": "OuroborosCollective/Sovereign-Studio-ato",
+        "SOVEREIGN_ANDROID_NATIVE_BUILD_MODE": "github_actions",
+        "SOVEREIGN_KAPPA_POS": "1000000",
+    }
+    completed = subprocess.run(
+        [sys.executable, "-c", embedded],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr[-4000:]
+    assert "self-update contracts passed." in completed.stdout
+
+
 def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Path) -> None:
     workflow = WORKFLOW.read_text("utf-8")
     remote_install = REMOTE_INSTALL.read_text("utf-8")
@@ -1167,7 +1203,7 @@ def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Pa
         "skills/sovereign-neuro-teaching-runtime/SKILL.md",
     ):
         assert path in workflow
-    assert "assert len(tool_names) == 251" in workflow
+    assert "assert len(tool_names) == 253" in workflow
     assert "n8n_workflow_plan" in deployment_surface
     assert "n8n_workflow_apply" in deployment_surface
     assert "assert len(tool_names - expected_tools) == 251" in deployment_surface
