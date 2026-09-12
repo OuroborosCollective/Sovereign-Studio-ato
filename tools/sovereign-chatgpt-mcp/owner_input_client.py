@@ -45,6 +45,7 @@ ALLOWED_TARGETS = {
     "openrouter_api_key": "OpenRouter API-Key für bezahlte Modelle",
     "openrouter_free_api_key": "OpenRouter API-Key nur für kostenlose Modelle",
     "openrouter_management_api_key": "OpenRouter Management API Key",
+    "agent_zero_api_key": "Agent Zero API-Key",
     "notion_integration_token": "Notion Integration Token",
     "wolfram_cag_api_key": "Wolfram CAG API-Key",
     "n8n_sovereign_api_key": "n8n Public API-Key für Sovereign Studio",

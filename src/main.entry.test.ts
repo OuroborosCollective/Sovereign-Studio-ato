@@ -35,23 +35,29 @@ describe('main app entry', () => {
 
   it('keeps repository execution and Draft-PR publication behind the single vNext production adapter', () => {
     const surface = readSource('./features/control-surface-vnext/App.tsx');
-    const adapter = readSource('./features/control-surface-vnext/adapter/production-adapter.ts');
+    const repositoryAdapter = readSource('./features/control-surface-vnext/adapter/repository-bound-adapter.ts');
+    const adapterBase = readSource('./features/control-surface-vnext/adapter/production-adapter.ts');
     const client = readSource('./features/product/runtime/sovereignAgentClient.ts');
     const publication = readSource('./features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx');
 
     expect(surface).toContain('SovereignAdapterProvider');
     expect(surface).toContain('useSwarmRun');
     expect(surface).toContain('useSovereignJob');
-    expect(adapter).toContain("'/api/user/agent/swarm/run'");
-    expect(adapter).toContain("'/api/user/agent/toolchain/manifest'");
-    expect(adapter).toContain("'/api/user/agent/swarm/manifest'");
-    expect(adapter).toContain('this.client.prepareDraftPr(run.jobId)');
-    expect(adapter).toContain('this.client.createDraftPr(run.jobId)');
-    expect(adapter).toContain('readbackHeadSha');
+    expect(repositoryAdapter).toContain("'/api/user/agent/repository/run'");
+    expect(repositoryAdapter).not.toContain("'/api/user/agent/swarm/run'");
+    expect(repositoryAdapter).toContain("mode: 'free'");
+    expect(repositoryAdapter).toContain("agentMode: 'single'");
+    expect(repositoryAdapter).toContain("intentMode: 'repository_execution'");
+    expect(adapterBase).toContain("'/api/user/agent/toolchain/manifest'");
+    expect(adapterBase).toContain("'/api/user/agent/swarm/manifest'");
+    expect(adapterBase).toContain('this.client.prepareDraftPr(jobId)');
+    expect(adapterBase).toContain('this.client.createDraftPr(jobId)');
+    expect(adapterBase).toContain('readbackHeadSha');
     expect(client).toContain("jobPath(jobId, '/draft-pr/prepare')");
     expect(client).toContain("jobPath(jobId, '/draft-pr/create')");
     expect(client).toContain("stringValue(signal.prStateVerified) === 'open'");
-    expect(adapter).not.toContain('MockSovereignBackendAdapter');
+    expect(repositoryAdapter).not.toContain('MockSovereignBackendAdapter');
+    expect(adapterBase).not.toContain('MockSovereignBackendAdapter');
     expect(publication).toContain('EXTERNAL WRITE CONSENT');
     expect(publication).toContain('Success is shown only after independent GitHub readback.');
   });

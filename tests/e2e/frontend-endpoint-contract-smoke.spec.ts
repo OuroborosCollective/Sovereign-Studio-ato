@@ -155,10 +155,10 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     });
   });
 
-  test('the built vNext surface dispatches one persisted run and preserves a backend blocker without synthesizing publication', async ({ page }) => {
+  test('the built vNext surface dispatches one persisted repository job and preserves a backend blocker without synthesizing publication', async ({ page }) => {
     const observed: Array<{ method: string; path: string }> = [];
     const unexpectedApiRequests: Array<{ method: string; path: string }> = [];
-    const swarmBodies: Array<Record<string, unknown>> = [];
+    const repositoryBodies: Array<Record<string, unknown>> = [];
     const pageErrors: string[] = [];
     const currentUser = {
       id: '00000000-0000-4000-8000-000000000001',
@@ -171,7 +171,8 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
       isGuest: false,
       createdAt: 1_700_000_000_000,
     };
-    const runId = 'run-endpoint-smoke';
+    const jobId = 'agent-endpoint-smoke';
+    const workspaceId = 'agent-workspace-smoke';
 
     await page.addInitScript((user) => {
       window.localStorage.setItem('sovereign-user', JSON.stringify({ state: { user }, version: 0 }));
@@ -190,6 +191,7 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
       await fulfillJson(route, { error: 'unexpected_frontend_endpoint_smoke_request' }, 501);
     });
     await page.route('**/api/auth/me', route => fulfillJson(route, currentUser));
+    await page.route('**/api/user/agent/jobs?limit=1', route => fulfillJson(route, { jobs: [] }));
     await page.route('**/api/user/agent/toolchain/manifest', route => fulfillJson(route, {
       ok: true,
       name: 'Sovereign Universal Toolchain',
@@ -197,32 +199,37 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
       runtime: 'embedded',
       policy: { draftPrOnly: true, confirmRequired: true },
     }));
-    await page.route('**/api/user/agent/swarm/manifest', route => fulfillJson(route, {
-      ok: true,
-      runtime: 'openai-agents-sdk',
-      manifest: {
-        releaseMode: 'draft_pr_only',
-        runtimeTruthRequired: true,
-        agents: [{ role: 'dispatcher', name: 'The Dispatcher', responsibility: 'Route the persisted mission.' }],
+    await page.route('**/api/user/agent/repository/run', async route => {
+      repositoryBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+      await fulfillJson(route, {
+        ok: true,
+        jobId,
+        job: {
+          jobId,
+          workspaceId,
+          status: 'running',
+          externalRef: 'agent-zero-a2a:task-smoke',
+          changedFiles: [],
+          events: [],
+        },
+      }, 202);
+    });
+    await page.route(`**/api/user/agent/jobs/${jobId}`, route => fulfillJson(route, {
+      job: {
+        jobId,
+        workspaceId,
+        status: 'blocked',
+        externalRef: 'agent-zero-a2a:task-smoke',
+        prState: 'blocked',
+        changedFiles: [],
+        events: [],
+        lastError: 'Smoke blocker preserved from persisted repository job.',
       },
     }));
-    await page.route('**/api/user/agent/swarm/run', async route => {
-      swarmBodies.push(route.request().postDataJSON() as Record<string, unknown>);
-      await fulfillJson(route, { ok: true, runtime: 'openai-agents-sdk', runId, status: 'RUNNING' });
-    });
-    await page.route(`**/api/user/agent/swarm/runs/${runId}`, route => fulfillJson(route, {
-      runtime: 'openai-agents-sdk',
-      run: {
-        runId,
-        status: 'BLOCKED',
-        source: 'agents-sdk',
-        reason: 'Smoke blocker preserved from persisted run.',
-        nextAction: 'REPAIR_SMOKE_DEPENDENCY',
-        iterationCount: 1,
-        maxIterations: 12,
-        leaseActive: false,
-        resumeAvailable: true,
-      },
+    await page.route(`**/api/user/agent/jobs/${jobId}/evidence-anchors?limit=100`, route => fulfillJson(route, {
+      jobId,
+      workspaceId,
+      evidenceAnchors: [],
     }));
 
     await page.goto('/');
@@ -258,19 +265,21 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     await composer.fill('Prüfe den aktuellen Build und ändere nichts ohne die bestehenden Runtime-Gates.');
     await composer.press('Enter');
 
-    await expect.poll(() => observed.some(item => item.method === 'POST' && item.path === '/api/user/agent/swarm/run')).toBe(true);
+    await expect.poll(() => observed.some(item => item.method === 'POST' && item.path === '/api/user/agent/repository/run')).toBe(true);
     await expect(page.getByText(/PERSISTED RUN ACCEPTED/)).toBeVisible({ timeout: 10_000 });
-    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === `/api/user/agent/swarm/runs/${runId}`)).toBe(true);
+    await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === `/api/user/agent/jobs/${jobId}`)).toBe(true);
     await expect(page.getByText('BLOCKED').first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/Smoke blocker preserved from persisted run/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/Smoke blocker preserved from persisted repository job/)).toBeVisible({ timeout: 10_000 });
 
-    expect(swarmBodies).toHaveLength(1);
-    expect(swarmBodies[0]).toEqual({
+    expect(repositoryBodies).toHaveLength(1);
+    expect(repositoryBodies[0]).toEqual({
       mission: 'Prüfe den aktuellen Build und ändere nichts ohne die bestehenden Runtime-Gates.',
       mode: 'free',
       agentMode: 'single',
-      intentMode: 'auto',
+      intentMode: 'repository_execution',
+      repositoryBranch: 'main',
     });
+    expect(observed.some(item => item.path === '/api/user/agent/swarm/run')).toBe(false);
     expect(observed.some(item => item.path.includes('/draft-pr/prepare'))).toBe(false);
     expect(observed.some(item => item.path.includes('/draft-pr/create'))).toBe(false);
     expect(unexpectedApiRequests).toEqual([]);

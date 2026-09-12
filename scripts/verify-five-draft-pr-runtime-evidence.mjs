@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 const EVIDENCE_PATH = 'test-results/five-draft-pr-evidence.json';
 const document = JSON.parse(readFileSync(EVIDENCE_PATH, 'utf8'));
 const fail = (message) => { throw new Error(`FIVE_PATH_RUNTIME_EVIDENCE_INVALID: ${message}`); };
+const jobIdPattern = /^agent-[0-9a-f]{32}$/;
+const a2aRefPattern = /^agent-zero-a2a:(?:retry:)?[A-Za-z0-9._:-]{1,200}$/;
 
 if (!/^[0-9a-f]{40}$/.test(String(document.sourceRevision || ''))) fail('sourceRevision is not an exact Git SHA');
 if (document.verifiedDraftPrCount !== 5 || !Array.isArray(document.evidence) || document.evidence.length !== 5) {
@@ -10,6 +12,9 @@ if (document.verifiedDraftPrCount !== 5 || !Array.isArray(document.evidence) || 
 }
 if (!Array.isArray(document.runtimeReadbacks)) fail('runtimeReadbacks missing');
 if (document.omittedRuntimeReadbacks !== 0) fail(`runtime readbacks were truncated: ${document.omittedRuntimeReadbacks}`);
+if (document.runtimeReadbacks.some((entry) => entry?.route === 'swarm.start')) {
+  fail('repository evidence contains an unexpected Swarm start');
+}
 
 const backendOrigin = String(process.env.SOVEREIGN_E2E_BACKEND_PROXY_TARGET || '').trim();
 let backendHealthUrl;
@@ -41,54 +46,57 @@ if (deployedRevision !== document.sourceRevision) {
   fail(`evidence/runtime revision mismatch: evidence=${document.sourceRevision} runtime=${deployedRevision}`);
 }
 
-const seenRuns = new Set();
+const validA2ARef = (value) => {
+  const ref = String(value || '');
+  return a2aRefPattern.test(ref) && !ref.includes(':claim:');
+};
+
+const seenJobs = new Set();
 for (const item of document.evidence) {
-  const runId = String(item?.persistedRunId || '');
-  if (!/^run-[0-9a-f]{32}$/.test(runId)) fail('invalid persisted run id');
-  if (seenRuns.has(runId)) fail(`duplicate persisted run ${runId}`);
-  seenRuns.add(runId);
+  const jobId = String(item?.persistedJobId || '');
+  if (!jobIdPattern.test(jobId)) fail('invalid persisted repository job id');
+  if (seenJobs.has(jobId)) fail(`duplicate persisted repository job ${jobId}`);
+  seenJobs.add(jobId);
 
   const request = item?.request || {};
-  if (request.mode !== 'free') fail(`${runId}: browser request mode ${request.mode}`);
-  if (request.agentMode !== 'single') fail(`${runId}: browser request agentMode ${request.agentMode}`);
-  if (request.intentMode !== 'repository_execution') fail(`${runId}: browser request intentMode ${request.intentMode}`);
-  if (request.repositoryBranch !== 'main') fail(`${runId}: browser request repositoryBranch ${request.repositoryBranch}`);
-  if (!/^https:\/\/github\.com\/[^/]+\/[^/]+$/.test(String(request.repositoryUrl || ''))) fail(`${runId}: browser request repository URL invalid`);
+  if (request.mode !== 'free') fail(`${jobId}: browser request mode ${request.mode}`);
+  if (request.agentMode !== 'single') fail(`${jobId}: browser request agentMode ${request.agentMode}`);
+  if (request.intentMode !== 'repository_execution') fail(`${jobId}: browser request intentMode ${request.intentMode}`);
+  if (request.repositoryBranch !== 'main') fail(`${jobId}: browser request repositoryBranch ${request.repositoryBranch}`);
+  if (!/^https:\/\/github\.com\/[^/]+\/[^/]+$/.test(String(request.repositoryUrl || ''))) fail(`${jobId}: browser request repository URL invalid`);
 
-  const starts = document.runtimeReadbacks.filter((entry) => entry?.route === 'swarm.start' && entry?.returnedRunId === runId);
-  if (starts.length !== 1) fail(`${runId}: expected one authoritative swarm.start response, got ${starts.length}`);
+  const starts = document.runtimeReadbacks.filter((entry) => entry?.route === 'repository.start' && entry?.jobId === jobId);
+  if (starts.length < 1) fail(`${jobId}: repository.start response missing`);
+  if (starts.some((entry) => entry?.httpStatus !== 202)) fail(`${jobId}: repository.start was not HTTP 202`);
+  const uniqueStartRefs = new Set(starts.map((entry) => String(entry?.externalRef || '')));
+  if (uniqueStartRefs.size !== 1) fail(`${jobId}: start task binding was not stable`);
   const start = starts[0];
-  const execution = start.execution || {};
-  const repository = start.repositoryExecution || {};
-  const tools = start.toolDiagnostics || {};
-  const itemExecution = item?.execution || {};
+  if (!start.workspaceId) fail(`${jobId}: internal workspace id missing at start`);
+  if (!validA2ARef(start.externalRef)) fail(`${jobId}: initial Agent Zero A2A binding invalid`);
 
-  if (start.httpStatus !== 200) fail(`${runId}: start HTTP ${start.httpStatus}`);
-  if (!start.jobId) fail(`${runId}: linked implementation job missing`);
-  if (!start.workspaceId) fail(`${runId}: internal workspace id missing`);
-  if (itemExecution.jobId !== start.jobId) fail(`${runId}: evidence/job identity mismatch`);
-  if (itemExecution.workspaceId !== start.workspaceId) fail(`${runId}: evidence/workspace identity mismatch`);
-  if (execution.profileId !== 'free_single_agent') fail(`${runId}: profile ${execution.profileId}`);
-  if (execution.requestedMode !== 'free') fail(`${runId}: requested mode ${execution.requestedMode}`);
-  if (!['FREELLM_FREE', 'OPENROUTER_FREE'].includes(execution.resolvedTransportClass)) fail(`${runId}: non-free transport class ${execution.resolvedTransportClass}`);
-  if (execution.billingCategory !== 'free') fail(`${runId}: billing category ${execution.billingCategory}`);
-  if (execution.maxForegroundAgents !== 1 || execution.maxBackgroundAgents !== 0 || execution.responseMaxBackgroundAgents !== 0) {
-    fail(`${runId}: expected foreground=1/background=0`);
-  }
-  if (execution.repositoryExecutionAllowed !== true) fail(`${runId}: repository execution not allowed`);
-  if (execution.secretValuesReturned !== false) fail(`${runId}: secret egress contract not explicitly false`);
-  if (repository.performed !== true || repository.gatePassed !== true || repository.canPrepareDraftPr !== true) fail(`${runId}: repository evidence gate not proven`);
-  if (!(repository.changedFileCount >= 1) || repository.hasDiff !== true || repository.hasTests !== true) fail(`${runId}: mutation/diff/test evidence incomplete`);
-  if (repository.freeAgentCalledTools !== true || !(tools.callCount >= 1) || !(tools.mutationCount >= 1) || tools.writeConfirmed !== true) {
-    fail(`${runId}: free single-agent tool mutation evidence incomplete`);
-  }
-  if (itemExecution.profileId !== execution.profileId) fail(`${runId}: evidence/profile mismatch`);
-  if (itemExecution.resolvedTransportClass !== execution.resolvedTransportClass) fail(`${runId}: evidence/transport mismatch`);
-  if (itemExecution.maxForegroundAgents !== 1 || itemExecution.maxBackgroundAgents !== 0) fail(`${runId}: serialized agent limits invalid`);
-  if (itemExecution.changedFileCount !== repository.changedFileCount) fail(`${runId}: serialized changed-file count mismatch`);
-  if (itemExecution.toolCallCount !== tools.callCount || itemExecution.mutationCount !== tools.mutationCount) fail(`${runId}: serialized tool counters mismatch`);
-  if (item.draft !== true || item.stateAtVerification !== 'open' || item.readmeVerified !== true) fail(`${runId}: GitHub Draft PR readback incomplete`);
-  if (item.closedAfterVerification !== true || item.branchDeletedAfterVerification !== true) fail(`${runId}: cleanup readback incomplete`);
+  const execution = item?.execution || {};
+  if (execution.jobId !== jobId) fail(`${jobId}: evidence/job identity mismatch`);
+  if (execution.workspaceId !== start.workspaceId) fail(`${jobId}: evidence/workspace identity mismatch`);
+  if (!validA2ARef(execution.externalRef)) fail(`${jobId}: serialized Agent Zero A2A binding invalid`);
+  if (execution.prState !== 'ready') fail(`${jobId}: serialized prState is not ready`);
+  if (!(execution.changedFileCount >= 1)) fail(`${jobId}: serialized changed-file evidence missing`);
+
+  const reads = document.runtimeReadbacks.filter((entry) => entry?.route === 'job.read' && entry?.jobId === jobId);
+  if (reads.length < 1) fail(`${jobId}: persisted job readback missing`);
+  const readyReads = reads.filter((entry) => (
+    entry?.httpStatus === 200
+    && entry?.workspaceId === execution.workspaceId
+    && entry?.prState === 'ready'
+    && validA2ARef(entry?.externalRef)
+    && (entry?.repositoryExecution?.changedFileCount || 0) >= 1
+  ));
+  if (readyReads.length < 1) fail(`${jobId}: READY_FOR_DRAFT_PR job readback missing`);
+  const finalRead = readyReads.at(-1);
+  if (finalRead.externalRef !== execution.externalRef) fail(`${jobId}: final A2A binding/evidence mismatch`);
+  if (finalRead.repositoryExecution.changedFileCount !== execution.changedFileCount) fail(`${jobId}: final changed-file count/evidence mismatch`);
+
+  if (item.draft !== true || item.stateAtVerification !== 'open' || item.readmeVerified !== true) fail(`${jobId}: GitHub Draft PR readback incomplete`);
+  if (item.closedAfterVerification !== true || item.branchDeletedAfterVerification !== true) fail(`${jobId}: cleanup readback incomplete`);
 }
 
 console.log(JSON.stringify({
@@ -96,6 +104,6 @@ console.log(JSON.stringify({
   sourceRevision: document.sourceRevision,
   runtimeSourceRevision: deployedRevision,
   runtimeImageDigest: deployedImageDigest,
-  verifiedRuns: seenRuns.size,
-  invariant: 'exact-deployed-revision -> browser-request-free-single -> runtime-free-single -> internal-workspace -> mutation/diff/tests -> consent -> verified-draft-pr -> cleanup',
+  verifiedJobs: seenJobs.size,
+  invariant: 'exact-deployed-revision -> browser repository request -> persisted agent job -> one bounded Agent Zero A2A binding -> shared-workspace mutation -> Sovereign diff/regression/evidence closeout -> explicit consent -> verified Draft PR -> cleanup',
 }, null, 2));

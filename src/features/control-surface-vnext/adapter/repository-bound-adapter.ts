@@ -2,7 +2,7 @@ import {
   resolveSovereignAgentConfig,
   type SovereignAgentConfig,
 } from '../../product/runtime/sovereignAgentRuntime';
-import type { AgentMode } from '../types/domain';
+import type { AgentMode, Skill } from '../types/domain';
 import {
   extractGitHubRepositoryUrl,
   SovereignProductionAdapter as SovereignProductionAdapterBase,
@@ -59,9 +59,32 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
     fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
     config: SovereignAgentConfig = resolveSovereignAgentConfig(),
   ) {
-    super(fetcher);
+    super(fetcher, config);
     this.repositoryFetcher = fetcher;
     this.repositoryConfig = config;
+  }
+
+  override async checkHealth(): Promise<{ status: string; latencyMs: number }> {
+    if (!this.repositoryConfig.ready) return { status: 'blocked', latencyMs: 0 };
+    const startedAt = performance.now();
+    try {
+      const response = await this.repositoryFetcher(
+        endpoint(this.repositoryConfig.agentApiUrl, '/api/user/agent/jobs?limit=1'),
+        { method: 'GET', credentials: 'include', headers: { Accept: 'application/json' }, cache: 'no-store' },
+      );
+      return {
+        status: response.ok ? 'ready' : 'blocked',
+        latencyMs: Math.round(performance.now() - startedAt),
+      };
+    } catch {
+      return { status: 'blocked', latencyMs: Math.round(performance.now() - startedAt) };
+    }
+  }
+
+  override async getSkills(): Promise<Skill[]> {
+    // Repository execution has no Swarm worker graph. An empty projection is
+    // preferable to inventing worker capabilities from a Swarm manifest.
+    return [];
   }
 
   override async runSwarm(
@@ -73,7 +96,7 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
     if (!this.repositoryConfig.ready) throw new Error(this.repositoryConfig.reason);
     const payload = buildRepositoryBoundRunRequest(prompt, agentMode);
     const response = await this.repositoryFetcher(
-      endpoint(this.repositoryConfig.agentApiUrl, '/api/user/agent/swarm/run'),
+      endpoint(this.repositoryConfig.agentApiUrl, '/api/user/agent/repository/run'),
       {
         method: 'POST',
         credentials: 'include',
@@ -86,8 +109,9 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
     );
     const body: unknown = await response.json().catch(() => null);
     const record = isRecord(body) ? body : {};
-    const runId = stringValue(record.runId);
-    if (runId) return { jobId: runId };
+    const nestedJob = isRecord(record.job) ? record.job : undefined;
+    const jobId = stringValue(record.jobId) || stringValue(nestedJob?.jobId);
+    if (jobId) return { jobId };
     const reason = stringValue(record.reason)
       || stringValue(record.error)
       || stringValue(record.blocker);

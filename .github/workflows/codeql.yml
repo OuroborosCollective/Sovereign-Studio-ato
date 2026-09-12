@@ -158,10 +158,60 @@ jobs:
           fi
 
       - name: Perform CodeQL Analysis
+        id: codeql-analysis
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
           upload: true
+          post-processed-sarif-path: ${{ github.workspace }}/.security-reports/codeql/${{ matrix.language }}
+
+      - name: Emit secret-safe CodeQL finding metadata
+        if: always()
+        shell: bash
+        env:
+          CODEQL_SARIF_DIR: ${{ github.workspace }}/.security-reports/codeql/${{ matrix.language }}
+          CODEQL_LANGUAGE: ${{ matrix.language }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["CODEQL_SARIF_DIR"])
+          language = os.environ["CODEQL_LANGUAGE"]
+          findings = []
+          for sarif_path in sorted(root.glob("*.sarif")):
+              payload = json.loads(sarif_path.read_text(encoding="utf-8"))
+              for run in payload.get("runs", []):
+                  rules = {}
+                  driver = ((run.get("tool") or {}).get("driver") or {})
+                  for rule in driver.get("rules", []) or []:
+                      props = rule.get("properties") or {}
+                      rules[str(rule.get("id") or "")] = {
+                          "securitySeverity": props.get("security-severity"),
+                          "precision": props.get("precision"),
+                      }
+                  for result in run.get("results", []) or []:
+                      rule_id = str(result.get("ruleId") or "")
+                      location = (((result.get("locations") or [{}])[0].get("physicalLocation") or {}))
+                      artifact = (location.get("artifactLocation") or {}).get("uri")
+                      region = location.get("region") or {}
+                      props = rules.get(rule_id, {})
+                      findings.append({
+                          "ruleId": rule_id,
+                          "path": artifact,
+                          "startLine": region.get("startLine"),
+                          "level": result.get("level"),
+                          "securitySeverity": props.get("securitySeverity"),
+                          "precision": props.get("precision"),
+                      })
+          print(json.dumps({
+              "schemaVersion": "sovereign.codeql-finding-metadata.v1",
+              "language": language,
+              "findingCount": len(findings),
+              "findings": findings,
+          }, sort_keys=True))
+          PY
 
       - name: Write CodeQL summary
         if: always()

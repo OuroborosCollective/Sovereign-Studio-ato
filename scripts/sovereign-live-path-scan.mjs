@@ -177,8 +177,9 @@ function scanRuntimeContracts() {
   else fail('vnext:production-adapter', 'vNext must use the live production adapter and only adopt the backend-accepted run id.');
 
   if (
-    /this\.client\.prepareDraftPr\(run\.jobId\)/.test(adapter)
-    && /this\.client\.createDraftPr\(run\.jobId\)/.test(adapter)
+    /const jobId = isDirectRepositoryJobId\(runId\)/.test(adapter)
+    && /this\.client\.prepareDraftPr\(jobId\)/.test(adapter)
+    && /this\.client\.createDraftPr\(jobId\)/.test(adapter)
     && /jobPath\(jobId, '\/draft-pr\/prepare'\)/.test(client)
     && /jobPath\(jobId, '\/draft-pr\/create'\)/.test(client)
     && /signal\.draftVerified === true/.test(client)

@@ -12,6 +12,8 @@ const REPO_URL = process.env.SOVEREIGN_E2E_REPO_URL?.trim() || '';
 const BACKEND_URL = process.env.SOVEREIGN_E2E_BACKEND_PROXY_TARGET?.trim() || '';
 const RUN_ID = process.env.GITHUB_RUN_ID?.trim() || `local-${Date.now()}`;
 const OWNED_MARKER_PREFIX = `[live-vnext:${RUN_ID}:`;
+const A2A_TASK_REF = /^agent-zero-a2a:(?:retry:)?[A-Za-z0-9._:-]{1,200}$/;
+const JOB_ID = /^agent-[0-9a-f]{32}$/;
 
 let activeAccountKey = CONFIGURED_ACCOUNT_KEY;
 let ephemeralAccountKeyId = '';
@@ -20,7 +22,7 @@ let ephemeralAccountKeyRevoked = false;
 let identitySource = CONFIGURED_ACCOUNT_KEY ? 'protected_repository_secret' : 'ephemeral_product_registration';
 
 interface LiveRunProof {
-  persistedRunId: string;
+  persistedJobId: string;
   request: {
     mode: 'free';
     agentMode: 'single';
@@ -31,14 +33,9 @@ interface LiveRunProof {
   execution: {
     jobId: string;
     workspaceId: string;
-    profileId: 'free_single_agent';
-    resolvedTransportClass: 'FREELLM_FREE' | 'OPENROUTER_FREE';
-    billingCategory: 'free';
-    maxForegroundAgents: 1;
-    maxBackgroundAgents: 0;
+    externalRef: string;
+    prState: 'ready';
     changedFileCount: number;
-    toolCallCount: number;
-    mutationCount: number;
   };
 }
 
@@ -75,9 +72,7 @@ function assertLiveConfig(): void {
     ['SOVEREIGN_E2E_REPO_URL', REPO_URL],
     ['SOVEREIGN_E2E_BACKEND_PROXY_TARGET', BACKEND_URL],
   ].filter(([, value]) => !value).map(([name]) => name);
-  if (missing.length > 0) {
-    throw new Error(`Live vNext E2E configuration missing: ${missing.join(', ')}`);
-  }
+  if (missing.length > 0) throw new Error(`Live vNext E2E configuration missing: ${missing.join(', ')}`);
   const parsed = new URL(REPO_URL);
   if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com' || parsed.pathname.split('/').filter(Boolean).length !== 2) {
     throw new Error('SOVEREIGN_E2E_REPO_URL must be an exact https://github.com/owner/repository URL.');
@@ -114,8 +109,7 @@ async function githubJson<T>(
     ...(data ? { data } : {}),
   });
   const text = await response.text();
-  const body = text.trim() ? JSON.parse(text) as T : null;
-  return { status: response.status(), body };
+  return { status: response.status(), body: text.trim() ? JSON.parse(text) as T : null };
 }
 
 async function latestPullRequestNumber(request: APIRequestContext): Promise<number> {
@@ -143,11 +137,7 @@ async function closeOwnedDraftPr(
 
 async function cleanupOwnedRunPullRequests(request: APIRequestContext): Promise<void> {
   const { owner, repo } = repositoryCoordinates();
-  const result = await githubJson<Array<{
-    number: number;
-    title: string;
-    head: { ref: string };
-  }>>(
+  const result = await githubJson<Array<{ number: number; title: string; head: { ref: string } }>>(
     request,
     'GET',
     `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls?state=open&per_page=100`,
@@ -170,31 +160,19 @@ async function provisionEphemeralAccountKey(): Promise<void> {
     const registration = await api.post('/api/auth/register', {
       data: { email, password, displayName: `Sovereign Live E2E ${RUN_ID}` },
     });
-    if (registration.status() !== 200) {
-      throw new Error(`Real ephemeral account registration failed: HTTP ${registration.status()}`);
-    }
-    const user = await registration.json() as {
-      id?: string;
-      isGuest?: boolean;
-      credits?: number;
-      creditStateVerified?: boolean;
-    };
+    if (registration.status() !== 200) throw new Error(`Real ephemeral account registration failed: HTTP ${registration.status()}`);
+    const user = await registration.json() as { id?: string; isGuest?: boolean; credits?: number; creditStateVerified?: boolean };
     if (!user.id || user.isGuest === true || user.creditStateVerified !== true || Number(user.credits || 0) <= 0) {
       throw new Error('Real ephemeral account did not return a non-guest, credit-verified execution identity.');
     }
-
     const issued = await api.post('/api/security/account-keys', {
       data: { label: `Sovereign Live Five ${RUN_ID}` },
     });
-    if (issued.status() !== 201) {
-      throw new Error(`Real ephemeral account-key issue failed: HTTP ${issued.status()}`);
-    }
+    if (issued.status() !== 201) throw new Error(`Real ephemeral account-key issue failed: HTTP ${issued.status()}`);
     const issuedBody = await issued.json() as { id?: string; key?: string };
     const key = String(issuedBody.key || '').trim();
     const keyId = String(issuedBody.id || '').trim();
-    if (!key.startsWith('svk_') || !keyId) {
-      throw new Error('Real ephemeral account-key issue returned incomplete evidence.');
-    }
+    if (!key.startsWith('svk_') || !keyId) throw new Error('Real ephemeral account-key issue returned incomplete evidence.');
     activeAccountKey = key;
     ephemeralAccountKeyId = keyId;
     ephemeralAccountId = user.id;
@@ -210,13 +188,9 @@ async function revokeEphemeralAccountKey(): Promise<void> {
   const api = await playwrightRequest.newContext({ baseURL: BACKEND_URL });
   try {
     const login = await api.post('/api/auth/account-key', { data: { key: activeAccountKey } });
-    if (login.status() !== 200) {
-      throw new Error(`Ephemeral account-key cleanup login failed: HTTP ${login.status()}`);
-    }
+    if (login.status() !== 200) throw new Error(`Ephemeral account-key cleanup login failed: HTTP ${login.status()}`);
     const revoked = await api.delete(`/api/security/account-keys/${encodeURIComponent(ephemeralAccountKeyId)}`);
-    if (revoked.status() !== 200) {
-      throw new Error(`Ephemeral account-key revocation failed: HTTP ${revoked.status()}`);
-    }
+    if (revoked.status() !== 200) throw new Error(`Ephemeral account-key revocation failed: HTTP ${revoked.status()}`);
     ephemeralAccountKeyRevoked = true;
   } finally {
     activeAccountKey = '';
@@ -231,25 +205,18 @@ async function authenticateVNext(page: Page): Promise<void> {
   await page.getByTestId('operator-auth-btn').click();
   const dialog = page.getByRole('dialog', { name: 'Sovereign account session' });
   await expect(dialog).toBeVisible();
-
   const accountKey = dialog.locator('#vnext-account-key');
   await expect(accountKey).toBeVisible({ timeout: 20_000 });
   await accountKey.fill(activeAccountKey);
   const authenticate = dialog.getByRole('button', { name: 'AUTHENTICATE WITH ACCOUNT KEY' });
   await expect(authenticate).toBeEnabled();
   const [login] = await Promise.all([
-    page.waitForResponse((response) =>
-      response.request().method() === 'POST'
-      && new URL(response.url()).pathname === '/api/auth/account-key',
-    { timeout: 30_000 }),
+    page.waitForResponse((response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/auth/account-key', { timeout: 30_000 }),
     authenticate.click(),
   ]);
   requireSameOrigin(login.url(), page.url());
   const accountId = requireLoginAccountId(login.status(), await login.json().catch(() => null));
-  if (ephemeralAccountId && accountId !== ephemeralAccountId) {
-    throw new Error('LIVE_AUTH_ISSUED_ACCOUNT_MISMATCH');
-  }
-
+  if (ephemeralAccountId && accountId !== ephemeralAccountId) throw new Error('LIVE_AUTH_ISSUED_ACCOUNT_MISMATCH');
   const session = await page.request.get(new URL('/api/auth/me', page.url()).href, {
     headers: { 'Cache-Control': 'no-store' },
     maxRedirects: 0,
@@ -275,116 +242,107 @@ function mission(pathId: string): { marker: string; text: string } {
   };
 }
 
+function requireA2ATaskRef(value: string | null | undefined, stage: string): string {
+  const ref = String(value || '');
+  if (!A2A_TASK_REF.test(ref) || ref.includes(':claim:')) throw new Error(`${stage}: persistent Agent Zero A2A task binding missing or transient`);
+  return ref;
+}
+
+function recordRuntimeObservation(observed: ReturnType<typeof runtimeObservation>): void {
+  if (!observed) return;
+  if (runtimeReadbacks.length < 2000) runtimeReadbacks.push(observed);
+  else omittedRuntimeReadbacks += 1;
+}
+
 async function submitMission(page: Page, text: string): Promise<LiveRunProof> {
   const composer = page.getByTestId('mission__textarea');
   await expect(composer).toBeVisible();
   await composer.fill(text);
   await expect(page.getByTestId('agent-mode-single')).toHaveAttribute('aria-pressed', 'true');
-
   const [startResponse] = await Promise.all([
-    page.waitForResponse((response) =>
-      response.request().method() === 'POST'
-      && new URL(response.url()).pathname === '/api/user/agent/swarm/run',
-    { timeout: 210_000 }),
+    page.waitForResponse((response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/user/agent/repository/run', { timeout: 210_000 }),
     page.getByTestId('builder__start-task').click(),
   ]);
   requireSameOrigin(startResponse.url(), page.url());
   const requestBody = startResponse.request().postDataJSON();
-  const requestProof = runRequestObservation('/api/user/agent/swarm/run', 'POST', requestBody);
+  const requestProof = runRequestObservation('/api/user/agent/repository/run', 'POST', requestBody);
   if (!requestProof) throw new Error('LIVE_RUN_REQUEST_EVIDENCE_MISSING');
   expect(requestProof).toMatchObject({
+    route: 'repository.start.request',
     mode: 'free',
     agentMode: 'single',
     intentMode: 'repository_execution',
     repositoryUrl: REPO_URL,
     repositoryBranch: 'main',
   });
-
   const startBody = await startResponse.json().catch(() => null);
-  const executionProof = runtimeObservation('/api/user/agent/swarm/run', 'POST', startResponse.status(), startBody);
-  if (!executionProof) throw new Error('LIVE_RUN_RESPONSE_EVIDENCE_MISSING');
-  expect(startResponse.status()).toBe(200);
+  const start = runtimeObservation('/api/user/agent/repository/run', 'POST', startResponse.status(), startBody);
+  if (!start) throw new Error('LIVE_REPOSITORY_START_EVIDENCE_MISSING');
+  recordRuntimeObservation(start);
+  expect(startResponse.status()).toBe(202);
+  expect(start.route).toBe('repository.start');
+  expect(start.jobId).toMatch(JOB_ID);
+  expect(start.workspaceId).toBeTruthy();
+  const startExternalRef = requireA2ATaskRef(start.externalRef, 'repository.start');
 
-  const accepted = page.getByText(/PERSISTED RUN ACCEPTED :: \[run-[0-9a-f]+\]/).last();
+  const accepted = page.getByText(/PERSISTED RUN ACCEPTED :: \[agent-[0-9a-f]{32}\]/).last();
   await expect(accepted).toBeVisible({ timeout: 45_000 });
   const rendered = await accepted.innerText();
-  const match = rendered.match(/\[(run-[0-9a-f]+)\]/);
-  if (!match) throw new Error(`vNext did not expose the persisted run id: ${rendered}`);
-  const persistedRunId = match[1];
-
-  expect(executionProof.returnedRunId).toBe(persistedRunId);
-  expect(executionProof.jobId).toBeTruthy();
-  expect(executionProof.workspaceId).toBeTruthy();
-  expect(executionProof.execution).toMatchObject({
-    profileId: 'free_single_agent',
-    requestedMode: 'free',
-    billingCategory: 'free',
-    maxForegroundAgents: 1,
-    maxBackgroundAgents: 0,
-    repositoryExecutionAllowed: true,
-    secretValuesReturned: false,
-    responseMaxBackgroundAgents: 0,
-  });
-  expect(['FREELLM_FREE', 'OPENROUTER_FREE']).toContain(executionProof.execution.resolvedTransportClass);
-  expect(executionProof.repositoryExecution).toMatchObject({
-    performed: true,
-    gatePassed: true,
-    canPrepareDraftPr: true,
-    hasDiff: true,
-    hasTests: true,
-    freeAgentCalledTools: true,
-  });
-  expect(executionProof.repositoryExecution.changedFileCount).toBeGreaterThan(0);
-  expect(executionProof.toolDiagnostics.callCount).toBeGreaterThan(0);
-  expect(executionProof.toolDiagnostics.mutationCount).toBeGreaterThan(0);
-  expect(executionProof.toolDiagnostics.writeConfirmed).toBe(true);
+  const match = rendered.match(/\[(agent-[0-9a-f]{32})\]/);
+  if (!match) throw new Error(`vNext did not expose the persisted repository job id: ${rendered}`);
+  const persistedJobId = match[1];
+  expect(start.jobId).toBe(persistedJobId);
 
   return {
-    persistedRunId,
+    persistedJobId,
     request: {
-      mode: 'free',
-      agentMode: 'single',
-      intentMode: 'repository_execution',
-      repositoryUrl: REPO_URL,
-      repositoryBranch: 'main',
+      mode: 'free', agentMode: 'single', intentMode: 'repository_execution', repositoryUrl: REPO_URL, repositoryBranch: 'main',
     },
     execution: {
-      jobId: executionProof.jobId!,
-      workspaceId: executionProof.workspaceId!,
-      profileId: 'free_single_agent',
-      resolvedTransportClass: executionProof.execution.resolvedTransportClass as 'FREELLM_FREE' | 'OPENROUTER_FREE',
-      billingCategory: 'free',
-      maxForegroundAgents: 1,
-      maxBackgroundAgents: 0,
-      changedFileCount: executionProof.repositoryExecution.changedFileCount!,
-      toolCallCount: executionProof.toolDiagnostics.callCount!,
-      mutationCount: executionProof.toolDiagnostics.mutationCount!,
+      jobId: persistedJobId,
+      workspaceId: start.workspaceId!,
+      externalRef: startExternalRef,
+      prState: 'ready',
+      changedFileCount: 0,
     },
   };
 }
 
 async function verifyLinkedJobReadback(page: Page, proof: LiveRunProof): Promise<void> {
-  const response = await page.request.get(new URL(`/api/user/agent/jobs/${encodeURIComponent(proof.execution.jobId)}`, page.url()).href, {
-    headers: { 'Cache-Control': 'no-store' },
-    maxRedirects: 0,
-  });
-  requireSameOrigin(response.url(), page.url());
-  expect(response.status()).toBe(200);
-  const body = await response.json().catch(() => null);
-  const observed = runtimeObservation(`/api/user/agent/jobs/${proof.execution.jobId}`, 'GET', response.status(), body);
-  if (!observed) throw new Error('LIVE_LINKED_JOB_READBACK_MISSING');
-  expect(observed.jobId).toBe(proof.execution.jobId);
-  expect(observed.workspaceId).toBe(proof.execution.workspaceId);
+  const deadline = Date.now() + 210_000;
+  while (Date.now() < deadline) {
+    const path = `/api/user/agent/jobs/${encodeURIComponent(proof.execution.jobId)}`;
+    const response = await page.request.get(new URL(path, page.url()).href, {
+      headers: { 'Cache-Control': 'no-store' },
+      maxRedirects: 0,
+    });
+    requireSameOrigin(response.url(), page.url());
+    expect(response.status()).toBe(200);
+    const body = await response.json().catch(() => null);
+    const observed = runtimeObservation(path, 'GET', response.status(), body);
+    if (!observed) throw new Error('LIVE_LINKED_JOB_READBACK_MISSING');
+    recordRuntimeObservation(observed);
+    expect(observed.jobId).toBe(proof.execution.jobId);
+    expect(observed.workspaceId).toBe(proof.execution.workspaceId);
+    if (observed.status === 'blocked' || observed.status === 'failed') {
+      throw new Error(`LIVE_REPOSITORY_JOB_TERMINAL_${String(observed.status).toUpperCase()}`);
+    }
+    if (observed.prState === 'ready' && (observed.repositoryExecution.changedFileCount || 0) > 0) {
+      proof.execution.externalRef = requireA2ATaskRef(observed.externalRef, 'job.ready');
+      proof.execution.prState = 'ready';
+      proof.execution.changedFileCount = observed.repositoryExecution.changedFileCount!;
+      return;
+    }
+    await page.waitForTimeout(1_500);
+  }
+  throw new Error('LIVE_REPOSITORY_JOB_NOT_READY_FOR_DRAFT_PR');
 }
 
 async function approveDraftReadinessIfRequested(page: Page): Promise<boolean> {
   const dialog = page.getByRole('dialog', { name: 'HUMAN-IN-THE-LOOP // OWNER DIRECTIVE REQUIRED' });
   if (!await dialog.isVisible().catch(() => false)) return false;
   const approve = dialog.getByRole('button', { name: /> approve/i });
-  if (!await approve.isVisible().catch(() => false)) {
-    const text = await dialog.innerText();
-    throw new Error(`Persisted run requested non-draft owner input during live vNext proof: ${text}`);
-  }
+  if (!await approve.isVisible().catch(() => false)) throw new Error(`Persisted run requested non-draft owner input during live vNext proof: ${await dialog.innerText()}`);
   await approve.click();
   await expect(dialog).toBeHidden({ timeout: 30_000 });
   return true;
@@ -399,13 +357,9 @@ async function openPublication(page: Page): Promise<void> {
 async function waitForPublicationGate(page: Page): Promise<void> {
   const deadline = Date.now() + 210_000;
   while (Date.now() < deadline) {
-    if (await approveDraftReadinessIfRequested(page)) {
-      await page.waitForTimeout(500);
-      continue;
-    }
+    if (await approveDraftReadinessIfRequested(page)) { await page.waitForTimeout(500); continue; }
     await openPublication(page);
-    const gate = page.getByTestId('vnext-prepare-draft-pr');
-    if (await gate.isVisible().catch(() => false)) return;
+    if (await page.getByTestId('vnext-prepare-draft-pr').isVisible().catch(() => false)) return;
     await page.getByRole('button', { name: /COMMAND/ }).click();
     await page.waitForTimeout(1_500);
   }
@@ -424,7 +378,6 @@ async function publishAndVerifyInUi(page: Page): Promise<{ prNumber: number; rea
   await expect(consent.getByText(/create exactly one GitHub/)).toBeVisible();
   await expect(consent.getByText(/No merge\. No push to main\./)).toBeVisible();
   await page.getByTestId('vnext-create-draft-pr').click();
-
   const panel = page.getByTestId('vnext-publication-inspector');
   await expect(panel.getByText('GITHUB READBACK VERIFIED')).toBeVisible({ timeout: 180_000 });
   await expect(panel.getByText('DRAFT PR VERIFIED')).toBeVisible();
@@ -436,20 +389,14 @@ async function publishAndVerifyInUi(page: Page): Promise<{ prNumber: number; rea
   return { prNumber: Number(prMatch[1]), readbackHeadSha: shaMatch[0], prUrl };
 }
 
-async function verifyReadmeAtHead(
-  request: APIRequestContext,
-  headSha: string,
-  marker: string,
-): Promise<void> {
+async function verifyReadmeAtHead(request: APIRequestContext, headSha: string, marker: string): Promise<void> {
   const { owner, repo } = repositoryCoordinates();
   const result = await githubJson<{ content?: string; encoding?: string }>(
     request,
     'GET',
     `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/README.md?ref=${encodeURIComponent(headSha)}`,
   );
-  if (result.status !== 200 || !result.body?.content || result.body.encoding !== 'base64') {
-    throw new Error(`GitHub README readback failed at ${headSha}: HTTP ${result.status}`);
-  }
+  if (result.status !== 200 || !result.body?.content || result.body.encoding !== 'base64') throw new Error(`GitHub README readback failed at ${headSha}: HTTP ${result.status}`);
   const readme = Buffer.from(result.body.content.replace(/\s+/g, ''), 'base64').toString('utf8');
   const firstHeading = readme.split(/\r?\n/).find((line) => /^#\s+/.test(line)) || '';
   expect(firstHeading).toContain(marker);
@@ -466,16 +413,9 @@ async function verifyAndCleanDraftPr(
   expect(ui.prNumber).toBeGreaterThan(baselinePrNumber);
   const { owner, repo } = repositoryCoordinates();
   const result = await githubJson<{
-    number: number;
-    html_url: string;
-    title: string;
-    state: string;
-    draft: boolean;
-    merged_at: string | null;
-    head: { ref: string; sha: string };
+    number: number; html_url: string; title: string; state: string; draft: boolean; merged_at: string | null; head: { ref: string; sha: string };
   }>(request, 'GET', `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${ui.prNumber}`);
   if (result.status !== 200 || !result.body) throw new Error(`GitHub PR verification failed: HTTP ${result.status}`);
-
   expect(result.body.title).toContain(marker);
   expect(result.body.state).toBe('open');
   expect(result.body.draft).toBe(true);
@@ -484,32 +424,17 @@ async function verifyAndCleanDraftPr(
   expect(result.body.head.sha).toBe(ui.readbackHeadSha);
   expect(result.body.html_url).toBe(ui.prUrl);
   await verifyReadmeAtHead(request, result.body.head.sha, marker);
-
   const cleanup = await closeOwnedDraftPr(request, ui.prNumber, result.body.head.ref);
   expect(cleanup.closed).toBe(true);
   expect(cleanup.branchDeleted).toBe(true);
-
   evidence.push({
-    path: pathName,
-    marker,
-    ...proof,
-    prNumber: ui.prNumber,
-    prUrl: result.body.html_url,
-    headRef: result.body.head.ref,
-    readbackHeadSha: result.body.head.sha,
-    draft: true,
-    stateAtVerification: 'open',
-    readmeVerified: true,
-    closedAfterVerification: cleanup.closed,
-    branchDeletedAfterVerification: cleanup.branchDeleted,
+    path: pathName, marker, ...proof, prNumber: ui.prNumber, prUrl: result.body.html_url,
+    headRef: result.body.head.ref, readbackHeadSha: result.body.head.sha, draft: true, stateAtVerification: 'open',
+    readmeVerified: true, closedAfterVerification: cleanup.closed, branchDeletedAfterVerification: cleanup.branchDeleted,
   });
 }
 
-async function executeCanonicalVNextRun(
-  page: Page,
-  request: APIRequestContext,
-  pathId: string,
-): Promise<void> {
+async function executeCanonicalVNextRun(page: Page, request: APIRequestContext, pathId: string): Promise<void> {
   const change = mission(pathId);
   const baseline = await latestPullRequestNumber(request);
   const proof = await submitMission(page, change.text);
@@ -522,26 +447,17 @@ test.describe('five canonical vNext repository runs reach independently verified
   test.describe.configure({ mode: 'serial' });
   test.skip(!LIVE_ENABLED, 'Live vNext Draft-PR validation runs only through the explicit protected workflow.');
   test.setTimeout(300_000);
-
-  test.beforeAll(async () => {
-    assertLiveConfig();
-    await provisionEphemeralAccountKey();
-  });
+  test.beforeAll(async () => { assertLiveConfig(); await provisionEphemeralAccountKey(); });
   test.beforeEach(async ({ page }) => {
     page.on('response', response => {
+      let pageOrigin: string;
+      try { pageOrigin = new URL(page.url()).origin; } catch { return; }
       const url = new URL(response.url());
-      if (url.origin !== new URL(page.url()).origin) return;
+      if (url.origin !== pageOrigin) return;
       const path = url.pathname;
       const method = response.request().method();
       if (!runtimeObservation(path, method, response.status(), null)) return;
-      const task = (async () => {
-        const body = await response.json().catch(() => null);
-        const observed = runtimeObservation(path, method, response.status(), body);
-        if (observed) {
-          if (runtimeReadbacks.length < 2000) runtimeReadbacks.push(observed);
-          else omittedRuntimeReadbacks += 1;
-        }
-      })();
+      const task = (async () => recordRuntimeObservation(runtimeObservation(path, method, response.status(), await response.json().catch(() => null))))();
       runtimeObservationTasks.add(task);
       void task.finally(() => runtimeObservationTasks.delete(task));
     });
@@ -551,48 +467,41 @@ test.describe('five canonical vNext repository runs reach independently verified
   test.afterAll(async () => {
     await Promise.allSettled([...runtimeObservationTasks]);
     let cleanupError: Error | null = null;
-    try {
-      await revokeEphemeralAccountKey();
-    } catch (error) {
-      cleanupError = error instanceof Error ? error : new Error(String(error));
-    }
+    try { await revokeEphemeralAccountKey(); } catch (error) { cleanupError = error instanceof Error ? error : new Error(String(error)); }
     await mkdir('test-results', { recursive: true });
-    await writeFile(
-      'test-results/five-draft-pr-evidence.json',
-      `${JSON.stringify({
-        runId: RUN_ID,
-        runAttempt: process.env.GITHUB_RUN_ATTEMPT || null,
-        sourceRevision: process.env.SOVEREIGN_E2E_REVISION || null,
-        identity: {
-          source: identitySource,
-          accountId: ephemeralAccountId || null,
-          ephemeralAccountKeyIssued: Boolean(ephemeralAccountKeyId),
-          ephemeralAccountKeyRevoked: ephemeralAccountKeyId ? ephemeralAccountKeyRevoked : null,
-          protectedValuePersistedInEvidence: false,
-        },
-        authenticationReadbacks,
-        runtimeReadbacks,
-        omittedRuntimeReadbacks,
-        verifiedDraftPrCount: evidence.length,
-        evidence,
-      }, null, 2)}\n`,
-      'utf8',
-    );
+    await writeFile('test-results/five-draft-pr-evidence.json', `${JSON.stringify({
+      runId: RUN_ID,
+      runAttempt: process.env.GITHUB_RUN_ATTEMPT || null,
+      sourceRevision: process.env.SOVEREIGN_E2E_REVISION || null,
+      identity: {
+        source: identitySource,
+        accountId: ephemeralAccountId || null,
+        ephemeralAccountKeyIssued: Boolean(ephemeralAccountKeyId),
+        ephemeralAccountKeyRevoked: ephemeralAccountKeyId ? ephemeralAccountKeyRevoked : null,
+        protectedValuePersistedInEvidence: false,
+      },
+      authenticationReadbacks,
+      runtimeReadbacks,
+      omittedRuntimeReadbacks,
+      verifiedDraftPrCount: evidence.length,
+      evidence,
+    }, null, 2)}\n`, 'utf8');
     if (cleanupError) throw cleanupError;
-    if (evidence.length !== 5) {
-      throw new Error(`Expected exactly five GitHub-verified vNext Draft PR runs, received ${evidence.length}.`);
-    }
+    if (evidence.length !== 5) throw new Error(`Expected exactly five GitHub-verified vNext Draft PR runs, received ${evidence.length}.`);
     for (const item of evidence) {
       expect(item.request).toMatchObject({ mode: 'free', agentMode: 'single', intentMode: 'repository_execution', repositoryBranch: 'main' });
-      expect(item.execution).toMatchObject({ profileId: 'free_single_agent', billingCategory: 'free', maxForegroundAgents: 1, maxBackgroundAgents: 0 });
+      expect(item.persistedJobId).toMatch(JOB_ID);
+      expect(item.execution.jobId).toBe(item.persistedJobId);
+      expect(item.execution.workspaceId).toBeTruthy();
+      expect(item.execution.externalRef).toMatch(A2A_TASK_REF);
+      expect(item.execution.externalRef).not.toContain(':claim:');
+      expect(item.execution.prState).toBe('ready');
       expect(item.execution.changedFileCount).toBeGreaterThan(0);
-      expect(item.execution.toolCallCount).toBeGreaterThan(0);
-      expect(item.execution.mutationCount).toBeGreaterThan(0);
     }
   });
 
   for (const pathId of ['p1', 'p2', 'p3', 'p4', 'p5']) {
-    test(`canonical vNext ${pathId}: free single-agent → persisted job/workspace → consent → GitHub readback`, async ({ page, request }) => {
+    test(`canonical vNext ${pathId}: repository job → one Agent Zero A2A task → consent → GitHub readback`, async ({ page, request }) => {
       await executeCanonicalVNextRun(page, request, pathId);
     });
   }

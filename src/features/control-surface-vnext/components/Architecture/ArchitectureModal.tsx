@@ -4,16 +4,13 @@ import { Modal } from '../Modal';
 import { useSovereignAdapter } from '../../adapter/context';
 
 const ENDPOINTS = [
-  ['POST', '/api/user/agent/swarm/run', 'Persist and execute a mission through the Agents SDK control plane.'],
-  ['GET', '/api/user/agent/swarm/runs/:runId', 'Read the persisted run identity and state.'],
-  ['POST', '/api/user/agent/swarm/runs/:runId/resume', 'Resume one eligible persisted run with owner-supplied evidence.'],
-  ['GET', '/api/user/agent/jobs/:jobId', 'Read the linked implementation job.'],
-  ['POST', '/api/user/agent/jobs/:jobId/cancel', 'Cancel a linked implementation job.'],
+  ['POST', '/api/user/agent/repository/run', 'Persist a repository mission as one Sovereign job and exactly one bounded Agent Zero A2A task.'],
+  ['GET', '/api/user/agent/jobs?limit=1', 'Read neutral vNext backend health without inventing a Swarm worker graph.'],
+  ['GET', '/api/user/agent/jobs/:jobId', 'Read the exact persisted repository implementation job.'],
   ['GET', '/api/user/agent/jobs/:jobId/evidence-anchors', 'Read revision-bound workspace evidence.'],
   ['POST', '/api/user/agent/jobs/:jobId/draft-pr/prepare', 'Read the publication gate. No PR is created.'],
   ['POST', '/api/user/agent/jobs/:jobId/draft-pr/create', 'Create a Draft PR only; response must contain strict GitHub readback evidence.'],
   ['GET', '/api/user/agent/toolchain/manifest', 'Read server-owned embedded toolchain policy.'],
-  ['GET', '/api/user/agent/swarm/manifest', 'Read the live swarm/agent contract.'],
 ] as const;
 
 export function ArchitectureModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -32,7 +29,7 @@ export function ArchitectureModal({ isOpen, onClose }: { isOpen: boolean; onClos
         </div>
         <div className="p-3 rounded-lg border border-[rgba(255,30,56,0.2)] bg-[var(--carbon-deep)]">
           <div className="flex items-center gap-2 font-black text-white tracking-wider mb-2"><Network size={14} className="text-[var(--red-laser)]" /> SINGLE EFFECT BOUNDARY</div>
-          <pre className="whitespace-pre-wrap text-[10px] leading-relaxed text-[var(--text-muted)]">{`Human Mission\n   ↓\nSovereign Control Surface vNext\n   ↓\nSovereignBackendAdapter\n   ↓\nSovereignProductionAdapter\n   ↓ credentials: include\nAuthenticated Sovereign backend\n   ↓\nAgents SDK / implementation job / evidence / Draft PR gate\n   ↓\nGitHub readback → only then verified publication UI`}</pre>
+          <pre className="whitespace-pre-wrap text-[10px] leading-relaxed text-[var(--text-muted)]">{`Human Mission\n   ↓\nSovereign Control Surface vNext\n   ↓\nrepository-bound adapter\n   ↓ credentials: include\nAuthenticated Sovereign backend\n   ↓\npersisted repository job + exactly one Agent Zero A2A task\n   ↓\nSovereign workspace / diff / regression / evidence closeout\n   ↓\nDraft PR gate + explicit consent\n   ↓\nGitHub readback → only then verified publication UI`}</pre>
         </div>
         <div>
           <div className="flex items-center gap-2 font-black text-white tracking-wider mb-2"><Server size={14} className="text-[var(--red-laser)]" /> BOUND ENDPOINTS</div>
