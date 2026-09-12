@@ -20298,10 +20298,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "61b2980a5e84b2cc214f8be6290bbd8aefdbead0be25f9c4044c46d76dc88061",
-  "revision": "e0cf7e91bdb7d5eb65f8b97a76af0fcf0904b066",
+  "reportSha256": "4aab22b5922b17f2d3994c6ad5742371f74230684a4c73c15bc5ee8dd728c018",
+  "revision": "7325616a0dbb60827dec6ddd93c9f7b7c61df5a3",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "02ea710caa8e40c3ec595e27c213e6c19af3b95e034cc7cac3c0caa8bc9e9ae6",
+  "sourceTreeSha256": "b4a84d7c5914286b89be1cda9fb8a25d4c3e39826e1bf3f0a9370826b702c62a",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
