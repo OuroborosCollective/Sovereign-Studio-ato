@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-const EVIDENCE_PATH = process.argv[2] || 'test-results/five-draft-pr-evidence.json';
+const EVIDENCE_PATH = 'test-results/five-draft-pr-evidence.json';
 const document = JSON.parse(readFileSync(EVIDENCE_PATH, 'utf8'));
 const fail = (message) => { throw new Error(`FIVE_PATH_RUNTIME_EVIDENCE_INVALID: ${message}`); };
 const jobIdPattern = /^agent-[0-9a-f]{32}$/;
