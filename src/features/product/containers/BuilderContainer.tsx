@@ -3025,9 +3025,9 @@ export function BuilderContainer({
 
   const appendRuntimeNotice = useCallback((text: string, id?: string) => {
     appendChatLine({
-      ...(id ? { id } : {}),
       role: 'system',
       text,
+      ...(id ? { id } : {}),
       monitorProjection: {
         schemaVersion: 'sovereign.monitor-communication-projection.v1',
         sourceKind: 'RUNTIME_NOTICE',
