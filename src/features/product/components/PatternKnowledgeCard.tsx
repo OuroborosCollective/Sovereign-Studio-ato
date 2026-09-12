@@ -33,11 +33,12 @@ function ScopeTag({ scope }: { readonly scope: 'lokal' | 'remote' | 'geteilt' })
 }
 
 function StatRow({ label, value }: { readonly label: string; readonly value: string | number }) {
+  const fullText = `${label}: ${value}`;
   return (
-    <div className="flex items-baseline justify-between gap-2">
+    <li className="flex items-baseline justify-between gap-2" title={fullText}>
       <span className="text-slate-400">{label}</span>
       <span className="tabular-nums text-slate-100">{value}</span>
-    </div>
+    </li>
   );
 }
 
@@ -50,8 +51,13 @@ export function PatternKnowledgeCard({
   const canUseLocal = counters.localExecutableCount > 0;
 
   return (
-    <section className="w-full max-w-[393px] rounded border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-200">
-      <h2 className="mb-3 font-bold tracking-tight">Dein Sovereign-Wissensstand</h2>
+    <section
+      className="w-full max-w-[393px] rounded border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-200"
+      aria-labelledby="pattern-knowledge-title"
+    >
+      <h2 id="pattern-knowledge-title" className="mb-3 font-bold tracking-tight">
+        Dein Sovereign-Wissensstand
+      </h2>
 
       {!hasAny && (
         <p className="text-slate-400 text-xs">
@@ -60,7 +66,7 @@ export function PatternKnowledgeCard({
       )}
 
       {hasAny && (
-        <div className="space-y-1.5">
+        <ul role="list" aria-label="Pattern Statistiken" className="space-y-1.5">
           <StatRow label="Gespeicherte Patterns" value={counters.totalStored} />
           <StatRow label="Geprüfte lokale Abläufe" value={counters.verifiedCount} />
           <StatRow label="Lokal ausführbare Schritte" value={counters.localExecutableCount} />
@@ -69,7 +75,7 @@ export function PatternKnowledgeCard({
             label="Letzte Wiederverwendung"
             value={formatTimestamp(counters.lastSuccessfulReuseAt)}
           />
-        </div>
+        </ul>
       )}
 
       {hasAny && (
@@ -92,7 +98,9 @@ export function PatternKnowledgeCard({
           <button
             type="button"
             onClick={onShowDetails}
-            className="rounded border border-slate-600 bg-slate-800 px-3 py-1 text-xs text-slate-200 hover:bg-slate-700 active:bg-slate-600"
+            title="Pattern-Details ansehen"
+            aria-label="Pattern-Details ansehen"
+            className="rounded border border-slate-600 bg-slate-800 px-3 py-1 text-xs text-slate-200 hover:bg-slate-700 active:bg-slate-600 focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none"
           >
             Details ansehen
           </button>
@@ -101,7 +109,9 @@ export function PatternKnowledgeCard({
           <button
             type="button"
             onClick={onUseLocalMode}
-            className="rounded border border-slate-500 bg-slate-700 px-3 py-1 text-xs text-slate-100 hover:bg-slate-600 active:bg-slate-500"
+            title="Lokalen Modus nutzen"
+            aria-label="Lokalen Modus nutzen"
+            className="rounded border border-slate-500 bg-slate-700 px-3 py-1 text-xs text-slate-100 hover:bg-slate-600 active:bg-slate-500 focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none"
           >
             Lokalen Modus nutzen
           </button>
