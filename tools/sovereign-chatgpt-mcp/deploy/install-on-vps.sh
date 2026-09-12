@@ -1372,7 +1372,7 @@ if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
     SOVEREIGN_MCP_ENABLE_AURION_WRITE; do
     set_value "$MANAGED_ENV" "$OWNER_CAPABILITY" "1"
   done
-  EXPECTED_MCP_TOOL_COUNT="254"
+  EXPECTED_MCP_TOOL_COUNT="256"
 fi
 INSTALL_STAGE="bind_private_owner_github_capabilities_to_ephemeral_app_auth"
 if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
@@ -2112,6 +2112,8 @@ import launcher
 import server
 
 required_tools = {
+    "agent_zero_backend_diagnostics",
+    "agent_zero_a2a_canary",
     "backend_architecture_assess",
     "deterministic_architecture_inventory",
     "mcp_tool_contract_registry",
@@ -2139,7 +2141,7 @@ neuro_tools = {
 }
 missing_tools = sorted(required_tools - tool_names)
 assert not missing_tools, {"missingRequiredTools": missing_tools, "toolCount": len(tool_names)}
-assert len(tool_names) == 254, {"expectedToolCount": 254, "actualToolCount": len(tool_names)}
+assert len(tool_names) == 256, {"expectedToolCount": 256, "actualToolCount": len(tool_names)}
 assert neuro_tools <= tool_names, sorted(neuro_tools - tool_names)
 registry = server._live_mcp_registry_evidence()
 assert registry.get("registry_runtime_verified") is True, registry
@@ -2894,7 +2896,7 @@ with tempfile.TemporaryDirectory(
     assert getattr(commit_tool.fn, "__sovereign_operating_profile_wrapped__", False)
 
     registered_tools = list(launcher.mcp._tool_manager.list_tools())
-    assert len({tool.name for tool in registered_tools}) == 254
+    assert len({tool.name for tool in registered_tools}) == 256
 
     def call_registered(tool_name: str, arguments: dict[str, object]):
         return asyncio.run(tool_manager.call_tool(tool_name, arguments, convert_result=False))
@@ -2903,11 +2905,11 @@ with tempfile.TemporaryDirectory(
     empty_status = call_registered("neuro_runtime_contract_status", {})
     assert empty_status.ok is True, empty_status
     assert empty_status.status == "NEURO_RUNTIME_CONTRACT_READY", empty_status
-    assert empty_status.evidence["toolCount"] == 254, empty_status
+    assert empty_status.evidence["toolCount"] == 256, empty_status
     assert empty_status.data["stateInitializedByThisCall"] is False, empty_status
     assert not isolated_state.exists(), "read-only status initialized isolated state"
     # Continuity is advisory provenance and intentionally not required for this
-    # deployment canary. Guard every one of the 249 non-neuro tools
+    # deployment canary. Guard every one of the 251 non-neuro tools
     # for the remainder of the canary while leaving only the five additive
     # Neuro/Teacher wrapper chains callable.
     guarded_tool_calls: list[str] = []
@@ -2923,7 +2925,7 @@ with tempfile.TemporaryDirectory(
 
         registered_tool.fn = forbidden_selected_tool_call
         guarded_tool_names.append(tool_name)
-    assert len(set(guarded_tool_names)) == 249, len(set(guarded_tool_names))
+    assert len(set(guarded_tool_names)) == 251, len(set(guarded_tool_names))
 
     now = datetime.now(timezone.utc)
     now = now.replace(microsecond=(now.microsecond // 1000) * 1000)
@@ -3280,8 +3282,8 @@ print(
     json.dumps(
         {
             "status": "NEURO_DEPLOYMENT_CANARY_VERIFIED",
-            "registryToolCount": 254,
-            "guardedPredecessorToolCount": 249,
+            "registryToolCount": 256,
+            "guardedPredecessorToolCount": 251,
             "quarantineNoMutation": True,
             "previewProposalOnly": True,
             "selectedToolsExecuted": False,
