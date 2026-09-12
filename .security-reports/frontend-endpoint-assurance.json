@@ -50,37 +50,37 @@
       "source": "scripts/sovereign-backend/app.py"
     },
     {
-      "line": 341,
+      "line": 349,
       "normalized": "/api/admin/evidence-observatory/v1/cases/<p>/verify",
       "route": "/api/admin/evidence-observatory/v1/cases/<case_id>/verify",
       "source": "scripts/sovereign-backend/evidence_observatory.py"
     },
     {
-      "line": 276,
+      "line": 278,
       "normalized": "/api/admin/evidence-observatory/v1/notion/import",
       "route": "/api/admin/evidence-observatory/v1/notion/import",
       "source": "scripts/sovereign-backend/evidence_observatory.py"
     },
     {
-      "line": 290,
+      "line": 295,
       "normalized": "/api/admin/evidence-observatory/v1/notion/status",
       "route": "/api/admin/evidence-observatory/v1/notion/status",
       "source": "scripts/sovereign-backend/evidence_observatory.py"
     },
     {
-      "line": 305,
+      "line": 310,
       "normalized": "/api/admin/evidence-observatory/v1/notion/sync",
       "route": "/api/admin/evidence-observatory/v1/notion/sync",
       "source": "scripts/sovereign-backend/evidence_observatory.py"
     },
     {
-      "line": 400,
+      "line": 410,
       "normalized": "/api/admin/evidence-observatory/v1/publish/huggingface",
       "route": "/api/admin/evidence-observatory/v1/publish/huggingface",
       "source": "scripts/sovereign-backend/evidence_observatory.py"
     },
     {
-      "line": 384,
+      "line": 394,
       "normalized": "/api/admin/evidence-observatory/v1/status",
       "route": "/api/admin/evidence-observatory/v1/status",
       "source": "scripts/sovereign-backend/evidence_observatory.py"
@@ -188,25 +188,25 @@
       "source": "scripts/sovereign-backend/app.py"
     },
     {
-      "line": 1167,
+      "line": 1184,
       "normalized": "/api/admin/llm/freellm/provider-credentials",
       "route": "/api/admin/llm/freellm/provider-credentials",
       "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
     },
     {
-      "line": 1323,
+      "line": 1340,
       "normalized": "/api/admin/llm/freellm/provider-credentials/<p>/keyless",
       "route": "/api/admin/llm/freellm/provider-credentials/<provider_id>/keyless",
       "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
     },
     {
-      "line": 1263,
+      "line": 1280,
       "normalized": "/api/admin/llm/freellm/provider-credentials/<p>/owner-input",
       "route": "/api/admin/llm/freellm/provider-credentials/<provider_id>/owner-input",
       "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
     },
     {
-      "line": 1188,
+      "line": 1205,
       "normalized": "/api/admin/llm/freellm/provider-credentials/auto",
       "route": "/api/admin/llm/freellm/provider-credentials/auto",
       "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
@@ -234,18 +234,6 @@
       "normalized": "/api/admin/llm/model-catalog/attach",
       "route": "/api/admin/llm/model-catalog/attach",
       "source": "scripts/sovereign-backend/llm_provider_runtime.py"
-    },
-    {
-      "line": 766,
-      "normalized": "/api/admin/llm/omniroute/refresh",
-      "route": "/api/admin/llm/omniroute/refresh",
-      "source": "scripts/sovereign-backend/omniroute_execution_runtime.py"
-    },
-    {
-      "line": 761,
-      "normalized": "/api/admin/llm/omniroute/status",
-      "route": "/api/admin/llm/omniroute/status",
-      "source": "scripts/sovereign-backend/omniroute_execution_runtime.py"
     },
     {
       "line": 1094,
@@ -356,37 +344,37 @@
       "source": "scripts/sovereign-backend/free_revolver_runtime.py"
     },
     {
-      "line": 1441,
+      "line": 1458,
       "normalized": "/api/admin/llm/revolver-v3/providers",
       "route": "/api/admin/llm/revolver-v3/providers",
       "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
     },
     {
-      "line": 1496,
+      "line": 1513,
       "normalized": "/api/admin/llm/revolver-v3/providers",
       "route": "/api/admin/llm/revolver-v3/providers",
       "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
     },
     {
-      "line": 3742,
+      "line": 3775,
       "normalized": "/api/admin/llm/revolver-v3/providers/<p>",
       "route": "/api/admin/llm/revolver-v3/providers/<source_id>",
       "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
     },
     {
-      "line": 1963,
+      "line": 1996,
       "normalized": "/api/admin/llm/revolver-v3/providers/<p>/discover",
       "route": "/api/admin/llm/revolver-v3/providers/<source_id>/discover",
       "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
     },
     {
-      "line": 1588,
+      "line": 1605,
       "normalized": "/api/admin/llm/revolver-v3/providers/<p>/owner-input",
       "route": "/api/admin/llm/revolver-v3/providers/<source_id>/owner-input",
       "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
     },
     {
-      "line": 3527,
+      "line": 3560,
       "normalized": "/api/admin/llm/revolver-v3/providers/<p>/recheck",
       "route": "/api/admin/llm/revolver-v3/providers/<source_id>/recheck",
       "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
@@ -878,19 +866,19 @@
       "source": "scripts/sovereign-backend/controller_board.py"
     },
     {
-      "line": 512,
+      "line": 522,
       "normalized": "/api/evidence-observatory/v1/arena/cases/<p>/request",
       "route": "/api/evidence-observatory/v1/arena/cases/<case_id>/request",
       "source": "scripts/sovereign-backend/evidence_observatory.py"
     },
     {
-      "line": 605,
+      "line": 617,
       "normalized": "/api/evidence-observatory/v1/arena/leaderboard",
       "route": "/api/evidence-observatory/v1/arena/leaderboard",
       "source": "scripts/sovereign-backend/evidence_observatory.py"
     },
     {
-      "line": 531,
+      "line": 541,
       "normalized": "/api/evidence-observatory/v1/arena/score",
       "route": "/api/evidence-observatory/v1/arena/score",
       "source": "scripts/sovereign-backend/evidence_observatory.py"
@@ -1100,25 +1088,25 @@
       "source": "scripts/sovereign-backend/controller_board.py"
     },
     {
-      "line": 1370,
+      "line": 1387,
       "normalized": "/api/internal/llm/freellm/provider-credentials/<p>/keyless",
       "route": "/api/internal/llm/freellm/provider-credentials/<provider_id>/keyless",
       "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
     },
     {
-      "line": 2850,
+      "line": 2883,
       "normalized": "/api/internal/llm/freellm/providers",
       "route": "/api/internal/llm/freellm/providers",
       "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
     },
     {
-      "line": 2377,
+      "line": 2410,
       "normalized": "/api/internal/llm/freellm/providers/<p>/discover",
       "route": "/api/internal/llm/freellm/providers/<source_id>/discover",
       "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
     },
     {
-      "line": 2998,
+      "line": 3031,
       "normalized": "/api/internal/llm/freellm/providers/<p>/reconcile",
       "route": "/api/internal/llm/freellm/providers/<source_id>/reconcile",
       "source": "scripts/sovereign-backend/free_revolver_provider_runtime.py"
@@ -2198,13 +2186,13 @@
       "source": "scripts/sovereign-backend/agent_runtime/skills/routes.py"
     },
     {
-      "line": 2525,
+      "line": 2607,
       "normalized": "/api/user/agent/swarm/manifest",
       "route": "/api/user/agent/swarm/manifest",
       "source": "backend/agent_runtime/cognitive_swarm_routes.py"
     },
     {
-      "line": 2525,
+      "line": 2607,
       "normalized": "/api/user/agent/swarm/manifest",
       "route": "/api/user/agent/swarm/manifest",
       "source": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
@@ -2216,49 +2204,49 @@
       "source": "scripts/sovereign-backend/openrouter_provider_runtime.py"
     },
     {
-      "line": 2586,
+      "line": 2676,
       "normalized": "/api/user/agent/swarm/run",
       "route": "/api/user/agent/swarm/run",
       "source": "backend/agent_runtime/cognitive_swarm_routes.py"
     },
     {
-      "line": 2586,
+      "line": 2676,
       "normalized": "/api/user/agent/swarm/run",
       "route": "/api/user/agent/swarm/run",
       "source": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
     },
     {
-      "line": 2554,
+      "line": 2640,
       "normalized": "/api/user/agent/swarm/runs/<p>",
       "route": "/api/user/agent/swarm/runs/<run_id>",
       "source": "backend/agent_runtime/cognitive_swarm_routes.py"
     },
     {
-      "line": 2554,
+      "line": 2640,
       "normalized": "/api/user/agent/swarm/runs/<p>",
       "route": "/api/user/agent/swarm/runs/<run_id>",
       "source": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
     },
     {
-      "line": 2570,
+      "line": 2656,
       "normalized": "/api/user/agent/swarm/runs/<p>/resume",
       "route": "/api/user/agent/swarm/runs/<run_id>/resume",
       "source": "backend/agent_runtime/cognitive_swarm_routes.py"
     },
     {
-      "line": 2570,
+      "line": 2656,
       "normalized": "/api/user/agent/swarm/runs/<p>/resume",
       "route": "/api/user/agent/swarm/runs/<run_id>/resume",
       "source": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
     },
     {
-      "line": 2539,
+      "line": 2625,
       "normalized": "/api/user/agent/swarm/runs/resumable",
       "route": "/api/user/agent/swarm/runs/resumable",
       "source": "backend/agent_runtime/cognitive_swarm_routes.py"
     },
     {
-      "line": 2539,
+      "line": 2625,
       "normalized": "/api/user/agent/swarm/runs/resumable",
       "route": "/api/user/agent/swarm/runs/resumable",
       "source": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
@@ -2385,14 +2373,14 @@
     }
   ],
   "counts": {
-    "backendRoutes": 397,
-    "backendSourceFiles": 340,
+    "backendRoutes": 395,
+    "backendSourceFiles": 342,
     "externalServiceReferences": 5,
-    "frontendReferences": 164,
-    "frontendSourceFiles": 490,
+    "frontendReferences": 181,
+    "frontendSourceFiles": 519,
     "retiredOrNoncanonicalReferences": 5,
-    "uniqueActiveInternalEndpoints": 131,
-    "uniqueBackendRoutes": 271,
+    "uniqueActiveInternalEndpoints": 139,
+    "uniqueBackendRoutes": 269,
     "uniqueUnboundActiveInternalEndpoints": 0
   },
   "references": [
@@ -2403,7 +2391,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/audit-log?${q}",
-      "line": 1223,
+      "line": 1131,
       "normalized": "/api/admin/audit-log",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2415,7 +2403,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/billing/stats",
-      "line": 1031,
+      "line": 952,
       "normalized": "/api/admin/billing/stats",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2427,7 +2415,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/credit-packages",
-      "line": 1257,
+      "line": 1165,
       "normalized": "/api/admin/credit-packages",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2439,7 +2427,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/credit-packages/${id}",
-      "line": 1272,
+      "line": 1180,
       "normalized": "/api/admin/credit-packages/<p>",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2451,7 +2439,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/credit-packages/${id}",
-      "line": 1279,
+      "line": 1187,
       "normalized": "/api/admin/credit-packages/<p>",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2463,7 +2451,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/credit-packages/init",
-      "line": 1262,
+      "line": 1170,
       "normalized": "/api/admin/credit-packages/init",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2475,7 +2463,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/launcher/tools",
-      "line": 1035,
+      "line": 956,
       "normalized": "/api/admin/launcher/tools",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2487,7 +2475,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/launcher/tools/${id}",
-      "line": 1039,
+      "line": 960,
       "normalized": "/api/admin/launcher/tools/<p>",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2499,32 +2487,8 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/llm/freellm/provider-credentials/auto",
-      "line": 886,
+      "line": 807,
       "normalized": "/api/admin/llm/freellm/provider-credentials/auto",
-      "owner": "sovereign-backend",
-      "source": "src/features/admin/api/adminApiClient.ts"
-    },
-    {
-      "backed": true,
-      "backend_sources": [
-        "scripts/sovereign-backend/omniroute_execution_runtime.py"
-      ],
-      "classification": "ACTIVE_INTERNAL",
-      "endpoint": "/api/admin/llm/omniroute/refresh",
-      "line": 1087,
-      "normalized": "/api/admin/llm/omniroute/refresh",
-      "owner": "sovereign-backend",
-      "source": "src/features/admin/api/adminApiClient.ts"
-    },
-    {
-      "backed": true,
-      "backend_sources": [
-        "scripts/sovereign-backend/omniroute_execution_runtime.py"
-      ],
-      "classification": "ACTIVE_INTERNAL",
-      "endpoint": "/api/admin/llm/omniroute/status",
-      "line": 1083,
-      "normalized": "/api/admin/llm/omniroute/status",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
     },
@@ -2535,7 +2499,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/llm/openrouter/catalog/refresh",
-      "line": 1213,
+      "line": 1121,
       "normalized": "/api/admin/llm/openrouter/catalog/refresh",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2547,7 +2511,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/llm/openrouter/free/status",
-      "line": 1098,
+      "line": 1008,
       "normalized": "/api/admin/llm/openrouter/free/status",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2559,7 +2523,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/llm/openrouter/status",
-      "line": 1094,
+      "line": 1004,
       "normalized": "/api/admin/llm/openrouter/status",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2571,7 +2535,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/llm/revolver-v3/providers",
-      "line": 1079,
+      "line": 1000,
       "normalized": "/api/admin/llm/revolver-v3/providers",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2583,7 +2547,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/llm/revolver-v3/providers",
-      "line": 1142,
+      "line": 1050,
       "normalized": "/api/admin/llm/revolver-v3/providers",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2595,7 +2559,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/llm/revolver-v3/providers/${encodeURIComponent(sourceId)}",
-      "line": 1197,
+      "line": 1105,
       "normalized": "/api/admin/llm/revolver-v3/providers/<p>",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2607,7 +2571,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/llm/revolver-v3/providers/${encodeURIComponent(sourceId)}/discover",
-      "line": 1177,
+      "line": 1085,
       "normalized": "/api/admin/llm/revolver-v3/providers/<p>/discover",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2619,7 +2583,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/llm/revolver-v3/providers/${encodeURIComponent(sourceId)}/owner-input",
-      "line": 1150,
+      "line": 1058,
       "normalized": "/api/admin/llm/revolver-v3/providers/<p>/owner-input",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2631,7 +2595,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/llm/revolver-v3/providers/${encodeURIComponent(sourceId)}/recheck",
-      "line": 1189,
+      "line": 1097,
       "normalized": "/api/admin/llm/revolver-v3/providers/<p>/recheck",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2643,7 +2607,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/llm/routes",
-      "line": 1054,
+      "line": 975,
       "normalized": "/api/admin/llm/routes",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2655,7 +2619,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/llm/routes/${id}",
-      "line": 1058,
+      "line": 979,
       "normalized": "/api/admin/llm/routes/<p>",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2667,7 +2631,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/llm/routes/${id}/revolver-reset",
-      "line": 1066,
+      "line": 987,
       "normalized": "/api/admin/llm/routes/<p>/revolver-reset",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2679,7 +2643,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/owner-input/requests/${encodeURIComponent(requestId)}/resolve?decision=yes",
-      "line": 824,
+      "line": 745,
       "normalized": "/api/admin/owner-input/requests/<p>/resolve",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2691,7 +2655,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/payment-methods",
-      "line": 1233,
+      "line": 1141,
       "normalized": "/api/admin/payment-methods",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2703,7 +2667,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/payment-methods/${id}",
-      "line": 1240,
+      "line": 1148,
       "normalized": "/api/admin/payment-methods/<p>",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2715,7 +2679,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/payment-methods/crypto/confirm",
-      "line": 1288,
+      "line": 1196,
       "normalized": "/api/admin/payment-methods/crypto/confirm",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2727,7 +2691,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/payment-methods/init",
-      "line": 1247,
+      "line": 1155,
       "normalized": "/api/admin/payment-methods/init",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2739,7 +2703,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/ping",
-      "line": 950,
+      "line": 871,
       "normalized": "/api/admin/ping",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2752,7 +2716,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/platform/v1/canaries",
-      "line": 968,
+      "line": 889,
       "normalized": "/api/admin/platform/v1/canaries",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2765,7 +2729,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/platform/v1/evidence?limit=${bounded}",
-      "line": 960,
+      "line": 881,
       "normalized": "/api/admin/platform/v1/evidence",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2778,7 +2742,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/platform/v1/openapi.json",
-      "line": 979,
+      "line": 900,
       "normalized": "/api/admin/platform/v1/openapi.json",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2791,7 +2755,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/platform/v1/overview",
-      "line": 954,
+      "line": 875,
       "normalized": "/api/admin/platform/v1/overview",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2803,7 +2767,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/toolchain/tools",
-      "line": 1342,
+      "line": 1250,
       "normalized": "/api/admin/toolchain/tools",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2815,7 +2779,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/toolchain/tools",
-      "line": 1354,
+      "line": 1262,
       "normalized": "/api/admin/toolchain/tools",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2827,7 +2791,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/toolchain/tools/${id}",
-      "line": 1369,
+      "line": 1277,
       "normalized": "/api/admin/toolchain/tools/<p>",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2839,7 +2803,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/toolchain/tools/${id}",
-      "line": 1376,
+      "line": 1284,
       "normalized": "/api/admin/toolchain/tools/<p>",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2851,7 +2815,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/transactions?${q}",
-      "line": 1022,
+      "line": 943,
       "normalized": "/api/admin/transactions",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2863,7 +2827,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/users?${q}",
-      "line": 987,
+      "line": 908,
       "normalized": "/api/admin/users",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2875,7 +2839,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/users/${id}",
-      "line": 991,
+      "line": 912,
       "normalized": "/api/admin/users/<p>",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -2887,7 +2851,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/admin/users/${id}/credit-adjustment",
-      "line": 1008,
+      "line": 929,
       "normalized": "/api/admin/users/<p>/credit-adjustment",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -3156,6 +3120,30 @@
       "normalized": "/api/billing/purchase/paypal/capture",
       "owner": "sovereign-backend",
       "source": "src/features/billing/billingSlice.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/controller_board.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/controller/approvals",
+      "line": 266,
+      "normalized": "/api/controller/approvals",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/adapter/production-adapter.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "scripts/sovereign-backend/controller_board.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/controller/approvals/${encodeURIComponent(interactionId)}/decision",
+      "line": 393,
+      "normalized": "/api/controller/approvals/<p>/decision",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/adapter/production-adapter.ts"
     },
     {
       "backed": true,
@@ -3943,7 +3931,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/toolchain/universal/briefing",
-      "line": 1325,
+      "line": 1233,
       "normalized": "/api/toolchain/universal/briefing",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -3979,7 +3967,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/toolchain/universal/manifest",
-      "line": 1308,
+      "line": 1216,
       "normalized": "/api/toolchain/universal/manifest",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -4003,7 +3991,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/toolchain/universal/status",
-      "line": 1316,
+      "line": 1224,
       "normalized": "/api/toolchain/universal/status",
       "owner": "sovereign-backend",
       "source": "src/features/admin/api/adminApiClient.ts"
@@ -4080,7 +4068,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/user/agent/jobs",
-      "line": 532,
+      "line": 553,
       "normalized": "/api/user/agent/jobs",
       "owner": "sovereign-backend",
       "source": "src/features/product/runtime/sovereignAgentClient.ts"
@@ -4093,7 +4081,7 @@
       ],
       "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/user/agent/jobs?limit=20",
-      "line": 770,
+      "line": 807,
       "normalized": "/api/user/agent/jobs",
       "owner": "sovereign-backend",
       "source": "src/features/product/runtime/sovereignAgentClient.ts"
@@ -4105,11 +4093,37 @@
         "scripts/sovereign-backend/agent_runtime/routes.py"
       ],
       "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/jobs/:jobId",
+      "line": 10,
+      "normalized": "/api/user/agent/jobs/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/components/Architecture/ArchitectureModal.tsx"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/user/agent/jobs/${encodeURIComponent(jobId.trim())}",
-      "line": 532,
+      "line": 553,
       "normalized": "/api/user/agent/jobs/<p>",
       "owner": "sovereign-backend",
       "source": "src/features/product/runtime/sovereignAgentClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/jobs/:jobId/cancel",
+      "line": 11,
+      "normalized": "/api/user/agent/jobs/<p>/cancel",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/components/Architecture/ArchitectureModal.tsx"
     },
     {
       "backed": true,
@@ -4136,6 +4150,45 @@
       "normalized": "/api/user/agent/jobs/<p>/diff-narration",
       "owner": "sovereign-backend",
       "source": "src/features/product/runtime/semanticDiffNarratorRuntime.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/jobs/:jobId/draft-pr/create",
+      "line": 14,
+      "normalized": "/api/user/agent/jobs/<p>/draft-pr/create",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/components/Architecture/ArchitectureModal.tsx"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/jobs/:jobId/draft-pr/prepare",
+      "line": 13,
+      "normalized": "/api/user/agent/jobs/<p>/draft-pr/prepare",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/components/Architecture/ArchitectureModal.tsx"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/jobs/:jobId/evidence-anchors",
+      "line": 12,
+      "normalized": "/api/user/agent/jobs/<p>/evidence-anchors",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/components/Architecture/ArchitectureModal.tsx"
     },
     {
       "backed": true,
@@ -4326,9 +4379,152 @@
         "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
       ],
       "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/swarm/manifest",
+      "line": 277,
+      "normalized": "/api/user/agent/swarm/manifest",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/adapter/production-adapter.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/swarm/manifest",
+      "line": 472,
+      "normalized": "/api/user/agent/swarm/manifest",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/adapter/production-adapter.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/swarm/manifest",
+      "line": 16,
+      "normalized": "/api/user/agent/swarm/manifest",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/components/Architecture/ArchitectureModal.tsx"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
       "endpoint": "/api/user/agent/swarm/run",
-      "line": 726,
+      "line": 299,
       "normalized": "/api/user/agent/swarm/run",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/adapter/production-adapter.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/swarm/run",
+      "line": 76,
+      "normalized": "/api/user/agent/swarm/run",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/swarm/run",
+      "line": 7,
+      "normalized": "/api/user/agent/swarm/run",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/components/Architecture/ArchitectureModal.tsx"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/swarm/run",
+      "line": 763,
+      "normalized": "/api/user/agent/swarm/run",
+      "owner": "sovereign-backend",
+      "source": "src/features/product/runtime/sovereignAgentClient.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/swarm/runs/${encodeURIComponent(requested)}",
+      "line": 312,
+      "normalized": "/api/user/agent/swarm/runs/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/adapter/production-adapter.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/swarm/runs/:runId",
+      "line": 8,
+      "normalized": "/api/user/agent/swarm/runs/<p>",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/components/Architecture/ArchitectureModal.tsx"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/swarm/runs/${encodeURIComponent(runId)}/resume",
+      "line": 404,
+      "normalized": "/api/user/agent/swarm/runs/<p>/resume",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/adapter/production-adapter.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/swarm/runs/:runId/resume",
+      "line": 9,
+      "normalized": "/api/user/agent/swarm/runs/<p>/resume",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/components/Architecture/ArchitectureModal.tsx"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/toolchain/handoff",
+      "line": 731,
+      "normalized": "/api/user/agent/toolchain/handoff",
       "owner": "sovereign-backend",
       "source": "src/features/product/runtime/sovereignAgentClient.ts"
     },
@@ -4339,11 +4535,24 @@
         "scripts/sovereign-backend/agent_runtime/routes.py"
       ],
       "classification": "ACTIVE_INTERNAL",
-      "endpoint": "/api/user/agent/toolchain/handoff",
-      "line": 694,
-      "normalized": "/api/user/agent/toolchain/handoff",
+      "endpoint": "/api/user/agent/toolchain/manifest",
+      "line": 456,
+      "normalized": "/api/user/agent/toolchain/manifest",
       "owner": "sovereign-backend",
-      "source": "src/features/product/runtime/sovereignAgentClient.ts"
+      "source": "src/features/control-surface-vnext/adapter/production-adapter.ts"
+    },
+    {
+      "backed": true,
+      "backend_sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ],
+      "classification": "ACTIVE_INTERNAL",
+      "endpoint": "/api/user/agent/toolchain/manifest",
+      "line": 15,
+      "normalized": "/api/user/agent/toolchain/manifest",
+      "owner": "sovereign-backend",
+      "source": "src/features/control-surface-vnext/components/Architecture/ArchitectureModal.tsx"
     },
     {
       "backed": true,
