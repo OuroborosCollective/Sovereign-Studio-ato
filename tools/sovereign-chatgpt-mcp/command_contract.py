@@ -3,6 +3,7 @@ from __future__ import annotations
 MUTATING_ACTIONS = frozenset(
     {
         "host_worker_canary",
+        "agent_zero_a2a_canary",
         "resolve_backend_image",
         "preview_verified_migration",
         "apply_verified_migration",

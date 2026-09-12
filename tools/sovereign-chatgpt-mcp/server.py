@@ -1383,6 +1383,32 @@ def programming_language_catalog_persistent_import(
 
 
 @mcp.tool(annotations=READ_ONLY)
+def agent_zero_backend_diagnostics(
+    expected_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    expected_image_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")],
+) -> dict[str, Any]:
+    """Read the live backend worker context/key accessibility and Agent Zero package evidence; no A2A submit."""
+    return broker.call("agent_zero_backend_diagnostics", {
+        "expected_revision": expected_revision, "expected_image_digest": expected_image_digest,
+    }, timeout=150)
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def agent_zero_a2a_canary(
+    expected_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    expected_image_digest: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")],
+    operation_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")],
+    action: Annotated[str, Field(pattern=r"^(submit|poll)$")] = "submit",
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Submit one fixed no-tools A2A message or poll its persisted task. Never resubmit an unknown outcome."""
+    return broker.call("agent_zero_a2a_canary", {
+        "expected_revision": expected_revision, "expected_image_digest": expected_image_digest,
+        "operation_id": operation_id, "action": action, "owner_approved": owner_approved,
+    }, timeout=150)
+
+
+@mcp.tool(annotations=READ_ONLY)
 def vps_container_status(container: str = "sovereign-backend") -> dict[str, Any]:
     """Inspect the real state of one allowlisted Docker container through the local broker."""
     return broker.call("container_status", {"container": container})
