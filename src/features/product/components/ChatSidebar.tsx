@@ -264,7 +264,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                 {isRestore ? `↻ ${msg.content}` : msg.content}
               </div>
               {msg.role === 'assistant' && msg.metadata?.modelId && msg.metadata.modelId !== selectedModel && (
-                <div className="text-[10px] text-amber-500/70 px-2 flex items-center gap-1 opacity-80" title="Aufgrund eines Fehlers wurde auf ein alternatives Modell zurückgegriffen">
+                <div className="text-[10px] text-amber-500/70 px-2 flex items-center gap-1 opacity-80" title="Due to an error, a fallback model was used">
                   <AlertTriangle size={10} />
                   Fallback: {msg.metadata.modelId as string}
                 </div>
