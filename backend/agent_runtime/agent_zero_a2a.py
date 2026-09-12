@@ -258,10 +258,14 @@ class AgentZeroA2AClient:
             "params": {
                 "message": {
                     "messageId": f"sovereign-{call_id}",
+                    "kind": "message",
                     "role": "user",
                     "parts": [{"kind": "text", "text": prompt}],
                 },
-                "configuration": {"blocking": False},
+                "configuration": {
+                    "acceptedOutputModes": ["text", "text/plain"],
+                    "blocking": False,
+                },
             },
         }
         return _parse_task(self._post_rpc(payload, submit=True))
