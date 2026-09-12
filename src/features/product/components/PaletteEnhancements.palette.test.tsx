@@ -24,6 +24,7 @@ import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
 import { TestRunnerResultCard } from './TestRunnerResultCard';
 import { PaywallModal } from '../../billing/PaywallModal';
+import { PatternKnowledgeCard } from './PatternKnowledgeCard';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -1155,6 +1156,57 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(repairBtn);
       expect(onRepair).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('PatternKnowledgeCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders landmark title, semantic list of metrics with hover tooltips, and focusable buttons with tooltips', () => {
+      const mockCounters = {
+        totalStored: 5,
+        verifiedCount: 3,
+        localExecutableCount: 2,
+        frequentlyUsedCount: 1,
+        lastSuccessfulReuseAt: 1718000000000,
+        localUserCount: 4,
+        remoteUserCount: 1,
+        sharedDerivedCount: 0,
+      };
+
+      const onShowDetails = vi.fn();
+      const onUseLocalMode = vi.fn();
+
+      render(
+        <PatternKnowledgeCard
+          counters={mockCounters}
+          onShowDetails={onShowDetails}
+          onUseLocalMode={onUseLocalMode}
+        />
+      );
+
+      const section = screen.getByRole('region', { name: 'Dein Sovereign-Wissensstand' });
+      expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', 'pattern-knowledge-title');
+
+      const statsList = screen.getByRole('list', { name: 'Pattern Statistiken' });
+      expect(statsList).toBeInTheDocument();
+
+      const items = screen.getAllByRole('listitem');
+      expect(items).toHaveLength(5);
+      expect(items[0]).toHaveAttribute('title', 'Gespeicherte Patterns: 5');
+
+      const detailsBtn = screen.getByRole('button', { name: 'Pattern-Details ansehen' });
+      expect(detailsBtn).toHaveAttribute('title', 'Pattern-Details ansehen');
+      expect(detailsBtn).toHaveClass('focus-visible:ring-2');
+
+      const localModeBtn = screen.getByRole('button', { name: 'Lokalen Modus nutzen' });
+      expect(localModeBtn).toHaveAttribute('title', 'Lokalen Modus nutzen');
+      expect(localModeBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(detailsBtn);
+      expect(onShowDetails).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(localModeBtn);
+      expect(onUseLocalMode).toHaveBeenCalledTimes(1);
     });
   });
 });
