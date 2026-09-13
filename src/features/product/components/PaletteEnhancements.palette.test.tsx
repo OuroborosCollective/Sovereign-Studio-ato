@@ -23,6 +23,7 @@ import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
 import { TestRunnerResultCard } from './TestRunnerResultCard';
+import { GeneratedFileReviewPanel } from './GeneratedFileReviewPanel';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1155,6 +1156,48 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(repairBtn);
       expect(onRepair).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('GeneratedFileReviewPanel Accessibility Enhancements', () => {
+    it('renders empty state section landmark linked to heading ID', () => {
+      render(<GeneratedFileReviewPanel pkg={null} />);
+      const heading = screen.getByRole('heading', { name: 'Generated Files Review' });
+      expect(heading).toHaveAttribute('id', 'generated-file-review-title-empty');
+    });
+
+    it('renders populated package review with title-linked landmark, accessible summary details and keyboard navigable pre preview', () => {
+      const mockPkg = {
+        title: 'Test Package',
+        summary: 'Updated files',
+        files: [
+          {
+            path: 'src/main.ts',
+            content: 'console.log("hello world");',
+          },
+        ],
+      };
+
+      render(<GeneratedFileReviewPanel pkg={mockPkg as any} />);
+
+      const heading = screen.getByRole('heading', { name: 'Generated Files Review' });
+      expect(heading).toHaveAttribute('id', 'generated-file-review-title');
+
+      const badge = screen.getByTitle('Pre-publish review');
+      expect(badge).toBeInTheDocument();
+
+      const summaryElement = screen.getByText('src/main.ts').closest('summary');
+      expect(summaryElement).toHaveAttribute('aria-label', 'Details for src/main.ts (LOW risk)');
+      expect(summaryElement).toHaveAttribute('title', 'Toggle details for src/main.ts (LOW risk)');
+      expect(summaryElement).toHaveClass('focus-visible:ring-2');
+
+      const riskBadge = screen.getByTitle('Risk level: LOW');
+      expect(riskBadge).toBeInTheDocument();
+
+      const prePreview = screen.getByLabelText('Preview for src/main.ts');
+      expect(prePreview).toHaveAttribute('tabIndex', '0');
+      expect(prePreview).toHaveAttribute('title', 'Preview content of src/main.ts');
+      expect(prePreview).toHaveClass('focus-visible:ring-2');
     });
   });
 });
