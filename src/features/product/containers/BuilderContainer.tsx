@@ -3242,9 +3242,29 @@ export function BuilderContainer({
         if (session.messageCount > 0) {
           const age = formatPersistedSessionAge(session);
           if (age.isStale) {
-            appendRuntimeNotice(`Warnung: Die wiederhergestellte Session ist älter als 3 Tage (Alter: ${age.text}) und möglicherweise nicht mehr mit dem aktuellen Codebase-Stand synchron.`);
+            appendChatLine({
+              id: 'system:restore-age',
+              role: 'system',
+              text: `Warnung: Die wiederhergestellte Session ist älter als 3 Tage (Alter: ${age.text}) und möglicherweise nicht mehr mit dem aktuellen Codebase-Stand synchron.`,
+              monitorProjection: {
+                schemaVersion: 'sovereign.monitor-communication-projection.v1',
+                sourceKind: 'RUNTIME_NOTICE',
+                authority: 'CONVERSATION_ONLY',
+                authoritative: false,
+              },
+            });
           } else {
-            appendRuntimeNotice(`Session erfolgreich wiederhergestellt (Alter: ${age.text}).`);
+            appendChatLine({
+              id: 'system:restore-age',
+              role: 'system',
+              text: `Session erfolgreich wiederhergestellt (Alter: ${age.text}).`,
+              monitorProjection: {
+                schemaVersion: 'sovereign.monitor-communication-projection.v1',
+                sourceKind: 'RUNTIME_NOTICE',
+                authority: 'CONVERSATION_ONLY',
+                authoritative: false,
+              },
+            });
           }
         }
       } catch {
