@@ -269,7 +269,8 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
       mission: 'Prüfe den aktuellen Build und ändere nichts ohne die bestehenden Runtime-Gates.',
       mode: 'free',
       agentMode: 'single',
-      intentMode: 'auto',
+      intentMode: 'repository_execution',
+      repositoryBranch: 'main',
     });
     expect(observed.some(item => item.path.includes('/draft-pr/prepare'))).toBe(false);
     expect(observed.some(item => item.path.includes('/draft-pr/create'))).toBe(false);
