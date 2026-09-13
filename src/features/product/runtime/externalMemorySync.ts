@@ -187,20 +187,35 @@ function buildGatewayHeaders(config: ExternalMemorySyncConfig): Record<string, s
 
 function parseRemoteItems(value: unknown): ExternalMemorySyncItem[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .filter((item): item is Partial<ExternalMemorySyncItem> => Boolean(item) && typeof item === 'object')
-    .map((item, index): ExternalMemorySyncItem => ({
-      id: sanitizeText(String(item.id ?? `remote-${index}`)),
-      kind: ['scan-finding', 'learning-pattern', 'solution-pattern'].includes(String(item.kind))
-        ? item.kind as ExternalMemorySyncItemKind
-        : 'solution-pattern',
-      title: sanitizeText(String(item.title ?? 'Remote pattern')),
-      text: sanitizeText(String(item.text ?? item.title ?? 'Remote pattern')),
-      tags: normalizeTags(Array.isArray(item.tags) ? item.tags.map(String) : ['remote']),
-      metadata: typeof item.metadata === 'object' && item.metadata ? item.metadata as ExternalMemorySyncItem['metadata'] : {},
-    }))
-    .filter((item) => validateExternalMemorySyncItem(item).valid)
-    .slice(0, 50);
+
+  const items: ExternalMemorySyncItem[] = [];
+  let index = 0;
+
+  for (const item of value) {
+    if (items.length >= 50) break;
+
+    if (Boolean(item) && typeof item === 'object') {
+      const candidateItem = item as Partial<ExternalMemorySyncItem>;
+
+      const mapped: ExternalMemorySyncItem = {
+        id: sanitizeText(String(candidateItem.id ?? `remote-${index}`)),
+        kind: ['scan-finding', 'learning-pattern', 'solution-pattern'].includes(String(candidateItem.kind))
+          ? candidateItem.kind as ExternalMemorySyncItemKind
+          : 'solution-pattern',
+        title: sanitizeText(String(candidateItem.title ?? 'Remote pattern')),
+        text: sanitizeText(String(candidateItem.text ?? candidateItem.title ?? 'Remote pattern')),
+        tags: normalizeTags(Array.isArray(candidateItem.tags) ? candidateItem.tags.map(String) : ['remote']),
+        metadata: typeof candidateItem.metadata === 'object' && candidateItem.metadata ? candidateItem.metadata as ExternalMemorySyncItem['metadata'] : {},
+      };
+
+      if (validateExternalMemorySyncItem(mapped).valid) {
+        items.push(mapped);
+      }
+    }
+    index++;
+  }
+
+  return items;
 }
 
 export function createExternalMemorySyncConfig(): ExternalMemorySyncConfig {
