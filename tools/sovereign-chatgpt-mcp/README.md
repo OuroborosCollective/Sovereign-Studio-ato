@@ -222,7 +222,7 @@ cd tools/sovereign-chatgpt-mcp
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
-python -m py_compile policy.py runtime.py database.py operations.py broker.py broker_client.py enterprise_backend_tools.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py server.py launcher.py tests/*.py
+python -m py_compile policy.py runtime.py database.py operations.py broker.py broker_client.py agent_zero_backend_probe.py agent_zero_diagnostics.py enterprise_backend_tools.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py server.py launcher.py tests/*.py
 python -m pytest -q
 docker build -t sovereign-chatgpt-mcp:local .
 ```
