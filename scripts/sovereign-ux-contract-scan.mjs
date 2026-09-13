@@ -72,6 +72,7 @@ function run() {
   const wrapper = 'src/SovereignAppWrapper.tsx';
   const surface = 'src/features/control-surface-vnext/App.tsx';
   const adapter = 'src/features/control-surface-vnext/adapter/production-adapter.ts';
+  const repositoryAdapter = 'src/features/control-surface-vnext/adapter/repository-bound-adapter.ts';
   const adapterContext = 'src/features/control-surface-vnext/adapter/context.tsx';
   const chat = 'src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx';
   const publication = 'src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx';
@@ -91,7 +92,8 @@ function run() {
     [app, 'Canonical App route is required.'],
     [wrapper, 'Passthrough app wrapper is required.'],
     [surface, 'Sovereign Control Surface vNext is required.'],
-    [adapter, 'The single live production adapter is required.'],
+    [adapter, 'The live HTTP adapter base is required.'],
+    [repositoryAdapter, 'The injected repository-bound vNext adapter is required.'],
     [adapterContext, 'Adapter dependency injection boundary is required.'],
     [chat, 'Mission command surface is required.'],
     [publication, 'Evidence-gated Draft PR publication surface is required.'],
@@ -119,15 +121,17 @@ function run() {
   requireText(app, /EvidenceObservatoryAtlas[\s\S]*\/observatory[\s\S]*\/evidence-observatory/, 'app:observatory-separated', 'Evidence Observatory remains an explicit non-default route.');
   forbidText(app, /PlayReleaseChat|RESTORE_LATEST_JOB|BuilderContainer/, 'app:no-retired-primary', 'Default App must not mount the retired release chat, auto-adopt historical jobs, or mount Builder as current truth.');
 
-  requireText(adapterContext, /new SovereignProductionAdapter\(\)/, 'adapter:production-default', 'The default injected adapter is the live production adapter.');
-  requireText(adapter, /credentials:\s*'include'/, 'adapter:http-only-session', 'Production requests rely on the backend HTTP-only session.');
-  requireText(adapter, /'\/api\/user\/agent\/swarm\/run'/, 'adapter:swarm-run', 'Mission dispatch uses the persisted Agents SDK run endpoint.');
-  requireText(adapter, /\/api\/user\/agent\/swarm\/runs\/\$\{encodeURIComponent\(requested\)\}/, 'adapter:run-readback', 'Persisted run identity is read back by exact run id.');
-  requireText(adapter, /this\.client\.getJob\(run\.jobId\)/, 'adapter:linked-job', 'Implementation work is read through the linked backend job id.');
-  requireText(adapter, /this\.client\.getEvidenceAnchors\(run\.jobId\)/, 'adapter:evidence-anchors', 'Workspace revision comes from evidence anchors.');
-  requireText(adapter, /this\.client\.prepareDraftPr\(run\.jobId\)/, 'adapter:draft-prepare', 'Draft PR preparation uses the existing server gate.');
-  requireText(adapter, /this\.client\.createDraftPr\(run\.jobId\)/, 'adapter:draft-create', 'Draft PR creation delegates to the existing strict client.');
-  forbidText(adapter, /MockSovereignBackendAdapter|fallbackMock|\/api\/config\/|sessionToken|Authorization:\s*`Bearer|localStorage/, 'adapter:no-simulated-truth', 'Production adapter must not contain simulator fallback, guessed config APIs, bearer-session state, or local persistence.');
+  requireText(adapterContext, /from ['"]\.\/repository-bound-adapter['"][\s\S]*new SovereignProductionAdapter\(\)/, 'adapter:repository-default', 'The default injected vNext adapter is the repository-bound live adapter.');
+  requireText(repositoryAdapter, /credentials:\s*'include'/, 'adapter:http-only-session', 'Repository requests rely on the backend HTTP-only session.');
+  requireText(repositoryAdapter, /'\/api\/user\/agent\/repository\/run'/, 'adapter:repository-run', 'vNext repository mission dispatch uses the direct persisted repository-job endpoint.');
+  forbidText(repositoryAdapter, /'\/api\/user\/agent\/swarm\/run'/, 'adapter:no-repository-swarm-run', 'The vNext repository path must not dispatch through the Swarm run endpoint.');
+  requireText(adapter, /\/api\/user\/agent\/swarm\/runs\/\$\{encodeURIComponent\(requested\)\}/, 'adapter:generic-run-readback', 'The generic adapter still supports persisted Swarm-run readback for non-repository product paths.');
+  requireText(adapter, /this\.client\.getJob\(jobId\)/, 'adapter:linked-job', 'Direct repository work is read through the exact backend job id.');
+  requireText(adapter, /this\.client\.getEvidenceAnchors\(jobId\)/, 'adapter:evidence-anchors', 'Workspace revision comes from evidence anchors bound to the direct job id.');
+  requireText(adapter, /this\.client\.prepareDraftPr\(jobId\)/, 'adapter:draft-prepare', 'Draft PR preparation uses the existing server gate against the exact job id.');
+  requireText(adapter, /this\.client\.createDraftPr\(jobId\)/, 'adapter:draft-create', 'Draft PR creation delegates to the existing strict client against the exact job id.');
+  forbidText(adapter, /MockSovereignBackendAdapter|fallbackMock|\/api\/config\/|sessionToken|Authorization:\s*`Bearer|localStorage/, 'adapter:no-simulated-truth-base', 'The live adapter base must not contain simulator fallback, guessed config APIs, bearer-session state, or local persistence.');
+  forbidText(repositoryAdapter, /MockSovereignBackendAdapter|fallbackMock|\/api\/config\/|sessionToken|Authorization:\s*`Bearer|localStorage/, 'adapter:no-simulated-truth', 'The injected repository adapter must not contain simulator fallback, guessed config APIs, bearer-session state, or local persistence.');
 
   requireText(agentClient, /jobPath\(jobId, '\/draft-pr\/prepare'\)/, 'client:draft-prepare-path', 'Canonical client owns the Draft PR prepare path.');
   requireText(agentClient, /jobPath\(jobId, '\/draft-pr\/create'\)/, 'client:draft-create-path', 'Canonical client owns the Draft PR create path.');

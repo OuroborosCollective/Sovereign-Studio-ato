@@ -4,6 +4,7 @@ import {
 } from '../../product/runtime/sovereignAgentClient';
 import {
   resolveSovereignAgentConfig,
+  type SovereignAgentConfig,
   type SovereignAgentJobSnapshot,
   type SovereignWorkspaceEvidenceAnchor,
 } from '../../product/runtime/sovereignAgentRuntime';
@@ -149,6 +150,10 @@ function phaseFromRun(status: string): JobPhase {
   }
 }
 
+function isDirectRepositoryJobId(value: string): boolean {
+  return /^agent-[A-Za-z0-9._-]{1,120}$/.test(value.trim());
+}
+
 function phaseFromJob(snapshot: SovereignAgentJobSnapshot, run: PersistedRun): JobPhase {
   switch (snapshot.status) {
     case 'idle': return phaseFromRun(run.status);
@@ -156,7 +161,7 @@ function phaseFromJob(snapshot: SovereignAgentJobSnapshot, run: PersistedRun): J
     case 'provisioning': return 'PROVISIONING';
     case 'running': return 'EXECUTING';
     case 'waiting-for-user': return 'AWAITING_OWNER_INPUT';
-    case 'validating': return 'FINALIZING';
+    case 'validating': return snapshot.prState === 'ready' ? 'READY_TO_PUBLISH' : 'FINALIZING';
     case 'blocked': return 'BLOCKED';
     case 'failed': return 'FAILED';
     case 'completed':
@@ -220,9 +225,12 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
   private lastPingMs?: number;
   private lastErrorMessage?: string;
 
-  constructor(fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {
+  constructor(
+    fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
+    config: SovereignAgentConfig = resolveSovereignAgentConfig(),
+  ) {
     this.fetcher = fetcher;
-    this.config = resolveSovereignAgentConfig();
+    this.config = config;
     this.client = createSovereignAgentClient({ config: this.config, fetcher });
   }
 
@@ -316,7 +324,46 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
     return run;
   }
 
+  private async getDirectRepositoryJob(jobId: string): Promise<SovereignJob> {
+    const snapshot = await this.client.getJob(jobId);
+    let anchors: SovereignWorkspaceEvidenceAnchor[] = [];
+    try { anchors = await this.client.getEvidenceAnchors(jobId); } catch { anchors = []; }
+    const run: PersistedRun = {
+      runId: jobId,
+      jobId,
+      status: snapshot.status.toUpperCase(),
+      source: 'repository-single-a2a',
+      reason: snapshot.lastError,
+      nextAction: snapshot.prState === 'ready' ? 'create_draft_pr' : undefined,
+    };
+    const phase = phaseFromJob(snapshot, run);
+    const publication = this.publications.get(jobId);
+    const now = new Date().toISOString();
+    return {
+      id: jobId,
+      runId: jobId,
+      backendJobId: jobId,
+      phase: publication ? 'COMPLETED' : phase,
+      createdAt: now,
+      updatedAt: now,
+      sourceStatus: snapshot.status,
+      nextAction: run.nextAction,
+      logs: eventLogs(snapshot, run),
+      workspaceState: {
+        modifiedFiles: snapshot.changedFiles,
+        currentRevision: newestEvidenceRevision(anchors),
+        diffStats: { additions: 0, deletions: 0, filesChanged: snapshot.changedFiles.length },
+      },
+      draftPR: publication,
+      publication: publication ? { draftPR: publication } : undefined,
+      error: phase === 'BLOCKED' || phase === 'FAILED'
+        ? { message: snapshot.lastError || 'Repository execution is blocked.' }
+        : undefined,
+    };
+  }
+
   async getJob(runId: string): Promise<SovereignJob> {
+    if (isDirectRepositoryJobId(runId)) return this.getDirectRepositoryJob(runId);
     const run = await this.getRun(runId);
     let snapshot: SovereignAgentJobSnapshot | undefined;
     let anchors: SovereignWorkspaceEvidenceAnchor[] = [];
@@ -383,6 +430,9 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
   }
 
   async resumeJob(runId: string, interactionId: string, response: string): Promise<void> {
+    if (isDirectRepositoryJobId(runId)) {
+      throw new Error('Single-Agent repository execution has no Swarm resume path; inspect the persisted repository job instead.');
+    }
     const evidence = response.trim();
     if (!evidence) throw new Error('Owner response is required.');
     if (interactionId.startsWith('approval-')) {
@@ -414,15 +464,20 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
   }
 
   async abortJob(runId: string): Promise<void> {
+    if (isDirectRepositoryJobId(runId)) {
+      throw new Error('Agent Zero A2A cancellation is not yet revision-proven; the persisted repository job and external task remain unchanged.');
+    }
     const run = await this.getRun(runId);
     if (!run.jobId) throw new Error('This persisted run has no linked cancellable implementation job.');
     await this.client.cancelJob(run.jobId);
   }
 
   async prepareDraftPr(runId: string): Promise<DraftPrPreparation> {
-    const run = await this.getRun(runId);
-    if (!run.jobId) throw new Error('Draft PR preparation requires a linked implementation job.');
-    const result = await this.client.prepareDraftPr(run.jobId);
+    const jobId = isDirectRepositoryJobId(runId)
+      ? runId
+      : (await this.getRun(runId)).jobId;
+    if (!jobId) throw new Error('Draft PR preparation requires a linked implementation job.');
+    const result = await this.client.prepareDraftPr(jobId);
     return {
       allowed: result.draftPrPreparation.allowed && result.draftPrPreparation.canCreateDraftPr !== false,
       decision: result.draftPrPreparation.decision,
@@ -435,9 +490,11 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
   }
 
   async createDraftPr(runId: string): Promise<DraftPR> {
-    const run = await this.getRun(runId);
-    if (!run.jobId) throw new Error('Draft PR creation requires a linked implementation job.');
-    const prepared = await this.client.prepareDraftPr(run.jobId);
+    const jobId = isDirectRepositoryJobId(runId)
+      ? runId
+      : (await this.getRun(runId)).jobId;
+    if (!jobId) throw new Error('Draft PR creation requires a linked implementation job.');
+    const prepared = await this.client.prepareDraftPr(jobId);
     if (!prepared.ok || !prepared.draftPrPreparation.allowed || prepared.draftPrPreparation.canCreateDraftPr === false) {
       throw new Error(
         prepared.draftPrPreparation.blockers.join('; ')
@@ -446,7 +503,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
         || 'Draft PR gate did not authorize publication.',
       );
     }
-    const created = await this.client.createDraftPr(run.jobId);
+    const created = await this.client.createDraftPr(jobId);
     const publication = mapDraftPr(created);
     this.publications.set(runId, publication);
     return publication;

@@ -9,11 +9,13 @@ function source(relativePath: string): string {
 describe('Sovereign Control Surface vNext truth contract', () => {
   it('keeps every production effect behind the single live HTTP adapter with no simulator fallback', () => {
     const contract = source('src/features/control-surface-vnext/adapter/interface.ts');
-    const adapter = source('src/features/control-surface-vnext/adapter/production-adapter.ts');
+    const adapterBase = source('src/features/control-surface-vnext/adapter/production-adapter.ts');
+    const repositoryAdapter = source('src/features/control-surface-vnext/adapter/repository-bound-adapter.ts');
     const context = source('src/features/control-surface-vnext/adapter/context.tsx');
 
     expect(contract).toContain("mode: 'live_http'");
     expect(contract).toContain('isFallback: false');
+    expect(context).toContain("from './repository-bound-adapter'");
     expect(context).toContain('new SovereignProductionAdapter()');
     for (const forbidden of [
       'MockSovereignBackendAdapter',
@@ -24,24 +26,32 @@ describe('Sovereign Control Surface vNext truth contract', () => {
       'Authorization: `Bearer',
       'localStorage',
     ]) {
-      expect(adapter, `forbidden production-adapter token: ${forbidden}`).not.toContain(forbidden);
+      expect(repositoryAdapter, `forbidden repository-adapter token: ${forbidden}`).not.toContain(forbidden);
+      expect(adapterBase, `forbidden production-adapter token: ${forbidden}`).not.toContain(forbidden);
     }
   });
 
   it('binds the exact persisted-run, linked-job, evidence and Draft-PR contracts already owned by the backend', () => {
-    const adapter = source('src/features/control-surface-vnext/adapter/production-adapter.ts');
+    const repositoryAdapter = source('src/features/control-surface-vnext/adapter/repository-bound-adapter.ts');
+    const adapterBase = source('src/features/control-surface-vnext/adapter/production-adapter.ts');
     const client = source('src/features/product/runtime/sovereignAgentClient.ts');
 
     for (const token of [
-      "'/api/user/agent/swarm/run'",
-      '/api/user/agent/swarm/runs/${encodeURIComponent(requested)}',
+      "'/api/user/agent/repository/run'",
+      "mode: 'free'",
+      "agentMode: 'single'",
+      "intentMode: 'repository_execution'",
+    ]) expect(repositoryAdapter).toContain(token);
+    expect(repositoryAdapter).not.toContain("'/api/user/agent/swarm/run'");
+
+    for (const token of [
       "'/api/user/agent/toolchain/manifest'",
       "'/api/user/agent/swarm/manifest'",
-      'this.client.getJob(run.jobId)',
-      'this.client.getEvidenceAnchors(run.jobId)',
-      'this.client.prepareDraftPr(run.jobId)',
-      'this.client.createDraftPr(run.jobId)',
-    ]) expect(adapter).toContain(token);
+      'this.client.getJob(jobId)',
+      'this.client.getEvidenceAnchors(jobId)',
+      'this.client.prepareDraftPr(jobId)',
+      'this.client.createDraftPr(jobId)',
+    ]) expect(adapterBase).toContain(token);
 
     for (const strictReadback of [
       'draftVerified',
@@ -55,12 +65,12 @@ describe('Sovereign Control Surface vNext truth contract', () => {
   });
 
   it('turns an explicit GitHub repository URL into the backend repository-execution contract instead of free conversation mode', () => {
-    const adapter = source('src/features/control-surface-vnext/adapter/production-adapter.ts');
+    const adapter = source('src/features/control-surface-vnext/adapter/repository-bound-adapter.ts');
     const backend = source('backend/agent_runtime/cognitive_swarm_routes.py');
 
-    expect(adapter).toContain('extractGitHubRepositoryUrl(mission)');
+    expect(adapter).toContain('extractGitHubRepositoryUrl(normalizedMission)');
     expect(adapter).toContain("intentMode: 'repository_execution'");
-    expect(adapter).toContain('repositoryUrl,');
+    expect(adapter).toContain('repositoryUrl: explicitRepositoryUrl');
     expect(adapter).toContain("repositoryBranch: 'main'");
     expect(backend).toContain('if free_profile and selected == "auto":');
     expect(backend).toContain('return "conversation"');
