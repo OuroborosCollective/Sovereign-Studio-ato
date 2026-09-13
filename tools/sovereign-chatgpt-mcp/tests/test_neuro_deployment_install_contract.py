@@ -30,6 +30,8 @@ EXPECTED_NEURO_TOOLS = {
     "teaching_package_assess",
 }
 
+EXPECTED_AGENT_ZERO_TOOLS = {"agent_zero_backend_diagnostics", "agent_zero_a2a_canary"}
+
 EXPECTED_AURION_TOOLS = {
     "aurion_account_role_readback",
     "aurion_account_role_plan",
@@ -160,8 +162,8 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
         'docker compose up -d --no-build --force-recreate --remove-orphans'
     )
 
-    assert 'EXPECTED_MCP_TOOL_COUNT="251"' in script
-    assert 'EXPECTED_MCP_TOOL_COUNT="254"' in script.split('INSTALL_STAGE="configure_private_owner_mode"', 1)[1]
+    assert 'EXPECTED_MCP_TOOL_COUNT="253"' in script
+    assert 'EXPECTED_MCP_TOOL_COUNT="256"' in script.split('INSTALL_STAGE="configure_private_owner_mode"', 1)[1]
     assert 'INSTALL_STAGE="capture_previous_mcp_tool_surface"' in script
     assert 'INSTALL_STAGE="verify_mcp_tool_surface_preservation"' in script
     assert "mcp_tool_contract_registry(include_schemas=True)" in script
@@ -438,13 +440,13 @@ print(json.dumps({
     )
     assert registry_process.returncode == 0, registry_process.stderr
     current_registry = json.loads(registry_process.stdout.strip().splitlines()[-1])
-    assert current_registry["toolCount"] == 254
+    assert current_registry["toolCount"] == 256
 
     predecessor_registry = json.loads(json.dumps(current_registry))
     predecessor_registry["tools"] = [
         item
         for item in predecessor_registry["tools"]
-        if item["name"] not in EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS | {"n8n_workflow_plan", "n8n_workflow_apply"}
+        if item["name"] not in EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS | EXPECTED_AGENT_ZERO_TOOLS | {"n8n_workflow_plan", "n8n_workflow_apply"}
     ]
     predecessor_registry["toolCount"] = len(predecessor_registry["tools"])
     predecessor_registry["registrySnapshotSha256"] = "0" * 64
@@ -514,7 +516,7 @@ print(json.dumps({
             str(predecessor_path),
             str(current_path),
             "1",
-            "254",
+            "256",
         ],
         capture_output=True,
         text=True,
@@ -523,7 +525,7 @@ print(json.dumps({
     )
     assert compatibility.returncode == 0, compatibility.stderr
     compatibility_receipt = json.loads(compatibility.stdout.strip().splitlines()[-1])
-    assert set(compatibility_receipt["additions"]) == EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS
+    assert set(compatibility_receipt["additions"]) == EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS | EXPECTED_AGENT_ZERO_TOOLS
     assert set(compatibility_receipt["changedCompatibleContracts"]) == (
         EXPECTED_COMPATIBLE_PREDECESSOR_DRIFT
     )
@@ -550,7 +552,7 @@ print(json.dumps({
             str(predecessor_path),
             str(incompatible_path),
             "1",
-            "254",
+            "256",
         ],
         capture_output=True,
         text=True,
@@ -590,7 +592,7 @@ print(json.dumps({
             str(property_predecessor_path),
             str(property_replacement_path),
             "1",
-            "254",
+            "256",
         ],
         capture_output=True,
         text=True,
@@ -626,7 +628,7 @@ print(json.dumps({
             str(one_of_predecessor_path),
             str(one_of_replacement_path),
             "1",
-            "254",
+            "256",
         ],
         capture_output=True,
         text=True,
@@ -670,7 +672,7 @@ print(json.dumps({
             str(output_predecessor_path),
             str(output_replacement_path),
             "1",
-            "254",
+            "256",
         ],
         capture_output=True,
         text=True,
@@ -714,7 +716,7 @@ print(json.dumps({
                 str(old_path),
                 str(new_path),
                 "1",
-                "254",
+                "256",
             ],
             capture_output=True,
             text=True,
@@ -843,7 +845,7 @@ print(json.dumps({
             str(predecessor_path),
             str(description_path),
             "1",
-            "254",
+            "256",
         ],
         capture_output=True,
         text=True,
@@ -998,7 +1000,7 @@ def test_installer_runs_a_clean_real_registry_neuro_canary_without_selected_tool
     assert '"allowed_effects": ["read"]' in canary
     assert '[contract["name"] for contract in selected_contracts] == ["mcp_self_update_status"]' in canary
     assert 'registered_tool.fn = forbidden_selected_tool_call' in canary
-    assert 'assert len(set(guarded_tool_names)) == 249' in canary
+    assert 'assert len(set(guarded_tool_names)) == 251' in canary
     assert '__sovereign_success_tracking__' in canary
     assert '__sovereign_operating_profile_wrapped__' in canary
     assert 'guarded_tool_calls == []' in canary
@@ -1097,14 +1099,14 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
     assert receipt == {
         "canonicalReadbackVerified": True,
         "commitReplayVerified": True,
-        "guardedPredecessorToolCount": 249,
+        "guardedPredecessorToolCount": 251,
         "isolatedStateCleaned": True,
         "previewProposalOnly": True,
         "persistedOutcomeTools": ["neuro_event_commit"],
         "quarantineNoMutation": True,
         "readOnlyCallsPersisted": False,
         "registeredToolSurfaceVerified": True,
-        "registryToolCount": 254,
+        "registryToolCount": 256,
         "selectedToolsExecuted": False,
         "status": "NEURO_DEPLOYMENT_CANARY_VERIFIED",
         "tamperDetected": True,
@@ -1146,6 +1148,42 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
     assert "Traceback" not in (failed.stdout + failed.stderr)
 
 
+def test_exact_ci_launcher_import_runs_with_the_default_registry(tmp_path: Path) -> None:
+    workflow = yaml.safe_load(WORKFLOW.read_text("utf-8"))
+    steps = workflow["jobs"]["validate"]["steps"]
+    step = next(item for item in steps if item.get("name") == "Import MCP launcher and inspect contracts")
+    embedded = step["run"].split("python - <<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+    environment = {
+        **os.environ,
+        "SOVEREIGN_MCP_GITHUB_APP_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE": "",
+        "PYTHONPATH": str(ROOT),
+        "SOVEREIGN_MCP_ENABLE_AURION_OPERATOR": "0",
+        "SOVEREIGN_MCP_ENABLE_AURION_WRITE": "0",
+        "SOVEREIGN_NEURO_RUNTIME_TRACKING_ENABLED": "0",
+        "SOVEREIGN_MCP_WORKSPACE_ROOT": str(tmp_path / "workspaces"),
+        "SOVEREIGN_TOOL_RANKING_STATE_ROOT": str(tmp_path / "tool-ranking"),
+        "SOVEREIGN_NEURO_RUNTIME_STATE_ROOT": str(tmp_path / "neuro-runtime"),
+        "SOVEREIGN_MCP_HOST": "127.0.0.1",
+        "SOVEREIGN_MCP_PORT": "8090",
+        "SOVEREIGN_MCP_REPOSITORY": "OuroborosCollective/Sovereign-Studio-ato",
+        "SOVEREIGN_ANDROID_NATIVE_BUILD_MODE": "github_actions",
+        "SOVEREIGN_KAPPA_POS": "1000000",
+    }
+    completed = subprocess.run(
+        [sys.executable, "-c", embedded],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr[-4000:]
+    assert "self-update contracts passed." in completed.stdout
+
+
 def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Path) -> None:
     workflow = WORKFLOW.read_text("utf-8")
     remote_install = REMOTE_INSTALL.read_text("utf-8")
@@ -1165,10 +1203,10 @@ def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Pa
         "skills/sovereign-neuro-teaching-runtime/SKILL.md",
     ):
         assert path in workflow
-    assert "assert len(tool_names) == 251" in workflow
+    assert "assert len(tool_names) == 253" in workflow
     assert "n8n_workflow_plan" in deployment_surface
     assert "n8n_workflow_apply" in deployment_surface
-    assert "assert len(tool_names - expected_tools) == 249" in deployment_surface
+    assert "assert len(tool_names - expected_tools) == 251" in deployment_surface
     assert "SOVEREIGN_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow
     assert workflow.count("ref: ${{ env.SOVEREIGN_SOURCE_REVISION }}") == 2
     assert '--expected-head "${SOVEREIGN_SOURCE_REVISION}"' in workflow

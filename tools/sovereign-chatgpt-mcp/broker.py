@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from admin_mode import PrivateAdminRuntime
+from agent_zero_diagnostics import AgentZeroDiagnosticsRuntime
 from aurion_operator import AurionOperatorRuntime
 from browserless_reader import BrowserlessReplayReader
 from command_contract import (
@@ -55,6 +56,7 @@ class BrokerRuntime:
             "ghcr.io/ouroboroscollective/sovereign-backend",
         ).strip()
         self.operations = OperationsRuntime()
+        self.agent_zero_diagnostics = AgentZeroDiagnosticsRuntime()
         self.browserless = BrowserlessReplayReader()
         self.document_pipeline = DocumentPipelineRuntime()
         self.github_knowledge = GitHubKnowledgeCanaryRuntime()
@@ -489,6 +491,17 @@ class BrokerRuntime:
                 "status": "HOST_WORKER_READY",
                 "execution_origin": execution_origin,
             },
+            "agent_zero_backend_diagnostics": lambda values: self.agent_zero_diagnostics.inspect(
+                expected_revision=str(values.get("expected_revision") or ""),
+                expected_image_digest=str(values.get("expected_image_digest") or ""),
+            ),
+            "agent_zero_a2a_canary": lambda values: self.agent_zero_diagnostics.canary(
+                expected_revision=str(values.get("expected_revision") or ""),
+                expected_image_digest=str(values.get("expected_image_digest") or ""),
+                operation_id=str(values.get("operation_id") or ""),
+                action=str(values.get("action") or "submit"),
+                owner_approved=values.get("owner_approved") is True,
+            ),
             "container_status": self.container_status,
             "container_logs": self.container_logs,
             "fleet_filebrowser_retirement_plan": lambda _values: self.fleet_maintenance.filebrowser_retirement_plan(),

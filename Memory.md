@@ -382,3 +382,10 @@ Evidence: PR #1925 pre-Memory head `9b4f2d2166306279d3bed88ba7739b35f60bdd5b`; S
 Learned: Prompt text must not decide repository capability when the product already owns a repository context; otherwise a valid mutation request deterministically collapses to conversation.
 Open: Agent Zero A2A/shared-workspace execution, deterministic backend closeout and the real UI-to-GitHub Draft-PR proof remain separate runtime obligations.
 Next safe step: Re-run relevant gates on the Memory-appended head, merge #1925, then integrate Agent Zero A2A against the shared Sovereign workspace and prove one real Draft PR before scaling to 5/5.
+
+### 2026-09-13 — Bounded Agent Zero operator diagnostics (#1935)
+Status: CI_VERIFIED; production diagnostics and product E2E pending.
+Änderung: Zwei feste Broker-/Host-Tools für Backend-Prozess-/Key-Readback und A2A-Submit/Poll mit dauerhaftem Claim vor Submit und ohne Resubmit bei unbekanntem Ausgang; Installer-/Registry-Verträge aktualisiert und Browser-Smoke an den bereits gemergten #1925-Request gebunden.
+Erkenntnis: Default- und optionale private Registry sind getrennte Verträge (253/256 Tools); Paketmetadaten und gesunde Container beweisen weder geladene Servermodule noch einen erfolgreichen A2A-Task.
+Evidence: Code-Head `db01156a9f863c5bbb8c358954e81bdf61fafcef`; MCP `34728550936` mit 1041 passed/12 skipped, Launcher-Import und Container-Build erfolgreich; Release Verification `34728529691` einschließlich Playwright und Integration Gate sowie Agent Runtime `34728529729` erfolgreich. PatchMon-Readback: 4/4 gesund, HTTP 200, bestehendes Backend-Image `sha256:1642ac13ebf26580a6211c91e9faf39b007a322d2e42033b48b44e7223660524`.
+Offen: Exakte Checks nach diesem Eintrag, explizite Operator-Release-Freigabe, immutable Deployment und Registry-/Prozess-/HTTP-Readback; #1930 bleibt auf `06bc26fdb2ff62be4cadb73a94dc358210dfa511` ohne finalen Memory-Eintrag oder Merge bis zur vollständigen Live-/Five-Path-Evidence.
