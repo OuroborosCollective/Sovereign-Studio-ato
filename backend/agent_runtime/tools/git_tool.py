@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import ToolBase, ToolResult, ToolPolicyError
+from ..git_environment import workspace_git_environment
 
 
 def _run_git(args: list[str], cwd: str | Path, timeout: int = 60) -> tuple[int, str, str]:
@@ -22,6 +23,7 @@ def _run_git(args: list[str], cwd: str | Path, timeout: int = 60) -> tuple[int, 
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=None if args and args[0] == "clone" else workspace_git_environment(cwd),
         )
         return result.returncode, result.stdout, result.stderr
     except subprocess.TimeoutExpired:

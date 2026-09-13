@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import ToolBase, ToolResult, ToolPolicyError
+from ..git_environment import workspace_git_environment
 
 
 class TestTool(ToolBase):
@@ -62,21 +63,22 @@ class TestTool(ToolBase):
         timeout = min(params.get("timeout", 120), 600)
         verbose = params.get("verbose", True)
 
-        work_dir = Path(workspace_path)
+        workspace_root = Path(workspace_path).resolve()
+        work_dir = workspace_root
         if test_path:
             work_dir = work_dir / test_path
             work_dir = work_dir.resolve()
-            if not str(work_dir).startswith(str(Path(workspace_path).resolve())):
+            if not work_dir.is_relative_to(workspace_root):
                 return ToolResult(
                     status="blocked",
                     blocker="Test path outside workspace",
                 )
 
         if command:
-            return self._run_custom_command(command, str(work_dir), timeout, verbose)
+            return self._run_custom_command(command, str(work_dir), timeout, verbose, workspace_root=str(workspace_root))
 
         if framework:
-            return self._run_framework(framework, str(work_dir), timeout, verbose)
+            return self._run_framework(framework, str(work_dir), timeout, verbose, workspace_root=str(workspace_root))
 
         detected = self._detect_framework(workspace_path)
         if not detected:
@@ -85,7 +87,7 @@ class TestTool(ToolBase):
                 blocker="No test framework detected. Specify 'command' or 'framework' parameter.",
             )
 
-        return self._run_framework(detected, str(work_dir), timeout, verbose)
+        return self._run_framework(detected, str(work_dir), timeout, verbose, workspace_root=str(workspace_root))
 
     def _detect_framework(self, workspace_path: str) -> str | None:
         """Auto-detect test framework from project files."""
@@ -129,6 +131,8 @@ class TestTool(ToolBase):
         cwd: str,
         timeout: int,
         verbose: bool,
+        *,
+        workspace_root: str | None = None,
     ) -> ToolResult:
         """Run tests with a specific framework."""
         framework = framework.lower()
@@ -155,7 +159,7 @@ class TestTool(ToolBase):
                 blocker=f"Unknown test framework: {framework}",
             )
 
-        return self._run_command(args, cwd, timeout)
+        return self._run_command(args, cwd, timeout, workspace_root=workspace_root)
 
     def _run_custom_command(
         self,
@@ -163,6 +167,8 @@ class TestTool(ToolBase):
         cwd: str,
         timeout: int,
         verbose: bool,
+        *,
+        workspace_root: str | None = None,
     ) -> ToolResult:
         """Run one allowlisted test command without a shell."""
         try:
@@ -206,10 +212,10 @@ class TestTool(ToolBase):
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                env={
-                    "PATH": os.environ.get("PATH", ""),
-                    "FORCE_COLOR": "0",
-                },
+                env=workspace_git_environment(
+                    workspace_root or cwd,
+                    base_env={"PATH": os.environ.get("PATH", ""), "FORCE_COLOR": "0"},
+                ),
             )
 
             output = result.stdout + "\n" + result.stderr if result.stderr else result.stdout
@@ -246,6 +252,8 @@ class TestTool(ToolBase):
         args: list[str],
         cwd: str,
         timeout: int,
+        *,
+        workspace_root: str | None = None,
     ) -> ToolResult:
         """Run a test command with arguments."""
         try:
@@ -255,10 +263,10 @@ class TestTool(ToolBase):
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                env={
-                    "PATH": os.environ.get("PATH", ""),
-                    "FORCE_COLOR": "0",
-                },
+                env=workspace_git_environment(
+                    workspace_root or cwd,
+                    base_env={"PATH": os.environ.get("PATH", ""), "FORCE_COLOR": "0"},
+                ),
             )
 
             output = result.stdout + "\n" + result.stderr if result.stderr else result.stdout
