@@ -49,9 +49,10 @@ describe('ChatLayoutTemplates Palette Accessibility', () => {
   });
 
   it('FloatingChatLayout Clear Input button has aria-label and title', () => {
-    // Need input value to show clear button
-    // But input is internal state. We might need a more complex test or trust the manual verification.
-    // Let's try to find it by name if we can mock the internal state or just rely on the other tests.
+    render(<ChatLayoutTemplates {...baseProps} layout="floating" />);
+    const clearButton = screen.getByRole('button', { name: /Clear conversation/i });
+    expect(clearButton).toHaveAttribute('aria-label', 'Clear conversation');
+    expect(clearButton).toHaveAttribute('title', 'Clear conversation');
   });
 
   it('TerminalChatLayout Send button has aria-label and title', () => {
