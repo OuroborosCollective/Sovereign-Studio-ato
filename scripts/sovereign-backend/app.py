@@ -89,7 +89,6 @@ from agent_runtime.desktop_control import DesktopControlGatewayV1
 from agent_runtime.desktop_projection import DesktopFrameProxyV1
 from agent_runtime.live_workspace_context import build_live_workspace_context_resolver
 from agent_runtime.contracts import sanitize_agent_text
-from agent_runtime.repository_execution import start_repository_reconciler
 from agent_runtime.routes import register_sovereign_agent_routes
 from agent_runtime.skills.routes import register_progressive_skill_routes
 from are_inference import register_are_inference_routes
@@ -1724,14 +1723,6 @@ register_sovereign_agent_routes(
     ),
     desktop_frame_allowed=lambda context: DesktopControlGatewayV1.from_env().frame_allowed(context=context),
     get_session_github_token=_session_github_token_for_user,
-)
-start_repository_reconciler(
-    get_connection=get_agent_runtime_connection,
-    workspace_root=(
-        Path(os.environ["SOVEREIGN_AGENT_WORKSPACE_ROOT"])
-        if os.getenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", "").strip()
-        else None
-    ),
 )
 register_cognitive_swarm_routes(
     app,
