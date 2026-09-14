@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 import sys
@@ -467,3 +468,93 @@ def test_all_closeout_evidence_allows_prepare_but_never_creates_pr(monkeypatch):
     assert result.changed_files == changed
     assert result.draft_pr_url is None
     assert result.pr_url is None
+
+def test_active_task_stalls_fail_closed_after_bounded_window(monkeypatch):
+    stale = replace(
+        _job(),
+        updated_at=datetime.now(timezone.utc) - timedelta(seconds=601),
+    )
+    state = _patch_job_store(monkeypatch, stale)
+    monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
+
+    class Client:
+        def get_task(self, task_id):
+            assert task_id == "task-original"
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+
+    result = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id="owner-test",
+        job_id="agent-test",
+        a2a_client_factory=Client,
+    )
+
+    assert result is not None
+    assert result.status == "blocked"
+    assert "AGENT_ZERO_A2A_STALLED" in (result.blocker or "")
+    assert any(event.stage == "agent_zero_a2a_task_stalled" for event in state["events"])
+
+
+def test_fresh_active_task_remains_running(monkeypatch):
+    fresh = replace(_job(), updated_at=datetime.now(timezone.utc))
+    _patch_job_store(monkeypatch, fresh)
+    monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
+
+    class Client:
+        def get_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+
+    result = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id="owner-test",
+        job_id="agent-test",
+        a2a_client_factory=Client,
+    )
+
+    assert result is not None
+    assert result.status == "running"
+
+
+def test_server_reconciler_processes_bound_job_without_client_polling(monkeypatch):
+    candidate = _job()
+    connections = []
+    observed = []
+
+    class Conn:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    def factory():
+        conn = Conn()
+        connections.append(conn)
+        return conn
+
+    monkeypatch.setattr(
+        repository_execution,
+        "list_reconcilable_repository_jobs",
+        lambda _conn, *, limit=50: (candidate,),
+    )
+
+    def reconcile(_conn, *, user_id, job_id, workspace_root=None, a2a_client_factory=None):
+        observed.append((user_id, job_id, workspace_root))
+        return candidate
+
+    monkeypatch.setattr(repository_execution, "reconcile_repository_execution", reconcile)
+
+    summary = repository_execution.reconcile_repository_jobs_once(
+        get_connection=factory,
+        workspace_root=Path("/tmp/server-owned-reconcile"),
+    )
+
+    assert summary == {
+        "scanned": 1,
+        "reconciled": 1,
+        "transientFailures": 0,
+        "unexpectedFailures": 0,
+    }
+    assert observed == [("owner-test", "agent-test", Path("/tmp/server-owned-reconcile"))]
+    assert len(connections) == 2
+    assert all(conn.closed for conn in connections)

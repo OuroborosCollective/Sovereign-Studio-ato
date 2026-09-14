@@ -42,6 +42,8 @@ class StoredSovereignAgentJob:
     commit_message: str | None = None
     pr_url: str | None = None
     pr_state: str | None = None
+    created_at: Any | None = None
+    updated_at: Any | None = None
 
 
 def _json(value: Any) -> str:
@@ -105,6 +107,8 @@ def stored_job_from_row(row: Mapping[str, Any]) -> StoredSovereignAgentJob:
         commit_message=row.get("commit_message"),
         pr_url=row.get("pr_url"),
         pr_state=row.get("pr_state"),
+        created_at=row.get("created_at"),
+        updated_at=row.get("updated_at"),
     )
 
 
@@ -594,6 +598,35 @@ def list_agent_jobs(conn: Any, *, user_id: str, limit: int = 20) -> tuple[Stored
             LIMIT %s
             """,
             (user_id, safe_limit),
+        )
+        rows = cur.fetchall()
+    return tuple(stored_job_from_row(row) for row in rows)
+
+
+def list_reconcilable_repository_jobs(
+    conn: Any,
+    *,
+    limit: int = 50,
+) -> tuple[StoredSovereignAgentJob, ...]:
+    """List server-owned running Agent Zero repository jobs across users.
+
+    This is an internal worker query, not a user-facing read boundary. Claim refs
+    are excluded because their side-effect owner must finish or require operator
+    recovery; blindly reconciling a claim could duplicate an external effect.
+    """
+
+    safe_limit = max(1, min(int(limit), 200))
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT * FROM sovereign_agent_jobs
+            WHERE status = 'running'
+              AND external_ref LIKE 'agent-zero-a2a:%'
+              AND external_ref NOT LIKE 'agent-zero-a2a:claim:%'
+            ORDER BY updated_at ASC, job_id ASC
+            LIMIT %s
+            """,
+            (safe_limit,),
         )
         rows = cur.fetchall()
     return tuple(stored_job_from_row(row) for row in rows)

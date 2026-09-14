@@ -7,10 +7,14 @@ gates. Agent Zero is one bounded external implementation worker only.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import hashlib
+import logging
 import os
 from pathlib import Path
 import re
+import threading
+import time
 from typing import Any, Callable, Final
 import uuid
 
@@ -29,6 +33,7 @@ from .job_store import (
     StoredSovereignAgentJob,
     append_agent_event,
     compare_and_swap_agent_job_external_ref,
+    list_reconcilable_repository_jobs,
     mark_draft_pr_prepared,
     read_agent_job,
     update_agent_job_state,
@@ -61,6 +66,9 @@ _ALLOWED_REGRESSION_PREFIXES: Final[tuple[tuple[str, ...], ...]] = (
     ("cargo", "test"),
 )
 _SHELL_CONTROL_TOKENS: Final[frozenset[str]] = frozenset({"||", ";", "|", ">", ">>", "<", "<<", "&"})
+_RECONCILER_THREAD_LOCK = threading.Lock()
+_RECONCILER_THREAD: threading.Thread | None = None
+_LOGGER = logging.getLogger(__name__)
 
 
 class RepositoryExecutionError(RuntimeError):
@@ -69,6 +77,31 @@ class RepositoryExecutionError(RuntimeError):
 
 class RepositoryExecutionTransientError(RepositoryExecutionError):
     """A readback failed but no executor side effect may be repeated."""
+
+
+def _bounded_env_seconds(name: str, default: float, minimum: float, maximum: float) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(value, maximum))
+
+
+def _repository_reconciler_poll_seconds() -> float:
+    return _bounded_env_seconds("SOVEREIGN_REPOSITORY_RECONCILER_POLL_SECONDS", 2.0, 0.5, 30.0)
+
+
+def _repository_stall_seconds() -> float:
+    return _bounded_env_seconds("SOVEREIGN_REPOSITORY_STALL_SECONDS", 1800.0, 300.0, 86400.0)
+
+
+def _job_age_seconds(job: StoredSovereignAgentJob) -> float | None:
+    observed = job.updated_at or job.created_at
+    if not isinstance(observed, datetime):
+        return None
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=timezone.utc)
+    return max(0.0, (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds())
 
 
 def _configured_repository_url() -> str:
@@ -523,6 +556,18 @@ def reconcile_repository_execution(
         ) from exc
 
     if task.active:
+        age_seconds = _job_age_seconds(job)
+        if age_seconds is not None and age_seconds >= _repository_stall_seconds():
+            return _block_job(
+                conn,
+                job,
+                (
+                    "AGENT_ZERO_A2A_STALLED: the external task remained active beyond the "
+                    "bounded server reconciliation window; workspace publication is quarantined "
+                    "and automatic resubmit is forbidden."
+                ),
+                "agent_zero_a2a_task_stalled",
+            )
         return job
     if task.interrupted:
         return _block_job(
@@ -562,3 +607,100 @@ def reconcile_repository_execution(
         bound_ref=external_ref,
         workspace_root=workspace_root,
     )
+
+def _close_reconciler_connection(conn: Any) -> None:
+    close = getattr(conn, "close", None)
+    if callable(close):
+        close()
+
+
+def reconcile_repository_jobs_once(
+    *,
+    get_connection: ConnectionFactory,
+    workspace_root: Path | None = None,
+    limit: int = 50,
+) -> dict[str, int]:
+    """Reconcile persisted A2A repository jobs without any client polling.
+
+    The scan only discovers already-bound tasks. ``reconcile_repository_execution``
+    retains the CAS ownership for retry and closeout, so this worker cannot create a
+    second Agent Zero task or duplicate Draft-PR preparation.
+    """
+
+    listing_conn = get_connection()
+    try:
+        candidates = list_reconcilable_repository_jobs(listing_conn, limit=limit)
+    finally:
+        _close_reconciler_connection(listing_conn)
+
+    reconciled = 0
+    transient_failures = 0
+    unexpected_failures = 0
+    for candidate in candidates:
+        conn = get_connection()
+        try:
+            reconcile_repository_execution(
+                conn,
+                user_id=candidate.user_id,
+                job_id=candidate.job_id,
+                workspace_root=workspace_root,
+            )
+            reconciled += 1
+        except RepositoryExecutionTransientError:
+            transient_failures += 1
+        except Exception as exc:  # keep the daemon alive; no secret-shaped payload is logged
+            unexpected_failures += 1
+            _LOGGER.warning(
+                "repository A2A reconcile failed job=%s type=%s",
+                candidate.job_id,
+                type(exc).__name__,
+            )
+        finally:
+            _close_reconciler_connection(conn)
+    return {
+        "scanned": len(candidates),
+        "reconciled": reconciled,
+        "transientFailures": transient_failures,
+        "unexpectedFailures": unexpected_failures,
+    }
+
+
+def start_repository_reconciler(
+    *,
+    get_connection: ConnectionFactory,
+    workspace_root: Path | None = None,
+) -> bool:
+    """Start one process-local daemon that owns A2A lifecycle reconciliation.
+
+    Multiple backend processes remain safe: active-task reads are side-effect free
+    and every retry/closeout effect is still protected by the existing persisted
+    ``external_ref`` compare-and-swap boundary. On process restart the fresh daemon
+    scans the database again, so client presence is never required for completion.
+    """
+
+    global _RECONCILER_THREAD
+    with _RECONCILER_THREAD_LOCK:
+        if _RECONCILER_THREAD is not None and _RECONCILER_THREAD.is_alive():
+            return False
+
+        def loop() -> None:
+            while True:
+                try:
+                    reconcile_repository_jobs_once(
+                        get_connection=get_connection,
+                        workspace_root=workspace_root,
+                    )
+                except Exception as exc:
+                    _LOGGER.warning(
+                        "repository A2A reconcile cycle failed type=%s",
+                        type(exc).__name__,
+                    )
+                time.sleep(_repository_reconciler_poll_seconds())
+
+        _RECONCILER_THREAD = threading.Thread(
+            target=loop,
+            name="sovereign-repository-a2a-reconciler",
+            daemon=True,
+        )
+        _RECONCILER_THREAD.start()
+        return True
