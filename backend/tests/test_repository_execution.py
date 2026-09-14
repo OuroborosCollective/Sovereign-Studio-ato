@@ -19,6 +19,7 @@ from agent_runtime.agent_zero_a2a import (  # noqa: E402
 from agent_runtime.job_store import (  # noqa: E402
     StoredSovereignAgentJob,
     compare_and_swap_agent_job_external_ref,
+    list_reconcilable_repository_jobs,
 )
 import agent_runtime.repository_execution as repository_execution  # noqa: E402
 
@@ -558,3 +559,28 @@ def test_server_reconciler_processes_bound_job_without_client_polling(monkeypatc
     assert observed == [("owner-test", "agent-test", Path("/tmp/server-owned-reconcile"))]
     assert len(connections) == 2
     assert all(conn.closed for conn in connections)
+
+
+class _PyformatCursor:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, sql, params):
+        rendered = sql % tuple(params)
+        assert "LIKE 'agent-zero-a2a:%'" in rendered
+        assert "NOT LIKE 'agent-zero-a2a:claim:%'" in rendered
+
+    def fetchall(self):
+        return []
+
+
+class _PyformatConnection:
+    def cursor(self):
+        return _PyformatCursor()
+
+
+def test_reconcilable_job_query_escapes_like_wildcards_for_pyformat_driver():
+    assert list_reconcilable_repository_jobs(_PyformatConnection()) == ()
