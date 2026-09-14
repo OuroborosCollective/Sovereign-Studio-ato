@@ -137,8 +137,13 @@ def build_repository_task_prompt(*, workspace_id: str, mission: str) -> str:
         f"Use only this already-cloned shared repository workspace: {workspace}\n"
         "Do not clone or replace the repository. Do not push to GitHub, create or merge a PR, deploy, "
         "mutate a database, inspect or disclose secrets, or claim Sovereign evidence/success. "
-        "You may read and modify files only inside the stated workspace and may run local implementation tools/tests there. "
-        "Keep the change bounded to the mission. Leave all GitHub publication, evidence verdicts and completion decisions to Sovereign.\n\n"
+        "First verify that the stated workspace exists and is the requested Git worktree; if it is unavailable, "
+        "stop immediately with SOVEREIGN_WORKSPACE_UNAVAILABLE and do not retry or search for another checkout. "
+        "Read only files needed for the requested mutation and write only inside the stated workspace. "
+        "Do not install dependencies or run tests, builds, linters, audits, package managers or other validation, even when the mission mentions them; "
+        "Sovereign owns all regression, janitor and evidence gates after your workspace mutation. "
+        "Once the requested file changes are saved, stop immediately and return a concise completion message. "
+        "Leave all GitHub publication, evidence verdicts and completion decisions to Sovereign.\n\n"
         f"Mission:\n{clean_mission}"
     )
 

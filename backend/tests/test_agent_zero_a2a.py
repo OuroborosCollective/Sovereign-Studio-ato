@@ -72,6 +72,10 @@ def test_submit_sets_both_auth_headers_keeps_secret_out_of_body_and_is_nonblocki
     assert "/a0/sovereign-workspaces/agent-workspace-123/repo" in prompt
     assert "Do not clone" in prompt
     assert "Do not push to GitHub" in prompt
+    assert "SOVEREIGN_WORKSPACE_UNAVAILABLE" in prompt
+    assert "Do not install dependencies or run tests, builds, linters, audits, package managers" in prompt
+    assert "Sovereign owns all regression, janitor and evidence gates" in prompt
+    assert "Once the requested file changes are saved, stop immediately" in prompt
 
 
 def test_tasks_get_validates_exact_task_identity_and_state(monkeypatch, tmp_path: Path):
