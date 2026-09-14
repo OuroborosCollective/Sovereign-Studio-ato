@@ -107,6 +107,12 @@ describe('maskSecrets', () => {
     expect(maskSecrets('master_password=master_pass_101')).toBe('master_password=****');
     expect(maskSecrets('master_key: master_key_val_202')).toBe('master_key: ****');
     expect(maskSecrets('secret_key=secret_key_val_303')).toBe('secret_key=****');
+    expect(maskSecrets('encryption_secret: enc_secret_val_404')).toBe('encryption_secret: ****');
+    expect(maskSecrets('cipher_key=cipher_key_val_505')).toBe('cipher_key=****');
+    expect(maskSecrets('deploy_key: deploy_key_val_606')).toBe('deploy_key: ****');
+    expect(maskSecrets('encryption_key=encryption_key_val_707')).toBe('encryption_key=****');
+    expect(maskSecrets('bot_token: bot_token_val_808')).toBe('bot_token: ****');
+    expect(maskSecrets('passphrase=passphrase_val_909')).toBe('passphrase=****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
