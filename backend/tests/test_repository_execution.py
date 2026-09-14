@@ -257,12 +257,19 @@ def _failed_tool(reason="failed"):
     )
 
 
-def _patch_closeout_baseline(monkeypatch, *, janitor_metadata=None, test_result=None, gate=None):
+def _patch_closeout_baseline(
+    monkeypatch,
+    *,
+    janitor_metadata=None,
+    test_result=None,
+    gate=None,
+    changed_files=("backend/agent_runtime/example.py",),
+):
     state = _patch_job_store(
         monkeypatch,
         _job(external_ref="agent-zero-a2a:claim:closeout:a:test"),
     )
-    changed = ("backend/agent_runtime/example.py",)
+    changed = tuple(changed_files)
 
     def tool(_job_value, action, _params, _root):
         if action == "git-status":
@@ -366,6 +373,47 @@ def test_closeout_blocks_on_critical_janitor_finding(monkeypatch):
 
     assert result.status == "blocked"
     assert "critical repository defect" in (result.blocker or "")
+
+
+def test_closeout_documentation_only_uses_real_diff_regression_instead_of_node_toolchain(monkeypatch):
+    state, _changed = _patch_closeout_baseline(
+        monkeypatch,
+        changed_files=("README.md",),
+        janitor_metadata={
+            "severityCounts": {},
+            "recommendedTestCommand": "pnpm test",
+        },
+    )
+    observed_commands: list[str] = []
+    original_tool = repository_execution.run_agent_job_tool
+
+    def tool(job_value, action, params, root):
+        if action == "test":
+            observed_commands.append(str(params.get("command") or ""))
+            return _done_tool(output="diff clean")
+        return original_tool(job_value, action, params, root)
+
+    monkeypatch.setattr(repository_execution, "run_agent_job_tool", tool)
+    monkeypatch.setattr(repository_execution, "draft_pr_input_from_job", lambda job: job)
+    monkeypatch.setattr(
+        repository_execution,
+        "prepare_draft_pr",
+        lambda _input: SimpleNamespace(
+            allowed=True,
+            blockers=(),
+            summary="ready",
+            head_branch="sovereign/agent-test",
+            base_branch="main",
+            title="Draft: test",
+            body="evidence",
+        ),
+    )
+    monkeypatch.setattr(repository_execution, "mark_draft_pr_prepared", lambda *_args, **_kwargs: None)
+
+    result = _run_closeout(state)
+
+    assert result.status == "running"
+    assert observed_commands == ["git diff --check"]
 
 
 def test_closeout_splits_janitor_shell_combination_and_never_executes_control_token(monkeypatch):
