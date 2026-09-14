@@ -25,10 +25,15 @@ export const RepoFileIntegrityMatrix = memo(({ files, limit = 80 }: RepoFileInte
   );
 
   return (
-    <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
+    <section
+      className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200"
+      aria-labelledby="repo-file-integrity-heading"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="font-bold">Repo File Integrity Matrix</h2>
+          <h2 id="repo-file-integrity-heading" className="font-bold">
+            Repo File Integrity Matrix
+          </h2>
           <p className="text-xs text-slate-400">{summarizeFileIntegrity(results)}</p>
         </div>
         <span className="rounded bg-slate-900 px-2 py-1 text-[11px] text-slate-400">path-only, not content scan</span>
@@ -37,7 +42,12 @@ export const RepoFileIntegrityMatrix = memo(({ files, limit = 80 }: RepoFileInte
       {results.length === 0 ? (
         <p className="mt-3 text-xs text-slate-500">Load a repository to inspect file risk markers.</p>
       ) : (
-        <div className="mt-3 max-h-96 overflow-auto rounded border border-slate-800">
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label="File Integrity Matrix Table"
+          className="mt-3 max-h-96 overflow-auto rounded border border-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+        >
           <table className="w-full border-collapse text-left text-xs">
             <thead className="sticky top-0 bg-slate-900 text-slate-400">
               <tr>
@@ -51,7 +61,13 @@ export const RepoFileIntegrityMatrix = memo(({ files, limit = 80 }: RepoFileInte
             <tbody>
               {results.map((file) => (
                 <tr key={file.path} className="border-t border-slate-800">
-                  <td className={`p-2 font-bold uppercase ${riskClass(file.riskLevel)}`}>{file.riskLevel}</td>
+                  <td
+                    className={`p-2 font-bold uppercase ${riskClass(file.riskLevel)}`}
+                    aria-label={`Risk level: ${file.riskLevel}`}
+                    title={`Risk level: ${file.riskLevel.toUpperCase()}`}
+                  >
+                    {file.riskLevel}
+                  </td>
                   <td className="p-2 font-mono">{file.score}</td>
                   <td className="p-2">
                     <div className="font-bold text-slate-100">{file.fileName}</div>

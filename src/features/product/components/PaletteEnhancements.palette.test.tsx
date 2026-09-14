@@ -23,6 +23,7 @@ import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
 import { TestRunnerResultCard } from './TestRunnerResultCard';
+import { RepoFileIntegrityMatrix } from './RepoFileIntegrityMatrix';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1155,6 +1156,32 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(repairBtn);
       expect(onRepair).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('RepoFileIntegrityMatrix Enhancements', () => {
+    it('renders section with aria-labelledby and keyboard navigable table region with risk level badge titles and aria-labels', () => {
+      const mockFiles = [
+        { path: '.env', type: 'file' as const },
+        { path: 'src/main.tsx', type: 'file' as const },
+      ];
+
+      render(<RepoFileIntegrityMatrix files={mockFiles as any} />);
+
+      const heading = screen.getByRole('heading', { name: 'Repo File Integrity Matrix' });
+      expect(heading).toHaveAttribute('id', 'repo-file-integrity-heading');
+
+      const tableRegion = screen.getByRole('region', { name: 'File Integrity Matrix Table' });
+      expect(tableRegion).toHaveAttribute('tabIndex', '0');
+      expect(tableRegion).toHaveClass('focus-visible:ring-2');
+
+      const highRiskBadge = screen.getByText('high');
+      expect(highRiskBadge).toHaveAttribute('aria-label', 'Risk level: high');
+      expect(highRiskBadge).toHaveAttribute('title', 'Risk level: HIGH');
+
+      const lowRiskBadge = screen.getByText('low');
+      expect(lowRiskBadge).toHaveAttribute('aria-label', 'Risk level: low');
+      expect(lowRiskBadge).toHaveAttribute('title', 'Risk level: LOW');
     });
   });
 });
