@@ -7,6 +7,7 @@ const WRAPPER_PATH = 'src/SovereignAppWrapper.tsx';
 const CSS_PATH = 'src/index.css';
 const CONTROL_SURFACE_PATH = 'src/features/control-surface-vnext/App.tsx';
 const PRODUCTION_ADAPTER_PATH = 'src/features/control-surface-vnext/adapter/production-adapter.ts';
+const REPOSITORY_ADAPTER_PATH = 'src/features/control-surface-vnext/adapter/repository-bound-adapter.ts';
 const AGENT_CLIENT_PATH = 'src/features/product/runtime/sovereignAgentClient.ts';
 
 const DOM_INSTALLER_TOKENS = [
@@ -69,6 +70,7 @@ describe('current Sovereign app shell contract', () => {
     expect(existsSync(CSS_PATH)).toBe(true);
     expect(existsSync(CONTROL_SURFACE_PATH)).toBe(true);
     expect(existsSync(PRODUCTION_ADAPTER_PATH)).toBe(true);
+    expect(existsSync(REPOSITORY_ADAPTER_PATH)).toBe(true);
     expect(existsSync(AGENT_CLIENT_PATH)).toBe(true);
   });
 
@@ -96,6 +98,7 @@ describe('current Sovereign app shell contract', () => {
     const app = read(APP_PATH);
     const controlSurface = read(CONTROL_SURFACE_PATH);
     const productionAdapter = read(PRODUCTION_ADAPTER_PATH);
+    const repositoryAdapter = read(REPOSITORY_ADAPTER_PATH);
     const agentClient = read(AGENT_CLIENT_PATH);
 
     expectContainsAll(app, [
@@ -116,12 +119,18 @@ describe('current Sovereign app shell contract', () => {
       'RuntimeMonitor',
       'WorkspaceProjection',
     ]);
+    expectContainsAll(repositoryAdapter, [
+      "'/api/user/agent/repository/run'",
+      "mode: 'free'",
+      "agentMode: 'single'",
+      "intentMode: 'repository_execution'",
+    ]);
+    expectContainsNone(repositoryAdapter, ["'/api/user/agent/swarm/run'"]);
     expectContainsAll(productionAdapter, [
-      "'/api/user/agent/swarm/run'",
       "'/api/user/agent/toolchain/manifest'",
       "'/api/user/agent/swarm/manifest'",
-      'this.client.prepareDraftPr(run.jobId)',
-      'this.client.createDraftPr(run.jobId)',
+      'this.client.prepareDraftPr(jobId)',
+      'this.client.createDraftPr(jobId)',
       'credentials: \'include\'',
       'createSovereignAgentClient',
     ]);
@@ -134,6 +143,7 @@ describe('current Sovereign app shell contract', () => {
       'signal.checksReadbackVerified === true',
     ]);
     expectContainsNone(productionAdapter, ['MockSovereignBackendAdapter', '/api/config/', 'sessionToken', 'localStorage']);
+    expectContainsNone(repositoryAdapter, ['MockSovereignBackendAdapter', '/api/config/', 'sessionToken', 'localStorage']);
   });
 
   it('keeps the wrapper free of visible chrome and navigation state', () => {

@@ -110,6 +110,8 @@ export interface SovereignAgentJobSnapshot {
   branch?: string;
   /** Resolved branch name as reported by the backend job record. Populated when the agent has created the working branch. */
   branchName?: string;
+  externalRef?: string;
+  prState?: string;
   draftPrUrl?: string;
   changedFiles: string[];
   events: SovereignAgentRuntimeEvent[];

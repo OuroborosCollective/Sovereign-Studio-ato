@@ -105,6 +105,8 @@ function writeReport() {
 function run() {
   const surface = 'src/features/control-surface-vnext/App.tsx';
   const adapter = 'src/features/control-surface-vnext/adapter/production-adapter.ts';
+  const repositoryAdapter = 'src/features/control-surface-vnext/adapter/repository-bound-adapter.ts';
+  const adapterContext = 'src/features/control-surface-vnext/adapter/context.tsx';
   const publication = 'src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx';
   const agentClient = 'src/features/product/runtime/sovereignAgentClient.ts';
   const builder = 'src/features/product/containers/BuilderContainer.tsx';
@@ -117,6 +119,8 @@ function run() {
     ['src/SovereignAppWrapper.tsx', 'Passthrough wrapper is required.'],
     [surface, 'Sovereign Control Surface vNext is required.'],
     [adapter, 'Sovereign vNext production adapter is required.'],
+    [repositoryAdapter, 'Sovereign vNext repository-bound adapter is required.'],
+    [adapterContext, 'Sovereign vNext adapter context is required.'],
     [publication, 'Sovereign vNext publication inspector is required.'],
     [agentClient, 'Canonical Agent client is required.'],
     ['src/features/product/components/LiveWorkspaceMonitor.tsx', 'Live workspace monitor diagnostic surface is required.'],
@@ -198,11 +202,15 @@ function run() {
   requireText(surface, /ensureGuestSession\(\)[\s\S]*user\.isGuest[\s\S]*setAuthOpen\(true\)/, 'vnext:session-before-agent', 'vNext resolves backend session and fails guest execution closed into authentication.');
   requireText(surface, /useSwarmRun[\s\S]*setActiveRunId\(accepted\.jobId\)/, 'vnext:accepted-run', 'Only a backend-accepted persisted run id becomes current.');
   forbidText(surface, /listJobs\(|RESTORE_LATEST_JOB/, 'vnext:no-history-auto-adopt', 'vNext must not auto-adopt historical Agent runs.');
-  requireText(adapter, /credentials:\s*'include'/, 'vnext:http-only-session', 'vNext production requests use the backend HTTP-only session.');
-  requireText(adapter, /'\/api\/user\/agent\/swarm\/run'/, 'vnext:agent-execution', 'vNext mission dispatch uses the persisted Agents SDK run endpoint.');
-  requireText(adapter, /this\.client\.getJob\(run\.jobId\)[\s\S]*this\.client\.getEvidenceAnchors\(run\.jobId\)/, 'vnext:linked-job-evidence', 'vNext links persisted run identity to implementation-job and evidence readback.');
-  requireText(adapter, /this\.client\.prepareDraftPr\(run\.jobId\)[\s\S]*this\.client\.createDraftPr\(run\.jobId\)/, 'vnext:draft-pr-gate', 'Draft PR flows through the existing prepare and create client calls.');
+  requireText(adapterContext, /from ['"]\.\/repository-bound-adapter['"]/, 'vnext:repository-adapter-active', 'vNext context instantiates the repository-bound production adapter.');
+  requireText(repositoryAdapter, /extends SovereignProductionAdapterBase/, 'vnext:repository-adapter-inherits-publication', 'Repository-bound vNext preserves the production Draft-PR publication contract by inheritance.');
+  requireText(repositoryAdapter, /credentials:\s*'include'/, 'vnext:http-only-session', 'vNext repository requests use the backend HTTP-only session.');
+  requireText(repositoryAdapter, /'\/api\/user\/agent\/repository\/run'/, 'vnext:agent-execution', 'vNext mission dispatch uses the dedicated persisted repository-run endpoint.');
+  forbidText(repositoryAdapter, /\/api\/user\/agent\/swarm\//, 'vnext:no-repository-swarm-route', 'Repository-bound vNext must not route repository execution through Swarm endpoints.');
+  requireText(adapter, /this\.client\.getJob\(run\.jobId\)[\s\S]*this\.client\.getEvidenceAnchors\(run\.jobId\)/, 'vnext:linked-job-evidence', 'Generic persisted runs retain linked implementation-job and evidence readback.');
+  requireText(adapter, /const jobId = isDirectRepositoryJobId\(runId\)[\s\S]*this\.client\.prepareDraftPr\(jobId\)[\s\S]*this\.client\.createDraftPr\(jobId\)/, 'vnext:draft-pr-gate', 'Draft PR normalizes direct agent jobs or linked implementation jobs before prepare/create publication calls.');
   forbidText(adapter, /MockSovereignBackendAdapter|fallbackMock|\/api\/config\/|sessionToken|Authorization:\s*`Bearer|localStorage/, 'vnext:no-simulator-truth', 'Production adapter must not contain simulator fallback, guessed config routes, or browser-owned bearer state.');
+  forbidText(repositoryAdapter, /MockSovereignBackendAdapter|fallbackMock|\/api\/config\/|sessionToken|Authorization:\s*`Bearer|localStorage/, 'vnext:no-repository-simulator-truth', 'Repository-bound adapter must not introduce simulator fallback, guessed config routes, or browser-owned bearer state.');
   requireText(agentClient, /jobPath\(jobId, '\/draft-pr\/prepare'\)[\s\S]*jobPath\(jobId, '\/draft-pr\/create'\)/, 'vnext:draft-pr-endpoints', 'Canonical Agent client owns the Draft PR prepare/create endpoints.');
   requireText(agentClient, /signal\.draftVerified === true[\s\S]*prStateVerified[\s\S]*signal\.readbackVerified === true[\s\S]*signal\.checksReadbackVerified === true/, 'vnext:draft-pr-readback', 'Draft PR success requires complete GitHub draft/open/head/check readback.');
   requireText(publication, /READ DRAFT-PR GATE[\s\S]*EXTERNAL WRITE CONSENT[\s\S]*CREATE DRAFT PR/, 'vnext:draft-pr-visible', 'Draft PR gate and external-write consent are visible.');
