@@ -451,7 +451,7 @@ async function executeCanonicalVNextRun(page: Page, request: APIRequestContext, 
 test.describe('five canonical vNext repository runs reach independently verified Draft PRs', () => {
   test.describe.configure({ mode: 'serial' });
   test.skip(!LIVE_ENABLED, 'Live vNext Draft-PR validation runs only through the explicit protected workflow.');
-  test.setTimeout(300_000);
+  test.setTimeout(REPOSITORY_READY_TIMEOUT_MS + 300_000);
   test.beforeAll(async () => { assertLiveConfig(); await provisionEphemeralAccountKey(); });
   test.beforeEach(async ({ page }) => {
     page.on('response', response => {
