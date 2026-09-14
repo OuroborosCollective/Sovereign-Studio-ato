@@ -621,8 +621,8 @@ def list_reconcilable_repository_jobs(
             """
             SELECT * FROM sovereign_agent_jobs
             WHERE status = 'running'
-              AND external_ref LIKE 'agent-zero-a2a:%'
-              AND external_ref NOT LIKE 'agent-zero-a2a:claim:%'
+              AND external_ref LIKE 'agent-zero-a2a:%%'
+              AND external_ref NOT LIKE 'agent-zero-a2a:claim:%%'
             ORDER BY updated_at ASC, job_id ASC
             LIMIT %s
             """,
