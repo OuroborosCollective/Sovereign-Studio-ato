@@ -99,13 +99,14 @@ jobs:
        github.actor == github.repository_owner &&
        contains(github.event.head_commit.message, '[sovereign-live-five]'))
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     permissions:
       contents: write
       pull-requests: write
     env:
       SOVEREIGN_E2E_LIVE: '1'
       SOVEREIGN_E2E_REVISION: ${{ github.sha }}
+      SOVEREIGN_E2E_A2A_ADMISSION_TIMEOUT_MS: '900000'
       SOVEREIGN_E2E_ACCOUNT_KEY: ${{ secrets.SOVEREIGN_E2E_ACCOUNT_KEY }}
       SOVEREIGN_E2E_GITHUB_TOKEN: ${{ github.token }}
       SOVEREIGN_E2E_REPO_URL: https://github.com/${{ github.repository }}
