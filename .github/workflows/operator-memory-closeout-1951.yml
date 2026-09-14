@@ -10,41 +10,37 @@ permissions:
 
 jobs:
   closeout:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-
-      - name: Guard exact reviewed head
+      - name: Guard exact head
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^)" = "ada5ca88085c0050dcac7e0a94c1e01d1a0ecdd0"
+          test "$(git rev-parse HEAD^)" = "7a4eacf744c7982f1771d8e733f799eee930c1bc"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/operator-memory-closeout-1951.yml"
           ! grep -Fq '### 2026-09-14 — Server-owned Agent Zero repository reconciliation (#1951)' Memory.md
-
-      - name: Append exactly one Memory entry
+      - name: Append Memory entry
         shell: bash
+        env:
+          MEMORY_ENTRY_B64: "CgojIyMgMjAyNi0wOS0xNCDigJQgU2VydmVyLW93bmVkIEFnZW50IFplcm8gcmVwb3NpdG9yeSByZWNvbmNpbGlhdGlvbiAoIzE5NTEpClN0YXR1czogQ0lfVkVSSUZJRUQ7IHByb2R1Y3Rpb24gcm9sbG91dCBhbmQgbGl2ZSA1LzUgcHJvb2YgcGVuZGluZy4KVGFzazogUmVtb3ZlIGNsaWVudCBwb2xsaW5nIGFzIHRoZSBsaWZlY3ljbGUgb3duZXIgZm9yIG5vbmJsb2NraW5nIEFnZW50IFplcm8gcmVwb3NpdG9yeSBqb2JzIGFmdGVyIGxpdmUgRml2ZS1QYXRoIGV2aWRlbmNlIHNob3dlZCB0aGUgc2hhcmVkIHdvcmtzcGFjZSBtdXRhdGluZyBhZnRlciB0aGUgYnJvd3NlciBydW5uZXIgaGFkIGFscmVhZHkgc3RvcHBlZCBwb2xsaW5nLgpEZWNpc2lvbnM6IFJlY29uY2lsZSBwZXJzaXN0ZWQgYGFnZW50LXplcm8tYTJhOipgIGpvYnMgZnJvbSB0aGUgcHJvZHVjdGlvbiBiYWNrZW5kLCBrZWVwIGNsYWltIHJlZnMgcXVhcmFudGluZWQsIHJldXNlIHRoZSBleGlzdGluZyBwZXJzaXN0ZWQgYGV4dGVybmFsX3JlZmAgQ0FTIGZvciBpZGVtcG90ZW50IGNsb3Nlb3V0LCBmYWlsIGNsb3NlZCBvbiBib3VuZGVkIHN0YWxscyB3aXRob3V0IHJlc3VibWl0LCBhbmQgZ2l2ZSB0aGUgcHJvdGVjdGVkIEZpdmUtUGF0aCBsYW5lIGEgYm91bmRlZCAxMC1taW51dGUgcmVwb3NpdG9yeSB3aW5kb3cuClRvdWNoZWQgc3VyZmFjZXM6IEFnZW50IGpvYiBzdG9yZS9yZXBvc2l0b3J5IGV4ZWN1dGlvbiBjYW5vbmljYWwrc2hpcHBpbmcgbWlycm9ycywgcHJvZHVjdGlvbiBHdW5pY29ybiBib290c3RyYXAsIHJlcG9zaXRvcnktZXhlY3V0aW9uIHJlZ3Jlc3Npb25zLCByZXF1aXJlZCBBZ2VudCBCYWNrZW5kIGdhdGUsIEZpdmUtUGF0aCBFMkUgdGltZW91dC4KRXZpZGVuY2U6IEJhc2UgYDhjZTU4ZGJlYWM1YWI5YjVkOThlYTdlNTFkMzE5NDZiNTU5MmM3MTBgOyByZXZpZXdlZCBjb2RlIGhlYWQgYGFkYTVjYTg4MDg1YzAwNTBkY2FjN2UwYTk0YzFlMDFkMWEwZWNkZDBgOyBBZ2VudCBCYWNrZW5kIHJ1biBgMzQ4NjU3NDQ5MzdgIHBhc3NlZCAxMjk0IHRlc3RzICsgMSBza2lwcGVkIGluY2x1ZGluZyBgdGVzdF9yZXBvc2l0b3J5X2V4ZWN1dGlvbi5weWA7IFJlbGVhc2UgVmVyaWZpY2F0aW9uIGAzNDg2NTc0NDk1NGAsIEJvdW5kYXJ5IExlZGdlciBgMzQ4NjU3NDQ5ODBgLCBJbnRlZ3JhdGlvbiBQbGFuIGAzNDg2NTc0NDk0MmAgYW5kIENvbnRpbnVpdHkgYDM0ODY1NzQ0OTkzYCBhbGwgc3VjY2VlZGVkOyBQUiAjMTk1MSByZXBvcnRlZCBgbWVyZ2VhYmxlPXRydWVgLCBgbWVyZ2VhYmxlX3N0YXRlPWNsZWFuYCBiZWZvcmUgdGhpcyBhcHBlbmQuCkxlYXJuZWQ6IEEyQSBzdWJtaXNzaW9uIHBsdXMgZXZlbnR1YWwgd29ya3NwYWNlIG11dGF0aW9uIGlzIG5vdCBjb21wbGV0aW9uIGlmIGxpZmVjeWNsZSByZWNvbmNpbGlhdGlvbiBpcyBvd25lZCBieSBhIGJyb3dzZXIgcG9sbGVyOyBhc3luY2hyb25vdXMgcmVwb3NpdG9yeSB3b3JrIG5lZWRzIGEgZHVyYWJsZSBzZXJ2ZXItb3duZWQgcmVjb25jaWxlciB3aGlsZSBlZmZlY3Qgb3duZXJzaGlwIHJlbWFpbnMgQ0FTLWJvdW5kLgpPcGVuOiBUaGlzIGVudHJ5IGRvZXMgbm90IGNsYWltIHByb2R1Y3Rpb24gZml4ZWQ7IHRoZSBNZW1vcnktYXBwZW5kZWQgaGVhZCBtdXN0IHBhc3MgZXhhY3QtaGVhZCBnYXRlcywgdGhlbiB0aGUgbWVyZ2VkIHJldmlzaW9uIG5lZWRzIGltbXV0YWJsZSBiYWNrZW5kIGRlcGxveW1lbnQvcmVhZGJhY2sgYW5kIGEgZnJlc2ggcmVhbCA1LzUgRnJvbnRlbmQg4oaSIEFnZW50IFplcm8g4oaSIERyYWZ0LVBSIGNhdXNhbCBwcm9vZi4KTmV4dCBzYWZlIHN0ZXA6IFJlLXJ1biBleGFjdC1oZWFkIHJlcXVpcmVkIGdhdGVzIG9uIHRoaXMgTWVtb3J5IGhlYWQsIG1lcmdlICMxOTUxIG9ubHkgaWYgdGVybWluYWwgZ3JlZW4sIGRlcGxveS9yZWFkIGJhY2sgdGhlIGltbXV0YWJsZSBiYWNrZW5kIHJldmlzaW9uLCB0aGVuIHJlcnVuIGFuZCBpbmRlcGVuZGVudGx5IHZlcmlmeSBGaXZlIFJlYWwgVUkgUGF0aHMuCg=="
         run: |
           set -Eeuo pipefail
-          cat >> Memory.md <<'EOF'
-
-### 2026-09-14 — Server-owned Agent Zero repository reconciliation (#1951)
-Status: CI_VERIFIED; production rollout and live 5/5 proof pending.
-Task: Remove client polling as the lifecycle owner for nonblocking Agent Zero repository jobs after live Five-Path evidence showed the shared workspace mutating after the browser runner had already stopped polling.
-Decisions: Reconcile persisted `agent-zero-a2a:*` jobs from the production backend, keep claim refs quarantined, reuse the existing persisted `external_ref` CAS for idempotent closeout, fail closed on bounded stalls without resubmit, and give the protected Five-Path lane a bounded 10-minute repository window.
-Touched surfaces: Agent job store/repository execution canonical+shipping mirrors, production Gunicorn bootstrap, repository-execution regressions, required Agent Backend gate, Five-Path E2E timeout.
-Evidence: Base `8ce58dbeac5ab9b5d98ea7e51d31946b5592c710`; reviewed code head `ada5ca88085c0050dcac7e0a94c1e01d1a0ecdd0`; Agent Backend run `34865744937` passed 1294 tests + 1 skipped including `test_repository_execution.py`; Release Verification `34865744954`, Boundary Ledger `34865744980`, Integration Plan `34865744942` and Continuity `34865744993` all succeeded; PR #1951 reported `mergeable=true`, `mergeable_state=clean` before this append.
-Learned: A2A submission plus eventual workspace mutation is not completion if lifecycle reconciliation is owned by a browser poller; asynchronous repository work needs a durable server-owned reconciler while effect ownership remains CAS-bound.
-Open: This entry does not claim production fixed; the Memory-appended head must pass exact-head gates, then the merged revision needs immutable backend deployment/readback and a fresh real 5/5 Frontend → Agent Zero → Draft-PR causal proof.
-Next safe step: Re-run exact-head required gates on this Memory head, merge #1951 only if terminal green, deploy/read back the immutable backend revision, then rerun and independently verify Five Real UI Paths.
-EOF
-          git diff --check
+          python - <<'PY'
+          import base64, os
+          from pathlib import Path
+          p = Path('Memory.md')
+          marker = '### 2026-09-14 — Server-owned Agent Zero repository reconciliation (#1951)'
+          text = p.read_text('utf-8')
+          if marker in text:
+              raise SystemExit('memory marker already exists')
+          p.write_bytes(text.encode('utf-8') + base64.b64decode(os.environ['MEMORY_ENTRY_B64']))
+          PY
           test "$(grep -Fc '### 2026-09-14 — Server-owned Agent Zero repository reconciliation (#1951)' Memory.md)" = "1"
-
-      - name: Commit Memory closeout and remove operator workflow
+          git diff --check
+      - name: Commit closeout
         shell: bash
         run: |
           set -Eeuo pipefail
