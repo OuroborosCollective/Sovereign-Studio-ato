@@ -668,7 +668,10 @@ def test_restore_readback_uses_admin_role_and_container_password(monkeypatch, tm
 
     assert result["ok"] is True
     assert len(calls) == 1
-    assert calls[0][3:6] == [
+    assert calls[0][:5] == [
+        "docker", "exec", "--env", "PGOPTIONS=-c search_path=pg_catalog", "supabase-db",
+    ]
+    assert calls[0][5:8] == [
         "sh",
         "-c",
         (
@@ -676,9 +679,46 @@ def test_restore_readback_uses_admin_role_and_container_password(monkeypatch, tm
             'exec psql "$@"'
         ),
     ]
-    assert calls[0][6] == "psql"
+    assert calls[0][8] == "psql"
     user_index = calls[0].index("--username") + 1
     assert calls[0][user_index] == "supabase_admin"
+
+
+def test_source_and_restore_metadata_clients_share_canonical_search_path(monkeypatch) -> None:
+    runtime = FleetMaintenanceRuntime()
+    calls: list[list[str]] = []
+
+    def capture(argv, timeout=120):
+        calls.append(argv)
+        return {"ok": True, "exit_code": 0, "stdout": "1\n", "stderr": ""}
+
+    monkeypatch.setattr(runtime, "_run_text", capture)
+    for role in ("postgres", "supabase_admin"):
+        runtime._psql("postgres", "SELECT 1;", username=role)
+    assert len(calls) == 2
+    for argv in calls:
+        assert argv[:5] == [
+            "docker", "exec", "--env", "PGOPTIONS=-c search_path=pg_catalog", "supabase-db",
+        ]
+        assert argv[argv.index("--command") + 1] == "SELECT 1;"
+        assert "--no-psqlrc" in argv
+        assert "ON_ERROR_STOP=1" in argv
+
+
+def test_canonical_metadata_comparison_still_detects_constraint_changes() -> None:
+    shared = {"schemaRows": [], "rowCounts": [], "rowCountDigest": "rows"}
+    source = {
+        **shared, "schemaDigest": "source",
+        "constraintRows": ["storage|objects|objects_owner_fkey|f|FOREIGN KEY (owner) REFERENCES auth.users(id)"],
+    }
+    changed = {
+        **shared, "schemaDigest": "changed",
+        "constraintRows": ["storage|objects|objects_owner_fkey|f|FOREIGN KEY (owner) REFERENCES auth.users(id) ON DELETE CASCADE"],
+    }
+    difference = _manifest_difference(source, changed)
+    assert difference["schemaDigestMatch"] is False
+    assert len(difference["structuralDifferences"]) == 2
+    assert {row["side"] for row in difference["structuralDifferences"]} == {"source", "restored"}
 
 
 def test_backup_plan_blocks_non_pending_patch_run(monkeypatch, tmp_path) -> None:
