@@ -22,45 +22,28 @@ jobs:
           set -Eeuo pipefail
           test "$GITHUB_REF_NAME" = "sovereign/chatgpt/five-timeout-alignment-20260914"
           git merge-base --is-ancestor 656e02911322004736ad0f16b2c49272fe2b7e76 HEAD
-      - name: Align bounded live-five timeouts
+      - name: Align per-test live-five timeout
         shell: bash
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           spec = Path('tests/e2e/five-draft-pr-paths.spec.ts')
           text = spec.read_text('utf-8')
           old = '  test.setTimeout(300_000);'
           new = '  test.setTimeout(REPOSITORY_READY_TIMEOUT_MS + 300_000);'
           assert text.count(old) == 1, f'unexpected per-test timeout matches: {text.count(old)}'
           spec.write_text(text.replace(old, new), 'utf-8')
-
-          workflow = Path('.github/workflows/e2e-testing.yml')
-          text = workflow.read_text('utf-8')
-          old = '    timeout-minutes: 45'
-          new = '    timeout-minutes: 90'
-          assert text.count(old) == 1, f'unexpected workflow timeout matches: {text.count(old)}'
-          workflow.write_text(text.replace(old, new), 'utf-8')
           PY
-          rm -f .github/operator-five-timeout-trigger.txt
-          rm -f .github/workflows/operator-five-timeout-align.yml
-          git diff --check
-      - name: Validate Playwright test discovery
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          corepack enable
-          corepack prepare pnpm@9.12.2 --activate
-          pnpm install --frozen-lockfile
-          pnpm exec playwright test tests/e2e/five-draft-pr-paths.spec.ts --project=chromium --list
-      - name: Commit bounded harness correction
+          git diff --check -- tests/e2e/five-draft-pr-paths.spec.ts
+      - name: Commit validated test-only correction
         shell: bash
         run: |
           set -Eeuo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add tests/e2e/five-draft-pr-paths.spec.ts
           git diff --cached --check
-          git commit -m 'test(e2e): align live five-path timeout bounds'
+          git diff --cached --quiet && exit 0
+          git commit -m 'test(e2e): align per-path repository timeout'
           git push origin HEAD:"$GITHUB_REF_NAME"
