@@ -134,6 +134,14 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     expect(surface).toContain('data-testid="vnext-mobile-layout"');
     expect(surface).not.toContain('hidden md:flex w-full h-full');
     expect(surface).not.toContain('md:hidden flex flex-col w-full h-full');
+    const ocular = source('src/features/control-surface-vnext/components/CyborgOcularMatrix/CyborgOcularMatrix.tsx');
+    expect(ocular).toContain('data-testid=\"vnext-cyborg-ocular-matrix\"');
+    expect(ocular).toContain('relative flex items-center');
+    expect(ocular).not.toContain('relative hidden sm:flex');
+    const workspace = source('src/features/control-surface-vnext/components/WorkspaceProjection/WorkspaceProjection.tsx');
+    expect(workspace).toContain('workspaceId?: string');
+    expect(surface).toContain('workspaceId={job?.backendJobId}');
+    expect(surface).toContain('terminal-${activeRunId}');
     expect(modal).toContain('role="dialog"');
     expect(modal).toContain('aria-modal="true"');
     expect(modal).toContain('aria-label={title}');
