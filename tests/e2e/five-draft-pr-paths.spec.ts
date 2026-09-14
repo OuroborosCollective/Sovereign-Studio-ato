@@ -14,6 +14,12 @@ const RUN_ID = process.env.GITHUB_RUN_ID?.trim() || `local-${Date.now()}`;
 const OWNED_MARKER_PREFIX = `[live-vnext:${RUN_ID}:`;
 const A2A_TASK_REF = /^agent-zero-a2a:(?:retry:)?[A-Za-z0-9._:-]{1,200}$/;
 const JOB_ID = /^agent-[0-9a-f]{32}$/;
+const A2A_ADMISSION_TIMEOUT_MS = (() => {
+  const configured = Number.parseInt(process.env.SOVEREIGN_E2E_A2A_ADMISSION_TIMEOUT_MS || '900000', 10);
+  if (!Number.isFinite(configured)) return 900_000;
+  return Math.max(210_000, Math.min(configured, 900_000));
+})();
+const REPOSITORY_START_TIMEOUT_MS = A2A_ADMISSION_TIMEOUT_MS + 60_000;
 const REPOSITORY_READY_TIMEOUT_MS = (() => {
   const configured = Number.parseInt(process.env.SOVEREIGN_E2E_REPOSITORY_READY_TIMEOUT_MS || '600000', 10);
   if (!Number.isFinite(configured)) return 600_000;
@@ -265,7 +271,7 @@ async function submitMission(page: Page, text: string): Promise<LiveRunProof> {
   await composer.fill(text);
   await expect(page.getByTestId('agent-mode-single')).toHaveAttribute('aria-pressed', 'true');
   const [startResponse] = await Promise.all([
-    page.waitForResponse((response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/user/agent/repository/run', { timeout: 210_000 }),
+    page.waitForResponse((response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/user/agent/repository/run', { timeout: REPOSITORY_START_TIMEOUT_MS }),
     page.getByTestId('builder__start-task').click(),
   ]);
   requireSameOrigin(startResponse.url(), page.url());
@@ -451,7 +457,7 @@ async function executeCanonicalVNextRun(page: Page, request: APIRequestContext, 
 test.describe('five canonical vNext repository runs reach independently verified Draft PRs', () => {
   test.describe.configure({ mode: 'serial' });
   test.skip(!LIVE_ENABLED, 'Live vNext Draft-PR validation runs only through the explicit protected workflow.');
-  test.setTimeout(REPOSITORY_READY_TIMEOUT_MS + 300_000);
+  test.setTimeout(REPOSITORY_START_TIMEOUT_MS + REPOSITORY_READY_TIMEOUT_MS + 300_000);
   test.beforeAll(async () => { assertLiveConfig(); await provisionEphemeralAccountKey(); });
   test.beforeEach(async ({ page }) => {
     page.on('response', response => {

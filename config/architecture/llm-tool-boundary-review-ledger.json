@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "18b65e34487769518691d7603d4b005a5b2ccd87",
+  "sourceRevision": "ad5148b7af4031f633b1c955a20bf75002c58b14",
   "rawCandidateCount": 100,
   "canonicalCandidateCount": 79,
   "entries": [
@@ -251,12 +251,12 @@
         "backend/agent_runtime/tools/git_tool.py"
       ],
       "symbol": "GitCommitTool",
-      "line": 214,
+      "line": 226,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "dacefc685582708d0c0dfb05a2b6ec96e688d02de9dc81fca76336d8e751f7e5",
+      "fileSha256": "50f80457383aef0b42edea77b5e9c0838cb4c8c9997fe28cf1d5320564900a0b",
       "anchorSha256": "58b9096b73d7ff555470434c96ee4bb64dea4ce682bb678c9f8aaada2131c809",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:cd2b13ca5c6e8e31fb67e293",
+      "candidateId": "llm-boundary:a239e7f77a4bc49fe2e8f9ee",
       "classification": "STRUCTURED_POLICY",
       "rationale": "GitCommitTool evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -1075,5 +1075,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "d5c0ad136f7bddd5ded1e5f48c4479cdb8cfd2739884a86cbca828f71eda2436"
+  "ledgerSha256": "3194466a816af6b990580fedcac1c80bc004874264eba79be7e4a9c3d9c41179"
 }

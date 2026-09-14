@@ -272,6 +272,31 @@ class TestGitStatusTool:
         assert result.is_ok()
         assert "clean" in result.output.lower() or result.output == ""
 
+    def test_status_scopes_safe_directory_to_exact_workspace(self, monkeypatch, tmp_path):
+        """Shared Agent Zero workspaces must stay readable without global Git config."""
+        import subprocess
+
+        (tmp_path / ".git").mkdir()
+        captured = {}
+
+        def fake_run(command, **kwargs):
+            captured["command"] = command
+            captured["cwd"] = kwargs.get("cwd")
+            captured["env"] = kwargs.get("env") or {}
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        monkeypatch.setattr("agent_runtime.tools.git_tool.subprocess.run", fake_run)
+
+        result = GitStatusTool().execute({}, str(tmp_path))
+
+        assert result.is_ok()
+        assert captured["command"] == ["git", "status", "--porcelain"]
+        assert captured["cwd"] == str(tmp_path)
+        env = captured["env"]
+        config_index = int(env["GIT_CONFIG_COUNT"]) - 1
+        assert env[f"GIT_CONFIG_KEY_{config_index}"] == "safe.directory"
+        assert env[f"GIT_CONFIG_VALUE_{config_index}"] == str(tmp_path.resolve())
+
     def test_status_with_changes(self, tmp_path):
         """Should report changed files."""
         import subprocess

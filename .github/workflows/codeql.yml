@@ -16,6 +16,8 @@ env:
   NODE_VERSION: "22"
   PNPM_VERSION: "9.12.2"
   CI: "true"
+  ANDROID_COMPILE_SDK: "36"
+  ANDROID_BUILD_TOOLS: "36.0.0"
 
 jobs:
   analyze:
@@ -51,9 +53,32 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Setup Android SDK for Android analysis
+      - name: Install Android SDK packages for Android analysis
         if: matrix.language == 'java-kotlin'
-        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER=""
+          for candidate in \
+            "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager" \
+            "${ANDROID_HOME:-}/cmdline-tools/bin/sdkmanager" \
+            "${ANDROID_SDK_ROOT:-}/cmdline-tools/latest/bin/sdkmanager" \
+            "${ANDROID_SDK_ROOT:-}/cmdline-tools/bin/sdkmanager"
+          do
+            if [ -x "$candidate" ]; then
+              SDKMANAGER="$candidate"
+              break
+            fi
+          done
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager || true)"
+          fi
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}"
 
       - name: Setup pnpm for Android analysis
         if: matrix.language == 'java-kotlin'

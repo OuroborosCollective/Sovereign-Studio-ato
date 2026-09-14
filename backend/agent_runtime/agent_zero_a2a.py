@@ -21,7 +21,8 @@ from .contracts import sanitize_agent_text
 
 _A2A_TASK_ID_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
 _A2A_WORKSPACE_ID_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
-_A2A_CALL_TIMEOUT_SECONDS: Final[int] = 30
+_A2A_READ_TIMEOUT_SECONDS: Final[int] = 30
+_A2A_SUBMIT_TIMEOUT_SECONDS: Final[int] = 900
 _AGENT_ZERO_WORKSPACE_ROOT: Final[str] = "/a0/sovereign-workspaces"
 
 _A2A_ACTIVE_STATES: Final[frozenset[str]] = frozenset({"submitted", "working"})
@@ -187,7 +188,11 @@ class AgentZeroA2AClient:
                 self.endpoint,
                 headers=self._headers(),
                 json=payload,
-                timeout=min(self.config.timeout_seconds, _A2A_CALL_TIMEOUT_SECONDS),
+                timeout=(
+                    _A2A_SUBMIT_TIMEOUT_SECONDS
+                    if submit
+                    else min(self.config.timeout_seconds, _A2A_READ_TIMEOUT_SECONDS)
+                ),
                 allow_redirects=False,
             )
         except (requests.Timeout, requests.ConnectionError, requests.RequestException) as exc:
