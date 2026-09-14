@@ -1,0 +1,56 @@
+name: Operator Memory Closeout 1951
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/a2a-server-reconcile-20260914
+
+permissions:
+  contents: write
+
+jobs:
+  closeout:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Guard exact reviewed head
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD^)" = "ada5ca88085c0050dcac7e0a94c1e01d1a0ecdd0"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/operator-memory-closeout-1951.yml"
+          ! grep -Fq '### 2026-09-14 — Server-owned Agent Zero repository reconciliation (#1951)' Memory.md
+
+      - name: Append exactly one Memory entry
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cat >> Memory.md <<'EOF'
+
+### 2026-09-14 — Server-owned Agent Zero repository reconciliation (#1951)
+Status: CI_VERIFIED; production rollout and live 5/5 proof pending.
+Task: Remove client polling as the lifecycle owner for nonblocking Agent Zero repository jobs after live Five-Path evidence showed the shared workspace mutating after the browser runner had already stopped polling.
+Decisions: Reconcile persisted `agent-zero-a2a:*` jobs from the production backend, keep claim refs quarantined, reuse the existing persisted `external_ref` CAS for idempotent closeout, fail closed on bounded stalls without resubmit, and give the protected Five-Path lane a bounded 10-minute repository window.
+Touched surfaces: Agent job store/repository execution canonical+shipping mirrors, production Gunicorn bootstrap, repository-execution regressions, required Agent Backend gate, Five-Path E2E timeout.
+Evidence: Base `8ce58dbeac5ab9b5d98ea7e51d31946b5592c710`; reviewed code head `ada5ca88085c0050dcac7e0a94c1e01d1a0ecdd0`; Agent Backend run `34865744937` passed 1294 tests + 1 skipped including `test_repository_execution.py`; Release Verification `34865744954`, Boundary Ledger `34865744980`, Integration Plan `34865744942` and Continuity `34865744993` all succeeded; PR #1951 reported `mergeable=true`, `mergeable_state=clean` before this append.
+Learned: A2A submission plus eventual workspace mutation is not completion if lifecycle reconciliation is owned by a browser poller; asynchronous repository work needs a durable server-owned reconciler while effect ownership remains CAS-bound.
+Open: This entry does not claim production fixed; the Memory-appended head must pass exact-head gates, then the merged revision needs immutable backend deployment/readback and a fresh real 5/5 Frontend → Agent Zero → Draft-PR causal proof.
+Next safe step: Re-run exact-head required gates on this Memory head, merge #1951 only if terminal green, deploy/read back the immutable backend revision, then rerun and independently verify Five Real UI Paths.
+EOF
+          git diff --check
+          test "$(grep -Fc '### 2026-09-14 — Server-owned Agent Zero repository reconciliation (#1951)' Memory.md)" = "1"
+
+      - name: Commit Memory closeout and remove operator workflow
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/operator-memory-closeout-1951.yml
+          git add Memory.md
+          git commit -m "docs(memory): close A2A server reconciliation block"
+          git push origin HEAD:sovereign/chatgpt/a2a-server-reconcile-20260914
