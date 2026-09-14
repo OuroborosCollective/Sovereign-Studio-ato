@@ -119,6 +119,22 @@ function Dashboard() {
   }, [job?.phase]);
 
   useEffect(() => {
+    if (!job?.id || !['BLOCKED', 'FAILED', 'CANCELLED'].includes(job.phase)) return;
+    const reason = job.error?.message?.trim();
+    setMessages((current) => current.map((message) => {
+      if (message.id !== `accepted-${job.id}`) return message;
+      return {
+        ...message,
+        role: 'system',
+        sender: 'SYSTEM',
+        content: `RUN ${job.phase} :: [${job.id}].${reason ? `\n${reason}` : ''}\nNo automatic resubmit was performed. Runtime readback remains authoritative.`,
+        evidenceBadge: `${job.phase} READBACK`,
+        timestamp: new Date().toISOString(),
+      };
+    }));
+  }, [job?.error?.message, job?.id, job?.phase]);
+
+  useEffect(() => {
     const pr = job?.draftPR;
     if (!pr || job?.phase !== 'COMPLETED') return;
     setMessages((current) => {

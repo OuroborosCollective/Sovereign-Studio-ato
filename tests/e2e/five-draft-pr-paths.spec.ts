@@ -13,6 +13,7 @@ const BACKEND_URL = process.env.SOVEREIGN_E2E_BACKEND_PROXY_TARGET?.trim() || ''
 const RUN_ID = process.env.GITHUB_RUN_ID?.trim() || `local-${Date.now()}`;
 const OWNED_MARKER_PREFIX = `[live-vnext:${RUN_ID}:`;
 const A2A_TASK_REF = /^agent-zero-a2a:(?:retry:)?[A-Za-z0-9._:-]{1,200}$/;
+const A2A_WAIT_REF = /^agent-zero-a2a:wait:[A-Za-z0-9._:-]{1,200}$/;
 const JOB_ID = /^agent-[0-9a-f]{32}$/;
 const REPOSITORY_READY_TIMEOUT_MS = (() => {
   const configured = Number.parseInt(process.env.SOVEREIGN_E2E_REPOSITORY_READY_TIMEOUT_MS || '600000', 10);
@@ -249,7 +250,15 @@ function mission(pathId: string): { marker: string; text: string } {
 
 function requireA2ATaskRef(value: string | null | undefined, stage: string): string {
   const ref = String(value || '');
-  if (!A2A_TASK_REF.test(ref) || ref.includes(':claim:')) throw new Error(`${stage}: persistent Agent Zero A2A task binding missing or transient`);
+  if (!A2A_TASK_REF.test(ref) || ref.includes(':claim:') || A2A_WAIT_REF.test(ref)) throw new Error(`${stage}: persistent Agent Zero A2A task binding missing or transient`);
+  return ref;
+}
+
+function requireA2AStartRef(value: string | null | undefined): string {
+  const ref = String(value || '');
+  if (ref.includes(':claim:') || (!A2A_TASK_REF.test(ref) && !A2A_WAIT_REF.test(ref))) {
+    throw new Error('repository.start: durable Agent Zero admission/task binding missing');
+  }
   return ref;
 }
 
@@ -288,7 +297,7 @@ async function submitMission(page: Page, text: string): Promise<LiveRunProof> {
   expect(start.route).toBe('repository.start');
   expect(start.jobId).toMatch(JOB_ID);
   expect(start.workspaceId).toBeTruthy();
-  const startExternalRef = requireA2ATaskRef(start.externalRef, 'repository.start');
+  const startExternalRef = requireA2AStartRef(start.externalRef);
 
   const accepted = page.getByText(/PERSISTED RUN ACCEPTED :: \[agent-[0-9a-f]{32}\]/).last();
   await expect(accepted).toBeVisible({ timeout: 45_000 });

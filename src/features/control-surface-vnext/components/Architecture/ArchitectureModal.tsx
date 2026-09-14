@@ -4,7 +4,7 @@ import { Modal } from '../Modal';
 import { useSovereignAdapter } from '../../adapter/context';
 
 const ENDPOINTS = [
-  ['POST', '/api/user/agent/repository/run', 'Persist a repository mission as one Sovereign job and exactly one bounded Agent Zero A2A task.'],
+  ['POST', '/api/user/agent/repository/run', 'Persist the repository mission/workspace; admission may queue, then exactly one bounded Agent Zero A2A task is submitted when the server-owned slot is free.'],
   ['GET', '/api/user/agent/jobs?limit=1', 'Read neutral vNext backend health without inventing a Swarm worker graph.'],
   ['GET', '/api/user/agent/jobs/:jobId', 'Read the exact persisted repository implementation job.'],
   ['GET', '/api/user/agent/jobs/:jobId/evidence-anchors', 'Read revision-bound workspace evidence.'],

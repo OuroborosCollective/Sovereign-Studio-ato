@@ -193,9 +193,14 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     const workspace = source('src/features/control-surface-vnext/components/WorkspaceProjection/WorkspaceProjection.tsx');
 
     expect(eye).toContain('EFFECTS DECORATIVE · STATE READBACK');
+    expect(eye).toContain('relative flex items-center');
+    expect(eye).not.toContain('relative hidden sm:flex');
     expect(neural).toContain('UI PROJECTION · NOT CPU TELEMETRY');
     expect(neural).not.toContain('Math.random');
     expect(workspace).toContain('REVISION UNVERIFIED');
     expect(workspace).toContain('This does not claim the repository is globally clean.');
+    const surface = source('src/features/control-surface-vnext/App.tsx');
+    expect(surface).toContain('No automatic resubmit was performed. Runtime readback remains authoritative.');
+    expect(surface).toContain('evidenceBadge: `${job.phase} READBACK`');
   });
 });

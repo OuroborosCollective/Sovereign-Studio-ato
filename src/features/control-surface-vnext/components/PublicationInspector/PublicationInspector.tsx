@@ -9,8 +9,8 @@ interface Props {
   draftPR?: DraftPR;
   jobPhase?: JobPhase;
   preparation?: DraftPrPreparation;
-  onPrepare?: () => void | Promise<void>;
-  onPublish?: () => void | Promise<void>;
+  onPrepare?: () => void | Promise<unknown>;
+  onPublish?: () => void | Promise<unknown>;
   isPreparing?: boolean;
   isPublishing?: boolean;
   publishError?: string;

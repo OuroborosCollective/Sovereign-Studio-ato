@@ -543,6 +543,7 @@ def test_server_reconciler_processes_bound_job_without_client_polling(monkeypatc
         return candidate
 
     monkeypatch.setattr(repository_execution, "reconcile_repository_execution", reconcile)
+    monkeypatch.setattr(repository_execution, "claim_next_queued_agent_zero_repository_job", lambda _conn: None)
 
     summary = repository_execution.reconcile_repository_jobs_once(
         get_connection=factory,
@@ -556,5 +557,95 @@ def test_server_reconciler_processes_bound_job_without_client_polling(monkeypatc
         "unexpectedFailures": 0,
     }
     assert observed == [("owner-test", "agent-test", Path("/tmp/server-owned-reconcile"))]
-    assert len(connections) == 2
+    assert len(connections) == 3
+    assert all(conn.closed for conn in connections)
+
+
+
+def test_start_queues_without_submitting_when_agent_zero_admission_is_busy(monkeypatch):
+    state = _patch_job_store(monkeypatch, _job(external_ref=None, status="running"))
+    monkeypatch.setattr(
+        repository_execution,
+        "create_sovereign_agent_job",
+        lambda *_args, **_kwargs: SimpleNamespace(job_id="agent-test"),
+    )
+
+    def admit(_conn, *, job_id, expected_ref, claim_ref, wait_ref):
+        assert job_id == "agent-test"
+        assert expected_ref is None
+        assert claim_ref.startswith("agent-zero-a2a:claim:submit:")
+        assert wait_ref == "agent-zero-a2a:wait:agent-test"
+        state["job"] = replace(state["job"], status="queued", external_ref=wait_ref)
+        return "queued"
+
+    monkeypatch.setattr(repository_execution, "admit_or_queue_agent_zero_repository_job", admit)
+
+    class Client:
+        def submit_repository_task(self, **_kwargs):
+            raise AssertionError("queued admission must not call Agent Zero")
+
+    result = repository_execution.start_repository_execution(
+        object(),
+        user_id="owner-test",
+        body={
+            "mode": "free",
+            "agentMode": "single",
+            "intentMode": "repository_execution",
+            "repositoryUrl": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            "repositoryBranch": "main",
+            "mission": "Implement one bounded repository change.",
+        },
+        a2a_client_factory=Client,
+    )
+
+    assert result.status == "queued"
+    assert result.external_ref == "agent-zero-a2a:wait:agent-test"
+    assert any(event.stage == "agent_zero_a2a_admission_queued" for event in state["events"])
+
+
+def test_server_reconciler_dispatches_exactly_one_waiting_job(monkeypatch):
+    queued_claim = "agent-zero-a2a:claim:submit:queued:test"
+    queued_job = _job(external_ref=queued_claim, status="running")
+    connections = []
+    submitted = []
+
+    class Conn:
+        def __init__(self):
+            self.closed = False
+        def close(self):
+            self.closed = True
+
+    def factory():
+        conn = Conn()
+        connections.append(conn)
+        return conn
+
+    monkeypatch.setattr(repository_execution, "list_reconcilable_repository_jobs", lambda _conn, *, limit=50: ())
+    monkeypatch.setattr(
+        repository_execution,
+        "claim_next_queued_agent_zero_repository_job",
+        lambda _conn: (queued_job, queued_claim),
+    )
+
+    def submit(_conn, *, job, claim_ref, retry, a2a_client_factory):
+        submitted.append((job.job_id, claim_ref, retry, a2a_client_factory))
+        return job
+
+    monkeypatch.setattr(repository_execution, "_submit_after_claim", submit)
+    client_factory = lambda: object()
+
+    summary = repository_execution.reconcile_repository_jobs_once(
+        get_connection=factory,
+        workspace_root=Path("/tmp/server-owned-reconcile"),
+        a2a_client_factory=client_factory,
+    )
+
+    assert summary == {
+        "scanned": 1,
+        "reconciled": 1,
+        "transientFailures": 0,
+        "unexpectedFailures": 0,
+    }
+    assert submitted == [("agent-test", queued_claim, False, client_factory)]
+    assert len(connections) == 3
     assert all(conn.closed for conn in connections)

@@ -102,6 +102,7 @@ test.describe('Sovereign Control Surface vNext browser smoke', () => {
   test('5. vNext fixed projections remain reachable at phone width', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.locator('[data-testid="mobile-bottom-nav"]')).toBeVisible();
+    await expect(page.getByTestId('vnext-cyborg-ocular-matrix')).toBeVisible();
     await expect(page.getByRole('button', { name: /COMMAND/ })).toBeVisible();
     await page.getByRole('button', { name: /EVIDENCE/ }).click();
     await expect(page.locator('[data-testid="vnext-runtime-monitor"]')).toBeVisible();

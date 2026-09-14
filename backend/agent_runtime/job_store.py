@@ -507,6 +507,127 @@ def compare_and_swap_agent_job_external_ref(
     return won
 
 
+_AGENT_ZERO_REPOSITORY_ADMISSION_LOCK_KEY = 7201236190078890170
+_AGENT_ZERO_A2A_PREFIX = "agent-zero-a2a:"
+_AGENT_ZERO_WAIT_PREFIX = "agent-zero-a2a:wait:"
+_AGENT_ZERO_CLOSEOUT_CLAIM_PREFIX = "agent-zero-a2a:claim:closeout:"
+
+
+def _safe_external_ref(value: str, *, field: str) -> str:
+    normalized = sanitize_agent_text(str(value or ""), 240)
+    if not normalized or normalized != str(value or "").strip():
+        raise ValueError(f"{field} is invalid")
+    return normalized
+
+
+def _agent_zero_admission_busy(cur: Any, *, exclude_job_id: str | None = None) -> bool:
+    cur.execute(
+        """
+        SELECT 1
+        FROM sovereign_agent_jobs
+        WHERE status = 'running'
+          AND (%s::text IS NULL OR job_id <> %s)
+          AND external_ref LIKE %s
+          AND external_ref NOT LIKE %s
+          AND external_ref NOT LIKE %s
+        LIMIT 1
+        """,
+        (
+            exclude_job_id,
+            exclude_job_id,
+            f"{_AGENT_ZERO_A2A_PREFIX}%",
+            f"{_AGENT_ZERO_WAIT_PREFIX}%",
+            f"{_AGENT_ZERO_CLOSEOUT_CLAIM_PREFIX}%",
+        ),
+    )
+    return cur.fetchone() is not None
+
+
+def admit_or_queue_agent_zero_repository_job(
+    conn: Any,
+    *,
+    job_id: str,
+    expected_ref: str | None,
+    claim_ref: str,
+    wait_ref: str,
+) -> str:
+    """Atomically claim the single Agent Zero admission slot or durably queue the job."""
+
+    safe_claim = _safe_external_ref(claim_ref, field="claim_ref")
+    safe_wait = _safe_external_ref(wait_ref, field="wait_ref")
+    safe_expected = _safe_external_ref(expected_ref, field="expected_ref") if expected_ref is not None else None
+    outcome = "lost"
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", (_AGENT_ZERO_REPOSITORY_ADMISSION_LOCK_KEY,))
+        busy = _agent_zero_admission_busy(cur, exclude_job_id=job_id)
+        target_status = "queued" if busy else "running"
+        target_ref = safe_wait if busy else safe_claim
+        cur.execute(
+            """
+            UPDATE sovereign_agent_jobs
+            SET status = %s,
+                external_ref = %s,
+                blocker = NULL
+            WHERE job_id = %s
+              AND status = 'running'
+              AND external_ref IS NOT DISTINCT FROM %s
+            RETURNING job_id
+            """,
+            (target_status, target_ref, job_id, safe_expected),
+        )
+        if cur.fetchone() is not None:
+            outcome = "queued" if busy else "claimed"
+    conn.commit()
+    return outcome
+
+
+def claim_next_queued_agent_zero_repository_job(
+    conn: Any,
+) -> tuple[StoredSovereignAgentJob, str] | None:
+    """Claim exactly one oldest queued repository job when Agent Zero has no active Sovereign task."""
+
+    claimed_row = None
+    claim_ref = ""
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", (_AGENT_ZERO_REPOSITORY_ADMISSION_LOCK_KEY,))
+        if not _agent_zero_admission_busy(cur):
+            cur.execute(
+                """
+                SELECT *
+                FROM sovereign_agent_jobs
+                WHERE status = 'queued'
+                  AND external_ref LIKE %s
+                ORDER BY created_at ASC, job_id ASC
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+                """,
+                (f"{_AGENT_ZERO_WAIT_PREFIX}%",),
+            )
+            queued_row = cur.fetchone()
+            if queued_row is not None:
+                job_id = str(queued_row.get("job_id") or "")
+                wait_ref = str(queued_row.get("external_ref") or "")
+                claim_ref = f"agent-zero-a2a:claim:submit:queued:{__import__('uuid').uuid4().hex}"
+                cur.execute(
+                    """
+                    UPDATE sovereign_agent_jobs
+                    SET status = 'running',
+                        external_ref = %s,
+                        blocker = NULL
+                    WHERE job_id = %s
+                      AND status = 'queued'
+                      AND external_ref = %s
+                    RETURNING *
+                    """,
+                    (claim_ref, job_id, wait_ref),
+                )
+                claimed_row = cur.fetchone()
+    conn.commit()
+    if claimed_row is None:
+        return None
+    return stored_job_from_row(claimed_row), claim_ref
+
+
 def mark_draft_pr_prepared(
     conn: Any,
     *,

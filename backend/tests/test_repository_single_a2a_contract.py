@@ -58,8 +58,12 @@ def test_external_ref_is_atomic_task_authority_and_recovery_is_bounded():
 
     assert "external_ref IS NOT DISTINCT FROM %s" in store
     assert "RETURNING job_id" in store
+    assert "pg_advisory_xact_lock" in store
+    assert "claim_next_queued_agent_zero_repository_job" in store
     assert '"agent-zero-a2a:"' in runtime
     assert '"agent-zero-a2a:retry:"' in runtime
+    assert '"agent-zero-a2a:wait:"' in runtime
+    assert "admit_or_queue_agent_zero_repository_job" in runtime
     assert "AgentZeroA2ASubmitOutcomeUnknown" in runtime
     assert "automatic resubmit is forbidden" in runtime
     assert "no further resubmit is allowed" in runtime

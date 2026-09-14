@@ -5,6 +5,7 @@ const document = JSON.parse(readFileSync(EVIDENCE_PATH, 'utf8'));
 const fail = (message) => { throw new Error(`FIVE_PATH_RUNTIME_EVIDENCE_INVALID: ${message}`); };
 const jobIdPattern = /^agent-[0-9a-f]{32}$/;
 const a2aRefPattern = /^agent-zero-a2a:(?:retry:)?[A-Za-z0-9._:-]{1,200}$/;
+const a2aWaitRefPattern = /^agent-zero-a2a:wait:[A-Za-z0-9._:-]{1,200}$/;
 
 if (!/^[0-9a-f]{40}$/.test(String(document.sourceRevision || ''))) fail('sourceRevision is not an exact Git SHA');
 if (document.verifiedDraftPrCount !== 5 || !Array.isArray(document.evidence) || document.evidence.length !== 5) {
@@ -48,7 +49,11 @@ if (deployedRevision !== document.sourceRevision) {
 
 const validA2ARef = (value) => {
   const ref = String(value || '');
-  return a2aRefPattern.test(ref) && !ref.includes(':claim:');
+  return a2aRefPattern.test(ref) && !ref.includes(':claim:') && !a2aWaitRefPattern.test(ref);
+};
+const validA2AStartRef = (value) => {
+  const ref = String(value || '');
+  return !ref.includes(':claim:') && (validA2ARef(ref) || a2aWaitRefPattern.test(ref));
 };
 
 const seenJobs = new Set();
@@ -72,7 +77,7 @@ for (const item of document.evidence) {
   if (uniqueStartRefs.size !== 1) fail(`${jobId}: start task binding was not stable`);
   const start = starts[0];
   if (!start.workspaceId) fail(`${jobId}: internal workspace id missing at start`);
-  if (!validA2ARef(start.externalRef)) fail(`${jobId}: initial Agent Zero A2A binding invalid`);
+  if (!validA2AStartRef(start.externalRef)) fail(`${jobId}: initial Agent Zero admission/task binding invalid`);
 
   const execution = item?.execution || {};
   if (execution.jobId !== jobId) fail(`${jobId}: evidence/job identity mismatch`);

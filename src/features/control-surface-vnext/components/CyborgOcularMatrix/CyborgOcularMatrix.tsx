@@ -57,8 +57,8 @@ export function CyborgOcularMatrix({ isTyping = false, jobPhase = 'IDLE' }: Prop
   const speed = useMemo(() => active ? 1.4 : ownerWait ? 2.8 : completed ? 8 : 14, [active, ownerWait, completed]);
 
   return (
-    <div className="relative hidden sm:flex items-center gap-2 select-none" data-testid="vnext-cyborg-ocular-matrix" aria-label={`Sovereign ocular phase ${jobPhase}`}>
-      <div className="relative w-[88px] h-[48px] md:w-[112px] md:h-[58px] flex items-center justify-center overflow-visible">
+    <div className="relative flex items-center gap-1 sm:gap-2 select-none shrink-0" data-testid="vnext-cyborg-ocular-matrix" aria-label={`Sovereign ocular phase ${jobPhase}`}>
+      <div className="relative w-[50px] h-[32px] sm:w-[88px] sm:h-[48px] md:w-[112px] md:h-[58px] flex items-center justify-center overflow-visible">
         <motion.div
           className="absolute inset-[3px] rounded-[50%] border bg-black/70 shadow-[inset_0_0_28px_rgba(0,0,0,1)]"
           animate={{ borderColor: accent, boxShadow: awake ? `inset 0 0 28px rgba(0,0,0,1),0 0 22px ${accent}55` : 'inset 0 0 28px rgba(0,0,0,1),0 0 8px rgba(255,30,56,.15)' }}

@@ -31,7 +31,9 @@ from .git_workspace import git_diff_check, git_diff_full
 from .job_lifecycle import create_sovereign_agent_job
 from .job_store import (
     StoredSovereignAgentJob,
+    admit_or_queue_agent_zero_repository_job,
     append_agent_event,
+    claim_next_queued_agent_zero_repository_job,
     compare_and_swap_agent_job_external_ref,
     list_reconcilable_repository_jobs,
     mark_draft_pr_prepared,
@@ -48,6 +50,7 @@ _REPOSITORY_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9_.-]+/[A-Z
 _A2A_NORMAL_PREFIX: Final[str] = "agent-zero-a2a:"
 _A2A_RETRY_PREFIX: Final[str] = "agent-zero-a2a:retry:"
 _A2A_CLAIM_PREFIX: Final[str] = "agent-zero-a2a:claim:"
+_A2A_WAIT_PREFIX: Final[str] = "agent-zero-a2a:wait:"
 _MAX_CLOSEOUT_DIFF_BYTES: Final[int] = 2_000_000
 _MAX_CLOSEOUT_CHANGED_FILES: Final[int] = 50
 
@@ -158,7 +161,13 @@ def _retry_ref(task_id: str) -> str:
     return f"{_A2A_RETRY_PREFIX}{task_id}"
 
 
+def _wait_ref(job_id: str) -> str:
+    return f"{_A2A_WAIT_PREFIX}{job_id}"
+
+
 def _bound_task(external_ref: str) -> tuple[str, bool] | None:
+    if external_ref.startswith(_A2A_WAIT_PREFIX):
+        return None
     if external_ref.startswith(_A2A_RETRY_PREFIX):
         task_id = external_ref[len(_A2A_RETRY_PREFIX):]
         return (task_id, True) if task_id else None
@@ -264,18 +273,28 @@ def start_repository_execution(
         return job
 
     claim_ref = _claim("submit", job.job_id)
-    if not compare_and_swap_agent_job_external_ref(
+    wait_ref = _wait_ref(job.job_id)
+    admission = admit_or_queue_agent_zero_repository_job(
         conn,
         job_id=job.job_id,
         expected_ref=None,
-        new_ref=claim_ref,
-    ):
+        claim_ref=claim_ref,
+        wait_ref=wait_ref,
+    )
+    current = read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
+    if admission == "lost":
         # Another caller already owns the external-effect boundary. Never submit.
-        return read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
-    claimed = read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
+        return current
+    if admission == "queued":
+        append_agent_event(conn, job.job_id, SovereignAgentEvent(
+            stage="agent_zero_a2a_admission_queued",
+            level="info",
+            message="Agent Zero is executing another Sovereign repository task; this persisted job is queued without sending a duplicate A2A request.",
+        ))
+        return read_agent_job(conn, user_id=user_id, job_id=job.job_id) or current
     return _submit_after_claim(
         conn,
-        job=claimed,
+        job=current,
         claim_ref=claim_ref,
         retry=False,
         a2a_client_factory=a2a_client_factory,
@@ -619,6 +638,7 @@ def reconcile_repository_jobs_once(
     get_connection: ConnectionFactory,
     workspace_root: Path | None = None,
     limit: int = 50,
+    a2a_client_factory: A2AClientFactory = AgentZeroA2AClient.from_env,
 ) -> dict[str, int]:
     """Reconcile persisted A2A repository jobs without any client polling.
 
@@ -644,6 +664,7 @@ def reconcile_repository_jobs_once(
                 user_id=candidate.user_id,
                 job_id=candidate.job_id,
                 workspace_root=workspace_root,
+                a2a_client_factory=a2a_client_factory,
             )
             reconciled += 1
         except RepositoryExecutionTransientError:
@@ -657,8 +678,43 @@ def reconcile_repository_jobs_once(
             )
         finally:
             _close_reconciler_connection(conn)
+
+    queued_dispatch = None
+    admission_conn = get_connection()
+    try:
+        queued_dispatch = claim_next_queued_agent_zero_repository_job(admission_conn)
+    except Exception as exc:
+        unexpected_failures += 1
+        _LOGGER.warning("repository A2A admission scan failed type=%s", type(exc).__name__)
+    finally:
+        _close_reconciler_connection(admission_conn)
+
+    if queued_dispatch is not None:
+        queued_job, queued_claim_ref = queued_dispatch
+        conn = get_connection()
+        try:
+            _submit_after_claim(
+                conn,
+                job=queued_job,
+                claim_ref=queued_claim_ref,
+                retry=False,
+                a2a_client_factory=a2a_client_factory,
+            )
+            reconciled += 1
+        except RepositoryExecutionTransientError:
+            transient_failures += 1
+        except Exception as exc:
+            unexpected_failures += 1
+            _LOGGER.warning(
+                "repository queued A2A submit failed job=%s type=%s",
+                queued_job.job_id,
+                type(exc).__name__,
+            )
+        finally:
+            _close_reconciler_connection(conn)
+
     return {
-        "scanned": len(candidates),
+        "scanned": len(candidates) + (1 if queued_dispatch is not None else 0),
         "reconciled": reconciled,
         "transientFailures": transient_failures,
         "unexpectedFailures": unexpected_failures,
