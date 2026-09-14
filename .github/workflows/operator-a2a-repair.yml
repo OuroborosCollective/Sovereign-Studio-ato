@@ -1,0 +1,172 @@
+name: Operator A2A Lifecycle Repair
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/a2a-server-reconcile-20260914
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Guard exact base and patch surface
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD^)" = "8ce58dbeac5ab9b5d98ea7e51d31946b5592c710"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/operator-a2a-repair.yml"
+
+      - name: Apply exact A2A lifecycle repair
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          def replace_exact(path: str, old: str, new: str, count: int = 1) -> None:
+              p = Path(path)
+              text = p.read_text('utf-8')
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} occurrences, found {actual}')
+              p.write_text(text.replace(old, new), 'utf-8')
+
+          def append_once(path: str, marker: str, addition: str) -> None:
+              p = Path(path)
+              text = p.read_text('utf-8')
+              if marker in text:
+                  raise SystemExit(f'{path}: marker already present: {marker}')
+              p.write_text(text.rstrip() + '\n\n' + addition.strip() + '\n', 'utf-8')
+
+          job_store = 'backend/agent_runtime/job_store.py'
+          replace_exact(
+              job_store,
+              '''    pr_url: str | None = None\n    pr_state: str | None = None\n''',
+              '''    pr_url: str | None = None\n    pr_state: str | None = None\n    created_at: Any | None = None\n    updated_at: Any | None = None\n''',
+          )
+          replace_exact(
+              job_store,
+              '''        pr_url=row.get("pr_url"),\n        pr_state=row.get("pr_state"),\n    )\n''',
+              '''        pr_url=row.get("pr_url"),\n        pr_state=row.get("pr_state"),\n        created_at=row.get("created_at"),\n        updated_at=row.get("updated_at"),\n    )\n''',
+          )
+          replace_exact(
+              job_store,
+              '''    return tuple(stored_job_from_row(row) for row in rows)\n\n\ndef result_from_stored_job(job: StoredSovereignAgentJob) -> SovereignAgentJobResult:\n''',
+              '''    return tuple(stored_job_from_row(row) for row in rows)\n\n\ndef list_reconcilable_repository_jobs(\n    conn: Any,\n    *,\n    limit: int = 50,\n) -> tuple[StoredSovereignAgentJob, ...]:\n    """List server-owned running Agent Zero repository jobs across users.\n\n    This is an internal worker query, not a user-facing read boundary. Claim refs\n    are excluded because their side-effect owner must finish or require operator\n    recovery; blindly reconciling a claim could duplicate an external effect.\n    """\n\n    safe_limit = max(1, min(int(limit), 200))\n    with conn.cursor() as cur:\n        cur.execute(\n            """\n            SELECT * FROM sovereign_agent_jobs\n            WHERE status = 'running'\n              AND external_ref LIKE 'agent-zero-a2a:%'\n              AND external_ref NOT LIKE 'agent-zero-a2a:claim:%'\n            ORDER BY updated_at ASC, job_id ASC\n            LIMIT %s\n            """,\n            (safe_limit,),\n        )\n        rows = cur.fetchall()\n    return tuple(stored_job_from_row(row) for row in rows)\n\n\ndef result_from_stored_job(job: StoredSovereignAgentJob) -> SovereignAgentJobResult:\n''',
+          )
+
+          repo_exec = 'backend/agent_runtime/repository_execution.py'
+          replace_exact(
+              repo_exec,
+              '''import hashlib\nimport os\nfrom pathlib import Path\nimport re\nfrom typing import Any, Callable, Final\nimport uuid\n''',
+              '''from datetime import datetime, timezone\nimport hashlib\nimport logging\nimport os\nfrom pathlib import Path\nimport re\nimport threading\nimport time\nfrom typing import Any, Callable, Final\nimport uuid\n''',
+          )
+          replace_exact(
+              repo_exec,
+              '''    compare_and_swap_agent_job_external_ref,\n    mark_draft_pr_prepared,\n    read_agent_job,\n''',
+              '''    compare_and_swap_agent_job_external_ref,\n    list_reconcilable_repository_jobs,\n    mark_draft_pr_prepared,\n    read_agent_job,\n''',
+          )
+          replace_exact(
+              repo_exec,
+              '''_SHELL_CONTROL_TOKENS: Final[frozenset[str]] = frozenset({"||", ";", "|", ">", ">>", "<", "<<", "&"})\n\n\nclass RepositoryExecutionError(RuntimeError):\n''',
+              '''_SHELL_CONTROL_TOKENS: Final[frozenset[str]] = frozenset({"||", ";", "|", ">", ">>", "<", "<<", "&"})\n_RECONCILER_THREAD_LOCK = threading.Lock()\n_RECONCILER_THREAD: threading.Thread | None = None\n_LOGGER = logging.getLogger(__name__)\n\n\nclass RepositoryExecutionError(RuntimeError):\n''',
+          )
+          replace_exact(
+              repo_exec,
+              '''class RepositoryExecutionTransientError(RepositoryExecutionError):\n    """A readback failed but no executor side effect may be repeated."""\n\n\ndef _configured_repository_url() -> str:\n''',
+              '''class RepositoryExecutionTransientError(RepositoryExecutionError):\n    """A readback failed but no executor side effect may be repeated."""\n\n\ndef _bounded_env_seconds(name: str, default: float, minimum: float, maximum: float) -> float:\n    try:\n        value = float(os.getenv(name, str(default)))\n    except (TypeError, ValueError):\n        value = default\n    return max(minimum, min(value, maximum))\n\n\ndef _repository_reconciler_poll_seconds() -> float:\n    return _bounded_env_seconds("SOVEREIGN_REPOSITORY_RECONCILER_POLL_SECONDS", 2.0, 0.5, 30.0)\n\n\ndef _repository_stall_seconds() -> float:\n    return _bounded_env_seconds("SOVEREIGN_REPOSITORY_STALL_SECONDS", 1800.0, 300.0, 86400.0)\n\n\ndef _job_age_seconds(job: StoredSovereignAgentJob) -> float | None:\n    observed = job.updated_at or job.created_at\n    if not isinstance(observed, datetime):\n        return None\n    if observed.tzinfo is None:\n        observed = observed.replace(tzinfo=timezone.utc)\n    return max(0.0, (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds())\n\n\ndef _configured_repository_url() -> str:\n''',
+          )
+          replace_exact(
+              repo_exec,
+              '''    if task.active:\n        return job\n''',
+              '''    if task.active:\n        age_seconds = _job_age_seconds(job)\n        if age_seconds is not None and age_seconds >= _repository_stall_seconds():\n            return _block_job(\n                conn,\n                job,\n                (\n                    "AGENT_ZERO_A2A_STALLED: the external task remained active beyond the "\n                    "bounded server reconciliation window; workspace publication is quarantined "\n                    "and automatic resubmit is forbidden."\n                ),\n                "agent_zero_a2a_task_stalled",\n            )\n        return job\n''',
+          )
+          append_once(
+              repo_exec,
+              'def reconcile_repository_jobs_once(',
+              '''def _close_reconciler_connection(conn: Any) -> None:\n    close = getattr(conn, "close", None)\n    if callable(close):\n        close()\n\n\ndef reconcile_repository_jobs_once(\n    *,\n    get_connection: ConnectionFactory,\n    workspace_root: Path | None = None,\n    limit: int = 50,\n) -> dict[str, int]:\n    """Reconcile persisted A2A repository jobs without any client polling.\n\n    The scan only discovers already-bound tasks. ``reconcile_repository_execution``\n    retains the CAS ownership for retry and closeout, so this worker cannot create a\n    second Agent Zero task or duplicate Draft-PR preparation.\n    """\n\n    listing_conn = get_connection()\n    try:\n        candidates = list_reconcilable_repository_jobs(listing_conn, limit=limit)\n    finally:\n        _close_reconciler_connection(listing_conn)\n\n    reconciled = 0\n    transient_failures = 0\n    unexpected_failures = 0\n    for candidate in candidates:\n        conn = get_connection()\n        try:\n            reconcile_repository_execution(\n                conn,\n                user_id=candidate.user_id,\n                job_id=candidate.job_id,\n                workspace_root=workspace_root,\n            )\n            reconciled += 1\n        except RepositoryExecutionTransientError:\n            transient_failures += 1\n        except Exception as exc:  # keep the daemon alive; no secret-shaped payload is logged\n            unexpected_failures += 1\n            _LOGGER.warning(\n                "repository A2A reconcile failed job=%s type=%s",\n                candidate.job_id,\n                type(exc).__name__,\n            )\n        finally:\n            _close_reconciler_connection(conn)\n    return {\n        "scanned": len(candidates),\n        "reconciled": reconciled,\n        "transientFailures": transient_failures,\n        "unexpectedFailures": unexpected_failures,\n    }\n\n\ndef start_repository_reconciler(\n    *,\n    get_connection: ConnectionFactory,\n    workspace_root: Path | None = None,\n) -> bool:\n    """Start one process-local daemon that owns A2A lifecycle reconciliation.\n\n    Multiple backend processes remain safe: active-task reads are side-effect free\n    and every retry/closeout effect is still protected by the existing persisted\n    ``external_ref`` compare-and-swap boundary. On process restart the fresh daemon\n    scans the database again, so client presence is never required for completion.\n    """\n\n    global _RECONCILER_THREAD\n    with _RECONCILER_THREAD_LOCK:\n        if _RECONCILER_THREAD is not None and _RECONCILER_THREAD.is_alive():\n            return False\n\n        def loop() -> None:\n            while True:\n                try:\n                    reconcile_repository_jobs_once(\n                        get_connection=get_connection,\n                        workspace_root=workspace_root,\n                    )\n                except Exception as exc:\n                    _LOGGER.warning(\n                        "repository A2A reconcile cycle failed type=%s",\n                        type(exc).__name__,\n                    )\n                time.sleep(_repository_reconciler_poll_seconds())\n\n        _RECONCILER_THREAD = threading.Thread(\n            target=loop,\n            name="sovereign-repository-a2a-reconciler",\n            daemon=True,\n        )\n        _RECONCILER_THREAD.start()\n        return True''',
+          )
+
+          app_path = 'scripts/sovereign-backend/app.py'
+          replace_exact(
+              app_path,
+              '''from agent_runtime.routes import register_sovereign_agent_routes\n''',
+              '''from agent_runtime.repository_execution import start_repository_reconciler\nfrom agent_runtime.routes import register_sovereign_agent_routes\n''',
+          )
+          replace_exact(
+              app_path,
+              '''    desktop_frame_allowed=lambda context: DesktopControlGatewayV1.from_env().frame_allowed(context=context),\n    get_session_github_token=_session_github_token_for_user,\n)\n''',
+              '''    desktop_frame_allowed=lambda context: DesktopControlGatewayV1.from_env().frame_allowed(context=context),\n    get_session_github_token=_session_github_token_for_user,\n)\nstart_repository_reconciler(\n    get_connection=get_agent_runtime_connection,\n    workspace_root=(\n        Path(os.environ["SOVEREIGN_AGENT_WORKSPACE_ROOT"])\n        if os.getenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", "").strip()\n        else None\n    ),\n)\n''',
+          )
+
+          e2e = 'tests/e2e/five-draft-pr-paths.spec.ts'
+          replace_exact(
+              e2e,
+              '''const JOB_ID = /^agent-[0-9a-f]{32}$/;\n''',
+              '''const JOB_ID = /^agent-[0-9a-f]{32}$/;\nconst REPOSITORY_READY_TIMEOUT_MS = (() => {\n  const configured = Number.parseInt(process.env.SOVEREIGN_E2E_REPOSITORY_READY_TIMEOUT_MS || '600000', 10);\n  if (!Number.isFinite(configured)) return 600_000;\n  return Math.max(210_000, Math.min(configured, 900_000));\n})();\n''',
+          )
+          replace_exact(
+              e2e,
+              '''  const deadline = Date.now() + 210_000;\n''',
+              '''  const deadline = Date.now() + REPOSITORY_READY_TIMEOUT_MS;\n''',
+              count=2,
+          )
+
+          test_path = 'backend/tests/test_repository_execution.py'
+          replace_exact(
+              test_path,
+              '''from dataclasses import replace\nimport os\n''',
+              '''from dataclasses import replace\nfrom datetime import datetime, timedelta, timezone\nimport os\n''',
+          )
+          append_once(
+              test_path,
+              'test_server_reconciler_processes_bound_job_without_client_polling',
+              '''def test_active_task_stalls_fail_closed_after_bounded_window(monkeypatch):\n    stale = replace(\n        _job(),\n        updated_at=datetime.now(timezone.utc) - timedelta(seconds=601),\n    )\n    state = _patch_job_store(monkeypatch, stale)\n    monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")\n\n    class Client:\n        def get_task(self, task_id):\n            assert task_id == "task-original"\n            return AgentZeroA2ATask(task_id=task_id, state="working")\n\n    result = repository_execution.reconcile_repository_execution(\n        object(),\n        user_id="owner-test",\n        job_id="agent-test",\n        a2a_client_factory=Client,\n    )\n\n    assert result is not None\n    assert result.status == "blocked"\n    assert "AGENT_ZERO_A2A_STALLED" in (result.blocker or "")\n    assert any(event.stage == "agent_zero_a2a_task_stalled" for event in state["events"])\n\n\ndef test_fresh_active_task_remains_running(monkeypatch):\n    fresh = replace(_job(), updated_at=datetime.now(timezone.utc))\n    _patch_job_store(monkeypatch, fresh)\n    monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")\n\n    class Client:\n        def get_task(self, task_id):\n            return AgentZeroA2ATask(task_id=task_id, state="working")\n\n    result = repository_execution.reconcile_repository_execution(\n        object(),\n        user_id="owner-test",\n        job_id="agent-test",\n        a2a_client_factory=Client,\n    )\n\n    assert result is not None\n    assert result.status == "running"\n\n\ndef test_server_reconciler_processes_bound_job_without_client_polling(monkeypatch):\n    candidate = _job()\n    connections = []\n    observed = []\n\n    class Conn:\n        def __init__(self):\n            self.closed = False\n\n        def close(self):\n            self.closed = True\n\n    def factory():\n        conn = Conn()\n        connections.append(conn)\n        return conn\n\n    monkeypatch.setattr(\n        repository_execution,\n        "list_reconcilable_repository_jobs",\n        lambda _conn, *, limit=50: (candidate,),\n    )\n\n    def reconcile(_conn, *, user_id, job_id, workspace_root=None, a2a_client_factory=None):\n        observed.append((user_id, job_id, workspace_root))\n        return candidate\n\n    monkeypatch.setattr(repository_execution, "reconcile_repository_execution", reconcile)\n\n    summary = repository_execution.reconcile_repository_jobs_once(\n        get_connection=factory,\n        workspace_root=Path("/tmp/server-owned-reconcile"),\n    )\n\n    assert summary == {\n        "scanned": 1,\n        "reconciled": 1,\n        "transientFailures": 0,\n        "unexpectedFailures": 0,\n    }\n    assert observed == [("owner-test", "agent-test", Path("/tmp/server-owned-reconcile"))]\n    assert len(connections) == 2\n    assert all(conn.closed for conn in connections)''',
+          )
+
+          # Canonical/shipping parity is a hard repository contract.
+          shutil.copyfile(job_store, 'scripts/sovereign-backend/agent_runtime/job_store.py')
+          shutil.copyfile(repo_exec, 'scripts/sovereign-backend/agent_runtime/repository_execution.py')
+          PY
+
+      - name: Static verification
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile \
+            backend/agent_runtime/job_store.py \
+            backend/agent_runtime/repository_execution.py \
+            scripts/sovereign-backend/agent_runtime/job_store.py \
+            scripts/sovereign-backend/agent_runtime/repository_execution.py \
+            scripts/sovereign-backend/app.py \
+            backend/tests/test_repository_execution.py
+          cmp -s backend/agent_runtime/job_store.py scripts/sovereign-backend/agent_runtime/job_store.py
+          cmp -s backend/agent_runtime/repository_execution.py scripts/sovereign-backend/agent_runtime/repository_execution.py
+          git diff --check
+
+      - name: Commit repair and remove operator patcher
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/operator-a2a-repair.yml
+          git add \
+            backend/agent_runtime/job_store.py \
+            scripts/sovereign-backend/agent_runtime/job_store.py \
+            backend/agent_runtime/repository_execution.py \
+            scripts/sovereign-backend/agent_runtime/repository_execution.py \
+            scripts/sovereign-backend/app.py \
+            backend/tests/test_repository_execution.py \
+            tests/e2e/five-draft-pr-paths.spec.ts
+          git commit -m "fix(agent-runtime): reconcile Agent Zero jobs server-side"
+          git push origin HEAD:sovereign/chatgpt/a2a-server-reconcile-20260914
