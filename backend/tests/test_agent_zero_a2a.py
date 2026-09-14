@@ -68,6 +68,7 @@ def test_submit_sets_both_auth_headers_keeps_secret_out_of_body_and_is_nonblocki
     assert calls[0]["json"]["params"]["message"]["kind"] == "message"
     assert calls[0]["json"]["params"]["configuration"]["blocking"] is False
     assert calls[0]["json"]["params"]["configuration"]["acceptedOutputModes"] == ["text", "text/plain"]
+    assert calls[0]["timeout"] == 900
     prompt = calls[0]["json"]["params"]["message"]["parts"][0]["text"]
     assert "/a0/sovereign-workspaces/agent-workspace-123/repo" in prompt
     assert "Do not clone" in prompt
@@ -84,6 +85,7 @@ def test_tasks_get_validates_exact_task_identity_and_state(monkeypatch, tmp_path
     def fake_post(_url, **kwargs):
         assert kwargs["json"]["method"] == "tasks/get"
         assert kwargs["json"]["params"] == {"id": "task-expected"}
+        assert kwargs["timeout"] == 30
         return FakeResponse({
             "jsonrpc": "2.0",
             "id": kwargs["json"]["id"],
