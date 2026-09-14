@@ -30,16 +30,18 @@ describe('Sovereign vNext primary-surface contract', () => {
 
   it('keeps mission execution and Draft-PR creation behind the real production adapter and existing strict client', () => {
     const surface = source('src/features/control-surface-vnext/App.tsx');
-    const adapter = source('src/features/control-surface-vnext/adapter/production-adapter.ts');
+    const repositoryAdapter = source('src/features/control-surface-vnext/adapter/repository-bound-adapter.ts');
+    const adapterBase = source('src/features/control-surface-vnext/adapter/production-adapter.ts');
     const client = source('src/features/product/runtime/sovereignAgentClient.ts');
     const publication = source('src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx');
 
     expect(surface).toContain('useSwarmRun');
     expect(surface).toContain('useSovereignJob');
     expect(surface).toContain('setActiveRunId(accepted.jobId)');
-    expect(adapter).toContain("'/api/user/agent/swarm/run'");
-    expect(adapter).toContain('this.client.prepareDraftPr(run.jobId)');
-    expect(adapter).toContain('this.client.createDraftPr(run.jobId)');
+    expect(repositoryAdapter).toContain("'/api/user/agent/repository/run'");
+    expect(repositoryAdapter).not.toContain("'/api/user/agent/swarm/run'");
+    expect(adapterBase).toContain('this.client.prepareDraftPr(jobId)');
+    expect(adapterBase).toContain('this.client.createDraftPr(jobId)');
     expect(client).toContain("jobPath(jobId, '/draft-pr/prepare')");
     expect(client).toContain("jobPath(jobId, '/draft-pr/create')");
     expect(client).toContain("stringValue(signal.prStateVerified) === 'open'");

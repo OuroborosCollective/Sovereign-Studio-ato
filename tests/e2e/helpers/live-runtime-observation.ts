@@ -64,10 +64,16 @@ function gateFailure(value: unknown): string | null {
 
 /** Secret-safe projection of the actual browser request. Mission/evidence/credentials are never serialized. */
 export function runRequestObservation(path: string, method: string, payload: unknown) {
-  if (path !== '/api/user/agent/swarm/run' || method !== 'POST') return null;
+  if (method !== 'POST') return null;
+  const route = path === '/api/user/agent/repository/run'
+    ? 'repository.start.request'
+    : path === '/api/user/agent/swarm/run'
+      ? 'swarm.start.request'
+      : null;
+  if (!route) return null;
   const body = record(payload);
   return {
-    route: 'swarm.start.request',
+    route,
     mode: code(body.mode),
     agentMode: code(body.agentMode),
     intentMode: code(body.intentMode),
@@ -79,10 +85,11 @@ export function runRequestObservation(path: string, method: string, payload: unk
 export function runtimeObservation(path: string, method: string, httpStatus: number, payload: unknown) {
   let route: string;
   let requestedRunId: string | null = null;
-  if (path === '/api/user/agent/swarm/run' && method === 'POST') route = 'swarm.start';
+  if (path === '/api/user/agent/repository/run' && method === 'POST') route = 'repository.start';
+  else if (path === '/api/user/agent/swarm/run' && method === 'POST') route = 'swarm.start';
   else if (/^\/api\/user\/agent\/swarm\/runs\/run-[0-9a-f]{32}$/.test(path) && method === 'GET') {
     route = 'swarm.read'; requestedRunId = path.split('/').pop()!;
-  } else if (/^\/api\/user\/agent\/jobs\/[A-Za-z0-9-]{3,120}$/.test(path) && method === 'GET') route = 'job.read';
+  } else if (/^\/api\/user\/agent\/jobs\/[A-Za-z0-9._-]{3,160}$/.test(path) && method === 'GET') route = 'job.read';
   else if (path === '/api/controller/approvals' && method === 'GET') route = 'approval.read';
   else return null;
   const body = record(payload);
@@ -97,8 +104,10 @@ export function runtimeObservation(path: string, method: string, httpStatus: num
     route, method, httpStatus, requestedRunId, returnedRunId,
     identityMatches: requestedRunId && returnedRunId ? requestedRunId === returnedRunId : null,
     status: code(run.status ?? job.status ?? body.status),
-    jobId: id(run.jobId ?? run.job_id ?? body.jobId ?? job.jobId ?? job.id ?? body.id, /^(?:agent|job)-[0-9a-f-]{4,100}$/),
+    jobId: id(run.jobId ?? run.job_id ?? body.jobId ?? job.jobId ?? job.id ?? body.id, /^(?:agent|job)-[A-Za-z0-9._-]{4,120}$/),
     workspaceId: boundedIdentifier(body.workspaceId ?? job.workspaceId),
+    externalRef: boundedIdentifier(body.externalRef ?? job.externalRef),
+    prState: code(body.prState ?? job.prState),
     evidenceId: id(run.evidenceId ?? body.evidenceId, /^evidence-[0-9a-f]{32}$/),
     failureFamily: code(body.failureFamily ?? body.failure_family ?? body.blocker),
     nextAction: code(run.nextAction ?? run.next_action ?? body.nextAction),

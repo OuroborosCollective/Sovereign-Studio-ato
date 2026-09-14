@@ -35,17 +35,9 @@ async function installReadbackManifests(page: import('@playwright/test').Page): 
     runtime: 'embedded',
     policy: { draftPrOnly: true, confirmRequired: true },
   }));
-  await page.route('**/api/user/agent/swarm/manifest', route => fulfillJson(route, {
+  await page.route('**/api/user/agent/jobs?limit=1', route => fulfillJson(route, {
     ok: true,
-    runtime: 'openai-agents-sdk',
-    manifest: {
-      releaseMode: 'draft_pr_only',
-      runtimeTruthRequired: true,
-      agents: [
-        { role: 'dispatcher', name: 'The Dispatcher', responsibility: 'Plan and route the mission.' },
-        { role: 'judge', name: 'The Judge', responsibility: 'Reject unsupported publication claims.' },
-      ],
-    },
+    jobs: [],
   }));
 }
 
@@ -80,7 +72,7 @@ test.describe('Sovereign Control Surface vNext browser smoke', () => {
     await expect(dialog.locator('input[placeholder="svk_…"]')).toHaveCount(0);
   });
 
-  test('3. Toolchain and agent-registry panels are server-readback projections, not local switches', async ({ page }) => {
+  test('3. Toolchain and agent-registry panels remain read-only projections without an invented Swarm graph', async ({ page }) => {
     await page.getByRole('button').filter({ hasText: 'TOOLCHAIN' }).click();
     const toolchainDialog = page.getByRole('dialog', { name: 'TOOLCHAIN CONFIGURATION // EXECUTION DRIVERS' });
     await expect(toolchainDialog).toBeVisible();
@@ -89,11 +81,12 @@ test.describe('Sovereign Control Surface vNext browser smoke', () => {
     await toolchainDialog.getByRole('button', { name: 'Close' }).click();
 
     await page.getByRole('button').filter({ hasText: 'AGENTS' }).click();
-    const swarmDialog = page.getByRole('dialog', { name: 'SWARM REGISTRY // BIOMODULAR NODES' });
-    await expect(swarmDialog).toBeVisible();
-    await expect(swarmDialog.getByText('The Dispatcher', { exact: true })).toBeVisible();
-    await expect(swarmDialog.getByText('The Judge', { exact: true })).toBeVisible();
-    await expect(swarmDialog.getByText(/does not locally enable or disable execution capabilities/)).toBeVisible();
+    const agentDialog = page.getByRole('dialog', { name: 'AGENT REGISTRY // RUNTIME PROJECTION' });
+    await expect(agentDialog).toBeVisible();
+    await expect(agentDialog.getByText(/intentionally projects no Swarm worker graph/)).toBeVisible();
+    await expect(agentDialog.getByText('No worker graph is projected for this execution path.', { exact: true })).toBeVisible();
+    await expect(agentDialog.getByText('The Dispatcher', { exact: true })).toHaveCount(0);
+    await expect(agentDialog.getByText('The Judge', { exact: true })).toHaveCount(0);
   });
 
   test('4. Architecture panel documents the exact production adapter truth boundary', async ({ page }) => {
@@ -101,7 +94,7 @@ test.describe('Sovereign Control Surface vNext browser smoke', () => {
     const dialog = page.getByRole('dialog', { name: 'PRODUCTION ADAPTER // TRUTH BOUNDARY' });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText('NO AUTOMATIC SIMULATOR FALLBACK', { exact: true })).toBeVisible();
-    await expect(dialog.getByText('/api/user/agent/swarm/run', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('/api/user/agent/repository/run', { exact: true })).toBeVisible();
     await expect(dialog.getByText('/api/user/agent/jobs/:jobId/draft-pr/create', { exact: true })).toBeVisible();
     await expect(dialog.getByText(/GitHub readback/).first()).toBeVisible();
   });
@@ -122,7 +115,7 @@ test.describe('Sovereign Control Surface vNext browser smoke', () => {
   test('6. Missing session fails closed before any protected agent request', async ({ page }) => {
     await page.unroute('**/api/auth/me');
     await page.unroute('**/api/user/agent/toolchain/manifest');
-    await page.unroute('**/api/user/agent/swarm/manifest');
+    await page.unroute('**/api/user/agent/jobs?limit=1');
     await page.route('**/api/auth/me', route => fulfillJson(route, { error: 'unauthorized' }, 401));
     await page.route('**/api/auth/guest', route => fulfillJson(route, { error: 'guest unavailable' }, 503));
     await page.evaluate(() => window.localStorage.clear());
