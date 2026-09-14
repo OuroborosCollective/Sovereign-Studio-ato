@@ -6,6 +6,7 @@ All operations are scoped to the workspace repository.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -14,14 +15,25 @@ from .base import ToolBase, ToolResult, ToolPolicyError
 
 
 def _run_git(args: list[str], cwd: str | Path, timeout: int = 60) -> tuple[int, str, str]:
-    """Run a git command and return (exit_code, stdout, stderr)."""
+    """Run Git with a process-local ownership exception for this exact workspace."""
     try:
+        command_env = os.environ.copy()
+        repo_path = Path(cwd).resolve()
+        if (repo_path / ".git").is_dir():
+            try:
+                config_count = int(command_env.get("GIT_CONFIG_COUNT", "0"))
+            except ValueError:
+                config_count = 0
+            command_env[f"GIT_CONFIG_KEY_{config_count}"] = "safe.directory"
+            command_env[f"GIT_CONFIG_VALUE_{config_count}"] = str(repo_path)
+            command_env["GIT_CONFIG_COUNT"] = str(config_count + 1)
         result = subprocess.run(
             ["git"] + args,
             cwd=str(cwd),
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=command_env,
         )
         return result.returncode, result.stdout, result.stderr
     except subprocess.TimeoutExpired:

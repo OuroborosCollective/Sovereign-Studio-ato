@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { Check, Copy, Diff, FileCode2, FolderGit2, GitCommit } from 'lucide-react';
 import type { WorkspaceState } from '../../types/domain';
 
-interface Props { workspace: WorkspaceState | undefined; }
+interface Props { workspace: WorkspaceState | undefined; workspaceId?: string; sourceStatus?: string; }
 
-export function WorkspaceProjection({ workspace }: Props) {
+export function WorkspaceProjection({ workspace, workspaceId, sourceStatus }: Props) {
   const [copiedRev, setCopiedRev] = useState(false);
   const copyRevision = () => {
     if (!workspace?.currentRevision) return;
@@ -20,6 +20,7 @@ export function WorkspaceProjection({ workspace }: Props) {
         <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-white uppercase tracking-wider"><FolderGit2 size={13} className="text-[var(--red-laser)]" /><span>WORKSPACE PROJECTION</span></div>
         {workspace?.currentRevision ? <button onClick={copyRevision} className="flex items-center gap-1 font-mono text-[9px] px-1.5 py-0.5 rounded bg-[var(--carbon-surface)] border border-white/5 text-[var(--text-muted)] hover:text-white" title="Copy evidence-bound repository revision"><GitCommit size={10} className="text-[var(--red-laser)]" /><span className="font-bold">{workspace.currentRevision.slice(0, 8)}</span>{copiedRev ? <Check size={10} className="text-[var(--emerald-seal)]" /> : <Copy size={10} />}</button> : <span className="text-[8.5px] text-[var(--red-alert)]">REVISION UNVERIFIED</span>}
       </div>
+      {workspaceId && <div className="font-mono text-[9px] mb-2 px-1.5 py-1 rounded bg-[var(--carbon-surface)] border border-white/5 text-[var(--text-muted)]"><span className="text-[var(--text-dim)]">WORKSPACE </span><span className="text-white">{workspaceId}</span>{sourceStatus ? <span className="ml-2 text-[var(--text-dim)]">{sourceStatus.toUpperCase()}</span> : null}</div>}
       {diffStats && <div className="flex items-center gap-2 font-mono text-[9.5px] mb-2 p-1.5 rounded bg-[var(--carbon-surface)] border border-white/5"><Diff size={12} className="text-[var(--text-dim)]" /><span className="text-[var(--text-dim)]">FILES</span><span className="text-white font-bold">{diffStats.filesChanged || modifiedFiles.length}</span>{(diffStats.additions > 0 || diffStats.deletions > 0) && <><span className="text-[var(--emerald-seal)] font-bold">+{diffStats.additions}</span><span className="text-[var(--red-laser)] font-bold">-{diffStats.deletions}</span></>}</div>}
       <div className="flex-1 overflow-y-auto font-mono text-[10.5px] space-y-1.5 pr-1">
         {modifiedFiles.map((file) => <div key={file} className="flex items-center justify-between p-1.5 rounded bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.2)] text-[var(--text-main)]"><div className="flex items-center gap-1.5 truncate"><FileCode2 size={12} className="text-[var(--red-laser)] shrink-0" /><span className="truncate">{file}</span></div><span className="text-[8.5px] px-1 py-0.2 rounded bg-[rgba(255,30,56,0.1)] text-[var(--red-laser)] font-bold">CHANGED</span></div>)}

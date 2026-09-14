@@ -119,6 +119,20 @@ function Dashboard() {
   }, [job?.phase]);
 
   useEffect(() => {
+    const terminalPhase = job?.phase;
+    if (!job?.error?.message || !activeRunId || !terminalPhase || !['BLOCKED', 'FAILED'].includes(terminalPhase)) return;
+    setMessages((current) => {
+      const id = `terminal-${activeRunId}`;
+      if (current.some((message) => message.id === id)) return current;
+      return [...current, {
+        id, role: 'system', sender: 'SYSTEM',
+        content: `RUN ${terminalPhase} :: [${activeRunId}]\n${job.error.message}${job.nextAction ? `\nNEXT: ${job.nextAction}` : ''}`,
+        timestamp: new Date().toISOString(),
+      }];
+    });
+  }, [activeRunId, job?.phase, job?.error?.message, job?.nextAction]);
+
+  useEffect(() => {
     const pr = job?.draftPR;
     if (!pr || job?.phase !== 'COMPLETED') return;
     setMessages((current) => {
@@ -156,7 +170,7 @@ function Dashboard() {
       const accepted = await swarmRun.mutateAsync({ prompt: mission, toolchains: selectedToolchain ? [selectedToolchain.id] : [], activeSkillIds, agentMode });
       setActiveRunId(accepted.jobId);
       dispatchFsm({ type: 'BACKEND_ACCEPTED', payload: { jobId: accepted.jobId } });
-      setMessages((current) => [...current, {
+      setMessages((current) => [...current.filter((message) => !message.id.startsWith('accepted-')), {
         id: `accepted-${accepted.jobId}`,
         role: 'assistant',
         sender: 'SOVEREIGN_SWARM',
@@ -198,15 +212,15 @@ function Dashboard() {
     />
   );
   const monitor = <><NeuralLoadMonitor job={job} phase={currentPhase} /><RuntimeMonitor job={job} isPolling={isPolling} /></>;
-  const workspacePanel = <WorkspaceProjection workspace={workspace} />;
+  const workspacePanel = <WorkspaceProjection workspace={workspace} workspaceId={job?.backendJobId} sourceStatus={job?.sourceStatus} />;
   const publicationPanel = (
     <PublicationInspector
       publication={publication}
       draftPR={job?.draftPR}
       jobPhase={currentPhase}
       preparation={draftPrPreparation}
-      onPrepare={prepareDraftPr}
-      onPublish={publishDraftPr}
+      onPrepare={async () => { await prepareDraftPr(); }}
+      onPublish={async () => { await publishDraftPr(); }}
       isPreparing={isPreparingDraftPr}
       isPublishing={isPublishing}
       publishError={publishFailure}
