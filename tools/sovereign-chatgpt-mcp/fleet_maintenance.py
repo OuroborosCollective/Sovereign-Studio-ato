@@ -743,13 +743,18 @@ class FleetMaintenanceRuntime:
         *,
         username: str = POSTGRES_USER,
     ) -> dict[str, Any]:
+        # pg_get_constraintdef/format_type qualify names using search_path.
+        # Source and restore roles must render the same structural truth even
+        # when their login defaults differ. Preserve all schema comparisons.
+        client = [
+            "docker", "exec", "--env",
+            "PGOPTIONS=-c search_path=pg_catalog", POSTGRES_CONTAINER,
+        ]
         if username == POSTGRES_USER:
-            argv = ["docker", "exec", POSTGRES_CONTAINER, "psql"]
+            argv = [*client, "psql"]
         elif username == POSTGRES_RESTORE_USER:
             argv = [
-                "docker",
-                "exec",
-                POSTGRES_CONTAINER,
+                *client,
                 "sh",
                 "-c",
                 (

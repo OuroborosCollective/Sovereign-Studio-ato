@@ -425,8 +425,11 @@ def _normalize_model(item: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _route_id(model_id: str, *, default_model: str = OPENROUTER_DEFAULT_MODEL) -> str:
-    if model_id == default_model:
-        return OPENROUTER_ROOT_ROUTE_ID
+    """Allocate a stable model identity, independent of the selected canary.
+
+    The compatibility keyword does not grant ownership of the credential root.
+    Existing persisted IDs are retained by the model_id conflict target.
+    """
     digest = hashlib.sha256(model_id.encode()).hexdigest()[:32]
     return f"openrouter-paid-{digest}"
 
@@ -657,8 +660,7 @@ def _sync_catalog(
                             tier, config, updated_at)
                        VALUES (%s,%s,%s,'openrouter',%s,%s,false,%s,
                                'openrouter','standard',%s::jsonb,NOW())
-                       ON CONFLICT (id) DO UPDATE SET
-                           model_id=EXCLUDED.model_id,
+                       ON CONFLICT (model_id) DO UPDATE SET
                            model_name=EXCLUDED.model_name,
                            provider='openrouter', base_url=EXCLUDED.base_url,
                            disabled=false, priority=EXCLUDED.priority,
@@ -715,6 +717,7 @@ def _sync_catalog(
                               || '{"selectable":false,"activationState":"missing-from-current-catalog"}'::jsonb,
                        updated_at=NOW()
                    WHERE lower(COALESCE(runtime_kind, provider))='openrouter'
+                     AND model_id LIKE 'sovereign-openrouter:%%'
                      AND NOT (model_id = ANY(%s))""",
                 (model_ids,),
             )
@@ -997,6 +1000,8 @@ def _openrouter_status_payload(query: Callable[..., Any]) -> dict[str, Any]:
                   COUNT(route.id) FILTER (
                       WHERE route.disabled=false
                         AND lower(COALESCE(route.runtime_kind, route.provider))='openrouter'
+                        AND route.model_id LIKE 'sovereign-openrouter:%%'
+                        AND COALESCE(route.config->>'selectable', 'false')='true'
                   ) OVER () AS selectable_models
            FROM llm_provider_deployments AS deployment
            LEFT JOIN llm_routes AS route ON true
@@ -1195,6 +1200,7 @@ def register_openrouter_provider_runtime(
             """SELECT id::text, model_id, model_name, disabled, priority, config
                FROM llm_routes
                WHERE lower(COALESCE(runtime_kind, provider))='openrouter'
+                 AND model_id LIKE 'sovereign-openrouter:%%'
                ORDER BY disabled ASC, priority ASC, model_name ASC
                LIMIT 700"""
         ) or []
@@ -1326,6 +1332,7 @@ def register_openrouter_provider_runtime(
                FROM llm_routes
                WHERE disabled=false
                  AND lower(COALESCE(runtime_kind, provider))='openrouter'
+                 AND model_id LIKE 'sovereign-openrouter:%%'
                  AND COALESCE((config->>'selectable')::boolean, false)=true
                ORDER BY priority ASC, model_name ASC
                LIMIT 700"""

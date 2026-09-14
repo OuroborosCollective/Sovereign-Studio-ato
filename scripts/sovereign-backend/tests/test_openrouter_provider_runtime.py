@@ -103,8 +103,9 @@ def test_agent_canary_selection_prefers_default_then_cheapest_compatible_model()
     }
     assert runtime._select_agent_canary_model(fallback) == "vendor/cheap"
     assert runtime._route_id("vendor/cheap", default_model="vendor/cheap") == (
-        runtime.OPENROUTER_ROOT_ROUTE_ID
+        runtime._route_id("vendor/cheap", default_model="vendor/expensive")
     )
+    assert runtime._route_id("vendor/cheap") != runtime.OPENROUTER_ROOT_ROUTE_ID
 
 
 def test_agent_canary_order_is_bounded_default_first_then_cheapest() -> None:
@@ -225,7 +226,9 @@ def test_agent_catalog_contract_requires_tools_tool_choice_and_max_tokens() -> N
     assert source.count("agent_catalog_request_id=agent_catalog_request_id") == 2
     assert "_MAX_AGENT_CANARY_CANDIDATES = 12" in source
     assert "openrouter_no_eligible_policy_provider" in source
-    upsert = source.split("ON CONFLICT (id) DO UPDATE SET", 1)[1].split("updated_at=NOW()", 1)[0]
+    upsert = source.split("ON CONFLICT (model_id) DO UPDATE SET", 1)[1].split("updated_at=NOW()", 1)[0]
+    assert "model_id=EXCLUDED.model_id" not in upsert
+    assert "id=EXCLUDED.id" not in upsert
     assert upsert.count("credits_per_unit=") == 1
     assert "credits_per_unit=EXCLUDED.credits_per_unit" not in upsert
 
