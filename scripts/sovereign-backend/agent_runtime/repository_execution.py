@@ -64,7 +64,6 @@ _ALLOWED_REGRESSION_PREFIXES: Final[tuple[tuple[str, ...], ...]] = (
     ("npx", "jest"),
     ("go", "test"),
     ("cargo", "test"),
-    ("git", "diff", "--check"),
 )
 _DOCUMENTATION_ONLY_SUFFIXES: Final[frozenset[str]] = frozenset({".md", ".mdx", ".rst", ".txt"})
 _SHELL_CONTROL_TOKENS: Final[frozenset[str]] = frozenset({"||", ";", "|", ">", ">>", "<", "<<", "&"})
@@ -299,16 +298,11 @@ def _safe_regression_commands(recommended: object) -> tuple[str, ...]:
     return tuple(selected)
 
 
-def _regression_commands_for_changes(
-    changed_files: tuple[str, ...],
-    recommended: object,
-) -> tuple[str, ...]:
-    if changed_files and all(
+def _documentation_only_changes(changed_files: tuple[str, ...]) -> bool:
+    return bool(changed_files) and all(
         Path(path).suffix.casefold() in _DOCUMENTATION_ONLY_SUFFIXES
         for path in changed_files
-    ):
-        return ("git diff --check",)
-    return _safe_regression_commands(recommended)
+    )
 
 
 def _closeout_repository_job(
@@ -387,12 +381,18 @@ def _closeout_repository_job(
             "repository_closeout_janitor_critical",
         )
 
-    commands = _regression_commands_for_changes(
-        tuple(status_result.changed_files),
-        janitor.metadata.get("recommendedTestCommand") if isinstance(janitor.metadata, dict) else None,
+    documentation_only = _documentation_only_changes(tuple(status_result.changed_files))
+    commands = () if documentation_only else _safe_regression_commands(
+        janitor.metadata.get("recommendedTestCommand") if isinstance(janitor.metadata, dict) else None
     )
     test_outputs: list[str] = []
-    if commands:
+    if documentation_only:
+        # ``git_diff_check`` above already executed against the canonical repository
+        # worktree. For documentation-only mutations that real result is the
+        # appropriate regression evidence; do not route Git through TestTool's
+        # workspace-shell cwd or require an unrelated Node toolchain.
+        test_outputs.append("git diff --check: passed")
+    elif commands:
         for command in commands:
             test_result = run_agent_job_tool(
                 job,

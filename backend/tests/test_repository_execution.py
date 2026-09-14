@@ -413,7 +413,8 @@ def test_closeout_documentation_only_uses_real_diff_regression_instead_of_node_t
     result = _run_closeout(state)
 
     assert result.status == "running"
-    assert observed_commands == ["git diff --check"]
+    assert observed_commands == []
+    assert "git diff --check: passed" in (result.test_summary or "")
 
 
 def test_closeout_splits_janitor_shell_combination_and_never_executes_control_token(monkeypatch):
