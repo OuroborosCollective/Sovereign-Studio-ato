@@ -131,8 +131,20 @@ export const useToolchainStore = create<ToolchainState>()((set, get) => ({
   getToolContext: () => {
     const { tools, allowedRepos, rules, universalManifest, loaded } = get();
     if (!loaded) return '';
-    const readTools  = tools.filter(t => !t.write).map(t => `  • ${t.label} (${t.id})`).join('\n');
-    const writeTools = tools.filter(t =>  t.write).map(t => `  • ${t.label} [confirm=true erforderlich]`).join('\n');
+    // ⚡ Bolt: Consolidated sequential .filter() and .map() chains into a single-pass loop
+    // to reduce intermediate array allocations and garbage collection overhead.
+    const readToolsArr: string[] = [];
+    const writeToolsArr: string[] = [];
+    for (const t of tools) {
+      if (!t.write) {
+        readToolsArr.push(`  • ${t.label} (${t.id})`);
+      } else {
+        writeToolsArr.push(`  • ${t.label} [confirm=true erforderlich]`);
+      }
+    }
+    const readTools = readToolsArr.join('\n');
+    const writeTools = writeToolsArr.join('\n');
+
     return [
       '── Sovereign App Toolchain ──',
       `Erlaubte Repos: ${allowedRepos.join(', ') || 'keine'}`,
