@@ -17,8 +17,30 @@ function valid(value: unknown): value is PromptLibraryState { return Boolean(val
 export function loadPromptLibraryState(storage: Storage): PromptLibraryState { try { const raw = storage.getItem(PROMPT_LIBRARY_STORAGE_KEY); if (!raw) return createEmptyState(); const parsed = JSON.parse(raw) as unknown; return valid(parsed) ? parsed : createEmptyState(); } catch { return createEmptyState(); } }
 function persist(storage: Storage, state: PromptLibraryState): void { storage.setItem(PROMPT_LIBRARY_STORAGE_KEY, JSON.stringify({ ...state, savedAt: Date.now() })); }
 export function getAllTemplates(state: PromptLibraryState): readonly PromptTemplate[] { return [...BUILTIN_TEMPLATES, ...state.customTemplates].sort((a,b) => Number(b.lastUsedAt ?? 0) - Number(a.lastUsedAt ?? 0)); }
-export function filterTemplates(templates: readonly PromptTemplate[], options: { category?: PromptCategory; query?: string } = {}): readonly PromptTemplate[] { const query = options.query?.trim().toLowerCase(); return templates.filter((item) => (!options.category || item.category === options.category) && (!query || `${item.label} ${item.shortLabel} ${item.prompt}`.toLowerCase().includes(query))); }
-export function availableCategories(templates: readonly PromptTemplate[]): readonly PromptCategory[] { return Array.from(new Set(templates.map((item) => item.category))); }
+export function filterTemplates(templates: readonly PromptTemplate[], options: { category?: PromptCategory; query?: string } = {}): readonly PromptTemplate[] {
+  const query = options.query?.trim().toLowerCase();
+  const category = options.category;
+  // ⚡ Bolt: Fast return if no filter options provided
+  if (!query && !category) return templates;
+  return templates.filter((item) => {
+    if (category && item.category !== category) return false;
+    if (!query) return true;
+    // ⚡ Bolt: Avoid intermediate template string allocations and leverage short-circuiting OR checks
+    return (
+      item.label.toLowerCase().includes(query) ||
+      item.shortLabel.toLowerCase().includes(query) ||
+      item.prompt.toLowerCase().includes(query)
+    );
+  });
+}
+export function availableCategories(templates: readonly PromptTemplate[]): readonly PromptCategory[] {
+  // ⚡ Bolt: Single-pass loop populating Set directly without intermediate .map() array allocation
+  const categories = new Set<PromptCategory>();
+  for (let i = 0; i < templates.length; i++) {
+    categories.add(templates[i].category);
+  }
+  return Array.from(categories);
+}
 export function categoryLabel(category: PromptCategory): string { return ({ analysis:'Analyse',patch:'Patch / PR',test:'Tests',docs:'Dokumentation',security:'Security',custom:'Eigenes' } as const)[category]; }
 export function saveCustomTemplate(storage: Storage, state: PromptLibraryState, input: { label: string; prompt: string; category: PromptCategory }): { state: PromptLibraryState; template: PromptTemplate } { const template: PromptTemplate = { id:`custom-${Date.now()}`, label:input.label.trim().slice(0,80), shortLabel:input.label.trim().slice(0,24), category:input.category, prompt:input.prompt.trim(), isBuiltin:false, createdAt:Date.now(), useCount:0 }; const next: PromptLibraryState = { version:1, customTemplates:[...state.customTemplates,template], savedAt:Date.now() }; persist(storage,next); return { state:next,template }; }
 export function deleteCustomTemplate(storage: Storage, state: PromptLibraryState, id: string): PromptLibraryState { const next: PromptLibraryState = { ...state, customTemplates:state.customTemplates.filter((item) => item.id !== id), savedAt:Date.now() }; persist(storage,next); return next; }
