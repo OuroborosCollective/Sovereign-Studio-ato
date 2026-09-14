@@ -48,6 +48,7 @@ jobs:
           corepack prepare pnpm@9.12.2 --activate
           pnpm install --frozen-lockfile
           pnpm exec vitest run src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts
+          pnpm run build:web
           pnpm exec playwright install chromium --with-deps
           pnpm exec playwright test tests/e2e/builder-container-smoke.spec.ts --project=chromium --workers=1 --reporter=line
           pnpm exec playwright test tests/e2e/five-draft-pr-paths.spec.ts --project=chromium --list
