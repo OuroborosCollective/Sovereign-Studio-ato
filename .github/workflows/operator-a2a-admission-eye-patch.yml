@@ -37,6 +37,7 @@ jobs:
           set -Eeuo pipefail
           python3 -m compileall -q backend/agent_runtime scripts/sovereign-backend/agent_runtime
           python3 -m pip install -q -r scripts/sovereign-backend/requirements.txt
+          python3 -m pip install -q pytest
           PYTHONPATH=backend python3 -m pytest -q backend/tests/test_repository_execution.py backend/tests/test_repository_single_a2a_contract.py backend/tests/test_agent_zero_a2a.py
 
       - name: Validate frontend contracts and mobile eye
