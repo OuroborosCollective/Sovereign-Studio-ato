@@ -407,3 +407,13 @@ Evidence: Base `8ce58dbeac5ab9b5d98ea7e51d31946b5592c710`; reviewed code head `a
 Learned: A2A submission plus eventual workspace mutation is not completion if lifecycle reconciliation is owned by a browser poller; asynchronous repository work needs a durable server-owned reconciler while effect ownership remains CAS-bound.
 Open: This entry does not claim production fixed; the Memory-appended head must pass exact-head gates, then the merged revision needs immutable backend deployment/readback and a fresh real 5/5 Frontend → Agent Zero → Draft-PR causal proof.
 Next safe step: Re-run exact-head required gates on this Memory head, merge #1951 only if terminal green, deploy/read back the immutable backend revision, then rerun and independently verify Five Real UI Paths.
+
+### 2026-09-14 — Five-Path timeout hierarchy aligned (#1952)
+Status: CI_VERIFIED; live 5/5 proof still pending.
+Task: Correct the protected Five-Path harness after the post-deploy run on `656e029...` was killed by Playwright at ~300 s even though repository readiness was allowed 600 s.
+Decisions: Keep product/A2A runtime unchanged; set each live path budget to repository-ready timeout plus 300 s and extend the serial workflow budget to 90 minutes.
+Touched surfaces: `tests/e2e/five-draft-pr-paths.spec.ts`, `.github/workflows/e2e-testing.yml`.
+Evidence: Base `656e02911322004736ad0f16b2c49272fe2b7e76`; code head `133aa5047c12fbcf02f97812288bea8acd927cb8`; failed live run `34869905753` timed out at 300324 ms; Agent Backend `34871533422`, Release Verification `34871533338`, Integration Plan `34871533345`, Continuity `34871533398` all succeeded; Wolfram budget check confirmed 600 s inner wait < 900 s per-test bound and 90 min workflow leaves 15 min slack across five maximum paths.
+Learned: A bounded inner wait is ineffective when the enclosing test has a shorter timeout; timeout hierarchy must be monotonic from operation to test to workflow.
+Open: This does not prove the Agent Zero corridor green; the protected 5/5 live run must be repeated after merge on exact deployed revision.
+Next safe step: Re-run exact-head gates on this Memory-appended head, merge only if green, then perform exact-revision rollout/readback and the protected 5/5 Draft-PR proof.
