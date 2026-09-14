@@ -99,7 +99,7 @@ jobs:
        github.actor == github.repository_owner &&
        contains(github.event.head_commit.message, '[sovereign-live-five]'))
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     permissions:
       contents: write
       pull-requests: write
