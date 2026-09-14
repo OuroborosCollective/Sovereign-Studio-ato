@@ -269,7 +269,7 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     await expect(page.getByText(/PERSISTED RUN ACCEPTED/)).toBeVisible({ timeout: 10_000 });
     await expect.poll(() => observed.some(item => item.method === 'GET' && item.path === `/api/user/agent/jobs/${jobId}`)).toBe(true);
     await expect(page.getByText('BLOCKED').first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/Smoke blocker preserved from persisted repository job/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/Smoke blocker preserved from persisted repository job/).first()).toBeVisible({ timeout: 10_000 });
 
     expect(repositoryBodies).toHaveLength(1);
     expect(repositoryBodies[0]).toEqual({
