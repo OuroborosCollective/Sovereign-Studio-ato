@@ -14,6 +14,11 @@ const RUN_ID = process.env.GITHUB_RUN_ID?.trim() || `local-${Date.now()}`;
 const OWNED_MARKER_PREFIX = `[live-vnext:${RUN_ID}:`;
 const A2A_TASK_REF = /^agent-zero-a2a:(?:retry:)?[A-Za-z0-9._:-]{1,200}$/;
 const JOB_ID = /^agent-[0-9a-f]{32}$/;
+const REPOSITORY_READY_TIMEOUT_MS = (() => {
+  const configured = Number.parseInt(process.env.SOVEREIGN_E2E_REPOSITORY_READY_TIMEOUT_MS || '600000', 10);
+  if (!Number.isFinite(configured)) return 600_000;
+  return Math.max(210_000, Math.min(configured, 900_000));
+})();
 
 let activeAccountKey = CONFIGURED_ACCOUNT_KEY;
 let ephemeralAccountKeyId = '';
@@ -309,7 +314,7 @@ async function submitMission(page: Page, text: string): Promise<LiveRunProof> {
 }
 
 async function verifyLinkedJobReadback(page: Page, proof: LiveRunProof): Promise<void> {
-  const deadline = Date.now() + 210_000;
+  const deadline = Date.now() + REPOSITORY_READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
     const path = `/api/user/agent/jobs/${encodeURIComponent(proof.execution.jobId)}`;
     const response = await page.request.get(new URL(path, page.url()).href, {
@@ -355,7 +360,7 @@ async function openPublication(page: Page): Promise<void> {
 }
 
 async function waitForPublicationGate(page: Page): Promise<void> {
-  const deadline = Date.now() + 210_000;
+  const deadline = Date.now() + REPOSITORY_READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
     if (await approveDraftReadinessIfRequested(page)) { await page.waitForTimeout(500); continue; }
     await openPublication(page);
