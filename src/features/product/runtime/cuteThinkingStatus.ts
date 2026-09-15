@@ -182,14 +182,18 @@ function statusSalt(status?: string): number {
   return [...status].reduce((sum, char) => sum + char.charCodeAt(0), 7);
 }
 
+// ⚡ Bolt: Replaced dynamic array .some() and .toLowerCase() checks with a precompiled module-level RegExp.
+// This reduces loop iteration overhead and avoids intermediate string allocations, optimizing hot path status evaluations.
+const DONE_STATUS_REGEX = /done|fertig|completed|complete|success|draft pr|green/i;
 function isDoneStatus(status?: string): boolean {
-  const clean = status?.toLowerCase() ?? '';
-  return ['done', 'fertig', 'completed', 'complete', 'success', 'draft pr', 'green'].some((token) => clean.includes(token));
+  return status ? DONE_STATUS_REGEX.test(status) : false;
 }
 
+// ⚡ Bolt: Replaced dynamic array .some() and .toLowerCase() checks with a precompiled module-level RegExp.
+// This eliminates repeated string manipulations and array traversals for frequent runtime state checks.
+const WORKING_STATUS_REGEX = /working|arbeitet|running|schreibt|code|build|package|agent/i;
 function isWorkingStatus(status?: string): boolean {
-  const clean = status?.toLowerCase() ?? '';
-  return ['working', 'arbeitet', 'running', 'schreibt', 'code', 'build', 'package', 'agent'].some((token) => clean.includes(token));
+  return status ? WORKING_STATUS_REGEX.test(status) : false;
 }
 
 export function normalizeThinkingFrameIndex(index: number, total = CUTE_THINKING_FRAMES.length): number {
