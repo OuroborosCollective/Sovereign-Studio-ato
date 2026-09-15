@@ -1,51 +1,29 @@
 name: Operator Memory Closeout 1971
 on:
-  pull_request:
-    branches: [main]
-    types: [synchronize]
+  push:
+    branches: [sovereign/chatgpt/lost-task-workspace-first-cleanup-20260915]
 permissions:
   contents: write
 jobs:
   append-memory:
-    if: github.event.pull_request.number == 1971
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: sovereign/chatgpt/lost-task-workspace-first-cleanup-20260915
-          fetch-depth: 20
+          fetch-depth: 50
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Guard exact reviewed ancestry and append once
-        id: memory
+      - name: Append exact Memory closeout once
         shell: bash
         run: |
           set -Eeuo pipefail
           test "$(git merge-base HEAD 75b13f04ee84b6b44fa122eca35c04432e56cfa8)" = "75b13f04ee84b6b44fa122eca35c04432e56cfa8"
-          title='### 2026-09-15 — A2A task-loss workspace-first recovery (#1971)'
-          if grep -Fq "$title" Memory.md; then
-            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          if grep -Fq 'A2A task-loss workspace-first recovery (#1971)' Memory.md; then
             echo 'Memory closeout entry already exists; no duplicate written.'
             exit 0
           fi
-          cat >> Memory.md <<'EOF'
-
-### 2026-09-15 — A2A task-loss workspace-first recovery (#1971)
-Status: CI_VERIFIED; production 5/5 proof pending.
-Task: Repair the live lost-A2A-task closeout failure without re-solving Draft-PR creation, and remove two false-red CI paths.
-Decisions: Treat the owned shared workspace—not transient A2A task retention—as repository-work truth: changed workspace closes out without resubmit; verified-empty workspace permits one CAS-bound recovery submit; unverifiable workspace blocks without resubmit. Missing ATO is a clean no-op; delayed supplemental dispatch after an exact PR closes is a clean no-op while unknown provenance still fails closed.
-Touched surfaces: Repository execution canonical/shipping mirrors, repository/workflow regressions, ATO workflow, supplemental coordinator.
-Evidence: Live `main@5a682f8407536d6f7ccbc0b6908a9d04e8fdd434` Five-Path run `34938782265` / artifact `10384124194` (`sha256:c9dd856c6dbebcdd25b29d3b2d1707e933cb8a2850c64d2edee4f4584296b737`) exposed TaskLost→retry-claim blocking after ~112s; guarded patch run `34977042660` passed 19 repository-execution tests; reviewed head `75b13f04ee84b6b44fa122eca35c04432e56cfa8` passed Agent Backend `34977685372`, Release Verification `34977685253`, Boundary Ledger `34977685300`, Integration Plan `34977685238`, Revision Guardian, and immutable PR-image validation `34977807411` with local OCI digest `sha256:f22e38f94abfae330856a9a34fffc2b51c20205eed8582ad5c219a95eb64e2c7`.
-Learned: `tasks/get` loss proves only loss of transient executor identity, not loss of repository work; Draft-PR machinery already exists, while workspace mutation/evidence must remain the durable causal boundary.
-Open: Production is not yet proven on this change; final Memory head must pass exact-head gates, then merged main requires coordinated immutable rollout/readback and a fresh protected Five-Path 5/5 run.
-Next safe step: Rerun exact-head gates on this Memory head, merge #1971 only if terminal green, deploy/read back exact merged revision, then require fresh 5/5 and return to 0 open PRs.
-EOF
+          python -c "import base64; from pathlib import Path; p=Path('Memory.md'); p.write_bytes(p.read_bytes()+base64.b64decode('CiMjIyAyMDI2LTA5LTE1IOKAlCBBMkEgdGFzay1sb3NzIHdvcmtzcGFjZS1maXJzdCByZWNvdmVyeSAoIzE5NzEpClN0YXR1czogQ0lfVkVSSUZJRUQ7IHByb2R1Y3Rpb24gNS81IHByb29mIHBlbmRpbmcuClRhc2s6IFJlcGFpciB0aGUgbGl2ZSBsb3N0LUEyQS10YXNrIGNsb3Nlb3V0IGZhaWx1cmUgd2l0aG91dCByZS1zb2x2aW5nIERyYWZ0LVBSIGNyZWF0aW9uLCBhbmQgcmVtb3ZlIHR3byBmYWxzZS1yZWQgQ0kgcGF0aHMuCkRlY2lzaW9uczogVHJlYXQgdGhlIG93bmVkIHNoYXJlZCB3b3Jrc3BhY2XigJRub3QgdHJhbnNpZW50IEEyQSB0YXNrIHJldGVudGlvbuKAlGFzIHJlcG9zaXRvcnktd29yayB0cnV0aDogY2hhbmdlZCB3b3Jrc3BhY2UgY2xvc2VzIG91dCB3aXRob3V0IHJlc3VibWl0OyB2ZXJpZmllZC1lbXB0eSB3b3Jrc3BhY2UgcGVybWl0cyBvbmUgQ0FTLWJvdW5kIHJlY292ZXJ5IHN1Ym1pdDsgdW52ZXJpZmlhYmxlIHdvcmtzcGFjZSBibG9ja3Mgd2l0aG91dCByZXN1Ym1pdC4gTWlzc2luZyBBVE8gaXMgYSBjbGVhbiBuby1vcDsgZGVsYXllZCBzdXBwbGVtZW50YWwgZGlzcGF0Y2ggYWZ0ZXIgYW4gZXhhY3QgUFIgY2xvc2VzIGlzIGEgY2xlYW4gbm8tb3Agd2hpbGUgdW5rbm93biBwcm92ZW5hbmNlIHN0aWxsIGZhaWxzIGNsb3NlZC4KVG91Y2hlZCBzdXJmYWNlczogUmVwb3NpdG9yeSBleGVjdXRpb24gY2Fub25pY2FsL3NoaXBwaW5nIG1pcnJvcnMsIHJlcG9zaXRvcnkvd29ya2Zsb3cgcmVncmVzc2lvbnMsIEFUTyB3b3JrZmxvdywgc3VwcGxlbWVudGFsIGNvb3JkaW5hdG9yLgpFdmlkZW5jZTogTGl2ZSBgbWFpbkA1YTY4MmY4NDA3NTM2ZDZmN2NjYmMwYjY5MDhhOWQwNGU4ZmRkNDM0YCBGaXZlLVBhdGggcnVuIGAzNDkzODc4MjI2NWAgLyBhcnRpZmFjdCBgMTAzODQxMjQxOTRgIChgc2hhMjU2OmM5ZGQ4NTZjNmRiZWJjZGQyNWIyOWQzYjJkMTcwN2U5MzNjYjhhMjg1MGM2NGQyZWRlZTRmNDU4NDI5NmI3MzNgKSBleHBvc2VkIFRhc2tMb3N04oaScmV0cnktY2xhaW0gYmxvY2tpbmcgYWZ0ZXIgfjExMnM7IGd1YXJkZWQgcGF0Y2ggcnVuIGAzNDk3NzA0MjY2MGAgcGFzc2VkIDE5IHJlcG9zaXRvcnktZXhlY3V0aW9uIHRlc3RzOyByZXZpZXdlZCBoZWFkIGA3NWIxM2YwNGVlODRiNmI0NGZhMTIyZWNhMzVjMDQ0MzJlNTZjZmE4YCBwYXNzZWQgQWdlbnQgQmFja2VuZCBgMzQ5Nzc2ODUzNzJgLCBSZWxlYXNlIFZlcmlmaWNhdGlvbiBgMzQ5Nzc2ODUyNTNgLCBCb3VuZGFyeSBMZWRnZXIgYDM0OTc3Njg1MzAwYCwgSW50ZWdyYXRpb24gUGxhbiBgMzQ5Nzc2ODUyMzhgLCBSZXZpc2lvbiBHdWFyZGlhbiwgYW5kIGltbXV0YWJsZSBQUi1pbWFnZSB2YWxpZGF0aW9uIGAzNDk3NzgwNzQxMWAgd2l0aCBsb2NhbCBPQ0kgZGlnZXN0IGBzaGEyNTY6ZjIyZTM4Zjk0YWJmYWUzMzA4NTZhOWEzNGZmZmMyYjUxYzIwMjA1ZWVkODU4MmFkNWMyMTlhOTVlYjY0ZTJjN2AuCkxlYXJuZWQ6IGB0YXNrcy9nZXRgIGxvc3MgcHJvdmVzIG9ubHkgbG9zcyBvZiB0cmFuc2llbnQgZXhlY3V0b3IgaWRlbnRpdHksIG5vdCBsb3NzIG9mIHJlcG9zaXRvcnkgd29yazsgRHJhZnQtUFIgbWFjaGluZXJ5IGFscmVhZHkgZXhpc3RzLCB3aGlsZSB3b3Jrc3BhY2UgbXV0YXRpb24vZXZpZGVuY2UgbXVzdCByZW1haW4gdGhlIGR1cmFibGUgY2F1c2FsIGJvdW5kYXJ5LgpPcGVuOiBQcm9kdWN0aW9uIGlzIG5vdCB5ZXQgcHJvdmVuIG9uIHRoaXMgY2hhbmdlOyBmaW5hbCBNZW1vcnkgaGVhZCBtdXN0IHBhc3MgZXhhY3QtaGVhZCBnYXRlcywgdGhlbiBtZXJnZWQgbWFpbiByZXF1aXJlcyBjb29yZGluYXRlZCBpbW11dGFibGUgcm9sbG91dC9yZWFkYmFjayBhbmQgYSBmcmVzaCBwcm90ZWN0ZWQgRml2ZS1QYXRoIDUvNSBydW4uCk5leHQgc2FmZSBzdGVwOiBSZXJ1biBleGFjdC1oZWFkIGdhdGVzIG9uIHRoaXMgTWVtb3J5IGhlYWQsIG1lcmdlICMxOTcxIG9ubHkgaWYgdGVybWluYWwgZ3JlZW4sIGRlcGxveS9yZWFkIGJhY2sgZXhhY3QgbWVyZ2VkIHJldmlzaW9uLCB0aGVuIHJlcXVpcmUgZnJlc2ggNS81IGFuZCByZXR1cm4gdG8gMCBvcGVuIFBScy4K'))"
           git diff --check
-          echo 'changed=true' >> "$GITHUB_OUTPUT"
-      - name: Commit Memory only
-        if: steps.memory.outputs.changed == 'true'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
           git config user.name "Ouroboros Collective"
           git config user.email "projectouroboroscollective@gmail.com"
           git add Memory.md
