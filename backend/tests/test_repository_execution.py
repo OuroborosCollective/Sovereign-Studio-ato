@@ -182,6 +182,13 @@ def test_original_task_lost_resubmits_exactly_once_then_retry_lost_fails_closed(
             return AgentZeroA2ATask(task_id="task-retry", state="submitted")
 
     client = Client()
+    monkeypatch.setattr(
+        repository_execution,
+        "run_agent_job_tool",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            status="done", changed_files=(), blocker=None, error=None,
+        ),
+    )
     recovered = repository_execution.reconcile_repository_execution(
         object(),
         user_id="owner-test",
@@ -204,6 +211,64 @@ def test_original_task_lost_resubmits_exactly_once_then_retry_lost_fails_closed(
     assert terminal.status == "blocked"
     assert "no further resubmit" in (terminal.blocker or "")
     assert client.submit_count == 1
+
+
+def test_original_task_lost_reuses_existing_workspace_change_before_retry(monkeypatch):
+    state = _patch_job_store(monkeypatch, _job())
+
+    class Client:
+        submit_count = 0
+
+        def get_task(self, _task_id):
+            raise AgentZeroA2ATaskLost(
+                "AGENT_ZERO_A2A_TASK_LOST",
+                "USE_SINGLE_ATOMIC_RESTART_RECOVERY",
+                http_status=404,
+            )
+
+        def submit_repository_task(self, **_kwargs):
+            self.submit_count += 1
+            raise AssertionError("existing workspace mutation must win over resubmit")
+
+    client = Client()
+    monkeypatch.setattr(
+        repository_execution,
+        "run_agent_job_tool",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            status="done", changed_files=("README.md",), blocker=None, error=None,
+        ),
+    )
+    observed = {}
+
+    def closeout(_conn, *, job, claim_ref, bound_ref, workspace_root):
+        observed.update(
+            claim_ref=claim_ref,
+            bound_ref=bound_ref,
+            workspace_root=workspace_root,
+        )
+        return replace(job, status="validating", pr_state="ready")
+
+    monkeypatch.setattr(repository_execution, "_closeout_repository_job", closeout)
+    workspace_root = Path("/tmp/sovereign-a2a-lost-task-test")
+    recovered = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id="owner-test",
+        job_id="agent-test",
+        workspace_root=workspace_root,
+        a2a_client_factory=lambda: client,
+    )
+
+    assert recovered is not None
+    assert recovered.status == "validating"
+    assert recovered.pr_state == "ready"
+    assert client.submit_count == 0
+    assert observed["bound_ref"] == "agent-zero-a2a:task-original"
+    assert observed["claim_ref"].startswith("agent-zero-a2a:claim:retry:")
+    assert observed["workspace_root"] == workspace_root
+    assert any(
+        event.stage == "agent_zero_a2a_lost_task_workspace_recovered"
+        for event in state["events"]
+    )
 
 
 def test_ambiguous_submit_outcome_blocks_without_any_automatic_second_submit(monkeypatch):

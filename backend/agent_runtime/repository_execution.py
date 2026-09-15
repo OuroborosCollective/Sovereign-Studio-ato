@@ -496,6 +496,7 @@ def _recover_lost_original_task(
     job: StoredSovereignAgentJob,
     bound_ref: str,
     task_id: str,
+    workspace_root: Path | None,
     a2a_client_factory: A2AClientFactory,
 ) -> StoredSovereignAgentJob:
     claim_ref = _claim("retry", task_id)
@@ -510,8 +511,33 @@ def _recover_lost_original_task(
     append_agent_event(conn, job.job_id, SovereignAgentEvent(
         stage="agent_zero_a2a_original_task_lost",
         level="warning",
-        message="The persisted original Agent Zero task is gone after runtime restart; one atomic recovery submit is allowed.",
+        message="The persisted original Agent Zero task is gone; Sovereign must inspect the shared workspace before any one-time recovery submit.",
     ))
+
+    workspace_status = run_agent_job_tool(claimed, "git-status", {}, workspace_root)
+    if workspace_status.status != "done":
+        return _block_job(
+            conn,
+            claimed,
+            workspace_status.blocker
+            or workspace_status.error
+            or "The lost Agent Zero task workspace could not be read safely; automatic resubmit is forbidden.",
+            "agent_zero_a2a_lost_task_workspace_unverified",
+        )
+    if workspace_status.changed_files:
+        append_agent_event(conn, job.job_id, SovereignAgentEvent(
+            stage="agent_zero_a2a_lost_task_workspace_recovered",
+            level="success",
+            message="The lost Agent Zero task already left real workspace changes; Sovereign will verify those changes instead of submitting a duplicate task.",
+        ))
+        return _closeout_repository_job(
+            conn,
+            job=claimed,
+            claim_ref=claim_ref,
+            bound_ref=bound_ref,
+            workspace_root=workspace_root,
+        )
+
     return _submit_after_claim(
         conn,
         job=claimed,
@@ -563,6 +589,7 @@ def reconcile_repository_execution(
             job=job,
             bound_ref=external_ref,
             task_id=task_id,
+            workspace_root=workspace_root,
             a2a_client_factory=a2a_client_factory,
         )
     except AgentZeroA2AError as exc:
