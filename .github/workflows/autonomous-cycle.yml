@@ -32,43 +32,64 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Detect ATO implementation
+        id: ato
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [ -f scripts/ato/autonomous-pipeline.ts ]; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup pnpm
+        if: steps.ato.outputs.present == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.2
+          run_install: false
+
       - name: Setup Node.js
+        if: steps.ato.outputs.present == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install Dependencies
-        run: npm ci
+        if: steps.ato.outputs.present == 'true'
+        run: pnpm install --frozen-lockfile
 
       - name: Initialize ATO Environment
+        if: steps.ato.outputs.present == 'true'
         run: |
           mkdir -p .ato/logs
           mkdir -p .ato/artifacts
 
       - name: Execute Autonomous Tuning & Optimization (v2)
-        # The ATO implementation is optional and must never be fabricated by the
-        # scheduler.  A missing implementation is a clean no-op, not a red run.
-        if: ${{ hashFiles('scripts/ato/autonomous-pipeline.ts') != '' }}
+        if: steps.ato.outputs.present == 'true'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           APP_ENV: production
           FORCE_OPT: ${{ github.event.inputs.force_optimization }}
-        run: npx tsx scripts/ato/autonomous-pipeline.ts
+        run: pnpm exec tsx scripts/ato/autonomous-pipeline.ts
 
       - name: Record unavailable ATO implementation
-        if: ${{ hashFiles('scripts/ato/autonomous-pipeline.ts') == '' }}
+        if: steps.ato.outputs.present != 'true'
         run: |
           set -Eeuo pipefail
-          echo 'ATO implementation is not present at scripts/ato/autonomous-pipeline.ts; no autonomous mutation was attempted.'
+          echo 'ATO implementation is not present at scripts/ato/autonomous-pipeline.ts; no dependency install, QA, mutation, or Draft PR publication was attempted.'
 
       - name: Run Quality Assurance & Mobile Validation
+        if: steps.ato.outputs.present == 'true'
         run: |
-          npm run lint
-          npm run build
-          npx cap sync android
+          pnpm run lint
+          pnpm run build
 
       - name: Publish autonomous changes as Draft PR only
+        if: steps.ato.outputs.present == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -98,4 +119,5 @@ jobs:
         with:
           name: ato-cycle-logs-${{ github.run_id }}
           path: .ato/logs/
+          if-no-files-found: ignore
           retention-days: 7

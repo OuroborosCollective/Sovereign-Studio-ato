@@ -123,13 +123,17 @@ jobs:
               commit_sha: headSha,
               per_page: 100,
             });
-            const pull = associatedPulls.data.find((candidate) => (
-              candidate.state === 'open'
-              && candidate.base?.ref === 'main'
+            const matchingPulls = associatedPulls.data.filter((candidate) => (
+              candidate.base?.ref === 'main'
               && String(candidate.head?.sha || '').toLowerCase() === headSha
             ));
+            const pull = matchingPulls.find((candidate) => candidate.state === 'open');
             if (!pull) {
-              core.setFailed('OPEN_MAIN_PULL_REQUEST_FOR_HEAD_NOT_FOUND');
+              if (matchingPulls.length > 0) {
+                core.info('Exact-head main PR is already closed or merged; supplemental dispatch is no longer required.');
+                return;
+              }
+              core.setFailed('MAIN_PULL_REQUEST_FOR_HEAD_NOT_FOUND');
               return;
             }
             const repositoryFullName = `${context.repo.owner}/${context.repo.repo}`;

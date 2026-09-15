@@ -481,8 +481,51 @@ def _recover_lost_original_task(
     job: StoredSovereignAgentJob,
     bound_ref: str,
     task_id: str,
+    workspace_root: Path | None,
     a2a_client_factory: A2AClientFactory,
 ) -> StoredSovereignAgentJob:
+    # A2A task storage is not the repository truth boundary. A missing task may
+    # follow an Agent Zero restart or an in-memory task-store loss after the
+    # shared workspace was already mutated. Inspect the owned workspace first;
+    # never duplicate repository work merely because tasks/get returned 404.
+    status_result = run_agent_job_tool(job, "git-status", {}, workspace_root)
+    if status_result.status != "done":
+        return _block_job(
+            conn,
+            job,
+            (
+                "AGENT_ZERO_A2A_TASK_LOST: the original task is no longer readable and "
+                "workspace mutation state could not be verified; recovery submit is quarantined."
+            ),
+            "agent_zero_a2a_lost_workspace_unverified",
+        )
+
+    if status_result.changed_files:
+        claim_ref = _claim("closeout-lost", task_id)
+        if not compare_and_swap_agent_job_external_ref(
+            conn,
+            job_id=job.job_id,
+            expected_ref=bound_ref,
+            new_ref=claim_ref,
+        ):
+            return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+        claimed = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+        append_agent_event(conn, job.job_id, SovereignAgentEvent(
+            stage="agent_zero_a2a_lost_workspace_changes_detected",
+            level="warning",
+            message=(
+                "The original Agent Zero task is no longer readable, but the owned shared workspace "
+                "contains real changes; Sovereign will close out those changes without resubmitting."
+            ),
+        ))
+        return _closeout_repository_job(
+            conn,
+            job=claimed,
+            claim_ref=claim_ref,
+            bound_ref=bound_ref,
+            workspace_root=workspace_root,
+        )
+
     claim_ref = _claim("retry", task_id)
     if not compare_and_swap_agent_job_external_ref(
         conn,
@@ -495,7 +538,10 @@ def _recover_lost_original_task(
     append_agent_event(conn, job.job_id, SovereignAgentEvent(
         stage="agent_zero_a2a_original_task_lost",
         level="warning",
-        message="The persisted original Agent Zero task is gone after runtime restart; one atomic recovery submit is allowed.",
+        message=(
+            "The persisted original Agent Zero task is gone and the owned workspace has no changes; "
+            "one atomic recovery submit is allowed."
+        ),
     ))
     return _submit_after_claim(
         conn,
@@ -548,6 +594,7 @@ def reconcile_repository_execution(
             job=job,
             bound_ref=external_ref,
             task_id=task_id,
+            workspace_root=workspace_root,
             a2a_client_factory=a2a_client_factory,
         )
     except AgentZeroA2AError as exc:
