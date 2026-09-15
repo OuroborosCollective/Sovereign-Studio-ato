@@ -182,6 +182,11 @@ def test_original_task_lost_resubmits_exactly_once_then_retry_lost_fails_closed(
             return AgentZeroA2ATask(task_id="task-retry", state="submitted")
 
     client = Client()
+    monkeypatch.setattr(
+        repository_execution,
+        "run_agent_job_tool",
+        lambda *_args, **_kwargs: _done_tool(changed_files=()),
+    )
     recovered = repository_execution.reconcile_repository_execution(
         object(),
         user_id="owner-test",
@@ -204,6 +209,91 @@ def test_original_task_lost_resubmits_exactly_once_then_retry_lost_fails_closed(
     assert terminal.status == "blocked"
     assert "no further resubmit" in (terminal.blocker or "")
     assert client.submit_count == 1
+
+
+def test_original_task_lost_with_workspace_changes_closes_out_without_resubmit(monkeypatch):
+    state = _patch_job_store(monkeypatch, _job())
+    closeout_calls = []
+
+    class Client:
+        submit_count = 0
+
+        def get_task(self, _task_id):
+            raise AgentZeroA2ATaskLost(
+                "AGENT_ZERO_A2A_TASK_LOST",
+                "USE_SINGLE_ATOMIC_RESTART_RECOVERY",
+                http_status=404,
+            )
+
+        def submit_repository_task(self, **_kwargs):
+            self.submit_count += 1
+            raise AssertionError("workspace mutation must be closed out before any recovery submit")
+
+    monkeypatch.setattr(
+        repository_execution,
+        "run_agent_job_tool",
+        lambda *_args, **_kwargs: _done_tool(changed_files=("README.md",)),
+    )
+
+    def closeout(_conn, *, job, claim_ref, bound_ref, workspace_root):
+        closeout_calls.append((claim_ref, bound_ref, workspace_root))
+        state["job"] = replace(job, status="validating", pr_state="ready", external_ref=bound_ref)
+        return state["job"]
+
+    monkeypatch.setattr(repository_execution, "_closeout_repository_job", closeout)
+    client = Client()
+    result = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id="owner-test",
+        job_id="agent-test",
+        workspace_root=Path("/tmp/shared-workspaces"),
+        a2a_client_factory=lambda: client,
+    )
+
+    assert result is not None
+    assert result.status == "validating"
+    assert result.pr_state == "ready"
+    assert result.external_ref == "agent-zero-a2a:task-original"
+    assert client.submit_count == 0
+    assert len(closeout_calls) == 1
+    assert closeout_calls[0][1] == "agent-zero-a2a:task-original"
+
+
+def test_original_task_lost_with_unverifiable_workspace_blocks_without_resubmit(monkeypatch):
+    state = _patch_job_store(monkeypatch, _job())
+
+    class Client:
+        submit_count = 0
+
+        def get_task(self, _task_id):
+            raise AgentZeroA2ATaskLost(
+                "AGENT_ZERO_A2A_TASK_LOST",
+                "USE_SINGLE_ATOMIC_RESTART_RECOVERY",
+                http_status=404,
+            )
+
+        def submit_repository_task(self, **_kwargs):
+            self.submit_count += 1
+            raise AssertionError("unverified workspace must never be resubmitted")
+
+    monkeypatch.setattr(
+        repository_execution,
+        "run_agent_job_tool",
+        lambda *_args, **_kwargs: _failed_tool("git status unavailable"),
+    )
+    client = Client()
+    result = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id="owner-test",
+        job_id="agent-test",
+        a2a_client_factory=lambda: client,
+    )
+
+    assert result is not None
+    assert result.status == "blocked"
+    assert "workspace mutation state could not be verified" in (result.blocker or "")
+    assert client.submit_count == 0
+    assert state["job"].external_ref == "agent-zero-a2a:task-original"
 
 
 def test_ambiguous_submit_outcome_blocks_without_any_automatic_second_submit(monkeypatch):
