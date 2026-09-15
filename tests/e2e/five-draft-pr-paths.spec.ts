@@ -11,6 +11,7 @@ const GITHUB_TOKEN = process.env.SOVEREIGN_E2E_GITHUB_TOKEN?.trim() || '';
 const REPO_URL = process.env.SOVEREIGN_E2E_REPO_URL?.trim() || '';
 const BACKEND_URL = process.env.SOVEREIGN_E2E_BACKEND_PROXY_TARGET?.trim() || '';
 const RUN_ID = process.env.GITHUB_RUN_ID?.trim() || `local-${Date.now()}`;
+const RUN_ATTEMPT = process.env.GITHUB_RUN_ATTEMPT?.trim() || '1';
 const OWNED_MARKER_PREFIX = `[live-vnext:${RUN_ID}:`;
 const A2A_TASK_REF = /^agent-zero-a2a:(?:retry:)?[A-Za-z0-9._:-]{1,200}$/;
 const JOB_ID = /^agent-[0-9a-f]{32}$/;
@@ -26,6 +27,9 @@ const REPOSITORY_READY_TIMEOUT_MS = (() => {
   return Math.max(210_000, Math.min(configured, 900_000));
 })();
 const DRAFT_PR_CREATE_TIMEOUT_MS = 240_000;
+const ACCOUNT_REQUEST_TIMEOUT_MS = 30_000;
+const ACCOUNT_RECOVERY_TIMEOUT_MS = 90_000;
+const ACCOUNT_SETUP_HOOK_TIMEOUT_MS = 300_000;
 
 let activeAccountKey = CONFIGURED_ACCOUNT_KEY;
 let ephemeralAccountKeyId = '';
@@ -71,6 +75,12 @@ const runtimeObservationTasks = new Set<Promise<void>>();
 let omittedRuntimeReadbacks = 0;
 const authenticationReadbacks: Array<{ accountId: string; origin: string; sessionStatus: number }> = [];
 const transientJobReadFailures: Array<{ jobId: string; httpStatus: number }> = [];
+const accountProvisioningEvidence = {
+  registrationAttempts: 0,
+  recoveryLoginAttempts: 0,
+  recoveredByLogin: false,
+  registrationReplayUsed: false,
+};
 
 test.use({
   viewport: { width: 390, height: 844 },
@@ -164,22 +174,88 @@ async function cleanupOwnedRunPullRequests(request: APIRequestContext): Promise<
   }
 }
 
+type EphemeralUser = { id?: string; isGuest?: boolean; credits?: number; creditStateVerified?: boolean };
+
+function requireEphemeralUser(user: EphemeralUser | null): EphemeralUser {
+  if (!user?.id || user.isGuest === true || user.creditStateVerified !== true || Number(user.credits || 0) <= 0) {
+    throw new Error('Real ephemeral account did not return a non-guest, credit-verified execution identity.');
+  }
+  return user;
+}
+
+async function recoverEphemeralAccount(
+  api: APIRequestContext,
+  email: string,
+  password: string,
+): Promise<EphemeralUser | null> {
+  const deadline = Date.now() + ACCOUNT_RECOVERY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    accountProvisioningEvidence.recoveryLoginAttempts += 1;
+    try {
+      const login = await api.post('/api/auth/login', {
+        data: { email, password },
+        timeout: ACCOUNT_REQUEST_TIMEOUT_MS,
+      });
+      if (login.status() === 200) {
+        accountProvisioningEvidence.recoveredByLogin = true;
+        return requireEphemeralUser(await login.json().catch(() => null));
+      }
+      if (![401, 404, 502, 503, 504].includes(login.status())) {
+        throw new Error(`Ephemeral account recovery login failed: HTTP ${login.status()}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Ephemeral account recovery login failed:')) throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, 5_000));
+  }
+  return null;
+}
+
 async function provisionEphemeralAccountKey(): Promise<void> {
   if (activeAccountKey) return;
   const api = await playwrightRequest.newContext({ baseURL: BACKEND_URL });
   let password = `Sovereign-E2E-${randomBytes(32).toString('base64url')}!9a`;
-  const email = `live-e2e-${RUN_ID}-${randomBytes(8).toString('hex')}@tests.sovereign.invalid`;
+  const email = `live-e2e-${RUN_ID}-${RUN_ATTEMPT}@tests.sovereign.invalid`;
+  let user: EphemeralUser | null = null;
   try {
-    const registration = await api.post('/api/auth/register', {
-      data: { email, password, displayName: `Sovereign Live E2E ${RUN_ID}` },
-    });
-    if (registration.status() !== 200) throw new Error(`Real ephemeral account registration failed: HTTP ${registration.status()}`);
-    const user = await registration.json() as { id?: string; isGuest?: boolean; credits?: number; creditStateVerified?: boolean };
-    if (!user.id || user.isGuest === true || user.creditStateVerified !== true || Number(user.credits || 0) <= 0) {
-      throw new Error('Real ephemeral account did not return a non-guest, credit-verified execution identity.');
+    accountProvisioningEvidence.registrationAttempts += 1;
+    try {
+      const registration = await api.post('/api/auth/register', {
+        data: { email, password, displayName: `Sovereign Live E2E ${RUN_ID}` },
+        timeout: ACCOUNT_REQUEST_TIMEOUT_MS,
+      });
+      if (registration.status() === 200) {
+        user = requireEphemeralUser(await registration.json().catch(() => null));
+      } else if (registration.status() === 409) {
+        user = await recoverEphemeralAccount(api, email, password);
+      } else if (![502, 503, 504].includes(registration.status())) {
+        throw new Error(`Real ephemeral account registration failed: HTTP ${registration.status()}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Real ephemeral account registration failed:')) throw error;
     }
+
+    if (!user) user = await recoverEphemeralAccount(api, email, password);
+    if (!user) {
+      accountProvisioningEvidence.registrationReplayUsed = true;
+      accountProvisioningEvidence.registrationAttempts += 1;
+      const replay = await api.post('/api/auth/register', {
+        data: { email, password, displayName: `Sovereign Live E2E ${RUN_ID}` },
+        timeout: ACCOUNT_REQUEST_TIMEOUT_MS,
+      });
+      if (replay.status() === 200) {
+        user = requireEphemeralUser(await replay.json().catch(() => null));
+      } else if (replay.status() === 409) {
+        user = await recoverEphemeralAccount(api, email, password);
+      } else {
+        throw new Error(`Real ephemeral account registration replay failed: HTTP ${replay.status()}`);
+      }
+    }
+    user = requireEphemeralUser(user);
+
     const issued = await api.post('/api/security/account-keys', {
       data: { label: `Sovereign Live Five ${RUN_ID}` },
+      timeout: ACCOUNT_REQUEST_TIMEOUT_MS,
     });
     if (issued.status() !== 201) throw new Error(`Real ephemeral account-key issue failed: HTTP ${issued.status()}`);
     const issuedBody = await issued.json() as { id?: string; key?: string };
@@ -188,7 +264,7 @@ async function provisionEphemeralAccountKey(): Promise<void> {
     if (!key.startsWith('svk_') || !keyId) throw new Error('Real ephemeral account-key issue returned incomplete evidence.');
     activeAccountKey = key;
     ephemeralAccountKeyId = keyId;
-    ephemeralAccountId = user.id;
+    ephemeralAccountId = user.id!;
     identitySource = 'ephemeral_product_registration';
   } finally {
     password = '';
@@ -501,7 +577,11 @@ test.describe('five canonical vNext repository runs reach independently verified
   test.describe.configure({ mode: 'serial' });
   test.skip(!LIVE_ENABLED, 'Live vNext Draft-PR validation runs only through the explicit protected workflow.');
   test.setTimeout(REPOSITORY_START_TIMEOUT_MS + REPOSITORY_READY_TIMEOUT_MS + 300_000);
-  test.beforeAll(async () => { assertLiveConfig(); await provisionEphemeralAccountKey(); });
+  test.beforeAll(async ({}, testInfo) => {
+    testInfo.setTimeout(ACCOUNT_SETUP_HOOK_TIMEOUT_MS);
+    assertLiveConfig();
+    await provisionEphemeralAccountKey();
+  });
   test.beforeEach(async ({ page }) => {
     page.on('response', response => {
       let pageOrigin: string;
@@ -535,6 +615,7 @@ test.describe('five canonical vNext repository runs reach independently verified
         protectedValuePersistedInEvidence: false,
       },
       authenticationReadbacks,
+      accountProvisioningEvidence,
       transientJobReadFailures,
       runtimeReadbacks,
       omittedRuntimeReadbacks,
