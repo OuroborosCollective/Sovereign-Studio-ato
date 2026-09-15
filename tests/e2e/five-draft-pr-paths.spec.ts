@@ -70,6 +70,7 @@ const runtimeReadbacks: NonNullable<ReturnType<typeof runtimeObservation>>[] = [
 const runtimeObservationTasks = new Set<Promise<void>>();
 let omittedRuntimeReadbacks = 0;
 const authenticationReadbacks: Array<{ accountId: string; origin: string; sessionStatus: number }> = [];
+const transientJobReadFailures: Array<{ jobId: string; httpStatus: number }> = [];
 
 test.use({
   viewport: { width: 390, height: 844 },
@@ -329,7 +330,17 @@ async function verifyLinkedJobReadback(page: Page, proof: LiveRunProof): Promise
       maxRedirects: 0,
     });
     requireSameOrigin(response.url(), page.url());
-    expect(response.status()).toBe(200);
+    const readStatus = response.status();
+    if (readStatus !== 200) {
+      if ([502, 503, 504].includes(readStatus)) {
+        if (transientJobReadFailures.length < 100) {
+          transientJobReadFailures.push({ jobId: proof.execution.jobId, httpStatus: readStatus });
+        }
+        await page.waitForTimeout(1_500);
+        continue;
+      }
+      throw new Error(`LIVE_LINKED_JOB_READ_HTTP_${readStatus}`);
+    }
     const body = await response.json().catch(() => null);
     const observed = runtimeObservation(path, 'GET', response.status(), body);
     if (!observed) throw new Error('LIVE_LINKED_JOB_READBACK_MISSING');
@@ -524,6 +535,7 @@ test.describe('five canonical vNext repository runs reach independently verified
         protectedValuePersistedInEvidence: false,
       },
       authenticationReadbacks,
+      transientJobReadFailures,
       runtimeReadbacks,
       omittedRuntimeReadbacks,
       verifiedDraftPrCount: evidence.length,
