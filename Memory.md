@@ -417,3 +417,13 @@ Evidence: Base `656e02911322004736ad0f16b2c49272fe2b7e76`; code head `133aa5047c
 Learned: A bounded inner wait is ineffective when the enclosing test has a shorter timeout; timeout hierarchy must be monotonic from operation to test to workflow.
 Open: This does not prove the Agent Zero corridor green; the protected 5/5 live run must be repeated after merge on exact deployed revision.
 Next safe step: Re-run exact-head gates on this Memory-appended head, merge only if green, then perform exact-revision rollout/readback and the protected 5/5 Draft-PR proof.
+
+### 2026-09-15 — A2A task-loss workspace-first recovery (#1971)
+Status: CI_VERIFIED; production 5/5 proof pending.
+Task: Repair the live lost-A2A-task closeout failure without re-solving Draft-PR creation, and remove two false-red CI paths.
+Decisions: Treat the owned shared workspace—not transient A2A task retention—as repository-work truth: changed workspace closes out without resubmit; verified-empty workspace permits one CAS-bound recovery submit; unverifiable workspace blocks without resubmit. Missing ATO is a clean no-op; delayed supplemental dispatch after an exact PR closes is a clean no-op while unknown provenance still fails closed.
+Touched surfaces: Repository execution canonical/shipping mirrors, repository/workflow regressions, ATO workflow, supplemental coordinator.
+Evidence: Live `main@5a682f8407536d6f7ccbc0b6908a9d04e8fdd434` Five-Path run `34938782265` / artifact `10384124194` (`sha256:c9dd856c6dbebcdd25b29d3b2d1707e933cb8a2850c64d2edee4f4584296b733`) exposed TaskLost→retry-claim blocking after ~112s; guarded patch run `34977042660` passed 19 repository-execution tests; reviewed head `75b13f04ee84b6b44fa122eca35c04432e56cfa8` passed Agent Backend `34977685372`, Release Verification `34977685253`, Boundary Ledger `34977685300`, Integration Plan `34977685238`, Revision Guardian, and immutable PR-image validation `34977807411` with local OCI digest `sha256:f22e38f94abfae330856a9a34fffc2b51c20205eed8582ad5c219a95eb64e2c7`.
+Learned: `tasks/get` loss proves only loss of transient executor identity, not loss of repository work; Draft-PR machinery already exists, while workspace mutation/evidence must remain the durable causal boundary.
+Open: Production is not yet proven on this change; final Memory head must pass exact-head gates, then merged main requires coordinated immutable rollout/readback and a fresh protected Five-Path 5/5 run.
+Next safe step: Rerun exact-head gates on this Memory head, merge #1971 only if terminal green, deploy/read back exact merged revision, then require fresh 5/5 and return to 0 open PRs.
