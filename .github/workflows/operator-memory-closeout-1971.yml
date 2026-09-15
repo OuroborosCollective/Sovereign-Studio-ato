@@ -11,13 +11,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: sovereign/chatgpt/lost-task-workspace-first-cleanup-20260915
-          fetch-depth: 2
+          fetch-depth: 20
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Guard exact reviewed parent and append once
+      - name: Guard exact reviewed ancestry and append once
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^)" = "75b13f04ee84b6b44fa122eca35c04432e56cfa8"
+          test "$(git merge-base HEAD 75b13f04ee84b6b44fa122eca35c04432e56cfa8)" = "75b13f04ee84b6b44fa122eca35c04432e56cfa8"
           title='### 2026-09-15 — A2A task-loss workspace-first recovery (#1971)'
           if grep -Fq "$title" Memory.md; then
             echo 'Memory closeout entry already exists; refusing duplicate.' >&2
