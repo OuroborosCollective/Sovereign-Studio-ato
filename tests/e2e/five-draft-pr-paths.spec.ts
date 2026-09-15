@@ -25,6 +25,7 @@ const REPOSITORY_READY_TIMEOUT_MS = (() => {
   if (!Number.isFinite(configured)) return 600_000;
   return Math.max(210_000, Math.min(configured, 900_000));
 })();
+const DRAFT_PR_CREATE_TIMEOUT_MS = 240_000;
 
 let activeAccountKey = CONFIGURED_ACCOUNT_KEY;
 let ephemeralAccountKeyId = '';
@@ -377,6 +378,25 @@ async function waitForPublicationGate(page: Page): Promise<void> {
   throw new Error('vNext did not reach READY_TO_PUBLISH within the bounded live-test window.');
 }
 
+function draftPrCreateFailureFamily(payload: unknown): string {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return 'INVALID_RESPONSE';
+  const body = payload as Record<string, unknown>;
+  const signal = body.draftPrCreate && typeof body.draftPrCreate === 'object' && !Array.isArray(body.draftPrCreate)
+    ? body.draftPrCreate as Record<string, unknown>
+    : {};
+  const text = [body.error, body.blocker, signal.blocker, signal.summary]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .toLowerCase();
+  if (text.includes('credential') || text.includes('github token')) return 'GITHUB_CREDENTIAL';
+  if (text.includes('credit')) return 'CREDIT_SETTLEMENT';
+  if (text.includes('git push') || text.includes('branch publication') || text.includes('workspace branch')) return 'GITHUB_BRANCH_PUBLICATION';
+  if (text.includes('readback') || text.includes('identity readback') || text.includes('check-runs')) return 'GITHUB_READBACK';
+  if (text.includes('status 401') || text.includes('status 403')) return 'GITHUB_AUTHORIZATION';
+  if (text.includes('status 422')) return 'GITHUB_VALIDATION';
+  return 'UNCLASSIFIED';
+}
+
 async function publishAndVerifyInUi(page: Page): Promise<{ prNumber: number; readbackHeadSha: string; prUrl: string }> {
   await waitForPublicationGate(page);
   await openPublication(page);
@@ -388,9 +408,21 @@ async function publishAndVerifyInUi(page: Page): Promise<{ prNumber: number; rea
   await expect(consent.getByText('EXTERNAL WRITE CONSENT')).toBeVisible();
   await expect(consent.getByText(/create exactly one GitHub/)).toBeVisible();
   await expect(consent.getByText(/No merge\. No push to main\./)).toBeVisible();
-  await page.getByTestId('vnext-create-draft-pr').click();
+  const [createResponse] = await Promise.all([
+    page.waitForResponse((response) => {
+      if (response.request().method() !== 'POST') return false;
+      const path = new URL(response.url()).pathname;
+      return /^\/api\/user\/agent\/jobs\/agent-[0-9a-f]{32}\/draft-pr\/create$/.test(path);
+    }, { timeout: DRAFT_PR_CREATE_TIMEOUT_MS }),
+    page.getByTestId('vnext-create-draft-pr').click(),
+  ]);
+  requireSameOrigin(createResponse.url(), page.url());
+  const createBody = await createResponse.json().catch(() => null);
+  if (createResponse.status() !== 200) {
+    throw new Error(`LIVE_DRAFT_PR_CREATE_HTTP_${createResponse.status()}_${draftPrCreateFailureFamily(createBody)}`);
+  }
   const panel = page.getByTestId('vnext-publication-inspector');
-  await expect(panel.getByText('GITHUB READBACK VERIFIED')).toBeVisible({ timeout: 180_000 });
+  await expect(panel.getByText('GITHUB READBACK VERIFIED')).toBeVisible({ timeout: 30_000 });
   await expect(panel.getByText('DRAFT PR VERIFIED')).toBeVisible();
   const panelText = await panel.innerText();
   const prMatch = panelText.match(/#(\d+)/);
