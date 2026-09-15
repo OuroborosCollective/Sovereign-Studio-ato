@@ -23,6 +23,7 @@ import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
 import { TestRunnerResultCard } from './TestRunnerResultCard';
+import { ScanFindingRegistryPanel } from './ScanFindingRegistryPanel';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1155,6 +1156,68 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(repairBtn);
       expect(onRepair).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('ScanFindingRegistryPanel Enhancements', () => {
+    it('renders with region landmark linked to heading ID, status badge tooltips, and focus-visible summaries', () => {
+      const mockRegistry = {
+        version: 1 as const,
+        updatedAt: Date.now(),
+        findings: [
+          {
+            id: 'sf-1',
+            category: 'security-leak' as const,
+            severity: 'critical' as const,
+            title: 'Exposed JWT Secret',
+            description: 'Found hardcoded secret in config',
+            fixTips: 'Move secret to environment variable',
+            filePath: 'src/config/jwt.ts',
+            lineNumber: 12,
+            confidence: 0.98,
+            hits: 2,
+            status: 'active' as const,
+          },
+          {
+            id: 'sf-2',
+            category: 'type-error' as const,
+            severity: 'low' as const,
+            title: 'Unused type parameter',
+            description: 'Redundant generic type parameter',
+            fixTips: 'Remove parameter',
+            filePath: 'src/types.ts',
+            lineNumber: 5,
+            confidence: 0.8,
+            hits: 1,
+            status: 'resolved' as const,
+          },
+        ],
+        runs: [
+          {
+            id: 'run-1',
+            timestamp: Date.now(),
+            summary: 'Initial repository security scan',
+            findingIds: ['sf-1', 'sf-2'],
+          },
+        ],
+      };
+
+      render(<ScanFindingRegistryPanel registry={mockRegistry} />);
+
+      const section = screen.getByRole('region', { name: 'Scan Findings Registry' });
+      expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', 'scan-findings-heading');
+
+      const gateBadge = screen.getByText('needs attention');
+      expect(gateBadge).toHaveAttribute('title', 'Status: Requires attention / resolution');
+
+      const activeFindingSummary = screen.getByText(/Exposed JWT Secret/i).closest('summary');
+      expect(activeFindingSummary).toHaveAttribute('title', 'Show finding details: Exposed JWT Secret');
+      expect(activeFindingSummary).toHaveClass('focus-visible:ring-2');
+
+      const resolvedHistorySummary = screen.getByText(/Resolved history · 1/i);
+      expect(resolvedHistorySummary).toHaveAttribute('title', 'Show history of resolved findings');
+      expect(resolvedHistorySummary).toHaveClass('focus-visible:ring-2');
     });
   });
 });

@@ -23,7 +23,10 @@ function severityClass(severity: ScanFindingSeverity): string {
 const FindingCard = memo(({ finding }: { finding: ScanFinding }) => {
   return (
     <details className="rounded border border-slate-800 bg-slate-900/70 p-3">
-      <summary className="cursor-pointer">
+      <summary
+        className="cursor-pointer font-medium text-slate-200 transition-colors hover:text-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 rounded px-1"
+        title={`Show finding details: ${finding.title}`}
+      >
         <span className={`mr-2 font-bold uppercase ${severityClass(finding.severity)}`}>{finding.severity}</span>
         <span className="mr-2 rounded bg-slate-950 px-2 py-0.5 text-[11px] uppercase text-slate-400">{finding.category}</span>
         <span className="font-bold text-slate-100">{finding.title}</span>
@@ -64,13 +67,19 @@ export const ScanFindingRegistryPanel = memo(({ registry }: ScanFindingRegistryP
   );
 
   return (
-    <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
+    <section
+      aria-labelledby="scan-findings-heading"
+      className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-bold">Scan Findings Registry</h2>
+          <h2 id="scan-findings-heading" className="font-bold">Scan Findings Registry</h2>
           <p className="mt-1 text-xs text-slate-400">{summary}</p>
         </div>
-        <span className={`rounded bg-slate-900 px-2 py-1 text-xs font-bold uppercase ${gate.allowed ? 'text-emerald-300' : 'text-red-300'}`}>
+        <span
+          title={gate.allowed ? 'Status: Clear - no critical blockers' : 'Status: Requires attention / resolution'}
+          className={`rounded bg-slate-900 px-2 py-1 text-xs font-bold uppercase ${gate.allowed ? 'text-emerald-300' : 'text-red-300'}`}
+        >
           {gate.allowed ? 'clear' : 'needs attention'}
         </span>
       </div>
@@ -103,7 +112,12 @@ export const ScanFindingRegistryPanel = memo(({ registry }: ScanFindingRegistryP
 
       {resolvedFindings.length ? (
         <details className="mt-4 rounded border border-slate-800 bg-slate-900/70 p-3">
-          <summary className="cursor-pointer font-bold text-slate-300">Resolved history · {resolvedFindings.length}</summary>
+          <summary
+            className="cursor-pointer font-bold text-slate-300 transition-colors hover:text-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 rounded px-1"
+            title="Show history of resolved findings"
+          >
+            Resolved history · {resolvedFindings.length}
+          </summary>
           <div className="mt-3 grid gap-2">
             {resolvedFindings.map((finding) => <FindingCard key={finding.id} finding={finding} />)}
           </div>
