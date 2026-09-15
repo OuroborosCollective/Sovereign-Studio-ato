@@ -5,7 +5,7 @@ on:
 permissions:
   contents: write
 jobs:
-  append-memory:
+  correct-memory-digest:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -13,20 +13,20 @@ jobs:
           ref: sovereign/chatgpt/lost-task-workspace-first-cleanup-20260915
           fetch-depth: 50
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Append exact Memory closeout once
+      - name: Correct exactly one pending Memory digest nibble
         shell: bash
         run: |
           set -Eeuo pipefail
           test "$(git merge-base HEAD 75b13f04ee84b6b44fa122eca35c04432e56cfa8)" = "75b13f04ee84b6b44fa122eca35c04432e56cfa8"
-          if grep -Fq 'A2A task-loss workspace-first recovery (#1971)' Memory.md; then
-            echo 'Memory closeout entry already exists; no duplicate written.'
-            exit 0
-          fi
-          python -c "import base64; from pathlib import Path; p=Path('Memory.md'); p.write_bytes(p.read_bytes()+base64.b64decode('CiMjIyAyMDI2LTA5LTE1IOKAlCBBMkEgdGFzay1sb3NzIHdvcmtzcGFjZS1maXJzdCByZWNvdmVyeSAoIzE5NzEpClN0YXR1czogQ0lfVkVSSUZJRUQ7IHByb2R1Y3Rpb24gNS81IHByb29mIHBlbmRpbmcuClRhc2s6IFJlcGFpciB0aGUgbGl2ZSBsb3N0LUEyQS10YXNrIGNsb3Nlb3V0IGZhaWx1cmUgd2l0aG91dCByZS1zb2x2aW5nIERyYWZ0LVBSIGNyZWF0aW9uLCBhbmQgcmVtb3ZlIHR3byBmYWxzZS1yZWQgQ0kgcGF0aHMuCkRlY2lzaW9uczogVHJlYXQgdGhlIG93bmVkIHNoYXJlZCB3b3Jrc3BhY2XigJRub3QgdHJhbnNpZW50IEEyQSB0YXNrIHJldGVudGlvbuKAlGFzIHJlcG9zaXRvcnktd29yayB0cnV0aDogY2hhbmdlZCB3b3Jrc3BhY2UgY2xvc2VzIG91dCB3aXRob3V0IHJlc3VibWl0OyB2ZXJpZmllZC1lbXB0eSB3b3Jrc3BhY2UgcGVybWl0cyBvbmUgQ0FTLWJvdW5kIHJlY292ZXJ5IHN1Ym1pdDsgdW52ZXJpZmlhYmxlIHdvcmtzcGFjZSBibG9ja3Mgd2l0aG91dCByZXN1Ym1pdC4gTWlzc2luZyBBVE8gaXMgYSBjbGVhbiBuby1vcDsgZGVsYXllZCBzdXBwbGVtZW50YWwgZGlzcGF0Y2ggYWZ0ZXIgYW4gZXhhY3QgUFIgY2xvc2VzIGlzIGEgY2xlYW4gbm8tb3Agd2hpbGUgdW5rbm93biBwcm92ZW5hbmNlIHN0aWxsIGZhaWxzIGNsb3NlZC4KVG91Y2hlZCBzdXJmYWNlczogUmVwb3NpdG9yeSBleGVjdXRpb24gY2Fub25pY2FsL3NoaXBwaW5nIG1pcnJvcnMsIHJlcG9zaXRvcnkvd29ya2Zsb3cgcmVncmVzc2lvbnMsIEFUTyB3b3JrZmxvdywgc3VwcGxlbWVudGFsIGNvb3JkaW5hdG9yLgpFdmlkZW5jZTogTGl2ZSBgbWFpbkA1YTY4MmY4NDA3NTM2ZDZmN2NjYmMwYjY5MDhhOWQwNGU4ZmRkNDM0YCBGaXZlLVBhdGggcnVuIGAzNDkzODc4MjI2NWAgLyBhcnRpZmFjdCBgMTAzODQxMjQxOTRgIChgc2hhMjU2OmM5ZGQ4NTZjNmRiZWJjZGQyNWIyOWQzYjJkMTcwN2U5MzNjYjhhMjg1MGM2NGQyZWRlZTRmNDU4NDI5NmI3MzNgKSBleHBvc2VkIFRhc2tMb3N04oaScmV0cnktY2xhaW0gYmxvY2tpbmcgYWZ0ZXIgfjExMnM7IGd1YXJkZWQgcGF0Y2ggcnVuIGAzNDk3NzA0MjY2MGAgcGFzc2VkIDE5IHJlcG9zaXRvcnktZXhlY3V0aW9uIHRlc3RzOyByZXZpZXdlZCBoZWFkIGA3NWIxM2YwNGVlODRiNmI0NGZhMTIyZWNhMzVjMDQ0MzJlNTZjZmE4YCBwYXNzZWQgQWdlbnQgQmFja2VuZCBgMzQ5Nzc2ODUzNzJgLCBSZWxlYXNlIFZlcmlmaWNhdGlvbiBgMzQ5Nzc2ODUyNTNgLCBCb3VuZGFyeSBMZWRnZXIgYDM0OTc3Njg1MzAwYCwgSW50ZWdyYXRpb24gUGxhbiBgMzQ5Nzc2ODUyMzhgLCBSZXZpc2lvbiBHdWFyZGlhbiwgYW5kIGltbXV0YWJsZSBQUi1pbWFnZSB2YWxpZGF0aW9uIGAzNDk3NzgwNzQxMWAgd2l0aCBsb2NhbCBPQ0kgZGlnZXN0IGBzaGEyNTY6ZjIyZTM4Zjk0YWJmYWUzMzA4NTZhOWEzNGZmZmMyYjUxYzIwMjA1ZWVkODU4MmFkNWMyMTlhOTVlYjY0ZTJjN2AuCkxlYXJuZWQ6IGB0YXNrcy9nZXRgIGxvc3MgcHJvdmVzIG9ubHkgbG9zcyBvZiB0cmFuc2llbnQgZXhlY3V0b3IgaWRlbnRpdHksIG5vdCBsb3NzIG9mIHJlcG9zaXRvcnkgd29yazsgRHJhZnQtUFIgbWFjaGluZXJ5IGFscmVhZHkgZXhpc3RzLCB3aGlsZSB3b3Jrc3BhY2UgbXV0YXRpb24vZXZpZGVuY2UgbXVzdCByZW1haW4gdGhlIGR1cmFibGUgY2F1c2FsIGJvdW5kYXJ5LgpPcGVuOiBQcm9kdWN0aW9uIGlzIG5vdCB5ZXQgcHJvdmVuIG9uIHRoaXMgY2hhbmdlOyBmaW5hbCBNZW1vcnkgaGVhZCBtdXN0IHBhc3MgZXhhY3QtaGVhZCBnYXRlcywgdGhlbiBtZXJnZWQgbWFpbiByZXF1aXJlcyBjb29yZGluYXRlZCBpbW11dGFibGUgcm9sbG91dC9yZWFkYmFjayBhbmQgYSBmcmVzaCBwcm90ZWN0ZWQgRml2ZS1QYXRoIDUvNSBydW4uCk5leHQgc2FmZSBzdGVwOiBSZXJ1biBleGFjdC1oZWFkIGdhdGVzIG9uIHRoaXMgTWVtb3J5IGhlYWQsIG1lcmdlICMxOTcxIG9ubHkgaWYgdGVybWluYWwgZ3JlZW4sIGRlcGxveS9yZWFkIGJhY2sgZXhhY3QgbWVyZ2VkIHJldmlzaW9uLCB0aGVuIHJlcXVpcmUgZnJlc2ggNS81IGFuZCByZXR1cm4gdG8gMCBvcGVuIFBScy4K'))"
+          bad='c9dd856c6dbebcdd25b29d3b2d1707e933cb8a2850c64d2edee4f4584296b733'
+          good='c9dd856c6dbebcdd25b29d3b2d1707e933cb8a2850c64d2edee4f4584296b737'
+          test "$(grep -o "$bad" Memory.md | wc -l)" -eq 1
+          test "$(grep -o "$good" Memory.md | wc -l)" -eq 0
+          sed -i "s/$bad/$good/" Memory.md
           git diff --check
-          git config user.name "Ouroboros Collective"
-          git config user.email "projectouroboroscollective@gmail.com"
+          git config user.name 'Ouroboros Collective'
+          git config user.email 'projectouroboroscollective@gmail.com'
           git add Memory.md
-          test "$(git diff --cached --name-only)" = "Memory.md"
-          git commit -m "docs(memory): record PR 1971 workspace-first evidence"
+          test "$(git diff --cached --name-only)" = 'Memory.md'
+          git commit -m 'docs(memory): correct PR 1971 artifact digest'
           git push origin HEAD:sovereign/chatgpt/lost-task-workspace-first-cleanup-20260915
