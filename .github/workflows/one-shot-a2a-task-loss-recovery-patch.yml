@@ -1,0 +1,255 @@
+name: One-shot A2A task-loss recovery patch
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/1789427168-post-merge-runtime-closeout-da5e50
+    paths:
+      - .github/workflows/one-shot-a2a-task-loss-recovery-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sovereign/chatgpt/1789427168-post-merge-runtime-closeout-da5e50
+          fetch-depth: 2
+
+      - name: Require exact reviewed parent
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD^)" = "eb66fa05e3baa8627642524a4422cbb6eb06c587"
+
+      - name: Apply exact workspace-first recovery patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, got {count}")
+              file.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          old_recovery = '''def _recover_lost_original_task(
+              conn: Any,
+              *,
+              job: StoredSovereignAgentJob,
+              bound_ref: str,
+              task_id: str,
+              a2a_client_factory: A2AClientFactory,
+          ) -> StoredSovereignAgentJob:
+              claim_ref = _claim("retry", task_id)
+              if not compare_and_swap_agent_job_external_ref(
+                  conn,
+                  job_id=job.job_id,
+                  expected_ref=bound_ref,
+                  new_ref=claim_ref,
+              ):
+                  return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+              claimed = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+              append_agent_event(conn, job.job_id, SovereignAgentEvent(
+                  stage="agent_zero_a2a_original_task_lost",
+                  level="warning",
+                  message="The persisted original Agent Zero task is gone after runtime restart; one atomic recovery submit is allowed.",
+              ))
+              return _submit_after_claim(
+                  conn,
+                  job=claimed,
+                  claim_ref=claim_ref,
+                  retry=True,
+                  a2a_client_factory=a2a_client_factory,
+              )
+          '''
+          new_recovery = '''def _recover_lost_original_task(
+              conn: Any,
+              *,
+              job: StoredSovereignAgentJob,
+              bound_ref: str,
+              task_id: str,
+              workspace_root: Path | None,
+              a2a_client_factory: A2AClientFactory,
+          ) -> StoredSovereignAgentJob:
+              claim_ref = _claim("retry", task_id)
+              if not compare_and_swap_agent_job_external_ref(
+                  conn,
+                  job_id=job.job_id,
+                  expected_ref=bound_ref,
+                  new_ref=claim_ref,
+              ):
+                  return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+              claimed = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+              append_agent_event(conn, job.job_id, SovereignAgentEvent(
+                  stage="agent_zero_a2a_original_task_lost",
+                  level="warning",
+                  message="The persisted original Agent Zero task is gone; Sovereign must inspect the shared workspace before any one-time recovery submit.",
+              ))
+
+              workspace_status = run_agent_job_tool(claimed, "git-status", {}, workspace_root)
+              if workspace_status.status != "done":
+                  return _block_job(
+                      conn,
+                      claimed,
+                      workspace_status.blocker
+                      or workspace_status.error
+                      or "The lost Agent Zero task workspace could not be read safely; automatic resubmit is forbidden.",
+                      "agent_zero_a2a_lost_task_workspace_unverified",
+                  )
+              if workspace_status.changed_files:
+                  append_agent_event(conn, job.job_id, SovereignAgentEvent(
+                      stage="agent_zero_a2a_lost_task_workspace_recovered",
+                      level="success",
+                      message="The lost Agent Zero task already left real workspace changes; Sovereign will verify those changes instead of submitting a duplicate task.",
+                  ))
+                  return _closeout_repository_job(
+                      conn,
+                      job=claimed,
+                      claim_ref=claim_ref,
+                      bound_ref=bound_ref,
+                      workspace_root=workspace_root,
+                  )
+
+              return _submit_after_claim(
+                  conn,
+                  job=claimed,
+                  claim_ref=claim_ref,
+                  retry=True,
+                  a2a_client_factory=a2a_client_factory,
+              )
+          '''
+
+          old_call = '''        return _recover_lost_original_task(
+              conn,
+              job=job,
+              bound_ref=external_ref,
+              task_id=task_id,
+              a2a_client_factory=a2a_client_factory,
+          )'''
+          new_call = '''        return _recover_lost_original_task(
+              conn,
+              job=job,
+              bound_ref=external_ref,
+              task_id=task_id,
+              workspace_root=workspace_root,
+              a2a_client_factory=a2a_client_factory,
+          )'''
+
+          for path in (
+              "backend/agent_runtime/repository_execution.py",
+              "scripts/sovereign-backend/agent_runtime/repository_execution.py",
+          ):
+              replace_once(path, old_recovery, new_recovery)
+              replace_once(path, old_call, new_call)
+
+          test_path = "backend/tests/test_repository_execution.py"
+          old_client = '''    client = Client()
+              recovered = repository_execution.reconcile_repository_execution(
+                  object(),
+                  user_id="owner-test",
+                  job_id="agent-test",
+                  a2a_client_factory=lambda: client,
+              )'''
+          new_client = '''    client = Client()
+              monkeypatch.setattr(
+                  repository_execution,
+                  "run_agent_job_tool",
+                  lambda *_args, **_kwargs: SimpleNamespace(
+                      status="done", changed_files=(), blocker=None, error=None,
+                  ),
+              )
+              recovered = repository_execution.reconcile_repository_execution(
+                  object(),
+                  user_id="owner-test",
+                  job_id="agent-test",
+                  a2a_client_factory=lambda: client,
+              )'''
+          replace_once(test_path, old_client, new_client)
+
+          marker = '''def test_ambiguous_submit_outcome_blocks_without_any_automatic_second_submit(monkeypatch):'''
+          new_test = '''def test_original_task_lost_reuses_existing_workspace_change_before_retry(monkeypatch):
+              state = _patch_job_store(monkeypatch, _job())
+
+              class Client:
+                  submit_count = 0
+
+                  def get_task(self, _task_id):
+                      raise AgentZeroA2ATaskLost(
+                          "AGENT_ZERO_A2A_TASK_LOST",
+                          "USE_SINGLE_ATOMIC_RESTART_RECOVERY",
+                          http_status=404,
+                      )
+
+                  def submit_repository_task(self, **_kwargs):
+                      self.submit_count += 1
+                      raise AssertionError("existing workspace mutation must win over resubmit")
+
+              client = Client()
+              monkeypatch.setattr(
+                  repository_execution,
+                  "run_agent_job_tool",
+                  lambda *_args, **_kwargs: SimpleNamespace(
+                      status="done", changed_files=("README.md",), blocker=None, error=None,
+                  ),
+              )
+              observed = {}
+
+              def closeout(_conn, *, job, claim_ref, bound_ref, workspace_root):
+                  observed.update(
+                      claim_ref=claim_ref,
+                      bound_ref=bound_ref,
+                      workspace_root=workspace_root,
+                  )
+                  return replace(job, status="validating", pr_state="ready")
+
+              monkeypatch.setattr(repository_execution, "_closeout_repository_job", closeout)
+              workspace_root = Path("/tmp/sovereign-a2a-lost-task-test")
+              recovered = repository_execution.reconcile_repository_execution(
+                  object(),
+                  user_id="owner-test",
+                  job_id="agent-test",
+                  workspace_root=workspace_root,
+                  a2a_client_factory=lambda: client,
+              )
+
+              assert recovered is not None
+              assert recovered.status == "validating"
+              assert recovered.pr_state == "ready"
+              assert client.submit_count == 0
+              assert observed["bound_ref"] == "agent-zero-a2a:task-original"
+              assert observed["claim_ref"].startswith("agent-zero-a2a:claim:retry:")
+              assert observed["workspace_root"] == workspace_root
+              assert any(
+                  event.stage == "agent_zero_a2a_lost_task_workspace_recovered"
+                  for event in state["events"]
+              )
+
+
+          ''' + marker
+          replace_once(test_path, marker, new_test)
+
+      - name: Run focused Python regression and diff checks
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pytest backend/tests/test_repository_execution.py backend/tests/test_agent_zero_a2a.py
+          git diff --check
+          cmp backend/agent_runtime/repository_execution.py scripts/sovereign-backend/agent_runtime/repository_execution.py
+
+      - name: Commit patch and remove operator bridge
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm .github/workflows/one-shot-a2a-task-loss-recovery-patch.yml
+          git config user.name "sovereign-nocode-ai-repo-codehelp[bot]"
+          git config user.email "301350536+sovereign-nocode-ai-repo-codehelp[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(agent-runtime): recover lost A2A tasks from workspace evidence"
+          git push origin HEAD:sovereign/chatgpt/1789427168-post-merge-runtime-closeout-da5e50
