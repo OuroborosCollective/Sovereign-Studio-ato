@@ -113,6 +113,13 @@ describe('maskSecrets', () => {
     expect(maskSecrets('encryption_key=encryption_key_val_707')).toBe('encryption_key=****');
     expect(maskSecrets('bot_token: bot_token_val_808')).toBe('bot_token: ****');
     expect(maskSecrets('passphrase=passphrase_val_909')).toBe('passphrase=****');
+    expect(maskSecrets('oauth_token: oauth_token_val_111')).toBe('oauth_token: ****');
+    expect(maskSecrets('oauth_secret=oauth_secret_val_222')).toBe('oauth_secret=****');
+    expect(maskSecrets('auth_secret: auth_secret_val_333')).toBe('auth_secret: ****');
+    expect(maskSecrets('bearer_token=bearer_token_val_444')).toBe('bearer_token=****');
+    expect(maskSecrets('registration_token: reg_token_val_555')).toBe('registration_token: ****');
+    expect(maskSecrets('access_key_id=AKIAIOSFODNN7EXAMPLE')).toBe('access_key_id=****');
+    expect(maskSecrets('aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY')).toBe('aws_secret_access_key: ****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
