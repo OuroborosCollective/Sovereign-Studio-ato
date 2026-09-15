@@ -51,6 +51,7 @@ _A2A_CLAIM_PREFIX: Final[str] = "agent-zero-a2a:claim:"
 _MAX_CLOSEOUT_DIFF_BYTES: Final[int] = 2_000_000
 _MAX_CLOSEOUT_CHANGED_FILES: Final[int] = 50
 _A2A_LOST_EVENT_STAGE: Final[str] = "agent_zero_a2a_task_readback_lost"
+_A2A_RESTORED_EVENT_STAGE: Final[str] = "agent_zero_a2a_task_readback_restored"
 _A2A_LOST_WORKSPACE_EVENT_STAGE: Final[str] = "agent_zero_a2a_task_lost_workspace_observed"
 _A2A_LOST_WORKSPACE_HASH_RE: Final[re.Pattern[str]] = re.compile(r"\bsha256:([0-9a-f]{64})\b")
 
@@ -109,14 +110,24 @@ def _latest_event(job: StoredSovereignAgentJob, stage: str) -> dict[str, Any] | 
     return None
 
 
-def _event_age_seconds(job: StoredSovereignAgentJob, stage: str) -> float | None:
-    event = _latest_event(job, stage)
+def _event_time_ms(event: dict[str, Any] | None) -> float | None:
     if event is None:
         return None
     observed_at = event.get("at")
-    if not isinstance(observed_at, (int, float)):
+    return float(observed_at) if isinstance(observed_at, (int, float)) else None
+
+
+def _event_age_seconds(job: StoredSovereignAgentJob, stage: str) -> float | None:
+    observed_at = _event_time_ms(_latest_event(job, stage))
+    if observed_at is None:
         return None
-    return max(0.0, time.time() - (float(observed_at) / 1000.0))
+    return max(0.0, time.time() - (observed_at / 1000.0))
+
+
+def _lost_epoch_is_active(job: StoredSovereignAgentJob) -> bool:
+    lost_at = _event_time_ms(_latest_event(job, _A2A_LOST_EVENT_STAGE))
+    restored_at = _event_time_ms(_latest_event(job, _A2A_RESTORED_EVENT_STAGE))
+    return lost_at is not None and (restored_at is None or lost_at > restored_at)
 
 
 def _event_workspace_sha256(event: dict[str, Any] | None) -> str | None:
@@ -525,7 +536,7 @@ def _reconcile_lost_original_task(
     """
 
     lost_event = _latest_event(job, _A2A_LOST_EVENT_STAGE)
-    if lost_event is None:
+    if not _lost_epoch_is_active(job):
         append_agent_event(conn, job.job_id, SovereignAgentEvent(
             stage=_A2A_LOST_EVENT_STAGE,
             level="warning",
@@ -662,6 +673,16 @@ def reconcile_repository_execution(
         ) from exc
 
     if task.active:
+        if _lost_epoch_is_active(job):
+            append_agent_event(conn, job.job_id, SovereignAgentEvent(
+                stage=_A2A_RESTORED_EVENT_STAGE,
+                level="info",
+                message=(
+                    "Agent Zero tasks/get returned the original task id again; the prior "
+                    "lost-readback epoch is closed and any future loss starts a fresh bounded window."
+                ),
+            ))
+            job = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
         age_seconds = _job_age_seconds(job)
         if age_seconds is not None and age_seconds >= _repository_stall_seconds():
             return _block_job(

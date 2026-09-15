@@ -216,6 +216,34 @@ def test_original_task_lost_does_not_resubmit_and_transient_404_can_recover(monk
     assert second.status == "running"
     assert second.external_ref == "agent-zero-a2a:task-original"
     assert client.submit_count == 0
+    assert any(event.stage == "agent_zero_a2a_task_readback_restored" for event in state["events"])
+    assert repository_execution._lost_epoch_is_active(second) is False
+
+
+def test_restored_task_makes_a_later_loss_start_a_fresh_epoch(monkeypatch):
+    state = _patch_job_store(monkeypatch, _job())
+    old_at = int((repository_execution.time.time() - 4000.0) * 1000)
+    state["job"] = replace(state["job"], events=(
+        {"stage": "agent_zero_a2a_task_readback_lost", "level": "warning", "message": "old", "at": old_at},
+        {"stage": "agent_zero_a2a_task_readback_restored", "level": "info", "message": "restored", "at": old_at + 1000},
+    ))
+    monkeypatch.setattr(repository_execution, "run_agent_job_tool", lambda *_a, **_k: _done_tool(changed_files=()))
+
+    class Client:
+        def get_task(self, task_id):
+            raise AgentZeroA2ATaskLost("AGENT_ZERO_A2A_TASK_LOST", "RECONCILE_STABLE_WORKSPACE_WITHOUT_RESUBMIT", http_status=404)
+        def submit_repository_task(self, **_kwargs):
+            raise AssertionError("fresh lost epoch must never resubmit")
+
+    result = repository_execution.reconcile_repository_execution(
+        object(), user_id="owner-test", job_id="agent-test", a2a_client_factory=Client,
+    )
+    assert result is not None
+    assert result.status == "running"
+    assert repository_execution._lost_epoch_is_active(result) is True
+    lost_events = [event for event in state["events"] if event.stage == "agent_zero_a2a_task_readback_lost"]
+    assert len(lost_events) == 1
+    assert lost_events[0].at > old_at + 1000
 
 
 def test_original_task_lost_closes_stable_workspace_effect_without_resubmit(monkeypatch):
