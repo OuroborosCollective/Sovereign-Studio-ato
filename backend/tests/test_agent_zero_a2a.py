@@ -127,6 +127,7 @@ def test_tasks_get_404_is_task_lost(monkeypatch, tmp_path: Path):
         AgentZeroA2AClient(config).get_task("task-lost")
 
     assert error.value.family == "AGENT_ZERO_A2A_TASK_LOST"
+    assert error.value.next_action == "RECONCILE_STABLE_WORKSPACE_WITHOUT_RESUBMIT"
 
 
 def test_submit_timeout_is_ambiguous_and_never_downgraded_to_retry(monkeypatch, tmp_path: Path):

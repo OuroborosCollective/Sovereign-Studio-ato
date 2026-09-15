@@ -154,6 +154,14 @@ def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
     def append(_conn, job_id, event):
         assert job_id == state["job"].job_id
         state["events"].append(event)
+        job = state["job"]
+        event_row = {
+            "stage": event.stage,
+            "level": event.level,
+            "message": event.message,
+            "at": event.at,
+        }
+        state["job"] = replace(job, events=job.events + (event_row,))
 
     monkeypatch.setattr(repository_execution, "read_agent_job", read_agent_job)
     monkeypatch.setattr(repository_execution, "compare_and_swap_agent_job_external_ref", cas)
@@ -162,49 +170,149 @@ def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
     return state
 
 
-def test_original_task_lost_resubmits_exactly_once_then_retry_lost_fails_closed(monkeypatch):
+def test_original_task_lost_does_not_resubmit_and_transient_404_can_recover(monkeypatch):
+    state = _patch_job_store(monkeypatch, _job())
+    monkeypatch.setattr(
+        repository_execution,
+        "run_agent_job_tool",
+        lambda *_args, **_kwargs: _done_tool(changed_files=()),
+    )
+
+    class Client:
+        submit_count = 0
+        reads = 0
+
+        def get_task(self, task_id):
+            assert task_id == "task-original"
+            self.reads += 1
+            if self.reads == 1:
+                raise AgentZeroA2ATaskLost(
+                    "AGENT_ZERO_A2A_TASK_LOST",
+                    "RECONCILE_STABLE_WORKSPACE_WITHOUT_RESUBMIT",
+                    http_status=404,
+                )
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+
+        def submit_repository_task(self, **_kwargs):
+            self.submit_count += 1
+            raise AssertionError("lost-task readback must never trigger an automatic resubmit")
+
+    client = Client()
+    first = repository_execution.reconcile_repository_execution(
+        object(), user_id="owner-test", job_id="agent-test",
+        a2a_client_factory=lambda: client,
+    )
+    assert first is not None
+    assert first.status == "running"
+    assert first.external_ref == "agent-zero-a2a:task-original"
+    assert client.submit_count == 0
+    assert any(event.stage == "agent_zero_a2a_task_readback_lost" for event in state["events"])
+
+    second = repository_execution.reconcile_repository_execution(
+        object(), user_id="owner-test", job_id="agent-test",
+        a2a_client_factory=lambda: client,
+    )
+    assert second is not None
+    assert second.status == "running"
+    assert second.external_ref == "agent-zero-a2a:task-original"
+    assert client.submit_count == 0
+
+
+def test_original_task_lost_closes_stable_workspace_effect_without_resubmit(monkeypatch):
     state = _patch_job_store(monkeypatch, _job())
 
     class Client:
         submit_count = 0
 
         def get_task(self, task_id):
+            assert task_id == "task-original"
             raise AgentZeroA2ATaskLost(
                 "AGENT_ZERO_A2A_TASK_LOST",
-                "USE_SINGLE_ATOMIC_RESTART_RECOVERY",
+                "RECONCILE_STABLE_WORKSPACE_WITHOUT_RESUBMIT",
                 http_status=404,
             )
 
-        def submit_repository_task(self, *, workspace_id, mission):
-            assert workspace_id == "agent-test"
-            assert mission == state["job"].mission
+        def submit_repository_task(self, **_kwargs):
             self.submit_count += 1
-            return AgentZeroA2ATask(task_id="task-retry", state="submitted")
+            raise AssertionError("workspace recovery must not submit a second Agent Zero task")
 
     client = Client()
-    recovered = repository_execution.reconcile_repository_execution(
-        object(),
-        user_id="owner-test",
-        job_id="agent-test",
-        a2a_client_factory=lambda: client,
+    monkeypatch.setattr(
+        repository_execution,
+        "run_agent_job_tool",
+        lambda *_args, **_kwargs: _done_tool(changed_files=("README.md",)),
     )
+    monkeypatch.setattr(
+        repository_execution,
+        "git_diff_full",
+        lambda *_args, **_kwargs: (
+            b"diff --git a/README.md b/README.md\n+stable marker\n",
+            SimpleNamespace(status="done", blocker=None),
+        ),
+    )
+    monkeypatch.setattr(repository_execution, "_lost_workspace_stable_seconds", lambda: 0.0)
+    closeouts: list[tuple[str, str]] = []
 
-    assert recovered is not None
-    assert recovered.external_ref == "agent-zero-a2a:retry:task-retry"
-    assert client.submit_count == 1
+    def closeout(_conn, *, job, claim_ref, bound_ref, workspace_root):
+        closeouts.append((claim_ref, bound_ref))
+        state["job"] = replace(
+            state["job"],
+            status="validating",
+            external_ref=bound_ref,
+            changed_files=("README.md",),
+            pr_state="ready",
+        )
+        return state["job"]
 
+    monkeypatch.setattr(repository_execution, "_closeout_repository_job", closeout)
+
+    # First miss records task-store loss; second observes the diff; third confirms the
+    # same diff is stable and enters closeout. None may call message/send.
+    for _ in range(3):
+        result = repository_execution.reconcile_repository_execution(
+            object(), user_id="owner-test", job_id="agent-test",
+            a2a_client_factory=lambda: client,
+        )
+
+    assert result is not None
+    assert result.pr_state == "ready"
+    assert result.changed_files == ("README.md",)
+    assert result.external_ref == "agent-zero-a2a:task-original"
+    assert client.submit_count == 0
+    assert len(closeouts) == 1
+    assert closeouts[0][0].startswith("agent-zero-a2a:claim:closeout-lost:")
+    assert closeouts[0][1] == "agent-zero-a2a:task-original"
+    assert any(event.stage == "agent_zero_a2a_task_lost_workspace_observed" for event in state["events"])
+    assert any(event.stage == "agent_zero_a2a_task_lost_workspace_closeout" for event in state["events"])
+
+
+def test_historical_retry_task_lost_blocks_without_another_resubmit(monkeypatch):
+    state = _patch_job_store(monkeypatch, _job(external_ref="agent-zero-a2a:retry:task-retry"))
+
+    class Client:
+        submit_count = 0
+
+        def get_task(self, task_id):
+            assert task_id == "task-retry"
+            raise AgentZeroA2ATaskLost(
+                "AGENT_ZERO_A2A_TASK_LOST",
+                "RECONCILE_STABLE_WORKSPACE_WITHOUT_RESUBMIT",
+                http_status=404,
+            )
+
+        def submit_repository_task(self, **_kwargs):
+            self.submit_count += 1
+            raise AssertionError("historical retry loss must fail closed without another submit")
+
+    client = Client()
     terminal = repository_execution.reconcile_repository_execution(
-        object(),
-        user_id="owner-test",
-        job_id="agent-test",
+        object(), user_id="owner-test", job_id="agent-test",
         a2a_client_factory=lambda: client,
     )
-
     assert terminal is not None
     assert terminal.status == "blocked"
     assert "no further resubmit" in (terminal.blocker or "")
-    assert client.submit_count == 1
-
+    assert client.submit_count == 0
 
 def test_ambiguous_submit_outcome_blocks_without_any_automatic_second_submit(monkeypatch):
     claim = "agent-zero-a2a:claim:submit:a:test"

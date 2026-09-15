@@ -209,7 +209,7 @@ class AgentZeroA2AClient:
         if response.status_code == 404 and not submit:
             raise AgentZeroA2ATaskLost(
                 "AGENT_ZERO_A2A_TASK_LOST",
-                "USE_SINGLE_ATOMIC_RESTART_RECOVERY",
+                "RECONCILE_STABLE_WORKSPACE_WITHOUT_RESUBMIT",
                 http_status=404,
             )
         if not 200 <= response.status_code < 300:
@@ -245,7 +245,7 @@ class AgentZeroA2AClient:
             if not submit and "not found" in message:
                 raise AgentZeroA2ATaskLost(
                     "AGENT_ZERO_A2A_TASK_LOST",
-                    "USE_SINGLE_ATOMIC_RESTART_RECOVERY",
+                    "RECONCILE_STABLE_WORKSPACE_WITHOUT_RESUBMIT",
                     http_status=response.status_code,
                 )
             raise AgentZeroA2AError(

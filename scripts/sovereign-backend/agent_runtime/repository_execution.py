@@ -50,6 +50,9 @@ _A2A_RETRY_PREFIX: Final[str] = "agent-zero-a2a:retry:"
 _A2A_CLAIM_PREFIX: Final[str] = "agent-zero-a2a:claim:"
 _MAX_CLOSEOUT_DIFF_BYTES: Final[int] = 2_000_000
 _MAX_CLOSEOUT_CHANGED_FILES: Final[int] = 50
+_A2A_LOST_EVENT_STAGE: Final[str] = "agent_zero_a2a_task_readback_lost"
+_A2A_LOST_WORKSPACE_EVENT_STAGE: Final[str] = "agent_zero_a2a_task_lost_workspace_observed"
+_A2A_LOST_WORKSPACE_HASH_RE: Final[re.Pattern[str]] = re.compile(r"\bsha256:([0-9a-f]{64})\b")
 
 _ALLOWED_REGRESSION_PREFIXES: Final[tuple[tuple[str, ...], ...]] = (
     ("python", "-m", "pytest"),
@@ -93,6 +96,34 @@ def _repository_reconciler_poll_seconds() -> float:
 
 def _repository_stall_seconds() -> float:
     return _bounded_env_seconds("SOVEREIGN_REPOSITORY_STALL_SECONDS", 1800.0, 300.0, 86400.0)
+
+
+def _lost_workspace_stable_seconds() -> float:
+    return _bounded_env_seconds("SOVEREIGN_A2A_LOST_WORKSPACE_STABLE_SECONDS", 5.0, 2.0, 60.0)
+
+
+def _latest_event(job: StoredSovereignAgentJob, stage: str) -> dict[str, Any] | None:
+    for event in reversed(job.events):
+        if str(event.get("stage") or "") == stage:
+            return event
+    return None
+
+
+def _event_age_seconds(job: StoredSovereignAgentJob, stage: str) -> float | None:
+    event = _latest_event(job, stage)
+    if event is None:
+        return None
+    observed_at = event.get("at")
+    if not isinstance(observed_at, (int, float)):
+        return None
+    return max(0.0, time.time() - (float(observed_at) / 1000.0))
+
+
+def _event_workspace_sha256(event: dict[str, Any] | None) -> str | None:
+    if event is None:
+        return None
+    match = _A2A_LOST_WORKSPACE_HASH_RE.search(str(event.get("message") or ""))
+    return match.group(1) if match else None
 
 
 def _job_age_seconds(job: StoredSovereignAgentJob) -> float | None:
@@ -475,15 +506,88 @@ def _closeout_repository_job(
     return read_agent_job(conn, user_id=evidenced.user_id, job_id=evidenced.job_id) or evidenced
 
 
-def _recover_lost_original_task(
+def _reconcile_lost_original_task(
     conn: Any,
     *,
     job: StoredSovereignAgentJob,
     bound_ref: str,
     task_id: str,
-    a2a_client_factory: A2AClientFactory,
+    workspace_root: Path | None,
 ) -> StoredSovereignAgentJob:
-    claim_ref = _claim("retry", task_id)
+    """Recover truth from a shared workspace without ever resubmitting on task-store loss.
+
+    Agent Zero currently uses FastA2A InMemoryStorage. A missing ``tasks/get`` record
+    therefore proves only that the current A2A task store cannot return the id; it does
+    not prove that the already-accepted implementation effect never ran. Sovereign keeps
+    the original task binding, observes the real shared Git workspace, requires the same
+    diff to remain stable across two bounded readbacks, and only then enters the existing
+    closeout/evidence gate. No second Agent Zero task is submitted from this path.
+    """
+
+    lost_event = _latest_event(job, _A2A_LOST_EVENT_STAGE)
+    if lost_event is None:
+        append_agent_event(conn, job.job_id, SovereignAgentEvent(
+            stage=_A2A_LOST_EVENT_STAGE,
+            level="warning",
+            message=(
+                "Agent Zero tasks/get no longer returns the persisted task id. "
+                "No resubmit is allowed; Sovereign will reconcile only a stable effect "
+                "already present in the shared workspace."
+            ),
+        ))
+        return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+
+    lost_age = _event_age_seconds(job, _A2A_LOST_EVENT_STAGE)
+    if lost_age is not None and lost_age >= _repository_stall_seconds():
+        return _block_job(
+            conn,
+            job,
+            (
+                "AGENT_ZERO_A2A_TASK_LOST_STALLED: the persisted task remained unavailable "
+                "without a closable stable workspace effect; automatic resubmit is forbidden."
+            ),
+            "agent_zero_a2a_task_lost_stalled",
+        )
+
+    status_result = run_agent_job_tool(job, "git-status", {}, workspace_root)
+    if status_result.status != "done":
+        raise RepositoryExecutionTransientError(
+            "AGENT_ZERO_A2A_TASK_LOST_WORKSPACE_STATUS_UNAVAILABLE: "
+            "workspace readback failed; no resubmit was performed"
+        )
+    if not status_result.changed_files:
+        return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+
+    patch, diff_result = git_diff_full(
+        str(job.workspace_id or job.job_id),
+        workspace_root,
+        max_bytes=_MAX_CLOSEOUT_DIFF_BYTES,
+        max_files=_MAX_CLOSEOUT_CHANGED_FILES,
+    )
+    if diff_result.status != "done" or not patch.strip():
+        raise RepositoryExecutionTransientError(
+            "AGENT_ZERO_A2A_TASK_LOST_WORKSPACE_DIFF_UNAVAILABLE: "
+            "workspace mutation is not yet independently closable; no resubmit was performed"
+        )
+
+    digest = hashlib.sha256(patch).hexdigest()
+    observed_event = _latest_event(job, _A2A_LOST_WORKSPACE_EVENT_STAGE)
+    if _event_workspace_sha256(observed_event) != digest:
+        append_agent_event(conn, job.job_id, SovereignAgentEvent(
+            stage=_A2A_LOST_WORKSPACE_EVENT_STAGE,
+            level="info",
+            message=(
+                "A real workspace diff exists after A2A task-store loss; awaiting a second "
+                f"stable readback sha256:{digest}. No resubmit was performed."
+            ),
+        ))
+        return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+
+    stable_age = _event_age_seconds(job, _A2A_LOST_WORKSPACE_EVENT_STAGE)
+    if stable_age is None or stable_age < _lost_workspace_stable_seconds():
+        return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+
+    claim_ref = _claim("closeout-lost", task_id)
     if not compare_and_swap_agent_job_external_ref(
         conn,
         job_id=job.job_id,
@@ -493,18 +597,20 @@ def _recover_lost_original_task(
         return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
     claimed = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
     append_agent_event(conn, job.job_id, SovereignAgentEvent(
-        stage="agent_zero_a2a_original_task_lost",
-        level="warning",
-        message="The persisted original Agent Zero task is gone after runtime restart; one atomic recovery submit is allowed.",
+        stage="agent_zero_a2a_task_lost_workspace_closeout",
+        level="success",
+        message=(
+            "The A2A task record stayed unavailable, but the same shared-workspace diff "
+            "remained stable. Sovereign is closing out that existing effect without resubmit."
+        ),
     ))
-    return _submit_after_claim(
+    return _closeout_repository_job(
         conn,
         job=claimed,
         claim_ref=claim_ref,
-        retry=True,
-        a2a_client_factory=a2a_client_factory,
+        bound_ref=bound_ref,
+        workspace_root=workspace_root,
     )
-
 
 def reconcile_repository_execution(
     conn: Any,
@@ -543,12 +649,12 @@ def reconcile_repository_execution(
                 "The one restart-recovery Agent Zero task is also lost; no further resubmit is allowed.",
                 "agent_zero_a2a_retry_task_lost",
             )
-        return _recover_lost_original_task(
+        return _reconcile_lost_original_task(
             conn,
             job=job,
             bound_ref=external_ref,
             task_id=task_id,
-            a2a_client_factory=a2a_client_factory,
+            workspace_root=workspace_root,
         )
     except AgentZeroA2AError as exc:
         raise RepositoryExecutionTransientError(
