@@ -1,11 +1,13 @@
 name: Operator Memory Closeout 1971
 on:
-  push:
-    branches: [sovereign/chatgpt/lost-task-workspace-first-cleanup-20260915]
+  pull_request:
+    branches: [main]
+    types: [synchronize]
 permissions:
   contents: write
 jobs:
   append-memory:
+    if: github.event.pull_request.number == 1971
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,14 +16,16 @@ jobs:
           fetch-depth: 20
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Guard exact reviewed ancestry and append once
+        id: memory
         shell: bash
         run: |
           set -Eeuo pipefail
           test "$(git merge-base HEAD 75b13f04ee84b6b44fa122eca35c04432e56cfa8)" = "75b13f04ee84b6b44fa122eca35c04432e56cfa8"
           title='### 2026-09-15 — A2A task-loss workspace-first recovery (#1971)'
           if grep -Fq "$title" Memory.md; then
-            echo 'Memory closeout entry already exists; refusing duplicate.' >&2
-            exit 1
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'Memory closeout entry already exists; no duplicate written.'
+            exit 0
           fi
           cat >> Memory.md <<'EOF'
 
@@ -36,14 +40,15 @@ Open: Production is not yet proven on this change; final Memory head must pass e
 Next safe step: Rerun exact-head gates on this Memory head, merge #1971 only if terminal green, deploy/read back exact merged revision, then require fresh 5/5 and return to 0 open PRs.
 EOF
           git diff --check
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
       - name: Commit Memory only
+        if: steps.memory.outputs.changed == 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
           git config user.name "Ouroboros Collective"
           git config user.email "projectouroboroscollective@gmail.com"
           git add Memory.md
-          git diff --cached --quiet && { echo 'No Memory change staged.' >&2; exit 1; }
           test "$(git diff --cached --name-only)" = "Memory.md"
           git commit -m "docs(memory): record PR 1971 workspace-first evidence"
           git push origin HEAD:sovereign/chatgpt/lost-task-workspace-first-cleanup-20260915
