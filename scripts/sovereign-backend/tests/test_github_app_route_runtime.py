@@ -60,6 +60,7 @@ def test_app_injects_real_pooled_connection_factory() -> None:
 
     assert "get_connection=get_agent_runtime_connection" in registration
     assert "get_connection=get_connection" not in registration
+    assert "get_controller_github_token=controller_repository_installation_token" in source
     assert 'raise RuntimeError("GitHub App route registration failed")' in source
     assert "GitHub App routes registration failed" not in source
 
@@ -287,6 +288,56 @@ def test_suspension_is_persisted_and_blocks_credit_use() -> None:
     assert deduction == {"ok": False, "duplicate": False, "remainingCredits": 10}
     assert blocked.commits == 0
     assert blocked.rollbacks == 1
+
+
+def test_controller_repository_installation_token_is_exact_repo_and_permission_bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_CONTROLLER_REPOSITORY", "OuroborosCollective/Sovereign-Studio-ato")
+    installation = github_app.Installation(
+        id=153170343,
+        account_login="OuroborosCollective",
+        account_type="Organization",
+        account_id=9001,
+        created_at=datetime(2026, 9, 15, tzinfo=timezone.utc),
+        permissions={"contents": "write", "pull_requests": "write"},
+        events=[],
+    )
+    monkeypatch.setattr(github_app, "list_installations", lambda: [installation])
+    observed: list[int] = []
+    monkeypatch.setattr(
+        github_app,
+        "get_installation_token",
+        lambda installation_id: observed.append(installation_id) or "ghs_ephemeral_installation_token",
+    )
+
+    token = github_app.controller_repository_installation_token(
+        "https://github.com/OuroborosCollective/Sovereign-Studio-ato"
+    )
+
+    assert token == "ghs_ephemeral_installation_token"
+    assert observed == [153170343]
+    assert github_app.controller_repository_installation_token(
+        "https://github.com/OuroborosCollective/Other-Repo"
+    ) is None
+    assert observed == [153170343]
+
+
+def test_controller_repository_installation_token_fails_closed_without_write_permissions(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_CONTROLLER_REPOSITORY", "OuroborosCollective/Sovereign-Studio-ato")
+    installation = github_app.Installation(
+        id=153170343,
+        account_login="OuroborosCollective",
+        account_type="Organization",
+        account_id=9001,
+        created_at=datetime(2026, 9, 15, tzinfo=timezone.utc),
+        permissions={"contents": "read", "pull_requests": "write"},
+        events=[],
+    )
+    monkeypatch.setattr(github_app, "list_installations", lambda: [installation])
+    monkeypatch.setattr(github_app, "get_installation_token", lambda _installation_id: pytest.fail("token must not be minted"))
+
+    assert github_app.controller_repository_installation_token(
+        "https://github.com/OuroborosCollective/Sovereign-Studio-ato"
+    ) is None
 
 
 def test_configured_status_requires_all_secret_families() -> None:

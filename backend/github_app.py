@@ -181,6 +181,39 @@ def get_installation_token(installation_id: int) -> str | None:
         return None
 
 
+def controller_repository_installation_token(repo_url: str) -> str | None:
+    """Return one short-lived App token only for the exact configured controller repo.
+
+    This is intentionally not a generic credential fallback. User-owned or other
+    repositories still require the authenticated user's server-held GitHub OAuth
+    credential. GitHub remains authoritative for selected-repository access.
+    """
+    configured = str(
+        os.getenv("SOVEREIGN_CONTROLLER_REPOSITORY")
+        or "OuroborosCollective/Sovereign-Studio-ato"
+    ).strip().removesuffix(".git")
+    requested = str(repo_url or "").strip().removesuffix(".git")
+    expected_url = f"https://github.com/{configured}"
+    if requested != expected_url or "/" not in configured:
+        return None
+    owner, repo = configured.split("/", 1)
+    if not owner or not repo:
+        return None
+    candidates = [
+        installation
+        for installation in list_installations()
+        if installation.account_login.casefold() == owner.casefold()
+    ]
+    if len(candidates) != 1:
+        return None
+    installation = candidates[0]
+    contents = str(installation.permissions.get("contents") or "").lower()
+    pull_requests = str(installation.permissions.get("pull_requests") or "").lower()
+    if contents not in {"write", "admin"} or pull_requests not in {"write", "admin"}:
+        return None
+    return get_installation_token(installation.id)
+
+
 def github_app_identity_evidence() -> dict[str, Any]:
     """Verify configured GitHub App id/client-id against GitHub without returning secrets."""
     jwt_token = _create_jwt()

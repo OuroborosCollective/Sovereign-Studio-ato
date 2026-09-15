@@ -288,6 +288,7 @@ def register_sovereign_agent_routes(
     send_desktop_user_input: Callable[[Any, str, str, str, dict[str, Any]], Mapping[str, Any] | None] | None = None,
     desktop_frame_allowed: Callable[[Any], bool] | None = None,
     get_session_github_token: Callable[[str], str | None] | None = None,
+    get_controller_github_token: Callable[[str], str | None] | None = None,
 ) -> None:
     """Register neutral user-facing Sovereign Agent job routes.
 
@@ -2415,6 +2416,11 @@ def register_sovereign_agent_routes(
             if not job:
                 conn.rollback()
                 return jsonify({"error": "Job nicht gefunden"}), 404
+            if not github_token and get_controller_github_token is not None:
+                try:
+                    github_token = get_controller_github_token(str(job.repo_url or ""))
+                except Exception:
+                    github_token = None
 
             with conn.cursor() as cur:
                 cur.execute(

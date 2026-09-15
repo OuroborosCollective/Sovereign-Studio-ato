@@ -11,6 +11,7 @@ const GITHUB_TOKEN = process.env.SOVEREIGN_E2E_GITHUB_TOKEN?.trim() || '';
 const REPO_URL = process.env.SOVEREIGN_E2E_REPO_URL?.trim() || '';
 const BACKEND_URL = process.env.SOVEREIGN_E2E_BACKEND_PROXY_TARGET?.trim() || '';
 const RUN_ID = process.env.GITHUB_RUN_ID?.trim() || `local-${Date.now()}`;
+const RUN_ATTEMPT = process.env.GITHUB_RUN_ATTEMPT?.trim() || '1';
 const OWNED_MARKER_PREFIX = `[live-vnext:${RUN_ID}:`;
 const A2A_TASK_REF = /^agent-zero-a2a:(?:retry:)?[A-Za-z0-9._:-]{1,200}$/;
 const JOB_ID = /^agent-[0-9a-f]{32}$/;
@@ -25,6 +26,10 @@ const REPOSITORY_READY_TIMEOUT_MS = (() => {
   if (!Number.isFinite(configured)) return 600_000;
   return Math.max(210_000, Math.min(configured, 900_000));
 })();
+const DRAFT_PR_CREATE_TIMEOUT_MS = 240_000;
+const ACCOUNT_REQUEST_TIMEOUT_MS = 30_000;
+const ACCOUNT_RECOVERY_TIMEOUT_MS = 90_000;
+const ACCOUNT_SETUP_HOOK_TIMEOUT_MS = 300_000;
 
 let activeAccountKey = CONFIGURED_ACCOUNT_KEY;
 let ephemeralAccountKeyId = '';
@@ -69,6 +74,13 @@ const runtimeReadbacks: NonNullable<ReturnType<typeof runtimeObservation>>[] = [
 const runtimeObservationTasks = new Set<Promise<void>>();
 let omittedRuntimeReadbacks = 0;
 const authenticationReadbacks: Array<{ accountId: string; origin: string; sessionStatus: number }> = [];
+const transientJobReadFailures: Array<{ jobId: string; httpStatus: number }> = [];
+const accountProvisioningEvidence = {
+  registrationAttempts: 0,
+  recoveryLoginAttempts: 0,
+  recoveredByLogin: false,
+  registrationReplayUsed: false,
+};
 
 test.use({
   viewport: { width: 390, height: 844 },
@@ -162,22 +174,88 @@ async function cleanupOwnedRunPullRequests(request: APIRequestContext): Promise<
   }
 }
 
+type EphemeralUser = { id?: string; isGuest?: boolean; credits?: number; creditStateVerified?: boolean };
+
+function requireEphemeralUser(user: EphemeralUser | null): EphemeralUser {
+  if (!user?.id || user.isGuest === true || user.creditStateVerified !== true || Number(user.credits || 0) <= 0) {
+    throw new Error('Real ephemeral account did not return a non-guest, credit-verified execution identity.');
+  }
+  return user;
+}
+
+async function recoverEphemeralAccount(
+  api: APIRequestContext,
+  email: string,
+  password: string,
+): Promise<EphemeralUser | null> {
+  const deadline = Date.now() + ACCOUNT_RECOVERY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    accountProvisioningEvidence.recoveryLoginAttempts += 1;
+    try {
+      const login = await api.post('/api/auth/login', {
+        data: { email, password },
+        timeout: ACCOUNT_REQUEST_TIMEOUT_MS,
+      });
+      if (login.status() === 200) {
+        accountProvisioningEvidence.recoveredByLogin = true;
+        return requireEphemeralUser(await login.json().catch(() => null));
+      }
+      if (![401, 404, 502, 503, 504].includes(login.status())) {
+        throw new Error(`Ephemeral account recovery login failed: HTTP ${login.status()}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Ephemeral account recovery login failed:')) throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, 5_000));
+  }
+  return null;
+}
+
 async function provisionEphemeralAccountKey(): Promise<void> {
   if (activeAccountKey) return;
   const api = await playwrightRequest.newContext({ baseURL: BACKEND_URL });
   let password = `Sovereign-E2E-${randomBytes(32).toString('base64url')}!9a`;
-  const email = `live-e2e-${RUN_ID}-${randomBytes(8).toString('hex')}@tests.sovereign.invalid`;
+  const email = `live-e2e-${RUN_ID}-${RUN_ATTEMPT}@tests.sovereign.invalid`;
+  let user: EphemeralUser | null = null;
   try {
-    const registration = await api.post('/api/auth/register', {
-      data: { email, password, displayName: `Sovereign Live E2E ${RUN_ID}` },
-    });
-    if (registration.status() !== 200) throw new Error(`Real ephemeral account registration failed: HTTP ${registration.status()}`);
-    const user = await registration.json() as { id?: string; isGuest?: boolean; credits?: number; creditStateVerified?: boolean };
-    if (!user.id || user.isGuest === true || user.creditStateVerified !== true || Number(user.credits || 0) <= 0) {
-      throw new Error('Real ephemeral account did not return a non-guest, credit-verified execution identity.');
+    accountProvisioningEvidence.registrationAttempts += 1;
+    try {
+      const registration = await api.post('/api/auth/register', {
+        data: { email, password, displayName: `Sovereign Live E2E ${RUN_ID}` },
+        timeout: ACCOUNT_REQUEST_TIMEOUT_MS,
+      });
+      if (registration.status() === 200) {
+        user = requireEphemeralUser(await registration.json().catch(() => null));
+      } else if (registration.status() === 409) {
+        user = await recoverEphemeralAccount(api, email, password);
+      } else if (![502, 503, 504].includes(registration.status())) {
+        throw new Error(`Real ephemeral account registration failed: HTTP ${registration.status()}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Real ephemeral account registration failed:')) throw error;
     }
+
+    if (!user) user = await recoverEphemeralAccount(api, email, password);
+    if (!user) {
+      accountProvisioningEvidence.registrationReplayUsed = true;
+      accountProvisioningEvidence.registrationAttempts += 1;
+      const replay = await api.post('/api/auth/register', {
+        data: { email, password, displayName: `Sovereign Live E2E ${RUN_ID}` },
+        timeout: ACCOUNT_REQUEST_TIMEOUT_MS,
+      });
+      if (replay.status() === 200) {
+        user = requireEphemeralUser(await replay.json().catch(() => null));
+      } else if (replay.status() === 409) {
+        user = await recoverEphemeralAccount(api, email, password);
+      } else {
+        throw new Error(`Real ephemeral account registration replay failed: HTTP ${replay.status()}`);
+      }
+    }
+    user = requireEphemeralUser(user);
+
     const issued = await api.post('/api/security/account-keys', {
       data: { label: `Sovereign Live Five ${RUN_ID}` },
+      timeout: ACCOUNT_REQUEST_TIMEOUT_MS,
     });
     if (issued.status() !== 201) throw new Error(`Real ephemeral account-key issue failed: HTTP ${issued.status()}`);
     const issuedBody = await issued.json() as { id?: string; key?: string };
@@ -186,7 +264,7 @@ async function provisionEphemeralAccountKey(): Promise<void> {
     if (!key.startsWith('svk_') || !keyId) throw new Error('Real ephemeral account-key issue returned incomplete evidence.');
     activeAccountKey = key;
     ephemeralAccountKeyId = keyId;
-    ephemeralAccountId = user.id;
+    ephemeralAccountId = user.id!;
     identitySource = 'ephemeral_product_registration';
   } finally {
     password = '';
@@ -246,7 +324,7 @@ function mission(pathId: string): { marker: string; text: string } {
     marker,
     text: [
       `${marker} Repository: ${REPO_URL}`,
-      'Ändere ausschließlich README.md: Hänge den Marker aus der ersten Missionszeile an die erste Markdown-Überschrift an.',
+      'Ändere ausschließlich README.md: Finde die erste Zeile, die mit `# ` beginnt. Füge den Marker aus der ersten Missionszeile ans Ende genau dieser Zeile an, getrennt durch genau ein Leerzeichen. Die Zeile muss weiterhin mit `# ` beginnen; verändere keine andere README-Zeile.',
       'Erhalte den übrigen Inhalt, führe die passenden Regressionstests aus und erzeuge noch keinen Pull Request.',
       'Stoppe nach belegtem Workspace-Diff und Test-Evidence, damit der sichtbare Publication-Gate den Draft PR separat freigeben kann.',
     ].join('\n'),
@@ -328,7 +406,17 @@ async function verifyLinkedJobReadback(page: Page, proof: LiveRunProof): Promise
       maxRedirects: 0,
     });
     requireSameOrigin(response.url(), page.url());
-    expect(response.status()).toBe(200);
+    const readStatus = response.status();
+    if (readStatus !== 200) {
+      if ([502, 503, 504].includes(readStatus)) {
+        if (transientJobReadFailures.length < 100) {
+          transientJobReadFailures.push({ jobId: proof.execution.jobId, httpStatus: readStatus });
+        }
+        await page.waitForTimeout(1_500);
+        continue;
+      }
+      throw new Error(`LIVE_LINKED_JOB_READ_HTTP_${readStatus}`);
+    }
     const body = await response.json().catch(() => null);
     const observed = runtimeObservation(path, 'GET', response.status(), body);
     if (!observed) throw new Error('LIVE_LINKED_JOB_READBACK_MISSING');
@@ -377,6 +465,25 @@ async function waitForPublicationGate(page: Page): Promise<void> {
   throw new Error('vNext did not reach READY_TO_PUBLISH within the bounded live-test window.');
 }
 
+function draftPrCreateFailureFamily(payload: unknown): string {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return 'INVALID_RESPONSE';
+  const body = payload as Record<string, unknown>;
+  const signal = body.draftPrCreate && typeof body.draftPrCreate === 'object' && !Array.isArray(body.draftPrCreate)
+    ? body.draftPrCreate as Record<string, unknown>
+    : {};
+  const text = [body.error, body.blocker, signal.blocker, signal.summary]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .toLowerCase();
+  if (text.includes('credential') || text.includes('github token')) return 'GITHUB_CREDENTIAL';
+  if (text.includes('credit')) return 'CREDIT_SETTLEMENT';
+  if (text.includes('git push') || text.includes('branch publication') || text.includes('workspace branch')) return 'GITHUB_BRANCH_PUBLICATION';
+  if (text.includes('readback') || text.includes('identity readback') || text.includes('check-runs')) return 'GITHUB_READBACK';
+  if (text.includes('status 401') || text.includes('status 403')) return 'GITHUB_AUTHORIZATION';
+  if (text.includes('status 422')) return 'GITHUB_VALIDATION';
+  return 'UNCLASSIFIED';
+}
+
 async function publishAndVerifyInUi(page: Page): Promise<{ prNumber: number; readbackHeadSha: string; prUrl: string }> {
   await waitForPublicationGate(page);
   await openPublication(page);
@@ -388,9 +495,21 @@ async function publishAndVerifyInUi(page: Page): Promise<{ prNumber: number; rea
   await expect(consent.getByText('EXTERNAL WRITE CONSENT')).toBeVisible();
   await expect(consent.getByText(/create exactly one GitHub/)).toBeVisible();
   await expect(consent.getByText(/No merge\. No push to main\./)).toBeVisible();
-  await page.getByTestId('vnext-create-draft-pr').click();
+  const [createResponse] = await Promise.all([
+    page.waitForResponse((response) => {
+      if (response.request().method() !== 'POST') return false;
+      const path = new URL(response.url()).pathname;
+      return /^\/api\/user\/agent\/jobs\/agent-[0-9a-f]{32}\/draft-pr\/create$/.test(path);
+    }, { timeout: DRAFT_PR_CREATE_TIMEOUT_MS }),
+    page.getByTestId('vnext-create-draft-pr').click(),
+  ]);
+  requireSameOrigin(createResponse.url(), page.url());
+  const createBody = await createResponse.json().catch(() => null);
+  if (createResponse.status() !== 200) {
+    throw new Error(`LIVE_DRAFT_PR_CREATE_HTTP_${createResponse.status()}_${draftPrCreateFailureFamily(createBody)}`);
+  }
   const panel = page.getByTestId('vnext-publication-inspector');
-  await expect(panel.getByText('GITHUB READBACK VERIFIED')).toBeVisible({ timeout: 180_000 });
+  await expect(panel.getByText('GITHUB READBACK VERIFIED')).toBeVisible({ timeout: 30_000 });
   await expect(panel.getByText('DRAFT PR VERIFIED')).toBeVisible();
   const panelText = await panel.innerText();
   const prMatch = panelText.match(/#(\d+)/);
@@ -458,7 +577,11 @@ test.describe('five canonical vNext repository runs reach independently verified
   test.describe.configure({ mode: 'serial' });
   test.skip(!LIVE_ENABLED, 'Live vNext Draft-PR validation runs only through the explicit protected workflow.');
   test.setTimeout(REPOSITORY_START_TIMEOUT_MS + REPOSITORY_READY_TIMEOUT_MS + 300_000);
-  test.beforeAll(async () => { assertLiveConfig(); await provisionEphemeralAccountKey(); });
+  test.beforeAll(async ({}, testInfo) => {
+    testInfo.setTimeout(ACCOUNT_SETUP_HOOK_TIMEOUT_MS);
+    assertLiveConfig();
+    await provisionEphemeralAccountKey();
+  });
   test.beforeEach(async ({ page }) => {
     page.on('response', response => {
       let pageOrigin: string;
@@ -492,6 +615,8 @@ test.describe('five canonical vNext repository runs reach independently verified
         protectedValuePersistedInEvidence: false,
       },
       authenticationReadbacks,
+      accountProvisioningEvidence,
+      transientJobReadFailures,
       runtimeReadbacks,
       omittedRuntimeReadbacks,
       verifiedDraftPrCount: evidence.length,

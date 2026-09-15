@@ -182,6 +182,13 @@ def test_original_task_lost_resubmits_exactly_once_then_retry_lost_fails_closed(
             return AgentZeroA2ATask(task_id="task-retry", state="submitted")
 
     client = Client()
+    monkeypatch.setattr(
+        repository_execution,
+        "run_agent_job_tool",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            status="done", changed_files=(), blocker=None, error=None,
+        ),
+    )
     recovered = repository_execution.reconcile_repository_execution(
         object(),
         user_id="owner-test",
@@ -204,6 +211,64 @@ def test_original_task_lost_resubmits_exactly_once_then_retry_lost_fails_closed(
     assert terminal.status == "blocked"
     assert "no further resubmit" in (terminal.blocker or "")
     assert client.submit_count == 1
+
+
+def test_original_task_lost_reuses_existing_workspace_change_before_retry(monkeypatch):
+    state = _patch_job_store(monkeypatch, _job())
+
+    class Client:
+        submit_count = 0
+
+        def get_task(self, _task_id):
+            raise AgentZeroA2ATaskLost(
+                "AGENT_ZERO_A2A_TASK_LOST",
+                "USE_SINGLE_ATOMIC_RESTART_RECOVERY",
+                http_status=404,
+            )
+
+        def submit_repository_task(self, **_kwargs):
+            self.submit_count += 1
+            raise AssertionError("existing workspace mutation must win over resubmit")
+
+    client = Client()
+    monkeypatch.setattr(
+        repository_execution,
+        "run_agent_job_tool",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            status="done", changed_files=("README.md",), blocker=None, error=None,
+        ),
+    )
+    observed = {}
+
+    def closeout(_conn, *, job, claim_ref, bound_ref, workspace_root):
+        observed.update(
+            claim_ref=claim_ref,
+            bound_ref=bound_ref,
+            workspace_root=workspace_root,
+        )
+        return replace(job, status="validating", pr_state="ready")
+
+    monkeypatch.setattr(repository_execution, "_closeout_repository_job", closeout)
+    workspace_root = Path("/tmp/sovereign-a2a-lost-task-test")
+    recovered = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id="owner-test",
+        job_id="agent-test",
+        workspace_root=workspace_root,
+        a2a_client_factory=lambda: client,
+    )
+
+    assert recovered is not None
+    assert recovered.status == "validating"
+    assert recovered.pr_state == "ready"
+    assert client.submit_count == 0
+    assert observed["bound_ref"] == "agent-zero-a2a:task-original"
+    assert observed["claim_ref"].startswith("agent-zero-a2a:claim:retry:")
+    assert observed["workspace_root"] == workspace_root
+    assert any(
+        event.stage == "agent_zero_a2a_lost_task_workspace_recovered"
+        for event in state["events"]
+    )
 
 
 def test_ambiguous_submit_outcome_blocks_without_any_automatic_second_submit(monkeypatch):
@@ -257,12 +322,19 @@ def _failed_tool(reason="failed"):
     )
 
 
-def _patch_closeout_baseline(monkeypatch, *, janitor_metadata=None, test_result=None, gate=None):
+def _patch_closeout_baseline(
+    monkeypatch,
+    *,
+    janitor_metadata=None,
+    test_result=None,
+    gate=None,
+    changed_files=("backend/agent_runtime/example.py",),
+):
     state = _patch_job_store(
         monkeypatch,
         _job(external_ref="agent-zero-a2a:claim:closeout:a:test"),
     )
-    changed = ("backend/agent_runtime/example.py",)
+    changed = tuple(changed_files)
 
     def tool(_job_value, action, _params, _root):
         if action == "git-status":
@@ -366,6 +438,48 @@ def test_closeout_blocks_on_critical_janitor_finding(monkeypatch):
 
     assert result.status == "blocked"
     assert "critical repository defect" in (result.blocker or "")
+
+
+def test_closeout_documentation_only_uses_real_diff_regression_instead_of_node_toolchain(monkeypatch):
+    state, _changed = _patch_closeout_baseline(
+        monkeypatch,
+        changed_files=("README.md",),
+        janitor_metadata={
+            "severityCounts": {},
+            "recommendedTestCommand": "pnpm test",
+        },
+    )
+    observed_commands: list[str] = []
+    original_tool = repository_execution.run_agent_job_tool
+
+    def tool(job_value, action, params, root):
+        if action == "test":
+            observed_commands.append(str(params.get("command") or ""))
+            return _done_tool(output="diff clean")
+        return original_tool(job_value, action, params, root)
+
+    monkeypatch.setattr(repository_execution, "run_agent_job_tool", tool)
+    monkeypatch.setattr(repository_execution, "draft_pr_input_from_job", lambda job: job)
+    monkeypatch.setattr(
+        repository_execution,
+        "prepare_draft_pr",
+        lambda _input: SimpleNamespace(
+            allowed=True,
+            blockers=(),
+            summary="ready",
+            head_branch="sovereign/agent-test",
+            base_branch="main",
+            title="Draft: test",
+            body="evidence",
+        ),
+    )
+    monkeypatch.setattr(repository_execution, "mark_draft_pr_prepared", lambda *_args, **_kwargs: None)
+
+    result = _run_closeout(state)
+
+    assert result.status == "running"
+    assert observed_commands == []
+    assert "git diff --check: passed" in (result.test_summary or "")
 
 
 def test_closeout_splits_janitor_shell_combination_and_never_executes_control_token(monkeypatch):

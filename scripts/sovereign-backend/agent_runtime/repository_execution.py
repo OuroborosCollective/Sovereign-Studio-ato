@@ -65,6 +65,7 @@ _ALLOWED_REGRESSION_PREFIXES: Final[tuple[tuple[str, ...], ...]] = (
     ("go", "test"),
     ("cargo", "test"),
 )
+_DOCUMENTATION_ONLY_SUFFIXES: Final[frozenset[str]] = frozenset({".md", ".mdx", ".rst", ".txt"})
 _SHELL_CONTROL_TOKENS: Final[frozenset[str]] = frozenset({"||", ";", "|", ">", ">>", "<", "<<", "&"})
 _RECONCILER_THREAD_LOCK = threading.Lock()
 _RECONCILER_THREAD: threading.Thread | None = None
@@ -297,6 +298,13 @@ def _safe_regression_commands(recommended: object) -> tuple[str, ...]:
     return tuple(selected)
 
 
+def _documentation_only_changes(changed_files: tuple[str, ...]) -> bool:
+    return bool(changed_files) and all(
+        Path(path).suffix.casefold() in _DOCUMENTATION_ONLY_SUFFIXES
+        for path in changed_files
+    )
+
+
 def _closeout_repository_job(
     conn: Any,
     *,
@@ -373,11 +381,18 @@ def _closeout_repository_job(
             "repository_closeout_janitor_critical",
         )
 
-    commands = _safe_regression_commands(
+    documentation_only = _documentation_only_changes(tuple(status_result.changed_files))
+    commands = () if documentation_only else _safe_regression_commands(
         janitor.metadata.get("recommendedTestCommand") if isinstance(janitor.metadata, dict) else None
     )
     test_outputs: list[str] = []
-    if commands:
+    if documentation_only:
+        # ``git_diff_check`` above already executed against the canonical repository
+        # worktree. For documentation-only mutations that real result is the
+        # appropriate regression evidence; do not route Git through TestTool's
+        # workspace-shell cwd or require an unrelated Node toolchain.
+        test_outputs.append("git diff --check: passed")
+    elif commands:
         for command in commands:
             test_result = run_agent_job_tool(
                 job,
@@ -481,6 +496,7 @@ def _recover_lost_original_task(
     job: StoredSovereignAgentJob,
     bound_ref: str,
     task_id: str,
+    workspace_root: Path | None,
     a2a_client_factory: A2AClientFactory,
 ) -> StoredSovereignAgentJob:
     claim_ref = _claim("retry", task_id)
@@ -495,8 +511,33 @@ def _recover_lost_original_task(
     append_agent_event(conn, job.job_id, SovereignAgentEvent(
         stage="agent_zero_a2a_original_task_lost",
         level="warning",
-        message="The persisted original Agent Zero task is gone after runtime restart; one atomic recovery submit is allowed.",
+        message="The persisted original Agent Zero task is gone; Sovereign must inspect the shared workspace before any one-time recovery submit.",
     ))
+
+    workspace_status = run_agent_job_tool(claimed, "git-status", {}, workspace_root)
+    if workspace_status.status != "done":
+        return _block_job(
+            conn,
+            claimed,
+            workspace_status.blocker
+            or workspace_status.error
+            or "The lost Agent Zero task workspace could not be read safely; automatic resubmit is forbidden.",
+            "agent_zero_a2a_lost_task_workspace_unverified",
+        )
+    if workspace_status.changed_files:
+        append_agent_event(conn, job.job_id, SovereignAgentEvent(
+            stage="agent_zero_a2a_lost_task_workspace_recovered",
+            level="success",
+            message="The lost Agent Zero task already left real workspace changes; Sovereign will verify those changes instead of submitting a duplicate task.",
+        ))
+        return _closeout_repository_job(
+            conn,
+            job=claimed,
+            claim_ref=claim_ref,
+            bound_ref=bound_ref,
+            workspace_root=workspace_root,
+        )
+
     return _submit_after_claim(
         conn,
         job=claimed,
@@ -548,6 +589,7 @@ def reconcile_repository_execution(
             job=job,
             bound_ref=external_ref,
             task_id=task_id,
+            workspace_root=workspace_root,
             a2a_client_factory=a2a_client_factory,
         )
     except AgentZeroA2AError as exc:
