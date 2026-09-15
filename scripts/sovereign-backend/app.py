@@ -109,10 +109,13 @@ from evidence_observatory import register_evidence_observatory_routes
 
 # GitHub App integration (Marketplace)
 try:
-    from github_app import github_app_identity_evidence, register_github_app_routes
+    from github_app import controller_repository_installation_token, github_app_identity_evidence, register_github_app_routes
     HAS_GITHUB_APP = True
 except ImportError:
     HAS_GITHUB_APP = False
+
+    def controller_repository_installation_token(_repo_url: str) -> str | None:
+        return None
     github_app_identity_evidence = None
     register_github_app_routes = None
 
@@ -1697,6 +1700,7 @@ register_sovereign_agent_routes(
     app,
     require_session=require_session,
     get_connection=get_agent_runtime_connection,
+    get_controller_github_token=controller_repository_installation_token,
     # Read-only reconnect resolution consumes only persisted stage evidence and an
     # existing exact AttemptWorkspace; generic /tools routes remain unprojected.
     get_live_workspace_context=build_live_workspace_context_resolver(),

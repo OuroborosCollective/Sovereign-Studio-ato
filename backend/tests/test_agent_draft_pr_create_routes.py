@@ -163,7 +163,7 @@ def request_contract():
     )
 
 
-def create_test_app(conn: FakeConnection):
+def create_test_app(conn: FakeConnection, *, get_controller_github_token=None):
     app = Flask(__name__)
 
     def require_session(fn):
@@ -177,7 +177,12 @@ def create_test_app(conn: FakeConnection):
         wrapped.__name__ = fn.__name__
         return wrapped
 
-    register_sovereign_agent_routes(app, require_session=require_session, get_connection=lambda: conn)
+    register_sovereign_agent_routes(
+        app,
+        require_session=require_session,
+        get_connection=lambda: conn,
+        get_controller_github_token=get_controller_github_token,
+    )
     return app
 
 
@@ -280,6 +285,41 @@ def test_draft_pr_create_blocks_without_server_credentials(monkeypatch):
     assert payload["draftPrCreate"]["blocker"] == "server GitHub credentials missing for Draft PR create"
     assert conn.jobs["agent-1"]["pr_state"] == "ready"
     assert conn.jobs["agent-1"]["pr_url"] is None
+
+
+def test_draft_pr_create_uses_controller_app_token_only_when_user_credential_is_absent(monkeypatch):
+    import agent_runtime.routes as routes
+
+    observed = {}
+
+    def fake_create_draft_pr_for_job(job, token=None):
+        observed["token"] = token
+        return DraftPrCreateResult(
+            allowed=True,
+            status="created",
+            pr_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/122",
+            summary="GitHub Draft PR created.",
+            predictive_signal="agent_draft_pr_created",
+        )
+
+    monkeypatch.setattr(routes, "create_draft_pr_for_job", fake_create_draft_pr_for_job)
+    conn = FakeConnection()
+    seed_ready_job(conn, user_id="user-1", job_id="agent-1")
+    requested_repositories = []
+    app = create_test_app(
+        conn,
+        get_controller_github_token=lambda repo_url: requested_repositories.append(repo_url) or "ghs_controller_installation_token",
+    )
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs/agent-1/draft-pr/create",
+        headers={"X-Test-User": "user-1"},
+        json={},
+    )
+
+    assert response.status_code == 200
+    assert observed["token"] == "ghs_controller_installation_token"
+    assert requested_repositories == ["https://github.com/OuroborosCollective/Sovereign-Studio-ato"]
 
 
 def test_draft_pr_create_persists_created_state(monkeypatch):
