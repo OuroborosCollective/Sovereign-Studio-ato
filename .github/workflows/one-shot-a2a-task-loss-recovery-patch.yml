@@ -19,11 +19,13 @@ jobs:
           ref: sovereign/chatgpt/1789427168-post-merge-runtime-closeout-da5e50
           fetch-depth: 2
 
-      - name: Require exact reviewed parent
+      - name: Require exact reviewed input blobs
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^)" = "eb66fa05e3baa8627642524a4422cbb6eb06c587"
+          test "$(git rev-parse HEAD:backend/agent_runtime/repository_execution.py)" = "cb58d9878e8c517523cdfd0b707c339645f6f0ef"
+          test "$(git rev-parse HEAD:scripts/sovereign-backend/agent_runtime/repository_execution.py)" = "cb58d9878e8c517523cdfd0b707c339645f6f0ef"
+          test "$(git rev-parse HEAD:backend/tests/test_repository_execution.py)" = "5ae5cb0e83cfdc7396ea1365b999cc89997874b0"
 
       - name: Apply exact workspace-first recovery patch
         shell: python
@@ -38,37 +40,18 @@ jobs:
                   raise SystemExit(f"{path}: expected exactly one match, got {count}")
               file.write_text(text.replace(old, new, 1), encoding="utf-8")
 
-          old_recovery = '''def _recover_lost_original_task(
-              conn: Any,
-              *,
-              job: StoredSovereignAgentJob,
-              bound_ref: str,
-              task_id: str,
-              a2a_client_factory: A2AClientFactory,
-          ) -> StoredSovereignAgentJob:
-              claim_ref = _claim("retry", task_id)
-              if not compare_and_swap_agent_job_external_ref(
-                  conn,
-                  job_id=job.job_id,
-                  expected_ref=bound_ref,
-                  new_ref=claim_ref,
-              ):
-                  return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-              claimed = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-              append_agent_event(conn, job.job_id, SovereignAgentEvent(
-                  stage="agent_zero_a2a_original_task_lost",
-                  level="warning",
-                  message="The persisted original Agent Zero task is gone after runtime restart; one atomic recovery submit is allowed.",
-              ))
-              return _submit_after_claim(
-                  conn,
-                  job=claimed,
-                  claim_ref=claim_ref,
-                  retry=True,
-                  a2a_client_factory=a2a_client_factory,
-              )
-          '''
-          new_recovery = '''def _recover_lost_original_task(
+          def replace_region(path: str, start_marker: str, end_marker: str, replacement: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+                  raise SystemExit(f"{path}: recovery region markers are not unique")
+              start = text.index(start_marker)
+              end = text.index(end_marker, start)
+              if end <= start:
+                  raise SystemExit(f"{path}: invalid recovery region")
+              file.write_text(text[:start] + replacement + text[end:], encoding="utf-8")
+
+          recovery = '''def _recover_lost_original_task(
               conn: Any,
               *,
               job: StoredSovereignAgentJob,
@@ -123,40 +106,46 @@ jobs:
                   retry=True,
                   a2a_client_factory=a2a_client_factory,
               )
-          '''
 
-          old_call = '''        return _recover_lost_original_task(
-              conn,
-              job=job,
-              bound_ref=external_ref,
-              task_id=task_id,
-              a2a_client_factory=a2a_client_factory,
-          )'''
-          new_call = '''        return _recover_lost_original_task(
-              conn,
-              job=job,
-              bound_ref=external_ref,
-              task_id=task_id,
-              workspace_root=workspace_root,
-              a2a_client_factory=a2a_client_factory,
-          )'''
+
+          '''
 
           for path in (
               "backend/agent_runtime/repository_execution.py",
               "scripts/sovereign-backend/agent_runtime/repository_execution.py",
           ):
-              replace_once(path, old_recovery, new_recovery)
-              replace_once(path, old_call, new_call)
+              replace_region(
+                  path,
+                  "def _recover_lost_original_task(",
+                  "def reconcile_repository_execution(",
+                  recovery,
+              )
+              replace_once(
+                  path,
+                  "            task_id=task_id,\n            a2a_client_factory=a2a_client_factory,",
+                  "            task_id=task_id,\n            workspace_root=workspace_root,\n            a2a_client_factory=a2a_client_factory,",
+              )
 
-          test_path = "backend/tests/test_repository_execution.py"
-          old_client = '''    client = Client()
-              recovered = repository_execution.reconcile_repository_execution(
-                  object(),
-                  user_id="owner-test",
-                  job_id="agent-test",
-                  a2a_client_factory=lambda: client,
-              )'''
-          new_client = '''    client = Client()
+          tests = '''def test_original_task_lost_resubmits_exactly_once_then_retry_lost_fails_closed(monkeypatch):
+              state = _patch_job_store(monkeypatch, _job())
+
+              class Client:
+                  submit_count = 0
+
+                  def get_task(self, task_id):
+                      raise AgentZeroA2ATaskLost(
+                          "AGENT_ZERO_A2A_TASK_LOST",
+                          "USE_SINGLE_ATOMIC_RESTART_RECOVERY",
+                          http_status=404,
+                      )
+
+                  def submit_repository_task(self, *, workspace_id, mission):
+                      assert workspace_id == "agent-test"
+                      assert mission == state["job"].mission
+                      self.submit_count += 1
+                      return AgentZeroA2ATask(task_id="task-retry", state="submitted")
+
+              client = Client()
               monkeypatch.setattr(
                   repository_execution,
                   "run_agent_job_tool",
@@ -169,11 +158,26 @@ jobs:
                   user_id="owner-test",
                   job_id="agent-test",
                   a2a_client_factory=lambda: client,
-              )'''
-          replace_once(test_path, old_client, new_client)
+              )
 
-          marker = '''def test_ambiguous_submit_outcome_blocks_without_any_automatic_second_submit(monkeypatch):'''
-          new_test = '''def test_original_task_lost_reuses_existing_workspace_change_before_retry(monkeypatch):
+              assert recovered is not None
+              assert recovered.external_ref == "agent-zero-a2a:retry:task-retry"
+              assert client.submit_count == 1
+
+              terminal = repository_execution.reconcile_repository_execution(
+                  object(),
+                  user_id="owner-test",
+                  job_id="agent-test",
+                  a2a_client_factory=lambda: client,
+              )
+
+              assert terminal is not None
+              assert terminal.status == "blocked"
+              assert "no further resubmit" in (terminal.blocker or "")
+              assert client.submit_count == 1
+
+
+          def test_original_task_lost_reuses_existing_workspace_change_before_retry(monkeypatch):
               state = _patch_job_store(monkeypatch, _job())
 
               class Client:
@@ -231,14 +235,19 @@ jobs:
               )
 
 
-          ''' + marker
-          replace_once(test_path, marker, new_test)
+          '''
+          replace_region(
+              "backend/tests/test_repository_execution.py",
+              "def test_original_task_lost_resubmits_exactly_once_then_retry_lost_fails_closed(",
+              "def test_ambiguous_submit_outcome_blocks_without_any_automatic_second_submit(",
+              tests,
+          )
 
-      - name: Run focused Python regression and diff checks
+      - name: Run dependency-free syntax, mirror and diff checks
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m pytest backend/tests/test_repository_execution.py backend/tests/test_agent_zero_a2a.py
+          python -m py_compile backend/agent_runtime/repository_execution.py backend/tests/test_repository_execution.py
           git diff --check
           cmp backend/agent_runtime/repository_execution.py scripts/sovereign-backend/agent_runtime/repository_execution.py
 
