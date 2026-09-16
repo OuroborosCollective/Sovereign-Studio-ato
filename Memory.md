@@ -447,3 +447,13 @@ Evidence: Pre-read completed before integration; #1978 merged to `2e4681f9b1043b
 Learned: A secret-safe diagnostic that collapses every bounded internal exception into one generic family destroys causal value; stage plus allowlisted-shaped family retains observability without exposing protected details.
 Open: This patch improves diagnosis only; it does not claim the underlying dedicated Agent Zero diagnostic path fixed.
 Next safe step: Re-run exact-head gates on this Memory-appended head, then merge only with explicit Owner approval; after exact merged-revision MCP rollout, repeat `agent_zero_backend_diagnostics` and repair only the newly proven failure family if one remains.
+
+### 2026-09-16 — Agent Zero framework-interpreter diagnostic repair
+Status: SOURCE_REGRESSION_VERIFIED; Draft-PR CI and live runtime proof pending.
+Task: Repair the exact `DIAGNOSTIC_PROCESS_FAILED` reproduced at `probe-agent-zero-runtime` after #1980 made the failure stage observable.
+Decisions: Execute the read-only Agent Zero inventory with the fixed framework interpreter `/opt/venv-a0/bin/python` rather than ambient `python`; require at least one observed `run_ui.py` process to resolve to that same executable before treating package metadata as diagnostic evidence; leave backend/A2A mutation paths unchanged.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/agent_zero_diagnostics.py` and focused diagnostic regressions.
+Evidence: Memory pre-read occurred before this block; exact live baseline is `main@37a126eeca07b1698505efe087e10cd5028fdd51`, MCP `sha256:8e4d16787865dfda36909fdc4eab20e1e258826ad65c221c5d2df680b7a12cc0`, backend `sha256:67740c2081f7e02aaf83837741bef1ea76867fe15645ec201664e3bb6b34de8d`; dedicated diagnostic reproduced `DIAGNOSTIC_PROCESS_FAILED` at `probe-agent-zero-runtime` while Agent Zero and general A2A remained healthy. Focused checks passed: 27 diagnostic, 22 broker, 19 install-contract and 3 backend-release/A2A tests plus `git diff --check`; CODEOWNERS covers both changed paths.
+Learned: Agent Zero activates a dedicated framework venv for `run_ui.py`; a fresh `docker exec` does not inherit shell activation, so an ambient interpreter is not valid evidence about the running framework. Matching the probe executable to the observed server process closes that attribution gap.
+Open: Source tests cannot prove the live Agent Zero container accepts this interpreter path; exact-head CI, immutable MCP rollout and a fresh `agent_zero_backend_diagnostics` readback are still required.
+Next safe step: Create one Draft PR, require terminal exact-head gates, and request explicit Owner merge approval only if green; after merge/self-update rerun the dedicated live diagnostic and stop on any new failure family.
