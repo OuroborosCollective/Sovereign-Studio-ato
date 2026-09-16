@@ -67,18 +67,34 @@ class AgentZeroDiagnosticsRuntime:
                           "python", "-I", "-B", "-", *args], script=script, timeout=55)
 
     def inspect(self, *, expected_revision, expected_image_digest):
+        stage = "bind-backend-runtime"
         try:
             backend = self._bound_backend(expected_revision, expected_image_digest)
+            stage = "probe-backend-worker"
             result = self._probe(backend, "inspect", expected_revision, expected_image_digest)
+            if result.get("ok") is not True:
+                result.update(diagnosticStage=stage, runtimeCanaryPassed=False,
+                              secretValuesReturned=False)
+                return result
+            stage = "bind-agent-zero-runtime"
             agent_zero = self._identity(AGENT_ZERO)
+            stage = "probe-agent-zero-runtime"
             result["agentZeroPackages"] = self._probe(agent_zero, "agent-zero")
+            stage = "stability-readback"
             if self._identity(BACKEND) != backend or self._identity(AGENT_ZERO) != agent_zero:
-                return blocked("RUNTIME_CHANGED_DURING_DIAGNOSTIC")
+                return {**blocked("RUNTIME_CHANGED_DURING_DIAGNOSTIC"),
+                        "diagnosticStage": stage}
             result.update(backendIdentity=backend, agentZeroIdentity=agent_zero,
-                          runtimeCanaryPassed=False, secretValuesReturned=False)
+                          diagnosticStage="complete", runtimeCanaryPassed=False,
+                          secretValuesReturned=False)
             return result
-        except Exception:
-            return blocked("AGENT_ZERO_DIAGNOSTIC_UNAVAILABLE")
+        except Exception as exc:
+            # Preserve only bounded internal failure-family identifiers. Never expose
+            # subprocess stderr, exception text, URLs, response bodies or headers.
+            safe_family = str(exc) if isinstance(exc, (ValueError, RuntimeError)) else ""
+            if not re.fullmatch(r"[A-Z][A-Z0-9_]{2,120}", safe_family):
+                safe_family = "AGENT_ZERO_DIAGNOSTIC_UNAVAILABLE"
+            return {**blocked(safe_family), "diagnosticStage": stage}
 
     def _root_fd(self):
         fd = os.open(self.evidence_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
