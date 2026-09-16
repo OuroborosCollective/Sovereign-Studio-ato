@@ -1,6 +1,5 @@
 FROM node:22-bookworm-slim AS node-toolchain
-RUN corepack enable \
-    && corepack prepare pnpm@9.12.2 --activate \
+RUN npm install --global pnpm@9.12.2 \
     && node --version \
     && npm --version \
     && pnpm --version
@@ -29,13 +28,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # backend-owned shared workspace. Carry the exact Node/pnpm toolchain required by
 # this repository into the immutable backend image instead of relying on host PATH.
 COPY --from=node-toolchain /usr/local/bin/node /usr/local/bin/node
-COPY --from=node-toolchain /usr/local/bin/npm /usr/local/bin/npm
-COPY --from=node-toolchain /usr/local/bin/npx /usr/local/bin/npx
-COPY --from=node-toolchain /usr/local/bin/corepack /usr/local/bin/corepack
-COPY --from=node-toolchain /usr/local/bin/pnpm /usr/local/bin/pnpm
-COPY --from=node-toolchain /usr/local/bin/pnpx /usr/local/bin/pnpx
 COPY --from=node-toolchain /usr/local/lib/node_modules /usr/local/lib/node_modules
-RUN node --version \
+RUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && ln -sf ../lib/node_modules/pnpm/bin/pnpm.cjs /usr/local/bin/pnpm \
+    && ln -sf ../lib/node_modules/pnpm/bin/pnpx.cjs /usr/local/bin/pnpx \
+    && node --version \
     && npm --version \
     && pnpm --version
 
