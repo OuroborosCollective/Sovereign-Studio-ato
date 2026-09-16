@@ -71,6 +71,13 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => new Response(JSON.stringify({
       jobs: [
         {
+          jobId: 'agent-unrelated-latest',
+          mission: 'Non-repository background work.',
+          status: 'running',
+          repoUrl: null,
+          branch: null,
+        },
+        {
           jobId: 'agent-persisted-latest',
           mission: 'Fix the persisted run.',
           status: 'running',
@@ -78,7 +85,7 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
           branch: 'main',
         },
       ],
-      total: 1,
+      total: 2,
     }), { status: init?.method === 'POST' ? 500 : 200 }));
     const adapter = new SovereignProductionAdapter(fetcher as unknown as typeof fetch, config);
 

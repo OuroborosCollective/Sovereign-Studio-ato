@@ -109,12 +109,13 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
     for (const candidate of body.jobs) {
       if (!isRecord(candidate)) continue;
       const jobId = stringValue(candidate.jobId);
-      if (!jobId) continue;
+      const repoUrl = stringValue(candidate.repoUrl);
+      if (!jobId || !repoUrl) continue;
       return {
         jobId,
         mission: stringValue(candidate.mission),
         status: stringValue(candidate.status),
-        repoUrl: stringValue(candidate.repoUrl),
+        repoUrl,
         branch: stringValue(candidate.branch),
       };
     }
