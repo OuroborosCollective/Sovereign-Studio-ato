@@ -1168,7 +1168,7 @@ describe('Palette Accessibility Enhancements', () => {
       expect(statusElem).toHaveAttribute('title', 'bereit');
 
       rerender(<Ampel status="thinking" compact />);
-      statusElem = screen.getByRole('status', { name: 'Agent-Status: denkt nach…' });
+      statusElem = screen.getByRole('status', { name: 'Agent-Status: denkt…' });
       expect(statusElem).toBeInTheDocument();
 
       rerender(<Ampel status="editing" />);
