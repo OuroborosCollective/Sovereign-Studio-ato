@@ -487,3 +487,13 @@ Evidence: Memory pre-read completed on `main@bdfc492e57cbe66cef8a7543629b5a288d1
 Learned: Zero-open-PR cleanup is safer when useful intent is reapplied onto exact current main and stale generated/performance branches are closed instead of merged wholesale. Security intent can be re-derived from current contracts when a foreign branch cannot be materialized, but that must be stated explicitly rather than pretending the original patch bytes were reviewed.
 Open: Final exact-head checks on the Memory-appended #1986 head remain required. The separate Agent Zero known-task poll gap (`AGENT_ZERO_CANARY_RUNTIME_CHANGED` for an old receipt with a real Task-ID) is not part of this consolidation and remains a distinct runtime repair.
 Next safe step: Re-run all exact-head gates on #1986 after this entry, merge only with explicit Owner approval, then continue the known-task cross-release poll repair without resubmitting the old Agent Zero operation.
+
+### 2026-09-17 — Ampel accessibility consolidation from #1987
+Status: SOURCE_INTEGRATION_VERIFIED; remote CI and merge approval pending.
+Task: Preserve the useful accessibility intent from newly opened Draft PR #1987 without merging its bot branch wholesale.
+Decisions: Materialize only the exact two reviewed paths onto current `main`; add `role="status"` and a localized `aria-label` to the Ampel container while marking purely visual dots/text `aria-hidden`; keep the existing visual/title behavior unchanged. Preserve the focused regression supplied by #1987.
+Touched surfaces: `src/features/product/components/Ampel.tsx`, `src/features/product/components/PaletteEnhancements.palette.test.tsx`.
+Evidence: Memory pre-read completed on `main@6ecaba0fd33f2903182dc150c6f7ebea5c38ab83`; PR #1987 exact head `b5f53c752fa4ae92fbd40e05067ad83074f1ec1c` changed only those two files and was materialized without checking out the foreign branch. `git diff --check` passed and CODEOWNERS covers both paths. Local Vitest was not executed because the MCP runtime forbids local Node dependency execution; GitHub Actions is the required test authority for this frontend change.
+Learned: The Ampel's visible color/text state needs one semantic status announcement, while its duplicated decorative dots/text should stay hidden from assistive technology to avoid repeated status output.
+Open: Exact-head GitHub Actions must still prove typecheck, targeted/runtime tests, build, accessibility-adjacent smoke and Guardian gates before merge.
+Next safe step: Create one current-main Draft PR, close #1987 as superseded after the exact port exists, require terminal exact-head CI, and request explicit Owner merge approval only if green.
