@@ -15,6 +15,10 @@ DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 OPERATION = re.compile(r"^[0-9a-f]{32}$")
 BACKEND = "sovereign-backend"
 AGENT_ZERO = "agent-zero-xrev-agent-zero-1"
+# Agent Zero activates this dedicated framework runtime before starting run_ui.py.
+# docker exec does not source that activation script, so invoke the same fixed
+# interpreter directly instead of relying on the container's ambient PATH.
+AGENT_ZERO_PYTHON = "/opt/venv-a0/bin/python"
 EVIDENCE_ROOT = Path("/opt/sovereign-chatgpt-tools/runtime-evidence")
 TERMINAL = {"completed", "failed", "canceled", "rejected"}
 
@@ -63,8 +67,18 @@ class AgentZeroDiagnosticsRuntime:
     def _probe(self, identity, action, revision="", digest="", task_id=""):
         script = Path(__file__).with_name("agent_zero_backend_probe.py").read_text("utf-8")
         args = [action] if action == "agent-zero" else [action, revision, digest, task_id]
-        return self._run(["docker", "exec", "-i", "--user", "0", identity["id"],
-                          "python", "-I", "-B", "-", *args], script=script, timeout=55)
+        interpreter = AGENT_ZERO_PYTHON if action == "agent-zero" else "python"
+        result = self._run(["docker", "exec", "-i", "--user", "0", identity["id"],
+                            interpreter, "-I", "-B", "-", *args], script=script, timeout=55)
+        if action == "agent-zero":
+            processes = result.get("serverProcesses") if isinstance(result, dict) else None
+            if not isinstance(processes, list) or not processes:
+                raise RuntimeError("AGENT_ZERO_SERVER_PROCESS_NOT_FOUND")
+            if not any(isinstance(item, dict) and item.get("sameExecutableAsProbe") is True
+                       for item in processes):
+                raise RuntimeError("AGENT_ZERO_PYTHON_EXECUTABLE_MISMATCH")
+            result["diagnosticInterpreterVerified"] = True
+        return result
 
     def inspect(self, *, expected_revision, expected_image_digest):
         stage = "bind-backend-runtime"

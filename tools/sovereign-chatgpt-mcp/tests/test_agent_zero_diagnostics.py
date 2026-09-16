@@ -8,7 +8,7 @@ import subprocess
 import pytest
 
 import agent_zero_backend_probe as probe
-from agent_zero_diagnostics import AgentZeroDiagnosticsRuntime, BACKEND, AGENT_ZERO
+from agent_zero_diagnostics import AgentZeroDiagnosticsRuntime, BACKEND, AGENT_ZERO, AGENT_ZERO_PYTHON
 
 REVISION = "e0cf7e91bdb7d5eb65f8b97a76af0fcf0904b066"
 DIGEST = "sha256:" + "1" * 64
@@ -38,7 +38,9 @@ def runtime(tmp_path, monkeypatch):
             if action == "inspect":
                 data = {"ok": True, "status": "BACKEND_PROCESS_READBACK_VERIFIED"}
             elif action == "agent-zero":
-                data = {"loadedVersionsVerified": False}
+                assert argv[6] == AGENT_ZERO_PYTHON
+                data = {"loadedVersionsVerified": False,
+                        "serverProcesses": [{"pid": 7, "sameExecutableAsProbe": True}]}
             else:
                 if response.get("timeout"):
                     raise subprocess.TimeoutExpired(argv, 55, output="untrusted diagnostic output")
@@ -156,8 +158,27 @@ def test_inspection_is_not_canary_evidence(runtime):
     assert result["diagnosticStage"] == "complete"
     assert result["runtimeCanaryPassed"] is False
     assert result["agentZeroPackages"]["loadedVersionsVerified"] is False
+    assert result["agentZeroPackages"]["diagnosticInterpreterVerified"] is True
+    agent_zero_execs = [call for call in calls if "agent-zero" in call]
+    assert len(agent_zero_execs) == 1
+    assert agent_zero_execs[0][6] == "/opt/venv-a0/bin/python"
     assert not sends(calls)
     assert not list(rt.evidence_root.iterdir())
+
+
+def test_agent_zero_probe_requires_running_server_executable_match(runtime, monkeypatch):
+    rt, _, _ = runtime
+    original_run = rt._run
+
+    def no_match(argv, **kwargs):
+        if "agent-zero" in argv:
+            return {"serverProcesses": [{"pid": 9, "sameExecutableAsProbe": False}]}
+        return original_run(argv, **kwargs)
+
+    monkeypatch.setattr(rt, "_run", no_match)
+    result = rt.inspect(expected_revision=REVISION, expected_image_digest=DIGEST)
+    assert result["failureFamily"] == "AGENT_ZERO_PYTHON_EXECUTABLE_MISMATCH"
+    assert result["diagnosticStage"] == "probe-agent-zero-runtime"
 
 
 def test_inspection_preserves_bounded_runtime_failure_family(runtime, monkeypatch):
