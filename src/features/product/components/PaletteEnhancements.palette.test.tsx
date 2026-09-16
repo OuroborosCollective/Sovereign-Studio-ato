@@ -1172,7 +1172,7 @@ describe('Palette Accessibility Enhancements', () => {
       expect(statusElem).toBeInTheDocument();
 
       rerender(<Ampel status="editing" />);
-      statusElem = screen.getByRole('status', { name: 'Agent-Status: bearbeitet' });
+      statusElem = screen.getByRole('status', { name: 'Agent-Status: editiert' });
       expect(statusElem).toBeInTheDocument();
     });
 
