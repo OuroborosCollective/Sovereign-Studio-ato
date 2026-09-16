@@ -5651,7 +5651,10 @@ Das echte Repo-Setup wurde geöffnet.`);
         <WorkbenchSlotDrawer
           slot={workbenchStatusSlots.find((s) => s.id === openWorkbenchSlot) ?? workbenchStatusSlots[0]}
           onClose={() => setOpenWorkbenchSlot(null)}
-          onOpenDraftPr={(url) => window.open(url, "_blank", "noopener,noreferrer")}
+          onOpenDraftPr={(url) => {
+            const safeUrl = safeHttpsUrl(url);
+            if (safeUrl) window.open(safeUrl, "_blank", "noopener,noreferrer");
+          }}
         />
       )}
 
