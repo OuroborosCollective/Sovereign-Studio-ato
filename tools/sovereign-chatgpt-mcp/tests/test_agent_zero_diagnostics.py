@@ -140,13 +140,14 @@ def test_old_release_unknown_without_task_is_quarantined_before_distinct_submit(
 
 
 def test_old_release_receipt_with_task_id_stays_poll_only(runtime):
-    rt, calls, _ = runtime
+    rt, calls, response = runtime
     first = call(rt)
     assert first["result"]["taskId"] == "canary-task"
     receipt_path = next(rt.evidence_root.glob("agent-zero-canary-*.json"))
     receipt = json.loads(receipt_path.read_text())
     receipt["binding"]["revision"] = "0" * 40
     receipt["binding"]["digest"] = "sha256:" + "2" * 64
+    receipt["binding"]["backend"]["revision"] = "0" * 40
     receipt_path.write_text(json.dumps(receipt))
     receipt_path.chmod(0o600)
 
@@ -163,6 +164,39 @@ def test_old_release_receipt_with_task_id_stays_poll_only(runtime):
         "bindingDigest": "sha256:" + "2" * 64,
     }]
     assert not list(rt.evidence_root.glob("agent-zero-canary-quarantine-*.json"))
+
+    response["taskState"] = "completed"
+    polled = call(rt, action="poll")
+    assert polled["ok"] is True
+    assert polled["status"] == "AGENT_ZERO_A2A_CANARY_PASS"
+    assert polled["binding"]["revision"] == "0" * 40
+    assert polled["binding"]["backend"]["revision"] == "0" * 40
+    assert polled["pollBinding"]["revision"] == REVISION
+    assert polled["pollBinding"]["digest"] == DIGEST
+    assert polled["pollBinding"]["agentZero"] == polled["binding"]["agentZero"]
+    assert len(sends(calls)) == 1
+
+    response["taskState"] = "working"
+    next_canary = call(rt, operation="2" * 32)
+    assert next_canary["result"]["taskId"] == "canary-task"
+    assert len(sends(calls)) == 2
+
+
+def test_cross_release_poll_fails_closed_if_agent_zero_runtime_changed(runtime):
+    rt, calls, _ = runtime
+    first = call(rt)
+    assert first["result"]["taskId"] == "canary-task"
+    receipt_path = next(rt.evidence_root.glob("agent-zero-canary-*.json"))
+    receipt = json.loads(receipt_path.read_text())
+    receipt["binding"]["revision"] = "0" * 40
+    receipt["binding"]["digest"] = "sha256:" + "2" * 64
+    receipt["binding"]["backend"]["revision"] = "0" * 40
+    receipt["binding"]["agentZero"]["id"] = "d" * 64
+    receipt_path.write_text(json.dumps(receipt))
+    receipt_path.chmod(0o600)
+
+    result = call(rt, action="poll")
+    assert result["failureFamily"] == "AGENT_ZERO_CANARY_AGENT_ZERO_RUNTIME_CHANGED"
     assert len(sends(calls)) == 1
 
 

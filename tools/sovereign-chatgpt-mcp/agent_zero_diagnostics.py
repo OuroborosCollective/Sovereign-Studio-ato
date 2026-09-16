@@ -263,13 +263,22 @@ class AgentZeroDiagnosticsRuntime:
             names = sorted(n for n in os.listdir(fd) if RECEIPT_NAME.fullmatch(n))
             if name in names:
                 receipt = self._read(fd, name)
-                if receipt["binding"] != binding:
-                    return blocked("AGENT_ZERO_CANARY_RUNTIME_CHANGED")
+                original_binding = receipt.get("binding") if isinstance(receipt, dict) else None
+                if not isinstance(original_binding, dict):
+                    return blocked("AGENT_ZERO_CANARY_RECEIPT_INVALID")
                 if action == "submit":
+                    if original_binding != binding:
+                        return blocked("AGENT_ZERO_CANARY_RUNTIME_CHANGED")
                     return receipt  # Replay NEVER invokes message/send again.
                 task_id = receipt.get("result", {}).get("taskId")
                 if not task_id:
                     return blocked("AGENT_ZERO_A2A_SUBMIT_OUTCOME_UNKNOWN")
+                # A known Task-ID belongs to the Agent Zero execution runtime, not
+                # to the backend release that originally submitted it. Permit a
+                # later exact backend release to perform a read-only poll only
+                # while the bound Agent Zero container identity is unchanged.
+                if original_binding.get("agentZero") != agent_zero:
+                    return blocked("AGENT_ZERO_CANARY_AGENT_ZERO_RUNTIME_CHANGED")
             else:
                 if action != "submit":
                     return blocked("AGENT_ZERO_CANARY_RECEIPT_NOT_FOUND")
@@ -295,6 +304,10 @@ class AgentZeroDiagnosticsRuntime:
             # On a poll transport failure retain the only known task ID.
             if action == "poll" and not result.get("taskId"):
                 result["taskId"] = task_id
+            if action == "poll":
+                # Preserve submit provenance in `binding`; record the exact
+                # backend/runtime identity used for this later readback separately.
+                receipt["pollBinding"] = binding
             passed = (action == "poll" and result.get("ok") is True
                       and result.get("taskReadbackVerified") is True and result.get("taskState") == "completed")
             receipt.update(result=result, ok=False, status="TASK_OBSERVED" if result.get("taskId") else "SUBMIT_UNRESOLVED")
