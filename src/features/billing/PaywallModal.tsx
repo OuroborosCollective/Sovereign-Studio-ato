@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useBilling } from './hooks/useBilling';
 import type { BillingPackage } from './billingSlice';
+import { safeHttpsUrl } from '../product/runtime/builderContainerHelpers';
 
 interface PaywallModalProps {
   isOpen: boolean;
@@ -92,11 +93,16 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
         packageId,
         paymentMethod: selectedPaymentMethod,
       });
-      const checkoutUrl = result.approvalUrl || result.redirectUrl;
+      const rawCheckoutUrl = result.approvalUrl || result.redirectUrl;
+      const checkoutUrl = safeHttpsUrl(rawCheckoutUrl);
       if (checkoutUrl) {
         setPurchaseNotice('Checkout wurde vom Backend erstellt. Der Kauf ist erst nach bestätigter Zahlung abgeschlossen.');
         const opened = window.open(checkoutUrl, '_blank', 'noopener,noreferrer');
         if (!opened) window.location.assign(checkoutUrl);
+        return;
+      }
+      if (rawCheckoutUrl) {
+        setPurchaseError('Das Backend hat eine ungültige Checkout-URL geliefert; Navigation wurde blockiert.');
         return;
       }
       if (result.walletAddress) {
