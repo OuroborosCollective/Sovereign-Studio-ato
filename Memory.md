@@ -437,3 +437,13 @@ Evidence: Pre-read completed before integration; PR #1978 code head `c015c394c0e
 Learned: Browser-local run identity cannot survive reload; copying Node package launchers across image stages can dereference relative shims and break them; visual mobile fixes must preserve the approved ocular geometry contract.
 Open: The dedicated Agent-Zero canary control-plane still reports an unresolved prior-submit/receipt gap even though the separate live A2A correlation canary succeeds; final Memory-appended head must be exact-head CI/runtime revalidated before merge.
 Next safe step: Re-run all exact-head gates, publish/deploy this final Memory head immutably, repeat PatchMon/runtime readback, then request the explicit merge step without automatic merge.
+
+### 2026-09-16 — Bounded Agent Zero diagnostic failure staging (#1980)
+Status: CI_VERIFIED; exact merged-revision runtime retry pending.
+Task: Make the remaining dedicated Agent Zero diagnostic gap causally inspectable after #1978 reached revision-equal production.
+Decisions: Preserve only strict uppercase internal failure-family identifiers plus fixed diagnostic stages; keep arbitrary exception text, subprocess stderr, URLs, response bodies, headers and secrets suppressed; do not change A2A execution or mutation behavior.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/agent_zero_diagnostics.py` and its focused regressions.
+Evidence: Pre-read completed before integration; #1978 merged to `2e4681f9b1043b4f9329544d5bdbe581ce47c438`; backend runs exact digest `sha256:9eed65ee2a1da33cabdfcd1b348c3e318c37dac196000313f646be332e79d05d`; MCP self-update aligned the control plane to the same revision with digest `sha256:c3f876b84e6396df54217dbb55230f15c09da6eea72d72cd0b9c598a82dc6c5e`; the generic diagnostic failure reproduced after alignment while the separate A2A correlation canary remained verified. PR #1980 pre-Memory head `39a6e6cf4158199007ab2463bcf9d5c351054fa0` passed all exact-head checks; focused local evidence: 26 diagnostic tests, 22 broker tests and 3 backend-release/A2A tests passed, plus `git diff --check` and CODEOWNERS coverage.
+Learned: A secret-safe diagnostic that collapses every bounded internal exception into one generic family destroys causal value; stage plus allowlisted-shaped family retains observability without exposing protected details.
+Open: This patch improves diagnosis only; it does not claim the underlying dedicated Agent Zero diagnostic path fixed.
+Next safe step: Re-run exact-head gates on this Memory-appended head, then merge only with explicit Owner approval; after exact merged-revision MCP rollout, repeat `agent_zero_backend_diagnostics` and repair only the newly proven failure family if one remains.
