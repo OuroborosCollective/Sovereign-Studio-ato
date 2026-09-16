@@ -23,6 +23,7 @@ import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
 import { TestRunnerResultCard } from './TestRunnerResultCard';
+import { Ampel } from './Ampel';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1155,6 +1156,32 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(repairBtn);
       expect(onRepair).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Ampel Accessibility Enhancements', () => {
+    it('renders with status role and aria-label matching agent status', () => {
+      const { rerender } = render(<Ampel status="idle" />);
+
+      let statusElem = screen.getByRole('status', { name: 'Agent-Status: bereit' });
+      expect(statusElem).toBeInTheDocument();
+      expect(statusElem).toHaveAttribute('title', 'bereit');
+
+      rerender(<Ampel status="thinking" compact />);
+      statusElem = screen.getByRole('status', { name: 'Agent-Status: denkt nach…' });
+      expect(statusElem).toBeInTheDocument();
+
+      rerender(<Ampel status="editing" />);
+      statusElem = screen.getByRole('status', { name: 'Agent-Status: bearbeitet' });
+      expect(statusElem).toBeInTheDocument();
+    });
+
+    it('marks indicator dots and label span with aria-hidden="true"', () => {
+      const { container } = render(<Ampel status="idle" />);
+
+      const hiddenElements = container.querySelectorAll('[aria-hidden="true"]');
+      // 3 status light dots + 1 non-compact status text label = 4 hidden elements
+      expect(hiddenElements.length).toBe(4);
     });
   });
 });
