@@ -16,6 +16,14 @@ export interface AdapterStatus {
   errorMessage?: string;
 }
 
+export interface RestoredRepositoryRun {
+  jobId: string;
+  mission?: string;
+  status?: string;
+  repoUrl?: string;
+  branch?: string;
+}
+
 export interface SovereignBackendAdapter {
   runSwarm(prompt: string, toolchains: string[], activeSkillIds?: string[], agentMode?: AgentMode): Promise<{ jobId: string }>;
   getJob(runId: string): Promise<SovereignJob>;
@@ -26,6 +34,7 @@ export interface SovereignBackendAdapter {
   getToolchains(): Promise<Toolchain[]>;
   getSkills(): Promise<Skill[]>;
   getIntegrations(): Promise<IntegrationAttachment[]>;
+  restoreLatestRepositoryRun?(): Promise<RestoredRepositoryRun | null>;
   getStatus?(): AdapterStatus;
   checkHealth?(): Promise<{ status: string; latencyMs: number }>;
 }

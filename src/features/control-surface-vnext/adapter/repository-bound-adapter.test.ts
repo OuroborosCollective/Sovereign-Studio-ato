@@ -60,6 +60,57 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     });
   });
 
+  it('restores the newest persisted repository job through authenticated backend readback without dispatching a replacement run', async () => {
+    const config: SovereignAgentConfig = {
+      enabled: true,
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://agent.example.test',
+      ready: true,
+      reason: 'ready',
+    };
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => new Response(JSON.stringify({
+      jobs: [
+        {
+          jobId: 'agent-persisted-latest',
+          mission: 'Fix the persisted run.',
+          status: 'running',
+          repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+          branch: 'main',
+        },
+      ],
+      total: 1,
+    }), { status: init?.method === 'POST' ? 500 : 200 }));
+    const adapter = new SovereignProductionAdapter(fetcher as unknown as typeof fetch, config);
+
+    await expect(adapter.restoreLatestRepositoryRun()).resolves.toEqual({
+      jobId: 'agent-persisted-latest',
+      mission: 'Fix the persisted run.',
+      status: 'running',
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      branch: 'main',
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/jobs?limit=20');
+    expect((fetcher.mock.calls[0][1] as RequestInit).method).toBe('GET');
+    expect((fetcher.mock.calls[0][1] as RequestInit).credentials).toBe('include');
+  });
+
+  it('fails closed when persisted repository job readback is malformed', async () => {
+    const config: SovereignAgentConfig = {
+      enabled: true,
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://agent.example.test',
+      ready: true,
+      reason: 'ready',
+    };
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ jobs: 'not-an-array' }), { status: 200 }));
+    const adapter = new SovereignProductionAdapter(fetcher as unknown as typeof fetch, config);
+
+    await expect(adapter.restoreLatestRepositoryRun()).rejects.toThrow(/invalid jobs payload/i);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it('checks vNext health through neutral jobs and does not read the Swarm manifest', async () => {
     const config: SovereignAgentConfig = {
       enabled: true,

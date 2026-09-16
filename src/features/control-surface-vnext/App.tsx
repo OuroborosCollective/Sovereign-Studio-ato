@@ -63,6 +63,7 @@ function Dashboard() {
   const adapter = useSovereignAdapter();
   const { user, ensureGuestSession } = useUserStore();
   const [sessionReady, setSessionReady] = useState(false);
+  const [sessionRestoreAttempted, setSessionRestoreAttempted] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [audioMuted, setAudioMuted] = useState(getAudioMuted());
@@ -113,6 +114,55 @@ function Dashboard() {
     content: 'SOVEREIGN CONTROL SURFACE vNEXT LOADED.\nNo runtime success is implied by UI startup. Waiting for authenticated server session and live manifest/readback evidence.',
     timestamp: new Date().toISOString(),
   }]);
+
+  useEffect(() => {
+    if (!sessionReady || !user || user.isGuest || sessionRestoreAttempted || activeRunId) return;
+    if (!adapter.restoreLatestRepositoryRun) {
+      setSessionRestoreAttempted(true);
+      return;
+    }
+    let cancelled = false;
+    void adapter.restoreLatestRepositoryRun()
+      .then((restored) => {
+        if (cancelled || !restored) return;
+        setActiveRunId(restored.jobId);
+        dispatchFsm({ type: 'BACKEND_ACCEPTED', payload: { jobId: restored.jobId } });
+        const restoredAt = new Date().toISOString();
+        setMessages((current) => {
+          if (current.some((message) => message.id === `restored-${restored.jobId}`)) return current;
+          return [
+            ...current,
+            ...(restored.mission ? [{
+              id: `restored-owner-${restored.jobId}`,
+              role: 'human' as const,
+              sender: 'HUMAN' as const,
+              content: restored.mission,
+              timestamp: restoredAt,
+            }] : []),
+            {
+              id: `restored-${restored.jobId}`,
+              role: 'assistant' as const,
+              sender: 'SOVEREIGN_SWARM' as const,
+              content: `PERSISTED REPOSITORY SESSION RESTORED :: [${restored.jobId}].\nBackend readback resumed the existing job; no new mission was dispatched.${restored.status ? `\nPersisted state: ${restored.status}` : ''}`,
+              timestamp: restoredAt,
+            },
+          ];
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const reason = error instanceof Error ? error.message : String(error);
+        setMessages((current) => [...current, {
+          id: `restore-failed-${Date.now()}`,
+          role: 'system',
+          sender: 'SYSTEM',
+          content: `PERSISTED SESSION READBACK UNAVAILABLE :: ${reason}\nNo replacement run was created.`,
+          timestamp: new Date().toISOString(),
+        }]);
+      })
+      .finally(() => { if (!cancelled) setSessionRestoreAttempted(true); });
+    return () => { cancelled = true; };
+  }, [activeRunId, adapter, sessionReady, sessionRestoreAttempted, user]);
 
   useEffect(() => {
     if (job?.phase) dispatchFsm({ type: 'BACKEND_PHASE_UPDATE', payload: { phase: job.phase } });
