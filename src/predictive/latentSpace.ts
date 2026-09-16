@@ -88,9 +88,10 @@ export class LatentSpaceNavigator {
       if (oldestId) this.evictPattern(oldestId);
     }
 
+    // ⚡ Bolt: Reuse pattern.norm if already provided to avoid redundant O(N) vector norm recalculations
     this.patterns.set(pattern.id, {
       ...pattern,
-      norm: this.computeNorm(pattern.embedding),
+      norm: pattern.norm ?? this.computeNorm(pattern.embedding),
     });
 
     if (!this.nodeIndex.has(pattern.node)) this.nodeIndex.set(pattern.node, new Set());

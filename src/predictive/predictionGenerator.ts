@@ -144,18 +144,25 @@ export class PredictionGenerator {
   }
 
   private addToHistory(nodeId: string, prediction: Prediction): void {
-    const history = this.predictionHistory.get(nodeId) ?? [];
+    // ⚡ Bolt: Avoid redundant Map.set operations when history array already exists in map
+    let history = this.predictionHistory.get(nodeId);
+    if (!history) {
+      history = [];
+      this.predictionHistory.set(nodeId, history);
+    }
     history.push(prediction);
     if (history.length > 100) history.shift();
-    this.predictionHistory.set(nodeId, history);
   }
 
   learn(signal: Signal, prediction: Prediction, actualValue: number): void {
-    const embedding = this.createEmbedding(signal);
+    // ⚡ Bolt: Consolidated single-pass embedding generation and Euclidean norm calculation.
+    // Pre-allocates fixed array capacity `new Array(dim)` to eliminate dynamic array re-allocations
+    // and accumulates vector sum-of-squares concurrently to eliminate a second pass over the vector.
+    const { embedding, norm } = this.createEmbeddingWithNorm(signal);
     this.latentSpace.addPattern({
       id: `pattern-${signal.id}`,
       embedding,
-      norm: this.computeNorm(embedding),
+      norm,
       signalValue: actualValue,
       node: signal.node,
       createdAt: Date.now(),
@@ -164,18 +171,17 @@ export class PredictionGenerator {
     });
   }
 
-  private createEmbedding(signal: Signal): number[] {
+  private createEmbeddingWithNorm(signal: Signal): { embedding: number[]; norm: number } {
     const dim = this.config.latentSpace.dimension;
-    const embedding: number[] = [];
+    const embedding = new Array<number>(dim);
+    let sumSq = 0;
     for (let i = 0; i < dim; i += 1) {
       const seed = signal.value * (i + 1) + signal.timestamp + i * 7919;
-      embedding.push((Math.sin(seed) + 1) / 2);
+      const val = (Math.sin(seed) + 1) / 2;
+      embedding[i] = val;
+      sumSq += val * val;
     }
-    return embedding;
-  }
-
-  private computeNorm(vector: number[]): number {
-    return Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+    return { embedding, norm: Math.sqrt(sumSq) };
   }
 
   getStats(): {

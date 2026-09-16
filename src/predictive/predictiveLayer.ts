@@ -144,11 +144,12 @@ export class PredictiveLayer {
       const weightUpdates: WeightUpdateResult[] = [];
 
       if (error.propagated) {
-        const embedding = this.createEmbedding(signal.value);
+        // ⚡ Bolt: Consolidated single-pass embedding generation and Euclidean norm calculation.
+        const { embedding, norm } = this.createEmbeddingWithNorm(signal.value);
         this.latentSpace.addPattern({
           id: `pattern-${signal.id}`,
           embedding,
-          norm: this.computeNorm(embedding),
+          norm,
           signalValue: signal.value,
           node: signal.node,
           createdAt: Date.now(),
@@ -321,17 +322,17 @@ export class PredictiveLayer {
     };
   }
 
-  private createEmbedding(value: number): number[] {
-    const embedding: number[] = [];
-    for (let i = 0; i < this.config.latentSpace.dimension; i += 1) {
+  private createEmbeddingWithNorm(value: number): { embedding: number[]; norm: number } {
+    const dim = this.config.latentSpace.dimension;
+    const embedding = new Array<number>(dim);
+    let sumSq = 0;
+    for (let i = 0; i < dim; i += 1) {
       const s = value * (i + 1) * 7919;
-      embedding.push((Math.sin(s) + 1) / 2);
+      const val = (Math.sin(s) + 1) / 2;
+      embedding[i] = val;
+      sumSq += val * val;
     }
-    return embedding;
-  }
-
-  private computeNorm(vector: number[]): number {
-    return Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+    return { embedding, norm: Math.sqrt(sumSq) };
   }
 
   private estimateMemoryUsage(): number {
