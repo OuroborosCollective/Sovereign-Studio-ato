@@ -38,6 +38,10 @@ describe('Sovereign Control Surface vNext truth contract', () => {
 
     for (const token of [
       "'/api/user/agent/repository/run'",
+      "'/api/user/agent/jobs?limit=20'",
+      'restoreLatestRepositoryRun',
+      "method: 'GET'",
+      "credentials: 'include'",
       "mode: 'free'",
       "agentMode: 'single'",
       "intentMode: 'repository_execution'",
@@ -62,6 +66,19 @@ describe('Sovereign Control Surface vNext truth contract', () => {
       "stringValue(signal.prStateVerified) === 'open'",
       'signal.draftVerified === true',
     ]) expect(client).toContain(strictReadback);
+  });
+
+  it('rehydrates the current persisted repository run after reload without local storage or blind resubmit', () => {
+    const surface = source('src/features/control-surface-vnext/App.tsx');
+    const contract = source('src/features/control-surface-vnext/adapter/interface.ts');
+
+    expect(contract).toContain('restoreLatestRepositoryRun?(): Promise<RestoredRepositoryRun | null>');
+    expect(surface).toContain('adapter.restoreLatestRepositoryRun()');
+    expect(surface).toContain('setActiveRunId(restored.jobId)');
+    expect(surface).toContain("type: 'BACKEND_ACCEPTED'");
+    expect(surface).toContain('Backend readback resumed the existing job; no new mission was dispatched.');
+    expect(surface).toContain('No replacement run was created.');
+    expect(surface).not.toContain('localStorage');
   });
 
   it('turns an explicit GitHub repository URL into the backend repository-execution contract instead of free conversation mode', () => {
@@ -137,6 +154,8 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     const ocular = source('src/features/control-surface-vnext/components/CyborgOcularMatrix/CyborgOcularMatrix.tsx');
     expect(ocular).toContain('data-testid=\"vnext-cyborg-ocular-matrix\"');
     expect(ocular).toContain('relative flex items-center');
+    expect(ocular).toContain('w-[88px] h-[48px] md:w-[112px] md:h-[58px]');
+    expect(ocular).not.toContain('w-[52px] h-[34px]');
     expect(ocular).not.toContain('relative hidden sm:flex');
     const workspace = source('src/features/control-surface-vnext/components/WorkspaceProjection/WorkspaceProjection.tsx');
     expect(workspace).toContain('workspaceId?: string');

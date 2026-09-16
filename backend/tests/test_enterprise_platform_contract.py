@@ -49,6 +49,13 @@ def test_container_and_workflow_bind_runtime_to_exact_source_revision() -> None:
     assert "ARG SOVEREIGN_SOURCE_REVISION=unverified" in dockerfile
     assert "SOVEREIGN_SOURCE_REVISION=${SOVEREIGN_SOURCE_REVISION}" in dockerfile
     assert "COPY enterprise_platform/ ./enterprise_platform/" in dockerfile
+    assert "FROM node:22-bookworm-slim AS node-toolchain" in dockerfile
+    assert "npm install --global pnpm@9.12.2" in dockerfile
+    assert "COPY --from=node-toolchain /usr/local/bin/node /usr/local/bin/node" in dockerfile
+    assert "COPY --from=node-toolchain /usr/local/lib/node_modules /usr/local/lib/node_modules" in dockerfile
+    assert "../lib/node_modules/npm/bin/npm-cli.js" in dockerfile
+    assert "../lib/node_modules/pnpm/bin/pnpm.cjs" in dockerfile
+    assert "pnpm --version" in dockerfile
     assert "STOPSIGNAL SIGTERM" in dockerfile
     assert "no-new-privileges:true" in compose
     assert "cap_drop:" in compose and "- ALL" in compose

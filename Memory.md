@@ -427,3 +427,13 @@ Evidence: Live `main@5a682f8407536d6f7ccbc0b6908a9d04e8fdd434` Five-Path run `34
 Learned: `tasks/get` loss proves only loss of transient executor identity, not loss of repository work; Draft-PR machinery already exists, while workspace mutation/evidence must remain the durable causal boundary.
 Open: Production is not yet proven on this change; final Memory head must pass exact-head gates, then merged main requires coordinated immutable rollout/readback and a fresh protected Five-Path 5/5 run.
 Next safe step: Rerun exact-head gates on this Memory head, merge #1971 only if terminal green, deploy/read back exact merged revision, then require fresh 5/5 and return to 0 open PRs.
+
+### 2026-09-16 — vNext reload, ocular geometry and backend pnpm recovery (#1978)
+Status: VERIFIED code/runtime candidate; final Memory-head revalidation and merge pending.
+Task: Repair mobile vNext session loss on reload, the shrunken ocular header and repository closeout failing when `pnpm` was absent from the production backend image.
+Decisions: Restore persisted repository runs only from authenticated backend job readback (skip non-repository jobs, never blind-resubmit); restore original eye geometry while keeping mobile visibility; carry Node 22 + pnpm 9.12.2 in the immutable backend image with canonical package shims.
+Touched surfaces: vNext App/adapter/ocular contracts, browser reload E2E, backend Dockerfile and deployment contract test.
+Evidence: Pre-read completed before integration; PR #1978 code head `c015c394c0e9e3ef37ec25545ddd8ce14fd184c9`; Release Verification `35084387703` and Agent Backend `35084387565` passed; immutable publish `35095516916` produced `sha256:ce7d6b789f3a93402ff4313dd2adb25b310f70557a42f56d2daccc6364bf047c`; production container readback shows that exact digest healthy, PatchMon 4/4 ready, FreeLLM 7 ready, OpenRouter ready, PostgreSQL canary=1 and A2A correlation canary verified.
+Learned: Browser-local run identity cannot survive reload; copying Node package launchers across image stages can dereference relative shims and break them; visual mobile fixes must preserve the approved ocular geometry contract.
+Open: The dedicated Agent-Zero canary control-plane still reports an unresolved prior-submit/receipt gap even though the separate live A2A correlation canary succeeds; final Memory-appended head must be exact-head CI/runtime revalidated before merge.
+Next safe step: Re-run all exact-head gates, publish/deploy this final Memory head immutably, repeat PatchMon/runtime readback, then request the explicit merge step without automatic merge.

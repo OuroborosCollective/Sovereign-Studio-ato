@@ -192,6 +192,7 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     });
     await page.route('**/api/auth/me', route => fulfillJson(route, currentUser));
     await page.route('**/api/user/agent/jobs?limit=1', route => fulfillJson(route, { jobs: [] }));
+    await page.route('**/api/user/agent/jobs?limit=20', route => fulfillJson(route, { jobs: [], total: 0 }));
     await page.route('**/api/user/agent/toolchain/manifest', route => fulfillJson(route, {
       ok: true,
       name: 'Sovereign Universal Toolchain',
@@ -279,9 +280,102 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
       intentMode: 'repository_execution',
       repositoryBranch: 'main',
     });
+    expect(observed.some(item => item.method === 'GET' && item.path === '/api/user/agent/jobs')).toBe(true);
     expect(observed.some(item => item.path === '/api/user/agent/swarm/run')).toBe(false);
     expect(observed.some(item => item.path.includes('/draft-pr/prepare'))).toBe(false);
     expect(observed.some(item => item.path.includes('/draft-pr/create'))).toBe(false);
+    expect(unexpectedApiRequests).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test('reload restores the newest persisted repository session without dispatching a replacement mission', async ({ page }) => {
+    const currentUser = {
+      id: '00000000-0000-4000-8000-000000000002',
+      email: 'reload-smoke@example.test',
+      displayName: 'Reload Smoke',
+      role: 'user',
+      credits: 9,
+      subscriptionStatus: 'free',
+      isBanned: false,
+      isGuest: false,
+      createdAt: 1_700_000_000_000,
+    };
+    const jobId = 'agent-persisted-reload-smoke';
+    const workspaceId = 'agent-workspace-reload-smoke';
+    const replacementDispatches: string[] = [];
+    const unexpectedApiRequests: Array<{ method: string; path: string }> = [];
+    const pageErrors: string[] = [];
+
+    await page.addInitScript((user) => {
+      window.localStorage.setItem('sovereign-user', JSON.stringify({ state: { user }, version: 0 }));
+    }, currentUser);
+    page.on('pageerror', error => pageErrors.push(error.message));
+
+    await page.route('**/api/**', async route => {
+      const request = route.request();
+      const url = new URL(request.url());
+      unexpectedApiRequests.push({ method: request.method(), path: url.pathname });
+      await fulfillJson(route, { error: 'unexpected_reload_smoke_request' }, 501);
+    });
+    await page.route('**/api/auth/me', route => fulfillJson(route, currentUser));
+    await page.route('**/api/user/agent/jobs?limit=1', route => fulfillJson(route, { jobs: [] }));
+    await page.route('**/api/user/agent/jobs?limit=20', route => fulfillJson(route, {
+      jobs: [
+        {
+          jobId: 'agent-newer-non-repository-job',
+          mission: 'Ignore this non-repository job.',
+          status: 'running',
+          repoUrl: null,
+          branch: null,
+        },
+        {
+          jobId,
+          workspaceId,
+          mission: 'Persisted repository mission survives reload.',
+          status: 'blocked',
+          repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+          branch: 'main',
+        },
+      ],
+      total: 2,
+    }));
+    await page.route('**/api/user/agent/toolchain/manifest', route => fulfillJson(route, {
+      ok: true,
+      name: 'Sovereign Universal Toolchain',
+      version: 'smoke',
+      runtime: 'embedded',
+      policy: { draftPrOnly: true, confirmRequired: true },
+    }));
+    await page.route('**/api/user/agent/repository/run', async route => {
+      replacementDispatches.push(route.request().postData() ?? '');
+      await fulfillJson(route, { error: 'replacement_dispatch_forbidden' }, 409);
+    });
+    await page.route(`**/api/user/agent/jobs/${jobId}`, route => fulfillJson(route, {
+      job: {
+        jobId,
+        workspaceId,
+        status: 'blocked',
+        repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+        branch: 'main',
+        externalRef: 'agent-zero-a2a:task-reload-smoke',
+        prState: 'blocked',
+        changedFiles: [],
+        events: [],
+        lastError: 'Persisted blocker survives reload readback.',
+      },
+    }));
+    await page.route(`**/api/user/agent/jobs/${jobId}/evidence-anchors?limit=100`, route => fulfillJson(route, {
+      jobId,
+      workspaceId,
+      evidenceAnchors: [],
+    }));
+
+    await page.goto('/');
+    await expect(page.locator('[data-testid="sovereign-control-surface-vnext"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/PERSISTED REPOSITORY SESSION RESTORED/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Persisted repository mission survives reload.')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/Persisted blocker survives reload readback/).first()).toBeVisible({ timeout: 10_000 });
+    expect(replacementDispatches).toEqual([]);
     expect(unexpectedApiRequests).toEqual([]);
     expect(pageErrors).toEqual([]);
   });

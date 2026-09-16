@@ -1,3 +1,9 @@
+FROM node:22-bookworm-slim AS node-toolchain
+RUN npm install --global pnpm@9.12.2 \
+    && node --version \
+    && npm --version \
+    && pnpm --version
+
 FROM python:3.11-slim
 
 ARG SOVEREIGN_SOURCE_REVISION=unverified
@@ -17,6 +23,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     git \
     && rm -rf /var/lib/apt/lists/*
+
+# Repository closeout runs the target repository's real test command inside the
+# backend-owned shared workspace. Carry the exact Node/pnpm toolchain required by
+# this repository into the immutable backend image instead of relying on host PATH.
+COPY --from=node-toolchain /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-toolchain /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && ln -sf ../lib/node_modules/pnpm/bin/pnpm.cjs /usr/local/bin/pnpm \
+    && ln -sf ../lib/node_modules/pnpm/bin/pnpx.cjs /usr/local/bin/pnpx \
+    && node --version \
+    && npm --version \
+    && pnpm --version
 
 # Copy requirements first for better caching
 COPY requirements.txt .

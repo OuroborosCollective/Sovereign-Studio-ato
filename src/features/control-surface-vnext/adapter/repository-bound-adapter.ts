@@ -3,6 +3,7 @@ import {
   type SovereignAgentConfig,
 } from '../../product/runtime/sovereignAgentRuntime';
 import type { AgentMode, Skill } from '../types/domain';
+import type { RestoredRepositoryRun } from './interface';
 import {
   extractGitHubRepositoryUrl,
   SovereignProductionAdapter as SovereignProductionAdapterBase,
@@ -85,6 +86,40 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
     // Repository execution has no Swarm worker graph. An empty projection is
     // preferable to inventing worker capabilities from a Swarm manifest.
     return [];
+  }
+
+  override async restoreLatestRepositoryRun(): Promise<RestoredRepositoryRun | null> {
+    if (!this.repositoryConfig.ready) return null;
+    const response = await this.repositoryFetcher(
+      endpoint(this.repositoryConfig.agentApiUrl, '/api/user/agent/jobs?limit=20'),
+      {
+        method: 'GET',
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Repository session readback failed with HTTP ${response.status}.`);
+    }
+    const body: unknown = await response.json().catch(() => null);
+    if (!isRecord(body) || !Array.isArray(body.jobs)) {
+      throw new Error('Repository session readback returned an invalid jobs payload.');
+    }
+    for (const candidate of body.jobs) {
+      if (!isRecord(candidate)) continue;
+      const jobId = stringValue(candidate.jobId);
+      const repoUrl = stringValue(candidate.repoUrl);
+      if (!jobId || !repoUrl) continue;
+      return {
+        jobId,
+        mission: stringValue(candidate.mission),
+        status: stringValue(candidate.status),
+        repoUrl,
+        branch: stringValue(candidate.branch),
+      };
+    }
+    return null;
   }
 
   override async runSwarm(
