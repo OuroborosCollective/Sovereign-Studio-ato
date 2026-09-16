@@ -391,9 +391,21 @@ export async function fetchDevChatRepoTree(parsed: ParsedDevChatGithubUrl): Prom
         sha: typeof entry.sha === 'string' ? entry.sha : undefined,
       }));
 
-    const blobPaths = files.filter((file: DevChatRepoTreeFile) => file.type === 'blob').map((file: DevChatRepoTreeFile) => file.path);
-    const topLevelDirs = blobPaths.map((path: string) => path.split('/')[0]).filter((dir: string): dir is string => Boolean(dir));
-    const dirs = Array.from(new Set<string>(topLevelDirs)).slice(0, 12);
+    // ⚡ Bolt: Consolidate O(N) multi-pass array mappings into a single O(N) loop and avoid .split('/') array allocations
+    const blobPaths: string[] = [];
+    const topLevelDirSet = new Set<string>();
+
+    for (const file of files) {
+      if (file.type === 'blob') {
+        blobPaths.push(file.path);
+        const slashIndex = file.path.indexOf('/');
+        const dir = slashIndex > 0 ? file.path.substring(0, slashIndex) : file.path;
+        if (dir) {
+          topLevelDirSet.add(dir);
+        }
+      }
+    }
+    const dirs = Array.from(topLevelDirSet).slice(0, 12);
     const lastPath = lastPreferredSourcePath(blobPaths);
     const slash = lastPath ? lastPath.lastIndexOf('/') : -1;
 
