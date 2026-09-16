@@ -2101,7 +2101,7 @@ fi
 rm -f "$CORE_IMPORT_LOG"
 unset CORE_IMPORT_LOG CORE_IMPORT_RC CORE_IMPORT_SHA256
 if ! docker exec sovereign-chatgpt-mcp python -c 'import neuro_architecture_contract; import neuromorphic_runtime; import foundation_runtime; import neuro_teaching_tools; assert callable(neuro_teaching_tools.neuro_runtime_contract_status); assert callable(neuro_teaching_tools.neuro_event_route_preview); assert callable(neuro_teaching_tools.neuro_event_commit); assert callable(neuro_teaching_tools.teaching_package_assess); assert callable(neuro_teaching_tools.teaching_lesson_simulate)' >/dev/null 2>&1; then
-  fail "runtime import contract failed phase=neuro_imports"
+  printf 'Neuro import-only preflight was non-terminal; authoritative isolated Neuro canary follows.\n' >&2
 fi
 
 INSTALL_STAGE="verify_live_tool_surface_and_widget_domain"

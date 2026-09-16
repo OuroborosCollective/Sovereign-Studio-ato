@@ -823,6 +823,60 @@ jobs:
           test "$KAPPA_LABEL" = "$KAPPA_POS"
           test "$PARITY_LABEL" = "$CROSS_RUNTIME_PARITY"
 
+          # Run the import contract in the image that will be published, not only
+          # in actions/setup-python. The production MCP image uses its own Python
+          # runtime and dependency closure; a source-level import pass is not
+          # sufficient evidence for that immutable runtime.
+          docker run --rm -i \
+            --network none \
+            --entrypoint /opt/venv/bin/python \
+            "sovereign-chatgpt-mcp:${SOVEREIGN_SOURCE_REVISION}" - <<'PY'
+          import importlib
+          import json
+          import re
+
+          modules = (
+              "neuro_architecture_contract",
+              "neuromorphic_runtime",
+              "foundation_runtime",
+              "neuro_teaching_tools",
+          )
+          loaded = {}
+          for module_name in modules:
+              try:
+                  loaded[module_name] = importlib.import_module(module_name)
+              except Exception as exc:
+                  error_type = type(exc).__name__
+                  if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", error_type):
+                      error_type = "UnknownError"
+                  print(json.dumps({
+                      "status": "PACKAGED_NEURO_IMPORT_FAILED",
+                      "module": module_name,
+                      "errorType": error_type,
+                  }, sort_keys=True, separators=(",", ":")))
+                  raise SystemExit(1)
+          teaching = loaded["neuro_teaching_tools"]
+          for name in (
+              "neuro_runtime_contract_status",
+              "neuro_event_route_preview",
+              "neuro_event_commit",
+              "teaching_package_assess",
+              "teaching_lesson_simulate",
+          ):
+              if not callable(getattr(teaching, name, None)):
+                  print(json.dumps({
+                      "status": "PACKAGED_NEURO_IMPORT_FAILED",
+                      "module": "neuro_teaching_tools",
+                      "errorType": "CallableContractMissing",
+                  }, sort_keys=True, separators=(",", ":")))
+                  raise SystemExit(1)
+          print(json.dumps({
+              "status": "PACKAGED_NEURO_IMPORTS_VERIFIED",
+              "moduleCount": len(modules),
+              "secretValuesReturned": False,
+          }, sort_keys=True, separators=(",", ":")))
+          PY
+
       - name: Assert Docker socket is absent from MCP container contract
         run: |
           set -euo pipefail

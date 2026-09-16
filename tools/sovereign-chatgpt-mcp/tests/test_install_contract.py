@@ -173,10 +173,30 @@ def test_runtime_import_contract_failure_is_bounded_and_phase_diagnostic() -> No
     assert 'runtime import contract failed phase=runtime_types output_sha256=$CORE_IMPORT_SHA256' in installer
     assert 'runtime import contract failed phase=broker_status output_sha256=$CORE_IMPORT_SHA256' in installer
     assert 'runtime import contract failed phase=unisolated_core_contract output_sha256=$CORE_IMPORT_SHA256' in installer
-    assert 'runtime import contract failed phase=neuro_imports' in installer
+    assert 'runtime import contract failed phase=neuro_imports' not in installer
+    assert 'Neuro import-only preflight was non-terminal; authoritative isolated Neuro canary follows.' in installer
+    assert 'INSTALL_STAGE="verify_isolated_neuro_runtime_canary"' in installer
+    assert 'NEURO_DEPLOYMENT_CANARY_FAILED' in installer
+    assert 'isolated neuro runtime canary failed: $CANARY_DIAGNOSTIC' in installer
     assert 'assert launcher.OPERATING_PROFILE_ENFORCEMENT.enforcedToolCount == launcher.OPERATING_PROFILE_ENFORCEMENT.mutableToolCount' in installer
     assert 'assert callable(server.aurion_account_role_apply)' in installer
     assert 'assert status.get("status") == "BROKER_READY"' in installer
+
+
+def test_mcp_ci_runs_neuro_import_contract_inside_built_image() -> None:
+    workflow = (
+        ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml"
+    ).read_text("utf-8")
+
+    assert '--entrypoint /opt/venv/bin/python' in workflow
+    assert '"sovereign-chatgpt-mcp:${SOVEREIGN_SOURCE_REVISION}" - <<\'PY\'' in workflow
+    assert 'PACKAGED_NEURO_IMPORTS_VERIFIED' in workflow
+    assert 'PACKAGED_NEURO_IMPORT_FAILED' in workflow
+    assert '"neuro_architecture_contract"' in workflow
+    assert '"neuromorphic_runtime"' in workflow
+    assert '"foundation_runtime"' in workflow
+    assert '"neuro_teaching_tools"' in workflow
+    assert '"secretValuesReturned": False' in workflow
 
 
 def test_installer_assigns_workspace_to_container_user_and_probes_write_access() -> None:
