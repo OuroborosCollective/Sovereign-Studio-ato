@@ -3,6 +3,7 @@ import { Eye, EyeOff, Trash2 } from 'lucide-react';
 import '../styles/UserKeyManager.css';
 import { SettingsErrorBoundary } from './SettingsErrorBoundary';
 import type { UserApiKeys } from '../runtime/userApiKeysContract';
+import { safeHttpsUrl } from '../runtime/builderContainerHelpers';
 
 export type { UserApiKeys } from '../runtime/userApiKeysContract';
 
@@ -59,7 +60,10 @@ export function UserKeyManager({ onKeysChange }: UserKeyManagerProps) {
   };
 
   const openDocs = (url: string) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
+    const safeUrl = safeHttpsUrl(url);
+    if (safeUrl) {
+      window.open(safeUrl, '_blank', 'noopener,noreferrer');
+    }
   };
 
   const clearKey = (providerId: string) => {
