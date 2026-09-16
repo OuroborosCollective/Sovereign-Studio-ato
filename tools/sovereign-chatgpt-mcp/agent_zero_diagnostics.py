@@ -21,6 +21,8 @@ AGENT_ZERO = "agent-zero-xrev-agent-zero-1"
 AGENT_ZERO_PYTHON = "/opt/venv-a0/bin/python"
 EVIDENCE_ROOT = Path("/opt/sovereign-chatgpt-tools/runtime-evidence")
 TERMINAL = {"completed", "failed", "canceled", "rejected"}
+RECEIPT_NAME = re.compile(r"^agent-zero-canary-([0-9a-f]{32})\.json$")
+QUARANTINE_NAME = re.compile(r"^agent-zero-canary-quarantine-([0-9a-f]{32})\.json$")
 
 
 def blocked(family):
@@ -151,6 +153,92 @@ class AgentZeroDiagnosticsRuntime:
         return (result.get("taskReadbackVerified") is True and result.get("taskState") in TERMINAL
                 or not result.get("taskId") and isinstance(status, int) and 300 <= status < 500)
 
+    @staticmethod
+    def _receipt_summary(receipt):
+        result = receipt.get("result", {}) if isinstance(receipt, dict) else {}
+        binding = receipt.get("binding", {}) if isinstance(receipt, dict) else {}
+        operation_id = str(receipt.get("operationId") or "") if isinstance(receipt, dict) else ""
+        return {
+            "operationId": operation_id if OPERATION.fullmatch(operation_id) else None,
+            "status": str(receipt.get("status") or "")[:80] if isinstance(receipt, dict) else "",
+            "taskIdPresent": bool(result.get("taskId")),
+            "taskReadbackVerified": result.get("taskReadbackVerified") is True,
+            "taskState": str(result.get("taskState") or "")[:40],
+            "httpStatus": result.get("httpStatus") if isinstance(result.get("httpStatus"), int) else None,
+            "bindingRevision": binding.get("revision") if SHA.fullmatch(str(binding.get("revision") or "")) else None,
+            "bindingDigest": binding.get("digest") if DIGEST.fullmatch(str(binding.get("digest") or "")) else None,
+        }
+
+    @staticmethod
+    def _quarantine_file(operation_id):
+        return "agent-zero-canary-quarantine-" + operation_id + ".json"
+
+    def _quarantine_present(self, fd, operation_id):
+        try:
+            marker = self._read(fd, self._quarantine_file(operation_id))
+        except FileNotFoundError:
+            return False
+        return bool(
+            isinstance(marker, dict)
+            and marker.get("operationId") == operation_id
+            and marker.get("unknownOutcomePreserved") is True
+            and marker.get("sameOperationMayResubmit") is False
+        )
+
+    @staticmethod
+    def _runtime_release_advanced(receipt, current_binding):
+        old = receipt.get("binding", {}) if isinstance(receipt, dict) else {}
+        old_revision = str(old.get("revision") or "")
+        old_digest = str(old.get("digest") or "")
+        current_revision = str(current_binding.get("revision") or "")
+        current_digest = str(current_binding.get("digest") or "")
+        return bool(
+            SHA.fullmatch(old_revision)
+            and DIGEST.fullmatch(old_digest)
+            and SHA.fullmatch(current_revision)
+            and DIGEST.fullmatch(current_digest)
+            and (old_revision != current_revision or old_digest != current_digest)
+        )
+
+    def _quarantine_stale_unknowns(self, fd, names, current_binding):
+        quarantined = []
+        blockers = []
+        for receipt_name in names:
+            receipt = self._read(fd, receipt_name)
+            if self._settled(receipt):
+                continue
+            summary = self._receipt_summary(receipt)
+            operation_id = summary.get("operationId")
+            if not operation_id:
+                blockers.append(summary)
+                continue
+            if self._quarantine_present(fd, operation_id):
+                continue
+            result = receipt.get("result", {}) if isinstance(receipt, dict) else {}
+            safe_candidate = bool(
+                receipt.get("status") in {"SUBMIT_CLAIMED", "SUBMIT_UNRESOLVED"}
+                and not result.get("taskId")
+                and self._runtime_release_advanced(receipt, current_binding)
+            )
+            if not safe_candidate:
+                blockers.append(summary)
+                continue
+            marker = {
+                "status": "UNKNOWN_OUTCOME_QUARANTINED_FOR_NEW_RUNTIME_RELEASE",
+                "operationId": operation_id,
+                "unknownOutcomePreserved": True,
+                "sameOperationMayResubmit": False,
+                "allowsNewDistinctCanary": True,
+                "sourceRevision": summary.get("bindingRevision"),
+                "sourceDigest": summary.get("bindingDigest"),
+                "supersedingRevision": current_binding["revision"],
+                "supersedingDigest": current_binding["digest"],
+                "secretValuesReturned": False,
+            }
+            self._write(fd, self._quarantine_file(operation_id), marker)
+            quarantined.append(operation_id)
+        return quarantined, blockers
+
     def canary(self, *, expected_revision, expected_image_digest, operation_id,
                action="submit", owner_approved=False):
         if (os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE") != "1" or owner_approved is not True):
@@ -172,7 +260,7 @@ class AgentZeroDiagnosticsRuntime:
                 raise RuntimeError("CANARY_LOCK_NOT_PRIVATE")
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             name = "agent-zero-canary-" + operation_id + ".json"
-            names = [n for n in os.listdir(fd) if n.startswith("agent-zero-canary-") and n.endswith(".json")]
+            names = sorted(n for n in os.listdir(fd) if RECEIPT_NAME.fullmatch(n))
             if name in names:
                 receipt = self._read(fd, name)
                 if receipt["binding"] != binding:
@@ -187,13 +275,19 @@ class AgentZeroDiagnosticsRuntime:
                     return blocked("AGENT_ZERO_CANARY_RECEIPT_NOT_FOUND")
                 if len(names) >= 100:
                     return blocked("AGENT_ZERO_CANARY_RECEIPT_QUOTA")
-                if any(not self._settled(self._read(fd, n)) for n in names):
-                    return blocked("AGENT_ZERO_CANARY_UNRESOLVED_PRIOR_SUBMIT")
+                quarantined, unresolved = self._quarantine_stale_unknowns(fd, names, binding)
+                if unresolved:
+                    return {
+                        **blocked("AGENT_ZERO_CANARY_UNRESOLVED_PRIOR_SUBMIT"),
+                        "unresolvedOperations": unresolved[:20],
+                        "quarantinedUnknownOperations": quarantined[:20],
+                    }
                 preflight = self._probe(backend, "inspect", expected_revision, expected_image_digest)
                 if preflight.get("ok") is not True:
                     return preflight
                 receipt = {"ok": False, "status": "SUBMIT_CLAIMED", "operationId": operation_id,
-                           "binding": binding, "result": {}, "secretValuesReturned": False}
+                           "binding": binding, "result": {}, "secretValuesReturned": False,
+                           "quarantinedUnknownOperations": quarantined[:20]}
                 self._write(fd, name, receipt)  # fsync before any message/send.
                 task_id = ""
             result = self._probe(backend, action, expected_revision, expected_image_digest, task_id)

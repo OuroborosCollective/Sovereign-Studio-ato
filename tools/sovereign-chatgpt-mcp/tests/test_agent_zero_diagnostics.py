@@ -98,7 +98,71 @@ def test_unknown_acceptance_blocks_new_operation(runtime, status):
     response.update(ok=False, httpStatus=status, failureFamily="AGENT_ZERO_A2A_RESPONSE_INVALID")
     receipt = call(rt)
     assert receipt["result"]["httpStatus"] == status
-    assert call(rt, operation="2" * 32)["failureFamily"] == "AGENT_ZERO_CANARY_UNRESOLVED_PRIOR_SUBMIT"
+    blocked = call(rt, operation="2" * 32)
+    assert blocked["failureFamily"] == "AGENT_ZERO_CANARY_UNRESOLVED_PRIOR_SUBMIT"
+    assert blocked["unresolvedOperations"][0]["operationId"] == "1" * 32
+    assert len(sends(calls)) == 1
+
+
+def test_old_release_unknown_without_task_is_quarantined_before_distinct_submit(runtime):
+    rt, calls, response = runtime
+    response["timeout"] = True
+    assert call(rt)["failureFamily"] == "AGENT_ZERO_CANARY_OUTCOME_UNVERIFIED"
+    receipt_path = next(rt.evidence_root.glob("agent-zero-canary-*.json"))
+    receipt = json.loads(receipt_path.read_text())
+    receipt["binding"]["revision"] = "0" * 40
+    receipt["binding"]["digest"] = "sha256:" + "2" * 64
+    receipt_path.write_text(json.dumps(receipt))
+    receipt_path.chmod(0o600)
+
+    response.clear()
+    response.update(ok=True, httpStatus=200, taskId="new-release-task", taskState="working")
+    result = call(rt, operation="2" * 32)
+    assert result["result"]["taskId"] == "new-release-task"
+    assert result["quarantinedUnknownOperations"] == ["1" * 32]
+    assert len(sends(calls)) == 2
+
+    marker = rt.evidence_root / ("agent-zero-canary-quarantine-" + "1" * 32 + ".json")
+    quarantine = json.loads(marker.read_text())
+    assert quarantine["unknownOutcomePreserved"] is True
+    assert quarantine["sameOperationMayResubmit"] is False
+    assert quarantine["allowsNewDistinctCanary"] is True
+    assert quarantine["sourceRevision"] == "0" * 40
+    assert quarantine["supersedingRevision"] == REVISION
+    assert marker.stat().st_mode & 0o777 == 0o600
+
+    original = json.loads(receipt_path.read_text())
+    assert original["status"] == "SUBMIT_CLAIMED"
+    assert original["result"] == {}
+    replay = call(rt)
+    assert replay["failureFamily"] == "AGENT_ZERO_CANARY_RUNTIME_CHANGED"
+    assert len(sends(calls)) == 2
+
+
+def test_old_release_receipt_with_task_id_stays_poll_only(runtime):
+    rt, calls, _ = runtime
+    first = call(rt)
+    assert first["result"]["taskId"] == "canary-task"
+    receipt_path = next(rt.evidence_root.glob("agent-zero-canary-*.json"))
+    receipt = json.loads(receipt_path.read_text())
+    receipt["binding"]["revision"] = "0" * 40
+    receipt["binding"]["digest"] = "sha256:" + "2" * 64
+    receipt_path.write_text(json.dumps(receipt))
+    receipt_path.chmod(0o600)
+
+    blocked = call(rt, operation="2" * 32)
+    assert blocked["failureFamily"] == "AGENT_ZERO_CANARY_UNRESOLVED_PRIOR_SUBMIT"
+    assert blocked["unresolvedOperations"] == [{
+        "operationId": "1" * 32,
+        "status": "TASK_OBSERVED",
+        "taskIdPresent": True,
+        "taskReadbackVerified": False,
+        "taskState": "working",
+        "httpStatus": 200,
+        "bindingRevision": "0" * 40,
+        "bindingDigest": "sha256:" + "2" * 64,
+    }]
+    assert not list(rt.evidence_root.glob("agent-zero-canary-quarantine-*.json"))
     assert len(sends(calls)) == 1
 
 
