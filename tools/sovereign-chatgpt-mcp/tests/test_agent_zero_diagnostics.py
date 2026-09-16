@@ -153,10 +153,41 @@ def test_inspection_is_not_canary_evidence(runtime):
     rt, calls, _ = runtime
     result = rt.inspect(expected_revision=REVISION, expected_image_digest=DIGEST)
     assert result["ok"] is True
+    assert result["diagnosticStage"] == "complete"
     assert result["runtimeCanaryPassed"] is False
     assert result["agentZeroPackages"]["loadedVersionsVerified"] is False
     assert not sends(calls)
     assert not list(rt.evidence_root.iterdir())
+
+
+def test_inspection_preserves_bounded_runtime_failure_family(runtime, monkeypatch):
+    rt, _, _ = runtime
+
+    def mismatch(*_args, **_kwargs):
+        raise RuntimeError("BACKEND_REVISION_OR_DIGEST_MISMATCH")
+
+    monkeypatch.setattr(rt, "_bound_backend", mismatch)
+    result = rt.inspect(expected_revision=REVISION, expected_image_digest=DIGEST)
+    assert result == {
+        "ok": False,
+        "status": "BLOCKED",
+        "failureFamily": "BACKEND_REVISION_OR_DIGEST_MISMATCH",
+        "secretValuesReturned": False,
+        "diagnosticStage": "bind-backend-runtime",
+    }
+
+
+def test_inspection_redacts_unbounded_exception_text(runtime, monkeypatch):
+    rt, _, _ = runtime
+
+    def unavailable(*_args, **_kwargs):
+        raise RuntimeError("sensitive-looking arbitrary process detail")
+
+    monkeypatch.setattr(rt, "_bound_backend", unavailable)
+    result = rt.inspect(expected_revision=REVISION, expected_image_digest=DIGEST)
+    assert result["failureFamily"] == "AGENT_ZERO_DIAGNOSTIC_UNAVAILABLE"
+    assert result["diagnosticStage"] == "bind-backend-runtime"
+    assert "sensitive-looking" not in json.dumps(result)
 
 
 def test_configuration_redacts_invalid_urls_and_unbounded_values():
