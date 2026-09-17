@@ -6,12 +6,15 @@ export function Ampel({ status, compact = false }: { status: AgentStatus; compac
   const col = STATUS_COLOR[status];
   return (
     <div
+      role="status"
+      aria-label={`Agent-Status: ${STATUS_LABEL[status]}`}
       style={{ display: "flex", alignItems: "center", gap: 5 }}
       title={STATUS_LABEL[status]}
     >
       {(["idle", "thinking", "editing"] as AgentStatus[]).map((s) => (
         <span
           key={s}
+          aria-hidden="true"
           style={{
             display: "inline-block",
             width: 7,
@@ -25,6 +28,7 @@ export function Ampel({ status, compact = false }: { status: AgentStatus; compac
       ))}
       {!compact && (
         <span
+          aria-hidden="true"
           style={{
             fontFamily: "monospace",
             fontSize: 10,
