@@ -1,3 +1,5 @@
+import { WorkbenchOverlays } from '../components/Workbench/WorkbenchOverlays';
+import { WorkbenchEmptyState } from '../components/Workbench/WorkbenchEmptyState';
 import React, {
   useCallback,
   useEffect,
@@ -5646,17 +5648,7 @@ Das echte Repo-Setup wurde geöffnet.`);
         onClearLogs={() => setStatusLogs([])}
       />
 
-      {/* Werkbank Slot Drawer — Actions/Files/Errors/Draft PR bottom sheet */}
-      {openWorkbenchSlot && (
-        <WorkbenchSlotDrawer
-          slot={workbenchStatusSlots.find((s) => s.id === openWorkbenchSlot) ?? workbenchStatusSlots[0]}
-          onClose={() => setOpenWorkbenchSlot(null)}
-          onOpenDraftPr={(url) => {
-            const safeUrl = safeHttpsUrl(url);
-            if (safeUrl) window.open(safeUrl, "_blank", "noopener,noreferrer");
-          }}
-        />
-      )}
+
 
       {/* ── Issue #426: Worker Degraded Banner */}
       {workerBlocker && (
@@ -5797,24 +5789,17 @@ Das echte Repo-Setup wurde geöffnet.`);
             })()}
             <MonitorCommunicationDock
               mode="chat"
-              emptyState={wishText.trim() ? null : (
-                <div style={{ width: 'min(760px, 100%)', textAlign: 'center' }}>
-                  <div aria-hidden="true" style={{ fontSize: 30, marginBottom: 8 }}>⬡</div>
-                  <h2 style={{ margin: 0, color: C.text, fontSize: 20, fontWeight: 650 }}>
-                    Was möchtest du tun?
-                  </h2>
-                  <p style={{ margin: '8px auto 18px', maxWidth: 560, color: C.textSub, fontSize: 13, lineHeight: 1.55 }}>
-                    Chatte ganz normal mit Sovereign. Modell und Werkzeuge kannst du unten wählen; Agent Zero und die Runtime arbeiten im Hintergrund.
-                  </p>
-                  <ActionSuggestionStrip
-                    actions={SOVEREIGN_PRESET_ACTIONS}
-                    repoReady={effectiveRepoReady}
-                    githubWriteReady={githubWriteAllowed}
-                    agentReady={agentReady ?? false}
-                    disabled={localRepoLoading || chatResponseBusy || isPublishing}
-                    onSelect={handlePresetActionSelect}
-                  />
-                </div>
+              emptyState={(
+                <WorkbenchEmptyState
+                  wishText={wishText}
+                  effectiveRepoReady={effectiveRepoReady}
+                  githubWriteAllowed={githubWriteAllowed}
+                  agentReady={agentReady ?? false}
+                  localRepoLoading={localRepoLoading}
+                  chatResponseBusy={chatResponseBusy}
+                  isPublishing={isPublishing}
+                  onPresetActionSelect={handlePresetActionSelect}
+                />
               )}
               value={wishText}
               onChange={setWishText}
@@ -6140,73 +6125,48 @@ Das echte Repo-Setup wurde geöffnet.`);
           onClose={() => setShowPatchDiffEvidence(false)}
         />
       )}
-      {showRepoExplorer && chatRepoSnapshot && effectiveRepoReady && (
-        <div
-          onClick={() => setShowRepoExplorer(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 80,
-            background: "rgba(14,17,22,0.82)",
-            backdropFilter: "blur(6px)",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "flex-end",
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              maxHeight: "78vh",
-              overflowY: "auto",
-              background: C.surface,
-              border: `1px solid ${C.border}`,
-              borderBottom: "none",
-              borderRadius: "20px 20px 0 0",
-              padding: "12px 14px 20px",
-            }}
-          >
-            <RepoTreeExplorer
-              snapshot={chatRepoSnapshot}
-              onClose={() => setShowRepoExplorer(false)}
-              onFileClick={handleRepoExplorerFileClick}
-            />
-          </div>
-        </div>
-      )}
-      {showSideMenu && (
-        <SideDrawer
-          onClose={() => setShowSide(false)}
-          onOpenAllTools={() => {
-            appendActionEvent(buildLocalRuntimeResultEvent({
-              label: 'Tool-Launcher geöffnet',
-              detail: 'Das Seitenmenü hat den registrierten Sovereign Launcher geöffnet.',
-            }));
-            useLauncherStore.getState().openMenu();
-          }}
-          onOpenRepo={() => handleCompactToolSelect('repo')}
-          onOpenRuntimeLogs={() => handleCompactToolSelect('runtime_logs')}
-          onOpenGithubAccess={() => handleCompactToolSelect('github_access')}
-          onSelectPreset={handlePresetActionSelect}
-          onDraftPrAction={handleSideMenuDraftPrAction}
-          draftPrDecision={sideMenuDraftPrDecision}
-          shareDecision={sideMenuShareDecision}
-          chatRepoSnapshot={chatRepoSnapshot}
-          githubAccessState={effectiveGitHubAccessState}
-          onCancelAgent={handleSideMenuCancelAgent}
-          agentIsRunning={scopedAgentIsRunning}
-          palStats={palStats}
-          onExportChat={async () => {
-            const exported = exportChatHistory(chatHistory, chatRepoSnapshot);
-            const result = await shareChatExport(exported);
-            if (result === "copied") {
-              appendRuntimeNotice("Chat in Zwischenablage kopiert.");
-            } else if (result === "failed") {
-              appendRuntimeNotice("Chat konnte nicht geteilt werden.");
-            }
-          }}
-        />
-      )}
+      <WorkbenchOverlays
+        SideDrawer={SideDrawer}
+        showRepoExplorer={showRepoExplorer && effectiveRepoReady}
+        setShowRepoExplorer={setShowRepoExplorer}
+        chatRepoSnapshot={chatRepoSnapshot}
+        handleRepoExplorerFileClick={handleRepoExplorerFileClick}
+        showSideMenu={showSideMenu}
+        setShowSide={setShowSide}
+        handleOpenAllTools={() => {
+          appendActionEvent(buildLocalRuntimeResultEvent({
+            label: 'Tool-Launcher geöffnet',
+            detail: 'Das Seitenmenü hat den registrierten Sovereign Launcher geöffnet.',
+          }));
+          useLauncherStore.getState().openMenu();
+        }}
+        handleCompactToolSelect={handleCompactToolSelect}
+        handlePresetActionSelect={handlePresetActionSelect}
+        handleSideMenuDraftPrAction={handleSideMenuDraftPrAction}
+        sideMenuDraftPrDecision={sideMenuDraftPrDecision}
+        sideMenuShareDecision={sideMenuShareDecision}
+        effectiveGitHubAccessState={effectiveGitHubAccessState}
+        handleSideMenuCancelAgent={handleSideMenuCancelAgent}
+        scopedAgentIsRunning={scopedAgentIsRunning}
+        palStats={palStats}
+        handleExportChat={async () => {
+          const exported = exportChatHistory(chatHistory, chatRepoSnapshot);
+          const result = await shareChatExport(exported);
+          if (result === "copied") {
+            appendRuntimeNotice("Chat in Zwischenablage kopiert.");
+          } else if (result === "failed") {
+            appendRuntimeNotice("Chat konnte nicht geteilt werden.");
+          }
+        }}
+        openWorkbenchSlot={openWorkbenchSlot}
+        setOpenWorkbenchSlot={setOpenWorkbenchSlot}
+        workbenchStatusSlots={workbenchStatusSlots}
+        handleOpenDraftPr={(url) => {
+          setOpenWorkbenchSlot(null);
+          const safeUrl = safeHttpsUrl(url);
+          if (safeUrl) window.open(safeUrl, '_blank', 'noopener,noreferrer');
+        }}
+      />
       {showAgentBriefing && agentConfig && (
         <div
           onClick={() => setOHB(false)}
