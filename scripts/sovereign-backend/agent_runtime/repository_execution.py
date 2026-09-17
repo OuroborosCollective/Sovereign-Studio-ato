@@ -47,6 +47,7 @@ A2AClientFactory = Callable[[], AgentZeroA2AClient]
 _REPOSITORY_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _A2A_NORMAL_PREFIX: Final[str] = "agent-zero-a2a:"
 _A2A_RETRY_PREFIX: Final[str] = "agent-zero-a2a:retry:"
+_A2A_PENDING_PREFIX: Final[str] = "agent-zero-a2a:pending:submit:"
 _A2A_CLAIM_PREFIX: Final[str] = "agent-zero-a2a:claim:"
 _MAX_CLOSEOUT_DIFF_BYTES: Final[int] = 2_000_000
 _MAX_CLOSEOUT_CHANGED_FILES: Final[int] = 50
@@ -154,6 +155,11 @@ def _normal_ref(task_id: str) -> str:
     return f"{_A2A_NORMAL_PREFIX}{task_id}"
 
 
+def _pending_submit_ref(job_id: str) -> str:
+    digest = hashlib.sha256(job_id.encode("utf-8")).hexdigest()[:24]
+    return f"{_A2A_PENDING_PREFIX}{digest}"
+
+
 def _retry_ref(task_id: str) -> str:
     return f"{_A2A_RETRY_PREFIX}{task_id}"
 
@@ -162,7 +168,11 @@ def _bound_task(external_ref: str) -> tuple[str, bool] | None:
     if external_ref.startswith(_A2A_RETRY_PREFIX):
         task_id = external_ref[len(_A2A_RETRY_PREFIX):]
         return (task_id, True) if task_id else None
-    if external_ref.startswith(_A2A_NORMAL_PREFIX) and not external_ref.startswith(_A2A_CLAIM_PREFIX):
+    if (
+        external_ref.startswith(_A2A_NORMAL_PREFIX)
+        and not external_ref.startswith(_A2A_CLAIM_PREFIX)
+        and not external_ref.startswith(_A2A_PENDING_PREFIX)
+    ):
         task_id = external_ref[len(_A2A_NORMAL_PREFIX):]
         return (task_id, False) if task_id else None
     return None
@@ -245,7 +255,14 @@ def start_repository_execution(
     workspace_root: Path | None = None,
     a2a_client_factory: A2AClientFactory = AgentZeroA2AClient.from_env,
 ) -> StoredSovereignAgentJob:
-    """Persist/clone one repository job, then submit exactly one A2A task."""
+    """Persist/clone one repository job and durably queue its A2A submit.
+
+    The user-facing HTTP request must never wait on Agent Zero.  The production
+    repository reconciler owns the outbound ``message/send`` side effect after
+    this function has committed a durable pending reference. ``a2a_client_factory``
+    remains in the signature for compatibility with callers/tests but is never
+    invoked on the request path.
+    """
 
     payload = _normalized_repository_payload(body)
     lifecycle = create_sovereign_agent_job(
@@ -263,16 +280,43 @@ def start_repository_execution(
     if job.status != "running":
         return job
 
-    claim_ref = _claim("submit", job.job_id)
+    pending_ref = _pending_submit_ref(job.job_id)
     if not compare_and_swap_agent_job_external_ref(
         conn,
         job_id=job.job_id,
         expected_ref=None,
+        new_ref=pending_ref,
+    ):
+        # Another caller already owns or queued the external-effect boundary.
+        return read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="agent_zero_a2a_submit_queued",
+        level="info",
+        message="Agent Zero A2A submission was durably queued for the server-owned reconciler.",
+    ))
+    return read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
+
+
+def _submit_pending_repository_job(
+    conn: Any,
+    *,
+    job: StoredSovereignAgentJob,
+    a2a_client_factory: A2AClientFactory = AgentZeroA2AClient.from_env,
+) -> StoredSovereignAgentJob:
+    """Claim and execute one durable initial submit outside the HTTP request."""
+
+    pending_ref = str(job.external_ref or "")
+    if job.status != "running" or not pending_ref.startswith(_A2A_PENDING_PREFIX):
+        return job
+    claim_ref = _claim("submit", job.job_id)
+    if not compare_and_swap_agent_job_external_ref(
+        conn,
+        job_id=job.job_id,
+        expected_ref=pending_ref,
         new_ref=claim_ref,
     ):
-        # Another caller already owns the external-effect boundary. Never submit.
-        return read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
-    claimed = read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
+        return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+    claimed = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
     return _submit_after_claim(
         conn,
         job=claimed,
@@ -566,6 +610,10 @@ def reconcile_repository_execution(
     if job is None or job.status != "running" or not is_repository_a2a_job(job):
         return job
     external_ref = str(job.external_ref or "")
+    if external_ref.startswith(_A2A_PENDING_PREFIX):
+        # Pending submission is server-worker-owned. User/client polling must be
+        # read-only and must never perform the outbound Agent Zero side effect.
+        return job
     if external_ref.startswith(_A2A_CLAIM_PREFIX):
         # Another request owns the side-effect boundary. A stale claim requires
         # operator evidence rather than an automatic duplicate submit.
@@ -669,9 +717,10 @@ def reconcile_repository_jobs_once(
 ) -> dict[str, int]:
     """Reconcile persisted A2A repository jobs without any client polling.
 
-    The scan only discovers already-bound tasks. ``reconcile_repository_execution``
-    retains the CAS ownership for retry and closeout, so this worker cannot create a
-    second Agent Zero task or duplicate Draft-PR preparation.
+    Pending initial submits are claimed and executed here, never in a user HTTP
+    request. Bound tasks retain the existing CAS ownership for retry and closeout,
+    so multiple backend processes cannot duplicate the external task or Draft-PR
+    preparation.
     """
 
     listing_conn = get_connection()
@@ -686,12 +735,15 @@ def reconcile_repository_jobs_once(
     for candidate in candidates:
         conn = get_connection()
         try:
-            reconcile_repository_execution(
-                conn,
-                user_id=candidate.user_id,
-                job_id=candidate.job_id,
-                workspace_root=workspace_root,
-            )
+            if str(candidate.external_ref or "").startswith(_A2A_PENDING_PREFIX):
+                _submit_pending_repository_job(conn, job=candidate)
+            else:
+                reconcile_repository_execution(
+                    conn,
+                    user_id=candidate.user_id,
+                    job_id=candidate.job_id,
+                    workspace_root=workspace_root,
+                )
             reconciled += 1
         except RepositoryExecutionTransientError:
             transient_failures += 1

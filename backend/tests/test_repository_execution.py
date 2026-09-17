@@ -162,6 +162,91 @@ def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
     return state
 
 
+def test_start_repository_execution_queues_submit_without_transport(monkeypatch):
+    state = _patch_job_store(monkeypatch, _job(external_ref=None))
+    monkeypatch.setattr(
+        repository_execution,
+        "create_sovereign_agent_job",
+        lambda *_args, **_kwargs: SimpleNamespace(job_id="agent-test"),
+    )
+    transport_calls: list[bool] = []
+
+    def client_factory():
+        transport_calls.append(True)
+        raise AssertionError("user-facing start must never call Agent Zero")
+
+    result = repository_execution.start_repository_execution(
+        object(),
+        user_id="owner-test",
+        body={
+            "mode": "free",
+            "agentMode": "single",
+            "intentMode": "repository_execution",
+            "mission": "Implement one bounded repository change.",
+        },
+        a2a_client_factory=client_factory,
+    )
+
+    assert result.status == "running"
+    assert (result.external_ref or "").startswith("agent-zero-a2a:pending:submit:")
+    assert transport_calls == []
+    assert [event.stage for event in state["events"]] == ["agent_zero_a2a_submit_queued"]
+
+
+def test_user_reconcile_does_not_execute_pending_submit(monkeypatch):
+    pending = repository_execution._pending_submit_ref("agent-test")
+    _patch_job_store(monkeypatch, _job(external_ref=pending))
+    transport_calls: list[bool] = []
+
+    def client_factory():
+        transport_calls.append(True)
+        raise AssertionError("client polling must not submit pending work")
+
+    result = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id="owner-test",
+        job_id="agent-test",
+        a2a_client_factory=client_factory,
+    )
+
+    assert result is not None
+    assert result.external_ref == pending
+    assert transport_calls == []
+
+
+def test_server_worker_claims_pending_submit_and_binds_one_task(monkeypatch):
+    pending = repository_execution._pending_submit_ref("agent-test")
+    state = _patch_job_store(monkeypatch, _job(external_ref=pending))
+
+    class Client:
+        submit_count = 0
+
+        def submit_repository_task(self, *, workspace_id, mission):
+            assert workspace_id == "agent-test"
+            assert mission == "Implement one bounded repository change."
+            self.submit_count += 1
+            return AgentZeroA2ATask(task_id="task-server-submit", state="submitted")
+
+    client = Client()
+    result = repository_execution._submit_pending_repository_job(
+        object(),
+        job=state["job"],
+        a2a_client_factory=lambda: client,
+    )
+
+    assert result.external_ref == "agent-zero-a2a:task-server-submit"
+    assert client.submit_count == 1
+    assert any(event.stage == "agent_zero_a2a_submitted" for event in state["events"])
+
+    second = repository_execution._submit_pending_repository_job(
+        object(),
+        job=state["job"],
+        a2a_client_factory=lambda: client,
+    )
+    assert second.external_ref == "agent-zero-a2a:task-server-submit"
+    assert client.submit_count == 1
+
+
 def test_original_task_lost_resubmits_exactly_once_then_retry_lost_fails_closed(monkeypatch):
     state = _patch_job_store(monkeypatch, _job())
 
@@ -604,6 +689,55 @@ def test_fresh_active_task_remains_running(monkeypatch):
 
     assert result is not None
     assert result.status == "running"
+
+
+def test_server_reconciler_dispatches_pending_submit_instead_of_client_reconcile(monkeypatch):
+    candidate = _job(external_ref=repository_execution._pending_submit_ref("agent-test"))
+    connections = []
+    submitted = []
+
+    class Conn:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    def factory():
+        conn = Conn()
+        connections.append(conn)
+        return conn
+
+    monkeypatch.setattr(
+        repository_execution,
+        "list_reconcilable_repository_jobs",
+        lambda _conn, *, limit=50: (candidate,),
+    )
+    monkeypatch.setattr(
+        repository_execution,
+        "_submit_pending_repository_job",
+        lambda _conn, *, job: submitted.append(job.job_id) or job,
+    )
+    monkeypatch.setattr(
+        repository_execution,
+        "reconcile_repository_execution",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("pending submit must use worker dispatch")),
+    )
+
+    summary = repository_execution.reconcile_repository_jobs_once(
+        get_connection=factory,
+        workspace_root=Path("/tmp/server-owned-reconcile"),
+    )
+
+    assert summary == {
+        "scanned": 1,
+        "reconciled": 1,
+        "transientFailures": 0,
+        "unexpectedFailures": 0,
+    }
+    assert submitted == ["agent-test"]
+    assert len(connections) == 2
+    assert all(conn.closed for conn in connections)
 
 
 def test_server_reconciler_processes_bound_job_without_client_polling(monkeypatch):
