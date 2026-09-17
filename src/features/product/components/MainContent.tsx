@@ -1,6 +1,7 @@
 import React, { useRef, useState, useCallback } from 'react';
 import { Bot, CheckCircle, Loader2, Send, CircleX, ExternalLink, Copy, Check } from 'lucide-react';
 import { FileItem, WorkView, PipelineState, ProjectSettings } from '../types';
+import { safeHttpsUrl } from '../runtime/builderContainerHelpers';
 
 interface MainContentProps {
   workView: WorkView;
@@ -135,9 +136,9 @@ export const MainContent: React.FC<MainContentProps> = ({
                     ? 'Alles erledigt. Du musst nicht nochmal auf Senden, Frei oder Pruefen druecken.'
                     : 'Druecke diesen grossen Button. Das blaue Senden-Symbol ist hierfuer nicht noetig.'}
                 </p>
-                {approvalConfirmed && targetLink && (
+                {approvalConfirmed && targetLink && safeHttpsUrl(targetLink) && (
                   <a
-                    href={targetLink}
+                    href={safeHttpsUrl(targetLink)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-900 underline"

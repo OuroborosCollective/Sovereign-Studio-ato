@@ -7,6 +7,7 @@
 
 import React from 'react';
 import type { DraftPrBuildStatusResult } from '../runtime/draftPrBuildStatusRuntime';
+import { safeHttpsUrl } from '../runtime/builderContainerHelpers';
 
 const C = {
   bg:        '#0e1116',
@@ -110,9 +111,9 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
           {buildStatus.label}
         </div>
         <div style={{ marginTop: 2 }}>{buildStatus.detail}</div>
-        {buildStatus.runUrl ? (
+        {buildStatus.runUrl && safeHttpsUrl(buildStatus.runUrl) ? (
           <a
-            href={buildStatus.runUrl}
+            href={safeHttpsUrl(buildStatus.runUrl)}
             target="_blank"
             rel="noopener noreferrer"
             title="GitHub Workflow Run öffnen"
