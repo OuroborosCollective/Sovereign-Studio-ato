@@ -81,7 +81,7 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
         <div className="theme-diamond-cut rounded-xl border border-[rgba(255,30,56,0.28)] bg-[var(--carbon-deep)] p-2 shadow-[0_0_24px_rgba(255,30,56,0.08)]">
           <textarea
             data-testid="mission__textarea"
-            aria-label="Mission an Sovereign"
+            aria-label="Mission to Sovereign"
             value={text}
             onChange={(event) => { setText(event.target.value); onTypingStateChange?.(event.target.value.length > 0); }}
             onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit(); } }}

@@ -57,3 +57,7 @@
 ## 2025-08-13 - [Overriding Visible Buttons via ARIA Labels]
 **Learning:** Overriding a button's visible text (e.g., 'Repo-Snapshot laden') with an 'aria-label' that does not match or include that exact text violates the WCAG 'Label in Name' requirement. It also disrupts testing frameworks and standard selectors looking for the visible text.
 **Action:** For buttons with descriptive, dynamic text content, rely on the visible text for the accessible name, and use the 'title' attribute exclusively for stateful hover descriptions rather than using aria-label overrides.
+
+## 2025-08-14 - [Consistent Focus Visualization Across Dynamic Layouts]
+**Learning:** When creating multi-layout UI components (such as floating chat, split-view chat, or terminal chat), focusing heavily on mouse interaction can inadvertently cause keyboard accessibility regressions. Standard styling classes without active `focus-visible` outlines make it impossible for keyboard-navigated users to visually track their focus point as it shifts between dynamic layout inputs, buttons, and drop-downs.
+**Action:** Always ensure that all interactive elements across multiple layout variants maintain explicit, matching `focus-visible` visual cues (e.g., `focus-visible:outline-none focus-visible:ring-2`) so keyboard accessibility remains universally reliable regardless of the chosen UI template.

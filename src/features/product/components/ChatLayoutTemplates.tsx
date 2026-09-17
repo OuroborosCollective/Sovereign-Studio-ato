@@ -140,9 +140,9 @@ const TerminalChatLayout: React.FC<{
         <button
           type="submit"
           disabled={!canSubmit}
-          aria-label="Senden"
-          title="Senden"
-          className="text-cyan-400 disabled:opacity-30"
+          aria-label="Send message"
+          title="Send message"
+          className="text-cyan-400 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 rounded-lg p-1"
         >
           <Send size={16} />
         </button>
@@ -215,9 +215,9 @@ const FloatingChatLayout: React.FC<{
                 onClick={() => setShowModelPicker(!showModelPicker)}
                 aria-expanded={showModelPicker}
                 aria-haspopup="true"
-                aria-label="Modell auswählen"
-                title="Modell auswählen"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-cyan-500/20 hover:border-cyan-500/40 transition-colors text-xs"
+                aria-label="Select model"
+                title="Select model"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-cyan-500/20 hover:border-cyan-500/40 transition-colors text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50"
               >
                 <Globe size={12} className="text-cyan-400" />
                 <span className="text-slate-300 max-w-[100px] truncate">
@@ -344,9 +344,9 @@ const FloatingChatLayout: React.FC<{
               <button
                 type="button"
                 onClick={() => onInputChange('')}
-                aria-label="Eingabe löschen"
-                title="Eingabe löschen"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                aria-label="Clear input"
+                title="Clear input"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 rounded-full"
               >
                 <CircleX size={16} />
               </button>
@@ -355,14 +355,14 @@ const FloatingChatLayout: React.FC<{
           <button
             type="submit"
             disabled={!canSubmit}
-            aria-label="Senden"
-            title="Senden"
-            className="px-4 py-3 bg-cyan-500/20 border border-cyan-500/30 rounded-2xl text-cyan-400 hover:bg-cyan-500/30 disabled:opacity-30"
+            aria-label="Send message"
+            title="Send message"
+            className="px-4 py-3 bg-cyan-500/20 border border-cyan-500/30 rounded-2xl text-cyan-400 hover:bg-cyan-500/30 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50"
           >
             <Send size={18} />
           </button>
         </form>
-        <button onClick={onClear} className="w-full mt-2 py-2 text-[11px] text-slate-500 hover:text-slate-400 flex items-center justify-center gap-2">
+        <button onClick={onClear} className="w-full mt-2 py-2 text-[11px] text-slate-500 hover:text-slate-400 flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 rounded-lg">
           <Trash2 size={12} />
           Clear conversation
         </button>
@@ -429,9 +429,9 @@ const SplitViewLayout: React.FC<{
             <button
               type="submit"
               disabled={!canSubmit}
-              aria-label="Senden"
-              title="Senden"
-              className="px-3 py-2 bg-cyan-500/20 border border-cyan-500/30 rounded-lg text-cyan-400 disabled:opacity-30"
+              aria-label="Send message"
+              title="Send message"
+              className="px-3 py-2 bg-cyan-500/20 border border-cyan-500/30 rounded-lg text-cyan-400 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50"
             >
               <Send size={16} />
             </button>
@@ -538,7 +538,7 @@ export const ChatLayoutTemplates: React.FC<ChatLayoutTemplatesProps> = ({
             key={l.id}
             type="button"
             onClick={() => onLayoutChange?.(l.id)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 ${
               layout === l.id
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
                 : 'bg-slate-800/50 text-slate-400 border border-transparent hover:bg-slate-700/50'
