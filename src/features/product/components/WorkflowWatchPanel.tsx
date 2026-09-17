@@ -51,10 +51,13 @@ export function WorkflowWatchPanel({
       : 'Start monitoring commit checks';
 
   return (
-    <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
+    <section
+      className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200"
+      aria-labelledby="workflow-watch-heading"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-bold">Workflow Watch</h2>
+          <h2 id="workflow-watch-heading" className="font-bold">Workflow Watch</h2>
           <p className="mt-1 text-xs text-slate-400">
             {helperText}
           </p>
@@ -84,7 +87,12 @@ export function WorkflowWatchPanel({
           </div>
 
           {report.checks.length ? (
-            <div className="rounded border border-slate-800">
+            <div
+              tabIndex={0}
+              role="region"
+              aria-label="Workflow checks overview"
+              className="overflow-x-auto rounded border border-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            >
               <table className="w-full border-collapse text-left text-xs">
                 <thead className="bg-slate-900 text-slate-400">
                   <tr>
@@ -118,7 +126,7 @@ export function WorkflowWatchPanel({
           {report.fixes.length ? (
             <div className="rounded border border-slate-800 bg-slate-900/70 p-3">
               <h3 className="font-bold">Next repair ideas</h3>
-              <ul className="mt-2 list-disc pl-5 text-xs text-slate-400">
+              <ul role="list" className="mt-2 list-disc pl-5 text-xs text-slate-400">
                 {report.fixes.map((fix) => <li key={fix}>{fix}</li>)}
               </ul>
             </div>
