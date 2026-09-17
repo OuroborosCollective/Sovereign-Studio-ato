@@ -262,7 +262,7 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     ]) expect(publishedTestPaths.has(representative)).toBe(true);
     for (const root of ['src', 'backend/tests', 'scripts/tests', 'tests/e2e']) expect(coveragePayload.testRoots?.[root]).toBeGreaterThan(0);
 
-    const composer = page.getByLabel('Mission an Sovereign');
+    const composer = page.getByLabel('Mission to Sovereign');
     await composer.fill('Prüfe den aktuellen Build und ändere nichts ohne die bestehenden Runtime-Gates.');
     await composer.press('Enter');
 
