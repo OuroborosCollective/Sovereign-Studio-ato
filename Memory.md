@@ -497,3 +497,13 @@ Evidence: Memory pre-read completed on `main@6ecaba0fd33f2903182dc150c6f7ebea5c3
 Learned: Backend release provenance and executor task identity are distinct. A known Task-ID may be read back through a newer exact Backend without rewriting submit provenance, but only while the Agent Zero execution identity remains the same.
 Open: Source regressions do not prove the historical live task can still be read from Agent Zero. Exact-head CI, explicit merge approval, immutable MCP rollout, then a poll of the original operation must decide terminal state before any fresh dedicated Canary submit.
 Next safe step: Create one Draft PR, require terminal exact-head gates, and request explicit Owner merge approval only if green; after merge/self-update poll `0c9821b2b2364097bccd54c8407c474e` first and never resubmit it.
+
+### 2026-09-17 — Ampel accessibility rebase onto exact current main
+Status: SOURCE_INTEGRATION_VERIFIED; exact-head CI and merge approval pending.
+Task: Preserve the useful Ampel accessibility change after #1988 advanced `main`, without merging the now-stale #1989 head.
+Decisions: Re-materialize only the reviewed `Ampel.tsx` and focused accessibility regression from #1989 onto exact `main@f832c29fc38b82126433e55190bfbb78a6a78809`; do not import the stale branch Memory entry or any unrelated files. Keep `role=status` plus a status-specific accessible name on the wrapper and hide duplicate visual dots/text from assistive technology.
+Touched surfaces: `src/features/product/components/Ampel.tsx`, `src/features/product/components/PaletteEnhancements.palette.test.tsx`.
+Evidence: Memory pre-read completed before integration; #1989 had terminal CI with 27 checks, 0 failures, but its base had advanced from `6ecaba0f...` to `f832c29f...`; exact source paths were materialized from #1989 head `0757b01ee94399a6602cb792b1cce144aced2a71` onto current main without checking out the foreign branch. Repository diff shows only 31 insertions across the two intended files; CODEOWNERS coverage is complete. Node-dependent validation is delegated to GitHub Actions per repository policy.
+Learned: A fully green PR can still become non-mergeable by policy once `main` advances. Reapplying the exact reviewed source delta onto the new main preserves the useful change without violating revision-equality rules.
+Open: The new exact-current-main Draft PR still needs terminal GitHub Actions before merge; #1989 should remain superseded rather than merged stale.
+Next safe step: Publish one replacement Draft PR, close #1989 as superseded, require terminal exact-head CI, then merge only under the standing Owner approval for zero-open-PR cleanup.
