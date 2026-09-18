@@ -39,6 +39,7 @@ from .job_store import (
     update_agent_job_state,
 )
 from .tool_runner import run_agent_job_tool
+from .workspace_policy import repo_dir_for_workspace, validate_workspace_relative_path
 
 
 ConnectionFactory = Callable[[], Any]
@@ -51,6 +52,12 @@ _A2A_PENDING_PREFIX: Final[str] = "agent-zero-a2a:pending:submit:"
 _A2A_CLAIM_PREFIX: Final[str] = "agent-zero-a2a:claim:"
 _MAX_CLOSEOUT_DIFF_BYTES: Final[int] = 2_000_000
 _MAX_CLOSEOUT_CHANGED_FILES: Final[int] = 50
+_MAX_DOCUMENTATION_REGRESSION_BYTES: Final[int] = 1_000_000
+_DOCUMENTATION_SUFFIXES: Final[frozenset[str]] = frozenset({".md", ".mdx", ".rst"})
+_DOCUMENTATION_ROOT_FILES: Final[frozenset[str]] = frozenset({
+    "README.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md",
+    "AGENTS.md", "AGENTS_SKILLS.md", "AGENTS_BEST_PRACTICES.md", "AGENTS_KNOWLEDGE.md", "Memory.md",
+})
 
 _ALLOWED_REGRESSION_PREFIXES: Final[tuple[tuple[str, ...], ...]] = (
     ("python", "-m", "pytest"),
@@ -341,6 +348,61 @@ def _safe_regression_commands(recommended: object) -> tuple[str, ...]:
     return tuple(selected)
 
 
+def _documentation_only_changed_files(changed_files: object) -> tuple[str, ...] | None:
+    if not isinstance(changed_files, (tuple, list)) or not changed_files:
+        return None
+    normalized: list[str] = []
+    for value in changed_files:
+        relative = str(value or "").strip()
+        try:
+            safe = validate_workspace_relative_path(relative)
+        except Exception:
+            return None
+        path = Path(safe)
+        if path.suffix.lower() not in _DOCUMENTATION_SUFFIXES:
+            return None
+        if path.name not in _DOCUMENTATION_ROOT_FILES and (not path.parts or path.parts[0] not in {"docs", ".github"}):
+            return None
+        normalized.append(safe)
+    return tuple(normalized)
+
+
+def _documentation_regression(
+    job: StoredSovereignAgentJob,
+    changed_files: object,
+    workspace_root: Path | None,
+) -> tuple[bool, str] | None:
+    documentation = _documentation_only_changed_files(changed_files)
+    if documentation is None:
+        return None
+    try:
+        repository = repo_dir_for_workspace(str(job.workspace_id or job.job_id), workspace_root).resolve()
+        if not repository.is_dir() or repository.is_symlink():
+            return False, "Documentation regression could not verify the repository workspace."
+        readme_verified = False
+        for relative in documentation:
+            target = (repository / relative).resolve()
+            if repository not in target.parents or target.is_symlink() or not target.is_file():
+                return False, "Documentation regression found an invalid changed-file path."
+            if target.stat().st_size > _MAX_DOCUMENTATION_REGRESSION_BYTES:
+                return False, "Documentation regression changed-file size exceeds the bounded limit."
+            text = target.read_text(encoding="utf-8", errors="strict")
+            if "\x00" in text:
+                return False, "Documentation regression rejected binary content."
+            if Path(relative).name == "README.md":
+                lines = text.splitlines()
+                if not lines or not lines[0].startswith("# "):
+                    return False, "Documentation regression requires README.md to preserve its first Markdown heading."
+                readme_verified = True
+        summary = (
+            f"documentation-regression: {len(documentation)} UTF-8 documentation file(s) verified"
+            + ("; README heading preserved" if readme_verified else "")
+        )
+        return True, summary
+    except (OSError, UnicodeError, ValueError):
+        return False, "Documentation regression could not read the changed documentation safely."
+
+
 def _closeout_repository_job(
     conn: Any,
     *,
@@ -417,41 +479,53 @@ def _closeout_repository_job(
             "repository_closeout_janitor_critical",
         )
 
-    commands = _safe_regression_commands(
-        janitor.metadata.get("recommendedTestCommand") if isinstance(janitor.metadata, dict) else None
-    )
+    documentation_regression = _documentation_regression(job, status_result.changed_files, workspace_root)
     test_outputs: list[str] = []
-    if commands:
-        for command in commands:
+    if documentation_regression is not None:
+        documentation_passed, documentation_summary = documentation_regression
+        if not documentation_passed:
+            return _block_job(
+                conn,
+                job,
+                documentation_summary,
+                "repository_closeout_documentation_regression_blocked",
+            )
+        test_outputs.append(documentation_summary)
+    else:
+        commands = _safe_regression_commands(
+            janitor.metadata.get("recommendedTestCommand") if isinstance(janitor.metadata, dict) else None
+        )
+        if commands:
+            for command in commands:
+                test_result = run_agent_job_tool(
+                    job,
+                    "test",
+                    {"command": command, "timeout": 600, "verbose": True},
+                    workspace_root,
+                )
+                if test_result.status != "done":
+                    return _block_job(
+                        conn,
+                        job,
+                        test_result.blocker or test_result.error or f"Regression failed: {command}",
+                        "repository_closeout_regression_blocked",
+                    )
+                test_outputs.append(f"{command}: {str(test_result.output or 'passed')[:1200]}")
+        else:
             test_result = run_agent_job_tool(
                 job,
                 "test",
-                {"command": command, "timeout": 600, "verbose": True},
+                {"timeout": 600, "verbose": True},
                 workspace_root,
             )
             if test_result.status != "done":
                 return _block_job(
                     conn,
                     job,
-                    test_result.blocker or test_result.error or f"Regression failed: {command}",
+                    test_result.blocker or test_result.error or "Repository regression test failed or was unavailable.",
                     "repository_closeout_regression_blocked",
                 )
-            test_outputs.append(f"{command}: {str(test_result.output or 'passed')[:1200]}")
-    else:
-        test_result = run_agent_job_tool(
-            job,
-            "test",
-            {"timeout": 600, "verbose": True},
-            workspace_root,
-        )
-        if test_result.status != "done":
-            return _block_job(
-                conn,
-                job,
-                test_result.blocker or test_result.error or "Repository regression test failed or was unavailable.",
-                "repository_closeout_regression_blocked",
-            )
-        test_outputs.append(str(test_result.output or "Auto-detected regression passed.")[:2000])
+            test_outputs.append(str(test_result.output or "Auto-detected regression passed.")[:2000])
 
     diff_summary = sanitize_agent_text(patch.decode("utf-8", errors="replace"), 4000)
     test_summary = sanitize_agent_text("\n".join(test_outputs), 4000)
