@@ -1,0 +1,103 @@
+name: Agent Zero Testfile UI Smoke
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/agent-zero-testfile-smoke
+    paths:
+      - 'tests/e2e/agent-zero-testfile-smoke.spec.ts'
+      - '.github/workflows/agent-zero-testfile-smoke.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-zero-testfile-ui-smoke
+  cancel-in-progress: false
+
+jobs:
+  sovereign-ui-testfile:
+    name: Sovereign UI → Agent Zero → empty testfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      SOVEREIGN_E2E_LIVE: '1'
+      SOVEREIGN_E2E_REVISION: ${{ github.sha }}
+      SOVEREIGN_E2E_ACCOUNT_KEY: ${{ secrets.SOVEREIGN_E2E_ACCOUNT_KEY }}
+      SOVEREIGN_E2E_REPO_URL: https://github.com/${{ github.repository }}
+      SOVEREIGN_E2E_APP_URL: https://127.0.0.1:3000
+      SOVEREIGN_E2E_BACKEND_PROXY_TARGET: https://sovereign-backend.arelorian.de
+      VITE_SOVEREIGN_AGENT_API_URL: https://127.0.0.1:3000
+      VITE_ADMIN_API_BASE: https://127.0.0.1:3000
+    steps:
+      - name: Checkout exact diagnostic revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Require exact diagnostic source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$SOVEREIGN_E2E_REVISION"
+
+      - name: Prepare isolated HTTPS preview trust
+        shell: bash
+        run: bash scripts/prepare-live-e2e-tls.sh
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.2
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build current Sovereign frontend
+        run: pnpm run build:web
+
+      - name: Install Chromium
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Run one Sovereign UI testfile assignment
+        shell: bash
+        run: |
+          rm -f test-results/agent-zero-testfile-smoke.json
+          pnpm exec playwright test tests/e2e/agent-zero-testfile-smoke.spec.ts --project=chromium --workers=1
+
+      - name: Verify bounded testfile evidence
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const evidence = JSON.parse(fs.readFileSync('test-results/agent-zero-testfile-smoke.json', 'utf8'));
+          if (evidence.sourceRevision !== process.env.SOVEREIGN_E2E_REVISION) throw new Error('revision mismatch');
+          if (evidence.frontendSubmissionVerified !== true) throw new Error('frontend submission unverified');
+          if (evidence.singleAgentModeVerified !== true) throw new Error('single agent mode unverified');
+          if (!/^agent-zero-a2a:/.test(evidence.externalRef || '')) throw new Error('A2A binding missing');
+          if (evidence.fileReadback?.path !== 'testfile') throw new Error('testfile path missing');
+          if (evidence.fileReadback?.bytes !== 0 || evidence.fileReadback?.contentEmpty !== true) throw new Error('testfile is not empty');
+          if (JSON.stringify(evidence.gitStatus?.changedFiles) !== JSON.stringify(['testfile'])) throw new Error('unexpected workspace mutation');
+          if (evidence.draftPrCreated !== false) throw new Error('unexpected Draft PR');
+          if (evidence.sovereignWorkspaceReadbackVerified !== true) throw new Error('Sovereign workspace readback missing');
+          if (evidence.secretValuesReturned !== false) throw new Error('secret return invariant violated');
+          NODE
+
+      - name: Upload testfile UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-zero-testfile-ui-smoke-${{ github.run_id }}
+          path: test-results/agent-zero-testfile-smoke.json
+          if-no-files-found: error
+          retention-days: 7
