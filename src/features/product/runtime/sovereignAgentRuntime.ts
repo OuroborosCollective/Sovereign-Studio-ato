@@ -210,7 +210,7 @@ export function buildSovereignAgentJobRequest(input: { repoUrl: string; branch?:
     source: 'sovereign-studio',
     executor: 'sovereign-local-runner',
     provisionWorkspace: true,
-    cloneRepo: true,
+    cloneRepo: false,
   };
 }
 
