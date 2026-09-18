@@ -1094,6 +1094,23 @@ def start_cognitive_swarm_run(
         )
     except ValueError as exc:
         return {"error": str(exc)}, 400
+    if (
+        normalized_intent_mode == "repository_execution"
+        or normalized_repository_url
+        or normalized_implementation_job_id
+        or normalized_github_access_token
+    ):
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "blocker": "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE",
+            "reason": (
+                "Repository execution is not available through the cognitive-swarm/GitHub-credential path. "
+                "Use POST /api/user/agent/repository/run, which binds exactly one Agent Zero A2A task."
+            ),
+            "nextAction": "USE_AGENT_ZERO_REPOSITORY_EXECUTION_ROUTE",
+            "secretValuesReturned": False,
+        }, 409
     if not normalized_mission:
         return {"error": "mission is required"}, 400
     if len(normalized_mission) > 20_000:
@@ -2681,6 +2698,24 @@ def register_cognitive_swarm_routes(
             body = {}
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
+        if (
+            str(body.get("intentMode") or "").strip().lower() == "repository_execution"
+            or body.get("repositoryUrl")
+            or body.get("repoUrl")
+            or body.get("implementationJobId")
+            or "githubAccessToken" in body
+        ):
+            return jsonify({
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "blocker": "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE",
+                "reason": (
+                    "Repository execution and GitHub credentials are forbidden on /swarm/run. "
+                    "Use /api/user/agent/repository/run for exactly one Agent Zero A2A task."
+                ),
+                "nextAction": "USE_AGENT_ZERO_REPOSITORY_EXECUTION_ROUTE",
+                "secretValuesReturned": False,
+            }), 409
         payload, status_code = _start_run_with_session_github_token(
             get_connection=get_connection,
             user_id=_current_session_user_id(),
@@ -2692,15 +2727,6 @@ def register_cognitive_swarm_routes(
             mode=str(body.get("mode") or "auto"),
             intent_mode=str(body.get("intentMode") or "auto"),
             agent_mode=str(body.get("agentMode") or "auto"),
-            repository_url=str(body.get("repositoryUrl") or body.get("repoUrl") or "") or None,
-            repository_branch=str(body.get("repositoryBranch") or body.get("branch") or "main"),
-            expected_head_sha=str(body.get("expectedHeadSha") or "") or None,
-            github_access_token=(
-                body.get("githubAccessToken")
-                if "githubAccessToken" in body
-                else None
-            ),
-            implementation_job_id=str(body.get("implementationJobId") or "") or None,
         )
         return jsonify(payload), status_code
 
