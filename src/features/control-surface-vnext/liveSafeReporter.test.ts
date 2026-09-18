@@ -63,6 +63,25 @@ describe('live runtime observation projection', () => {
     expect(runtimeObservation(`/api/user/agent/swarm/runs/${runId}`, 'GET', 200, { run: { runId: 'run-' + 'b'.repeat(32) } })?.identityMatches).toBe(false);
     expect(runtimeObservation('/api/user/agent/swarm/run', 'POST', 503, { blocker: 'NO_VERIFIED_EXECUTION_ROUTE_READY' })).toMatchObject({ httpStatus: 503, failureFamily: 'NO_VERIFIED_EXECUTION_ROUTE_READY' });
   });
+  it('preserves the bounded repository closeout stage when the blocker text is not an allowlisted code', () => {
+    const result = runtimeObservation('/api/user/agent/jobs/agent-' + 'c'.repeat(32), 'GET', 200, {
+      job: {
+        jobId: 'agent-' + 'c'.repeat(32),
+        status: 'blocked',
+        blocker: 'Agent Zero completed without workspace changes.',
+        events: [
+          { stage: 'agent_zero_a2a_submitted', level: 'success' },
+          { stage: 'repository_closeout_git_status_blocked', level: 'warning' },
+        ],
+      },
+    });
+    expect(result).toMatchObject({
+      status: 'blocked',
+      failureFamily: 'repository_closeout_git_status_blocked',
+      repositoryExecution: { changedFileCount: null },
+    });
+    expect(JSON.stringify(result)).not.toContain('completed without workspace changes');
+  });
   it('rejects secret-shaped metadata and never captures auth response bodies', () => {
     for (const secret of ['svk_', 'ghp_', 'github_pat_', 'sk-', 'hf_'].map(prefix => prefix + 'a'.repeat(32))) {
       const result = runtimeObservation('/api/user/agent/swarm/run', 'POST', 500, { status: secret, nextAction: secret, blocker: secret });
