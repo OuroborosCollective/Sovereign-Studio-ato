@@ -83,6 +83,8 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
           status: 'running',
           repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
           branch: 'main',
+          workspaceId: 'agent-persisted-latest',
+          externalRef: 'agent-zero-a2a:task-persisted',
         },
       ],
       total: 2,
@@ -101,6 +103,80 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/jobs?limit=20');
     expect((fetcher.mock.calls[0][1] as RequestInit).method).toBe('GET');
     expect((fetcher.mock.calls[0][1] as RequestInit).credentials).toBe('include');
+  });
+
+  it('skips a stale pre-A2A running clone instead of locking the composer after reload', async () => {
+    const config: SovereignAgentConfig = {
+      enabled: true,
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://agent.example.test',
+      ready: true,
+      reason: 'ready',
+    };
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      jobs: [
+        {
+          jobId: 'agent-zombie',
+          mission: 'Old mission that never reached Agent Zero.',
+          status: 'running',
+          repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+          branch: 'main',
+          workspaceId: 'agent-zombie',
+          externalRef: null,
+          events: [
+            { stage: 'agent_job_created', level: 'success', at: 1 },
+            { stage: 'workspace_created', level: 'success', at: 2 },
+            { stage: 'repo_clone_completed', level: 'success', at: 3 },
+          ],
+        },
+      ],
+      total: 1,
+    }), { status: 200 }));
+    const adapter = new SovereignProductionAdapter(fetcher as unknown as typeof fetch, config);
+
+    await expect(adapter.restoreLatestRepositoryRun()).resolves.toBeNull();
+  });
+
+  it('skips terminal history and restores the next genuinely bound active repository run', async () => {
+    const config: SovereignAgentConfig = {
+      enabled: true,
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://agent.example.test',
+      ready: true,
+      reason: 'ready',
+    };
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      jobs: [
+        {
+          jobId: 'agent-failed-latest',
+          mission: 'Already failed.',
+          status: 'failed',
+          repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+          branch: 'main',
+          workspaceId: 'agent-failed-latest',
+          externalRef: 'agent-zero-a2a:task-failed',
+        },
+        {
+          jobId: 'agent-active',
+          mission: 'Resume this real A2A run.',
+          status: 'validating',
+          repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+          branch: 'main',
+          workspaceId: 'agent-active',
+          externalRef: 'agent-zero-a2a:task-active',
+        },
+      ],
+      total: 2,
+    }), { status: 200 }));
+    const adapter = new SovereignProductionAdapter(fetcher as unknown as typeof fetch, config);
+
+    await expect(adapter.restoreLatestRepositoryRun()).resolves.toEqual({
+      jobId: 'agent-active',
+      mission: 'Resume this real A2A run.',
+      status: 'validating',
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      branch: 'main',
+    });
   });
 
   it('fails closed when persisted repository job readback is malformed', async () => {

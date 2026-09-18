@@ -560,3 +560,14 @@ Evidence: Memory pre-read completed on `main@b430384661b596cf79e06c82fac06ed7560
 Learned: Shared-workspace mutation and regression-environment provisioning are separate truth boundaries; a docs-only change needs a deterministic docs regression, while code changes must continue to require their real project test path.
 Open: Exact-head CI, immutable backend deployment, runtime revision/digest readback and a fresh protected 5/5 Draft-PR run remain required.
 Next safe step: Publish this Draft PR, require terminal exact-head gates, merge only under Owner approval, deploy the exact merged backend image, then rerun the protected Five-Path and require five GitHub-verified Draft PRs.
+
+
+### 2026-09-19 — Reload must not adopt pre-A2A zombie repository jobs
+Status: SOURCE_PATCHED; exact-head CI pending.
+Task: Repair the live frontend reload state that restored an old repository job as executing and locked the mission composer even though the job never reached a valid Agent Zero A2A binding.
+Decisions: Auto-restore only non-terminal repository jobs with a real workspace ID and persisted `agent-zero-a2a:*` external binding; skip pre-A2A clones and terminal history instead of treating them as the current execution. Preserve authenticated backend readback and never blind-resubmit on reload.
+Touched surfaces: vNext repository-bound production adapter and focused restore regressions.
+Evidence: Memory pre-read completed on `main@9e9782f858c53c4bcd2fdd109789a39be1379f72`. The 2026-09-19 mobile live recording shows restored job `agent-1689030d8391402894bf16bfa7087a73` stuck as `RUNNING · repository-single-a2a`, while visible runtime evidence stops at `agent_job_created → workspace_created → repo_clone_completed`; Workspace shows 0 changed files / revision unverified and the composer is disabled with “Mission locked while the persisted run is executing…”.
+Learned: A persisted `running` label alone is not resumable execution truth. Reload adoption must require the causal workspace + A2A binding that proves the job crossed repository provisioning into the current execution protocol.
+Open: Exact-head frontend/release CI and deployed reload readback remain required before calling the production UI repaired.
+Next safe step: Require green exact-head gates, merge under Owner approval, deploy/read back the exact revision, then reload the authenticated production UI and confirm the stale job no longer locks the composer.
