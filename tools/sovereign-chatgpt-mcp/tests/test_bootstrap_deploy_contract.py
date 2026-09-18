@@ -360,6 +360,28 @@ def test_tunnel_is_restarted_after_the_new_mcp_passes_protocol_health() -> None:
     assert 'MALFORMED_MCP_REQUESTS >= 2 && SUCCESSFUL_MCP_REQUESTS == 0' in full_installer
 
 
+def test_pull_requests_run_mcp_validator_without_publish_or_vps_mutation() -> None:
+    workflow = (REPO_ROOT / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
+
+    assert "pull_request:\n    branches: [main]" in workflow
+
+    validate_start = workflow.index("  validate:")
+    publish_start = workflow.index("  publish-mcp-image:", validate_start)
+    validate = workflow[validate_start:publish_start]
+    assert "name: Validate MCP operator" in validate
+    assert "github.event_name == 'push'" not in validate
+
+    publish_end = workflow.index("\n  verify-published-mcp-image:", publish_start)
+    publish = workflow[publish_start:publish_end]
+    assert "github.event_name == 'push' && github.ref == 'refs/heads/main'" in publish
+
+    deploy_start = workflow.index("  deploy-vps:")
+    deploy_end = workflow.index("\n  resolve-pr-992-review-thread:", deploy_start)
+    deploy = workflow[deploy_start:deploy_end]
+    assert "github.event_name == 'workflow_dispatch'" in deploy
+    assert "github.ref == 'refs/heads/main'" in deploy
+
+
 def test_main_push_publishes_and_verifies_the_immutable_mcp_image() -> None:
     workflow = (REPO_ROOT / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
 

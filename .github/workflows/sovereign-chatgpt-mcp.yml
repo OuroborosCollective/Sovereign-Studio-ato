@@ -3,6 +3,8 @@ name: Sovereign ChatGPT MCP
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       update_pr_branch:

@@ -538,3 +538,14 @@ Evidence: Memory pre-read completed; Five-Path attempt 2 artifact `10550596042` 
 Learned: A matching path string inside Agent Zero is not shared filesystem authority; the Docker bind mount itself must be revision-independent host truth and independently read back.
 Open: Exact-head CI, coordinated release host mutation/readback, Agent Zero mount diagnostics and a fresh protected 5/5 Draft-PR run remain required before claiming production-green.
 Next safe step: Open one Draft PR, require terminal exact-head gates, merge only under Owner approval, let the coordinated main release install/read back the host mount, then rerun the protected Five-Path lane and require five GitHub-verified Draft PRs.
+
+
+### 2026-09-18 — Agent Zero mount-release fixture repair
+Status: SOURCE_PATCHED; exact-head CI pending.
+Task: Repair the post-merge MCP validation failure without weakening the new Agent Zero shared-workspace mount gate, and close the CI gap that let the full MCP suite run only after merge.
+Decisions: Keep the production mount preflight unchanged; make the legacy unexpected-runtime-readback fixture satisfy the verified no-op mount boundary so it still reaches the intentionally injected `OSError`; run the read-only MCP validator on pull requests while keeping image publication and VPS effects hard-gated to `push/main` or explicit main-only dispatch.
+Touched surfaces: coordinated-release fixture, MCP workflow trigger, MCP CI safety regression.
+Evidence: Memory pre-read completed on `main@18cd4baefeb256da0a4ea9b1794738e529d6ff94`; MCP run `35353879350` compiled all changed Python and passed 1053 tests with exactly one fixture failure, `test_unexpected_runtime_readback_failure_stays_redacted_and_retains_mutation`; bounded log artifact `10550429792` SHA-256 `46c7b2e8788068e37cad27340b24cca06a7c2af5267b8c2f1b725ec559a46c41`. Coordinated release `35353879180` stopped before target-system mutation because the exact-revision MCP image was not published.
+Learned: Introducing an earlier fail-closed preflight changes the prerequisites of tests that intentionally inject later-stage failures; those fixtures must satisfy the earlier boundary rather than bypass or remove it. A release-critical validator that runs only after merge leaves an avoidable evidence gap, so the same non-mutating suite must execute on the PR head.
+Open: Exact-head PR gates including the full MCP validator, a successful main MCP image, coordinated target-system receipt, mount readback, and fresh protected Five-Path proof remain required.
+Next safe step: Require terminal exact-head PR and MCP-validator evidence, merge under Owner approval only when green, then let the main MCP/coordinated release rerun the real host-mount path.

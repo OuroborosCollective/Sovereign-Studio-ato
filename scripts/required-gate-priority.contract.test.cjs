@@ -51,6 +51,7 @@ test('only required workflows and one bounded owner recovery lane receive direct
       'integration-plan-lane-gate.yml',
       'release-verification.yml',
       'sovereign-agent-backend.yml',
+      'sovereign-chatgpt-mcp.yml',
       'sovereign-continuity-gate.yml',
       'sovereign-desktop-worker.yml',
     ],
