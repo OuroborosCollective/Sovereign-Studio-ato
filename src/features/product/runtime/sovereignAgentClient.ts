@@ -21,7 +21,6 @@ export interface SovereignRepositoryExecutionInput {
   expectedHeadSha?: string;
   mission: string;
   evidenceText?: string;
-  githubAccessToken?: string;
 }
 
 export interface SovereignDesktopFrameObservation {
@@ -55,7 +54,6 @@ export interface SovereignAgentStartJobInput {
   cloneRepo?: boolean;
   stagedFiles?: readonly SovereignStagedFile[];
   testCommand?: string;
-  githubAccessToken?: string;
 }
 
 export interface SovereignToolchainStartJobInput extends SovereignAgentStartJobInput {
@@ -706,6 +704,9 @@ export class SovereignAgentClient {
   buildJobRequest(input: SovereignAgentStartJobInput): SovereignAgentJobRequest { return buildSovereignAgentJobRequest(input); }
   async startJob(input: SovereignAgentStartJobInput): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);
+    if (input.cloneRepo === true || Boolean(input.stagedFiles?.length)) {
+      throw new Error('Repository mutation requires startRepositoryExecution() and the Agent Zero A2A route.');
+    }
     const job = this.buildJobRequest(input);
     const snapshot = await requestSnapshot({
       url: endpoint(this.config.agentApiUrl, jobPath()),
@@ -716,11 +717,10 @@ export class SovereignAgentClient {
         body: JSON.stringify({
           ...job,
           provisionWorkspace: input.provisionWorkspace ?? true,
-          cloneRepo: input.cloneRepo ?? true,
+          cloneRepo: false,
           ...(input.expectedHeadSha?.trim() ? { expectedHeadSha: input.expectedHeadSha.trim() } : {}),
           ...(input.stagedFiles?.length ? { stagedFiles: input.stagedFiles } : {}),
           ...(input.testCommand?.trim() ? { testCommand: input.testCommand.trim() } : {}),
-          ...(input.githubAccessToken?.trim() ? { githubAccessToken: input.githubAccessToken.trim() } : {}),
         }),
       },
       fetcher: this.fetcher,
@@ -730,6 +730,9 @@ export class SovereignAgentClient {
   }
   async startToolchainJob(input: SovereignToolchainStartJobInput): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);
+    if (input.cloneRepo === true || Boolean(input.stagedFiles?.length)) {
+      throw new Error('Repository mutation requires startRepositoryExecution() and the Agent Zero A2A route.');
+    }
     const job = this.buildJobRequest(input);
     const body = await requestObject({
       url: endpoint(this.config.agentApiUrl, '/api/user/agent/toolchain/handoff'),
@@ -741,11 +744,10 @@ export class SovereignAgentClient {
           ...job,
           evidenceText: input.evidenceText || '',
           provisionWorkspace: input.provisionWorkspace ?? true,
-          cloneRepo: input.cloneRepo ?? true,
+          cloneRepo: false,
           ...(input.expectedHeadSha?.trim() ? { expectedHeadSha: input.expectedHeadSha.trim() } : {}),
           ...(input.stagedFiles?.length ? { stagedFiles: input.stagedFiles } : {}),
           ...(input.testCommand?.trim() ? { testCommand: input.testCommand.trim() } : {}),
-          ...(input.githubAccessToken?.trim() ? { githubAccessToken: input.githubAccessToken.trim() } : {}),
         }),
       },
       fetcher: this.fetcher,
@@ -777,7 +779,6 @@ export class SovereignAgentClient {
           repositoryUrl: input.repoUrl,
           repositoryBranch: input.branch || 'main',
           ...(input.expectedHeadSha?.trim() ? { expectedHeadSha: input.expectedHeadSha.trim() } : {}),
-          ...(input.githubAccessToken?.trim() ? { githubAccessToken: input.githubAccessToken.trim() } : {}),
         }),
       },
     );
