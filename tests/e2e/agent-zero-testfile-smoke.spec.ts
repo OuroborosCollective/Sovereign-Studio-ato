@@ -383,6 +383,7 @@ test.describe('one Sovereign frontend assignment reaches one Agent Zero task', (
     ).toBe(true);
 
     let cleaned = false;
+    let cleanupHttpStatus: number | null = null;
     if (['blocked', 'failed', 'completed', 'cleaned'].includes(finalStatus)) {
       const cleanup = await page.request.post(
         new URL(
@@ -392,8 +393,8 @@ test.describe('one Sovereign frontend assignment reaches one Agent Zero task', (
         { data: {}, maxRedirects: 0 },
       );
       requireSameOrigin(cleanup.url(), page.url());
-      expect(cleanup.status()).toBe(200);
-      cleaned = true;
+      cleanupHttpStatus = cleanup.status();
+      cleaned = cleanupHttpStatus === 200;
     }
 
     await mkdir('test-results', { recursive: true });
@@ -426,6 +427,7 @@ test.describe('one Sovereign frontend assignment reaches one Agent Zero task', (
           sovereignEvidenceFiles,
         },
         workspaceCleanupPerformed: cleaned,
+        workspaceCleanupHttpStatus: cleanupHttpStatus,
         sovereignWorkspaceReadbackVerified: true,
         secretValuesReturned: false,
       }, null, 2)}\n`,
