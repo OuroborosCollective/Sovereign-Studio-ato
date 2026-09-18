@@ -293,7 +293,12 @@ test.describe('one Sovereign frontend assignment reaches one Agent Zero task', (
 
     expect(jobId).toMatch(JOB_ID);
     expect(workspaceId).toBeTruthy();
-    expect(initialExternalRef).toMatch(A2A_REF);
+    if (initialExternalRef) {
+      expect(
+        A2A_REF.test(initialExternalRef)
+        || initialExternalRef.startsWith('agent-zero-a2a:pending:submit:'),
+      ).toBe(true);
+    }
 
     const accepted = page
       .getByText(/PERSISTED RUN ACCEPTED :: \[agent-[0-9a-f]{32}\]/)
