@@ -29,6 +29,21 @@ const PLACEHOLDER_RE = /\b(mock|stub|placeholder|fake implementation)\b/i;
 const SENSITIVE_RE = /\b(api[_-]?key|access[_-]?key|private[_-]?key|password|secret|token)\b\s*[:=]/i;
 const RISKY_IMPORT_RE = /\b(eval\(|child_process|execSync|Function\()/;
 
+// Hoisted TextEncoder instance to measure UTF-8 string byte length without Blob allocations.
+const textEncoder = new TextEncoder();
+
+/**
+ * Checks whether content byte size exceeds MAX_CONTENT_BYTES without instantiating DOM Blob objects.
+ * - If length > 250_000, UTF-8 byte count is guaranteed to exceed 250,000.
+ * - If length <= 62_500, UTF-8 byte count is guaranteed to be <= 250,000.
+ * - Otherwise, computes exact byte length via TextEncoder.
+ */
+function isOversized(content: string): boolean {
+  if (content.length > MAX_CONTENT_BYTES) return true;
+  if (content.length <= MAX_CONTENT_BYTES / 4) return false;
+  return textEncoder.encode(content).length > MAX_CONTENT_BYTES;
+}
+
 function stableId(path: string, line: number, kind: string): string {
   let hash = 0x811c9dc5;
   const input = `${path}:${line}:${kind}`;
@@ -49,28 +64,34 @@ function finding(path: string, line: number, kind: RepoContentFindingKind, sever
 
 export function scanRepoContent(snapshots: RepoContentSnapshot[]): RepoContentScanReport {
   const findings: RepoContentFinding[] = [];
+  let scannedFiles = 0;
 
   for (const snapshot of snapshots) {
     const path = snapshot.path.trim();
     const content = snapshot.content ?? '';
     if (!path || !content) continue;
-    if (new Blob([content]).size > MAX_CONTENT_BYTES) {
+    scannedFiles += 1;
+
+    // Fast-path byte check eliminates DOM Blob creation
+    if (isOversized(content)) {
       findings.push(finding(path, 1, 'large-content', 'medium', 'Selected file is larger than recommended scan size.'));
       continue;
     }
 
     const lines = content.split(/\r?\n/);
-    lines.forEach((lineText, index) => {
+    const lineCount = lines.length;
+    for (let index = 0; index < lineCount; index += 1) {
+      const lineText = lines[index];
       const line = index + 1;
       if (SENSITIVE_RE.test(lineText)) findings.push(finding(path, line, 'sensitive-marker', 'critical', lineText));
       else if (RISKY_IMPORT_RE.test(lineText)) findings.push(finding(path, line, 'risky-import', 'high', lineText));
       else if (PLACEHOLDER_RE.test(lineText)) findings.push(finding(path, line, 'placeholder', 'medium', lineText));
       else if (TODO_RE.test(lineText)) findings.push(finding(path, line, 'todo', 'low', lineText));
-    });
+    }
   }
 
   return {
-    scannedFiles: snapshots.filter((snapshot) => snapshot.path.trim() && snapshot.content).length,
+    scannedFiles,
     findings,
     summary: `${snapshots.length} selected file(s), ${findings.length} content finding(s).`,
   };
