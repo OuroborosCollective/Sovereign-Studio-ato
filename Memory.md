@@ -527,3 +527,13 @@ Evidence: Memory pre-read completed; local `git diff --check` passed; PR #1997 p
 Learned: Public readability can improve without weakening evidence boundaries when portfolio context is kept distinct from runtime truth.
 Open: This append changes the PR head, so exact-head CI must be read again before merge.
 Next safe step: Publish this single Memory entry, require terminal checks on the new exact head, then merge under Owner approval and read back `main`.
+
+### 2026-09-18 — Reload-safe Sovereign chat projection
+Status: SOURCE_PATCHED; exact-head CI and live Five-Path proof pending.
+Task: Prevent restored PostgreSQL chat history from being replaced by the onboarding empty state while independently re-verifying the deployed Sovereign Backend → Agent Zero → Draft-PR path.
+Decisions: Empty-state visibility now depends on both composer text and real restored conversation content; keep GitHub publication behind explicit user consent while retries/recovery remain server-owned and idempotent.
+Touched surfaces: `WorkbenchEmptyState.tsx`, `BuilderContainer.tsx`, focused empty-state regression.
+Evidence: Memory pre-read completed; `git diff --check` passed; deployed backend `main@a4a6ac7f9496b1c87bf6ec00b9b0018c85777b76` matches immutable digest `sha256:f5111a48654baeef4289ee6dfaabb19acd8a40e44e29ba6ddcdbdf2f680b83c0`; backend and Agent Zero containers are healthy; dedicated A2A task readback is stable but remains submitted, while a fresh protected Five-Path run `35340120654` is executing; Draft PR #1998 pre-Memory head `1ed4a8b5603cfe3fbb233ad2412f86bfa37910ff`.
+Learned: Reload UI truth and repository-execution truth are separate boundaries; a healthy container or accepted A2A task is not Draft-PR completion evidence.
+Open: Exact-head CI for #1998 and the protected Five-Path runtime verdict remain required.
+Next safe step: Publish this one Memory entry to #1998, require terminal exact-head regression/build checks, then use the Five-Path evidence to drive any further causal Agent Zero repair before merge.
