@@ -100,6 +100,12 @@ export function runtimeObservation(path: string, method: string, httpStatus: num
   const executionResolution = record(body.executionResolution);
   const returnedRunId = id(body.runId ?? run.runId ?? run.run_id, /^run-[0-9a-f]{32}$/);
   const approvals = Array.isArray(body.approvals) ? body.approvals.map(record) : [];
+  const jobEvents = Array.isArray(job.events)
+    ? job.events.map(record)
+    : Array.isArray(body.events)
+      ? body.events.map(record)
+      : [];
+  const lastJobEvent = jobEvents.length > 0 ? jobEvents[jobEvents.length - 1] : {};
   return {
     route, method, httpStatus, requestedRunId, returnedRunId,
     identityMatches: requestedRunId && returnedRunId ? requestedRunId === returnedRunId : null,
@@ -109,7 +115,12 @@ export function runtimeObservation(path: string, method: string, httpStatus: num
     externalRef: boundedIdentifier(body.externalRef ?? job.externalRef),
     prState: code(body.prState ?? job.prState),
     evidenceId: id(run.evidenceId ?? body.evidenceId, /^evidence-[0-9a-f]{32}$/),
-    failureFamily: code(body.failureFamily ?? body.failure_family ?? body.blocker),
+    failureFamily: code(
+      body.failureFamily
+      ?? body.failure_family
+      ?? body.blocker
+      ?? lastJobEvent.stage,
+    ),
     nextAction: code(run.nextAction ?? run.next_action ?? body.nextAction),
     execution: {
       profileId: code(executionResolution.profileId),
@@ -131,7 +142,7 @@ export function runtimeObservation(path: string, method: string, httpStatus: num
       circuitOpen: Array.isArray(repositoryTools.openCircuits)
         ? repositoryTools.openCircuits.includes('free_single_agent') : null,
       writeConfirmed: flag(repositoryTools.writeConfirmed),
-      jobEventCount: count(job.events ?? body.events),
+      jobEventCount: jobEvents.length,
     },
     nonAuthoritativeModelHints: {
       source: 'model-output-not-runtime-proof',
