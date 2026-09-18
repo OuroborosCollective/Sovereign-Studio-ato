@@ -517,3 +517,13 @@ Evidence: Pre-read completed on `main@0fb8045f648dac351fdf4fb5a5bc8c7476257f43`,
 Learned: HTTP 202 existed only after a still-synchronous `requests.post`; `blocking:false` at Agent Zero does not make Sovereign's caller asynchronous. The current root cause is initial-submit ownership, not localhost networking, missing workspace mount or Agent Zero GitHub-token guessing.
 Open: Full Flask-backed route suite could not run in the isolated local checker because Flask is absent there; exact-head GitHub Agent Backend/Release lanes and a revision-equal deployed Frontend→pending→A2A→workspace→Draft-PR readback remain required.
 Next safe step: Create one Draft PR, require terminal exact-head CI, then merge/deploy only under explicit Owner approval and verify PatchMon/runtime revision equality plus one fresh real UI Draft-PR run.
+
+### 2026-09-18 — Public portfolio positioning
+Status: SOURCE_AND_CI_VERIFIED; final Memory-head CI and merge pending.
+Task: Improve the public README first view without changing Sovereign product/runtime truth.
+Decisions: Keep Sovereign explicitly separate as the agent-infrastructure/operational-assurance line; link Aurion, ProofFleet, ARE Agent Studio, N+1 and WASD only as portfolio context; add no unsupported metrics or deployment claims.
+Touched surfaces: `README.md`.
+Evidence: Memory pre-read completed; local `git diff --check` passed; PR #1997 pre-Memory head `9762674953c7ee32917498271a9321d72f241ae8` changed only `README.md`; Revision Guardian Evidence, Revision Guardian, Release Gate, Agent Runtime Tests, continuity-ledger and integration-plan-lane-gate all completed successfully on that head.
+Learned: Public readability can improve without weakening evidence boundaries when portfolio context is kept distinct from runtime truth.
+Open: This append changes the PR head, so exact-head CI must be read again before merge.
+Next safe step: Publish this single Memory entry, require terminal checks on the new exact head, then merge under Owner approval and read back `main`.
