@@ -368,10 +368,19 @@ test.describe('one Sovereign frontend assignment reaches one Agent Zero task', (
     const gitStatus = await toolRead(page, jobId, 'git-status', {});
     expect(String(gitStatus.tool.status ?? '')).toBe('done');
 
-    const changedFiles = Array.isArray(gitStatus.tool.changedFiles)
+    const observedChangedFiles = Array.isArray(gitStatus.tool.changedFiles)
       ? gitStatus.tool.changedFiles.map(String)
       : [];
-    expect(changedFiles).toEqual(['testfile']);
+    const sovereignEvidenceFiles = observedChangedFiles.filter(
+      (path) => path.startsWith('.security-reports/'),
+    );
+    const missionChangedFiles = observedChangedFiles.filter(
+      (path) => !path.startsWith('.security-reports/'),
+    );
+    expect(missionChangedFiles).toEqual(['testfile']);
+    expect(
+      sovereignEvidenceFiles.every((path) => path.startsWith('.security-reports/')),
+    ).toBe(true);
 
     let cleaned = false;
     if (['blocked', 'failed', 'completed', 'cleaned'].includes(finalStatus)) {
@@ -411,7 +420,11 @@ test.describe('one Sovereign frontend assignment reaches one Agent Zero task', (
           sha256: String(fileMetadata.sha256 ?? ''),
           contentEmpty: true,
         },
-        gitStatus: { changedFiles },
+        gitStatus: {
+          changedFiles: missionChangedFiles,
+          observedChangedFiles,
+          sovereignEvidenceFiles,
+        },
         workspaceCleanupPerformed: cleaned,
         sovereignWorkspaceReadbackVerified: true,
         secretValuesReturned: false,
