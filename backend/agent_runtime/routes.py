@@ -1517,19 +1517,24 @@ def register_sovereign_agent_routes(
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
-        github_token, token_error = _github_access_token_for_session(body, user_id)
-        if token_error is not None:
-            return token_error
-        payload = {**body}
-        payload.pop("githubAccessToken", None)
+        if "githubAccessToken" in body:
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-agent",
+                "execution": "repository-single-a2a",
+                "code": "GITHUB_CREDENTIAL_FORBIDDEN_ON_EXECUTION",
+                "error": (
+                    "Repository execution never accepts a Sovereign GitHub OAuth/token credential. "
+                    "Agent Zero owns repository access for implementation."
+                ),
+            }), 400
         conn = _connection()
         try:
             try:
                 job = start_repository_execution(
                     conn,
                     user_id=user_id,
-                    body=payload,
-                    github_access_token=github_token,
+                    body=body,
                     workspace_root=_workspace_root(),
                 )
             except RepositoryExecutionError as exc:
