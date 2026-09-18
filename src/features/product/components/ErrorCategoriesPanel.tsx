@@ -85,13 +85,13 @@ export const ErrorCategoriesPanel: React.FC<ErrorCategoriesPanelProps> = ({ regi
   const resolvedCount = registry.findings.length - activeFindings.length;
 
   return (
-    <section aria-label="Fehlerkategorien Übersicht" className={`rounded-2xl border border-slate-700/60 bg-slate-900 ${className}`}>
+    <section aria-labelledby="error-categories-heading" className={`rounded-2xl border border-slate-700/60 bg-slate-900 ${className}`}>
       <header className="border-b border-slate-700/70 px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <AlertCircle size={18} className="text-cyan-300" aria-hidden="true" />
             <div>
-              <h3 className="text-sm font-bold text-slate-100">Fehlerkategorien</h3>
+              <h3 id="error-categories-heading" className="text-sm font-bold text-slate-100">Fehlerkategorien</h3>
               <p className="text-[11px] text-slate-500">{summary}</p>
             </div>
           </div>
@@ -104,18 +104,18 @@ export const ErrorCategoriesPanel: React.FC<ErrorCategoriesPanelProps> = ({ regi
         </div>
       </header>
 
-      <div className="grid gap-2 p-4 sm:grid-cols-4">
+      <ul role="list" aria-label="Fehlerschweregrade Übersicht" className="grid gap-2 p-4 sm:grid-cols-4">
         {(Object.keys(bySeverity) as ScanFindingSeverity[]).map((severity) => (
-          <div
+          <li
             key={severity}
             title={`${bySeverity[severity]} ${SEVERITY_LABELS[severity]}-Findings`}
             className={`rounded-xl border p-3 ${severityClasses(severity)}`}
           >
             <div className="text-[10px] uppercase tracking-wider opacity-75">{SEVERITY_LABELS[severity]}</div>
             <div className="text-2xl font-bold">{bySeverity[severity]}</div>
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
 
       <div className="space-y-3 p-4 pt-0">
         {activeFindings.length === 0 ? (
@@ -139,24 +139,25 @@ export const ErrorCategoriesPanel: React.FC<ErrorCategoriesPanelProps> = ({ regi
                   {findings.length}
                 </span>
               </div>
-              <div className="space-y-2">
+              <ul role="list" aria-label={`Findings in Kategorie ${CATEGORY_LABELS[category]}`} className="space-y-2">
                 {findings.slice(0, 6).map((finding) => (
-                  <button
-                    key={finding.id}
-                    type="button"
-                    title={`Finding anzeigen: ${finding.title}`}
-                    onClick={() => onFindingClick?.(finding)}
-                    className="w-full rounded-lg border border-slate-700/50 bg-slate-950/40 p-2 text-left transition hover:border-cyan-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold text-slate-100">{finding.title}</span>
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] ${severityClasses(finding.severity)}`}>{SEVERITY_LABELS[finding.severity]}</span>
-                    </div>
-                    <p title={finding.filePath} className="mt-1 text-[11px] text-slate-400">{finding.filePath}</p>
-                    <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">{finding.fixTips || finding.description}</p>
-                  </button>
+                  <li key={finding.id}>
+                    <button
+                      type="button"
+                      title={`Finding anzeigen: ${finding.title}`}
+                      onClick={() => onFindingClick?.(finding)}
+                      className="w-full rounded-lg border border-slate-700/50 bg-slate-950/40 p-2 text-left transition hover:border-cyan-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-slate-100">{finding.title}</span>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${severityClasses(finding.severity)}`}>{SEVERITY_LABELS[finding.severity]}</span>
+                      </div>
+                      <p title={finding.filePath} className="mt-1 text-[11px] text-slate-400">{finding.filePath}</p>
+                      <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">{finding.fixTips || finding.description}</p>
+                    </button>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           );
         })}
