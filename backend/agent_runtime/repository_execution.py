@@ -65,6 +65,7 @@ _ALLOWED_REGRESSION_PREFIXES: Final[tuple[tuple[str, ...], ...]] = (
     ("npx", "jest"),
     ("go", "test"),
     ("cargo", "test"),
+    ("git", "diff", "--check"),
 )
 _SHELL_CONTROL_TOKENS: Final[frozenset[str]] = frozenset({"||", ";", "|", ">", ">>", "<", "<<", "&"})
 _RECONCILER_THREAD_LOCK = threading.Lock()
@@ -326,6 +327,14 @@ def _submit_pending_repository_job(
     )
 
 
+def _documentation_only_changes(changed_files: tuple[str, ...] | list[str]) -> bool:
+    normalized = tuple(str(path or "").strip().replace("\\", "/") for path in changed_files)
+    if not normalized or any(not path for path in normalized):
+        return False
+    documentation_suffixes = {".md", ".mdx", ".rst", ".txt"}
+    return all(Path(path).suffix.lower() in documentation_suffixes for path in normalized)
+
+
 def _safe_regression_commands(recommended: object) -> tuple[str, ...]:
     text = str(recommended or "").strip()
     if not text:
@@ -417,8 +426,12 @@ def _closeout_repository_job(
             "repository_closeout_janitor_critical",
         )
 
-    commands = _safe_regression_commands(
-        janitor.metadata.get("recommendedTestCommand") if isinstance(janitor.metadata, dict) else None
+    commands = (
+        ("git diff --check",)
+        if _documentation_only_changes(tuple(status_result.changed_files))
+        else _safe_regression_commands(
+            janitor.metadata.get("recommendedTestCommand") if isinstance(janitor.metadata, dict) else None
+        )
     )
     test_outputs: list[str] = []
     if commands:
