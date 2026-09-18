@@ -2,8 +2,7 @@ name: Agent Zero Testfile Smoke
 
 on:
   push:
-    branches:
-      - sovereign/chatgpt/agent-zero-testfile-smoke
+    branches: [main]
     paths:
       - 'tools/sovereign-chatgpt-mcp/deploy/agent-zero-testfile-smoke.sh'
       - '.github/workflows/agent-zero-testfile-smoke.yml'
