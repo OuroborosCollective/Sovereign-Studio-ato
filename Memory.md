@@ -527,3 +527,14 @@ Evidence: Memory pre-read completed; local `git diff --check` passed; PR #1997 p
 Learned: Public readability can improve without weakening evidence boundaries when portfolio context is kept distinct from runtime truth.
 Open: This append changes the PR head, so exact-head CI must be read again before merge.
 Next safe step: Publish this single Memory entry, require terminal checks on the new exact head, then merge under Owner approval and read back `main`.
+
+
+### 2026-09-18 — Agent Zero shared-workspace host mount repair
+Status: SOURCE_PATCHED; exact-head CI and target-system runtime proof pending.
+Task: Repair the repeated protected Five-Path Draft-PR failure after run `35340120654` attempt 2 reached a real Agent Zero task and closeout claim but still exposed zero changed files.
+Decisions: Make `/opt/sovereign-agent-workspaces` the single host truth and bind it read-write into Agent Zero at `/a0/sovereign-workspaces`; the coordinated release reconciler may recreate only the existing Compose-managed Agent Zero service through its observed Compose project/config identity, with `--no-build --pull never`, then require Docker mount readback before release success. Keep Draft-PR publication behind explicit user consent and project the bounded final repository event stage instead of raw blocker text.
+Touched surfaces: coordinated release reconciler, Agent Zero diagnostics/canary mount gate, live Five-Path runtime observation, focused regressions.
+Evidence: Memory pre-read completed; Five-Path attempt 2 artifact `10550596042` / SHA-256 `ed7a156a61c89ce37d1f78d71585dcdeabf5de3f53e6c6b89120457dd7451e3e` records job `agent-6334c87d50144bfcbcf1d0d869bbf0d8`, Agent Zero task `ffbd456a-b978-4c07-a0b1-8f4b543d987c`, a real closeout claim and final blocked state with `changedFileCount=0`; changing Agent Zero's default working directory alone did not alter this result.
+Learned: A matching path string inside Agent Zero is not shared filesystem authority; the Docker bind mount itself must be revision-independent host truth and independently read back.
+Open: Exact-head CI, coordinated release host mutation/readback, Agent Zero mount diagnostics and a fresh protected 5/5 Draft-PR run remain required before claiming production-green.
+Next safe step: Open one Draft PR, require terminal exact-head gates, merge only under Owner approval, let the coordinated main release install/read back the host mount, then rerun the protected Five-Path lane and require five GitHub-verified Draft PRs.

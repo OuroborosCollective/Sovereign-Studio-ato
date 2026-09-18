@@ -138,6 +138,11 @@ BROKER_SOCKET = Path(
     )
 )
 
+AGENT_ZERO_CONTAINER = "agent-zero-xrev-agent-zero-1"
+AGENT_ZERO_WORKSPACE_HOST_ROOT = Path("/opt/sovereign-agent-workspaces")
+AGENT_ZERO_WORKSPACE_CONTAINER_ROOT = "/a0/sovereign-workspaces"
+AGENT_ZERO_OVERRIDE_FILE = STATE_DIR / "agent-zero-workspace.override.yml"
+
 class ReconcileError(RuntimeError):
     def __init__(
         self,
@@ -320,7 +325,11 @@ def _release_gate(revision: str, *, expected_runtime_readback_run_id: int | None
 
 
 def _run(
-    argv: list[str], *, timeout: int, environment: dict[str, str] | None = None
+    argv: list[str],
+    *,
+    timeout: int,
+    environment: dict[str, str] | None = None,
+    cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
@@ -330,6 +339,7 @@ def _run(
             timeout=timeout,
             check=False,
             env=environment if environment is not None else os.environ.copy(),
+            cwd=str(cwd) if cwd is not None else None,
         )
     except subprocess.TimeoutExpired as exc:
         raise ReconcileError("host_command", f"timeout:{Path(argv[0]).name}") from exc
@@ -498,6 +508,194 @@ def _container_identity(container: str, repository: str) -> dict[str, Any]:
         "immutableReference": immutable,
         "digest": immutable.split("@", 1)[1] if "@" in immutable else "",
         "imageId": image_id,
+    }
+
+
+def _agent_zero_runtime_identity() -> dict[str, Any]:
+    inspect = _run(["docker", "inspect", AGENT_ZERO_CONTAINER], timeout=30)
+    if inspect.returncode != 0:
+        return {"present": False, "container": AGENT_ZERO_CONTAINER}
+    try:
+        row = json.loads(inspect.stdout)[0]
+    except (json.JSONDecodeError, IndexError, TypeError):
+        return {"present": True, "container": AGENT_ZERO_CONTAINER, "valid": False}
+
+    config = row.get("Config") if isinstance(row.get("Config"), dict) else {}
+    labels = config.get("Labels") if isinstance(config.get("Labels"), dict) else {}
+    state = row.get("State") if isinstance(row.get("State"), dict) else {}
+    mounts = row.get("Mounts") if isinstance(row.get("Mounts"), list) else []
+
+    mount = None
+    for item in mounts:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("Destination") or "") != AGENT_ZERO_WORKSPACE_CONTAINER_ROOT:
+            continue
+        mount = {
+            "type": str(item.get("Type") or ""),
+            "source": str(item.get("Source") or ""),
+            "destination": str(item.get("Destination") or ""),
+            "readWrite": item.get("RW") is True,
+        }
+        break
+
+    project = str(labels.get("com.docker.compose.project") or "")
+    service = str(labels.get("com.docker.compose.service") or "")
+    working_dir = str(labels.get("com.docker.compose.project.working_dir") or "")
+    config_files_raw = str(labels.get("com.docker.compose.project.config_files") or "")
+    config_files = [item.strip() for item in config_files_raw.split(",") if item.strip()]
+
+    mount_verified = bool(
+        isinstance(mount, dict)
+        and mount.get("type") == "bind"
+        and mount.get("source") == str(AGENT_ZERO_WORKSPACE_HOST_ROOT)
+        and mount.get("destination") == AGENT_ZERO_WORKSPACE_CONTAINER_ROOT
+        and mount.get("readWrite") is True
+    )
+    return {
+        "present": True,
+        "valid": True,
+        "container": AGENT_ZERO_CONTAINER,
+        "containerId": str(row.get("Id") or ""),
+        "imageId": str(row.get("Image") or ""),
+        "running": state.get("Running") is True,
+        "mountVerified": mount_verified,
+        "mount": mount,
+        "compose": {
+            "project": project,
+            "service": service,
+            "workingDir": working_dir,
+            "configFiles": config_files,
+        },
+    }
+
+
+def _validate_agent_zero_compose_runtime(runtime: dict[str, Any]) -> tuple[str, str, Path, list[Path]]:
+    compose = runtime.get("compose") if isinstance(runtime.get("compose"), dict) else {}
+    project = str(compose.get("project") or "")
+    service = str(compose.get("service") or "")
+    working_dir = Path(str(compose.get("workingDir") or ""))
+    raw_config_files = compose.get("configFiles") if isinstance(compose.get("configFiles"), list) else []
+
+    name_re = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+    if not name_re.fullmatch(project) or not name_re.fullmatch(service):
+        raise ReconcileError("agent_zero_workspace_mount", "Agent Zero compose identity is invalid")
+    if not working_dir.is_absolute() or not working_dir.is_dir() or working_dir.is_symlink():
+        raise ReconcileError("agent_zero_workspace_mount", "Agent Zero compose working directory is invalid")
+
+    config_files: list[Path] = []
+    for raw in raw_config_files:
+        candidate = Path(str(raw))
+        if not candidate.is_absolute():
+            candidate = working_dir / candidate
+        if not candidate.is_file() or candidate.is_symlink():
+            raise ReconcileError("agent_zero_workspace_mount", "Agent Zero compose config file is invalid")
+        config_files.append(candidate)
+    if not config_files:
+        raise ReconcileError("agent_zero_workspace_mount", "Agent Zero compose config files are unavailable")
+    return project, service, working_dir, config_files
+
+
+def _validate_agent_zero_workspace_host_root() -> None:
+    try:
+        metadata = AGENT_ZERO_WORKSPACE_HOST_ROOT.lstat()
+    except OSError as exc:
+        raise ReconcileError("agent_zero_workspace_mount", "shared workspace host root is unavailable") from exc
+    if (
+        AGENT_ZERO_WORKSPACE_HOST_ROOT.is_symlink()
+        or not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) & 0o002
+    ):
+        raise ReconcileError("agent_zero_workspace_mount", "shared workspace host root metadata is unsafe")
+
+
+def _write_agent_zero_workspace_override(service: str) -> Path:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(STATE_DIR, 0o750)
+    payload = (
+        "services:\n"
+        f"  {json.dumps(service)}:\n"
+        "    volumes:\n"
+        "      - type: bind\n"
+        f"        source: {json.dumps(str(AGENT_ZERO_WORKSPACE_HOST_ROOT))}\n"
+        f"        target: {json.dumps(AGENT_ZERO_WORKSPACE_CONTAINER_ROOT)}\n"
+        "        read_only: false\n"
+    )
+    temporary = AGENT_ZERO_OVERRIDE_FILE.with_suffix(".tmp")
+    temporary.write_text(payload, encoding="utf-8")
+    os.chmod(temporary, 0o640)
+    temporary.replace(AGENT_ZERO_OVERRIDE_FILE)
+    return AGENT_ZERO_OVERRIDE_FILE
+
+
+def _ensure_agent_zero_workspace_mount() -> dict[str, Any]:
+    before = _agent_zero_runtime_identity()
+    if before.get("present") is not True or before.get("running") is not True:
+        raise ReconcileError(
+            "agent_zero_workspace_mount",
+            "Agent Zero container is not running",
+            safe_evidence={"agentZero": before},
+        )
+    if before.get("mountVerified") is True:
+        return {
+            "status": "ALREADY_CURRENT",
+            "mutationPerformed": False,
+            "mountVerified": True,
+            "mount": before.get("mount"),
+        }
+
+    _validate_agent_zero_workspace_host_root()
+    project, service, working_dir, config_files = _validate_agent_zero_compose_runtime(before)
+    override = _write_agent_zero_workspace_override(service)
+    command = ["docker", "compose", "-p", project]
+    for config_file in config_files:
+        command.extend(["-f", str(config_file)])
+    command.extend(
+        [
+            "-f",
+            str(override),
+            "up",
+            "-d",
+            "--no-deps",
+            "--force-recreate",
+            "--no-build",
+            "--pull",
+            "never",
+            service,
+        ]
+    )
+    completed = _run(command, timeout=300, cwd=working_dir)
+    if completed.returncode != 0:
+        output_sha = hashlib.sha256(
+            (completed.stdout + completed.stderr).encode("utf-8", errors="replace")
+        ).hexdigest()
+        raise ReconcileError(
+            "agent_zero_workspace_mount",
+            f"Agent Zero compose recreation failed;outputSha256={output_sha}",
+        )
+
+    after = _agent_zero_runtime_identity()
+    if not (
+        after.get("present") is True
+        and after.get("running") is True
+        and after.get("mountVerified") is True
+        and after.get("imageId") == before.get("imageId")
+    ):
+        raise ReconcileError(
+            "agent_zero_workspace_mount",
+            "Agent Zero shared workspace mount readback failed",
+            safe_evidence={
+                "imagePreserved": after.get("imageId") == before.get("imageId"),
+                "mountVerified": after.get("mountVerified") is True,
+            },
+        )
+    return {
+        "status": "MOUNT_REPAIRED",
+        "mutationPerformed": True,
+        "mountVerified": True,
+        "imagePreserved": True,
+        "containerRecreated": after.get("containerId") != before.get("containerId"),
+        "mount": after.get("mount"),
     }
 
 
@@ -901,6 +1099,7 @@ def _toolchain_identity(revision: str) -> dict[str, Any]:
 def _runtime_readback(revision: str, backend: dict[str, str], mcp: dict[str, str]) -> dict[str, Any]:
     backend_runtime = _container_identity("sovereign-backend", BACKEND_REPOSITORY)
     mcp_runtime = _container_identity("sovereign-chatgpt-mcp", MCP_REPOSITORY)
+    agent_zero_runtime = _agent_zero_runtime_identity()
     toolchain_runtime = _toolchain_identity(revision)
     if not (
         backend_runtime.get("running") is True
@@ -921,6 +1120,15 @@ def _runtime_readback(revision: str, backend: dict[str, str], mcp: dict[str, str
             "toolchain revision, service, or evidence-service parity failed",
             safe_evidence={"toolchain": toolchain_runtime},
         )
+    if not (
+        agent_zero_runtime.get("running") is True
+        and agent_zero_runtime.get("mountVerified") is True
+    ):
+        raise ReconcileError(
+            "runtime_readback",
+            "Agent Zero shared workspace mount is not verified",
+            safe_evidence={"agentZero": agent_zero_runtime},
+        )
     broker = _broker_call("broker_health", {})
     if broker.get("status") != "BROKER_READY":
         raise ReconcileError("runtime_readback", "broker is not ready")
@@ -934,6 +1142,7 @@ def _runtime_readback(revision: str, backend: dict[str, str], mcp: dict[str, str
     return {
         "backend": backend_runtime,
         "mcp": mcp_runtime,
+        "agentZero": agent_zero_runtime,
         "toolchain": toolchain_runtime,
         "broker": {
             "status": broker.get("status"),
@@ -1178,12 +1387,19 @@ def reconcile() -> dict[str, Any]:
             **failure_receipt,
         )
 
+    agent_zero_workspace: dict[str, Any] = {
+        "status": "NOT_CHECKED",
+        "mutationPerformed": False,
+        "mountVerified": False,
+    }
     try:
+        agent_zero_workspace = _ensure_agent_zero_workspace_mount()
         runtime = _runtime_readback(revision, backend_image, mcp_image)
     except Exception as exc:
         mutation_performed = bool(
             backend_deploy.get("mutationPerformed") is True
             or mcp_update.get("mutationPerformed") is True
+            or agent_zero_workspace.get("mutationPerformed") is True
         )
         if isinstance(exc, ReconcileError):
             runtime_failure = {
@@ -1212,6 +1428,7 @@ def reconcile() -> dict[str, Any]:
             previousBackend=previous_backend,
             backendDeploy=backend_deploy,
             mcpUpdate=mcp_update,
+            agentZeroWorkspace=agent_zero_workspace,
             runtimeReadback=runtime_failure,
             mutationEvidenceStatus="PERFORMED" if mutation_performed else "NOT_PERFORMED",
             mutationPerformed=mutation_performed,
@@ -1226,8 +1443,13 @@ def reconcile() -> dict[str, Any]:
         mcpImage=mcp_image,
         backendDeploy=backend_deploy,
         mcpUpdate=mcp_update,
+        agentZeroWorkspace=agent_zero_workspace,
         runtime=runtime,
-        mutationPerformed=bool(backend_changed or mcp_changed),
+        mutationPerformed=bool(
+            backend_changed
+            or mcp_changed
+            or agent_zero_workspace.get("mutationPerformed") is True
+        ),
         retryable=False,
         expectedScope=scope,
         operatorSource=operator_source,

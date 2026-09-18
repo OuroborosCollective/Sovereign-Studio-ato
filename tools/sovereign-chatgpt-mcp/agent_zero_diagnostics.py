@@ -19,6 +19,8 @@ AGENT_ZERO = "agent-zero-xrev-agent-zero-1"
 # docker exec does not source that activation script, so invoke the same fixed
 # interpreter directly instead of relying on the container's ambient PATH.
 AGENT_ZERO_PYTHON = "/opt/venv-a0/bin/python"
+AGENT_ZERO_WORKSPACE_HOST_ROOT = "/opt/sovereign-agent-workspaces"
+AGENT_ZERO_WORKSPACE_CONTAINER_ROOT = "/a0/sovereign-workspaces"
 EVIDENCE_ROOT = Path("/opt/sovereign-chatgpt-tools/runtime-evidence")
 TERMINAL = {"completed", "failed", "canceled", "rejected"}
 RECEIPT_NAME = re.compile(r"^agent-zero-canary-([0-9a-f]{32})\.json$")
@@ -55,6 +57,33 @@ class AgentZeroDiagnosticsRuntime:
         revision = value.get("revision")
         value["revision"] = revision if isinstance(revision, str) and SHA.fullmatch(revision) else None
         return value
+
+    def _workspace_mount(self, identity):
+        mounts = self._run([
+            "docker", "inspect", "--format", "{{json .Mounts}}", identity["id"],
+        ])
+        if not isinstance(mounts, list):
+            raise RuntimeError("AGENT_ZERO_SHARED_WORKSPACE_MOUNT_INVALID")
+        for item in mounts:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("Destination") or "") != AGENT_ZERO_WORKSPACE_CONTAINER_ROOT:
+                continue
+            verified = bool(
+                item.get("Type") == "bind"
+                and item.get("Source") == AGENT_ZERO_WORKSPACE_HOST_ROOT
+                and item.get("RW") is True
+            )
+            if not verified:
+                break
+            return {
+                "type": "bind",
+                "source": AGENT_ZERO_WORKSPACE_HOST_ROOT,
+                "destination": AGENT_ZERO_WORKSPACE_CONTAINER_ROOT,
+                "readWrite": True,
+                "verified": True,
+            }
+        raise RuntimeError("AGENT_ZERO_SHARED_WORKSPACE_MOUNT_MISSING")
 
     def _bound_backend(self, revision, digest):
         if not SHA.fullmatch(revision) or not DIGEST.fullmatch(digest):
@@ -94,8 +123,11 @@ class AgentZeroDiagnosticsRuntime:
                 return result
             stage = "bind-agent-zero-runtime"
             agent_zero = self._identity(AGENT_ZERO)
+            stage = "verify-agent-zero-shared-workspace"
+            workspace_mount = self._workspace_mount(agent_zero)
             stage = "probe-agent-zero-runtime"
             result["agentZeroPackages"] = self._probe(agent_zero, "agent-zero")
+            result["agentZeroWorkspaceMount"] = workspace_mount
             stage = "stability-readback"
             if self._identity(BACKEND) != backend or self._identity(AGENT_ZERO) != agent_zero:
                 return {**blocked("RUNTIME_CHANGED_DURING_DIAGNOSTIC"),
@@ -250,6 +282,7 @@ class AgentZeroDiagnosticsRuntime:
         try:
             backend = self._bound_backend(expected_revision, expected_image_digest)
             agent_zero = self._identity(AGENT_ZERO)
+            self._workspace_mount(agent_zero)
             binding = {"backend": backend, "agentZero": agent_zero,
                        "revision": expected_revision, "digest": expected_image_digest}
             fd = self._root_fd()
