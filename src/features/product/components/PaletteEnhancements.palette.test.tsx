@@ -865,7 +865,7 @@ describe('Palette Accessibility Enhancements', () => {
   });
 
   describe('ErrorCategoriesPanel Accessibility and Hover Discoverability Enhancements', () => {
-    it('renders with section aria-label and native hover tooltips on badges, cards, and buttons', () => {
+    it('renders with section aria-labelledby, semantic lists, and focus ring styles', () => {
       const mockRegistry = {
         findings: [
           {
@@ -900,8 +900,15 @@ describe('Palette Accessibility Enhancements', () => {
 
       render(<ErrorCategoriesPanel registry={mockRegistry} onFindingClick={onFindingClick} />);
 
-      const section = screen.getByRole('region', { name: 'Fehlerkategorien Übersicht' });
+      const section = screen.getByRole('region', { name: 'Fehlerkategorien' });
       expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', 'error-categories-heading');
+
+      const severityList = screen.getByRole('list', { name: 'Fehlerschweregrade Übersicht' });
+      expect(severityList).toBeInTheDocument();
+
+      const categoryFindingsList = screen.getByRole('list', { name: 'Findings in Kategorie TypeScript' });
+      expect(categoryFindingsList).toBeInTheDocument();
 
       const statusBadge = screen.getByText('1 aktiv · 1 gelöst');
       expect(statusBadge).toHaveAttribute('title', '1 aktive Findings, 1 gelöst');
