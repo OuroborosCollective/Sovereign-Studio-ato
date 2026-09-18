@@ -1,0 +1,93 @@
+name: Agent Zero Testfile Smoke
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/agent-zero-testfile-smoke
+    paths:
+      - 'tools/sovereign-chatgpt-mcp/deploy/agent-zero-testfile-smoke.sh'
+      - '.github/workflows/agent-zero-testfile-smoke.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-zero-testfile-smoke
+  cancel-in-progress: false
+
+jobs:
+  testfile-smoke:
+    name: Agent Zero creates empty root testfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact diagnostic revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact revision and shell syntax
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          bash -n tools/sovereign-chatgpt-mcp/deploy/agent-zero-testfile-smoke.sh
+
+      - name: Run disposable Agent Zero A2A testfile mission on pinned VPS
+        env:
+          RUNTIME_READBACK_SSH_PRIVATE_KEY: ${{ secrets.SOVEREIGN_RUNTIME_READBACK_SSH_PRIVATE_KEY }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$RUNTIME_READBACK_SSH_PRIVATE_KEY"
+          ssh_dir="$(mktemp -d)"
+          trap 'rm -rf "$ssh_dir"' EXIT
+          install -m 0600 /dev/null "$ssh_dir/id_ed25519"
+          printf '%s\n' "$RUNTIME_READBACK_SSH_PRIVATE_KEY" > "$ssh_dir/id_ed25519"
+          printf '%s\n' '46.202.154.25 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIVZLyqUD5nlHXfk1sRA0v829TiZyxa5Bs4AS/G8eWLv' > "$ssh_dir/known_hosts"
+          chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          test "$(ssh-keygen -lf "$ssh_dir/known_hosts" | awk '{print $2}')" = 'SHA256:pskBohJoTx/V3iCPaD9m1sW1vchvhvGc89lKnX0RocQ'
+
+          mkdir -p .sovereign-evidence
+          ssh \
+            -i "$ssh_dir/id_ed25519" \
+            -o BatchMode=yes \
+            -o ClearAllForwardings=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -o GlobalKnownHostsFile=/dev/null \
+            -o HostKeyAlgorithms=ssh-ed25519 \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=30 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=20 \
+            -o TCPKeepAlive=yes \
+            root@46.202.154.25 \
+            "GITHUB_RUN_ID='$GITHUB_RUN_ID' bash -s" \
+            < tools/sovereign-chatgpt-mcp/deploy/agent-zero-testfile-smoke.sh \
+            | tee .sovereign-evidence/agent-zero-testfile-smoke.json
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          receipt = json.loads(Path('.sovereign-evidence/agent-zero-testfile-smoke.json').read_text('utf-8'))
+          assert receipt['ok'] is True
+          assert receipt['status'] == 'AGENT_ZERO_TESTFILE_SMOKE_VERIFIED'
+          assert receipt['taskState'] == 'completed'
+          assert receipt['changedFile'] == 'testfile'
+          assert receipt['fileSizeBytes'] == 0
+          assert receipt['hostReadbackVerified'] is True
+          assert receipt['backendReadbackVerified'] is True
+          assert receipt['agentZeroReadbackVerified'] is True
+          assert receipt['gitStatusVerified'] is True
+          assert receipt['secretValuesReturned'] is False
+          PY
+
+      - name: Upload bounded testfile evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: agent-zero-testfile-smoke-${{ github.run_id }}
+          path: .sovereign-evidence/agent-zero-testfile-smoke.json
+          if-no-files-found: error
+          retention-days: 7
