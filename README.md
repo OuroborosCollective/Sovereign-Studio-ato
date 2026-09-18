@@ -10,7 +10,25 @@
 [![GitHub Issues](https://img.shields.io/github/issues/OuroborosCollective/Sovereign-Studio-ato)](https://github.com/OuroborosCollective/Sovereign-Studio-ato/issues)
 [![GitHub PRs](https://img.shields.io/github/issues-pr/OuroborosCollective/Sovereign-Studio-ato)](https://github.com/OuroborosCollective/Sovereign-Studio-ato/pulls)
 
-Sovereign Studio ATO is an Android-first NoCode/AI service and agent workbench for controlled work on real repositories and connected runtime systems. The permanent primary product surface is the Live Workspace Monitor; a compact embedded communication dock preserves natural-language conversation without restoring the legacy chat-first body.
+Sovereign Studio ATO is an **Android-first, evidence-first agent engineering workbench** for controlled work on real repositories and connected runtime systems. It combines a React/Vite/Capacitor product surface, typed execution boundaries, an agent runtime, GitHub/MCP operations and independent target-system readback.
+
+The engineering goal is simple to state and difficult to fake: **model output is not execution evidence, a successful tool call is not deployment proof, and a green UI is not runtime truth.** Sovereign keeps intent, execution, projection, evidence and verification as separate contracts so automation can be inspected instead of merely trusted.
+
+### What this repository demonstrates
+
+| Engineering surface | Repository focus |
+| --- | --- |
+| **Agent infrastructure** | bounded jobs, tasks, tools, consent/policy gates and recovery |
+| **Verifiable automation** | revision-bound evidence, independent readback and fail-closed completion states |
+| **Repository operations** | GitHub/PR/workflow tooling, isolated workspaces and guarded mutations |
+| **Runtime operations** | container, deployment, database and fleet evidence without UI-generated truth |
+| **Cross-platform product** | React + Vite web surface with Capacitor Android packaging |
+
+The permanent primary product surface is the **Live Workspace Monitor**; a compact embedded communication dock preserves natural-language interaction while keeping observable work and evidence in view.
+
+### OuroborosCollective portfolio context
+
+Sovereign Studio ATO is the **agent-infrastructure and operational-assurance** line of the wider OuroborosCollective portfolio. It is intentionally separate from the game/simulation authority of [Echoes of Aurion](https://github.com/OuroborosCollective/Echoes_of_Aurion) and from the learning experiments in [ARE Agent Studio](https://github.com/OuroborosCollective/ARE_AGENT_STUDIO). Related public work includes [ProofFleet](https://github.com/OuroborosCollective/Prooffleet), [SovAreAgentn1](https://github.com/OuroborosCollective/SovAreAgentn1) and the deterministic Arelorian research lineage in [WASD](https://github.com/OuroborosCollective/Wasd).
 
 > [!IMPORTANT]
 > **Proprietary software — all rights reserved.** Sovereign-Studio-ato is not open source. Use, execution, copying, modification, coding, adaptation, derivative works, model training, deployment, hosting, distribution or commercialization require prior express written permission from Thomas Markgraf for himself and OuroborosCollective. Third-party components retain their own licenses. See [LICENSE](LICENSE).
