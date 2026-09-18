@@ -2,7 +2,7 @@ name: Sovereign E2E Smoke
 
 on:
   push:
-    branches: [main, develop, 'feature/**', 'sovereign/chatgpt/agent-zero-testfile-smoke']
+    branches: [main, develop, 'feature/**']
     paths:
       - 'src/**'
       - 'scripts/**'
@@ -20,11 +20,6 @@ on:
       live_five_path:
         description: 'Run five real first-user paths through verified Draft PR creation'
         required: true
-        type: boolean
-        default: false
-      live_testfile_smoke:
-        description: 'Run one Sovereign UI to Agent Zero empty-testfile mutation proof'
-        required: false
         type: boolean
         default: false
 
@@ -94,120 +89,6 @@ jobs:
             echo "- Browser Gate: pnpm run test:e2e (Playwright smoke tests)"
             echo "- Legacy RN path retired: sovereign-studio-rn/** is no longer required"
           } >> "$GITHUB_STEP_SUMMARY"
-
-
-  live-agent-zero-testfile-smoke:
-    name: Sovereign UI → Agent Zero empty testfile
-    if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.live_testfile_smoke == true) ||
-      (github.event_name == 'push' &&
-       github.ref == 'refs/heads/sovereign/chatgpt/agent-zero-testfile-smoke')
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    permissions:
-      contents: read
-    env:
-      SOVEREIGN_E2E_LIVE: '1'
-      SOVEREIGN_E2E_TESTFILE_SMOKE: '1'
-      SOVEREIGN_E2E_ACCOUNT_KEY: ${{ secrets.SOVEREIGN_E2E_ACCOUNT_KEY }}
-      SOVEREIGN_E2E_GITHUB_TOKEN: ${{ github.token }}
-      SOVEREIGN_E2E_REPO_URL: https://github.com/${{ github.repository }}
-      SOVEREIGN_E2E_APP_URL: https://127.0.0.1:3000
-      SOVEREIGN_E2E_BACKEND_PROXY_TARGET: https://sovereign-backend.arelorian.de
-      VITE_SOVEREIGN_AGENT_API_URL: https://127.0.0.1:3000
-      VITE_ADMIN_API_BASE: https://127.0.0.1:3000
-
-    steps:
-      - name: Checkout diagnostic UI revision
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Resolve exact production main revision
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          git fetch --no-tags --depth=1 origin main
-          main_revision="$(git rev-parse origin/main)"
-          [[ "$main_revision" =~ ^[0-9a-f]{40}$ ]]
-          echo "SOVEREIGN_E2E_REVISION=$main_revision" >> "$GITHUB_ENV"
-
-      - name: Prepare isolated HTTPS preview trust
-        shell: bash
-        run: bash scripts/prepare-live-e2e-tls.sh
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install dependencies
-        shell: bash
-        run: pnpm install --frozen-lockfile
-
-      - name: Build diagnostic UI with real Sovereign route
-        shell: bash
-        run: pnpm run build:web
-
-      - name: Install Chromium
-        shell: bash
-        run: pnpm exec playwright install chromium --with-deps
-
-      - name: Run Sovereign UI testfile mutation proof
-        shell: bash
-        run: |
-          rm -f test-results/agent-zero-testfile-ui-evidence.json test-results/live-safe-reporter.json
-          pnpm exec playwright test tests/e2e/five-draft-pr-paths.spec.ts \
-            --grep "Sovereign UI testfile smoke" \
-            --project=chromium \
-            --workers=1 \
-            --reporter=./tests/e2e/helpers/live-safe-reporter.ts
-
-      - name: Verify bounded UI mutation receipt
-        shell: bash
-        run: |
-          node - <<'NODE'
-          const fs = require('fs');
-          const p = 'test-results/agent-zero-testfile-ui-evidence.json';
-          const value = JSON.parse(fs.readFileSync(p, 'utf8'));
-          if (value.sovereignWorkspaceReadback !== true) throw new Error('SOVEREIGN_WORKSPACE_READBACK_MISSING');
-          if (value.filePath !== 'testfile' || value.fileSizeBytes !== 0) throw new Error('TESTFILE_READBACK_INVALID');
-          if (value.draftPrRequested !== false) throw new Error('UNEXPECTED_DRAFT_PR_EFFECT');
-          if (value.secretValuesReturned !== false) throw new Error('SECRET_RETURN_CONTRACT_INVALID');
-          if (!/^agent-[0-9a-f]{32}$/.test(String(value.jobId || ''))) throw new Error('JOB_ID_INVALID');
-          if (!/^agent-zero-a2a:[A-Za-z0-9._:-]{1,200}$/.test(String(value.externalRef || ''))) throw new Error('A2A_REF_INVALID');
-          console.log(JSON.stringify({
-            ok: true,
-            status: 'SOVEREIGN_UI_AGENT_ZERO_TESTFILE_VERIFIED',
-            sourceRevision: value.sourceRevision,
-            jobId: value.jobId,
-            workspaceId: value.workspaceId,
-            filePath: value.filePath,
-            fileSizeBytes: value.fileSizeBytes,
-            sovereignWorkspaceReadback: value.sovereignWorkspaceReadback,
-            draftPrRequested: value.draftPrRequested,
-            secretValuesReturned: false,
-          }));
-          NODE
-
-      - name: Upload Sovereign UI testfile evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sovereign-ui-agent-zero-testfile-${{ github.run_id }}
-          path: |
-            test-results/agent-zero-testfile-ui-evidence.json
-            test-results/live-safe-reporter.json
-          if-no-files-found: error
-          retention-days: 7
-
 
   live-five-path-draft-pr:
     name: Five Real UI Paths to Draft PR
