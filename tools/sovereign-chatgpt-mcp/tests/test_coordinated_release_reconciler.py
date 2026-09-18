@@ -596,6 +596,15 @@ def test_unexpected_runtime_readback_failure_stays_redacted_and_retains_mutation
         "_deploy_mcp_from_ci_scope",
         lambda *_args, **_kwargs: {"status": "DEPLOYED", "revision": scope["revision"]},
     )
+    monkeypatch.setattr(
+        module,
+        "_ensure_agent_zero_workspace_mount",
+        lambda: {
+            "status": "ALREADY_CURRENT",
+            "mutationPerformed": False,
+            "mountVerified": True,
+        },
+    )
     raw_secret = "private-broker-error-detail"
     monkeypatch.setattr(
         module,
