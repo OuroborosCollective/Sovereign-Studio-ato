@@ -1,0 +1,101 @@
+name: Agent Zero Shared Workspace Mount
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/sovereign-chatgpt-mcp/deploy/reconcile-agent-zero-workspace-mount.sh'
+      - '.github/workflows/agent-zero-shared-workspace-mount.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: agent-zero-shared-workspace-mount
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: Reconcile Agent Zero shared workspace mount
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment:
+      name: production
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact checked-out revision
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Reconcile pinned VPS Agent Zero workspace mount
+        env:
+          RUNTIME_READBACK_SSH_PRIVATE_KEY: ${{ secrets.SOVEREIGN_RUNTIME_READBACK_SSH_PRIVATE_KEY }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$RUNTIME_READBACK_SSH_PRIVATE_KEY"
+          ssh_dir="$(mktemp -d)"
+          trap 'rm -rf "$ssh_dir"' EXIT
+          install -m 0600 /dev/null "$ssh_dir/id_ed25519"
+          printf '%s\n' "$RUNTIME_READBACK_SSH_PRIVATE_KEY" > "$ssh_dir/id_ed25519"
+          printf '%s\n' '46.202.154.25 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIVZLyqUD5nlHXfk1sRA0v829TiZyxa5Bs4AS/G8eWLv' > "$ssh_dir/known_hosts"
+          chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          test "$(ssh-keygen -lf "$ssh_dir/known_hosts" | awk '{print $2}')" = 'SHA256:pskBohJoTx/V3iCPaD9m1sW1vchvhvGc89lKnX0RocQ'
+
+          mkdir -p .sovereign-evidence
+          ssh \
+            -i "$ssh_dir/id_ed25519" \
+            -o BatchMode=yes \
+            -o ClearAllForwardings=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -o GlobalKnownHostsFile=/dev/null \
+            -o HostKeyAlgorithms=ssh-ed25519 \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=30 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=20 \
+            -o TCPKeepAlive=yes \
+            root@46.202.154.25 \
+            'bash -s' \
+            < tools/sovereign-chatgpt-mcp/deploy/reconcile-agent-zero-workspace-mount.sh \
+            | tee .sovereign-evidence/agent-zero-shared-workspace-mount.json
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          receipt = json.loads(Path('.sovereign-evidence/agent-zero-shared-workspace-mount.json').read_text('utf-8'))
+          assert receipt == {
+              'ok': True,
+              'status': 'AGENT_ZERO_SHARED_WORKSPACE_MOUNT_VERIFIED',
+              'hostRoot': '/opt/sovereign-agent-workspaces',
+              'backendRoot': '/var/lib/sovereign-agent/workspaces',
+              'agentZeroRoot': '/a0/sovereign-workspaces',
+              'canaryReadbackVerified': True,
+              'cleanupVerified': True,
+              'secretValuesReturned': False,
+          }
+          PY
+
+      - name: Upload mount reconciliation receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: agent-zero-shared-workspace-mount-${{ github.run_id }}
+          path: .sovereign-evidence/agent-zero-shared-workspace-mount.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Dispatch protected Five-Path runtime proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          gh workflow run e2e-testing.yml --ref main -f live_five_path=true
