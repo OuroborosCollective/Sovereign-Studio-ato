@@ -2,9 +2,10 @@ name: Agent Zero Testfile Smoke
 
 on:
   push:
-    branches: [main]
+    branches:
+      - sovereign/chatgpt/agent-zero-testfile-smoke
     paths:
-      - 'tools/sovereign-chatgpt-mcp/deploy/agent-zero-testfile-smoke.sh'
+      - 'tests/e2e/agent-zero-testfile-smoke.spec.ts'
       - '.github/workflows/agent-zero-testfile-smoke.yml'
 
 permissions:
@@ -12,83 +13,104 @@ permissions:
 
 concurrency:
   group: agent-zero-testfile-smoke
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
-  testfile-smoke:
-    name: Agent Zero creates empty root testfile
+  single-frontend-assignment:
+    name: One Sovereign UI assignment to Agent Zero
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment:
-      name: production-runtime-readback
+    timeout-minutes: 20
+    env:
+      NODE_VERSION: 22
+      PNPM_VERSION: 9.12.2
+      CI: true
+      SOVEREIGN_E2E_LIVE: '1'
+      SOVEREIGN_E2E_REVISION: 9e9782f858c53c4bcd2fdd109789a39be1379f72
+      SOVEREIGN_E2E_ACCOUNT_KEY: ${{ secrets.SOVEREIGN_E2E_ACCOUNT_KEY }}
+      SOVEREIGN_E2E_REPO_URL: https://github.com/${{ github.repository }}
+      SOVEREIGN_E2E_APP_URL: https://127.0.0.1:3000
+      SOVEREIGN_E2E_BACKEND_PROXY_TARGET: https://sovereign-backend.arelorian.de
+      VITE_SOVEREIGN_AGENT_API_URL: https://127.0.0.1:3000
+      VITE_ADMIN_API_BASE: https://127.0.0.1:3000
+
     steps:
-      - name: Checkout exact diagnostic revision
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
           fetch-depth: 1
 
-      - name: Verify exact revision and shell syntax
+      - name: Confirm deployed backend source revision
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          bash -n tools/sovereign-chatgpt-mcp/deploy/agent-zero-testfile-smoke.sh
+          [[ "$SOVEREIGN_E2E_REVISION" =~ ^[0-9a-f]{40}$ ]]
 
-      - name: Run disposable Agent Zero A2A testfile mission on pinned VPS
-        env:
-          RUNTIME_READBACK_SSH_PRIVATE_KEY: ${{ secrets.SOVEREIGN_RUNTIME_READBACK_SSH_PRIVATE_KEY }}
+      - name: Prepare isolated HTTPS preview trust
+        run: bash scripts/prepare-live-e2e-tls.sh
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install frontend test dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build current Sovereign frontend
+        run: pnpm run build:web
+
+      - name: Install Chromium
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Run exactly one frontend assignment
         run: |
           set -Eeuo pipefail
-          test -n "$RUNTIME_READBACK_SSH_PRIVATE_KEY"
-          ssh_dir="$(mktemp -d)"
-          trap 'rm -rf "$ssh_dir"' EXIT
-          install -m 0600 /dev/null "$ssh_dir/id_ed25519"
-          printf '%s\n' "$RUNTIME_READBACK_SSH_PRIVATE_KEY" > "$ssh_dir/id_ed25519"
-          printf '%s\n' '46.202.154.25 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIVZLyqUD5nlHXfk1sRA0v829TiZyxa5Bs4AS/G8eWLv' > "$ssh_dir/known_hosts"
-          chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
-          test "$(ssh-keygen -lf "$ssh_dir/known_hosts" | awk '{print $2}')" = 'SHA256:pskBohJoTx/V3iCPaD9m1sW1vchvhvGc89lKnX0RocQ'
+          rm -f test-results/agent-zero-testfile-smoke.json test-results/live-safe-reporter.json
+          pnpm exec playwright test tests/e2e/agent-zero-testfile-smoke.spec.ts \
+            --project=chromium \
+            --workers=1 \
+            --reporter=./tests/e2e/helpers/live-safe-reporter.ts
 
-          mkdir -p .sovereign-evidence
-          ssh \
-            -i "$ssh_dir/id_ed25519" \
-            -o BatchMode=yes \
-            -o ClearAllForwardings=yes \
-            -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
-            -o GlobalKnownHostsFile=/dev/null \
-            -o HostKeyAlgorithms=ssh-ed25519 \
-            -o IdentitiesOnly=yes \
-            -o ConnectTimeout=30 \
-            -o ServerAliveInterval=15 \
-            -o ServerAliveCountMax=20 \
-            -o TCPKeepAlive=yes \
-            root@46.202.154.25 \
-            "GITHUB_RUN_ID='$GITHUB_RUN_ID' bash -s" \
-            < tools/sovereign-chatgpt-mcp/deploy/agent-zero-testfile-smoke.sh \
-            | tee .sovereign-evidence/agent-zero-testfile-smoke.json
-
+      - name: Verify bounded UI-to-Agent-Zero evidence
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          if [ ! -f test-results/agent-zero-testfile-smoke.json ]; then
+            echo 'agent-zero-testfile-smoke evidence missing' >&2
+            exit 1
+          fi
           python3 - <<'PY'
           from pathlib import Path
           import json
 
-          receipt = json.loads(Path('.sovereign-evidence/agent-zero-testfile-smoke.json').read_text('utf-8'))
-          assert receipt['ok'] is True
-          assert receipt['status'] == 'AGENT_ZERO_TESTFILE_SMOKE_VERIFIED'
-          assert receipt['taskState'] == 'completed'
-          assert receipt['changedFile'] == 'testfile'
-          assert receipt['fileSizeBytes'] == 0
-          assert receipt['hostReadbackVerified'] is True
-          assert receipt['backendReadbackVerified'] is True
-          assert receipt['agentZeroReadbackVerified'] is True
-          assert receipt['gitStatusVerified'] is True
-          assert receipt['secretValuesReturned'] is False
+          evidence = json.loads(Path('test-results/agent-zero-testfile-smoke.json').read_text('utf-8'))
+          assert evidence['schemaVersion'] == 'sovereign.agent-zero-testfile-smoke.v1'
+          assert evidence['sourceRevision'] == '9e9782f858c53c4bcd2fdd109789a39be1379f72'
+          assert evidence['frontendSubmissionVerified'] is True
+          assert evidence['singleAgentModeVerified'] is True
+          assert evidence['draftPrCreated'] is False
+          assert evidence['fileReadback']['path'] == 'testfile'
+          assert evidence['fileReadback']['bytes'] == 0
+          assert evidence['fileReadback']['contentEmpty'] is True
+          assert evidence['gitStatus']['changedFiles'] == ['testfile']
+          assert evidence['sovereignWorkspaceReadbackVerified'] is True
+          assert evidence['secretValuesReturned'] is False
           PY
 
-      - name: Upload bounded testfile evidence
+      - name: Upload bounded smoke evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@v4
         with:
-          name: agent-zero-testfile-smoke-${{ github.run_id }}
-          path: .sovereign-evidence/agent-zero-testfile-smoke.json
-          if-no-files-found: error
+          name: agent-zero-testfile-ui-smoke-${{ github.run_id }}
+          path: |
+            test-results/agent-zero-testfile-smoke.json
+            test-results/live-safe-reporter.json
+          if-no-files-found: warn
           retention-days: 7
