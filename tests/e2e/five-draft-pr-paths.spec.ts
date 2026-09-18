@@ -6,6 +6,7 @@ import { runRequestObservation, runtimeObservation } from './helpers/live-runtim
 import { verifyOwnedDraftCleanup } from './helpers/live-draft-cleanup';
 
 const LIVE_ENABLED = process.env.SOVEREIGN_E2E_LIVE === '1';
+const TESTFILE_SMOKE_ENABLED = process.env.SOVEREIGN_E2E_TESTFILE_SMOKE === '1';
 const CONFIGURED_ACCOUNT_KEY = process.env.SOVEREIGN_E2E_ACCOUNT_KEY?.trim() || '';
 const GITHUB_TOKEN = process.env.SOVEREIGN_E2E_GITHUB_TOKEN?.trim() || '';
 const REPO_URL = process.env.SOVEREIGN_E2E_REPO_URL?.trim() || '';
@@ -516,4 +517,127 @@ test.describe('five canonical vNext repository runs reach independently verified
       await executeCanonicalVNextRun(page, request, pathId);
     });
   }
+});
+
+
+interface TestfileSmokeEvidence {
+  runId: string;
+  sourceRevision: string | null;
+  jobId: string;
+  workspaceId: string;
+  externalRef: string;
+  filePath: 'testfile';
+  fileSizeBytes: 0;
+  fileSha256: string;
+  sovereignWorkspaceReadback: true;
+  draftPrRequested: false;
+}
+
+async function waitForEmptyTestfileViaSovereign(page: Page, proof: LiveRunProof): Promise<TestfileSmokeEvidence> {
+  const deadline = Date.now() + 240_000;
+  while (Date.now() < deadline) {
+    const jobPath = `/api/user/agent/jobs/${encodeURIComponent(proof.execution.jobId)}`;
+    const jobResponse = await page.request.get(new URL(jobPath, page.url()).href, {
+      headers: { 'Cache-Control': 'no-store' },
+      maxRedirects: 0,
+    });
+    requireSameOrigin(jobResponse.url(), page.url());
+    if (jobResponse.status() === 200) {
+      const jobBody = await jobResponse.json().catch(() => null);
+      const observed = runtimeObservation(jobPath, 'GET', jobResponse.status(), jobBody);
+      if (observed) {
+        recordRuntimeObservation(observed);
+        expect(observed.jobId).toBe(proof.execution.jobId);
+        expect(observed.workspaceId).toBe(proof.execution.workspaceId);
+      }
+    }
+
+    const filePath = `/api/user/agent/jobs/${encodeURIComponent(proof.execution.jobId)}/tools/file`;
+    const fileResponse = await page.request.post(new URL(filePath, page.url()).href, {
+      data: { mode: 'read', path: 'testfile', maxBytes: 1 },
+      headers: { 'Cache-Control': 'no-store' },
+      maxRedirects: 0,
+    });
+    requireSameOrigin(fileResponse.url(), page.url());
+    const body = await fileResponse.json().catch(() => null) as Record<string, unknown> | null;
+    const tool = body && typeof body.tool === 'object' && body.tool !== null
+      ? body.tool as Record<string, unknown>
+      : {};
+    const metadata = typeof tool.metadata === 'object' && tool.metadata !== null
+      ? tool.metadata as Record<string, unknown>
+      : {};
+    const status = String(tool.status || '');
+    const output = typeof tool.stdout === 'string'
+      ? tool.stdout
+      : typeof tool.output === 'string'
+        ? tool.output
+        : '';
+    const sizeBytes = Number(metadata.bytes);
+    const sha256 = String(metadata.sha256 || '');
+
+    if (status === 'done' && metadata.path === 'testfile' && sizeBytes === 0) {
+      expect(output).toBe('');
+      expect(sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(proof.execution.externalRef).toMatch(A2A_TASK_REF);
+      expect(proof.execution.externalRef).not.toContain(':claim:');
+      return {
+        runId: RUN_ID,
+        sourceRevision: process.env.SOVEREIGN_E2E_REVISION || null,
+        jobId: proof.execution.jobId,
+        workspaceId: proof.execution.workspaceId,
+        externalRef: proof.execution.externalRef,
+        filePath: 'testfile',
+        fileSizeBytes: 0,
+        fileSha256: sha256,
+        sovereignWorkspaceReadback: true,
+        draftPrRequested: false,
+      };
+    }
+    await page.waitForTimeout(1_000);
+  }
+  throw new Error('LIVE_TESTFILE_NOT_OBSERVED_THROUGH_SOVEREIGN_WORKSPACE');
+}
+
+test.describe('Sovereign UI testfile smoke', () => {
+  test.skip(!TESTFILE_SMOKE_ENABLED, 'Runs only through the explicit Sovereign UI testfile smoke workflow.');
+  test.setTimeout(REPOSITORY_START_TIMEOUT_MS + 300_000);
+
+  test.beforeAll(async () => {
+    assertLiveConfig();
+    await provisionEphemeralAccountKey();
+  });
+
+  test.afterAll(async () => {
+    await revokeEphemeralAccountKey();
+  });
+
+  test('frontend → Sovereign repository tool → Agent Zero → empty root testfile → Sovereign file readback', async ({ page }) => {
+    await authenticateVNext(page);
+    const proof = await submitMission(page, [
+      `[live-testfile:${RUN_ID}] Repository: ${REPO_URL}`,
+      'Erstelle im Root des bereitgestellten Git-Worktrees genau eine leere reguläre Datei mit dem Namen testfile.',
+      'Verändere keine andere Datei. Erzeuge keinen Commit und keinen Pull Request.',
+      'Sobald testfile gespeichert ist, melde knapp: Auftrag abgeschlossen.',
+    ].join('\n'));
+
+    const readback = await waitForEmptyTestfileViaSovereign(page, proof);
+    await mkdir('test-results', { recursive: true });
+    await writeFile(
+      'test-results/agent-zero-testfile-ui-evidence.json',
+      `${JSON.stringify({
+        ...readback,
+        identity: {
+          source: identitySource,
+          accountId: ephemeralAccountId || null,
+          protectedValuePersistedInEvidence: false,
+        },
+        secretValuesReturned: false,
+      }, null, 2)}\n`,
+      'utf8',
+    );
+
+    expect(readback.sovereignWorkspaceReadback).toBe(true);
+    expect(readback.fileSizeBytes).toBe(0);
+    expect(readback.draftPrRequested).toBe(false);
+  });
 });
