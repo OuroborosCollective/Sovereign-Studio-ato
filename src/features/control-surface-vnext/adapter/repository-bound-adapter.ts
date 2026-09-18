@@ -23,6 +23,20 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+const RESUMABLE_REPOSITORY_STATUSES = new Set(['running', 'validating']);
+
+function isResumableRepositoryRun(candidate: JsonRecord): boolean {
+  const status = stringValue(candidate.status)?.toLowerCase();
+  const workspaceId = stringValue(candidate.workspaceId);
+  const externalRef = stringValue(candidate.externalRef);
+  return Boolean(
+    status
+    && RESUMABLE_REPOSITORY_STATUSES.has(status)
+    && workspaceId
+    && externalRef?.startsWith('agent-zero-a2a:'),
+  );
+}
+
 export function buildRepositoryBoundRunRequest(
   mission: string,
   agentMode: AgentMode = 'single',
@@ -110,7 +124,7 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
       if (!isRecord(candidate)) continue;
       const jobId = stringValue(candidate.jobId);
       const repoUrl = stringValue(candidate.repoUrl);
-      if (!jobId || !repoUrl) continue;
+      if (!jobId || !repoUrl || !isResumableRepositoryRun(candidate)) continue;
       return {
         jobId,
         mission: stringValue(candidate.mission),
