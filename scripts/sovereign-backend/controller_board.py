@@ -630,39 +630,6 @@ def register_controller_board_routes(
         implementation_job = None
         task_ids_by_agent: dict[str, str] = {}
         repository_toolset = None
-        try:
-        except Exception as exc:
-            conn = get_connection()
-            try:
-                handoff_state = transition_agent_run(
-                    conn,
-                    user_id=owner_id,
-                    run_id=run_id,
-                    status="FAILED_RECOVERABLE",
-                    source="agents-sdk",
-                    trace_id=trace_id,
-                    reason="Repository execution handoff failed after intent classification.",
-                    next_action="RETRY_REPOSITORY_EXECUTION_HANDOFF",
-                    evidence_kind="implementation_handoff_failure",
-                    evidence_summary="The implementation job or six-agent task graph could not be materialized.",
-                    evidence_payload={"errorType": type(exc).__name__, "rawErrorPersisted": False},
-                    agent_id="orchestrator",
-                )
-            finally:
-                _close(conn)
-            return _operator_json({
-                "ok": False,
-                "runtime": "openai-agents-sdk",
-                "runId": run_id,
-                "status": handoff_state["status"],
-                "source": handoff_state["source"],
-                "evidenceId": handoff_state["evidenceId"],
-                "receivedEvidenceId": received_state["evidenceId"],
-                "blocker": "AGENT_REPOSITORY_HANDOFF_FAILED",
-                "reason": handoff_state["reason"],
-                "nextAction": handoff_state["nextAction"],
-                "protectedValuesReturned": False,
-            }, 503)
 
         payload, status_code = execute_persisted_swarm(
             get_connection=get_connection,
