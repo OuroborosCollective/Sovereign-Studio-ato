@@ -289,7 +289,6 @@ export interface BuilderContainerProps {
     readonly repoUrl: string;
     readonly branch?: string;
     readonly expectedHeadSha?: string;
-    readonly githubAccessToken?: string;
   }) => void | Promise<void>;
   onCancelAgent?: () => void;
   /**
