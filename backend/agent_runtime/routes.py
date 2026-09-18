@@ -1564,23 +1564,32 @@ def register_sovereign_agent_routes(
             body = {}
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
-        github_token, token_error = _github_access_token_for_session(body, user_id)
-        if token_error is not None:
-            return token_error
+        if (
+            "githubAccessToken" in body
+            or body.get("cloneRepo") is True
+            or bool(body.get("stagedFiles"))
+        ):
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-agent",
+                "code": "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE",
+                "error": (
+                    "User-facing repository clone/mutation is exclusive to "
+                    "/api/user/agent/repository/run and Agent Zero A2A."
+                ),
+            }), 409
         payload = {**body}
-        payload.pop("githubAccessToken", None)
         provision_workspace = bool(body.get("provisionWorkspace", True))
-        clone_repo = bool(body.get("cloneRepo", False))
         conn = _connection()
         try:
             lifecycle = create_sovereign_agent_job(
                 conn,
                 user_id=user_id,
                 payload=payload,
-                github_access_token=github_token,
+                github_access_token=None,
                 workspace_root=_workspace_root(),
                 provision_workspace=provision_workspace,
-                clone_repo=clone_repo,
+                clone_repo=False,
             )
             status_code = 201 if lifecycle.result.status not in ("blocked", "failed") else 400
             return jsonify({
