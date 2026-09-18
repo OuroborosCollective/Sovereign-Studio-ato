@@ -62,6 +62,16 @@ function gateFailure(value: unknown): string | null {
   return typeof value === 'string' && Object.hasOwn(reasons, value) ? reasons[value] : null;
 }
 
+function lastJobFailureStage(value: unknown): string | null {
+  if (!Array.isArray(value)) return null;
+  for (let index = value.length - 1; index >= 0; index -= 1) {
+    const event = record(value[index]);
+    const stage = code(event.stage);
+    if (stage && /(?:blocked|failed|unavailable|stalled|invalid)$/i.test(stage)) return stage;
+  }
+  return null;
+}
+
 /** Secret-safe projection of the actual browser request. Mission/evidence/credentials are never serialized. */
 export function runRequestObservation(path: string, method: string, payload: unknown) {
   if (method !== 'POST') return null;
@@ -109,7 +119,7 @@ export function runtimeObservation(path: string, method: string, httpStatus: num
     externalRef: boundedIdentifier(body.externalRef ?? job.externalRef),
     prState: code(body.prState ?? job.prState),
     evidenceId: id(run.evidenceId ?? body.evidenceId, /^evidence-[0-9a-f]{32}$/),
-    failureFamily: code(body.failureFamily ?? body.failure_family ?? body.blocker),
+    failureFamily: code(body.failureFamily ?? body.failure_family ?? body.blocker) ?? lastJobFailureStage(job.events ?? body.events),
     nextAction: code(run.nextAction ?? run.next_action ?? body.nextAction),
     execution: {
       profileId: code(executionResolution.profileId),
