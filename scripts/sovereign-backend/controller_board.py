@@ -44,6 +44,7 @@ from agent_runtime.cognitive_swarm_routes import (
 from agent_runtime.cognitive_usage_billing import AgentBillingError, AgentStageBilling
 from agent_runtime.github_access import resolve_request_github_token
 from agent_runtime.job_lifecycle import create_sovereign_agent_job
+from agent_runtime.repository_execution import start_repository_execution
 from agent_runtime.fleet_supervisor import (
     FleetContractError,
     FleetPlan,
@@ -360,11 +361,37 @@ def register_controller_board_routes(
                 }, 503)
             finally:
                 _close(conn)
-            github_token = resolve_request_github_token(
-                None,
-                user_id=owner_id,
-                get_session_github_token=get_session_github_token,
-            )
+            if requested_intent_mode == "repository_execution":
+                conn = get_connection()
+                try:
+                    repository = _controller_repository()
+                    job = start_repository_execution(
+                        conn,
+                        user_id=owner_id,
+                        body={
+                            "mission": mission,
+                            "mode": "free",
+                            "agentMode": "single",
+                            "intentMode": "repository_execution",
+                            "repositoryUrl": f"https://github.com/{repository}",
+                            "repositoryBranch": "main",
+                        },
+                        workspace_root=_controller_workspace_root(),
+                    )
+                finally:
+                    _close(conn)
+                return _operator_json({
+                    "ok": job.status not in {"blocked", "failed"},
+                    "runtime": "sovereign-agent",
+                    "execution": "repository-single-a2a",
+                    "jobId": job.job_id,
+                    "workspaceId": job.workspace_id,
+                    "externalRef": job.external_ref,
+                    "status": job.status,
+                    "operatorBridge": True,
+                    "requestedMode": "free",
+                    "protectedValuesReturned": False,
+                }, 202 if job.status not in {"blocked", "failed"} else 409)
             payload, status_code = start_cognitive_swarm_run(
                 get_connection=get_connection,
                 user_id=owner_id,
@@ -372,7 +399,6 @@ def register_controller_board_routes(
                 evidence=evidence,
                 mode="free",
                 intent_mode=requested_intent_mode,
-                github_access_token=github_token,
             )
             return _operator_json({
                 **payload,
@@ -566,94 +592,45 @@ def register_controller_board_routes(
                 "protectedValuesReturned": False,
             }, 502 if exc.retryable else 503)
 
+        if mission_intent.mode == "repository_execution":
+            conn = get_connection()
+            try:
+                repository = _controller_repository()
+                job = start_repository_execution(
+                    conn,
+                    user_id=owner_id,
+                    body={
+                        "mission": mission_intent.normalized_goal,
+                        "mode": "free",
+                        "agentMode": "single",
+                        "intentMode": "repository_execution",
+                        "repositoryUrl": f"https://github.com/{repository}",
+                        "repositoryBranch": "main",
+                    },
+                    workspace_root=_controller_workspace_root(),
+                )
+            finally:
+                _close(conn)
+            return _operator_json({
+                "ok": job.status not in {"blocked", "failed"},
+                "runtime": "sovereign-agent",
+                "execution": "repository-single-a2a",
+                "runId": run_id,
+                "traceId": trace_id,
+                "receivedEvidenceId": received_state["evidenceId"],
+                "jobId": job.job_id,
+                "workspaceId": job.workspace_id,
+                "externalRef": job.external_ref,
+                "status": job.status,
+                "operatorBridge": True,
+                "requestedMode": requested_mode,
+                "protectedValuesReturned": False,
+            }, 202 if job.status not in {"blocked", "failed"} else 409)
+
         implementation_job = None
         task_ids_by_agent: dict[str, str] = {}
         repository_toolset = None
         try:
-            if mission_intent.mode == "repository_execution":
-                conn = get_connection()
-                try:
-                    repository = _controller_repository()
-                    implementation_job = create_sovereign_agent_job(
-                        conn,
-                        user_id=owner_id,
-                        payload={
-                            "repoUrl": f"https://github.com/{repository}",
-                            "branch": "main",
-                            "mission": mission_intent.normalized_goal,
-                            "executor": "sovereign-local-runner",
-                            "draftPrOnly": True,
-                            "allowAutoMerge": False,
-                        },
-                        github_access_token=resolve_request_github_token(
-                            None,
-                            user_id=owner_id,
-                            get_session_github_token=get_session_github_token,
-                        ),
-                        workspace_root=_controller_workspace_root(),
-                        provision_workspace=True,
-                        clone_repo=True,
-                    )
-                    linked_state = link_agent_run_job(
-                        conn,
-                        user_id=owner_id,
-                        run_id=run_id,
-                        job_id=implementation_job.job_id,
-                        trace_id=trace_id,
-                        workspace_id=implementation_job.result.workspace_id,
-                    )
-                    if implementation_job.result.status in {"blocked", "failed"}:
-                        blocked_state = transition_agent_run(
-                            conn,
-                            user_id=owner_id,
-                            run_id=run_id,
-                            status="BLOCKED",
-                            source="agents-sdk",
-                            trace_id=trace_id,
-                            reason="The real repository workspace could not be provisioned.",
-                            next_action="FIX_WORKSPACE_PROVISIONING_AND_RERUN",
-                            evidence_kind="workspace_provisioning_failure",
-                            evidence_summary="Repository execution was selected but workspace provisioning failed.",
-                            evidence_payload={
-                                "jobId": implementation_job.job_id,
-                                "workspaceId": implementation_job.result.workspace_id,
-                                "blocker": implementation_job.result.blocker or "IMPLEMENTATION_JOB_PROVISIONING_FAILED",
-                                "autoMerge": False,
-                            },
-                            agent_id="orchestrator",
-                        )
-                        return _operator_json({
-                            "ok": False,
-                            "runtime": "sovereign-agent",
-                            "runId": run_id,
-                            "status": blocked_state["status"],
-                            "source": blocked_state["source"],
-                            "evidenceId": blocked_state["evidenceId"],
-                            "receivedEvidenceId": received_state["evidenceId"],
-                            "jobId": implementation_job.job_id,
-                            "workspaceId": implementation_job.result.workspace_id,
-                            "blocker": implementation_job.result.blocker or "IMPLEMENTATION_JOB_PROVISIONING_FAILED",
-                            "reason": blocked_state["reason"],
-                            "nextAction": blocked_state["nextAction"],
-                            "protectedValuesReturned": False,
-                        }, 503)
-                    task_ids_by_agent = create_repository_swarm_tasks(
-                        conn,
-                        run_id=run_id,
-                        evidence_id=linked_state["evidenceId"],
-                        write_confirmed=True,
-                    )
-                finally:
-                    _close(conn)
-                repository_toolset = BoundRepositoryToolset(
-                    get_connection=get_connection,
-                    user_id=owner_id,
-                    run_id=run_id,
-                    job_id=implementation_job.job_id,
-                    task_ids_by_agent=task_ids_by_agent,
-                    workspace_root=_controller_workspace_root(),
-                    write_confirmed=True,
-                )
         except Exception as exc:
             conn = get_connection()
             try:
