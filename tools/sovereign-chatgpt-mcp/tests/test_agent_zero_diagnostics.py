@@ -25,7 +25,14 @@ def runtime(tmp_path, monkeypatch):
 
     def docker(argv, **kwargs):
         calls.append(argv)
-        if argv[1] == "inspect":
+        if argv[1] == "inspect" and "{{json .Mounts}}" in argv:
+            data = [{
+                "Type": "bind",
+                "Source": "/opt/sovereign-agent-workspaces",
+                "Destination": "/a0/sovereign-workspaces",
+                "RW": True,
+            }]
+        elif argv[1] == "inspect":
             identity = "a" * 64 if argv[-1] == BACKEND else "b" * 64
             data = {"id": identity, "image": "sha256:" + "c" * 64, "running": True,
                     "startedAt": "2026-09-12T00:00:00Z", "revision": REVISION}
@@ -262,6 +269,18 @@ def test_inspection_is_not_canary_evidence(runtime):
     assert agent_zero_execs[0][6] == "/opt/venv-a0/bin/python"
     assert not sends(calls)
     assert not list(rt.evidence_root.iterdir())
+
+
+def test_inspection_blocks_when_shared_workspace_mount_is_missing(runtime, monkeypatch):
+    rt, _, _ = runtime
+
+    def missing(_identity):
+        raise RuntimeError("AGENT_ZERO_SHARED_WORKSPACE_MOUNT_MISSING")
+
+    monkeypatch.setattr(rt, "_workspace_mount", missing)
+    result = rt.inspect(expected_revision=REVISION, expected_image_digest=DIGEST)
+    assert result["failureFamily"] == "AGENT_ZERO_SHARED_WORKSPACE_MOUNT_MISSING"
+    assert result["diagnosticStage"] == "verify-agent-zero-shared-workspace"
 
 
 def test_agent_zero_probe_requires_running_server_executable_match(runtime, monkeypatch):
