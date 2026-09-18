@@ -5792,6 +5792,7 @@ Das echte Repo-Setup wurde geöffnet.`);
               emptyState={(
                 <WorkbenchEmptyState
                   wishText={wishText}
+                  hasConversationContent={chatHistory.length > 0}
                   effectiveRepoReady={effectiveRepoReady}
                   githubWriteAllowed={githubWriteAllowed}
                   agentReady={agentReady ?? false}
