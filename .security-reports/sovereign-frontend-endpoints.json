@@ -9827,6 +9827,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -9899,6 +9900,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -9971,6 +9973,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10043,6 +10046,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10115,6 +10119,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10187,6 +10192,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10259,6 +10265,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10331,6 +10338,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10385,6 +10393,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10439,6 +10448,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10493,6 +10503,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10547,6 +10558,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10601,6 +10613,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10655,6 +10668,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10709,6 +10723,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10763,6 +10778,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10817,6 +10833,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10871,6 +10888,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10925,6 +10943,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10979,6 +10998,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11033,6 +11053,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11087,6 +11108,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11141,6 +11163,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11195,6 +11218,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11249,6 +11273,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11303,6 +11328,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11357,6 +11383,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11411,6 +11438,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11465,6 +11493,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11519,6 +11548,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11573,6 +11603,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11627,6 +11658,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11681,6 +11713,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11735,6 +11768,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11789,6 +11823,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11843,6 +11878,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11897,6 +11933,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11951,6 +11988,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12005,6 +12043,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12059,6 +12098,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -20615,10 +20655,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "c60436b9bbb99975f07517058b835513dae61e7795571dc94828714f9d06ff1e",
-  "revision": "0fb8045f648dac351fdf4fb5a5bc8c7476257f43",
+  "reportSha256": "164f638768540d45e3b1671f25c01c660e6e96022c8d4e70dbe42811f2183d50",
+  "revision": "b430384661b596cf79e06c82fac06ed756009865",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "b58ca1bb47b179b9685e5c03ebd2d5c2735900c3fd6a7d8bc31e21ab0cc63ec6",
+  "sourceTreeSha256": "19273d0fca5d4e541d3888ffa33bf5f597b096f2d4bad9cd5b556faa98ac775f",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
