@@ -328,11 +328,14 @@ def _submit_pending_repository_job(
 
 
 def _documentation_only_changes(changed_files: tuple[str, ...] | list[str]) -> bool:
-    normalized = tuple(str(path or "").strip().replace("\\", "/") for path in changed_files)
-    if not normalized or any(not path for path in normalized):
+    normalized = tuple(map(lambda path: str(path or "").strip().replace("\\", "/"), changed_files))
+    if not normalized or not all(normalized):
         return False
-    documentation_suffixes = {".md", ".mdx", ".rst", ".txt"}
-    return all(Path(path).suffix.lower() in documentation_suffixes for path in normalized)
+    documentation_suffixes = frozenset({".md", ".mdx", ".rst", ".txt"})
+    return all(map(
+        lambda path: documentation_suffixes.__contains__(Path(path).suffix.casefold()),
+        normalized,
+    ))
 
 
 def _safe_regression_commands(recommended: object) -> tuple[str, ...]:
