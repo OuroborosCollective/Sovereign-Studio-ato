@@ -58,8 +58,7 @@ if ! mount_present "$AGENT_ZERO_CONTAINER" "$HOST_WORKSPACE_ROOT" "$AGENT_ZERO_W
   compose_args=(docker compose -p "$project")
   IFS=',' read -r -a raw_configs <<< "$config_files"
   for raw_config in "${raw_configs[@]}"; do
-    raw_config="${raw_config#" "${raw_config%%[![:space:]]*}"}"
-    raw_config="${raw_config%" "${raw_config##*[![:space:]]}"}"
+    raw_config="$(printf '%s' "$raw_config" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
     [[ -n "$raw_config" ]] || fail "compose_config_file_empty"
     if [[ "$raw_config" == /* ]]; then
       config_path="$raw_config"
