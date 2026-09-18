@@ -20,6 +20,8 @@ jobs:
     name: Agent Zero creates empty root testfile
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment:
+      name: production-runtime-readback
     steps:
       - name: Checkout exact diagnostic revision
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
