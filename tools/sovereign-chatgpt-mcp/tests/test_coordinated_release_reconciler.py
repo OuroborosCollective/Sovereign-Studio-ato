@@ -154,6 +154,109 @@ def test_waiting_release_gate_performs_no_image_or_runtime_mutation(monkeypatch,
     assert json.loads((tmp_path / "status.json").read_text("utf-8"))["revision"] == revision
 
 
+def test_agent_zero_workspace_mount_is_noop_when_already_verified(monkeypatch) -> None:
+    module = _load()
+    runtime = {
+        "present": True,
+        "running": True,
+        "mountVerified": True,
+        "mount": {
+            "type": "bind",
+            "source": "/opt/sovereign-agent-workspaces",
+            "destination": "/a0/sovereign-workspaces",
+            "readWrite": True,
+        },
+    }
+    monkeypatch.setattr(module, "_agent_zero_runtime_identity", lambda: dict(runtime))
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("compose must not run when the mount is already verified")
+        ),
+    )
+
+    result = module._ensure_agent_zero_workspace_mount()
+
+    assert result["status"] == "ALREADY_CURRENT"
+    assert result["mutationPerformed"] is False
+    assert result["mountVerified"] is True
+
+
+def test_agent_zero_workspace_mount_recreates_only_compose_service_without_pull_or_build(
+    monkeypatch, tmp_path
+) -> None:
+    module = _load()
+    state_dir = tmp_path / "state"
+    host_root = tmp_path / "workspaces"
+    working_dir = tmp_path / "agent-zero"
+    host_root.mkdir()
+    host_root.chmod(0o770)
+    working_dir.mkdir()
+    compose_file = working_dir / "compose.yml"
+    compose_file.write_text("services:\n  agent-zero:\n    image: agent0ai/agent-zero:latest\n", "utf-8")
+
+    monkeypatch.setattr(module, "STATE_DIR", state_dir)
+    monkeypatch.setattr(module, "STATUS_FILE", state_dir / "status.json")
+    monkeypatch.setattr(module, "AGENT_ZERO_OVERRIDE_FILE", state_dir / "agent-zero-workspace.override.yml")
+    monkeypatch.setattr(module, "AGENT_ZERO_WORKSPACE_HOST_ROOT", host_root)
+
+    before = {
+        "present": True,
+        "running": True,
+        "mountVerified": False,
+        "mount": None,
+        "containerId": "old-agent-zero",
+        "imageId": "sha256:" + "a" * 64,
+        "compose": {
+            "project": "agent-zero-xrev",
+            "service": "agent-zero",
+            "workingDir": str(working_dir),
+            "configFiles": [str(compose_file)],
+        },
+    }
+    after = {
+        **before,
+        "mountVerified": True,
+        "containerId": "new-agent-zero",
+        "mount": {
+            "type": "bind",
+            "source": str(host_root),
+            "destination": "/a0/sovereign-workspaces",
+            "readWrite": True,
+        },
+    }
+    identities = [before, after]
+    monkeypatch.setattr(module, "_agent_zero_runtime_identity", lambda: identities.pop(0))
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(module, "_run", run)
+
+    result = module._ensure_agent_zero_workspace_mount()
+
+    assert result["status"] == "MOUNT_REPAIRED"
+    assert result["mutationPerformed"] is True
+    assert result["mountVerified"] is True
+    assert result["imagePreserved"] is True
+    assert result["containerRecreated"] is True
+    assert len(calls) == 1
+    argv, kwargs = calls[0]
+    assert argv[:4] == ["docker", "compose", "-p", "agent-zero-xrev"]
+    assert "--no-deps" in argv
+    assert "--force-recreate" in argv
+    assert "--no-build" in argv
+    assert argv[argv.index("--pull") + 1] == "never"
+    assert argv[-1] == "agent-zero"
+    assert kwargs["cwd"] == working_dir
+    override = module.AGENT_ZERO_OVERRIDE_FILE.read_text("utf-8")
+    assert str(host_root) in override
+    assert "/a0/sovereign-workspaces" in override
+
+
 def _scoped_reconcile_fixture(
     monkeypatch, tmp_path, *, restored: bool = True, backend_current: bool = False
 ):
