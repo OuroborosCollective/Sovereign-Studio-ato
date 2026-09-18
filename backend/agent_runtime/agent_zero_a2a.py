@@ -22,7 +22,10 @@ from .contracts import sanitize_agent_text
 _A2A_TASK_ID_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
 _A2A_WORKSPACE_ID_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
 _A2A_READ_TIMEOUT_SECONDS: Final[int] = 30
-_A2A_SUBMIT_TIMEOUT_SECONDS: Final[int] = 900
+# message/send is explicitly nonblocking. A slow acknowledgement must never tie
+# up the server-owned repository reconciler for minutes; an expired acceptance
+# window remains outcome-unknown and therefore fail-closed/no-resubmit.
+_A2A_SUBMIT_TIMEOUT_SECONDS: Final[int] = 30
 _AGENT_ZERO_WORKSPACE_ROOT: Final[str] = "/a0/sovereign-workspaces"
 
 _A2A_ACTIVE_STATES: Final[frozenset[str]] = frozenset({"submitted", "working"})

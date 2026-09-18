@@ -507,3 +507,23 @@ Evidence: Memory pre-read completed before integration; #1989 had terminal CI wi
 Learned: A fully green PR can still become non-mergeable by policy once `main` advances. Reapplying the exact reviewed source delta onto the new main preserves the useful change without violating revision-equality rules.
 Open: The new exact-current-main Draft PR still needs terminal GitHub Actions before merge; #1989 should remain superseded rather than merged stale.
 Next safe step: Publish one replacement Draft PR, close #1989 as superseded, require terminal exact-head CI, then merge only under the standing Owner approval for zero-open-PR cleanup.
+
+### 2026-09-17 — Agent Zero repository-submit HTTP decoupling
+Status: SOURCE_REGRESSION_VERIFIED; Draft-PR CI and deployed UI proof pending.
+Task: Remove the live 504/60-second Frontend failure caused by Sovereign synchronously waiting for Agent Zero task acceptance inside `/api/user/agent/repository/run`.
+Decisions: Persist a deterministic `pending:submit` ref and return from the user request without Agent Zero transport; let only the server-owned reconciler CAS-claim and perform the initial A2A submit; keep unknown submit outcomes fail-closed/no-resubmit and bound the nonblocking A2A acknowledgement to 30 s.
+Touched surfaces: Agent Zero A2A/repository-execution canonical+shipping mirrors and focused regressions.
+Evidence: Pre-read completed on `main@0fb8045f648dac351fdf4fb5a5bc8c7476257f43`, deployed backend digest `sha256:ed39ef9502d6bba529e0a892f0aa7af364833a79149d78870d6e400d1ad3822e`; live DB showed the latest blocked repository job spanning 09:35:47→09:50:51 with `AGENT_ZERO_A2A_SUBMIT_OUTCOME_UNKNOWN`, matching the old 900-s submit timeout. Dedicated A2A poll completed on the existing known Task-ID without resubmit; diagnostics proved the current backend uses the real Agent Zero URL/key path, and historical live jobs prove shared-workspace mutation/Draft-PR creation. Focused regressions: 23 repository-execution + 6 A2A + 4 single-A2A-contract tests passed; canonical/shipping mirror mismatch=0.
+Learned: HTTP 202 existed only after a still-synchronous `requests.post`; `blocking:false` at Agent Zero does not make Sovereign's caller asynchronous. The current root cause is initial-submit ownership, not localhost networking, missing workspace mount or Agent Zero GitHub-token guessing.
+Open: Full Flask-backed route suite could not run in the isolated local checker because Flask is absent there; exact-head GitHub Agent Backend/Release lanes and a revision-equal deployed Frontend→pending→A2A→workspace→Draft-PR readback remain required.
+Next safe step: Create one Draft PR, require terminal exact-head CI, then merge/deploy only under explicit Owner approval and verify PatchMon/runtime revision equality plus one fresh real UI Draft-PR run.
+
+### 2026-09-18 — Public portfolio positioning
+Status: SOURCE_AND_CI_VERIFIED; final Memory-head CI and merge pending.
+Task: Improve the public README first view without changing Sovereign product/runtime truth.
+Decisions: Keep Sovereign explicitly separate as the agent-infrastructure/operational-assurance line; link Aurion, ProofFleet, ARE Agent Studio, N+1 and WASD only as portfolio context; add no unsupported metrics or deployment claims.
+Touched surfaces: `README.md`.
+Evidence: Memory pre-read completed; local `git diff --check` passed; PR #1997 pre-Memory head `9762674953c7ee32917498271a9321d72f241ae8` changed only `README.md`; Revision Guardian Evidence, Revision Guardian, Release Gate, Agent Runtime Tests, continuity-ledger and integration-plan-lane-gate all completed successfully on that head.
+Learned: Public readability can improve without weakening evidence boundaries when portfolio context is kept distinct from runtime truth.
+Open: This append changes the PR head, so exact-head CI must be read again before merge.
+Next safe step: Publish this single Memory entry, require terminal checks on the new exact head, then merge under Owner approval and read back `main`.

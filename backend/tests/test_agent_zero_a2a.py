@@ -68,7 +68,7 @@ def test_submit_sets_both_auth_headers_keeps_secret_out_of_body_and_is_nonblocki
     assert calls[0]["json"]["params"]["message"]["kind"] == "message"
     assert calls[0]["json"]["params"]["configuration"]["blocking"] is False
     assert calls[0]["json"]["params"]["configuration"]["acceptedOutputModes"] == ["text", "text/plain"]
-    assert calls[0]["timeout"] == 900
+    assert calls[0]["timeout"] == 30
     prompt = calls[0]["json"]["params"]["message"]["parts"][0]["text"]
     assert "/a0/sovereign-workspaces/agent-workspace-123/repo" in prompt
     assert "Do not clone" in prompt
