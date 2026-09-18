@@ -5,6 +5,7 @@ import { SOVEREIGN_PRESET_ACTIONS, type SovereignPresetActionId } from '../../ru
 
 export interface WorkbenchEmptyStateProps {
   wishText: string;
+  hasConversationContent: boolean;
   effectiveRepoReady: boolean;
   githubWriteAllowed: boolean;
   agentReady: boolean;
@@ -16,6 +17,7 @@ export interface WorkbenchEmptyStateProps {
 
 export function WorkbenchEmptyState({
   wishText,
+  hasConversationContent,
   effectiveRepoReady,
   githubWriteAllowed,
   agentReady,
@@ -24,7 +26,8 @@ export function WorkbenchEmptyState({
   isPublishing,
   onPresetActionSelect,
 }: WorkbenchEmptyStateProps): React.ReactElement | null {
-  if (wishText.trim()) return null;
+  // Existing/restored conversation content is authoritative; never replace it with onboarding.
+  if (wishText.trim() || hasConversationContent) return null;
 
   return (
     <div style={{ width: 'min(760px, 100%)', textAlign: 'center' }}>
