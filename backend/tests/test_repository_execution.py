@@ -489,6 +489,118 @@ def _run_closeout(state):
     )
 
 
+def test_documentation_regression_accepts_bounded_readme_change(tmp_path: Path):
+    repo = tmp_path / "agent-test" / "repo"
+    repo.mkdir(parents=True)
+    (repo / "README.md").write_text(
+        "# Sovereign Studio ATO [live-vnext:test:p1]\n\nBody stays intact.\n",
+        encoding="utf-8",
+    )
+
+    result = repository_execution._documentation_regression(
+        _job(),
+        ("README.md",),
+        tmp_path,
+    )
+
+    assert result == (
+        True,
+        "documentation-regression: 1 UTF-8 documentation file(s) verified; README heading preserved",
+    )
+
+
+def test_documentation_regression_rejects_readme_heading_break(tmp_path: Path):
+    repo = tmp_path / "agent-test" / "repo"
+    repo.mkdir(parents=True)
+    (repo / "README.md").write_text("Sovereign Studio ATO\n", encoding="utf-8")
+
+    result = repository_execution._documentation_regression(
+        _job(),
+        ("README.md",),
+        tmp_path,
+    )
+
+    assert result == (
+        False,
+        "Documentation regression requires README.md to preserve its first Markdown heading.",
+    )
+
+
+def test_documentation_regression_never_replaces_code_regression(tmp_path: Path):
+    repo = tmp_path / "agent-test" / "repo"
+    repo.mkdir(parents=True)
+    (repo / "README.md").write_text("# Sovereign Studio ATO\n", encoding="utf-8")
+    (repo / "backend.py").write_text("value = 1\n", encoding="utf-8")
+
+    assert repository_execution._documentation_regression(
+        _job(),
+        ("README.md", "backend.py"),
+        tmp_path,
+    ) is None
+
+
+def test_closeout_readme_only_does_not_require_unprovisioned_frontend_dependencies(monkeypatch, tmp_path: Path):
+    state, _changed = _patch_closeout_baseline(
+        monkeypatch,
+        janitor_metadata={
+            "severityCounts": {},
+            "recommendedTestCommand": "pnpm run type-check && pnpm run test",
+        },
+    )
+    baseline_tool = repository_execution.run_agent_job_tool
+    test_calls: list[str] = []
+
+    def tool(job_value, action, params, root):
+        if action == "git-status":
+            return _done_tool(changed_files=("README.md",))
+        if action == "test":
+            test_calls.append(str(params.get("command") or "auto"))
+            return _failed_tool("frontend dependency tree is intentionally absent")
+        return baseline_tool(job_value, action, params, root)
+
+    monkeypatch.setattr(repository_execution, "run_agent_job_tool", tool)
+    repo = tmp_path / "agent-test" / "repo"
+    repo.mkdir(parents=True)
+    (repo / "README.md").write_text(
+        "# Sovereign Studio ATO [live-vnext:test:p1]\n\nBody stays intact.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(repository_execution, "draft_pr_input_from_job", lambda job: job)
+    monkeypatch.setattr(
+        repository_execution,
+        "prepare_draft_pr",
+        lambda _input: SimpleNamespace(
+            allowed=True,
+            blockers=(),
+            summary="ready",
+            head_branch="sovereign/agent-test",
+            base_branch="main",
+            title="Draft: docs regression",
+            body="verified evidence",
+        ),
+    )
+
+    def mark(_conn, **kwargs):
+        job = state["job"]
+        state["job"] = replace(job, status="validating", pr_state="ready")
+
+    monkeypatch.setattr(repository_execution, "mark_draft_pr_prepared", mark)
+
+    result = repository_execution._closeout_repository_job(
+        object(),
+        job=state["job"],
+        claim_ref="agent-zero-a2a:claim:closeout:a:test",
+        bound_ref="agent-zero-a2a:task-original",
+        workspace_root=tmp_path,
+    )
+
+    assert test_calls == []
+    assert result.status == "validating"
+    assert result.pr_state == "ready"
+    assert result.changed_files == ("README.md",)
+    assert "documentation-regression" in result.test_summary
+
+
 def test_closeout_blocks_when_no_changes_exist(monkeypatch):
     state = _patch_job_store(monkeypatch, _job(external_ref="agent-zero-a2a:claim:closeout:a:test"))
     monkeypatch.setattr(

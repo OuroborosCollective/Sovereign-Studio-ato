@@ -549,3 +549,14 @@ Evidence: Memory pre-read completed on `main@18cd4baefeb256da0a4ea9b1794738e529d
 Learned: Introducing an earlier fail-closed preflight changes the prerequisites of tests that intentionally inject later-stage failures; those fixtures must satisfy the earlier boundary rather than bypass or remove it. A release-critical validator that runs only after merge leaves an avoidable evidence gap, so the same non-mutating suite must execute on the PR head.
 Open: Exact-head PR gates including the full MCP validator, a successful main MCP image, coordinated target-system receipt, mount readback, and fresh protected Five-Path proof remain required.
 Next safe step: Require terminal exact-head PR and MCP-validator evidence, merge under Owner approval only when green, then let the main MCP/coordinated release rerun the real host-mount path.
+
+
+### 2026-09-18 — Path-scoped repository closeout regression
+Status: SOURCE_PATCHED; exact-head CI and deployed Five-Path proof pending.
+Task: Repair the post-mount Five-Path blocker after Agent Zero began reaching real shared-workspace closeout but the README-only mutation was blocked by an unavailable global frontend regression environment.
+Decisions: Keep code changes on the existing Janitor-selected project regression path; for documentation-only changes limited to allowlisted root docs, `docs/**` or `.github/**`, run a bounded UTF-8/document-structure regression after the existing full diff, `git diff --check` and Janitor gates. README.md additionally must preserve its first Markdown heading. Do not install dependencies in Agent Zero and do not weaken Draft-PR consent.
+Touched surfaces: canonical+shipping `repository_execution.py` and focused repository-execution regressions.
+Evidence: Memory pre-read completed on `main@b430384661b596cf79e06c82fac06ed756009865`; protected Five-Path run `35396640026` artifact `10567713173` / SHA-256 `358bcf766a9557ade1a9b20d5858b4dfc10706b89b4f398eb8ba988b9a6374c3` records a real Agent Zero task `4c67b5a7-f849-4d1d-8602-f4b3003fd7ca`, closeout claim, and final `repository_closeout_regression_blocked`, proving the mount/git-status/diff/Janitor boundary was crossed. The backend image carries Node/pnpm but no project node_modules and no pytest dependency, so a global `pnpm run test` is not a valid invariant for a README-only workspace.
+Learned: Shared-workspace mutation and regression-environment provisioning are separate truth boundaries; a docs-only change needs a deterministic docs regression, while code changes must continue to require their real project test path.
+Open: Exact-head CI, immutable backend deployment, runtime revision/digest readback and a fresh protected 5/5 Draft-PR run remain required.
+Next safe step: Publish this Draft PR, require terminal exact-head gates, merge only under Owner approval, deploy the exact merged backend image, then rerun the protected Five-Path and require five GitHub-verified Draft PRs.
