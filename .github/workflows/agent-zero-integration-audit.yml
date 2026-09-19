@@ -23,7 +23,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Export only real Git objects and revision metadata
+      - name: Export real Git objects and revision metadata
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
         shell: bash
@@ -35,15 +35,22 @@ jobs:
           git bundle verify "$RUNNER_TEMP/agent-zero-source-audit/source.bundle"
           git rev-parse HEAD > "$RUNNER_TEMP/agent-zero-source-audit/source-revision.txt"
           git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/agent-zero-source-audit/source-tree.txt"
-          cd "$RUNNER_TEMP/agent-zero-source-audit"
-          sha256sum source.bundle > source.bundle.sha256
-      - name: Download public Python wheels for offline regression environment
-        shell: bash
+      - name: Set up locked pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 9.12.2
+          run_install: false
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Download locked dependencies without lifecycle scripts
         run: |
           set -Eeuo pipefail
-          python3 -m pip download --only-binary=:all: --python-version 3.13 --platform manylinux2014_x86_64 --implementation cp --abi cp313 --dest "$RUNNER_TEMP/agent-zero-source-audit/wheels" 'flask>=2.3.0' 'flask-cors>=4.0.0' 'a2a-sdk==1.1.1' 'openai-agents==0.18.2' 'psycopg2-binary>=2.9.9' 'PyJWT>=2.8.0'
+          pnpm install --frozen-lockfile --ignore-scripts
+          tar -czf "$RUNNER_TEMP/agent-zero-source-audit/node-dependencies.tar.gz" node_modules
           cd "$RUNNER_TEMP/agent-zero-source-audit"
-          sha256sum wheels/* > wheels.sha256
+          sha256sum source.bundle node-dependencies.tar.gz > downloads.sha256
       - name: Upload source and dependencies only; not runtime evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
