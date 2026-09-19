@@ -1728,7 +1728,6 @@ register_cognitive_swarm_routes(
     app,
     require_session=require_session,
     get_connection=get_agent_runtime_connection,
-    get_session_github_token=_session_github_token_for_user,
 )
 
 # ── Legacy external job compatibility tables ─────────────────────────────────
