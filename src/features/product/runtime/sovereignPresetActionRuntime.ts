@@ -163,14 +163,6 @@ export function evaluateSovereignPresetActionGate(
       nextAction: 'Bitte zuerst eine GitHub-Repo-URL laden.',
     };
   }
-  if (action.requiresGithubWrite && !context.githubWriteReady) {
-    return {
-      actionId: action.id,
-      canStart: false,
-      reason: 'GitHub-Schreibzugang fehlt.',
-      nextAction: 'Sicheren GitHub-Zugang öffnen; der vorgemerkte Auftrag läuft danach automatisch weiter.',
-    };
-  }
   return {
     actionId: action.id,
     canStart: true,
@@ -189,9 +181,9 @@ export function buildSovereignPresetActionPrompt(
   const routeLine = `Preset-Route: ${action.route} · Risiko: ${action.risk}`;
   const gateParts = [
     `Repo geladen: ${context.repoReady ? 'ja' : 'nein'}`,
-    action.requiresGithubWrite && !context.githubWriteReady
-      ? 'GitHub Write: wird vor Ausführung geprüft'
-      : `GitHub Write: ${context.githubWriteReady ? 'ja' : 'nein'}`,
+    action.requiresGithubWrite
+      ? `GitHub Publish: ${context.githubWriteReady ? 'bereit' : 'separate Freigabe erforderlich'}`
+      : `GitHub Read/Publish: ${context.githubWriteReady ? 'bereit' : 'nicht erforderlich für Start'}`,
   ];
 
   if (action.risk !== 'safe_analysis') {
