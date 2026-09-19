@@ -164,11 +164,11 @@ def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
 
 def test_start_repository_execution_queues_submit_without_transport(monkeypatch):
     state = _patch_job_store(monkeypatch, _job(external_ref=None))
-    monkeypatch.setattr(
-        repository_execution,
-        "create_sovereign_agent_job",
-        lambda *_args, **_kwargs: SimpleNamespace(job_id="agent-test"),
-    )
+    lifecycle_calls: list[dict] = []
+    def create_job(*_args, **kwargs):
+        lifecycle_calls.append(kwargs)
+        return SimpleNamespace(job_id="agent-test")
+    monkeypatch.setattr(repository_execution, "create_sovereign_agent_job", create_job)
     transport_calls: list[bool] = []
 
     def client_factory():
@@ -188,6 +188,10 @@ def test_start_repository_execution_queues_submit_without_transport(monkeypatch)
     )
 
     assert result.status == "running"
+    assert lifecycle_calls
+    assert lifecycle_calls[0]["github_access_token"] is None
+    assert lifecycle_calls[0]["clone_repo"] is False
+    assert lifecycle_calls[0]["provision_workspace"] is True
     assert (result.external_ref or "").startswith("agent-zero-a2a:pending:submit:")
     assert transport_calls == []
     assert [event.stage for event in state["events"]] == ["agent_zero_a2a_submit_queued"]
@@ -221,8 +225,10 @@ def test_server_worker_claims_pending_submit_and_binds_one_task(monkeypatch):
     class Client:
         submit_count = 0
 
-        def submit_repository_task(self, *, workspace_id, mission):
+        def submit_repository_task(self, *, workspace_id, repository_url, branch, mission):
             assert workspace_id == "agent-test"
+            assert repository_url == "https://github.com/OuroborosCollective/Sovereign-Studio-ato"
+            assert branch == "main"
             assert mission == "Implement one bounded repository change."
             self.submit_count += 1
             return AgentZeroA2ATask(task_id="task-server-submit", state="submitted")
@@ -260,8 +266,10 @@ def test_original_task_lost_resubmits_exactly_once_then_retry_lost_fails_closed(
                 http_status=404,
             )
 
-        def submit_repository_task(self, *, workspace_id, mission):
+        def submit_repository_task(self, *, workspace_id, repository_url, branch, mission):
             assert workspace_id == "agent-test"
+            assert repository_url == "https://github.com/OuroborosCollective/Sovereign-Studio-ato"
+            assert branch == "main"
             assert mission == state["job"].mission
             self.submit_count += 1
             return AgentZeroA2ATask(task_id="task-retry", state="submitted")
