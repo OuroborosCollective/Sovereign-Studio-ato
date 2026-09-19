@@ -1,0 +1,46 @@
+name: Agent Zero Integration Source Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/agent-zero-integration-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-bundle:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'sovereign/chatgpt/agent-zero-only-execution'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact integration head without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Export only real Git objects and revision metadata
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          mkdir -p "$RUNNER_TEMP/agent-zero-source-audit"
+          git bundle create "$RUNNER_TEMP/agent-zero-source-audit/source.bundle" HEAD
+          git bundle verify "$RUNNER_TEMP/agent-zero-source-audit/source.bundle"
+          git rev-parse HEAD > "$RUNNER_TEMP/agent-zero-source-audit/source-revision.txt"
+          git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/agent-zero-source-audit/source-tree.txt"
+          cd "$RUNNER_TEMP/agent-zero-source-audit"
+          sha256sum source.bundle > source.bundle.sha256
+      - name: Upload source only; this is not runtime evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: agent-zero-source-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/agent-zero-source-audit/
+          if-no-files-found: error
+          retention-days: 1
