@@ -1,0 +1,440 @@
+name: Agent Zero Testfile Production Smoke
+
+on:
+  push:
+    branches:
+      - feature/sovereign-agent-zero-testfile-smoke-20260919
+    paths:
+      - .github/workflows/agent-zero-testfile-production-smoke.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sovereign-agent-zero-testfile-production-smoke
+  cancel-in-progress: false
+
+jobs:
+  production-smoke:
+    name: Deployed UI to Agent Zero empty testfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      NODE_VERSION: '22'
+      PNPM_VERSION: '9.12.2'
+      EXPECTED_MAIN_REVISION: 5d23e0f0274e33140cc35e88aca0a7fefeb63109
+      SOVEREIGN_APP_URL: https://chat.arelorian.de
+      SOVEREIGN_BACKEND_URL: https://sovereign-backend.arelorian.de
+      SOVEREIGN_E2E_ACCOUNT_KEY: ${{ secrets.SOVEREIGN_E2E_ACCOUNT_KEY }}
+
+    steps:
+      - name: Checkout smoke carrier branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify authoritative main has not advanced
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          expected = os.environ["EXPECTED_MAIN_REVISION"].lower()
+          request = urllib.request.Request(
+              "https://api.github.com/repos/OuroborosCollective/Sovereign-Studio-ato/commits/main",
+              headers={"Accept": "application/vnd.github+json", "User-Agent": "sovereign-production-smoke"},
+          )
+          with urllib.request.urlopen(request, timeout=20) as response:
+              payload = json.load(response)
+          actual = str(payload.get("sha") or "").lower()
+          if actual != expected:
+              raise SystemExit(f"MAIN_REVISION_CHANGED:{actual}")
+          print(f"MAIN_REVISION_VERIFIED={actual}")
+          PY
+
+      - name: Require protected product account key
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SOVEREIGN_E2E_ACCOUNT_KEY}" || {
+            echo "SOVEREIGN_E2E_ACCOUNT_KEY is not configured; production mutation remains UNVERIFIED." >&2
+            exit 1
+          }
+          echo "Protected product account-key identity is configured; value is not emitted."
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install exact test dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        shell: bash
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Run deployed UI Agent-Zero-only testfile smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p test-results
+          cat > test-results/agent-zero-testfile-production-smoke.mjs <<'NODE'
+          import { chromium } from '@playwright/test';
+          import { createHash } from 'node:crypto';
+          import { writeFile } from 'node:fs/promises';
+
+          const EXPECTED_REVISION = process.env.EXPECTED_MAIN_REVISION;
+          const APP = process.env.SOVEREIGN_APP_URL;
+          const BACKEND = process.env.SOVEREIGN_BACKEND_URL;
+          const ACCOUNT_KEY = process.env.SOVEREIGN_E2E_ACCOUNT_KEY;
+          const EXPECTED_REPO = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato';
+          const MISSION = 'Erstelle im Root des bereitgestellten Repository-Workspaces genau eine leere reguläre Datei testfile. Verändere keine andere Datei. Erzeuge keinen Commit und keinen Pull Request. Melde nach Fertigstellung den Abschluss des Auftrages.';
+          const EMPTY_SHA256 = createHash('sha256').update(Buffer.alloc(0)).digest('hex');
+          const JOB_ID = /^agent-[0-9a-f]{32}$/;
+          const NORMAL_A2A = /^agent-zero-a2a:(?!pending:|claim:)(?!retry:)[A-Za-z0-9._:-]{1,200}$/;
+
+          const fail = (code, detail = '') => {
+            const suffix = detail ? ':' + String(detail).slice(0, 500) : '';
+            throw new Error(code + suffix);
+          };
+          const sha256 = (value) => createHash('sha256').update(String(value)).digest('hex');
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          const json = async (response) => response.json().catch(() => null);
+          const eventStages = (job) => Array.isArray(job?.events)
+            ? job.events.map((event) => String(event?.stage || '')).filter(Boolean)
+            : [];
+          const eventText = (job) => Array.isArray(job?.events)
+            ? job.events.map((event) => String(event?.stage || '') + ' ' + String(event?.message || '')).join('\n')
+            : '';
+
+          if (!ACCOUNT_KEY) fail('PRODUCT_ACCOUNT_KEY_MISSING');
+
+          const evidence = {
+            schemaVersion: 'sovereign.agent-zero-testfile-production-smoke.v1',
+            sourceRevision: EXPECTED_REVISION,
+            uiOrigin: APP,
+            backendOrigin: BACKEND,
+            missionSha256: sha256(MISSION),
+            request: null,
+            job: null,
+            a2a: null,
+            fileReadback: null,
+            gitStatus: null,
+            forbiddenPageRequests: [],
+            assertions: {},
+            secretValuesReturned: false,
+          };
+
+          const browser = await chromium.launch({ headless: true });
+          const context = await browser.newContext({
+            viewport: { width: 390, height: 844 },
+            ignoreHTTPSErrors: false,
+          });
+          const page = await context.newPage();
+          const pageRequests = [];
+          let repositoryRequestProof = null;
+
+          page.on('request', (request) => {
+            let url;
+            try { url = new URL(request.url()); } catch { return; }
+            if (url.hostname !== 'sovereign-backend.arelorian.de') return;
+            const method = request.method().toUpperCase();
+            const path = url.pathname;
+            pageRequests.push({ method, path });
+            if (method === 'POST' && path === '/api/user/agent/repository/run') {
+              let body = {};
+              try { body = request.postDataJSON() || {}; } catch {}
+              repositoryRequestProof = {
+                method,
+                path,
+                bodyKeys: Object.keys(body).sort(),
+                hasGithubAccessToken: Object.prototype.hasOwnProperty.call(body, 'githubAccessToken'),
+                mode: String(body.mode || ''),
+                agentMode: String(body.agentMode || ''),
+                intentMode: String(body.intentMode || ''),
+                missionSha256: sha256(String(body.mission || '')),
+              };
+            }
+          });
+
+          try {
+            await page.goto(APP + '/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+            await page.getByTestId('sovereign-control-surface-vnext').waitFor({ state: 'visible', timeout: 60_000 });
+
+            await page.getByTestId('operator-auth-btn').click();
+            const authDialog = page.getByRole('dialog', { name: /Sovereign account session/i });
+            await authDialog.waitFor({ state: 'visible', timeout: 30_000 });
+            const keyInput = authDialog.locator('#vnext-account-key');
+            await keyInput.fill(ACCOUNT_KEY);
+            const authButton = authDialog.getByRole('button', { name: 'AUTHENTICATE WITH ACCOUNT KEY' });
+            const loginPromise = page.waitForResponse((response) => {
+              try {
+                const url = new URL(response.url());
+                return response.request().method() === 'POST'
+                  && url.hostname === 'sovereign-backend.arelorian.de'
+                  && url.pathname === '/api/auth/account-key';
+              } catch { return false; }
+            }, { timeout: 30_000 });
+            await authButton.click();
+            const login = await loginPromise;
+            if (login.status() !== 200) fail('PRODUCT_ACCOUNT_KEY_LOGIN_FAILED', login.status());
+            await authDialog.getByText('AUTHENTICATED', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
+            const closeAuth = authDialog.getByRole('button', { name: 'Close account session' });
+            if (await closeAuth.isVisible().catch(() => false)) await closeAuth.click();
+
+            const session = await context.request.get(BACKEND + '/api/auth/me', {
+              headers: { 'Cache-Control': 'no-store', Accept: 'application/json' },
+              maxRedirects: 0,
+            });
+            if (session.status() !== 200) fail('SESSION_READBACK_FAILED', session.status());
+            const sessionBody = await json(session);
+            if (!sessionBody || sessionBody.isGuest === true || !sessionBody.id) fail('SESSION_IDENTITY_UNVERIFIED');
+
+            const beforeResponse = await context.request.get(BACKEND + '/api/user/agent/jobs?limit=20', {
+              headers: { 'Cache-Control': 'no-store', Accept: 'application/json' },
+              maxRedirects: 0,
+            });
+            if (beforeResponse.status() !== 200) fail('PRE_JOB_INVENTORY_FAILED', beforeResponse.status());
+            const beforeBody = await json(beforeResponse);
+            const beforeIds = new Set(Array.isArray(beforeBody?.jobs) ? beforeBody.jobs.map((item) => String(item?.jobId || '')) : []);
+
+            const singleButton = page.getByTestId('agent-mode-single');
+            if (await singleButton.isVisible().catch(() => false)) {
+              const pressed = await singleButton.getAttribute('aria-pressed');
+              if (pressed !== 'true') await singleButton.click();
+            }
+
+            const composer = page.getByTestId('mission__textarea');
+            await composer.waitFor({ state: 'visible', timeout: 30_000 });
+            if (await composer.isDisabled()) fail('MISSION_COMPOSER_LOCKED');
+            await composer.fill(MISSION);
+
+            const startPromise = page.waitForResponse((response) => {
+              try {
+                const url = new URL(response.url());
+                return response.request().method() === 'POST'
+                  && url.hostname === 'sovereign-backend.arelorian.de'
+                  && url.pathname === '/api/user/agent/repository/run';
+              } catch { return false; }
+            }, { timeout: 120_000 });
+            await page.getByTestId('builder__start-task').click();
+            const startResponse = await startPromise;
+            const startBody = await json(startResponse);
+            if (startResponse.status() !== 202) fail('REPOSITORY_START_NOT_ACCEPTED', startResponse.status());
+
+            if (!repositoryRequestProof) fail('REPOSITORY_REQUEST_PROOF_MISSING');
+            if (repositoryRequestProof.hasGithubAccessToken) fail('GITHUB_CREDENTIAL_PRESENT_ON_EXECUTION_REQUEST');
+            if (repositoryRequestProof.mode !== 'free') fail('EXECUTION_MODE_NOT_FREE');
+            if (repositoryRequestProof.agentMode !== 'single') fail('EXECUTION_NOT_SINGLE_AGENT');
+            if (repositoryRequestProof.intentMode !== 'repository_execution') fail('EXECUTION_INTENT_INVALID');
+            if (repositoryRequestProof.missionSha256 !== sha256(MISSION)) fail('MISSION_REQUEST_MISMATCH');
+            evidence.request = repositoryRequestProof;
+
+            const jobId = String(startBody?.jobId || startBody?.job?.jobId || '');
+            if (!JOB_ID.test(jobId)) fail('PERSISTED_JOB_ID_MISSING');
+            if (beforeIds.has(jobId)) fail('OLD_JOB_REUSED');
+            const startJob = startBody?.job || {};
+            if (String(startJob.repoUrl || '') !== EXPECTED_REPO) fail('REPOSITORY_TARGET_MISMATCH', startJob.repoUrl);
+            if (String(startJob.branch || '') !== 'main') fail('REPOSITORY_BRANCH_MISMATCH', startJob.branch);
+            if (String(startJob.mission || '') !== MISSION) fail('PERSISTED_MISSION_MISMATCH');
+
+            const taskRefs = new Set();
+            let finalJob = startJob;
+            let upstreamCompletionObserved = false;
+            const deadline = Date.now() + 15 * 60_000;
+            while (Date.now() < deadline) {
+              const response = await context.request.get(BACKEND + '/api/user/agent/jobs/' + encodeURIComponent(jobId), {
+                headers: { 'Cache-Control': 'no-store', Accept: 'application/json' },
+                maxRedirects: 0,
+              });
+              if (![200, 503].includes(response.status())) fail('JOB_READBACK_HTTP_INVALID', response.status());
+              const body = await json(response);
+              const job = body?.job || body;
+              if (!job || String(job.jobId || '') !== jobId) fail('JOB_READBACK_INVALID');
+              finalJob = job;
+
+              const ref = String(job.externalRef || '');
+              if (NORMAL_A2A.test(ref)) taskRefs.add(ref);
+              const stages = eventStages(job);
+              if (stages.some((stage) => stage === 'repository_ready_for_draft_pr' || stage.startsWith('repository_closeout_'))) {
+                upstreamCompletionObserved = true;
+                break;
+              }
+              if (String(job.status || '').toLowerCase() === 'failed') fail('REPOSITORY_JOB_FAILED_BEFORE_CLOSEOUT');
+              if (String(job.status || '').toLowerCase() === 'blocked') {
+                fail('REPOSITORY_JOB_BLOCKED_BEFORE_COMPLETED_TASK', String(job.blocker || ''));
+              }
+              await sleep(2_000);
+            }
+            if (!upstreamCompletionObserved) fail('AGENT_ZERO_TASK_COMPLETION_NOT_CAUSALLY_OBSERVED');
+
+            const stages = eventStages(finalJob);
+            const normalSubmits = stages.filter((stage) => stage === 'agent_zero_a2a_submitted').length;
+            const retries = stages.filter((stage) => stage === 'agent_zero_a2a_retry_submitted').length;
+            const queued = stages.filter((stage) => stage === 'agent_zero_a2a_submit_queued').length;
+            const delegated = stages.filter((stage) => stage === 'agent_zero_repository_access_delegated').length;
+            if (normalSubmits !== 1 || retries !== 0 || queued !== 1 || delegated !== 1) {
+              fail('A2A_CARDINALITY_INVALID', JSON.stringify({ normalSubmits, retries, queued, delegated }));
+            }
+            if (taskRefs.size !== 1) fail('A2A_TASK_BINDING_CARDINALITY_INVALID', taskRefs.size);
+
+            const jobEventsText = eventText(finalJob);
+            if (/cognitive[_ -]?swarm|github coding agent|jules|billing|credit/i.test(jobEventsText)) {
+              fail('FORBIDDEN_EXECUTION_PATH_EVENT_OBSERVED');
+            }
+
+            const fileResponse = await context.request.post(
+              BACKEND + '/api/user/agent/jobs/' + encodeURIComponent(jobId) + '/tools/file',
+              {
+                data: { mode: 'read', path: 'testfile', maxBytes: 1 },
+                headers: { Accept: 'application/json' },
+                maxRedirects: 0,
+              },
+            );
+            const fileBody = await json(fileResponse);
+            const fileTool = fileBody?.tool || {};
+            const bytes = Number(fileTool?.metadata?.bytes);
+            const fileSha = String(fileTool?.metadata?.sha256 || '');
+            if (String(fileTool.status || '') !== 'done') fail('TESTFILE_READBACK_TOOL_FAILED', fileTool?.blocker || fileTool?.error || fileResponse.status());
+            if (bytes !== 0) fail('TESTFILE_NOT_EMPTY', bytes);
+            if (String(fileTool.stdout ?? '') !== '') fail('TESTFILE_CONTENT_NOT_EMPTY');
+            if (fileSha !== EMPTY_SHA256) fail('TESTFILE_EMPTY_HASH_MISMATCH');
+            evidence.fileReadback = {
+              httpStatus: fileResponse.status(),
+              toolStatus: fileTool.status,
+              bytes,
+              sha256: fileSha,
+              path: fileTool?.metadata?.path,
+            };
+
+            const statusResponse = await context.request.post(
+              BACKEND + '/api/user/agent/jobs/' + encodeURIComponent(jobId) + '/tools/git-status',
+              { data: {}, headers: { Accept: 'application/json' }, maxRedirects: 0 },
+            );
+            const statusBody = await json(statusResponse);
+            const statusTool = statusBody?.tool || {};
+            if (String(statusTool.status || '') !== 'done') fail('GIT_STATUS_READBACK_FAILED', statusTool?.blocker || statusTool?.error || statusResponse.status());
+            const changed = Array.isArray(statusTool.changedFiles) ? statusTool.changedFiles.map(String) : [];
+            if (changed.length !== 1 || changed[0] !== 'testfile') fail('WORKSPACE_CHANGED_FILES_NOT_EXACT', JSON.stringify(changed));
+            const gitStdout = String(statusTool.stdout || '');
+            if (!/(^|\n)\?\?\s+testfile(\n|$)/.test(gitStdout)) fail('TESTFILE_NOT_UNTRACKED');
+            evidence.gitStatus = {
+              httpStatus: statusResponse.status(),
+              toolStatus: statusTool.status,
+              changedFiles: changed,
+              stdoutSha256: sha256(gitStdout),
+              untrackedTestfile: true,
+            };
+
+            const finalResponse = await context.request.get(BACKEND + '/api/user/agent/jobs/' + encodeURIComponent(jobId), {
+              headers: { 'Cache-Control': 'no-store', Accept: 'application/json' },
+              maxRedirects: 0,
+            });
+            const finalBody = await json(finalResponse);
+            const readbackJob = finalBody?.job || finalBody || finalJob;
+            if (readbackJob?.draftPrUrl || readbackJob?.prUrl) fail('DRAFT_PR_PUBLICATION_OBSERVED');
+            if (String(readbackJob?.repoUrl || '') !== EXPECTED_REPO) fail('FINAL_REPOSITORY_TARGET_MISMATCH');
+            if (String(readbackJob?.mission || '') !== MISSION) fail('FINAL_MISSION_MISMATCH');
+
+            const forbidden = pageRequests.filter(({ method, path }) =>
+              (method === 'POST' && path === '/api/user/agent/swarm/run')
+              || (method === 'POST' && path === '/api/user/agent/jobs')
+              || (method === 'POST' && path === '/api/user/agent/toolchain/handoff')
+              || (method === 'POST' && path.endsWith('/draft-pr/create'))
+            );
+            if (forbidden.length) fail('FORBIDDEN_UI_REQUEST_OBSERVED', JSON.stringify(forbidden));
+            evidence.forbiddenPageRequests = forbidden;
+
+            evidence.a2a = {
+              taskRefSha256: sha256([...taskRefs][0]),
+              uniqueTaskRefCount: taskRefs.size,
+              submitQueuedCount: queued,
+              submittedCount: normalSubmits,
+              retrySubmittedCount: retries,
+              repositoryAccessDelegatedCount: delegated,
+              upstreamCompletionCausallyObserved: upstreamCompletionObserved,
+            };
+            evidence.job = {
+              jobId,
+              workspaceId: String(readbackJob?.workspaceId || finalJob?.workspaceId || ''),
+              repoUrl: String(readbackJob?.repoUrl || ''),
+              branch: String(readbackJob?.branch || ''),
+              status: String(readbackJob?.status || ''),
+              blocker: String(readbackJob?.blocker || ''),
+              changedFiles: Array.isArray(readbackJob?.changedFiles) ? readbackJob.changedFiles.map(String) : [],
+              prState: readbackJob?.prState ?? null,
+              draftPrUrlPresent: Boolean(readbackJob?.draftPrUrl),
+              prUrlPresent: Boolean(readbackJob?.prUrl),
+              eventStages: eventStages(readbackJob),
+              missionSha256: sha256(String(readbackJob?.mission || '')),
+            };
+            evidence.assertions = {
+              deployedUiUsed: true,
+              productionBackendUsed: true,
+              newPersistedRepositoryJob: true,
+              githubAccessTokenAbsent: true,
+              exactlyOneAgentZeroA2ATask: true,
+              agentZeroRepositoryDelegationObserved: true,
+              gitRepositoryWorkspaceReadback: true,
+              exactlyOneChangedFile: true,
+              testfileRegularReadSucceeded: true,
+              testfileSizeZero: true,
+              noCommit: true,
+              noSwarmRun: true,
+              noGenericJobsPost: true,
+              noToolchainHandoff: true,
+              noGitHubCodingAgentOrJulesEvent: true,
+              noBillingOrCreditsEvent: true,
+              noDraftPrPublication: true,
+              noOldJobReuse: true,
+            };
+
+            await writeFile('test-results/agent-zero-testfile-production-smoke.json', JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+            console.log('AGENT_ZERO_TESTFILE_PRODUCTION_SMOKE_VERIFIED');
+            console.log('JOB_ID=' + jobId);
+            console.log('TESTFILE_BYTES=0');
+            console.log('A2A_TASK_COUNT=1');
+            console.log('DRAFT_PR_PUBLICATION=false');
+          } finally {
+            await browser.close();
+          }
+          NODE
+          pnpm exec node test-results/agent-zero-testfile-production-smoke.mjs
+
+      - name: Upload bounded production smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-zero-testfile-production-smoke-${{ github.run_id }}
+          path: test-results/agent-zero-testfile-production-smoke.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Write safe smoke summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Agent Zero only production testfile smoke"
+            echo ""
+            echo "- Expected main: ${EXPECTED_MAIN_REVISION}"
+            echo "- UI: deployed https://chat.arelorian.de"
+            echo "- Backend: deployed https://sovereign-backend.arelorian.de"
+            echo "- Mission: exact empty-root-testfile mission"
+            echo "- No Draft-PR publication action is invoked by this workflow."
+            echo "- Evidence artifact contains no account key or credential value."
+          } >> "$GITHUB_STEP_SUMMARY"
