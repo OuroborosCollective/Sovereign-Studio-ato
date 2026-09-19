@@ -28,7 +28,7 @@ jobs:
       CI: 'true'
       NODE_VERSION: '22'
       PNPM_VERSION: '9.12.2'
-      SOVEREIGN_E2E_APP_URL: https://chat.arelorian.de
+      SOVEREIGN_E2E_APP_URL: https://sovereign-backend.arelorian.de/app/
       SOVEREIGN_E2E_BACKEND_URL: https://sovereign-backend.arelorian.de
       SOVEREIGN_E2E_REPO_URL: https://github.com/${{ github.repository }}
       SOVEREIGN_E2E_EXPECTED_REVISION: ${{ inputs.expected_revision }}
@@ -101,7 +101,7 @@ jobs:
           {
             echo "## Agent Zero Only Production Smoke"
             echo ""
-            echo "- Deployed UI: https://chat.arelorian.de"
+            echo "- Deployed UI: https://sovereign-backend.arelorian.de/app/"
             echo "- Production backend: https://sovereign-backend.arelorian.de"
             echo "- Expected revision: $SOVEREIGN_E2E_EXPECTED_REVISION"
             echo "- Expected backend digest: $SOVEREIGN_E2E_EXPECTED_IMAGE_DIGEST"

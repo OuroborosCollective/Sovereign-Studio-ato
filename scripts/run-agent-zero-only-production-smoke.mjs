@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium, request as playwrightRequest } from '@playwright/test';
 
-const APP_URL = (process.env.SOVEREIGN_E2E_APP_URL || 'https://chat.arelorian.de').replace(/\/+$/, '');
+const APP_URL = (process.env.SOVEREIGN_E2E_APP_URL || 'https://sovereign-backend.arelorian.de/app/').replace(/\/+$/, '');
 const BACKEND_URL = (process.env.SOVEREIGN_E2E_BACKEND_URL || 'https://sovereign-backend.arelorian.de').replace(/\/+$/, '');
 const REPO_URL = (process.env.SOVEREIGN_E2E_REPO_URL || 'https://github.com/OuroborosCollective/Sovereign-Studio-ato').replace(/\.git$/i, '');
 const EXPECTED_REVISION = String(process.env.SOVEREIGN_E2E_EXPECTED_REVISION || '').trim().toLowerCase();
