@@ -246,6 +246,7 @@ def test_code_missions_keep_repository_execution_out_of_swarm_and_billing() -> N
 
 def test_visible_user_swarm_route_refuses_repository_execution_and_github_credentials() -> None:
     routes = SWARM_ROUTES.read_text("utf-8")
+    controller = CONTROLLER.read_text("utf-8")
 
     assert 'def start_cognitive_swarm_run(' in routes
     assert '@app.route("/api/user/agent/swarm/run", methods=["POST"])' in routes
@@ -261,9 +262,17 @@ def test_visible_user_swarm_route_refuses_repository_execution_and_github_creden
         "def resume_cognitive_swarm_run(", 1
     )[0]
     assert "create_repository_single_agent_task(" not in start_path
-    assert "create_repository_swarm_tasks(" not in start_path
+    assert "create_repository_swarm_tasks(" not in routes
+    assert "repository_toolset = BoundRepositoryToolset(" not in routes
+    assert "repository_resume_route_blocked" in routes
     assert "create_sovereign_agent_job(" not in start_path
     assert "clone_repo=True" not in start_path
+
+    assert "create_repository_swarm_tasks(" not in controller
+    assert "repository_toolset = BoundRepositoryToolset(" not in controller
+    assert "Repository-backed runs cannot resume through Controller Board or Cognitive Swarm." in controller
+    assert '"billingRouteUsed": False' in controller
+    assert '"githubOAuthUsed": False' in controller
 
 
 def test_task_lifecycle_preserves_history_without_false_active_blockers() -> None:

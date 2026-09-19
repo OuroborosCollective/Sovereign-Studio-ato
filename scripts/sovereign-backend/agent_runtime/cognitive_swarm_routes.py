@@ -26,7 +26,6 @@ from .cognitive_run_store import (
     link_agent_run_job,
     list_resumable_agent_runs,
     read_agent_run,
-    read_agent_task_ids,
     record_agent_failure,
     record_agent_stage_event,
     request_agent_approval,
@@ -47,8 +46,6 @@ from .cognitive_repository_tools import (
     BoundRepositoryToolset,
     FleetAttemptSnapshot,
     FleetAttemptSnapshotEvidence,
-    create_repository_single_agent_task,
-    create_repository_swarm_tasks,
 )
 from .cognitive_swarm_manifest import WORKER_ROLES, manifest_payload
 from .cognitive_usage_billing import AgentBillingError, AgentStageBilling
@@ -389,6 +386,21 @@ def execute_persisted_swarm(
     worker_routes: dict[str, dict[str, Any]] | None = None,
     stage_billing: AgentStageBilling | None = None,
 ) -> tuple[dict[str, object], int]:
+    if (
+        repository_tool_factory is not None
+        or repository_tool_summary is not None
+        or repository_toolset is not None
+        or job_id
+    ):
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": run_id,
+            "blocker": "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE",
+            "reason": "Cognitive Swarm cannot receive repository execution tools or repository jobs.",
+            "nextAction": "USE_AGENT_ZERO_REPOSITORY_EXECUTION_ROUTE",
+            "secretValuesReturned": False,
+        }, 409
     manifest = manifest_payload()
     fleet_bindings = None
 
@@ -1097,6 +1109,8 @@ def start_cognitive_swarm_run(
         or normalized_repository_url
         or normalized_implementation_job_id
         or normalized_github_access_token
+        or _free_implementation_job is not None
+        or _free_repository_toolset is not None
     ):
         return {
             "ok": False,
@@ -2094,50 +2108,29 @@ def resume_cognitive_swarm_run(
             "errorType": type(exc).__name__,
         }, 503
 
-    task_ids_by_agent: dict[str, str] = {}
-    repository_toolset = None
-    try:
-        if claim.run.job_id:
-            conn = get_connection()
-            try:
-                task_ids_by_agent = read_agent_task_ids(conn, run_id=claim.run.run_id)
-                if not set(WORKER_ROLES).issubset(task_ids_by_agent):
-                    task_ids_by_agent.update(create_repository_swarm_tasks(
-                        conn,
-                        run_id=claim.run.run_id,
-                        evidence_id=claim.evidence_id,
-                        write_confirmed=True,
-                    ))
-            finally:
-                _close_connection(conn)
-            repository_toolset = BoundRepositoryToolset(
-                get_connection=get_connection,
-                user_id=user_id,
-                run_id=claim.run.run_id,
-                job_id=claim.run.job_id,
-                task_ids_by_agent=task_ids_by_agent,
-                workspace_root=_workspace_root(),
-                write_confirmed=True,
-            )
-    except Exception as exc:
-        failure_reason = "Repository execution resume handoff failed after the run lease was claimed."
+    if claim.run.job_id:
+        reason = (
+            "Repository-backed runs cannot resume through the cognitive swarm. "
+            "Repository execution is exclusive to the canonical Agent Zero A2A route."
+        )
         try:
             conn = get_connection()
             try:
-                failed_state = transition_agent_run(
+                blocked_state = transition_agent_run(
                     conn,
                     user_id=user_id,
                     run_id=claim.run.run_id,
-                    status="FAILED_RECOVERABLE",
+                    status="BLOCKED",
                     source="agents-sdk",
                     trace_id=resolved_trace_id,
-                    reason=failure_reason,
-                    next_action="RETRY_REPOSITORY_EXECUTION_HANDOFF",
-                    evidence_kind="resume_implementation_handoff_failure",
-                    evidence_summary=failure_reason,
+                    reason=reason,
+                    next_action="USE_AGENT_ZERO_REPOSITORY_EXECUTION_ROUTE",
+                    evidence_kind="repository_resume_route_blocked",
+                    evidence_summary=reason,
                     evidence_payload={
-                        "errorType": type(exc).__name__,
-                        "rawErrorPersisted": False,
+                        "repositoryExecutionPrevented": True,
+                        "githubOAuthUsed": False,
+                        "billingRouteUsed": False,
                     },
                     task_id=claim.task_id,
                     expected_lease_token=claim.lease_token,
@@ -2149,21 +2142,26 @@ def resume_cognitive_swarm_run(
                 "ok": False,
                 "runtime": "openai-agents-sdk",
                 "runId": claim.run.run_id,
-                "blocker": "RUN_RESUME_FAILURE_PERSISTENCE_UNAVAILABLE",
+                "blocker": "REPOSITORY_RESUME_BLOCKER_PERSISTENCE_UNAVAILABLE",
                 "errorType": type(persistence_exc).__name__,
+                "secretValuesReturned": False,
             }, 503
         return {
             "ok": False,
             "runtime": "openai-agents-sdk",
             "runId": claim.run.run_id,
-            "status": failed_state["status"],
-            "source": failed_state["source"],
-            "evidenceId": failed_state["evidenceId"],
-            "blocker": "AGENT_REPOSITORY_RESUME_HANDOFF_FAILED",
-            "reason": failed_state["reason"],
-            "nextAction": failed_state["nextAction"],
-            "resumed": True,
-        }, 503
+            "status": blocked_state["status"],
+            "source": blocked_state["source"],
+            "evidenceId": blocked_state["evidenceId"],
+            "blocker": "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE",
+            "reason": blocked_state["reason"],
+            "nextAction": blocked_state["nextAction"],
+            "resumed": False,
+            "secretValuesReturned": False,
+        }, 409
+
+    task_ids_by_agent: dict[str, str] = {}
+    repository_toolset = None
 
     resume_context = {
         "persistedRunId": claim.run.run_id,

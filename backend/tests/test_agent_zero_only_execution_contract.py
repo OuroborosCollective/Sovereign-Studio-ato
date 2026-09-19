@@ -54,11 +54,18 @@ def test_legacy_swarm_and_controller_cannot_execute_repositories() -> None:
 
     assert "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE" in swarm
     assert "create_sovereign_agent_job(" not in swarm
+    assert "create_repository_swarm_tasks(" not in swarm
+    assert "repository_toolset = BoundRepositoryToolset(" not in swarm
+    assert "Cognitive Swarm cannot receive repository execution tools or repository jobs." in swarm
+    assert "repository_resume_route_blocked" in swarm
     assert "clone_repo=True" not in swarm
     assert "resolve_request_github_token" not in swarm
 
     assert "start_repository_execution(" in controller
     assert "create_sovereign_agent_job(" not in controller
+    assert "create_repository_swarm_tasks(" not in controller
+    assert "repository_toolset = BoundRepositoryToolset(" not in controller
+    assert "Repository-backed runs cannot resume through Controller Board or Cognitive Swarm." in controller
     assert "clone_repo=True" not in controller
     assert "resolve_request_github_token(" not in controller
     assert '"billingRouteUsed": False' in controller

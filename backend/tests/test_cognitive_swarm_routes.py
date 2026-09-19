@@ -780,70 +780,36 @@ def test_free_runtime_rejects_invalid_intent_before_provider_execution(monkeypat
     assert "intentMode must be" in payload["error"]
 
 
-def test_free_runtime_does_not_retry_after_repository_mutation(monkeypatch) -> None:
-    attempts: list[str] = []
-    resolution = _free_resolution()
-    intent = MissionIntent(
-        mode="read_only_analysis",
-        normalized_goal="Inspect mutation safety.",
-        requires_online_tools=True,
-        requires_repository_workspace=False,
-        learning_scope=[],
-        confidence=1.0,
-    )
-
+def test_free_runtime_rejects_internal_repository_toolset_before_provider_execution(monkeypatch) -> None:
+    factory = FakeConnectionFactory()
     monkeypatch.setattr(
         routes_runtime,
         "load_execution_resolution",
-        lambda *args, **kwargs: resolution,
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("resolver must not run")),
     )
-
-    async def failing_free_agent(*args, route=None, **kwargs):
-        attempts.append(str((route or {}).get("id") or ""))
-        raise SwarmExecutionError(
-            stage="free-single-agent",
-            family="FREELLM_RATE_LIMITED",
-            error_type="RateLimitError",
-            next_action="RETRY_AFTER_PROVIDER_BACKOFF",
-            retryable=True,
-            http_status=429,
-        )
-
-    monkeypatch.setattr(routes_runtime, "run_free_single_agent", failing_free_agent)
-    monkeypatch.setattr(routes_runtime, "_record_route_cooldown", lambda *args, **kwargs: None)
-
-    def transition(*args, **kwargs):
-        return {
-            "status": kwargs["status"],
-            "source": kwargs["source"],
-            "evidenceId": "evidence-free-failed",
-            "reason": kwargs["reason"],
-            "nextAction": kwargs["next_action"],
-        }
-
-    monkeypatch.setattr(routes_runtime, "transition_agent_run", transition)
+    monkeypatch.setattr(
+        routes_runtime,
+        "run_free_single_agent",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("provider must not run")),
+    )
     mutated_toolset = SimpleNamespace(
         tools_for_role=lambda _role: [],
         summary=lambda: {"rolesWithMutations": ["free_single_agent"]},
     )
 
     payload, status_code = routes_runtime.start_cognitive_swarm_run(
-        get_connection=FakeConnectionFactory(),
+        get_connection=factory,
         user_id=USER_ID,
-        mission="Do not duplicate an already mutated repository action.",
+        mission="Do not accept a hidden repository execution fallback.",
         mode="free",
-        run_id="run-free-mutation-guard",
-        session_key="session-free-mutation-guard",
-        trace_id="trace-free-mutation-guard",
-        _reuse_received_state={"evidenceId": "evidence-free-received"},
         _free_repository_toolset=mutated_toolset,
-        _free_mission_intent=intent,
     )
 
-    assert status_code == 502
-    assert payload["status"] == "FAILED_RECOVERABLE"
-    assert payload["freeRouteFailoverCount"] == 0
-    assert attempts == ["free-a"]
+    assert status_code == 409
+    assert payload["blocker"] == "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE"
+    assert payload["nextAction"] == "USE_AGENT_ZERO_REPOSITORY_EXECUTION_ROUTE"
+    assert payload["secretValuesReturned"] is False
+    assert factory.calls == []
 
 
 def test_swarm_rejects_secret_shaped_input() -> None:
@@ -907,7 +873,7 @@ def test_swarm_resume_persists_route_blocker_with_claimed_lease(monkeypatch) -> 
     assert not any("INSERT INTO llm_usage_settlements" in sql for sql, _ in factory.calls)
 
 
-def test_resume_repository_handoff_failure_persists_recoverable_state_with_same_lease(monkeypatch) -> None:
+def test_resume_repository_backed_run_is_blocked_before_swarm_or_billing(monkeypatch) -> None:
     claim = SimpleNamespace(
         run=SimpleNamespace(
             run_id="run-resume-handoff",
@@ -929,21 +895,21 @@ def test_resume_repository_handoff_failure_persists_recoverable_state_with_same_
     monkeypatch.setattr(routes_runtime, "claim_agent_run_for_resume", lambda *args, **kwargs: claim)
     monkeypatch.setattr(
         routes_runtime,
-        "read_agent_task_ids",
-        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("task store unavailable")),
+        "load_execution_resolution",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("billing/model resolution must not run")),
     )
 
-    def persist_failure(*args, **kwargs):
+    def persist_block(*args, **kwargs):
         captured.update(kwargs)
         return {
-            "status": "FAILED_RECOVERABLE",
+            "status": "BLOCKED",
             "source": "agents-sdk",
-            "evidenceId": "evidence-resume-failed",
+            "evidenceId": "evidence-resume-blocked",
             "reason": kwargs["reason"],
             "nextAction": kwargs["next_action"],
         }
 
-    monkeypatch.setattr(routes_runtime, "transition_agent_run", persist_failure)
+    monkeypatch.setattr(routes_runtime, "transition_agent_run", persist_block)
     payload, status_code = routes_runtime.resume_cognitive_swarm_run(
         get_connection=FakeConnectionFactory(),
         user_id=USER_ID,
@@ -951,13 +917,18 @@ def test_resume_repository_handoff_failure_persists_recoverable_state_with_same_
         evidence="Fresh runtime evidence.",
     )
 
-    assert status_code == 503
-    assert payload["status"] == "FAILED_RECOVERABLE"
-    assert payload["blocker"] == "AGENT_REPOSITORY_RESUME_HANDOFF_FAILED"
-    assert payload["resumed"] is True
+    assert status_code == 409
+    assert payload["status"] == "BLOCKED"
+    assert payload["blocker"] == "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE"
+    assert payload["nextAction"] == "USE_AGENT_ZERO_REPOSITORY_EXECUTION_ROUTE"
+    assert payload["resumed"] is False
+    assert payload["secretValuesReturned"] is False
     assert captured["expected_lease_token"] == claim.lease_token
     assert captured["task_id"] == claim.task_id
-    assert captured["evidence_kind"] == "resume_implementation_handoff_failure"
+    assert captured["evidence_kind"] == "repository_resume_route_blocked"
+    assert captured["evidence_payload"]["repositoryExecutionPrevented"] is True
+    assert captured["evidence_payload"]["githubOAuthUsed"] is False
+    assert captured["evidence_payload"]["billingRouteUsed"] is False
 
 
 def test_swarm_resume_rejects_active_lease_without_starting_second_run(monkeypatch) -> None:

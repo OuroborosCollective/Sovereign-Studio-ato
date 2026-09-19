@@ -16,10 +16,6 @@ from typing import Any, Callable
 import requests
 from flask import jsonify, make_response, request
 
-from agent_runtime.cognitive_repository_tools import (
-    BoundRepositoryToolset,
-    create_repository_swarm_tasks,
-)
 from agent_runtime.cognitive_run_store import (
     AgentRunIterationLimit,
     AgentRunNotResumable,
@@ -27,7 +23,6 @@ from agent_runtime.cognitive_run_store import (
     claim_agent_run_for_resume,
     create_agent_run,
     link_agent_run_job,
-    read_agent_task_ids,
     record_external_action_event,
     transition_agent_run,
 )
@@ -980,6 +975,39 @@ def register_controller_board_routes(
         finally:
             _close(conn)
 
+        if claim.run.job_id:
+            reason = (
+                "Repository-backed runs cannot resume through Controller Board or Cognitive Swarm. "
+                "Repository execution is exclusive to the canonical Agent Zero A2A route."
+            )
+            state = _persist_execution_resolution_blocker(
+                get_connection,
+                user_id=owner_id,
+                run_id=claim.run.run_id,
+                trace_id=trace_id,
+                status="BLOCKED",
+                blocker="REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE",
+                reason=reason,
+                next_action="USE_AGENT_ZERO_REPOSITORY_EXECUTION_ROUTE",
+                task_id=claim.task_id,
+                expected_lease_token=claim.lease_token,
+            )
+            return _operator_json({
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "runId": claim.run.run_id,
+                "status": state["status"],
+                "source": state["source"],
+                "evidenceId": state["evidenceId"],
+                "blocker": "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE",
+                "reason": state["reason"],
+                "nextAction": state["nextAction"],
+                "resumed": False,
+                "billingRouteUsed": False,
+                "githubOAuthUsed": False,
+                "protectedValuesReturned": False,
+            }, 409)
+
         try:
             execution_resolution = load_execution_resolution(
                 get_connection,
@@ -1144,28 +1172,6 @@ def register_controller_board_routes(
 
         task_ids_by_agent: dict[str, str] = {}
         repository_toolset = None
-        if claim.run.job_id:
-            conn = get_connection()
-            try:
-                task_ids_by_agent = read_agent_task_ids(conn, run_id=claim.run.run_id)
-                if not set(WORKER_ROLES).issubset(task_ids_by_agent):
-                    task_ids_by_agent.update(create_repository_swarm_tasks(
-                        conn,
-                        run_id=claim.run.run_id,
-                        evidence_id=claim.evidence_id,
-                        write_confirmed=True,
-                    ))
-            finally:
-                _close(conn)
-            repository_toolset = BoundRepositoryToolset(
-                get_connection=get_connection,
-                user_id=owner_id,
-                run_id=claim.run.run_id,
-                job_id=claim.run.job_id,
-                task_ids_by_agent=task_ids_by_agent,
-                workspace_root=_controller_workspace_root(),
-                write_confirmed=True,
-            )
 
         resume_context = {
             "persistedRunId": claim.run.run_id,
