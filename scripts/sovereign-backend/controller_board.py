@@ -345,6 +345,43 @@ def register_controller_board_routes(
         if requested_mode not in {"paid", "free"}:
             return _operator_json({"error": "mode must be paid or free"}, 400)
 
+        if requested_intent_mode == "repository_execution":
+            conn = get_connection()
+            try:
+                owner_id = _operator_owner_user_id(conn)
+                repository = _controller_repository()
+                job = start_repository_execution(
+                    conn,
+                    user_id=owner_id,
+                    body={
+                        "mission": mission,
+                        "mode": "free",
+                        "agentMode": "single",
+                        "intentMode": "repository_execution",
+                        "repositoryUrl": f"https://github.com/{repository}",
+                        "repositoryBranch": "main",
+                    },
+                    workspace_root=_controller_workspace_root(),
+                )
+            except LookupError:
+                return _operator_json({"error": "configured owner was not found"}, 404)
+            finally:
+                _close(conn)
+            return _operator_json({
+                "ok": job.status not in {"blocked", "failed"},
+                "runtime": "sovereign-agent",
+                "execution": "repository-single-a2a",
+                "jobId": job.job_id,
+                "workspaceId": job.workspace_id,
+                "externalRef": job.external_ref,
+                "status": job.status,
+                "operatorBridge": True,
+                "requestedMode": requested_mode,
+                "billingRouteUsed": False,
+                "githubOAuthUsed": False,
+                "protectedValuesReturned": False,
+            }, 202 if job.status not in {"blocked", "failed"} else 409)
+
         if requested_mode == "free":
             conn = get_connection()
             try:
@@ -361,37 +398,6 @@ def register_controller_board_routes(
                 }, 503)
             finally:
                 _close(conn)
-            if requested_intent_mode == "repository_execution":
-                conn = get_connection()
-                try:
-                    repository = _controller_repository()
-                    job = start_repository_execution(
-                        conn,
-                        user_id=owner_id,
-                        body={
-                            "mission": mission,
-                            "mode": "free",
-                            "agentMode": "single",
-                            "intentMode": "repository_execution",
-                            "repositoryUrl": f"https://github.com/{repository}",
-                            "repositoryBranch": "main",
-                        },
-                        workspace_root=_controller_workspace_root(),
-                    )
-                finally:
-                    _close(conn)
-                return _operator_json({
-                    "ok": job.status not in {"blocked", "failed"},
-                    "runtime": "sovereign-agent",
-                    "execution": "repository-single-a2a",
-                    "jobId": job.job_id,
-                    "workspaceId": job.workspace_id,
-                    "externalRef": job.external_ref,
-                    "status": job.status,
-                    "operatorBridge": True,
-                    "requestedMode": "free",
-                    "protectedValuesReturned": False,
-                }, 202 if job.status not in {"blocked", "failed"} else 409)
             payload, status_code = start_cognitive_swarm_run(
                 get_connection=get_connection,
                 user_id=owner_id,
