@@ -591,3 +591,12 @@ Learned: Start-path exclusivity is insufficient when resume/recovery code can re
 Open: Exact-head CI, merge readback, immutable Backend revision/digest, PatchMon/Fleet health and the deployed UI → persisted job → exactly one Agent Zero A2A → empty root `testfile` smoke remain required.
 Next safe step: Require terminal exact-head gates, merge only if green, then prove the exact merged Backend image and run the no-OAuth/no-Swarm/no-billing production smoke.
 
+### 2026-09-19 — Agent-Zero-only production smoke lane
+Status: SOURCE_AND_CI_VERIFIED; deployed smoke pending.
+Task: Add a production-only proof for deployed UI → persisted repository job → exactly one Agent Zero A2A task → shared workspace → empty root `testfile`, with no OAuth/Swarm/billing/Draft-PR execution fallback.
+Decisions: Use an opt-in `workflow_dispatch` lane with `contents: read`, no GitHub token or publication step; bind backend `/health` to exact revision/digest; verify `testfile` through the existing job-owned file and git-status readbacks.
+Evidence: Memory pre-read on `main@5d23e0f0274e33140cc35e88aca0a7fefeb63109`; production backend `sha256:b6e7cafc8bae27f391a0b9397769cab9283ea9dec68a184bd41378beb0b462df` and Agent Zero healthy with RW shared-workspace mount. PR #2016 pre-Memory head `97c6ae14148c796872028d667d613581a4b10597`: Agent Backend 1305 passed/1 skipped, Revision Guardian, Boundary Ledger, Continuity, Integration Plan, MCP validator and Release Verification all succeeded.
+Learned: The existing job-owned FileReadTool plus git-status already proves regular-file identity, zero bytes, empty SHA-256 and uncommitted state; no new runtime readback API or GitHub execution authority is needed.
+Open: This Memory append changes the PR head; exact-head gates, merge/deploy revision+digest readback and the real dispatched production smoke are still required.
+Next safe step: Require terminal checks on the new exact head, merge only if green, deploy/read back that exact revision and dispatch the smoke.
+
