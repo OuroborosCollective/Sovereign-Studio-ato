@@ -581,3 +581,13 @@ Evidence: Memory pre-read completed on `main@1ecde15912c732349732e2f823142bbcf6b
 Learned: Authentication/readback/publication authority and execution authority must be structurally separate at every UI and backend entry point. A GitHub credential available to a session must never become an implicit repository executor or prerequisite for starting an Agent Zero mission.
 Open: Final exact-head gates after this final Memory update, merge, immutable production release/readback, and deployed Sovereign UI → Agent Zero smoke creating one empty root `testfile` without Draft PR remain required.
 Next safe step: Freeze this head, require all exact-head gates green, merge under Owner approval, then verify production revision/digest and run the deployed UI testfile smoke with zero GitHub-OAuth execution dispatch.
+
+### 2026-09-19 — Agent-Zero-only resume fallback closure
+Status: SOURCE_PATCHED; exact-head CI and deployed runtime proof pending.
+Task: Close the hidden post-#2011 repository-execution fallback that could reconstruct repository Swarm tools when a persisted run with a repository job was resumed.
+Decisions: Repository-backed resume now fails closed before billing/model resolution in both Cognitive Swarm and Controller Board; `execute_persisted_swarm` rejects any repository tool factory/summary/toolset or repository job; internal free-agent repository toolsets are rejected; the residual `github_access_token=None` coupling was removed from canonical repository start. Canonical/shipping execution mirrors remain byte-equal.
+Evidence: Started from exact `main@89e5303ec81b2e8091b0b5be413c04737b568f4e`. The merged source still contained active `create_repository_swarm_tasks(...)` resume paths in `cognitive_swarm_routes.py` and `controller_board.py`; targeted isolated checks before publication passed 4/4 Agent-Zero-only contract tests and 20/20 controller-board contract tests. The isolated runner lacked Flask for the full cognitive-swarm suite, so exact-head GitHub Agent Backend CI remains authoritative for that regression.
+Learned: Start-path exclusivity is insufficient when resume/recovery code can reconstruct mutation authority from a persisted repository job; execution authority must stay exclusive across start, resume, recovery and internal-call boundaries.
+Open: Exact-head CI, merge readback, immutable Backend revision/digest, PatchMon/Fleet health and the deployed UI → persisted job → exactly one Agent Zero A2A → empty root `testfile` smoke remain required.
+Next safe step: Require terminal exact-head gates, merge only if green, then prove the exact merged Backend image and run the no-OAuth/no-Swarm/no-billing production smoke.
+
