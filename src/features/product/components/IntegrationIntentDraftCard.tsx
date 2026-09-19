@@ -39,8 +39,6 @@ export interface IntegrationIntentDraftCardProps {
   gateSnapshot: IntegrationIntentDraftGateSnapshot;
   /** Called when user confirms the draft and execution path is ready */
   onConfirm: () => void;
-  /** Called when user confirms but GitHub access is needed - opens GitHub Access Gate */
-  onConfirmWithGitHubAccess?: () => void;
   /** Called when user wants to rephrase the draft */
   onRephrase: () => void;
   /** Called when user rejects the draft */
@@ -95,36 +93,19 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
   draft,
   gateSnapshot,
   onConfirm,
-  onConfirmWithGitHubAccess,
   onRephrase,
   onReject,
   canConfirm = true,
   confirmBlocker,
 }) => {
   const { acted, act } = useActionLatch();
-  const accessRequestPendingRef = React.useRef(false);
+  // GitHub write readiness is publication/readback information only.
+  // It must never gate repository execution, which is Agent-Zero-only.
+  const einbauenEnabled = !acted && gateSnapshot.repoReady && canConfirm;
 
-  // Determine if we need GitHub access to proceed
-  const needsGitHubAccess = gateSnapshot.repoReady && !gateSnapshot.githubWriteReady;
-
-  // The "Einbauen" button should be enabled if repo is ready
-  // Even without GitHub write, clicking it should lead to the access gate
-  const einbauenEnabled = !acted && gateSnapshot.repoReady && (canConfirm || needsGitHubAccess);
-
-  // Opening the secure GitHub gate is not action approval. Keep the draft
-  // pending so the owner must confirm again after access becomes ready.
   const handleEinbauen = () => {
-    if (needsGitHubAccess && onConfirmWithGitHubAccess) {
-      if (accessRequestPendingRef.current) return;
-      accessRequestPendingRef.current = true;
-      onConfirmWithGitHubAccess();
-      window.setTimeout(() => {
-        accessRequestPendingRef.current = false;
-      }, 0);
-    } else if (canConfirm) {
-      if (!act()) return;
-      onConfirm();
-    }
+    if (!canConfirm || !act()) return;
+    onConfirm();
   };
 
   const handleRephrase = () => {
@@ -258,7 +239,7 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
           </span>
           <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-1.5" data-testid="draft-gates">
             <GateIndicator label="Repo ready" ready={gateSnapshot.repoReady} />
-            <GateIndicator label="GitHub Write" ready={gateSnapshot.githubWriteReady} />
+            <GateIndicator label="GitHub Publish" ready={gateSnapshot.githubWriteReady} />
             <GateIndicator label="Direct Patch" ready={gateSnapshot.directPatchReady} />
             <GateIndicator label="Sovereign Agent" ready={gateSnapshot.agentReady} />
           </div>
@@ -280,15 +261,13 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
             disabled={!einbauenEnabled}
             className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
               einbauenEnabled
-                ? needsGitHubAccess
-                  ? 'bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 active:scale-[0.98]'
-                  : 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30 active:scale-[0.98]'
+                ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30 active:scale-[0.98]'
                 : 'bg-slate-800 border border-slate-700 text-slate-500 cursor-not-allowed'
             }`}
             data-testid="btn-confirm"
-            aria-label={needsGitHubAccess ? 'Sicheren GitHub-Zugang öffnen' : 'Repository-Auftrag starten'}
+            aria-label="Repository-Auftrag starten"
           >
-            {needsGitHubAccess ? 'GitHub-Zugang öffnen' : 'Auftrag starten'}
+            Auftrag starten
           </button>
 
           {/* Neu formulieren */}
