@@ -1433,67 +1433,17 @@ def start_cognitive_swarm_run(
                 )
             if mission_intent is None:
                 raise RuntimeError("Free execution requires a deterministic intent mode.")
-            if (
-                mission_intent.mode == "repository_execution"
-                and implementation_job is None
-            ):
-                conn = get_connection()
-                try:
-                    configured_repository = _configured_repository()
-                    selected_repository_url = (
-                        normalized_repository_url
-                        or f"https://github.com/{configured_repository}"
-                    )
-                    job_payload: dict[str, Any] = {
-                        "repoUrl": selected_repository_url,
-                        "branch": normalized_repository_branch,
-                        "mission": mission_intent.normalized_goal,
-                        "executor": "sovereign-local-runner",
-                        "draftPrOnly": True,
-                        "allowAutoMerge": False,
-                    }
-                    if normalized_expected_head_sha:
-                        job_payload["expectedHeadSha"] = normalized_expected_head_sha
-                    implementation_job = create_sovereign_agent_job(
-                        conn,
-                        user_id=user_id,
-                        payload=job_payload,
-                        github_access_token=normalized_github_access_token,
-                        workspace_root=_workspace_root(),
-                        provision_workspace=True,
-                        clone_repo=True,
-                        job_id=normalized_implementation_job_id,
-                    )
-                    linked_state = link_agent_run_job(
-                        conn,
-                        user_id=user_id,
-                        run_id=resolved_run_id,
-                        job_id=implementation_job.job_id,
-                        trace_id=resolved_trace_id,
-                        workspace_id=implementation_job.result.workspace_id,
-                    )
-                    if implementation_job.result.status in {"blocked", "failed"}:
-                        raise RuntimeError(
-                            implementation_job.result.blocker
-                            or "FREE_AGENT_WORKSPACE_PROVISIONING_FAILED"
-                        )
-                    free_task_id = create_repository_single_agent_task(
-                        conn,
-                        run_id=resolved_run_id,
-                        evidence_id=linked_state["evidenceId"],
-                        write_confirmed=True,
-                    )
-                finally:
-                    _close_connection(conn)
-                repository_toolset = BoundRepositoryToolset(
-                    get_connection=get_connection,
-                    user_id=user_id,
-                    run_id=resolved_run_id,
-                    job_id=implementation_job.job_id,
-                    task_ids_by_agent={"free_single_agent": free_task_id},
-                    workspace_root=_workspace_root(),
-                    write_confirmed=True,
-                )
+            if mission_intent.mode == "repository_execution":
+                return {
+                    "ok": False,
+                    "runtime": "openai-agents-sdk",
+                    "runId": resolved_run_id,
+                    "traceId": resolved_trace_id,
+                    "blocker": "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE",
+                    "reason": "Repository execution is exclusive to the canonical Agent Zero A2A route.",
+                    "nextAction": "USE_AGENT_ZERO_REPOSITORY_EXECUTION_ROUTE",
+                    "secretValuesReturned": False,
+                }, 409
 
             single_result = asyncio.run(run_free_single_agent(
                 normalized_mission,
@@ -1963,128 +1913,21 @@ def start_cognitive_swarm_run(
             "nextAction": intent_state["nextAction"],
         }, 502 if exc.retryable else 503
 
-    implementation_job = None
-    task_ids_by_agent: dict[str, str] = {}
-    repository_toolset = None
-    try:
-        if mission_intent.mode == "repository_execution":
-            conn = get_connection()
-            try:
-                configured_repository = _configured_repository()
-                selected_repository_url = (
-                    normalized_repository_url
-                    or f"https://github.com/{configured_repository}"
-                )
-                job_payload: dict[str, Any] = {
-                    "repoUrl": selected_repository_url,
-                    "branch": normalized_repository_branch,
-                    "mission": mission_intent.normalized_goal,
-                    "executor": "sovereign-local-runner",
-                    "draftPrOnly": True,
-                    "allowAutoMerge": False,
-                }
-                if normalized_expected_head_sha:
-                    job_payload["expectedHeadSha"] = normalized_expected_head_sha
-                implementation_job = create_sovereign_agent_job(
-                    conn,
-                    user_id=user_id,
-                    payload=job_payload,
-                    github_access_token=normalized_github_access_token,
-                    workspace_root=_workspace_root(),
-                    provision_workspace=True,
-                    clone_repo=True,
-                    job_id=normalized_implementation_job_id,
-                )
-                linked_state = link_agent_run_job(
-                    conn,
-                    user_id=user_id,
-                    run_id=resolved_run_id,
-                    job_id=implementation_job.job_id,
-                    trace_id=resolved_trace_id,
-                    workspace_id=implementation_job.result.workspace_id,
-                )
-                if implementation_job.result.status in {"blocked", "failed"}:
-                    blocked_state = transition_agent_run(
-                        conn,
-                        user_id=user_id,
-                        run_id=resolved_run_id,
-                        status="BLOCKED",
-                        source="agents-sdk",
-                        trace_id=resolved_trace_id,
-                        reason="The real repository workspace could not be provisioned.",
-                        next_action="FIX_WORKSPACE_PROVISIONING_AND_RERUN",
-                        evidence_kind="workspace_provisioning_failure",
-                        evidence_summary="Repository execution was selected but workspace provisioning failed.",
-                        evidence_payload={
-                            "jobId": implementation_job.job_id,
-                            "workspaceId": implementation_job.result.workspace_id,
-                            "blocker": implementation_job.result.blocker or "IMPLEMENTATION_JOB_PROVISIONING_FAILED",
-                            "autoMerge": False,
-                        },
-                        agent_id="orchestrator",
-                    )
-                    return {
-                        "ok": False,
-                        "runtime": "sovereign-agent",
-                        "runId": resolved_run_id,
-                        "status": blocked_state["status"],
-                        "source": blocked_state["source"],
-                        "evidenceId": blocked_state["evidenceId"],
-                        "receivedEvidenceId": received_state["evidenceId"],
-                        "jobId": implementation_job.job_id,
-                        "workspaceId": implementation_job.result.workspace_id,
-                        "blocker": implementation_job.result.blocker or "IMPLEMENTATION_JOB_PROVISIONING_FAILED",
-                        "reason": blocked_state["reason"],
-                        "nextAction": blocked_state["nextAction"],
-                    }, 503
-                task_ids_by_agent = create_repository_swarm_tasks(
-                    conn,
-                    run_id=resolved_run_id,
-                    evidence_id=linked_state["evidenceId"],
-                    write_confirmed=True,
-                )
-            finally:
-                _close_connection(conn)
-            repository_toolset = BoundRepositoryToolset(
-                get_connection=get_connection,
-                user_id=user_id,
-                run_id=resolved_run_id,
-                job_id=implementation_job.job_id,
-                task_ids_by_agent=task_ids_by_agent,
-                workspace_root=_workspace_root(),
-                write_confirmed=True,
-            )
-    except Exception as exc:
-        conn = get_connection()
-        try:
-            handoff_state = transition_agent_run(
-                conn,
-                user_id=user_id,
-                run_id=resolved_run_id,
-                status="FAILED_RECOVERABLE",
-                source="agents-sdk",
-                trace_id=resolved_trace_id,
-                reason="Repository execution handoff failed after intent classification.",
-                next_action="RETRY_REPOSITORY_EXECUTION_HANDOFF",
-                evidence_kind="implementation_handoff_failure",
-                evidence_summary="The implementation job or six-agent task graph could not be materialized.",
-                evidence_payload={"errorType": type(exc).__name__, "rawErrorPersisted": False},
-                agent_id="orchestrator",
-            )
-        finally:
-            _close_connection(conn)
+    if mission_intent.mode == "repository_execution":
         return {
             "ok": False,
             "runtime": "openai-agents-sdk",
             "runId": resolved_run_id,
-            "status": handoff_state["status"],
-            "source": handoff_state["source"],
-            "evidenceId": handoff_state["evidenceId"],
-            "receivedEvidenceId": received_state["evidenceId"],
-            "blocker": "AGENT_REPOSITORY_HANDOFF_FAILED",
-            "reason": handoff_state["reason"],
-            "nextAction": handoff_state["nextAction"],
-        }, 503
+            "traceId": resolved_trace_id,
+            "blocker": "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE",
+            "reason": "Repository execution is exclusive to the canonical Agent Zero A2A route.",
+            "nextAction": "USE_AGENT_ZERO_REPOSITORY_EXECUTION_ROUTE",
+            "secretValuesReturned": False,
+        }, 409
+
+    implementation_job = None
+    task_ids_by_agent: dict[str, str] = {}
+    repository_toolset = None
 
     return execute_persisted_swarm(
         get_connection=get_connection,
