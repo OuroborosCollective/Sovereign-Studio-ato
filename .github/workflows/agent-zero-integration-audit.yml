@@ -15,7 +15,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.head.ref == 'sovereign/chatgpt/agent-zero-only-execution'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout exact integration head without persisted credentials
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -37,7 +37,15 @@ jobs:
           git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/agent-zero-source-audit/source-tree.txt"
           cd "$RUNNER_TEMP/agent-zero-source-audit"
           sha256sum source.bundle > source.bundle.sha256
-      - name: Upload source only; this is not runtime evidence
+      - name: Download public Python wheels for offline regression environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip download --only-binary=:all: --python-version 3.13 --platform manylinux2014_x86_64 --implementation cp --abi cp313 --dest "$RUNNER_TEMP/agent-zero-source-audit/wheels" 'flask>=2.3.0' 'flask-cors>=4.0.0' 'a2a-sdk==1.1.1' 'openai-agents==0.18.2' 'psycopg2-binary>=2.9.9' 'PyJWT>=2.8.0'
+          cd "$RUNNER_TEMP/agent-zero-source-audit"
+          sha256sum wheels/* > wheels.sha256
+      - name: Upload source and dependencies only; not runtime evidence
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: agent-zero-source-audit-${{ github.run_id }}
