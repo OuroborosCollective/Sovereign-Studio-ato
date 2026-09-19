@@ -935,15 +935,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(within(draftCard).getByTestId('draft-target-head').textContent).toBe('c'.repeat(40));
     expect(props.onStartAgent).not.toHaveBeenCalled();
 
-    fireEvent.click(within(draftCard).getByRole('button', { name: 'Sicheren GitHub-Zugang öffnen' }));
-    fireEvent.click(screen.getByText('Zugang eingeben'));
-    fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
-    fireEvent.click(screen.getByText('Übernehmen'));
-    await waitFor(() => expect(
-      getActionStream(),
-    ).toHaveTextContent('GitHub-Zugang bereit'));
-
-    // Access capability is not consent to execute. The exact preview stays pending.
+    // Repository execution is independent from GitHub publication authority.
     expect(props.onStartAgent).not.toHaveBeenCalled();
     expect(screen.getByTestId('integration-intent-draft-card')).toBeInTheDocument();
 
@@ -954,7 +946,6 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       repoUrl: TEST_REPO_URL,
       branch: 'main',
       expectedHeadSha: 'c'.repeat(40),
-      githubAccessToken: fakeGitHubPat(),
     });
   });
 
@@ -1302,7 +1293,6 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       repoUrl: TEST_REPO_URL,
       branch: "main",
       expectedHeadSha: 'c'.repeat(40),
-      githubAccessToken: fakeGitHubPat(),
     });
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
   });
