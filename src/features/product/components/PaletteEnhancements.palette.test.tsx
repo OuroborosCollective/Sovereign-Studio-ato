@@ -135,19 +135,46 @@ describe('Palette Accessibility Enhancements', () => {
       expect(closeButton).toHaveAttribute('title', 'Runtime Logs schließen');
     });
 
-    it('FileContentPreviewSheet close button has matching aria-label and title', () => {
-      render(
+    it('FileContentPreviewSheet close button has matching aria-label and title, scrollable pre, and send to chat button attributes', () => {
+      const onSendToChat = vi.fn();
+      const { container, rerender } = render(
         <FileContentPreviewSheet
           filePath="src/main.tsx"
           result={{ status: 'loaded', content: 'console.log("hello");', sizeBytes: 22, sha: '123', language: 'typescript' }}
           loading={false}
           onClose={vi.fn()}
+          onSendToChat={onSendToChat}
         />
       );
 
       const closeButton = screen.getByRole('button', { name: 'Vorschau schließen' });
       expect(closeButton).toHaveAttribute('aria-label', 'Vorschau schließen');
       expect(closeButton).toHaveAttribute('title', 'Vorschau schließen');
+
+      const preBlock = screen.getByLabelText('Dateiinhalt');
+      expect(preBlock).toHaveAttribute('tabIndex', '0');
+      expect(preBlock).toHaveClass('focus-visible:ring-2');
+
+      const sendToChatBtn = screen.getByRole('button', { name: 'Dateiinhalt in Chat übernehmen' });
+      expect(sendToChatBtn).toHaveAttribute('title', 'Dateiinhalt in Chat übernehmen');
+      expect(sendToChatBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(sendToChatBtn);
+      expect(onSendToChat).toHaveBeenCalledTimes(1);
+
+      // Error state
+      rerender(
+        <FileContentPreviewSheet
+          filePath="src/main.tsx"
+          result={{ status: 'error', error: 'File read error', content: '', sizeBytes: 0, sha: '', language: '' }}
+          loading={false}
+          onClose={vi.fn()}
+        />
+      );
+
+      const warningIcon = container.querySelector('[aria-hidden="true"]');
+      expect(warningIcon).toBeInTheDocument();
+      expect(warningIcon).toHaveTextContent('⚠️');
     });
   });
 
