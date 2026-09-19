@@ -211,6 +211,8 @@ def _submit_after_claim(
     try:
         task = a2a_client_factory().submit_repository_task(
             workspace_id=str(job.workspace_id or job.job_id),
+            repository_url=job.repo_url,
+            branch=job.branch,
             mission=job.mission,
         )
     except AgentZeroA2ASubmitOutcomeUnknown as exc:
@@ -258,32 +260,51 @@ def start_repository_execution(
     *,
     user_id: str,
     body: dict[str, Any],
-    github_access_token: object = None,
     workspace_root: Path | None = None,
     a2a_client_factory: A2AClientFactory = AgentZeroA2AClient.from_env,
 ) -> StoredSovereignAgentJob:
-    """Persist/clone one repository job and durably queue its A2A submit.
+    """Persist one Agent-Zero-only repository job and queue its A2A submit.
 
-    The user-facing HTTP request must never wait on Agent Zero.  The production
-    repository reconciler owns the outbound ``message/send`` side effect after
-    this function has committed a durable pending reference. ``a2a_client_factory``
-    remains in the signature for compatibility with callers/tests but is never
-    invoked on the request path.
+    Sovereign provisions only the shared filesystem slot. It never resolves a
+    GitHub OAuth credential and never clones the implementation repository on
+    the execution path. The server-owned reconciler submits exactly one A2A task;
+    Agent Zero owns repository access and checkout through its own configured
+    repository/GitHub capability.
     """
+
+    if "githubAccessToken" in body:
+        raise RepositoryExecutionError("GITHUB_CREDENTIAL_FORBIDDEN_ON_EXECUTION")
 
     payload = _normalized_repository_payload(body)
     lifecycle = create_sovereign_agent_job(
         conn,
         user_id=user_id,
         payload=payload,
-        github_access_token=github_access_token,
+        github_access_token=None,
         workspace_root=workspace_root,
         provision_workspace=True,
-        clone_repo=True,
+        clone_repo=False,
     )
     job = read_agent_job(conn, user_id=user_id, job_id=lifecycle.job_id)
     if job is None:
         raise RepositoryExecutionError("persisted repository job readback is missing")
+    if job.status == "provisioning":
+        update_agent_job_state(
+            conn,
+            job_id=job.job_id,
+            status="running",
+            workspace_id=str(job.workspace_id or job.job_id),
+            clear_blocker=True,
+        )
+        append_agent_event(conn, job.job_id, SovereignAgentEvent(
+            stage="agent_zero_repository_access_delegated",
+            level="success",
+            message=(
+                "Sovereign provisioned only the shared workspace; repository checkout "
+                "is delegated exclusively to Agent Zero without Sovereign GitHub OAuth."
+            ),
+        ))
+        job = read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
     if job.status != "running":
         return job
 
