@@ -189,7 +189,7 @@ def test_start_repository_execution_queues_submit_without_transport(monkeypatch)
 
     assert result.status == "running"
     assert lifecycle_calls
-    assert lifecycle_calls[0]["github_access_token"] is None
+    assert "github_access_token" not in lifecycle_calls[0]
     assert lifecycle_calls[0]["clone_repo"] is False
     assert lifecycle_calls[0]["provision_workspace"] is True
     assert (result.external_ref or "").startswith("agent-zero-a2a:pending:submit:")
