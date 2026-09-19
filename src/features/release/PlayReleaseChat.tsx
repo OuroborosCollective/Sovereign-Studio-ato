@@ -264,25 +264,15 @@ export function PlayReleaseChat() {
   }): Promise<void> => {
     setActiveMenu('github');
     addMessage('system', `GitHub-Auftrag erkannt · ${args.target.label} · Start nur über die revisionsgebundene Agent-Runtime.`);
-    const githubAccessToken = githubTokenRef.current;
     let snapshot = await agentClient.startRepositoryExecution({
       repoUrl: args.target.repoUrl,
       branch: args.target.branch,
       mission: args.actionTitle || args.text,
       evidenceText: args.text,
-      ...(githubAccessToken ? { githubAccessToken } : {}),
     });
     setAgentJob(snapshot);
     snapshot = await waitForRepositoryJob(snapshot);
     setAgentJob(snapshot);
-    if (
-      githubAccessToken
-      && githubAccessState.maskedToken
-      && ['completed', 'cleaned'].includes(snapshot.status)
-      && snapshot.changedFiles.length > 0
-    ) {
-      setGitHubAccessState(completeGitHubAccessValidation(githubAccessState.maskedToken));
-    }
 
     if (snapshot.status === 'waiting-for-user') {
       addMessage('system', 'GitHub-Ausführung wartet auf eine Nutzerentscheidung. Es wurde kein Erfolg behauptet.');

@@ -217,107 +217,53 @@ def test_external_action_stream_is_idempotent_owner_scoped_and_state_neutral() -
     assert '"protectedValuesReturned": False' in external_route
 
 
-def test_code_missions_use_llm_intent_and_materialize_six_tool_bound_tasks() -> None:
+def test_code_missions_keep_repository_execution_out_of_swarm_and_billing() -> None:
     controller = CONTROLLER.read_text("utf-8")
     routes = SWARM_ROUTES.read_text("utf-8")
     agents = SWARM_AGENTS.read_text("utf-8")
-    tools = REPOSITORY_TOOLS.read_text("utf-8")
-    run_store = RUN_STORE.read_text("utf-8")
-    tool_events = TOOL_EVENTS.read_text("utf-8")
-    job_store = JOB_STORE.read_text("utf-8")
 
     assert "class MissionIntent(BaseModel):" in agents
     assert "async def classify_mission_intent(" in agents
     assert 'Literal["conversation", "read_only_analysis", "repository_execution"]' in agents
-    assert "Understand the user's natural language" in agents
-    assert "stage_billing = AgentStageBilling(" in controller
-    assert "mission_intent = asyncio.run(classify_mission_intent(" in controller
-    assert "stage_billing=stage_billing" in controller
-    assert "_persist_billing_blocker(" in controller
-    assert controller.index("received_state = create_agent_run(") < controller.index("stage_billing = AgentStageBilling(")
-    assert controller.index("stage_billing = AgentStageBilling(") < controller.index("mission_intent = asyncio.run(classify_mission_intent(")
-    assert "intent_classification_failure" in controller
-    assert "link_agent_run_job(" in controller
-    assert 'mission_intent.mode == "repository_execution"' in controller
-    assert "_IMPLEMENTATION_ACTION_PATTERN" not in controller
-    assert "_IMPLEMENTATION_TARGET_PATTERN" not in controller
-    assert "create_sovereign_agent_job(" in controller
-    assert 'clone_repo=True' in controller
-    assert "get_session_github_token: Callable[[str], str | None] | None = None" in controller
-    assert "github_access_token=github_token" in controller
-    assert "github_access_token=resolve_request_github_token(" in controller
-    assert 'job_id=implementation_job.job_id if implementation_job else None' in controller
-    assert "create_repository_swarm_tasks(" in controller
-    assert "BoundRepositoryToolset(" in controller
-    assert "repository_tool_factory=(repository_toolset.tools_for_role" in controller
-    assert "ROLE_WORK_PACKAGES" in tools
-    for role in ("data_storage", "business_core", "endpoint_bridge", "chat_cognitive", "ui_accessibility", "predictive_qa"):
-        assert f'"{role}"' in tools
-    assert "function_tool(read_repository_file)" in tools
-    assert "function_tool(scan_repository_family)" in tools
-    assert "function_tool(apply_exact_repository_patch)" in tools
-    assert "start_agent_tool_call(" in tools
-    assert "finish_agent_tool_call(" in tools
-    assert "INSERT INTO agent_tool_calls" in run_store
-    assert "tool_call_count = tool_call_count + 1" in run_store
-    assert 'stage="agent_evidence_gate" if not evidence_pending else "agent_evidence_pending"' in tool_events
-    assert "next_blocker = None if gate.passed else gate.reason" in tool_events
-    assert "jsonb_agg(item ORDER BY item)" in job_store
-    assert "COALESCE(sovereign_agent_jobs.changed_files" in job_store
-    assert "LEFT(sovereign_agent_jobs.diff_summary || E'\\n---\\n' || input.diff_summary" in job_store
-    assert '"autoMerge": False' in controller
+
+    assert "start_repository_execution(" in controller
+    assert '"billingRouteUsed": False' in controller
+    assert '"githubOAuthUsed": False' in controller
+    assert "create_sovereign_agent_job(" not in controller
+    assert "clone_repo=True" not in controller
+    assert "resolve_request_github_token(" not in controller
+
+    explicit_repo_gate = controller.index('if requested_intent_mode == "repository_execution":')
+    billing_resolution = controller.index("execution_resolution = load_execution_resolution(")
+    assert explicit_repo_gate < billing_resolution
+
+    assert "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE" in routes
+    assert "create_sovereign_agent_job(" not in routes
+    assert "clone_repo=True" not in routes
+    assert "resolve_request_github_token" not in routes
+    assert "start_run=_start_run_without_github_authority" in routes
 
 
-def test_visible_user_swarm_route_uses_the_same_repository_execution_path() -> None:
+def test_visible_user_swarm_route_refuses_repository_execution_and_github_credentials() -> None:
     routes = SWARM_ROUTES.read_text("utf-8")
-    free_profile = routes.split(
-        "if execution_resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:",
-        1,
-    )[1].split(
-        "if execution_resolution.profile_id not in {PAID_SWARM_PROFILE, FREE_SWARM_PROFILE}:",
-        1,
-    )[0]
-    swarm_profile = routes.split(
-        "if execution_resolution.profile_id not in {PAID_SWARM_PROFILE, FREE_SWARM_PROFILE}:",
-        1,
-    )[1].split("except AgentBillingError as exc:", 1)[0]
 
     assert 'def start_cognitive_swarm_run(' in routes
     assert '@app.route("/api/user/agent/swarm/run", methods=["POST"])' in routes
-    assert "mission_intent = _explicit_mission_intent(" in free_profile
-    assert "_normalize_intent_mode(normalized_intent_mode, free_profile=True)" in free_profile
-    assert "classify_mission_intent(" not in free_profile
-    assert "Free execution requires a deterministic intent mode." in free_profile
-    assert "create_repository_single_agent_task(" in free_profile
-    assert 'task_ids_by_agent={"free_single_agent": free_task_id}' in free_profile
-    assert '"codeServerWorkspace"' in free_profile
-    assert '"backgroundAgentsStarted": 0' in free_profile
-    assert "free_swarm = execution_resolution.profile_id == FREE_SWARM_PROFILE" in swarm_profile
-    assert "execution_resolution.candidate_routes[1:7]" in swarm_profile
-    assert "strict=True" in swarm_profile
-    assert "None\n            if free_swarm\n            else AgentStageBilling(" in swarm_profile
-    assert "mission_intent = asyncio.run(classify_mission_intent(" in swarm_profile
-    assert "model=resolved_model," in swarm_profile
-    assert "stage_billing=stage_billing," in swarm_profile
-    assert swarm_profile.index("else AgentStageBilling(") < swarm_profile.index("mission_intent = asyncio.run(classify_mission_intent(")
-    assert routes.index("received_state = create_agent_run(") < routes.index("if execution_resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:")
-    assert "payload, status_code = _start_run_with_session_github_token(" in routes
-    assert "payload, status_code = resume_cognitive_swarm_run(" in routes
-    assert "start_run=_start_run_with_session_github_token" in routes
-    assert "resume_run=resume_cognitive_swarm_run" in routes
-    assert "intent_classification_failure" in routes
-    assert "link_agent_run_job(" in routes
-    assert 'mission_intent.mode == "repository_execution"' in routes
-    assert "create_sovereign_agent_job(" in routes
-    assert "create_repository_swarm_tasks(" in routes
-    assert "BoundRepositoryToolset(" in routes
-    assert "repository_tool_factory=(repository_toolset.tools_for_role" in routes
-    assert "task_ids_by_agent=task_ids_by_agent" in routes
-    assert '"learningState": "PENDING_EVIDENCE"' in routes
-    assert '"autoMerge": False' in routes
-    assert "persist_pattern_learning_candidate_once(" in routes
-    assert '"learningEvidence"' in routes
-    assert "pg_advisory_xact_lock" in PATTERN_GATEWAY.read_text("utf-8")
+    assert "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE" in routes
+    assert "USE_AGENT_ZERO_REPOSITORY_EXECUTION_ROUTE" in routes
+    assert 'or "githubAccessToken" in body' in routes
+    assert "payload, status_code = _start_run_without_github_authority(" in routes
+    assert "start_run=_start_run_without_github_authority" in routes
+    assert "_start_run_with_session_github_token" not in routes
+    assert "resolve_request_github_token" not in routes
+
+    start_path = routes.split("def start_cognitive_swarm_run(", 1)[1].split(
+        "def resume_cognitive_swarm_run(", 1
+    )[0]
+    assert "create_repository_single_agent_task(" not in start_path
+    assert "create_repository_swarm_tasks(" not in start_path
+    assert "create_sovereign_agent_job(" not in start_path
+    assert "clone_repo=True" not in start_path
 
 
 def test_task_lifecycle_preserves_history_without_false_active_blockers() -> None:

@@ -935,15 +935,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(within(draftCard).getByTestId('draft-target-head').textContent).toBe('c'.repeat(40));
     expect(props.onStartAgent).not.toHaveBeenCalled();
 
-    fireEvent.click(within(draftCard).getByRole('button', { name: 'Sicheren GitHub-Zugang öffnen' }));
-    fireEvent.click(screen.getByText('Zugang eingeben'));
-    fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
-    fireEvent.click(screen.getByText('Übernehmen'));
-    await waitFor(() => expect(
-      getActionStream(),
-    ).toHaveTextContent('GitHub-Zugang bereit'));
-
-    // Access capability is not consent to execute. The exact preview stays pending.
+    // Repository execution is independent from GitHub publication authority.
     expect(props.onStartAgent).not.toHaveBeenCalled();
     expect(screen.getByTestId('integration-intent-draft-card')).toBeInTheDocument();
 
@@ -954,7 +946,6 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       repoUrl: TEST_REPO_URL,
       branch: 'main',
       expectedHeadSha: 'c'.repeat(40),
-      githubAccessToken: fakeGitHubPat(),
     });
   });
 
@@ -1302,7 +1293,6 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       repoUrl: TEST_REPO_URL,
       branch: "main",
       expectedHeadSha: 'c'.repeat(40),
-      githubAccessToken: fakeGitHubPat(),
     });
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
   });
@@ -2262,7 +2252,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(oauthValidationCalls()).toHaveLength(2);
   });
 
-  it("routes the exact degraded /direct-patch command to the supported executor and stops at GitHub consent", async () => {
+  it("routes the exact degraded /direct-patch command to Agent Zero without GitHub execution consent", async () => {
     const onStartAgent = vi.fn();
     const fetchMock = mockFetchSequence(
       jsonResponse({ tree: [{ path: 'docs/README.md', type: 'blob', size: 42 }], truncated: false }),
@@ -2280,15 +2270,21 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
     await loadRepoFromChat();
 
-    fireEvent.change(chatField(), {
-      target: { value: '/direct-patch ändere docs/README.md, prüfe den Test und erzeuge nur einen Draft PR' },
-    });
+    const mission = '/direct-patch ändere docs/README.md, prüfe den Test und erzeuge nur einen Draft PR';
+    fireEvent.change(chatField(), { target: { value: mission } });
     fireEvent.click(sendButton());
 
     const actionStream = getActionStream();
-    await waitFor(() => expect(actionStream).toHaveTextContent('Executor braucht GitHub-Zugang'));
+    await waitFor(() => expect(onStartAgent).toHaveBeenCalledOnce());
+    expect(actionStream).toHaveTextContent('Sovereign Agent Job angefragt');
+    expect(actionStream).not.toHaveTextContent('Executor braucht GitHub-Zugang');
     expect(actionStream).not.toHaveTextContent('Kein bestätigter Code- oder Draft-PR-Ausführungsauftrag');
-    expect(onStartAgent).not.toHaveBeenCalled();
+    expect(onStartAgent.mock.calls[0]?.[1]).toMatchObject({
+      repoUrl: TEST_REPO_URL,
+      branch: 'main',
+      expectedHeadSha: 'c'.repeat(40),
+    });
+    expect(onStartAgent.mock.calls[0]?.[1]).not.toHaveProperty('githubAccessToken');
     expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
     expect(fetchMock.mock.calls.some(([input]) => (
       requestUrl(input as RequestInfo | URL).includes('/api/llm/chat')

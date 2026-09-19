@@ -24,15 +24,14 @@ describe('sovereignPresetActionRuntime', () => {
     expect(gate.reason).toMatch(/Repo-Kontext fehlt/);
   });
 
-  it('blocks write presets when GitHub write access is missing', () => {
+  it('allows write presets to start without GitHub publication access', () => {
     const action = getSovereignPresetAction('docs_architecture_sync');
     const gate = evaluateSovereignPresetActionGate(action, {
       repoReady: true,
       githubWriteReady: false,
     });
 
-    expect(gate.canStart).toBe(false);
-    expect(gate.reason).toMatch(/GitHub-Schreibzugang fehlt/);
+    expect(gate.canStart).toBe(true);
   });
 
   it('builds a deterministic prompt with route and runtime gate truth', () => {
@@ -48,7 +47,7 @@ describe('sovereignPresetActionRuntime', () => {
     expect(prompt).toContain('Sovereign Preset: Runtime härten');
     expect(prompt).toContain('Repo: OuroborosCollective/Sovereign-Studio-ato · Branch: main');
     expect(prompt).toContain('Preset-Route: runtime_review');
-    expect(prompt).toContain('GitHub Write: nein');
+    expect(prompt).toContain('GitHub Read/Publish: nicht erforderlich für Start');
   });
 
   it('does not bake stale missing write access into pending write preset submissions', () => {
@@ -61,8 +60,8 @@ describe('sovereignPresetActionRuntime', () => {
       agentReady: false,
     });
 
-    expect(submitted).toContain('GitHub Write: wird vor Ausführung geprüft');
-    expect(submitted).not.toContain('GitHub Write: nein');
+    expect(submitted).toContain('GitHub Publish: separate Freigabe erforderlich');
+    expect(submitted).not.toContain('GitHub Write: wird vor Ausführung geprüft');
   });
 
   it('keeps safe-analysis preset submissions out of write and executor routing', () => {
@@ -101,8 +100,7 @@ describe('sovereignPresetActionRuntime', () => {
     expect(action.route).toBe('direct_patch_or_agent');
     expect(action.risk).toBe('reviewable_patch');
     expect(action.requiresGithubWrite).toBe(true);
-    expect(blocked.canStart).toBe(false);
-    expect(blocked.reason).toMatch(/GitHub-Schreibzugang fehlt/);
+    expect(blocked.canStart).toBe(true);
     expect(submitted).toContain('ausschließlich einen Draft PR');
     expect(submitted).not.toContain('Preset-Ausführungsmodus: safe_analysis');
     expect(isWriteIntent(submitted, true)).toBe(true);

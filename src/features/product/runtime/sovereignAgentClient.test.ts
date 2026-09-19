@@ -68,7 +68,7 @@ describe('SovereignAgentClient', () => {
     const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
     await expect(client.startJob({ repoUrl: 'https://github.com/acme/repo', mission: 'Fix tests' })).rejects.toThrow('workspace unavailable');
   });
-  it('carries staged changes and ephemeral GitHub access through the real Draft-PR route family', async () => {
+  it('keeps diagnostic handoff OAuth-free while Draft-PR publication may use explicit GitHub access', async () => {
     const calls: string[] = [];
     const requestInits: RequestInit[] = [];
     const githubAccessToken = 'not-a-real-github-token';
@@ -168,9 +168,7 @@ describe('SovereignAgentClient', () => {
       expectedHeadSha: 'b'.repeat(40),
       mission: 'Fix TypeScript and create a Draft PR.',
       evidenceText: 'TS2339 Property paymentMethods does not exist',
-      stagedFiles: [{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }],
       testCommand: '  git diff --check  ',
-      githubAccessToken: `  ${githubAccessToken}  `,
     });
     const preparation = await client.prepareDraftPr(job.jobId || '');
     const creation = await client.createDraftPr(job.jobId || '', `  ${githubAccessToken}  `);
@@ -189,13 +187,13 @@ describe('SovereignAgentClient', () => {
     expect(creation.draftPrCreate.prUrl).toContain('/pull/999');
     expect(finalJob.draftPrUrl).toContain('/pull/999');
     expect(JSON.parse(String(requestInits[0].body))).toMatchObject({
-      stagedFiles: [{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }],
       testCommand: 'git diff --check',
-      githubAccessToken,
-      cloneRepo: true,
+      cloneRepo: false,
       provisionWorkspace: true,
       expectedHeadSha: 'b'.repeat(40),
     });
+    expect(JSON.parse(String(requestInits[0].body))).not.toHaveProperty('githubAccessToken');
+    expect(JSON.parse(String(requestInits[0].body))).not.toHaveProperty('stagedFiles');
     expect(JSON.parse(String(requestInits[2].body))).toEqual({ githubAccessToken });
     expect(calls).toEqual([
       'https://agent.example.test/api/user/agent/toolchain/handoff',
@@ -237,7 +235,6 @@ describe('SovereignAgentClient', () => {
       expectedHeadSha: 'c'.repeat(40),
       mission: 'Repair one causal failure and stop at Draft PR.',
       evidenceText: 'Observed runtime blocker.',
-      githubAccessToken: 'not-a-real-github-token',
     });
 
     expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/repository/run');
@@ -249,8 +246,8 @@ describe('SovereignAgentClient', () => {
       repositoryUrl: 'https://github.com/acme/repo',
       repositoryBranch: 'main',
       expectedHeadSha: 'c'.repeat(40),
-      githubAccessToken: 'not-a-real-github-token',
     });
+    expect(JSON.parse(String(requestInits[0].body))).not.toHaveProperty('githubAccessToken');
     expect(JSON.parse(String(requestInits[0].body))).not.toHaveProperty('evidenceText');
     expect(snapshot).toMatchObject({
       jobId: 'job-repository',

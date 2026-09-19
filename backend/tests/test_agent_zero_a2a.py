@@ -55,6 +55,8 @@ def test_submit_sets_both_auth_headers_keeps_secret_out_of_body_and_is_nonblocki
     monkeypatch.setattr("agent_runtime.agent_zero_a2a.requests.post", fake_post)
     task = AgentZeroA2AClient(config).submit_repository_task(
         workspace_id="agent-workspace-123",
+        repository_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+        branch="main",
         mission="Implement the bounded repository change and leave publication to Sovereign.",
     )
 
@@ -71,9 +73,13 @@ def test_submit_sets_both_auth_headers_keeps_secret_out_of_body_and_is_nonblocki
     assert calls[0]["timeout"] == 30
     prompt = calls[0]["json"]["params"]["message"]["parts"][0]["text"]
     assert "/a0/sovereign-workspaces/agent-workspace-123/repo" in prompt
-    assert "Do not clone" in prompt
+    assert "Repository target: https://github.com/OuroborosCollective/Sovereign-Studio-ato" in prompt
+    assert "Repository branch: main" in prompt
+    assert "Agent Zero's own configured GitHub/repository capability" in prompt
+    assert "GitHub Coding Agent" in prompt
+    assert "githubAccessToken" in prompt
     assert "Do not push to GitHub" in prompt
-    assert "SOVEREIGN_WORKSPACE_UNAVAILABLE" in prompt
+    assert "AGENT_ZERO_REPOSITORY_ACCESS_UNAVAILABLE" in prompt
     assert "Do not install dependencies or run tests, builds, linters, audits, package managers" in prompt
     assert "Sovereign owns all regression, janitor and evidence gates" in prompt
     assert "Once the requested file changes are saved, stop immediately" in prompt

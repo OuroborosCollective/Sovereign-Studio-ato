@@ -289,7 +289,6 @@ export interface BuilderContainerProps {
     readonly repoUrl: string;
     readonly branch?: string;
     readonly expectedHeadSha?: string;
-    readonly githubAccessToken?: string;
   }) => void | Promise<void>;
   onCancelAgent?: () => void;
   /**
@@ -3672,14 +3671,6 @@ export function BuilderContainer({
       appendRuntimeNotice('Executor blockiert: Die strukturierte Intent-Evidence erlaubt keinen Code- oder Draft-PR-Start.');
       return false;
     }
-    if (!(githubWriteAllowed || hasCurrentGitHubWriteEvidence())) {
-      appendActionEvent({ kind: 'github_access_required', route: 'github-access', label: 'Executor braucht GitHub-Zugang', detail: 'Ausführungsauftrag erkannt, aber GitHub-Schreibzugang ist nicht validiert.', state: 'blocked' });
-      if (!pendingOnlineExecutionRef.current) pendingWriteIntentRef.current = text;
-      setShowGitHubAccessOverride(true);
-      appendRuntimeNotice('GitHub-Zugang fehlt. Executor-Aktion blockiert: Vor dem Start muss der GitHub-Schreibzugang im sicheren Feld validiert werden.');
-      return false;
-    }
-
     const bypassPreflight = missionValidationBypassRef.current === text;
     if (bypassPreflight) {
       missionValidationBypassRef.current = null;
@@ -3741,7 +3732,6 @@ export function BuilderContainer({
         repoUrl: chatRepoSnapshot.repoUrl,
         branch: chatRepoSnapshot.branch,
         expectedHeadSha: chatRepoSnapshot.headSha,
-        githubAccessToken: githubTokenRef.current || undefined,
       });
       return true;
     } catch (error) {
@@ -3804,17 +3794,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       appendRuntimeNotice('Start blockiert: Repository-Stand hat sich geändert. Auftrag bitte erneut prüfen und freigeben.');
       return false;
     }
-    if (!(githubWriteAllowed || hasCurrentGitHubWriteEvidence())) {
-      setShowGitHubAccessOverride(true);
-      appendActionEvent({
-        kind: 'github_access_required',
-        route: 'github-access',
-        label: 'GitHub-Zugang erforderlich',
-        detail: 'Zugang öffnen ist keine Aktionsfreigabe; der Auftrag bleibt ausstehend.',
-        state: 'blocked',
-      });
-      return false;
-    }
     if (!onStartAgent) {
       appendRuntimeNotice('Start blockiert: Kein bestätigter Workspace-Executor ist verbunden.');
       return false;
@@ -3843,7 +3822,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         repoUrl: executionTarget.repoUrl,
         branch: executionTarget.branch,
         expectedHeadSha: executionTarget.expectedHeadSha,
-        githubAccessToken: githubTokenRef.current || undefined,
       });
       appendRuntimeNotice('Start angefragt. Ergebnis bleibt Draft PR; kein Auto-Merge.');
       return true;
@@ -5752,7 +5730,7 @@ Das echte Repo-Setup wurde geöffnet.`);
                 <IntegrationIntentDraftCard
                   draft={draft}
                   gateSnapshot={gateSnapshot}
-                  canConfirm={effectiveRepoReady && githubWriteAllowed && sovereignAgentStartAvailable}
+                  canConfirm={effectiveRepoReady && sovereignAgentStartAvailable}
                   confirmBlocker={!effectiveRepoReady
                     ? 'Repository-Snapshot fehlt.'
                     : !sovereignAgentStartAvailable
@@ -5763,16 +5741,6 @@ Das echte Repo-Setup wurde geöffnet.`);
                     setIntentDraftState({ status: 'confirmed', draft });
                     void startAgentFromApprovedDraft(draft, executionIntent)
                       .finally(() => setIntentDraftState({ status: 'idle' }));
-                  }}
-                  onConfirmWithGitHubAccess={() => {
-                    setShowGitHubAccessOverride(true);
-                    appendActionEvent({
-                      kind: 'github_access_required',
-                      route: 'github-access',
-                      label: 'GitHub-Zugang geöffnet',
-                      detail: 'Nur der Zugang wird geprüft; der Repository-Auftrag bleibt unbestätigt.',
-                      state: 'blocked',
-                    });
                   }}
                   onRephrase={() => {
                     appendActionEvent(buildDraftRephrasedEvent(draft));

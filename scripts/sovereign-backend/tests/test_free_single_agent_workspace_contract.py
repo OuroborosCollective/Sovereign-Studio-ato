@@ -16,7 +16,7 @@ def test_free_profile_has_one_agent_and_code_workspace_access() -> None:
     assert "repository_execution_allowed=True" in resolver
 
 
-def test_free_agent_uses_one_isolated_workspace_task_with_write_and_test_tools() -> None:
+def test_free_agent_conversation_keeps_capability_tools_but_repository_execution_is_externalized() -> None:
     tools = (BACKEND / "agent_runtime" / "cognitive_repository_tools.py").read_text("utf-8")
     agents = (BACKEND / "agent_runtime" / "cognitive_swarm_agents.py").read_text("utf-8")
     routes = (BACKEND / "agent_runtime" / "cognitive_swarm_routes.py").read_text("utf-8")
@@ -25,22 +25,21 @@ def test_free_agent_uses_one_isolated_workspace_task_with_write_and_test_tools()
     assert "def create_repository_single_agent_task(" in tools
     assert "def write_repository_file(" in tools
     assert "run_repository_test" in tools
-    assert 'task_ids_by_agent={"free_single_agent": free_task_id}' in routes
-    assert '"backgroundAgentsStarted": 0' in routes
-    assert '"maxBackgroundAgents": 0' in routes
-    assert '"codeServerWorkspace"' in routes
     assert "repository_tool_factory" in agents
     assert "capability_tool_factory" in agents
     assert "tools=[*repository_tools, *capability_tools]" in agents
-    assert "If the mission explicitly requires one of those capabilities" in agents
     assert "_AGENT_FREE_WORKSPACE_MAX_TURNS: Final[int] = 12" in agents
     assert 'if "free-single-agent" in normalized:' in agents
+
+    assert "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE" in routes
+    assert "create_repository_single_agent_task(" not in routes
+    assert 'task_ids_by_agent={"free_single_agent": free_task_id}' not in routes
+    assert "clone_repo=True" not in routes
     assert "free_fallback_resolution(" in routes
     assert "paid_provider_429_resolved_to_free_revolver" in routes
     assert "_reuse_received_state=received_state" in routes
     assert "def _record_route_success(" in routes
     assert "last_attempt_at=NOW()" in routes
-    assert '"freeRouteRotationRecorded": rotation_recorded' in routes
 
 
 def test_code_server_and_agent_jobs_share_the_same_workspace_root() -> None:

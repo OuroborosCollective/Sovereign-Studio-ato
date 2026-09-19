@@ -222,7 +222,6 @@ def _app(
         app,
         require_session=_require_session,
         get_connection=factory or FakeConnectionFactory(),
-        get_session_github_token=get_session_github_token,
     )
     return app
 
@@ -261,12 +260,12 @@ def test_environment_model_allowlist_cannot_override_database_resolution(monkeyp
 
 
 
-def test_swarm_run_forwards_separate_main_and_six_agent_model_selections(monkeypatch) -> None:
-    captured: dict[str, Any] = {}
-    token = "ghp_" + "a" * 40
+def test_swarm_run_rejects_repository_execution_before_model_or_token_forwarding(monkeypatch) -> None:
+    started = False
 
     def fake_start(**kwargs: Any):
-        captured.update(kwargs)
+        nonlocal started
+        started = True
         return {"ok": True, "status": "captured"}, 200
 
     monkeypatch.setattr(routes_runtime, "start_cognitive_swarm_run", fake_start)
@@ -282,22 +281,19 @@ def test_swarm_run_forwards_separate_main_and_six_agent_model_selections(monkeyp
             "repositoryUrl": "https://github.com/acme/repo",
             "repositoryBranch": "repair-branch",
             "expectedHeadSha": "c" * 40,
-            "githubAccessToken": token,
+            "githubAccessToken": "ghp_" + "a" * 40,
         },
     )
 
-    assert response.status_code == 200
-    assert captured["main_model"] == "openai/gpt-5.4-mini"
-    assert captured["agent_model"] == "anthropic/claude-haiku-4.5"
-    assert captured["mode"] == "paid"
-    assert captured["intent_mode"] == "repository_execution"
-    assert captured["repository_url"] == "https://github.com/acme/repo"
-    assert captured["repository_branch"] == "repair-branch"
-    assert captured["expected_head_sha"] == "c" * 40
-    assert captured["github_access_token"] == token
+    assert response.status_code == 409
+    payload = response.get_json()
+    assert payload["blocker"] == "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE"
+    assert payload["nextAction"] == "USE_AGENT_ZERO_REPOSITORY_EXECUTION_ROUTE"
+    assert payload["secretValuesReturned"] is False
+    assert started is False
 
 
-def test_swarm_run_uses_server_held_github_credential_without_returning_it(monkeypatch) -> None:
+def test_swarm_run_does_not_acquire_server_held_github_credential(monkeypatch) -> None:
     captured: dict[str, Any] = {}
     token = "ghp_" + "b" * 40
 
@@ -312,15 +308,15 @@ def test_swarm_run_uses_server_held_github_credential_without_returning_it(monke
 
     response = client.post(
         "/api/user/agent/swarm/run",
-        json={"mission": "Inspect the private repository.", "mode": "paid"},
+        json={"mission": "Discuss repository architecture without executing it.", "mode": "paid"},
     )
 
     assert response.status_code == 200
-    assert captured["github_access_token"] == token
+    assert captured["github_access_token"] is None
     assert token not in repr(response.get_json())
 
 
-def test_a2a_start_uses_same_server_held_github_credential_without_exposing_it(monkeypatch) -> None:
+def test_a2a_start_does_not_acquire_server_held_github_credential(monkeypatch) -> None:
     captured: dict[str, Any] = {}
     started = threading.Event()
     token = "ghp_" + "d" * 40
@@ -336,7 +332,7 @@ def test_a2a_start_uses_same_server_held_github_credential_without_exposing_it(m
         trace_id="trace-a2a-oauth",
         reason="Waiting for bounded user input.",
         next_action="PROVIDE_INPUT",
-        mission_summary="Inspect the private repository.",
+        mission_summary="Discuss repository architecture.",
         mission_digest="a" * 64,
         max_active_specialists=4,
         max_iterations=12,
@@ -369,18 +365,18 @@ def test_a2a_start_uses_same_server_held_github_credential_without_exposing_it(m
                 "messageId": "message-a2a-oauth",
                 "contextId": "context-a2a-oauth",
                 "role": "ROLE_USER",
-                "parts": [{"text": "Inspect the private repository.", "mediaType": "text/plain"}],
+                "parts": [{"text": "Discuss repository architecture.", "mediaType": "text/plain"}],
             },
         },
     )
 
     assert response.status_code == 200
     assert started.wait(timeout=1)
-    assert captured["github_access_token"] == token
+    assert captured["github_access_token"] is None
     assert token not in response.get_data(as_text=True)
 
 
-def test_swarm_run_rejects_invalid_explicit_github_credential_without_session_fallback(monkeypatch) -> None:
+def test_swarm_run_rejects_any_explicit_github_credential_without_session_fallback(monkeypatch) -> None:
     started = False
     session_calls: list[str] = []
 
@@ -397,13 +393,14 @@ def test_swarm_run_rejects_invalid_explicit_github_credential_without_session_fa
     response = client.post(
         "/api/user/agent/swarm/run",
         json={
-            "mission": "Inspect the private repository.",
+            "mission": "Attempt a credential-bearing swarm request.",
             "githubAccessToken": "not-a-token",
         },
     )
 
-    assert response.status_code == 400
-    assert response.get_json()["error"] == "githubAccessToken has an invalid format"
+    assert response.status_code == 409
+    payload = response.get_json()
+    assert payload["blocker"] == "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE"
     assert started is False
     assert session_calls == []
 

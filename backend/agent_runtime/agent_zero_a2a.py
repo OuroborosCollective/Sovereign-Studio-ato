@@ -17,6 +17,11 @@ import requests
 
 from .agent_zero_runtime import AgentZeroRuntimeConfig, AgentZeroRuntimeError
 from .contracts import sanitize_agent_text
+from .workspace_policy import (
+    WorkspacePolicyError,
+    validate_repo_url_for_workspace,
+    validate_workspace_branch,
+)
 
 
 _A2A_TASK_ID_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
@@ -120,8 +125,14 @@ def _parse_task(value: object) -> AgentZeroA2ATask:
     return AgentZeroA2ATask(task_id=task_id, state=_normalize_state(state_value))
 
 
-def build_repository_task_prompt(*, workspace_id: str, mission: str) -> str:
-    """Build the bounded single-task contract for the shared workspace."""
+def build_repository_task_prompt(
+    *,
+    workspace_id: str,
+    repository_url: str,
+    branch: str,
+    mission: str,
+) -> str:
+    """Build the bounded Agent-Zero-only repository execution contract."""
 
     normalized_workspace = str(workspace_id or "").strip()
     if not _A2A_WORKSPACE_ID_RE.fullmatch(normalized_workspace):
@@ -129,6 +140,14 @@ def build_repository_task_prompt(*, workspace_id: str, mission: str) -> str:
             "AGENT_ZERO_A2A_WORKSPACE_ID_INVALID",
             "USE_PERSISTED_SOVEREIGN_WORKSPACE_ID",
         )
+    try:
+        clean_repository_url = validate_repo_url_for_workspace(repository_url)
+        clean_branch = validate_workspace_branch(branch)
+    except WorkspacePolicyError as exc:
+        raise AgentZeroA2AError(
+            "AGENT_ZERO_REPOSITORY_TARGET_INVALID",
+            "USE_VALIDATED_REPOSITORY_URL_AND_BRANCH",
+        ) from exc
     clean_mission = sanitize_agent_text(str(mission or ""), 8000)
     if not clean_mission or clean_mission != str(mission or "").strip():
         raise AgentZeroA2AError(
@@ -138,16 +157,25 @@ def build_repository_task_prompt(*, workspace_id: str, mission: str) -> str:
     workspace = f"{_AGENT_ZERO_WORKSPACE_ROOT}/{normalized_workspace}/repo"
     return (
         "You are exactly one Agent Zero implementation task for Sovereign Studio ATO.\n"
-        f"Use only this already-cloned shared repository workspace: {workspace}\n"
-        "Do not clone or replace the repository. Do not push to GitHub, create or merge a PR, deploy, "
-        "mutate a database, inspect or disclose secrets, or claim Sovereign evidence/success. "
-        "First verify that the stated workspace exists and is the requested Git worktree; if it is unavailable, "
-        "stop immediately with SOVEREIGN_WORKSPACE_UNAVAILABLE and do not retry or search for another checkout. "
+        f"Use only this pre-created shared repository workspace: {workspace}\n"
+        f"Repository target: {clean_repository_url}\n"
+        f"Repository branch: {clean_branch}\n"
+        "The workspace is intentionally created by Sovereign without a repository checkout. "
+        "Obtain the target repository only through Agent Zero's own configured GitHub/repository capability "
+        "and materialize it into exactly the stated workspace. Never request, read, accept, or use a Sovereign "
+        "GitHub OAuth credential, githubAccessToken, browser OAuth redirect, GitHub Coding Agent, Copilot coding "
+        "workspace, Jules task, or any hosted GitHub coding executor. "
+        "Do not create or use an alternate checkout. Verify the resulting Git worktree origin matches the exact "
+        "repository target and the checked-out branch matches the requested branch; otherwise stop with "
+        "AGENT_ZERO_REPOSITORY_ACCESS_UNAVAILABLE. "
+        "Do not push to GitHub, create or merge a PR, deploy, mutate a database, inspect or disclose secrets, "
+        "or claim Sovereign evidence/success. "
         "Read only files needed for the requested mutation and write only inside the stated workspace. "
-        "Do not install dependencies or run tests, builds, linters, audits, package managers or other validation, even when the mission mentions them; "
-        "Sovereign owns all regression, janitor and evidence gates after your workspace mutation. "
-        "Once the requested file changes are saved, stop immediately and return a concise completion message. "
-        "Leave all GitHub publication, evidence verdicts and completion decisions to Sovereign.\n\n"
+        "Do not install dependencies or run tests, builds, linters, audits, package managers or other validation, "
+        "even when the mission mentions them; Sovereign owns all regression, janitor and evidence gates after "
+        "your workspace mutation. Once the requested file changes are saved, stop immediately and return a "
+        "concise completion message. Leave all GitHub publication, evidence verdicts and completion decisions "
+        "to Sovereign.\n\n"
         f"Mission:\n{clean_mission}"
     )
 
@@ -265,8 +293,20 @@ class AgentZeroA2AClient:
             )
         return result
 
-    def submit_repository_task(self, *, workspace_id: str, mission: str) -> AgentZeroA2ATask:
-        prompt = build_repository_task_prompt(workspace_id=workspace_id, mission=mission)
+    def submit_repository_task(
+        self,
+        *,
+        workspace_id: str,
+        repository_url: str,
+        branch: str,
+        mission: str,
+    ) -> AgentZeroA2ATask:
+        prompt = build_repository_task_prompt(
+            workspace_id=workspace_id,
+            repository_url=repository_url,
+            branch=branch,
+            mission=mission,
+        )
         call_id = str(uuid.uuid4())
         payload = {
             "jsonrpc": "2.0",
