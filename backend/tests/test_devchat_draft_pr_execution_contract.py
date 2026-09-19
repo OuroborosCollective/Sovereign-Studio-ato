@@ -14,38 +14,39 @@ ENGINE_BOUNDARY = ROOT / "src" / "features" / "product" / "runtime" / "sovereign
 BACKEND_APP = ROOT / "scripts" / "sovereign-backend" / "app.py"
 
 
-def test_swarm_route_forwards_repository_execution_identity() -> None:
+def test_swarm_route_rejects_repository_execution_and_github_credentials() -> None:
     source = CANONICAL.read_text("utf-8")
 
-    assert 'repository_url=str(body.get("repositoryUrl") or body.get("repoUrl") or "") or None' in source
-    assert 'repository_branch=str(body.get("repositoryBranch") or body.get("branch") or "main")' in source
-    assert 'expected_head_sha=str(body.get("expectedHeadSha") or "") or None' in source
-    assert 'payload, status_code = _start_run_with_session_github_token(' in source
-    assert 'if "githubAccessToken" in body' in source
-    assert "start_run=_start_run_with_session_github_token" in source
+    assert "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE" in source
+    assert "USE_AGENT_ZERO_REPOSITORY_EXECUTION_ROUTE" in source
+    assert "_start_run_without_github_authority" in source
+    assert "_start_run_with_session_github_token" not in source
+    assert "resolve_request_github_token" not in source
+    assert "create_sovereign_agent_job(" not in source
+    assert "clone_repo=True" not in source
 
 
-def test_paid_repository_execution_uses_requested_repo_branch_and_exact_head() -> None:
-    source = CANONICAL.read_text("utf-8")
+def test_repository_execution_is_owned_by_canonical_agent_zero_route() -> None:
+    runtime = (ROOT / "backend" / "agent_runtime" / "repository_execution.py").read_text("utf-8")
+    a2a = (ROOT / "backend" / "agent_runtime" / "agent_zero_a2a.py").read_text("utf-8")
 
-    assert "selected_repository_url = (" in source
-    assert '"repoUrl": selected_repository_url' in source
-    assert '"branch": normalized_repository_branch' in source
-    assert 'job_payload["expectedHeadSha"] = normalized_expected_head_sha' in source
-    assert "github_access_token=normalized_github_access_token" in source
-    assert 'job_payload["githubAccessToken"]' not in source
-    assert "clone_repo=True" in source
+    assert "clone_repo=False" in runtime
+    assert "agent_zero_repository_access_delegated" in runtime
+    assert "github_access_token" not in runtime.split("def start_repository_execution(", 1)[1].split("def _submit_pending_repository_job(", 1)[0]
+    assert "Agent Zero's own configured GitHub/repository capability" in a2a
+    assert "GitHub Coding Agent" in a2a
+    assert "githubAccessToken" in a2a
 
 
 def test_deployment_mirror_matches_canonical_swarm_route() -> None:
     assert MIRROR.read_bytes() == CANONICAL.read_bytes()
 
 
-def test_deployment_registers_server_held_github_credential_for_swarm_starts() -> None:
+def test_deployment_does_not_wire_github_credential_into_swarm_starts() -> None:
     source = BACKEND_APP.read_text("utf-8")
 
     registration = source.split("register_cognitive_swarm_routes(", 1)[1].split(")", 1)[0]
-    assert "get_session_github_token=_session_github_token_for_user" in registration
+    assert "get_session_github_token=_session_github_token_for_user" not in registration
 
 
 def test_devchat_uses_executable_repository_runtime_and_restores_jobs() -> None:
@@ -58,7 +59,7 @@ def test_devchat_uses_executable_repository_runtime_and_restores_jobs() -> None:
     assert "await transport.startRepositoryExecution(command.payload.input)" in boundary
     assert "await transport.listJobs()" in boundary
     assert "await transport.createDraftPr(command.payload.jobId, command.payload.githubAccessToken)" in boundary
-    assert "'/api/user/agent/swarm/run'" in client
+    assert "'/api/user/agent/swarm/run'" not in client
     assert "async listJobs(): Promise<SovereignAgentJobSnapshot[]>" in client
 
 
@@ -87,6 +88,7 @@ def test_repository_execution_is_same_origin_revision_bound_and_rescue_is_condit
     assert "/commits/${encodeURIComponent(parsed.branch)}" in bridge
     assert "headSha: typeof commit.sha === 'string' ? commit.sha : undefined" in bridge
     assert "expectedHeadSha: chatRepoSnapshot.headSha" in builder
-    assert "githubAccessToken: githubTokenRef.current || undefined" in builder
+    start_section = builder.split("const startAgentFromText", 1)[1].split("const publishConfirmedDraftPr", 1)[0]
+    assert "githubAccessToken: githubTokenRef.current || undefined" not in start_section
     assert "!rescueOpen && (" in app
     assert "['blocked', 'failed'].includes(canonicalAgentJob.status)" in app
