@@ -235,7 +235,6 @@ describe('SovereignAgentClient', () => {
       expectedHeadSha: 'c'.repeat(40),
       mission: 'Repair one causal failure and stop at Draft PR.',
       evidenceText: 'Observed runtime blocker.',
-      githubAccessToken: 'not-a-real-github-token',
     });
 
     expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/repository/run');
@@ -247,8 +246,8 @@ describe('SovereignAgentClient', () => {
       repositoryUrl: 'https://github.com/acme/repo',
       repositoryBranch: 'main',
       expectedHeadSha: 'c'.repeat(40),
-      githubAccessToken: 'not-a-real-github-token',
     });
+    expect(JSON.parse(String(requestInits[0].body))).not.toHaveProperty('githubAccessToken');
     expect(JSON.parse(String(requestInits[0].body))).not.toHaveProperty('evidenceText');
     expect(snapshot).toMatchObject({
       jobId: 'job-repository',
