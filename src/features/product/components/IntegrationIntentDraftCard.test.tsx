@@ -553,40 +553,40 @@ describe('IntegrationIntentDraftCard', () => {
       expect(onReject).toHaveBeenCalledTimes(1);
     });
 
-    it('deduplicates a fast access double click without consuming later task approval', () => {
+    it('keeps the execution latch independent from GitHub publication readiness', () => {
       const onConfirm = vi.fn();
-      const onConfirmWithGitHubAccess = vi.fn();
       const draft = createMockDraft();
       const { rerender } = render(
         <IntegrationIntentDraftCard
           draft={draft}
-          gateSnapshot={createMockGates({ githubWriteReady: false })}
+          gateSnapshot={createMockGates({ githubWriteReady: false, agentReady: true })}
           onConfirm={onConfirm}
-          onConfirmWithGitHubAccess={onConfirmWithGitHubAccess}
           onRephrase={vi.fn()}
           onReject={vi.fn()}
+          canConfirm
         />
       );
 
       const button = screen.getByTestId('btn-confirm');
       fireEvent.click(button);
       fireEvent.click(button);
-      expect(onConfirmWithGitHubAccess).toHaveBeenCalledTimes(1);
-      expect(onConfirm).not.toHaveBeenCalled();
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+      expect(button).toBeDisabled();
 
       rerender(
         <IntegrationIntentDraftCard
           draft={draft}
-          gateSnapshot={createMockGates({ githubWriteReady: true })}
+          gateSnapshot={createMockGates({ githubWriteReady: true, agentReady: true })}
           onConfirm={onConfirm}
-          onConfirmWithGitHubAccess={onConfirmWithGitHubAccess}
           onRephrase={vi.fn()}
           onReject={vi.fn()}
+          canConfirm
         />
       );
       fireEvent.click(screen.getByTestId('btn-confirm'));
 
       expect(onConfirm).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('btn-confirm')).toBeDisabled();
     });
   });
 
