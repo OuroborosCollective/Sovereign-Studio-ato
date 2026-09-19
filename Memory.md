@@ -600,3 +600,13 @@ Learned: The existing job-owned FileReadTool plus git-status already proves regu
 Open: This Memory append changes the PR head; exact-head gates, merge/deploy revision+digest readback and the real dispatched production smoke are still required.
 Next safe step: Require terminal checks on the new exact head, merge only if green, deploy/read back that exact revision and dispatch the smoke.
 
+
+### 2026-09-19 — Production smoke canonical UI route correction
+Status: SOURCE_PATCHED; exact-head CI and redispatch pending.
+Task: Repair the first real Agent-Zero-only production smoke after it failed before repository execution because the workflow targeted the callback/rescue host instead of the canonical deployed user app.
+Decisions: Bind the smoke UI to `https://sovereign-backend.arelorian.de/app/`; keep `chat.arelorian.de` out of the workflow execution surface; preserve the existing read-only workflow permissions and all OAuth/Swarm/billing/Draft-PR negative assertions.
+Evidence: Memory pre-read completed on `main@01ddd09863e958c4b4bc8d55c6adee376059e0c9`. Production release is verified at Backend `sha256:2f7079f691e15262dc133b42e95d9e98eb6225ee6e4a2c50cd1863205a9b036b`, MCP `sha256:f77aef81dcd16c6d41894da7a2cdd1f83122565d7aeeaf47dcd4fe4933a6c0a5`, runtime receipt `217fccd5352997b523c35fe5a953abdb4c6f74bcd3931af923d580730be709c2`. Smoke run `35471558556` failed causally with `DEPLOYED_UI_HTTP_404` before any repository/A2A action. The live backend source owns `/app/` as the canonical user-app route and `docs/GITHUB_OAUTH_SETUP.md` names that URL as the productive frontend. Focused contract 3/3, `git diff --check`, backend compile and workflow schema diagnostics pass after the correction.
+Learned: OAuth callback/rescue origins are not interchangeable with the product UI truth boundary; production smoke must bind to the route actually serving the revision-stamped user artifact.
+Open: Exact-head GitHub gates, merge/deploy readback for the correction and a fresh production smoke still remain before final E2E verification.
+Next safe step: Publish one Draft PR, require exact-head terminal green, merge under Owner approval, verify the resulting production revision/digest, then redispatch the same smoke and read its artifact to terminal.
+

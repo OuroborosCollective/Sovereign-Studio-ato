@@ -24,6 +24,9 @@ def test_agent_zero_only_production_smoke_has_no_github_or_publication_authority
     assert "GITHUB_TOKEN" not in workflow
     assert "SOVEREIGN_E2E_GITHUB_TOKEN" not in workflow
     assert "No Draft-PR publication step exists" in workflow
+    assert "SOVEREIGN_E2E_APP_URL: https://sovereign-backend.arelorian.de/app/" in workflow
+    assert "https://sovereign-backend.arelorian.de/app/" in script
+    assert "https://chat.arelorian.de" not in workflow
     assert "createDraftPr" not in workflow
     assert "publishDraft" not in workflow
 
