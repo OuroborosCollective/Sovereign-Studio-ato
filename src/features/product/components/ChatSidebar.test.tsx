@@ -191,7 +191,7 @@ describe('ChatSidebar', () => {
       render(<ChatSidebar {...defaultProps} />);
 
       // Open model picker by clicking the dropdown button
-      const modelButton = screen.getByRole('button', { name: /Gemini/i });
+      const modelButton = screen.getByRole('button', { name: /Open model picker/i });
       fireEvent.click(modelButton);
       
       // Select different model from the dropdown
