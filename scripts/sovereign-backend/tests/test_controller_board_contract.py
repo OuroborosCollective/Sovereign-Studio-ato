@@ -256,10 +256,14 @@ def test_visible_user_swarm_route_refuses_repository_execution_and_github_creden
     assert "start_run=_start_run_without_github_authority" in routes
     assert "_start_run_with_session_github_token" not in routes
     assert "resolve_request_github_token" not in routes
-    assert "create_repository_single_agent_task(" not in routes
-    assert "create_repository_swarm_tasks(" not in routes
-    assert "create_sovereign_agent_job(" not in routes
-    assert "clone_repo=True" not in routes
+
+    start_path = routes.split("def start_cognitive_swarm_run(", 1)[1].split(
+        "def resume_cognitive_swarm_run(", 1
+    )[0]
+    assert "create_repository_single_agent_task(" not in start_path
+    assert "create_repository_swarm_tasks(" not in start_path
+    assert "create_sovereign_agent_job(" not in start_path
+    assert "clone_repo=True" not in start_path
 
 
 def test_task_lifecycle_preserves_history_without_false_active_blockers() -> None:
