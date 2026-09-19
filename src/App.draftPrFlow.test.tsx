@@ -369,9 +369,9 @@ describe('Play release chat runtime integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Repository-Ausführung starten' }));
 
     await waitFor(() => expect(runtime.agentStart).toHaveBeenCalledWith(expect.objectContaining({
-      githubAccessToken: sessionToken,
       repoUrl: 'https://github.com/acme/repo',
     })));
+    expect(runtime.agentStart.mock.calls[0][0]).not.toHaveProperty('githubAccessToken');
     expect(runtime.reply).not.toHaveBeenCalled();
   });
 
