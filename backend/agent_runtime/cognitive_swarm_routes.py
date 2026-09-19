@@ -54,8 +54,6 @@ from .cognitive_swarm_manifest import WORKER_ROLES, manifest_payload
 from .cognitive_usage_billing import AgentBillingError, AgentStageBilling
 from .evidence_gate import EvidenceGateInput, evaluate_agent_evidence
 from .fleet_supervisor import stable_hash
-from .github_access import resolve_request_github_token
-from .job_lifecycle import create_sovereign_agent_job
 from .job_store import read_agent_job
 from .pattern_gateway import (
     evaluate_pattern_learning,
@@ -2448,21 +2446,13 @@ def register_cognitive_swarm_routes(
     get_connection: ConnectionFactory,
     get_session_github_token: Callable[[str], str | None] | None = None,
 ) -> None:
-    def _start_run_with_session_github_token(**kwargs):
-        raw_token = kwargs.pop("github_access_token", None)
-        user_id = str(kwargs.get("user_id") or "")
-        try:
-            github_token = resolve_request_github_token(
-                raw_token,
-                user_id=user_id,
-                get_session_github_token=get_session_github_token,
-            )
-        except ValueError as exc:
-            return {"error": str(exc)}, 400
-        return start_cognitive_swarm_run(
-            **kwargs,
-            github_access_token=github_token,
-        )
+    # The parameter remains for backwards-compatible route registration only.
+    # Cognitive/swarm execution must never acquire GitHub authority.
+    _ = get_session_github_token
+
+    def _start_run_without_github_authority(**kwargs):
+        kwargs.pop("github_access_token", None)
+        return start_cognitive_swarm_run(**kwargs, github_access_token=None)
 
     @app.route("/api/user/agent/swarm/manifest", methods=["GET"])
     @require_session
@@ -2559,7 +2549,7 @@ def register_cognitive_swarm_routes(
                 "nextAction": "USE_AGENT_ZERO_REPOSITORY_EXECUTION_ROUTE",
                 "secretValuesReturned": False,
             }), 409
-        payload, status_code = _start_run_with_session_github_token(
+        payload, status_code = _start_run_without_github_authority(
             get_connection=get_connection,
             user_id=_current_session_user_id(),
             mission=str(body.get("mission") or ""),
@@ -2583,7 +2573,7 @@ def register_cognitive_swarm_routes(
         app,
         require_session=require_session,
         get_connection=get_connection,
-        start_run=_start_run_with_session_github_token,
+        start_run=_start_run_without_github_authority,
         resume_run=resume_cognitive_swarm_run,
         service_user_resolver=lambda: _service_owner_user_id(get_connection),
     )
