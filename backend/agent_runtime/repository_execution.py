@@ -280,7 +280,6 @@ def start_repository_execution(
         conn,
         user_id=user_id,
         payload=payload,
-        github_access_token=None,
         workspace_root=workspace_root,
         provision_workspace=True,
         clone_repo=False,
