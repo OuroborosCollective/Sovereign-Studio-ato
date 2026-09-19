@@ -296,31 +296,8 @@ describe('IntegrationIntentDraftCard', () => {
       expect(screen.getByTestId('btn-confirm')).toBeDisabled();
     });
 
-    it('offers GitHub-Zugang öffnen when the repo is ready but write access is missing', () => {
-      const draft = createMockDraft();
-      const gates = createMockGates({
-        repoReady: true,
-        githubWriteReady: false,
-        directPatchReady: false,
-        agentReady: false,
-      });
-
-      render(
-        <IntegrationIntentDraftCard
-          draft={draft}
-          gateSnapshot={gates}
-          onConfirm={vi.fn()}
-          onConfirmWithGitHubAccess={vi.fn()}
-          onRephrase={vi.fn()}
-          onReject={vi.fn()}
-        />
-      );
-
-      expect(screen.getByTestId('btn-confirm')).not.toBeDisabled();
-      expect(screen.getByTestId('btn-confirm').textContent).toBe('GitHub-Zugang öffnen');
-    });
-
-    it('keeps the GitHub access action available when the agent is configured but write access is missing', () => {
+    it('keeps repository execution available when GitHub publication access is missing', () => {
+      const onConfirm = vi.fn();
       const draft = createMockDraft();
       const gates = createMockGates({
         repoReady: true,
@@ -333,21 +310,20 @@ describe('IntegrationIntentDraftCard', () => {
         <IntegrationIntentDraftCard
           draft={draft}
           gateSnapshot={gates}
-          onConfirm={vi.fn()}
-          onConfirmWithGitHubAccess={vi.fn()}
+          onConfirm={onConfirm}
           onRephrase={vi.fn()}
           onReject={vi.fn()}
-          canConfirm={false}
+          canConfirm={true}
         />
       );
 
       expect(screen.getByTestId('btn-confirm')).not.toBeDisabled();
-      expect(screen.getByTestId('btn-confirm').textContent).toBe('GitHub-Zugang öffnen');
+      expect(screen.getByTestId('btn-confirm').textContent).toBe('Auftrag starten');
+      fireEvent.click(screen.getByTestId('btn-confirm'));
+      expect(onConfirm).toHaveBeenCalledTimes(1);
     });
 
-    it('calls onConfirmWithGitHubAccess when button clicked with GitHub access needed', () => {
-      const onConfirm = vi.fn();
-      const onConfirmWithGitHubAccess = vi.fn();
+    it('still blocks execution when the Agent runtime is not ready even if the repo exists', () => {
       const draft = createMockDraft();
       const gates = createMockGates({
         repoReady: true,
@@ -360,16 +336,15 @@ describe('IntegrationIntentDraftCard', () => {
         <IntegrationIntentDraftCard
           draft={draft}
           gateSnapshot={gates}
-          onConfirm={onConfirm}
-          onConfirmWithGitHubAccess={onConfirmWithGitHubAccess}
+          onConfirm={vi.fn()}
           onRephrase={vi.fn()}
           onReject={vi.fn()}
+          canConfirm={false}
         />
       );
 
-      fireEvent.click(screen.getByTestId('btn-confirm'));
-      expect(onConfirmWithGitHubAccess).toHaveBeenCalledTimes(1);
-      expect(onConfirm).not.toHaveBeenCalled();
+      expect(screen.getByTestId('btn-confirm')).toBeDisabled();
+      expect(screen.getByTestId('btn-confirm').textContent).toBe('Auftrag starten');
     });
 
     it('shows blocker message when repo is not ready', () => {
@@ -413,7 +388,7 @@ describe('IntegrationIntentDraftCard', () => {
       );
 
       expect(screen.getByText('Repo ready')).toBeInTheDocument();
-      expect(screen.getByText('GitHub Write')).toBeInTheDocument();
+      expect(screen.getByText('GitHub Publish')).toBeInTheDocument();
       expect(screen.getByText('Direct Patch')).toBeInTheDocument();
       expect(screen.getByText('Sovereign Agent')).toBeInTheDocument();
     });
