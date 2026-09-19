@@ -21,6 +21,12 @@ describe('maskSecrets', () => {
     expect(maskSecrets('ghr_1234567890abcdefghijklmnopqrstuvwx')).toBe('ghr_****');
   });
 
+  it('masks GitLab Personal Access Tokens', () => {
+    const secret = 'glpat-1234567890abcdefghij_kL';
+    const text = `Failed to clone with ${secret}`;
+    expect(maskSecrets(text)).toBe('Failed to clone with glpat-****');
+  });
+
   it('masks Google API keys', () => {
     const secret = 'AIzaSyA-1234567890_abcdefghijklmnopqrst';
     const text = `API key ${secret} is invalid`;
@@ -104,6 +110,11 @@ describe('maskSecrets', () => {
     expect(maskSecrets('database_password: db_secret_pass_123')).toBe('database_password: ****');
     expect(maskSecrets('db_password=db_secret_pass_456')).toBe('db_password=****');
     expect(maskSecrets('db_pass: db_secret_pass_789')).toBe('db_pass: ****');
+    expect(maskSecrets('redis_password: redis_secret_pass_123')).toBe('redis_password: ****');
+    expect(maskSecrets('redis_pass=redis_secret_pass_456')).toBe('redis_pass=****');
+    expect(maskSecrets('postgres_password: postgres_secret_pass_789')).toBe('postgres_password: ****');
+    expect(maskSecrets('pg_password=pg_secret_pass_101')).toBe('pg_password=****');
+    expect(maskSecrets('gitlab_token: gl_token_val_202')).toBe('gitlab_token: ****');
     expect(maskSecrets('master_password=master_pass_101')).toBe('master_password=****');
     expect(maskSecrets('master_key: master_key_val_202')).toBe('master_key: ****');
     expect(maskSecrets('secret_key=secret_key_val_303')).toBe('secret_key=****');
