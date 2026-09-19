@@ -60,7 +60,8 @@ describe('DevChat Draft PR execution contract', () => {
     expect(bridge).toContain('/commits/${encodeURIComponent(parsed.branch)}');
     expect(bridge).toContain("headSha: typeof commit.sha === 'string' ? commit.sha : undefined");
     expect(builder).toContain('expectedHeadSha: chatRepoSnapshot.headSha');
-    expect(builder).toContain('githubAccessToken: githubTokenRef.current || undefined');
+    const startSection = builder.split('const startAgentFromText', 1)[1].split('const publishConfirmedDraftPr', 1)[0];
+    expect(startSection).not.toContain('githubAccessToken: githubTokenRef.current || undefined');
   });
 
   it('does not mount the retired Rescue/ReSecure overlay and does not fall back to a simulator on the primary vNext surface', () => {
