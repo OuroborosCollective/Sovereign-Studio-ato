@@ -6,7 +6,21 @@ export interface AutoCodeReviewResult { readonly decision: ReviewDecision; reado
 export interface AutoCodeReviewRequest { readonly jobId: string; readonly backendBase: string; readonly fetcher?: typeof fetch; }
 export function reviewAllowsDraftPr(result: AutoCodeReviewResult): boolean { return result.decision === 'passed' && result.passed; }
 export function reviewBlockerMessage(result: AutoCodeReviewResult): string { if (result.decision === 'blocked_high') return `Auto Code Review: ${result.highCount} HIGH finding(s) must be resolved. ${result.summary}`; if (result.decision === 'blocked_unavailable') return `Auto Code Review unavailable: ${result.error || result.summary}`; return ''; }
-export function findingsByFile(findings: readonly CodeReviewFinding[]): Map<string, readonly CodeReviewFinding[]> { const map = new Map<string, CodeReviewFinding[]>(); for (const finding of findings) map.set(finding.file, [...(map.get(finding.file) ?? []), finding]); return map; }
+/**
+ * Groups code review findings by file path in O(N) time with zero intermediate array copying allocations.
+ */
+export function findingsByFile(findings: readonly CodeReviewFinding[]): Map<string, readonly CodeReviewFinding[]> {
+  const map = new Map<string, CodeReviewFinding[]>();
+  for (const finding of findings) {
+    let fileFindings = map.get(finding.file);
+    if (!fileFindings) {
+      fileFindings = [];
+      map.set(finding.file, fileFindings);
+    }
+    fileFindings.push(finding);
+  }
+  return map;
+}
 export function severityIcon(severity: ReviewSeverity): string { return ({ HIGH: '🔴', MEDIUM: '🟡', LOW: '🟢' } as const)[severity]; }
 export function categoryLabel(category: ReviewCategory): string { return ({ security: 'Security', breaking_change: 'Breaking Change', quality: 'Qualität', style: 'Style' } as const)[category]; }
 function unavailable(jobId: string, error: string): AutoCodeReviewResult { return { decision: 'blocked_unavailable', passed: false, summary: 'Auto code review unavailable.', findings: [], highCount: 0, mediumCount: 0, lowCount: 0, modelUsed: '', resolvedTransport: '', routeId: '', fallbackUsed: false, attemptedRouteCount: 0, error: jobId ? error : 'jobId is required', reviewedAt: Date.now() }; }
