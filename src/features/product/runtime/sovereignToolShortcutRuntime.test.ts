@@ -65,13 +65,12 @@ describe('sovereignToolShortcutRuntime', () => {
     });
   });
 
-  it('blocks Executor until repo, execution-intent, GitHub and runtime evidence exist', () => {
+  it('blocks Executor only on repo, execution intent and runtime evidence, never GitHub publication access', () => {
     expect(gate('executor')).toMatchObject({ canOpen: false, statusLabel: 'Repo fehlt' });
     expect(gate('executor', { repoReady: true })).toMatchObject({ canOpen: false, statusLabel: 'Ausführungsauftrag fehlt' });
-    expect(gate('executor', { repoReady: true, hasExecutorMission: true, executorIntent: 'code_execution' })).toMatchObject({ canOpen: false, statusLabel: 'GitHub-Zugang fehlt' });
-    expect(gate('executor', { repoReady: true, githubAccessState: 'ready', hasExecutorMission: true, executorIntent: 'code_execution' })).toMatchObject({ canOpen: false, statusLabel: 'Nicht verbunden' });
-    expect(gate('executor', { repoReady: true, githubAccessState: 'ready', executorAvailable: true, hasExecutorMission: true, executorIntent: 'question' })).toMatchObject({ canOpen: false, statusLabel: 'Ausführungsauftrag fehlt' });
-    expect(gate('executor', { repoReady: true, githubAccessState: 'ready', executorAvailable: true, hasExecutorMission: true, executorIntent: 'code_execution' })).toMatchObject({ canOpen: true, statusLabel: 'Start möglich' });
+    expect(gate('executor', { repoReady: true, hasExecutorMission: true, executorIntent: 'code_execution' })).toMatchObject({ canOpen: false, statusLabel: 'Nicht verbunden' });
+    expect(gate('executor', { repoReady: true, executorAvailable: true, hasExecutorMission: true, executorIntent: 'question' })).toMatchObject({ canOpen: false, statusLabel: 'Ausführungsauftrag fehlt' });
+    expect(gate('executor', { repoReady: true, githubAccessState: 'missing', executorAvailable: true, hasExecutorMission: true, executorIntent: 'code_execution' })).toMatchObject({ canOpen: true, statusLabel: 'Start möglich' });
   });
 
   it('opens Runtime Logs without fabricating events', () => {
