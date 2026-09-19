@@ -1,0 +1,113 @@
+name: Agent Zero Only Production Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_revision:
+        description: Exact deployed Sovereign source revision
+        required: true
+        type: string
+      expected_image_digest:
+        description: Exact deployed immutable backend image digest
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-zero-only-production-smoke
+  cancel-in-progress: false
+
+jobs:
+  production-smoke:
+    name: Deployed UI to Agent Zero Repository Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: 'true'
+      NODE_VERSION: '22'
+      PNPM_VERSION: '9.12.2'
+      SOVEREIGN_E2E_APP_URL: https://chat.arelorian.de
+      SOVEREIGN_E2E_BACKEND_URL: https://sovereign-backend.arelorian.de
+      SOVEREIGN_E2E_REPO_URL: https://github.com/${{ github.repository }}
+      SOVEREIGN_E2E_EXPECTED_REVISION: ${{ inputs.expected_revision }}
+      SOVEREIGN_E2E_EXPECTED_IMAGE_DIGEST: ${{ inputs.expected_image_digest }}
+      SOVEREIGN_E2E_ACCOUNT_KEY: ${{ secrets.SOVEREIGN_E2E_ACCOUNT_KEY }}
+      SOVEREIGN_E2E_REPOSITORY_READY_TIMEOUT_MS: '900000'
+
+    steps:
+      - name: Checkout exact smoke contract revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.expected_revision }}
+          fetch-depth: 1
+
+      - name: Bind checkout to requested revision
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$SOVEREIGN_E2E_EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "expected_revision must be a full lowercase Git SHA" >&2
+            exit 1
+          }
+          [[ "$SOVEREIGN_E2E_EXPECTED_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "expected_image_digest must be an immutable sha256 digest" >&2
+            exit 1
+          }
+          [ "$(git rev-parse HEAD)" = "$SOVEREIGN_E2E_EXPECTED_REVISION" ] || {
+            echo "Checked out revision differs from requested production revision" >&2
+            exit 1
+          }
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install exact dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        shell: bash
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Run deployed Agent-Zero-only repository smoke
+        shell: bash
+        run: node scripts/run-agent-zero-only-production-smoke.mjs
+
+      - name: Upload causal smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-zero-only-production-smoke-${{ github.run_id }}
+          path: test-results/agent-zero-only-production-smoke.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Write smoke summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Agent Zero Only Production Smoke"
+            echo ""
+            echo "- Deployed UI: https://chat.arelorian.de"
+            echo "- Production backend: https://sovereign-backend.arelorian.de"
+            echo "- Expected revision: $SOVEREIGN_E2E_EXPECTED_REVISION"
+            echo "- Expected backend digest: $SOVEREIGN_E2E_EXPECTED_IMAGE_DIGEST"
+            echo "- Repository execution route: /api/user/agent/repository/run"
+            echo "- Workflow repository permission: contents: read"
+            echo "- No GitHub token is provided to the smoke process"
+            echo "- No Draft-PR publication step exists in this workflow"
+            echo "- Evidence artifact: agent-zero-only-production-smoke-${{ github.run_id }}"
+          } >> "$GITHUB_STEP_SUMMARY"
