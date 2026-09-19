@@ -2444,12 +2444,7 @@ def register_cognitive_swarm_routes(
     *,
     require_session,
     get_connection: ConnectionFactory,
-    get_session_github_token: Callable[[str], str | None] | None = None,
 ) -> None:
-    # The parameter remains for backwards-compatible route registration only.
-    # Cognitive/swarm execution must never acquire GitHub authority.
-    _ = get_session_github_token
-
     def _start_run_without_github_authority(**kwargs):
         kwargs.pop("github_access_token", None)
         return start_cognitive_swarm_run(**kwargs, github_access_token=None)
