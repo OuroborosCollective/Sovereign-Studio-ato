@@ -679,10 +679,11 @@ def test_create_job_runs_lifecycle_and_returns_runtime_state(tmp_path, monkeypat
     assert payload["job"]["workspaceId"].startswith("agent-")
 
 
-def test_create_job_uses_server_held_github_credential_request_locally(tmp_path, monkeypatch):
+def test_create_job_does_not_acquire_server_held_github_credential(tmp_path, monkeypatch):
     conn = FakeConnection()
     token = "ghp_" + "s" * 40
     captured = {}
+    session_calls: list[str] = []
     original_create = routes_module.create_sovereign_agent_job
 
     def capture_create(*args, **kwargs):
@@ -693,7 +694,7 @@ def test_create_job_uses_server_held_github_credential_request_locally(tmp_path,
     monkeypatch.setattr(routes_module, "create_sovereign_agent_job", capture_create)
     app = create_test_app(
         conn,
-        get_session_github_token=lambda user_id: token if user_id == "user-1" else None,
+        get_session_github_token=lambda user_id: session_calls.append(user_id) or token,
     )
 
     response = app.test_client().post(
@@ -702,20 +703,21 @@ def test_create_job_uses_server_held_github_credential_request_locally(tmp_path,
         json={
             "repoUrl": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
             "branch": "main",
-            "mission": "Inspect the private repository and prepare a Draft PR.",
+            "mission": "Create a non-repository diagnostic job.",
             "provisionWorkspace": True,
             "cloneRepo": False,
         },
     )
 
     assert response.status_code == 201
-    assert captured["github_access_token"] == token
-    assert "githubAccessToken" not in captured["payload"]
+    assert captured["github_access_token"] is None
+    assert captured["clone_repo"] is False
+    assert session_calls == []
     assert token not in repr(response.get_json())
     assert token not in repr(conn.jobs)
 
 
-def test_create_job_rejects_invalid_explicit_github_credential_without_session_fallback(tmp_path, monkeypatch):
+def test_create_job_rejects_any_explicit_github_credential_without_session_fallback(tmp_path, monkeypatch):
     conn = FakeConnection()
     session_calls: list[str] = []
     monkeypatch.setenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", str(tmp_path))
@@ -730,13 +732,14 @@ def test_create_job_rejects_invalid_explicit_github_credential_without_session_f
         json={
             "repoUrl": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
             "branch": "main",
-            "mission": "Inspect the private repository and prepare a Draft PR.",
+            "mission": "Attempt a hidden GitHub credential path.",
             "githubAccessToken": "not-a-token",
         },
     )
 
-    assert response.status_code == 400
-    assert response.get_json()["error"] == "githubAccessToken has an invalid format"
+    assert response.status_code == 409
+    payload = response.get_json()
+    assert payload["code"] == "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE"
     assert session_calls == []
     assert conn.jobs == {}
 
