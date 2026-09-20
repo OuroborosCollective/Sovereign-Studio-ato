@@ -1,10 +1,25 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "2b362b20273dd618ea431f3fe539535f11935dc0",
-  "rawCandidateCount": 100,
-  "canonicalCandidateCount": 79,
+  "sourceRevision": "a0cd16d75c9db4f6af0c7b2001dcaa3b45645346",
+  "rawCandidateCount": 102,
+  "canonicalCandidateCount": 80,
   "entries": [
+    {
+      "canonicalPath": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+      "mirrorPaths": [
+        "backend/agent_runtime/cag_self_healing_runtime.py"
+      ],
+      "symbol": "_candidate_jobs",
+      "line": 170,
+      "patternFamily": "python_keyword_intent",
+      "fileSha256": "c2ac4596fa6935f80f53397a770ef0e9b477293a1f9b5930f67bac632b34326e",
+      "anchorSha256": "0146fe6c9d3a5beee7ffeb0250f770cf183a9240b76137d58083aac4d096c4e3",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:c750036689e30e356d9f7448",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "_candidate_jobs queries bounded persisted job status, external_ref and explicit event-stage fields; it does not interpret free user language, choose semantic intent, or independently authorize a repository effect."
+    },
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cognitive_llm_transport.py",
       "mirrorPaths": [
@@ -1075,5 +1090,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "4aa09ec236bddcca407bdeb3f7cd066effa9e3dae6e4f846e74dc053eeaecc80"
+  "ledgerSha256": "7de6acfa4d4e3e23239a3c1f42968aa323905b1fc9cf8d89e09efae399252ae1"
 }
