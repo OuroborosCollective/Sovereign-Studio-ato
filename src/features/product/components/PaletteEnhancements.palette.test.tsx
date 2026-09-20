@@ -842,13 +842,14 @@ describe('Palette Accessibility Enhancements', () => {
     });
 
     it('shows stateful submit button titles based on loading status', () => {
+      const mockOnLoad = vi.fn();
       const { rerender } = render(
         <CompactRepoSetupSheet
           value=""
           busy={false}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={mockOnLoad}
           onClose={vi.fn()}
         />
       );
@@ -864,7 +865,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={false}
           error={null}
           onChange={vi.fn()}
-          onLoad={onLoad}
+          onLoad={mockOnLoad}
           onClose={vi.fn()}
         />
       );
@@ -880,7 +881,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={true}
           error={null}
           onChange={vi.fn()}
-          onLoad={onLoad}
+          onLoad={mockOnLoad}
           onClose={vi.fn()}
         />
       );
