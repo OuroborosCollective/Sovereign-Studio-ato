@@ -655,7 +655,7 @@ def runtime_dependency_health_matrix(
             "blockedFunctions": ["all runtime functions under pressure"],
             "causeFindings": capacity.get("findings") or [],
         },
-        {"dependency": "document-pipeline", "ok": document.get("ok"), "status": document.get("status"), "blockedFunctions": ["DOCX to PDF", "PDF marker verification"]},
+        {"dependency": "document-pipeline", "required": False, "ok": document.get("ok"), "status": document.get("status"), "blockedFunctions": ["DOCX to PDF", "PDF marker verification"]},
         {"dependency": "milvus-memory-gateway", "ok": milvus.get("ok"), "status": milvus.get("status"), "blockedFunctions": ["Milvus collection operations", "external vector memory canary"]},
         {
             "dependency": "wolfram-cag",
@@ -666,7 +666,7 @@ def runtime_dependency_health_matrix(
     ]
     findings: list[dict[str, Any]] = []
     for item in dependencies:
-        if item["ok"] is not False:
+        if item["ok"] is not False or item.get("required") is False:
             continue
         finding: dict[str, Any] = {
             "severity": "P0",

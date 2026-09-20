@@ -16,3 +16,4 @@ This index points to current canonical knowledge. It must not preserve transient
 Transient observations belong in an Issue, PR, test result, evidence receipt or dated history entry. They should not be promoted to durable memory unless revalidated and intentionally consolidated.
 
 - CAG runtime lesson: the production backend deploy template must bind the fixed `WOLFRAM_CAG_API_KEY_FILE` owner-managed path; the source Compose contract alone is insufficient. Evidence: owner-input target consumed, live CAG status still unconfigured before the template fix, targeted owner-input install contract 12/12 passed after the fix.
+- Document pipeline retirement: Gotenberg is intentionally absent and therefore the document-pipeline canary is optional rather than a release-blocking dependency. Evidence: dependency-matrix regression covers the missing-Gotenberg state and the operational-assurance suite passes 11/11.
