@@ -864,7 +864,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={false}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoad}
           onClose={vi.fn()}
         />
       );
@@ -880,7 +880,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={true}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoad}
           onClose={vi.fn()}
         />
       );
@@ -952,7 +952,7 @@ describe('Palette Accessibility Enhancements', () => {
   });
 
   describe('PromptLibraryPanel Accessibility and Micro-UX Enhancements', () => {
-    it('renders dialog and controls with descriptive title, aria-label, and aria-pressed attributes', () => {
+    it('renders dialog and controls with descriptive title, aria-label, aria-pressed, keyboard Escape dismiss, and semantic list', () => {
       const onSelectTemplate = vi.fn();
       const onClose = vi.fn();
 
@@ -963,6 +963,12 @@ describe('Palette Accessibility Enhancements', () => {
         />
       );
 
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toHaveAttribute('aria-labelledby', 'prompt-library-title');
+
+      const heading = screen.getByText('📋 Prompt-Bibliothek');
+      expect(heading).toHaveAttribute('id', 'prompt-library-title');
+
       const closeBtn = screen.getByRole('button', { name: 'Prompt-Bibliothek schließen' });
       expect(closeBtn).toHaveAttribute('title', 'Prompt-Bibliothek schließen');
 
@@ -972,6 +978,20 @@ describe('Palette Accessibility Enhancements', () => {
       const allCategoryBtn = screen.getByRole('button', { name: 'Kategorie: Alle' });
       expect(allCategoryBtn).toHaveAttribute('title', 'Kategorie: Alle');
       expect(allCategoryBtn).toHaveAttribute('aria-pressed', 'true');
+
+      const templateList = screen.getByRole('list', { name: 'Prompt-Templates' });
+      expect(templateList).toBeInTheDocument();
+
+      // Test Escape key dismiss
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+
+      // Search non-existent string to verify empty state
+      fireEvent.change(searchInput, { target: { value: 'nonexistent-query-xyz' } });
+      expect(screen.getByText('Keine passenden Templates gefunden.')).toBeInTheDocument();
+
+      // Clear search
+      fireEvent.change(searchInput, { target: { value: '' } });
 
       const createCustomBtn = screen.getByRole('button', { name: 'Eigenes Template erstellen' });
       expect(createCustomBtn).toHaveAttribute('title', 'Eigenes Template erstellen');
