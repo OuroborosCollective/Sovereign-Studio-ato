@@ -449,11 +449,13 @@ export interface UseAdminSelfHealingResult {
     mode: SelfHealingMode;
     allowedFailureFamilies: SelfHealingFailureFamily[];
     maxAutoRepairsPerHour: number;
+    maxAutoRepairsPerDay: number;
     maxChangedFiles: number;
     expiresInSeconds: number;
     paused?: boolean;
   }) => Promise<void>;
   revokeAuthority: () => Promise<void>;
+  approveIncident: (incidentId: string) => Promise<void>;
 }
 
 export function useAdminSelfHealing(): UseAdminSelfHealingResult {
@@ -486,6 +488,7 @@ export function useAdminSelfHealing(): UseAdminSelfHealingResult {
     mode: SelfHealingMode;
     allowedFailureFamilies: SelfHealingFailureFamily[];
     maxAutoRepairsPerHour: number;
+    maxAutoRepairsPerDay: number;
     maxChangedFiles: number;
     expiresInSeconds: number;
     paused?: boolean;
@@ -501,7 +504,13 @@ export function useAdminSelfHealing(): UseAdminSelfHealingResult {
     reload();
   }, [reload]);
 
-  return { authority, incidents, loading, error, reload, saveAuthority, revokeAuthority };
+  const approveIncident = useCallback(async (incidentId: string) => {
+    setError(null);
+    await adminApiClient.approveSelfHealingIncident(incidentId, 900);
+    reload();
+  }, [reload]);
+
+  return { authority, incidents, loading, error, reload, saveAuthority, revokeAuthority, approveIncident };
 }
 
 // ── useAdminAuditLog ──────────────────────────────────────────────────────────

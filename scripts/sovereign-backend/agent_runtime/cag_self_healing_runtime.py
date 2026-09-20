@@ -523,7 +523,8 @@ def _authority_row(connection: Any, owner_admin_id: str) -> dict[str, Any] | Non
         cur.execute(
             """
             SELECT owner_admin_id::text, schema_version, mode, allowed_failure_families,
-                   max_auto_repairs_per_hour, max_changed_files, expires_at, paused,
+                   max_auto_repairs_per_hour, max_auto_repairs_per_day,
+                   max_changed_files, expires_at, paused,
                    grant_sha256, created_at, updated_at, last_used_at,
                    (expires_at <= NOW()) AS expired
             FROM sovereign_self_healing_authority
@@ -542,7 +543,8 @@ def _allowed_families(value: Any) -> list[str]:
     return [str(item) for item in values if str(item) in allowed]
 
 
-def _recent_action_count(connection: Any, owner_admin_id: str) -> int:
+def _recent_action_count(connection: Any, owner_admin_id: str, *, hours: int) -> int:
+    bounded_hours = max(1, min(int(hours), 24))
     with connection.cursor() as cur:
         cur.execute(
             """
@@ -551,13 +553,68 @@ def _recent_action_count(connection: Any, owner_admin_id: str) -> int:
             JOIN sovereign_self_healing_incidents incident
               ON incident.incident_id=receipt.incident_id
             WHERE incident.authority_owner_admin_id=%s::uuid
-              AND receipt.created_at >= NOW() - INTERVAL '1 hour'
+              AND receipt.created_at >= NOW() - (%s * INTERVAL '1 hour')
               AND receipt.action_kind IN ('READBACK_RECOVERED','REPAIR_JOB_STARTED')
             """,
-            (owner_admin_id,),
+            (owner_admin_id, bounded_hours),
         )
         row = cur.fetchone() or {}
     return int(row.get("action_count") or 0)
+
+
+def _manual_approval_available(
+    connection: Any,
+    *,
+    incident_id: str,
+    owner_admin_id: str,
+) -> bool:
+    with connection.cursor() as cur:
+        cur.execute(
+            """
+            SELECT 1
+            FROM sovereign_self_healing_manual_approvals
+            WHERE incident_id=%s
+              AND owner_admin_id=%s::uuid
+              AND consumed_at IS NULL
+              AND expires_at > NOW()
+            LIMIT 1
+            """,
+            (incident_id, owner_admin_id),
+        )
+        return cur.fetchone() is not None
+
+
+def _claim_manual_approval(
+    connection: Any,
+    *,
+    incident_id: str,
+    owner_admin_id: str,
+) -> str | None:
+    with connection.cursor() as cur:
+        cur.execute(
+            """
+            WITH candidate AS (
+                SELECT approval_id
+                FROM sovereign_self_healing_manual_approvals
+                WHERE incident_id=%s
+                  AND owner_admin_id=%s::uuid
+                  AND consumed_at IS NULL
+                  AND expires_at > NOW()
+                ORDER BY created_at ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE sovereign_self_healing_manual_approvals approval
+            SET consumed_at=NOW()
+            FROM candidate
+            WHERE approval.approval_id=candidate.approval_id
+            RETURNING approval.approval_sha256
+            """,
+            (incident_id, owner_admin_id),
+        )
+        row = cur.fetchone()
+    connection.commit()
+    return str(row.get("approval_sha256") or "") if row else None
 
 
 def _touch_authority(connection: Any, owner_admin_id: str) -> None:
@@ -841,22 +898,36 @@ def process_cag_self_healing_once(
                 continue
             if not owner_admin_id:
                 continue
-            if _recent_action_count(connection, owner_admin_id) >= int(
-                (authority or {}).get("max_auto_repairs_per_hour") or 1
+            hourly_count = _recent_action_count(connection, owner_admin_id, hours=1)
+            daily_count = _recent_action_count(connection, owner_admin_id, hours=24)
+            hourly_limit = int((authority or {}).get("max_auto_repairs_per_hour") or 1)
+            daily_limit = int((authority or {}).get("max_auto_repairs_per_day") or 3)
+            budget_exhausted = hourly_count >= hourly_limit or daily_count >= daily_limit
+            manual_approval_sha: str | None = None
+            if budget_exhausted and not _manual_approval_available(
+                connection,
+                incident_id=incident_id,
+                owner_admin_id=owner_admin_id,
             ):
                 authority_blocked += 1
                 _update_incident(
                     connection,
                     incident_id=incident_id,
                     status="WAITING_FOR_AUTHORITY",
-                    blocker="SELF_HEALING_RATE_LIMIT_REACHED",
+                    blocker="SELF_HEALING_DAILY_LIMIT_REACHED_MANUAL_APPROVAL_REQUIRED",
                 )
                 _persist_action_receipt(
                     connection,
                     incident_id=incident_id,
                     action_kind="AUTHORITY_BLOCKED",
                     effect_class="read",
-                    payload={"reason": "SELF_HEALING_RATE_LIMIT_REACHED"},
+                    payload={
+                        "reason": "SELF_HEALING_DAILY_LIMIT_REACHED_MANUAL_APPROVAL_REQUIRED",
+                        "hourlyCount": hourly_count,
+                        "hourlyLimit": hourly_limit,
+                        "dailyCount": daily_count,
+                        "dailyLimit": daily_limit,
+                    },
                 )
                 continue
             if not _claim_incident_for_action(connection, incident_id):
@@ -885,6 +956,29 @@ def process_cag_self_healing_once(
                     payload={"reason": "STANDING_AUTHORITY_REVOKED_OR_EXPIRED"},
                 )
                 continue
+
+            if budget_exhausted:
+                manual_approval_sha = _claim_manual_approval(
+                    connection,
+                    incident_id=incident_id,
+                    owner_admin_id=owner_admin_id,
+                )
+                if not manual_approval_sha:
+                    authority_blocked += 1
+                    _update_incident(
+                        connection,
+                        incident_id=incident_id,
+                        status="WAITING_FOR_AUTHORITY",
+                        blocker="MANUAL_APPROVAL_ALREADY_CONSUMED_OR_EXPIRED",
+                    )
+                    _persist_action_receipt(
+                        connection,
+                        incident_id=incident_id,
+                        action_kind="AUTHORITY_BLOCKED",
+                        effect_class="read",
+                        payload={"reason": "MANUAL_APPROVAL_ALREADY_CONSUMED_OR_EXPIRED"},
+                    )
+                    continue
 
             if family is FailureFamily.HANDOFF_TIMEOUT_WITH_READBACK:
                 if not observation.task_readback_available:
@@ -927,6 +1021,7 @@ def process_cag_self_healing_once(
                             "repairContractSha256": repair_contract["repairContractSha256"],
                             "resubmitted": False,
                             "taskReadbackVerified": True,
+                            **({"manualApprovalSha256": manual_approval_sha} if manual_approval_sha else {}),
                         },
                     )
                 else:
@@ -987,6 +1082,7 @@ def process_cag_self_healing_once(
                     "repairJobId": repair_job_id,
                     "executor": "agent-zero-a2a",
                     "automaticMerge": False,
+                    **({"manualApprovalSha256": manual_approval_sha} if manual_approval_sha else {}),
                 },
             )
         except Exception as exc:
@@ -1022,6 +1118,7 @@ def _authority_projection(row: Mapping[str, Any] | None) -> dict[str, Any]:
             "mode": "OBSERVE_ONLY",
             "allowedFailureFamilies": [],
             "maxAutoRepairsPerHour": 0,
+            "maxAutoRepairsPerDay": 0,
             "maxChangedFiles": 0,
             "expiresAt": None,
             "paused": True,
@@ -1036,6 +1133,7 @@ def _authority_projection(row: Mapping[str, Any] | None) -> dict[str, Any]:
         "mode": str(row.get("mode") or "OBSERVE_ONLY"),
         "allowedFailureFamilies": _allowed_families(row.get("allowed_failure_families")),
         "maxAutoRepairsPerHour": int(row.get("max_auto_repairs_per_hour") or 0),
+        "maxAutoRepairsPerDay": int(row.get("max_auto_repairs_per_day") or 0),
         "maxChangedFiles": int(row.get("max_changed_files") or 0),
         "expiresAt": expires_at.isoformat() if getattr(expires_at, "isoformat", None) else str(expires_at or "") or None,
         "paused": bool(row.get("paused")),
@@ -1065,6 +1163,7 @@ def _upsert_authority(
     mode: str,
     allowed_failure_families: Sequence[str],
     max_auto_repairs_per_hour: int,
+    max_auto_repairs_per_day: int,
     max_changed_files: int,
     expires_in_seconds: int,
     paused: bool,
@@ -1078,10 +1177,15 @@ def _upsert_authority(
     if not requested or not requested.issubset(known):
         raise SelfHealingContractError("allowed failure families are invalid")
     max_rate = int(max_auto_repairs_per_hour)
+    max_daily = int(max_auto_repairs_per_day)
     max_files = int(max_changed_files)
     expires_seconds = int(expires_in_seconds)
     if not 1 <= max_rate <= 10:
         raise SelfHealingContractError("maxAutoRepairsPerHour must be between 1 and 10")
+    if not 1 <= max_daily <= 30:
+        raise SelfHealingContractError("maxAutoRepairsPerDay must be between 1 and 30")
+    if max_rate > max_daily:
+        raise SelfHealingContractError("maxAutoRepairsPerHour cannot exceed maxAutoRepairsPerDay")
     if not 1 <= max_files <= 50:
         raise SelfHealingContractError("maxChangedFiles must be between 1 and 50")
     if not 300 <= expires_seconds <= 604800:
@@ -1095,6 +1199,7 @@ def _upsert_authority(
         "mode": normalized_mode,
         "allowedFailureFamilies": ordered,
         "maxAutoRepairsPerHour": max_rate,
+        "maxAutoRepairsPerDay": max_daily,
         "maxChangedFiles": max_files,
         "expiresAt": expires_at.isoformat(),
         "paused": bool(paused),
@@ -1105,14 +1210,15 @@ def _upsert_authority(
             """
             INSERT INTO sovereign_self_healing_authority (
                 owner_admin_id, schema_version, mode, allowed_failure_families,
-                max_auto_repairs_per_hour, max_changed_files, expires_at, paused,
-                grant_sha256
-            ) VALUES (%s::uuid,%s,%s,%s::jsonb,%s,%s,%s,%s,%s)
+                max_auto_repairs_per_hour, max_auto_repairs_per_day,
+                max_changed_files, expires_at, paused, grant_sha256
+            ) VALUES (%s::uuid,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (owner_admin_id) DO UPDATE SET
                 schema_version=EXCLUDED.schema_version,
                 mode=EXCLUDED.mode,
                 allowed_failure_families=EXCLUDED.allowed_failure_families,
                 max_auto_repairs_per_hour=EXCLUDED.max_auto_repairs_per_hour,
+                max_auto_repairs_per_day=EXCLUDED.max_auto_repairs_per_day,
                 max_changed_files=EXCLUDED.max_changed_files,
                 expires_at=EXCLUDED.expires_at,
                 paused=EXCLUDED.paused,
@@ -1125,6 +1231,7 @@ def _upsert_authority(
                 normalized_mode,
                 canonical_json(ordered),
                 max_rate,
+                max_daily,
                 max_files,
                 expires_at,
                 bool(paused),
@@ -1152,6 +1259,100 @@ def _revoke_authority(connection: Any, owner_admin_id: str) -> dict[str, Any]:
         )
     connection.commit()
     return _authority_projection(_authority_row(connection, owner_admin_id))
+
+
+def _grant_manual_incident_approval(
+    connection: Any,
+    *,
+    incident_id: str,
+    owner_admin_id: str,
+    expires_in_seconds: int,
+) -> dict[str, Any]:
+    if not re.fullmatch(r"self-heal-[0-9a-f]{24}", incident_id):
+        raise SelfHealingContractError("incident id is invalid")
+    expires_seconds = int(expires_in_seconds)
+    if not 60 <= expires_seconds <= 3600:
+        raise SelfHealingContractError("manual approval expiry must be between 60 and 3600 seconds")
+    with connection.cursor() as cur:
+        cur.execute(
+            """
+            SELECT incident_id, status, failure_family, cag_verified
+            FROM sovereign_self_healing_incidents
+            WHERE incident_id=%s
+            LIMIT 1
+            """,
+            (incident_id,),
+        )
+        incident = cur.fetchone()
+    if not incident:
+        raise SelfHealingContractError("incident not found")
+    if str(incident.get("status") or "") != "WAITING_FOR_AUTHORITY":
+        raise SelfHealingContractError("incident is not waiting for authority")
+    if incident.get("cag_verified") is not True:
+        raise SelfHealingContractError("incident is not CAG verified")
+
+    with connection.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE sovereign_self_healing_manual_approvals
+            SET consumed_at=NOW()
+            WHERE incident_id=%s
+              AND owner_admin_id=%s::uuid
+              AND consumed_at IS NULL
+              AND expires_at <= NOW()
+            """,
+            (incident_id, owner_admin_id),
+        )
+        cur.execute(
+            """
+            SELECT approval_id, approval_sha256, expires_at
+            FROM sovereign_self_healing_manual_approvals
+            WHERE incident_id=%s
+              AND owner_admin_id=%s::uuid
+              AND consumed_at IS NULL
+              AND expires_at > NOW()
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (incident_id, owner_admin_id),
+        )
+        existing = cur.fetchone()
+    connection.commit()
+    if existing:
+        return {
+            "approvalId": str(existing.get("approval_id") or ""),
+            "approvalSha256": str(existing.get("approval_sha256") or ""),
+            "expiresAt": existing.get("expires_at").isoformat(),
+            "reused": True,
+        }
+
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_seconds)
+    body = {
+        "schemaVersion": "sovereign.cag-self-healing-manual-approval.v1",
+        "incidentId": incident_id,
+        "ownerAdminIdSha256": sha256_text(owner_admin_id),
+        "failureFamily": str(incident.get("failure_family") or ""),
+        "expiresAt": expires_at.isoformat(),
+        "oneUse": True,
+    }
+    approval_sha = sha256_json(body)
+    approval_id = f"self-heal-manual-{approval_sha[:24]}"
+    with connection.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO sovereign_self_healing_manual_approvals (
+                approval_id, incident_id, owner_admin_id, approval_sha256, expires_at
+            ) VALUES (%s,%s,%s::uuid,%s,%s)
+            """,
+            (approval_id, incident_id, owner_admin_id, approval_sha, expires_at),
+        )
+    connection.commit()
+    return {
+        "approvalId": approval_id,
+        "approvalSha256": approval_sha,
+        "expiresAt": expires_at.isoformat(),
+        "reused": False,
+    }
 
 
 def _incident_projection(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -1232,7 +1433,7 @@ def register_cag_self_healing_admin_routes(
             return jsonify({"error": "invalid_request"}), 400
         allowed_keys = {
             "mode", "allowedFailureFamilies", "maxAutoRepairsPerHour",
-            "maxChangedFiles", "expiresInSeconds", "paused",
+            "maxAutoRepairsPerDay", "maxChangedFiles", "expiresInSeconds", "paused",
         }
         if set(body) - allowed_keys:
             return jsonify({"error": "invalid_request"}), 400
@@ -1249,6 +1450,7 @@ def register_cag_self_healing_admin_routes(
                         else []
                     ),
                     max_auto_repairs_per_hour=int(body.get("maxAutoRepairsPerHour") or 1),
+                    max_auto_repairs_per_day=int(body.get("maxAutoRepairsPerDay") or 3),
                     max_changed_files=int(body.get("maxChangedFiles") or 8),
                     expires_in_seconds=int(body.get("expiresInSeconds") or 0),
                     paused=bool(body.get("paused", False)),
@@ -1279,6 +1481,40 @@ def register_cag_self_healing_admin_routes(
             "ok": True,
             "authority": projection,
             "revoked": True,
+            "secretValuesReturned": False,
+        }), 200
+
+    @app.route("/api/admin/self-healing/incidents/<incident_id>/approve", methods=["POST"])
+    @require_admin
+    def _self_healing_incident_approve(incident_id: str):
+        owner_admin_id = _admin_id(get_current_admin)
+        if not owner_admin_id:
+            return jsonify({"error": "admin_identity_missing"}), 401
+        configured_owner = _configured_owner_admin_id()
+        if not configured_owner:
+            return jsonify({"error": "owner_identity_not_configured"}), 503
+        if owner_admin_id != configured_owner:
+            return jsonify({"error": "owner_authority_required"}), 403
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body, dict) or set(body) - {"expiresInSeconds"}:
+            return jsonify({"error": "invalid_request"}), 400
+        try:
+            connection = get_connection()
+            try:
+                approval = _grant_manual_incident_approval(
+                    connection,
+                    incident_id=incident_id,
+                    owner_admin_id=owner_admin_id,
+                    expires_in_seconds=int(body.get("expiresInSeconds") or 900),
+                )
+            finally:
+                _close(connection)
+        except (SelfHealingContractError, TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({
+            "ok": True,
+            "approval": approval,
+            "oneUse": True,
             "secretValuesReturned": False,
         }), 200
 

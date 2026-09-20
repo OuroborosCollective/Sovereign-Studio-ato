@@ -219,6 +219,10 @@ def test_runtime_source_has_scoped_consent_and_no_direct_repository_mutator() ->
     assert 'methods=["DELETE"]' in source
     assert "expiresInSeconds must be between 300 and 604800" in source
     assert "maxAutoRepairsPerHour must be between 1 and 10" in source
+    assert "maxAutoRepairsPerDay must be between 1 and 30" in source
+    assert "SELF_HEALING_DAILY_LIMIT_REACHED_MANUAL_APPROVAL_REQUIRED" in source
+    assert "_claim_manual_approval(" in source
+    assert "/api/admin/self-healing/incidents/<incident_id>/approve" in source
     assert "execute_live_cag_request(" in source
     assert 'capability_id="wolfram.cag.compute"' in source
     assert "start_repository_execution(" in source

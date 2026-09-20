@@ -46,7 +46,7 @@ export function SelfHealingAuthorityCard() {
   const api = useAdminSelfHealing();
   const [mode, setMode] = useState<SelfHealingMode>('ASK_FIRST');
   const [families, setFamilies] = useState<SelfHealingFailureFamily[]>(FAMILIES);
-  const [maxRate, setMaxRate] = useState(1);
+  const [maxDaily, setMaxDaily] = useState(3);
   const [maxFiles, setMaxFiles] = useState(8);
   const [expiresInSeconds, setExpiresInSeconds] = useState(86_400);
   const [saving, setSaving] = useState(false);
@@ -57,7 +57,7 @@ export function SelfHealingAuthorityCard() {
     setFamilies(api.authority.allowedFailureFamilies.length
       ? api.authority.allowedFailureFamilies
       : FAMILIES);
-    setMaxRate(Math.max(1, api.authority.maxAutoRepairsPerHour || 1));
+    setMaxDaily(Math.max(1, api.authority.maxAutoRepairsPerDay || 3));
     setMaxFiles(Math.max(1, api.authority.maxChangedFiles || 8));
   }, [api.authority]);
 
@@ -80,7 +80,8 @@ export function SelfHealingAuthorityCard() {
       await api.saveAuthority({
         mode,
         allowedFailureFamilies: families,
-        maxAutoRepairsPerHour: maxRate,
+        maxAutoRepairsPerHour: maxDaily,
+        maxAutoRepairsPerDay: maxDaily,
         maxChangedFiles: maxFiles,
         expiresInSeconds,
         paused: false,
@@ -143,13 +144,13 @@ export function SelfHealingAuthorityCard() {
             </select>
           </label>
           <label>
-            Automatische Aktionen / Stunde
+            Automatische Aktionen / 24h
             <input
               type="number"
               min={1}
-              max={10}
-              value={maxRate}
-              onChange={event => setMaxRate(Number(event.target.value))}
+              max={30}
+              value={maxDaily}
+              onChange={event => setMaxDaily(Number(event.target.value))}
               style={field}
             />
           </label>
@@ -240,6 +241,17 @@ export function SelfHealingAuthorityCard() {
                 <span>Repair Contract: <code>{shortHash(incident.repairContractSha256)}</code></span>
                 <span>Repair Job: <code>{incident.repairJobId ?? '—'}</code></span>
                 {incident.blocker && <span>Blocker: {incident.blocker}</span>}
+                {incident.status === 'WAITING_FOR_AUTHORITY'
+                  && incident.blocker === 'SELF_HEALING_DAILY_LIMIT_REACHED_MANUAL_APPROVAL_REQUIRED' && (
+                    <button
+                      type="button"
+                      onClick={() => void api.approveIncident(incident.incidentId)}
+                      disabled={saving}
+                      style={{ marginTop: 8, justifySelf: 'start' }}
+                    >
+                      Einmal manuell freigeben
+                    </button>
+                  )}
               </div>
             </article>
           ))}
