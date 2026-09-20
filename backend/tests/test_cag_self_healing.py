@@ -260,3 +260,19 @@ def test_migration_encodes_consent_rate_limit_incident_and_receipt_boundaries() 
     assert "sovereign_self_healing_action_receipts" in migration
     for family in FailureFamily:
         assert family.value in migration
+
+
+def test_daily_budget_and_manual_approval_migration_is_bounded() -> None:
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / ".."
+        / "scripts"
+        / "sovereign-backend"
+        / "migrations"
+        / "065_self_healing_daily_budget_manual_approval.sql"
+    ).resolve().read_text("utf-8")
+    assert "max_auto_repairs_per_day INTEGER NOT NULL DEFAULT 3" in migration
+    assert "max_auto_repairs_per_day BETWEEN 1 AND 30" in migration
+    assert "sovereign_self_healing_manual_approvals" in migration
+    assert "consumed_at IS NULL" in migration
+    assert "idx_self_healing_manual_approval_active" in migration

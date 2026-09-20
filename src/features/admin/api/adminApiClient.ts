@@ -545,6 +545,7 @@ export interface SelfHealingAuthority {
   mode: SelfHealingMode;
   allowedFailureFamilies: SelfHealingFailureFamily[];
   maxAutoRepairsPerHour: number;
+  maxAutoRepairsPerDay: number;
   maxChangedFiles: number;
   expiresAt: string | null;
   paused: boolean;
@@ -914,6 +915,7 @@ export const adminApiClient = {
     mode: SelfHealingMode;
     allowedFailureFamilies: SelfHealingFailureFamily[];
     maxAutoRepairsPerHour: number;
+    maxAutoRepairsPerDay: number;
     maxChangedFiles: number;
     expiresInSeconds: number;
     paused?: boolean;
@@ -935,6 +937,18 @@ export const adminApiClient = {
     return req<{ ok: true; incidents: SelfHealingIncident[]; secretValuesReturned: false }>(
       '/api/admin/self-healing/incidents',
     );
+  },
+
+  approveSelfHealingIncident(incidentId: string, expiresInSeconds = 900) {
+    return req<{
+      ok: true;
+      approval: { approvalId: string; approvalSha256: string; expiresAt: string; reused: boolean };
+      oneUse: true;
+      secretValuesReturned: false;
+    }>(`/api/admin/self-healing/incidents/${encodeURIComponent(incidentId)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ expiresInSeconds }),
+    });
   },
 
   ping() {
