@@ -532,6 +532,7 @@ class WolframCagReceipt:
     quota_remaining: str
     response_schema_hash: str
     status: WolframCagStatus
+    normalized_result: str = ""
     truth_notice: str = (
         "Wolfram CAG output is supplemental and cannot verify repository, "
         "runtime, deployment, ARE or Kappa truth; it cannot mutate GitHub, "
@@ -681,6 +682,46 @@ def _live_cag_schema_validator(body: bytes, content_type: str, component: Wolfra
     if "uuid" in payload and not isinstance(payload["uuid"], str):
         return False
     return True
+
+
+_CAG_NORMALIZED_RESULT_LIMIT = 4096
+
+
+def _normalized_cag_result(body: bytes, content_type: str, component: WolframCagComponent) -> str:
+    """Return only the bounded provider result field, never the raw response envelope."""
+    if component.expected_content_type == "text/plain":
+        try:
+            value = body.decode("utf-8").strip()
+        except UnicodeDecodeError as exc:
+            raise WolframCagError(
+                "CAG result is not UTF-8",
+                family=WolframCagErrorFamily.SCHEMA,
+            ) from exc
+    else:
+        try:
+            payload = json.loads(body)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise WolframCagError(
+                "CAG result JSON is invalid",
+                family=WolframCagErrorFamily.SCHEMA,
+            ) from exc
+        if not isinstance(payload, dict) or "result" not in payload:
+            raise WolframCagError(
+                "CAG result field is missing",
+                family=WolframCagErrorFamily.SCHEMA,
+            )
+        raw_result = payload.get("result")
+        value = (
+            raw_result.strip()
+            if isinstance(raw_result, str)
+            else json.dumps(raw_result, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+        )
+    if len(value.encode("utf-8")) > _CAG_NORMALIZED_RESULT_LIMIT:
+        raise WolframCagError(
+            "CAG normalized result exceeds the bounded result limit",
+            family=WolframCagErrorFamily.SCHEMA,
+        )
+    return value
 
 
 def _bounded_cag_response_body(response: Any, limit: int) -> bytes:
@@ -956,6 +997,7 @@ def execute_cag_request(
             quota_remaining=outcome.quota_remaining,
             response_schema_hash=request.response_schema_hash,
             status=WolframCagStatus.SUCCEEDED_UNVERIFIED,
+            normalized_result=_normalized_cag_result(outcome.body, outcome.content_type, component),
         )
         receipt.validate()
         return receipt

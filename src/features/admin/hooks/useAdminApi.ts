@@ -22,6 +22,10 @@ import {
   type OpenRouterFreeRuntimeStatus,
   type AuditEntry,
   type PaymentMethod,
+  type SelfHealingAuthority,
+  type SelfHealingFailureFamily,
+  type SelfHealingIncident,
+  type SelfHealingMode,
 } from '../api/adminApiClient';
 
 // ── useAdminUsers ─────────────────────────────────────────────────────────────
@@ -432,6 +436,73 @@ export function useAdminPaymentMethods(): UseAdminPaymentMethodsResult {
   };
 }
 
+
+// ── useAdminSelfHealing ───────────────────────────────────────────────────────
+
+export interface UseAdminSelfHealingResult {
+  authority: SelfHealingAuthority | null;
+  incidents: SelfHealingIncident[];
+  loading: boolean;
+  error: string | null;
+  reload: () => void;
+  saveAuthority: (input: {
+    mode: SelfHealingMode;
+    allowedFailureFamilies: SelfHealingFailureFamily[];
+    maxAutoRepairsPerHour: number;
+    maxChangedFiles: number;
+    expiresInSeconds: number;
+    paused?: boolean;
+  }) => Promise<void>;
+  revokeAuthority: () => Promise<void>;
+}
+
+export function useAdminSelfHealing(): UseAdminSelfHealingResult {
+  const [authority, setAuthority] = useState<SelfHealingAuthority | null>(null);
+  const [incidents, setIncidents] = useState<SelfHealingIncident[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  const reload = useCallback(() => setTick(value => value + 1), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    Promise.all([
+      adminApiClient.getSelfHealingAuthority(),
+      adminApiClient.getSelfHealingIncidents(),
+    ])
+      .then(([authorityResult, incidentResult]) => {
+        if (cancelled) return;
+        setAuthority(authorityResult.authority);
+        setIncidents(incidentResult.incidents);
+      })
+      .catch(reason => { if (!cancelled) setError(String(reason)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [tick]);
+
+  const saveAuthority = useCallback(async (input: {
+    mode: SelfHealingMode;
+    allowedFailureFamilies: SelfHealingFailureFamily[];
+    maxAutoRepairsPerHour: number;
+    maxChangedFiles: number;
+    expiresInSeconds: number;
+    paused?: boolean;
+  }) => {
+    setError(null);
+    await adminApiClient.updateSelfHealingAuthority(input);
+    reload();
+  }, [reload]);
+
+  const revokeAuthority = useCallback(async () => {
+    setError(null);
+    await adminApiClient.revokeSelfHealingAuthority();
+    reload();
+  }, [reload]);
+
+  return { authority, incidents, loading, error, reload, saveAuthority, revokeAuthority };
+}
 
 // ── useAdminAuditLog ──────────────────────────────────────────────────────────
 

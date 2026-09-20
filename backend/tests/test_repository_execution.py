@@ -194,7 +194,10 @@ def test_start_repository_execution_queues_submit_without_transport(monkeypatch)
     assert lifecycle_calls[0]["provision_workspace"] is True
     assert (result.external_ref or "").startswith("agent-zero-a2a:pending:submit:")
     assert transport_calls == []
-    assert [event.stage for event in state["events"]] == ["agent_zero_a2a_submit_queued"]
+    assert [event.stage for event in state["events"]] == [
+        "repository_execution_contract_bound",
+        "agent_zero_a2a_submit_queued",
+    ]
 
 
 def test_user_reconcile_does_not_execute_pending_submit(monkeypatch):

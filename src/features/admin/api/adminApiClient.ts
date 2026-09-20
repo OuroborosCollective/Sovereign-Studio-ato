@@ -531,6 +531,44 @@ export type LlmRouteUpdate = Partial<Pick<
   'disabled' | 'priority' | 'billingCategory' | 'markupMultiplier' | 'quotaScope'
 >>;
 
+export type SelfHealingMode = 'OBSERVE_ONLY' | 'ASK_FIRST' | 'AUTO_SAFE' | 'AUTO_BOUNDED_CODE_REPAIR';
+export type SelfHealingFailureFamily =
+  | 'EXECUTOR_MISMATCH'
+  | 'ENDPOINT_ROUTE_MISMATCH'
+  | 'HANDOFF_TIMEOUT_WITH_READBACK'
+  | 'JOB_STATE_TRANSITION_VIOLATION'
+  | 'BILLING_ROUTE_MISMATCH';
+
+export interface SelfHealingAuthority {
+  configured: boolean;
+  active: boolean;
+  mode: SelfHealingMode;
+  allowedFailureFamilies: SelfHealingFailureFamily[];
+  maxAutoRepairsPerHour: number;
+  maxChangedFiles: number;
+  expiresAt: string | null;
+  paused: boolean;
+  grantSha256: string | null;
+  lastUsedAt: string | null;
+}
+
+export interface SelfHealingIncident {
+  incidentId: string;
+  sourceJobId: string;
+  failureFamily: SelfHealingFailureFamily;
+  observationSha256: string;
+  cagVerified: boolean;
+  cagRequestSha256: string | null;
+  cagResponseSha256: string | null;
+  cagResultSha256: string | null;
+  repairContractSha256: string | null;
+  repairJobId: string | null;
+  status: string;
+  blocker: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AuditEntry {
   id: string;
   adminId: string;
@@ -866,6 +904,38 @@ async function autoConfigureFreellmProviderKey(
 // ── API client ────────────────────────────────────────────────────────────────
 
 export const adminApiClient = {
+  getSelfHealingAuthority() {
+    return req<{ ok: true; authority: SelfHealingAuthority; consentNotice: string; secretValuesReturned: false }>(
+      '/api/admin/self-healing/authority',
+    );
+  },
+
+  updateSelfHealingAuthority(data: {
+    mode: SelfHealingMode;
+    allowedFailureFamilies: SelfHealingFailureFamily[];
+    maxAutoRepairsPerHour: number;
+    maxChangedFiles: number;
+    expiresInSeconds: number;
+    paused?: boolean;
+  }) {
+    return req<{ ok: true; authority: SelfHealingAuthority; secretValuesReturned: false }>(
+      '/api/admin/self-healing/authority',
+      { method: 'PUT', body: JSON.stringify(data) },
+    );
+  },
+
+  revokeSelfHealingAuthority() {
+    return req<{ ok: true; authority: SelfHealingAuthority; revoked: true; secretValuesReturned: false }>(
+      '/api/admin/self-healing/authority',
+      { method: 'DELETE' },
+    );
+  },
+
+  getSelfHealingIncidents() {
+    return req<{ ok: true; incidents: SelfHealingIncident[]; secretValuesReturned: false }>(
+      '/api/admin/self-healing/incidents',
+    );
+  },
 
   ping() {
     return req<AdminUser & { ok: true; authMode: string }>('/api/admin/ping');

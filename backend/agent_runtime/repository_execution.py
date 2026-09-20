@@ -307,6 +307,17 @@ def start_repository_execution(
     if job.status != "running":
         return job
 
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="repository_execution_contract_bound",
+        level="success",
+        message=(
+            "Repository execution contract bound: Sovereign persists the job and evidence; exactly one "
+            "Agent Zero A2A task owns implementation; the current repository path is free and may not "
+            "create a paid usage settlement."
+        ),
+    ))
+    job = read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
+
     pending_ref = _pending_submit_ref(job.job_id)
     if not compare_and_swap_agent_job_external_ref(
         conn,
@@ -796,6 +807,60 @@ def reconcile_repository_execution(
         bound_ref=external_ref,
         workspace_root=workspace_root,
     )
+
+def recover_stalled_repository_job_from_verified_readback(
+    conn: Any,
+    *,
+    user_id: str,
+    job_id: str,
+    workspace_root: Path | None = None,
+    a2a_client_factory: A2AClientFactory = AgentZeroA2AClient.from_env,
+) -> tuple[StoredSovereignAgentJob | None, bool]:
+    """Recover only a proven completed stalled task; never resubmit external work.
+
+    This is the bounded self-healing action for HANDOFF_TIMEOUT_WITH_READBACK.
+    The task identity must already be persisted, tasks/get must prove completion,
+    and the canonical closeout path still owns all workspace/test/evidence gates.
+    """
+    job = read_agent_job(conn, user_id=user_id, job_id=job_id)
+    if job is None:
+        return None, False
+    if job.status != "blocked" or "AGENT_ZERO_A2A_STALLED" not in str(job.blocker or ""):
+        return job, False
+    binding = _bound_task(str(job.external_ref or ""))
+    if binding is None:
+        return job, False
+    task_id, _is_retry = binding
+    try:
+        task = a2a_client_factory().get_task(task_id)
+    except (AgentZeroA2AError, AgentZeroA2ATaskLost):
+        return job, False
+    if not task.completed:
+        return job, False
+
+    update_agent_job_state(
+        conn,
+        job_id=job.job_id,
+        status="running",
+        clear_blocker=True,
+    )
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="self_healing_handoff_readback_recovered",
+        level="success",
+        message=(
+            "Self-healing readback proved the already-bound Agent Zero task completed; "
+            "the job was resumed for canonical closeout without any resubmit."
+        ),
+    ))
+    recovered = reconcile_repository_execution(
+        conn,
+        user_id=user_id,
+        job_id=job_id,
+        workspace_root=workspace_root,
+        a2a_client_factory=a2a_client_factory,
+    )
+    return recovered, True
+
 
 def _close_reconciler_connection(conn: Any) -> None:
     close = getattr(conn, "close", None)
