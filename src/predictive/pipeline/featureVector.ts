@@ -87,23 +87,27 @@ export interface FeatureExtractionResult {
  * Computes a deterministic hash of signal values.
  * Uses a simple polynomial hash for deterministic behavior across environments.
  * For production, consider using a proper SHA-256 implementation.
+ * ⚡ Bolt: Optimized with direct signal character iteration to avoid allocating tuple arrays and large string join allocations.
  */
 export function computeSignalHash(signals: OrderedSignal[]): string {
-  if (signals.length === 0) return 'empty';
-
-  // Use tick-sequence-value tuples for hashing
-  const tuples = signals.map(
-    (s) => `${s.metadata.tick}:${s.metadata.sequence}:${s.metadata.node}:${s.value}`,
-  );
-  const combined = tuples.join('|');
+  const len = signals.length;
+  if (len === 0) return 'empty';
 
   // Simple deterministic hash (FNV-1a inspired)
   let hash = 2166136261; // FNV offset basis
   const prime = 16777619;
 
-  for (let i = 0; i < combined.length; i++) {
-    hash ^= combined.charCodeAt(i);
-    hash = Math.imul(hash, prime);
+  for (let i = 0; i < len; i++) {
+    if (i > 0) {
+      hash ^= 124; // '|' separator char code
+      hash = Math.imul(hash, prime);
+    }
+    const s = signals[i];
+    const str = `${s.metadata.tick}:${s.metadata.sequence}:${s.metadata.node}:${s.value}`;
+    for (let j = 0; j < str.length; j++) {
+      hash ^= str.charCodeAt(j);
+      hash = Math.imul(hash, prime);
+    }
   }
 
   // Convert to hex string
@@ -117,6 +121,37 @@ export function computeSignalHash(signals: OrderedSignal[]): string {
   }
 
   return extended;
+}
+
+/**
+ * Computes running differences (deltas).
+ * ⚡ Bolt: Pre-allocated indexed array loop replacing generator iteration.
+ */
+function computeDeltas(values: number[]): number[] {
+  const len = values.length;
+  if (len === 0) return [];
+  const deltas = new Array<number>(len);
+  deltas[0] = values[0];
+  for (let i = 1; i < len; i++) {
+    deltas[i] = values[i] - values[i - 1];
+  }
+  return deltas;
+}
+
+/**
+ * Computes running totals (cumulative sums).
+ * ⚡ Bolt: Pre-allocated indexed array loop replacing generator iteration.
+ */
+function computeCumulativeSum(values: number[]): number[] {
+  const len = values.length;
+  if (len === 0) return [];
+  const totals = new Array<number>(len);
+  let total = 0;
+  for (let i = 0; i < len; i++) {
+    total += values[i];
+    totals[i] = total;
+  }
+  return totals;
 }
 
 // ============================================================================
@@ -217,8 +252,9 @@ export function extractFeatures(
   const range = minMax ? minMax[1] - minMax[0] : 0;
 
   // Temporal features
-  const deltas = cfg.includeDeltas ? [...runningDifference(values)] : [];
-  const cumulativeSum = cfg.includeTemporal ? [...runningTotal(values)] : [];
+  // ⚡ Bolt: Use direct indexed deltas and cumulativeSum loops to avoid generator allocation and iterator overhead
+  const deltas = cfg.includeDeltas ? computeDeltas(values) : [];
+  const cumulativeSum = cfg.includeTemporal ? computeCumulativeSum(values) : [];
 
   // Histogram
   let histogram: number[] | undefined;
@@ -444,10 +480,16 @@ export function computeNodeDeltaFeatures(
 ): Map<string, Array<{ from: number; to: number; delta: number }>> {
   const byNode = new Map<string, OrderedSignal[]>();
 
-  for (const signal of window.signals) {
+  // ⚡ Bolt: Single map lookup per signal avoiding .has() + .get()
+  for (let i = 0; i < window.signals.length; i++) {
+    const signal = window.signals[i];
     const node = signal.metadata.node;
-    if (!byNode.has(node)) byNode.set(node, []);
-    byNode.get(node)!.push(signal);
+    let list = byNode.get(node);
+    if (list === undefined) {
+      list = [];
+      byNode.set(node, list);
+    }
+    list.push(signal);
   }
 
   const deltas = new Map<string, Array<{ from: number; to: number; delta: number }>>();
@@ -456,8 +498,10 @@ export function computeNodeDeltaFeatures(
     const sorted = [...signals].sort((a, b) => a.metadata.sequence - b.metadata.sequence);
     const nodeDeltas: Array<{ from: number; to: number; delta: number }> = [];
 
-    for (const pair of pairwise(sorted)) {
-      const [from, to] = pair;
+    // ⚡ Bolt: Direct loop over sorted pairs to avoid generator allocations
+    for (let i = 1; i < sorted.length; i++) {
+      const from = sorted[i - 1];
+      const to = sorted[i];
       nodeDeltas.push({
         from: from.value,
         to: to.value,
