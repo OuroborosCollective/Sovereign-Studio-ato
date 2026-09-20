@@ -19,6 +19,7 @@ export function useSovereignJob(jobId: string | null) {
     },
   });
   const abortMutation = useMutation({
+    mutationKey: ['sovereign-vnext-abort', jobId],
     mutationFn: () => {
       if (!jobId) throw new Error('No run ID');
       return adapter.abortJob(jobId);
@@ -46,6 +47,7 @@ export function useSovereignJob(jobId: string | null) {
     error: query.error,
     abort: abortMutation.mutateAsync,
     isAborting: abortMutation.isPending,
+    abortError: abortMutation.error,
     prepareDraftPr: prepareMutation.mutateAsync,
     isPreparingDraftPr: prepareMutation.isPending,
     draftPrPreparation: prepareMutation.data,

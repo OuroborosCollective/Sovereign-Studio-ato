@@ -3,6 +3,22 @@ import { buildRepositoryBoundRunRequest, SovereignProductionAdapter } from './re
 import type { SovereignAgentConfig } from '../../product/runtime/sovereignAgentRuntime';
 
 describe('vNext repository-bound Draft-PR mission contract', () => {
+  it('sends Abort to the bound backend job and preserves a truthful cancellation rejection', async () => {
+    const reason = 'Cancellation is not supported by the connected Agent Zero task contract. The job remains active; no stop was confirmed.';
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      ok: false, blocker: 'AGENT_ZERO_A2A_CANCEL_NOT_PROVEN', error: reason,
+    }), { status: 409 }));
+    const adapter = new SovereignProductionAdapter(fetcher as typeof fetch, {
+      enabled: true, deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://agent.example.test', ready: true, reason: 'ready',
+    });
+
+    await expect(adapter.abortJob('agent-cancel-test')).rejects.toThrow(reason);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/jobs/agent-cancel-test/cancel');
+    expect(fetcher.mock.calls[0][1]).toMatchObject({ method: 'POST', credentials: 'include' });
+  });
+
   it('keeps a normal repository instruction in repository execution even without a GitHub URL', () => {
     expect(buildRepositoryBoundRunRequest('Please add the repository readme a smiley like this :)')).toEqual({
       mission: 'Please add the repository readme a smiley like this :)',

@@ -21,6 +21,7 @@ from agent_runtime.cag_self_healing import (
     failure_mask,
     failures_from_mask,
     parse_cag_failure_mask,
+    normalize_event_stages,
     transition_order_valid,
 )
 
@@ -38,8 +39,8 @@ def observation(**overrides) -> SelfHealingObservation:
         "expected_endpoint_path": "/a2a/",
         "event_stages": (
             "agent_job_created",
-            "repository_execution_contract_bound",
             "agent_zero_repository_access_delegated",
+            "repository_execution_contract_bound",
             "agent_zero_a2a_submit_queued",
             "agent_zero_a2a_submitted",
         ),
@@ -113,8 +114,8 @@ def test_transition_contract_requires_agent_zero_evidence_before_draft_ready() -
     assert transition_order_valid(
         (
             "agent_job_created",
-            "repository_execution_contract_bound",
             "agent_zero_repository_access_delegated",
+            "repository_execution_contract_bound",
             "agent_zero_a2a_submit_queued",
             "agent_zero_a2a_submitted",
             "repository_ready_for_draft_pr",
@@ -127,6 +128,29 @@ def test_transition_contract_requires_agent_zero_evidence_before_draft_ready() -
             "repository_ready_for_draft_pr",
         )
     )
+
+
+def test_recorded_production_start_order_is_valid_without_broadening_authority() -> None:
+    # Exact stage order observed for the 2026-09-20 video job, stripped of IDs.
+    stages = (
+        "agent_job_created", "workspace_created", "agent_zero_repository_access_delegated",
+        "repository_execution_contract_bound", "agent_zero_a2a_submit_queued", "agent_zero_a2a_submitted",
+    )
+    assert detect_failures(observation(event_stages=stages)) == ()
+    assert cag_agrees_with_local_verdict(observation(event_stages=stages), "0")
+    reversed_start = (stages[0], stages[1], stages[3], stages[2], *stages[4:])
+    assert not transition_order_valid(reversed_start)
+
+
+def test_poll_observations_do_not_mask_or_change_lifecycle_verification() -> None:
+    original = observation().event_stages
+    events = [{"stage": stage} for stage in original]
+    events.extend({"stage": "agent_zero_a2a_task_observed"} for _ in range(200))
+    events.append({"stage": "agent_zero_a2a_readback_unavailable"})
+    events.append({"stage": "repository_ready_for_draft_pr"})
+    stages = normalize_event_stages(events)
+    assert stages == (*original, "repository_ready_for_draft_pr")
+    assert transition_order_valid(stages)
 
 
 def test_cag_mask_parser_fails_closed_and_divergence_is_rejected() -> None:

@@ -269,7 +269,8 @@ async function submitMission(page: Page, text: string): Promise<LiveRunProof> {
   const composer = page.getByTestId('mission__textarea');
   await expect(composer).toBeVisible();
   await composer.fill(text);
-  await expect(page.getByTestId('agent-mode-single')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('agent-mode-single')).toHaveText('1 AGENT · FREELLM');
+  await expect(page.getByRole('combobox', { name: 'ROUTE', exact: true })).toHaveValue('low');
   const [startResponse] = await Promise.all([
     page.waitForResponse((response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/user/agent/repository/run', { timeout: REPOSITORY_START_TIMEOUT_MS }),
     page.getByTestId('builder__start-task').click(),

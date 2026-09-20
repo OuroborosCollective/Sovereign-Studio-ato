@@ -2186,7 +2186,7 @@ def register_sovereign_agent_routes(
                     "jobId": job_id,
                     "status": job.status,
                     "blocker": "AGENT_ZERO_A2A_CANCEL_NOT_PROVEN",
-                    "error": "The active Agent Zero A2A task cannot be marked cancelled until upstream task cancellation has an exact readback contract.",
+                    "error": "Cancellation is not supported by the connected Agent Zero task contract. The job remains active; no stop was confirmed.",
                 }), 409
             update_agent_job_state(
                 conn,

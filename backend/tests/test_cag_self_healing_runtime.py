@@ -31,8 +31,8 @@ def _job(**overrides) -> StoredSovereignAgentJob:
         "blocker": None,
         "events": (
             {"stage": "agent_job_created"},
-            {"stage": "repository_execution_contract_bound"},
             {"stage": "agent_zero_repository_access_delegated"},
+            {"stage": "repository_execution_contract_bound"},
             {"stage": "agent_zero_a2a_submit_queued"},
             {"stage": "agent_zero_a2a_submitted"},
         ),

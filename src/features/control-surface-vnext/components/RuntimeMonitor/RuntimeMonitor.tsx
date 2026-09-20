@@ -2,9 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Activity, Check, Copy, Radio, Terminal } from 'lucide-react';
 import type { SovereignJob } from '../../types/domain';
 
-interface Props { job: SovereignJob | null | undefined; isPolling?: boolean; }
+interface Props { job: SovereignJob | null | undefined; isPolling?: boolean; readbackError?: string; }
 
-export function RuntimeMonitor({ job, isPolling = false }: Props) {
+export function RuntimeMonitor({ job, isPolling = false, readbackError }: Props) {
   const [copied, setCopied] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => { logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [job?.logs?.length]);
@@ -21,6 +21,7 @@ export function RuntimeMonitor({ job, isPolling = false }: Props) {
         <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-white uppercase tracking-wider"><Activity size={13} className="text-[var(--red-laser)]" /><span>RUNTIME MONITOR</span></div>
         <div className="flex items-center gap-2">{isPolling && <div className="flex items-center gap-1 font-mono text-[9px] text-[var(--red-laser)] animate-pulse"><Radio size={10} /><span>LIVE READBACK</span></div>}<button onClick={copyLogs} disabled={logs.length === 0} className="text-[var(--text-dim)] hover:text-white disabled:opacity-30 transition-colors p-1" title="Copy runtime readback">{copied ? <Check size={12} className="text-[var(--emerald-seal)]" /> : <Copy size={12} />}</button></div>
       </div>
+      {readbackError && <div role="alert" className="mb-2 text-[11px] text-[var(--red-alert)] break-words">Live readback unavailable. Showing the last received state: {readbackError}</div>}
       <div className="flex-1 overflow-y-auto font-mono text-[10.5px] leading-relaxed space-y-1 pr-1 select-text">
         {logs.map((log, idx) => {
           const isError = /ERR|ERROR|FAILED|BLOCKED/i.test(log);

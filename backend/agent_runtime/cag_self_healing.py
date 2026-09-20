@@ -79,8 +79,8 @@ _RETRY_PREFIX: Final[str] = "agent-zero-a2a:retry:"
 
 _SIGNIFICANT_STAGE_ORDER: Final[tuple[str, ...]] = (
     "agent_job_created",
-    "repository_execution_contract_bound",
     "agent_zero_repository_access_delegated",
+    "repository_execution_contract_bound",
     "agent_zero_a2a_submit_queued",
     "agent_zero_a2a_submitted",
     "repository_ready_for_draft_pr",
@@ -133,13 +133,18 @@ def classify_external_ref(external_ref: Any) -> str:
 
 def normalize_event_stages(events: Sequence[Any] | None) -> tuple[str, ...]:
     stages: list[str] = []
-    for item in list(events or ())[:MAX_EVENT_STAGES]:
+    # Poll observations are not lifecycle transitions and must not hide closeout.
+    for item in events or ():
         if isinstance(item, Mapping):
             stage = _bounded_text(item.get("stage"), 80)
         else:
             stage = _bounded_text(item, 80)
+        if stage in {"agent_zero_a2a_task_observed", "agent_zero_a2a_readback_unavailable"}:
+            continue
         if stage:
             stages.append(stage)
+            if len(stages) >= MAX_EVENT_STAGES:
+                break
     return tuple(stages)
 
 
