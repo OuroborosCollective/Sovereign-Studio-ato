@@ -120,6 +120,11 @@ describe('maskSecrets', () => {
     expect(maskSecrets('registration_token: reg_token_val_555')).toBe('registration_token: ****');
     expect(maskSecrets('access_key_id=AKIAIOSFODNN7EXAMPLE')).toBe('access_key_id=****');
     expect(maskSecrets('aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY')).toBe('aws_secret_access_key: ****');
+    expect(maskSecrets('jwt_secret: super_secret_jwt_key')).toBe('jwt_secret: ****');
+    expect(maskSecrets('jwt_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9')).toBe('jwt_token=****');
+    expect(maskSecrets('jwt_key: jwt_signing_key_material')).toBe('jwt_key: ****');
+    expect(maskSecrets('cluster_secret: cluster_secret_val_123')).toBe('cluster_secret: ****');
+    expect(maskSecrets('cluster_key=cluster_key_val_456')).toBe('cluster_key=****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
