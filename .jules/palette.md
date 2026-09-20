@@ -57,3 +57,7 @@
 ## 2025-08-13 - [Overriding Visible Buttons via ARIA Labels]
 **Learning:** Overriding a button's visible text (e.g., 'Repo-Snapshot laden') with an 'aria-label' that does not match or include that exact text violates the WCAG 'Label in Name' requirement. It also disrupts testing frameworks and standard selectors looking for the visible text.
 **Action:** For buttons with descriptive, dynamic text content, rely on the visible text for the accessible name, and use the 'title' attribute exclusively for stateful hover descriptions rather than using aria-label overrides.
+
+## 2026-07-08 - [Keyboard Accessibility for Inline-Styled React Components]
+**Learning:** When adding keyboard accessibility to React components that use purely inline styles instead of CSS classes (like Tailwind), focus-visible pseudo-classes are not available. The standard approach is to implement explicit focus state tracking (e.g., via `onFocus`/`onBlur`) to dynamically apply an `outline` style.
+**Action:** Always use state variables to track focus on custom interactive elements using inline styles, and dynamically apply `outline` and `outlineOffset` to maintain explicit focus visibility for keyboard users.
