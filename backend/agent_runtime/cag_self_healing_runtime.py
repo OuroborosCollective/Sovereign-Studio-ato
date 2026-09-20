@@ -95,13 +95,57 @@ def _controller_repository() -> str:
     return value
 
 
-def _configured_owner_admin_id() -> str:
+def _configured_owner_admin_id(connection: Any | None = None) -> str:
+    """Resolve the canonical Owner ID from the same ID/email policy as Owner Input."""
     value = str(os.getenv("SOVEREIGN_OWNER_ADMIN_ID") or "").strip().casefold()
+    if value:
+        try:
+            parsed = str(uuid.UUID(value))
+        except (ValueError, AttributeError):
+            return ""
+        return parsed if _UUID.fullmatch(parsed) else ""
+
+    email = str(os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL") or "").strip().casefold()
+    if not email or connection is None:
+        return ""
+    with connection.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id::text
+            FROM admin_users
+            WHERE lower(email)=lower(%s)
+            ORDER BY id
+            LIMIT 2
+            """,
+            (email,),
+        )
+        rows = cur.fetchall()
+    if len(rows) != 1:
+        return ""
+    candidate = str(rows[0].get("id") or "").strip().casefold()
     try:
-        parsed = str(uuid.UUID(value))
+        parsed = str(uuid.UUID(candidate))
     except (ValueError, AttributeError):
         return ""
     return parsed if _UUID.fullmatch(parsed) else ""
+
+
+def _owner_identity_configured() -> bool:
+    return bool(
+        str(os.getenv("SOVEREIGN_OWNER_ADMIN_ID") or "").strip()
+        or str(os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL") or "").strip()
+    )
+
+
+def _configured_owner_matches_admin(admin: Mapping[str, Any] | None) -> bool:
+    current = admin or {}
+    expected_id = str(os.getenv("SOVEREIGN_OWNER_ADMIN_ID") or "").strip().casefold()
+    expected_email = str(os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL") or "").strip().casefold()
+    if expected_id:
+        return str(current.get("id") or "").strip().casefold() == expected_id
+    if expected_email:
+        return str(current.get("email") or "").strip().casefold() == expected_email
+    return False
 
 
 def _poll_seconds() -> float:
@@ -718,9 +762,9 @@ def process_cag_self_healing_once(
     workspace_root: Path | None = None,
     limit: int = _MAX_CANDIDATES,
 ) -> dict[str, Any]:
-    owner_admin_id = _configured_owner_admin_id()
     listing = get_connection()
     try:
+        owner_admin_id = _configured_owner_admin_id(listing)
         candidates = _candidate_jobs(listing, limit=limit)
     finally:
         _close(listing)
@@ -1395,13 +1439,13 @@ def register_cag_self_healing_admin_routes(
     @app.route("/api/admin/self-healing/authority", methods=["GET"])
     @require_admin
     def _self_healing_authority_get():
-        owner_admin_id = _admin_id(get_current_admin)
+        admin = get_current_admin()
+        owner_admin_id = _admin_id(lambda: admin)
         if not owner_admin_id:
             return jsonify({"error": "admin_identity_missing"}), 401
-        configured_owner = _configured_owner_admin_id()
-        if not configured_owner:
+        if not _owner_identity_configured():
             return jsonify({"error": "owner_identity_not_configured"}), 503
-        if owner_admin_id != configured_owner:
+        if not _configured_owner_matches_admin(admin):
             return jsonify({"error": "owner_authority_required"}), 403
         connection = get_connection()
         try:
@@ -1420,13 +1464,13 @@ def register_cag_self_healing_admin_routes(
     @app.route("/api/admin/self-healing/authority", methods=["PUT"])
     @require_admin
     def _self_healing_authority_put():
-        owner_admin_id = _admin_id(get_current_admin)
+        admin = get_current_admin()
+        owner_admin_id = _admin_id(lambda: admin)
         if not owner_admin_id:
             return jsonify({"error": "admin_identity_missing"}), 401
-        configured_owner = _configured_owner_admin_id()
-        if not configured_owner:
+        if not _owner_identity_configured():
             return jsonify({"error": "owner_identity_not_configured"}), 503
-        if owner_admin_id != configured_owner:
+        if not _configured_owner_matches_admin(admin):
             return jsonify({"error": "owner_authority_required"}), 403
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
@@ -1464,13 +1508,13 @@ def register_cag_self_healing_admin_routes(
     @app.route("/api/admin/self-healing/authority", methods=["DELETE"])
     @require_admin
     def _self_healing_authority_delete():
-        owner_admin_id = _admin_id(get_current_admin)
+        admin = get_current_admin()
+        owner_admin_id = _admin_id(lambda: admin)
         if not owner_admin_id:
             return jsonify({"error": "admin_identity_missing"}), 401
-        configured_owner = _configured_owner_admin_id()
-        if not configured_owner:
+        if not _owner_identity_configured():
             return jsonify({"error": "owner_identity_not_configured"}), 503
-        if owner_admin_id != configured_owner:
+        if not _configured_owner_matches_admin(admin):
             return jsonify({"error": "owner_authority_required"}), 403
         connection = get_connection()
         try:
@@ -1487,13 +1531,13 @@ def register_cag_self_healing_admin_routes(
     @app.route("/api/admin/self-healing/incidents/<incident_id>/approve", methods=["POST"])
     @require_admin
     def _self_healing_incident_approve(incident_id: str):
-        owner_admin_id = _admin_id(get_current_admin)
+        admin = get_current_admin()
+        owner_admin_id = _admin_id(lambda: admin)
         if not owner_admin_id:
             return jsonify({"error": "admin_identity_missing"}), 401
-        configured_owner = _configured_owner_admin_id()
-        if not configured_owner:
+        if not _owner_identity_configured():
             return jsonify({"error": "owner_identity_not_configured"}), 503
-        if owner_admin_id != configured_owner:
+        if not _configured_owner_matches_admin(admin):
             return jsonify({"error": "owner_authority_required"}), 403
         body = request.get_json(silent=True) or {}
         if not isinstance(body, dict) or set(body) - {"expiresInSeconds"}:

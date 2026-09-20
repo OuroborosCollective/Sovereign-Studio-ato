@@ -209,6 +209,42 @@ def test_persisted_cag_evidence_is_reusable_and_divergence_fails_closed() -> Non
         ])
 
 
+def test_owner_identity_resolution_matches_owner_input_id_or_email_policy(monkeypatch) -> None:
+    owner_id = "00000000-0000-4000-8000-000000000001"
+
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return False
+        def execute(self, sql, params):
+            assert "FROM admin_users" in sql
+            assert params == ("owner@example.test",)
+        def fetchall(self):
+            return list(self.rows)
+
+    class Connection:
+        def __init__(self, rows):
+            self.rows = rows
+        def cursor(self):
+            return Cursor(self.rows)
+
+    monkeypatch.delenv("SOVEREIGN_OWNER_ADMIN_ID", raising=False)
+    monkeypatch.setenv("SOVEREIGN_OWNER_ADMIN_EMAIL", "Owner@Example.Test")
+    assert runtime._configured_owner_admin_id(Connection([{"id": owner_id}])) == owner_id
+    assert runtime._configured_owner_admin_id(Connection([])) == ""
+    assert runtime._configured_owner_admin_id(Connection([{"id": owner_id}, {"id": owner_id}])) == ""
+    assert runtime._configured_owner_matches_admin({"id": owner_id, "email": "OWNER@example.test"}) is True
+    assert runtime._configured_owner_matches_admin({"id": owner_id, "email": "other@example.test"}) is False
+
+    monkeypatch.setenv("SOVEREIGN_OWNER_ADMIN_ID", owner_id)
+    monkeypatch.delenv("SOVEREIGN_OWNER_ADMIN_EMAIL", raising=False)
+    assert runtime._configured_owner_admin_id(None) == owner_id
+    assert runtime._configured_owner_matches_admin({"id": owner_id, "email": "other@example.test"}) is True
+
+
 def test_runtime_source_has_scoped_consent_and_no_direct_repository_mutator() -> None:
     source = (
         Path(__file__).resolve().parents[1]
@@ -230,6 +266,8 @@ def test_runtime_source_has_scoped_consent_and_no_direct_repository_mutator() ->
     assert "_claim_incident_for_cag(" in source
     assert "CAG_VERIFYING" in source
     assert "owner_authority_required" in source
+    assert "SOVEREIGN_OWNER_ADMIN_EMAIL" in source
+    assert "_configured_owner_matches_admin(" in source
     assert "STANDING_AUTHORITY_REVOKED_OR_EXPIRED" in source
     assert "automaticMerge" in source
     assert '"agent-zero-a2a"' in source
