@@ -14,3 +14,5 @@ This index points to current canonical knowledge. It must not preserve transient
 - [Continuity context](../../docs/sovereign-continuity/CONTEXT.md) — canonical provenance and continuity requirements.
 
 Transient observations belong in an Issue, PR, test result, evidence receipt or dated history entry. They should not be promoted to durable memory unless revalidated and intentionally consolidated.
+
+- CAG runtime lesson: the production backend deploy template must bind the fixed `WOLFRAM_CAG_API_KEY_FILE` owner-managed path; the source Compose contract alone is insufficient. Evidence: owner-input target consumed, live CAG status still unconfigured before the template fix, targeted owner-input install contract 12/12 passed after the fix.
