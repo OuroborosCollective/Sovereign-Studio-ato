@@ -336,9 +336,14 @@ def build_cag_verification_code(observation: SelfHealingObservation) -> str:
 
 def parse_cag_failure_mask(value: Any) -> int:
     text = str(value or "").strip()
-    if not re.fullmatch(r"[0-9]{1,10}", text):
+    # Wolfram Language Computation returns a notebook-style output label such
+    # as ``Out[1]=4`` even when the evaluated expression itself is an integer.
+    # Accept exactly that bounded provider wrapper or an already-normalized
+    # decimal integer; arbitrary messages or multi-line output still fail closed.
+    match = re.fullmatch(r"(?:Out\[[0-9]{1,9}\]\s*=\s*)?([0-9]{1,10})", text)
+    if match is None:
         raise SelfHealingContractError("CAG failure mask result is invalid")
-    result = int(text)
+    result = int(match.group(1))
     max_mask = sum(FAILURE_BITS.values())
     if result < 0 or result > max_mask:
         raise SelfHealingContractError("CAG failure mask is outside the allowed range")
