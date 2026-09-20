@@ -27,6 +27,10 @@ ledger = _load(
     ROOT / "backend" / "agent_runtime" / "wolfram_cag_partner_ledger.py",
     "wolfram_cag_partner_ledger_runtime_test",
 )
+binding = _load(
+    ROOT / "backend" / "agent_runtime" / "wolfram_cag_runtime_binding.py",
+    "wolfram_cag_runtime_binding_runtime_test",
+)
 
 agent_runtime_pkg = ModuleType("agent_runtime")
 agent_runtime_pkg.__path__ = []
@@ -45,6 +49,7 @@ _STUBBED_MODULE_KEYS = (
     "agent_runtime.adapters",
     "agent_runtime.adapters.wolfram_agenttools",
     "agent_runtime.wolfram_cag_partner_ledger",
+    "agent_runtime.wolfram_cag_runtime_binding",
     "flask",
 )
 _saved_sys_modules = {key: sys.modules.get(key) for key in _STUBBED_MODULE_KEYS}
@@ -53,6 +58,7 @@ sys.modules["agent_runtime"] = agent_runtime_pkg
 sys.modules["agent_runtime.adapters"] = adapters_pkg
 sys.modules["agent_runtime.adapters.wolfram_agenttools"] = adapter
 sys.modules["agent_runtime.wolfram_cag_partner_ledger"] = ledger
+sys.modules["agent_runtime.wolfram_cag_runtime_binding"] = binding
 
 fake_request = SimpleNamespace(headers={}, get_json=lambda silent=True: {})
 flask_module = ModuleType("flask")

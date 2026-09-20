@@ -31,9 +31,15 @@ from agent_runtime.wolfram_cag_partner_ledger import (
     persist_partner_analysis,
     public_partner_projection,
 )
+from agent_runtime.wolfram_cag_runtime_binding import (
+    RuntimeBindingError,
+    build_runtime_evidence_binding,
+    persist_runtime_evidence_binding,
+)
 
 ConnectionFactory = Callable[[], Any]
 _REVISION = re.compile(r"^[0-9a-f]{40}$")
+_IMAGE_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 _CAG_CANARIES: dict[str, dict[str, Any]] = {
     "wolfram.cag.hints": {"context": "Find Wolfram Language code that computes 2+2."},
@@ -52,6 +58,11 @@ def _service_authorized() -> bool:
 def _revision() -> str | None:
     value = os.getenv("SOVEREIGN_SOURCE_REVISION", "").strip().casefold()
     return value if _REVISION.fullmatch(value) else None
+
+
+def _image_digest() -> str | None:
+    value = os.getenv("SOVEREIGN_IMAGE_DIGEST", "").strip().casefold()
+    return value if _IMAGE_DIGEST.fullmatch(value) else None
 
 
 def _input_sha256(payload: dict[str, Any]) -> str:
@@ -233,6 +244,73 @@ def run_cag_canaries(*, get_connection: ConnectionFactory, components: list[str]
     }
 
 
+def bind_cag_runtime_evidence(
+    *,
+    get_connection: ConnectionFactory,
+    expected_revision: str,
+    expected_image_digest: str,
+    bindings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    revision = _revision()
+    image_digest = _image_digest()
+    if revision is None or revision != str(expected_revision or "").strip().casefold():
+        raise RuntimeBindingError("runtime revision does not match the operator evidence")
+    if image_digest is None or image_digest != str(expected_image_digest or "").strip().casefold():
+        raise RuntimeBindingError("runtime image digest does not match the operator evidence")
+    if not isinstance(bindings, list) or not bindings or len(bindings) > 4:
+        raise RuntimeBindingError("runtime evidence bindings must contain one to four records")
+
+    connection = get_connection()
+    results: list[dict[str, Any]] = []
+    try:
+        for item in bindings:
+            if not isinstance(item, dict):
+                raise RuntimeBindingError("runtime evidence binding payload must be an object")
+            record = build_runtime_evidence_binding(
+                analysis_id=str(item.get("analysisId") or ""),
+                analysis_record_sha256=str(item.get("analysisRecordSha256") or ""),
+                repository_revision=revision,
+                runtime_revision=revision,
+                immutable_image_digest=image_digest,
+                runtime_container_identity_sha256=str(item.get("runtimeContainerIdentitySha256") or ""),
+                deployed_target_identity="sovereign-backend",
+                docker_readback_sha256=str(item.get("dockerReadbackSha256") or ""),
+                patchmon_readback_sha256=str(item.get("patchmonReadbackSha256") or ""),
+                cag_execution_receipt_sha256=str(item.get("cagExecutionReceiptSha256") or ""),
+                provider_request_id_sha256=str(item.get("providerRequestIdSha256") or ""),
+                provider_response_sha256=str(item.get("providerResponseSha256") or ""),
+                entitlement_receipt_sha256=str(item.get("entitlementReceiptSha256") or ""),
+                runtime_evidence_readback_verified=item.get("runtimeEvidenceReadbackVerified") is True,
+                public_projection_allowed=item.get("publicProjectionAllowed") is True,
+                created_at=_now(),
+            )
+            persisted = persist_runtime_evidence_binding(connection, record)
+            results.append({
+                **persisted,
+                "analysisId": record["analysisId"],
+                "runtimeRevision": record["runtimeRevision"],
+                "immutableImageDigest": record["immutableImageDigest"],
+                "authorizationBasisClass": record["authorizationBasisClass"],
+                "authorizationBasisSha256": record["authorizationBasisSha256"],
+                "authorizationSourceReadbackState": record["authorizationSourceReadbackState"],
+                "usageScope": record["usageScope"],
+                "publicProjectionAllowed": record["publicProjectionAllowed"],
+            })
+    finally:
+        _close(connection)
+    return {
+        "ok": bool(results) and all(item.get("readbackVerified") is True for item in results),
+        "status": "WOLFRAM_CAG_RUNTIME_EVIDENCE_BOUND",
+        "sourceRevision": revision,
+        "imageDigest": image_digest,
+        "bindings": results,
+        "runtimeEvidenceReadbackVerified": True,
+        "publicOutputBoundary": "DERIVED_PUBLIC_SAFE_ONLY",
+        "commercialUseAuthorized": False,
+        "secretValuesReturned": False,
+    }
+
+
 def register_wolfram_cag_runtime(app: Any, *, get_connection: ConnectionFactory) -> None:
     @app.route("/api/internal/wolfram-cag/status", methods=["GET"])
     def _status():
@@ -260,8 +338,27 @@ def register_wolfram_cag_runtime(app: Any, *, get_connection: ConnectionFactory)
         result = run_cag_canaries(get_connection=get_connection, components=selected)
         return jsonify(result), (200 if result.get("ok") else 409)
 
+    @app.route("/api/internal/wolfram-cag/runtime-evidence-bind", methods=["POST"])
+    def _runtime_evidence_bind():
+        if not _service_authorized():
+            return jsonify({"ok": False, "error": "service_unauthorized"}), 401
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or set(body) - {"expectedRevision", "expectedImageDigest", "bindings"}:
+            return jsonify({"ok": False, "error": "invalid_request"}), 400
+        try:
+            result = bind_cag_runtime_evidence(
+                get_connection=get_connection,
+                expected_revision=str(body.get("expectedRevision") or ""),
+                expected_image_digest=str(body.get("expectedImageDigest") or ""),
+                bindings=body.get("bindings") if isinstance(body.get("bindings"), list) else [],
+            )
+        except RuntimeBindingError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 409
+        return jsonify(result), (200 if result.get("ok") else 409)
+
 
 __all__ = [
+    "bind_cag_runtime_evidence",
     "cag_runtime_status",
     "run_cag_canaries",
     "register_wolfram_cag_runtime",
