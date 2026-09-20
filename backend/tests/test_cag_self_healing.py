@@ -132,10 +132,15 @@ def test_transition_contract_requires_agent_zero_evidence_before_draft_ready() -
 def test_cag_mask_parser_fails_closed_and_divergence_is_rejected() -> None:
     item = observation(observed_endpoint_path="/wrong")
     assert parse_cag_failure_mask("2") == 2
+    assert parse_cag_failure_mask("Out[1]=2") == 2
+    assert parse_cag_failure_mask("Out[42]= 2") == 2
     assert cag_agrees_with_local_verdict(item, "2") is True
+    assert cag_agrees_with_local_verdict(item, "Out[1]=2") is True
     assert cag_agrees_with_local_verdict(item, "0") is False
     with pytest.raises(SelfHealingContractError):
         parse_cag_failure_mask("SUPPORTED")
+    with pytest.raises(SelfHealingContractError):
+        parse_cag_failure_mask("During evaluation...\\nOut[1]=2")
     with pytest.raises(SelfHealingContractError):
         parse_cag_failure_mask("999999")
 
