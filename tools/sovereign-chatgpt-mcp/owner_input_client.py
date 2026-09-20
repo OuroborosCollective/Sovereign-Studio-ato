@@ -318,6 +318,43 @@ class ProviderRuntimeClient(OwnerInputClient):
             "secret_argument_accepted": False,
         }
 
+    def wolfram_cag_bind_runtime_evidence(
+        self,
+        *,
+        expected_revision: str,
+        expected_image_digest: str,
+        bindings: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        revision = str(expected_revision or "").strip().casefold()
+        digest = str(expected_image_digest or "").strip().casefold()
+        if not re.fullmatch(r"[0-9a-f]{40}", revision):
+            raise ValueError("expected_revision ist ungültig")
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+            raise ValueError("expected_image_digest ist ungültig")
+        if not isinstance(bindings, list) or not bindings or len(bindings) > 4:
+            raise ValueError("bindings muss ein Array mit 1 bis 4 Einträgen sein")
+        rendered = json.dumps(bindings, ensure_ascii=False, sort_keys=True)
+        if len(rendered.encode("utf-8")) > 100_000:
+            raise ValueError("bindings überschreitet das Operator-Limit")
+        if any(marker in rendered.casefold() for marker in OPERATOR_SECRET_MARKERS):
+            raise ValueError("Secret-förmige Runtime-Evidence ist verboten")
+        payload = self._request(
+            "POST",
+            "/api/internal/wolfram-cag/runtime-evidence-bind",
+            json_body={
+                "expectedRevision": revision,
+                "expectedImageDigest": digest,
+                "bindings": bindings,
+            },
+            expected=(200, 400, 401, 409, 500),
+            timeout=120,
+        )
+        return {
+            **payload,
+            "protected_values_returned": False,
+            "secret_argument_accepted": False,
+        }
+
     def openrouter_status(self) -> dict[str, Any]:
         payload = self._request(
             "GET",

@@ -1542,6 +1542,184 @@ def wolfram_cag_canary(components: list[str] | None = None) -> dict[str, Any]:
     return provider_runtime.wolfram_cag_canary(components)
 
 
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def wolfram_cag_runtime_evidence_bind(expected_revision: str) -> dict[str, Any]:
+    """Bind fresh 4/4 CAG canaries to exact Docker, PatchMon, image and authorization evidence."""
+    revision = str(expected_revision or "").strip().casefold()
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ValueError("expected_revision must be a full commit SHA")
+
+    def canonical_sha256(value: Any) -> str:
+        canonical = json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    canary = provider_runtime.wolfram_cag_canary()
+    results = canary.get("results") if isinstance(canary.get("results"), list) else []
+    if (
+        canary.get("ok") is not True
+        or canary.get("status") != "WOLFRAM_CAG_CANARIES_SUCCEEDED_UNVERIFIED"
+        or canary.get("sourceRevision") != revision
+        or len(results) != 4
+        or any(item.get("status") != "SUCCEEDED_UNVERIFIED" for item in results if isinstance(item, dict))
+    ):
+        return {
+            "ok": False,
+            "status": "WOLFRAM_CAG_RUNTIME_BINDING_BLOCKED",
+            "blocker": "fresh_four_component_canary_required",
+            "sourceRevision": canary.get("sourceRevision"),
+            "mutationPerformed": bool(canary.get("documentationPersisted")),
+            "secretValuesReturned": False,
+        }
+
+    image = broker.call("resolve_backend_image", {"revision": revision}, timeout=360)
+    digest = str(image.get("image_digest") or "").strip().casefold()
+    if image.get("ok") is not True or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+        return {
+            "ok": False,
+            "status": "WOLFRAM_CAG_RUNTIME_BINDING_BLOCKED",
+            "blocker": "immutable_backend_image_unresolved",
+            "mutationPerformed": True,
+            "secretValuesReturned": False,
+        }
+
+    docker_status = broker.call("container_status", {"container": "sovereign-backend"}, timeout=60)
+    state = docker_status.get("state") if isinstance(docker_status.get("state"), dict) else {}
+    health = state.get("Health") if isinstance(state.get("Health"), dict) else {}
+    health_status = str(health.get("Status") or "")
+    if docker_status.get("ok") is not True or state.get("Running") is not True or str(state.get("Status") or "") != "running" or health_status != "healthy":
+        return {
+            "ok": False,
+            "status": "WOLFRAM_CAG_RUNTIME_BINDING_BLOCKED",
+            "blocker": "backend_container_not_healthy",
+            "mutationPerformed": True,
+            "secretValuesReturned": False,
+        }
+
+    patchmon = broker.call(
+        "patchmon_runtime_inventory",
+        {"include_fleet": True, "max_fleet_containers": 100},
+        timeout=180,
+    )
+    fleet = patchmon.get("fleet") if isinstance(patchmon.get("fleet"), dict) else {}
+    fleet_rows = fleet.get("containers") if isinstance(fleet.get("containers"), list) else []
+    backend_row = next(
+        (item for item in fleet_rows if isinstance(item, dict) and item.get("name") == "sovereign-backend"),
+        None,
+    )
+    immutable_reference = str((backend_row or {}).get("image") or "")
+    if (
+        patchmon.get("ok") is not True
+        or backend_row is None
+        or backend_row.get("state") != "running"
+        or f"@{digest}" not in immutable_reference
+    ):
+        return {
+            "ok": False,
+            "status": "WOLFRAM_CAG_RUNTIME_BINDING_BLOCKED",
+            "blocker": "patchmon_backend_digest_readback_missing",
+            "mutationPerformed": True,
+            "secretValuesReturned": False,
+        }
+
+    container_identity_sha256 = canonical_sha256({
+        "containerId": str(backend_row.get("id") or ""),
+        "name": "sovereign-backend",
+        "image": immutable_reference,
+        "revision": revision,
+        "imageDigest": digest,
+    })
+    docker_readback_sha256 = canonical_sha256({
+        "container": "sovereign-backend",
+        "running": True,
+        "status": "running",
+        "health": health_status,
+        "imageDigest": digest,
+        "revision": revision,
+    })
+    http_health = patchmon.get("httpHealth") if isinstance(patchmon.get("httpHealth"), dict) else {}
+    patchmon_health = http_health.get("health") if isinstance(http_health.get("health"), dict) else {}
+    patchmon_readback_sha256 = canonical_sha256({
+        "status": patchmon.get("status"),
+        "httpHealthOk": http_health.get("ok") is True,
+        "httpHealthBodySha256": str(patchmon_health.get("bodySha256") or ""),
+        "backendContainerId": str(backend_row.get("id") or ""),
+        "backendImage": immutable_reference,
+        "backendState": backend_row.get("state"),
+        "backendStatus": backend_row.get("status"),
+        "revision": revision,
+        "imageDigest": digest,
+    })
+    entitlement_receipt_sha256 = canonical_sha256({
+        "status": canary.get("status"),
+        "sourceRevision": revision,
+        "imageDigest": digest,
+        "components": [
+            {
+                "capabilityId": str(item.get("capabilityId") or ""),
+                "component": str(item.get("component") or ""),
+                "status": str(item.get("status") or ""),
+                "responseStatus": int(item.get("responseStatus") or 0),
+                "responseHash": str(item.get("responseHash") or ""),
+                "analysisId": str((item.get("analysis") or {}).get("analysisId") or "") if isinstance(item.get("analysis"), dict) else "",
+            }
+            for item in results
+            if isinstance(item, dict)
+        ],
+    })
+
+    bindings: list[dict[str, Any]] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        analysis = item.get("analysis") if isinstance(item.get("analysis"), dict) else {}
+        request_identity = str(item.get("requestId") or item.get("requestHash") or "")
+        provider_response_sha256 = str(item.get("responseHash") or analysis.get("providerResponseSha256") or "").strip().casefold()
+        execution_receipt_sha256 = canonical_sha256({
+            "capabilityId": str(item.get("capabilityId") or ""),
+            "component": str(item.get("component") or ""),
+            "status": str(item.get("status") or ""),
+            "responseStatus": int(item.get("responseStatus") or 0),
+            "requestHash": str(item.get("requestHash") or ""),
+            "responseHash": provider_response_sha256,
+            "responseUuid": str(item.get("responseUuid") or ""),
+            "requestIdSha256": hashlib.sha256(request_identity.encode("utf-8")).hexdigest(),
+        })
+        bindings.append({
+            "analysisId": str(analysis.get("analysisId") or ""),
+            "analysisRecordSha256": str(analysis.get("analysisRecordSha256") or ""),
+            "runtimeContainerIdentitySha256": container_identity_sha256,
+            "dockerReadbackSha256": docker_readback_sha256,
+            "patchmonReadbackSha256": patchmon_readback_sha256,
+            "cagExecutionReceiptSha256": execution_receipt_sha256,
+            "providerRequestIdSha256": hashlib.sha256(request_identity.encode("utf-8")).hexdigest(),
+            "providerResponseSha256": provider_response_sha256,
+            "entitlementReceiptSha256": entitlement_receipt_sha256,
+            "runtimeEvidenceReadbackVerified": True,
+            "publicProjectionAllowed": True,
+        })
+
+    bound = provider_runtime.wolfram_cag_bind_runtime_evidence(
+        expected_revision=revision,
+        expected_image_digest=digest,
+        bindings=bindings,
+    )
+    return {
+        **bound,
+        "status": bound.get("status") or "WOLFRAM_CAG_RUNTIME_EVIDENCE_BOUND",
+        "sourceRevision": revision,
+        "imageDigest": digest,
+        "containerIdentitySha256": container_identity_sha256,
+        "dockerReadbackSha256": docker_readback_sha256,
+        "patchmonReadbackSha256": patchmon_readback_sha256,
+        "entitlementReceiptSha256": entitlement_receipt_sha256,
+        "providerCanaryExecuted": True,
+        "componentCount": len(bindings),
+        "mutationPerformed": True,
+        "readbackVerified": bound.get("runtimeEvidenceReadbackVerified") is True,
+        "secretValuesReturned": False,
+    }
+
+
 @mcp.tool(annotations=NETWORK_READ)
 def openrouter_provider_status() -> dict[str, Any]:
     """Read secret-free status and canary metadata for the direct OpenRouter transport."""
