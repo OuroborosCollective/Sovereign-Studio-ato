@@ -67,38 +67,39 @@ export async function executeMCPTool(config: MCPToolConfig): Promise<{
   durationMs: number;
 }> {
   const startTime = performance.now();
+  const { serverName, toolName, parameters, workspaceId, jobId } = config;
   
   // Register for pattern learning
-  registerToolNode(config.toolName, 'mcp');
+  registerToolNode(toolName, 'mcp');
 
   try {
     // Execute tool freely - no restrictions
-    const result = await executeMCPToolInternal(
-      config.serverName,
-      config.toolName,
-      config.parameters
-    );
+    const result = await getMCPToolRegistry().execute(serverName, toolName, parameters, workspaceId, jobId);
+
+    if (!result.success) {
+      throw new Error(result.error);
+    }
     
     // Emit success signal
     emitToolSignal({
-      toolName: config.toolName,
+      toolName: toolName,
       toolType: 'mcp',
       status: 'success',
       durationMs: performance.now() - startTime,
-      parameters: config.parameters,
-      workspaceId: config.workspaceId,
-      jobId: config.jobId,
+      parameters: parameters,
+      workspaceId: workspaceId,
+      jobId: jobId,
     });
 
     return {
       success: true,
-      result,
+      result: result.result,
       durationMs: performance.now() - startTime,
     };
   } catch (error) {
     // Emit error signal
     emitToolSignal({
-      toolName: config.toolName,
+      toolName: toolName,
       toolType: 'mcp',
       status: 'error',
       durationMs: performance.now() - startTime,

@@ -7,8 +7,8 @@
  * @module features/mcp/mcpFreeTools
  */
 
-import { emitToolSignal, registerToolNode } from '@/predictive/toolPredictiveBridge';
-import type { ToolExecutionEvent } from '@/predictive/toolPredictiveBridge';
+import { emitToolSignal, registerToolNode } from '../../predictive/toolPredictiveBridge';
+import type { ToolExecutionEvent } from '../../predictive/toolPredictiveBridge';
 
 export interface MCPToolConfig {
   serverName: string;
@@ -36,15 +36,19 @@ export async function executeMCPTool(config: MCPToolConfig): Promise<{
 
   try {
     // Execute tool freely - no restrictions
-    const result = await executeMCPToolInternal(serverName, toolName, parameters);
+    const result = await getMCPToolRegistry().execute(serverName, toolName, parameters, workspaceId, jobId);
     const durationMs = performance.now() - startTime;
+
+    if (!result.success) {
+      throw new Error(result.error);
+    }
 
     // Emit success signal
     emitToolSignal(createToolEvent(toolName, 'success', durationMs, parameters, workspaceId, jobId));
 
     return {
       success: true,
-      result,
+      result: result.result,
       durationMs,
     };
   } catch (error) {
@@ -67,16 +71,6 @@ export async function executeMCPTool(config: MCPToolConfig): Promise<{
       durationMs,
     };
   }
-}
-
-async function executeMCPToolInternal(
-  serverName: string,
-  toolName: string,
-  _parameters: Record<string, unknown>,
-): Promise<never> {
-  throw new Error(
-    `MCP transport unavailable for ${serverName}/${toolName}. Register a concrete executor before use.`,
-  );
 }
 
 function createToolEvent(
