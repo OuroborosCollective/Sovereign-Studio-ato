@@ -17,7 +17,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import './AdminPanel.css';
 import {
   Users, CreditCard, Grid, Cpu, FileText,
-  Key, CheckCircle, AlertTriangle, Wallet, ServerCog,
+  Key, CheckCircle, AlertTriangle, Wallet, ServerCog, ShieldCheck,
 } from 'lucide-react';
 import { AdminGate } from './AdminGate';
 import { UserTable } from './components/UserTable';
@@ -28,6 +28,7 @@ import { LauncherToolEditor } from './components/LauncherToolEditor';
 import { LlmRouteEditor } from './components/LlmRouteEditor';
 import { PaymentMethodEditor } from './components/PaymentMethodEditor';
 import { EnterpriseBackendPanel } from './components/EnterpriseBackendPanel';
+import { SelfHealingAuthorityCard } from './components/SelfHealingAuthorityCard';
 import {
   useAdminUsers,
   useAdminTransactions,
@@ -51,10 +52,11 @@ const C = {
   accent: '#00d9b1', text: '#cdd9e5', textSub: '#768390', danger: '#f87171',
 } as const;
 
-type Tab = 'platform' | 'users' | 'billing' | 'payments' | 'launcher' | 'llm' | 'audit';
+type Tab = 'platform' | 'selfHealing' | 'users' | 'billing' | 'payments' | 'launcher' | 'llm' | 'audit';
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
   { id: 'platform', label: 'Platform',  icon: ServerCog },
+  { id: 'selfHealing', label: 'Self-Healing', icon: ShieldCheck },
   { id: 'users',    label: 'Nutzer',    icon: Users },
   { id: 'billing',  label: 'Billing',   icon: CreditCard },
   { id: 'payments', label: 'Zahlungen', icon: Wallet },
@@ -324,6 +326,7 @@ function LlmTab() {
 function ActiveTab({ tab }: { tab: Tab }) {
   switch (tab) {
     case 'platform': return <EnterpriseBackendPanel />;
+    case 'selfHealing': return <SelfHealingAuthorityCard />;
     case 'users': return <UsersTab />;
     case 'billing': return <BillingTab />;
     case 'payments': return <PaymentsTab />;
