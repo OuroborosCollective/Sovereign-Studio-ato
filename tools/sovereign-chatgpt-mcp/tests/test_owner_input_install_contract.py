@@ -137,6 +137,7 @@ def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> Non
     assert deploy.count('--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"') == 1
     assert compose.count("/opt/secure:/opt/secure:ro") == 1
     assert compose.count("/opt/sovereign-owner-managed:/opt/sovereign-owner-managed:rw") == 1
+    assert "WOLFRAM_CAG_API_KEY_FILE: /opt/sovereign-owner-managed/wolfram_cag_api_key.txt" in compose
     assert 'WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"' in deploy
     assert 'WORKSPACE_CONTAINER_ROOT="/var/lib/sovereign-agent/workspaces"' in deploy
     assert 'chown "$WORKSPACE_UID:$WORKSPACE_GID" "$WORKSPACE_HOST_ROOT"' in deploy

@@ -10,6 +10,7 @@ services:
       SOVEREIGN_IMAGE_DIGEST: "${SOVEREIGN_BACKEND_IMAGE_DIGEST:?backend digest is required}"
       SOVEREIGN_SOURCE_REVISION: "${SOVEREIGN_BACKEND_SOURCE_REVISION:?backend revision is required}"
       SOVEREIGN_MCP_BROKER_SOCKET: /run/sovereign-chatgpt-broker/operator.sock
+      WOLFRAM_CAG_API_KEY_FILE: /opt/sovereign-owner-managed/wolfram_cag_api_key.txt
       SOVEREIGN_LLM_ROUTE_SCANNER_ENABLED: "1"
       SOVEREIGN_LLM_ROUTE_SCANNER_INTERVAL_SECONDS: "3600"
       SOVEREIGN_LLM_ROUTE_SCANNER_INITIAL_DELAY_SECONDS: "30"
