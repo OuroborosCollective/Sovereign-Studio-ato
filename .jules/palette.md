@@ -57,3 +57,7 @@
 ## 2025-08-13 - [Overriding Visible Buttons via ARIA Labels]
 **Learning:** Overriding a button's visible text (e.g., 'Repo-Snapshot laden') with an 'aria-label' that does not match or include that exact text violates the WCAG 'Label in Name' requirement. It also disrupts testing frameworks and standard selectors looking for the visible text.
 **Action:** For buttons with descriptive, dynamic text content, rely on the visible text for the accessible name, and use the 'title' attribute exclusively for stateful hover descriptions rather than using aria-label overrides.
+
+## 2025-08-16 - [Keyboard Navigable Interactive Elements with Tailwind]
+**Learning:** Many custom interactive UI elements like icon-only clear buttons, list option buttons, and specialized chat input controls that rely purely on Tailwind utility classes often lack explicit focus rings. This prevents keyboard-only users from tracking their position within complex components like Chat Sidebars.
+**Action:** Always ensure that custom interactive components (like custom dropdown menu buttons or inline form actions) include explicit `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color]` classes (and appropriate `rounded` utilities to clip the ring properly) to maintain universally clear focus states.
