@@ -465,7 +465,10 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
 
   async abortJob(runId: string): Promise<void> {
     if (isDirectRepositoryJobId(runId)) {
-      throw new Error('Agent Zero A2A cancellation is not yet revision-proven; the persisted repository job and external task remain unchanged.');
+      // The backend owns cancellation capability and its exact job readback.
+      // Surface its rejection; never invent a local cancelled state.
+      await this.client.cancelJob(runId);
+      return;
     }
     const run = await this.getRun(runId);
     if (!run.jobId) throw new Error('This persisted run has no linked cancellable implementation job.');

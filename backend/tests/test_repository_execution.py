@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
@@ -12,6 +12,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_runtime.agent_zero_a2a import (  # noqa: E402
+    AgentZeroA2AError,
     AgentZeroA2ASubmitOutcomeUnknown,
     AgentZeroA2ATask,
     AgentZeroA2ATaskLost,
@@ -154,6 +155,7 @@ def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
     def append(_conn, job_id, event):
         assert job_id == state["job"].job_id
         state["events"].append(event)
+        state["job"] = replace(state["job"], events=(*state["job"].events, asdict(event)))
 
     monkeypatch.setattr(repository_execution, "read_agent_job", read_agent_job)
     monkeypatch.setattr(repository_execution, "compare_and_swap_agent_job_external_ref", cas)
@@ -708,12 +710,20 @@ def test_closeout_splits_janitor_shell_combination_and_never_executes_control_to
 
 
 def test_closeout_blocks_when_regression_fails(monkeypatch):
-    state, _changed = _patch_closeout_baseline(monkeypatch, test_result=_failed_tool("regression red"))
+    state, changed = _patch_closeout_baseline(monkeypatch, test_result=_failed_tool("regression red"))
 
     result = _run_closeout(state)
 
     assert result.status == "blocked"
     assert result.blocker == "regression red"
+    assert result.changed_files == changed
+    assert "real implementation" in result.diff_summary
+    assert not result.test_summary
+    assert result.pr_state != "ready"
+    assert result.draft_pr_url is None
+    assert [event.stage for event in state["events"]] == [
+        "repository_regression_started", "repository_closeout_regression_blocked",
+    ]
 
 
 def test_closeout_blocks_when_evidence_gate_rejects(monkeypatch):
@@ -931,3 +941,74 @@ class _PyformatConnection:
 
 def test_reconcilable_job_query_escapes_like_wildcards_for_pyformat_driver():
     assert list_reconcilable_repository_jobs(_PyformatConnection()) == ()
+
+
+def test_active_readback_is_persisted_throttled_and_never_resets_stall_clock(monkeypatch):
+    import time
+    initial = replace(_job(), updated_at=datetime.now(timezone.utc))
+    state = _patch_job_store(monkeypatch, initial)
+    now = int(time.time() * 1000)
+    monkeypatch.setattr("agent_runtime.contracts.time.time", lambda: now / 1000)
+    class Client:
+        def get_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+    def reconcile():
+        return repository_execution.reconcile_repository_execution(
+            object(), user_id=initial.user_id, job_id=initial.job_id, a2a_client_factory=Client,
+        )
+    first = reconcile()
+    assert len(first.events) == 1
+    assert first.events[0]["stage"] == "agent_zero_a2a_task_observed"
+    assert first.events[0]["level"] == "info"
+    assert "not new file changes" in first.events[0]["message"]
+    assert first.status == "running" and first.changed_files == ()
+    assert first.updated_at == initial.updated_at
+    reconcile()
+    assert len(state["events"]) == 1
+    now += 31_000
+    second = reconcile()
+    assert len(second.events) == 2
+    assert second.updated_at == initial.updated_at
+
+
+def test_readback_failure_and_recovery_are_visible_without_duplicate_submit(monkeypatch):
+    initial = replace(_job(), updated_at=datetime.now(timezone.utc))
+    state = _patch_job_store(monkeypatch, initial)
+    class Client:
+        unavailable = True
+        def get_task(self, task_id):
+            if self.unavailable:
+                raise AgentZeroA2AError("AGENT_ZERO_A2A_READ_UNAVAILABLE", "RETRY_TASK_READBACK_WITHOUT_RESUBMITTING")
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+        def submit_repository_task(self, **_kwargs):
+            pytest.fail("Readback failures must not submit another task")
+    client = Client()
+    def reconcile():
+        return repository_execution.reconcile_repository_execution(
+            object(), user_id=initial.user_id, job_id=initial.job_id, a2a_client_factory=lambda: client,
+        )
+    for _ in range(2):
+        with pytest.raises(repository_execution.RepositoryExecutionTransientError):
+            reconcile()
+    assert len(state["events"]) == 1
+    assert state["events"][0].stage == "agent_zero_a2a_readback_unavailable"
+    assert state["job"].status == "running"
+    assert state["job"].external_ref == initial.external_ref
+    client.unavailable = False
+    result = reconcile()
+    assert result.events[-1]["stage"] == "agent_zero_a2a_task_observed"
+    assert len(result.events) == 2
+
+
+def test_late_readback_cannot_project_activity_on_a_terminal_job(monkeypatch):
+    initial = _job()
+    state = _patch_job_store(monkeypatch, initial)
+    class Client:
+        def get_task(self, task_id):
+            state["job"] = replace(initial, status="blocked")
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+    result = repository_execution.reconcile_repository_execution(
+        object(), user_id=initial.user_id, job_id=initial.job_id, a2a_client_factory=Client,
+    )
+    assert result.status == "blocked"
+    assert state["events"] == []

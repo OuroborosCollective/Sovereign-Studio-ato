@@ -94,6 +94,9 @@ function Dashboard() {
     job,
     isPolling,
     abort,
+    isAborting,
+    abortError,
+    error: readbackError,
     workspace,
     publication,
     prepareDraftPr,
@@ -249,7 +252,9 @@ function Dashboard() {
       onSendMessage={submitMission}
       jobPhase={currentPhase}
       activeJob={job}
-      onAbortJob={activeRunId ? () => void abort() : undefined}
+      onAbortJob={activeRunId ? () => { void abort().catch(() => undefined); } : undefined}
+      isAborting={isAborting}
+      abortError={abortError instanceof Error ? abortError.message : undefined}
       onTypingStateChange={setIsTyping}
       onOpenToolchain={() => setToolchainOpen(true)}
       onOpenSkills={() => setSkillsOpen(true)}
@@ -261,7 +266,8 @@ function Dashboard() {
       onAgentModeChange={setAgentMode}
     />
   );
-  const monitor = <><NeuralLoadMonitor job={job} phase={currentPhase} /><RuntimeMonitor job={job} isPolling={isPolling} /></>;
+  const pollingError = readbackError instanceof Error ? readbackError.message : undefined;
+  const monitor = <><NeuralLoadMonitor job={job} phase={currentPhase} /><RuntimeMonitor job={job} isPolling={isPolling} readbackError={pollingError} /></>;
   const workspacePanel = <WorkspaceProjection workspace={workspace} workspaceId={job?.backendJobId} sourceStatus={job?.sourceStatus} />;
   const publicationPanel = (
     <PublicationInspector
@@ -279,15 +285,15 @@ function Dashboard() {
 
   return (
     <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-[var(--bg-void)] text-[var(--text-main)] selection:bg-[var(--red-pulse)] selection:text-white font-sans carbon-mesh-bg" data-testid="sovereign-control-surface-vnext">
-      <header className="h-14 sm:h-16 md:h-20 bg-[var(--carbon-deep)] border-b border-[rgba(255,30,56,0.22)] px-2.5 sm:px-4 md:px-6 flex items-center justify-between shrink-0 z-30 shadow-[0_4px_20px_rgba(0,0,0,0.8)] relative">
+      <header className="h-14 sm:h-16 md:h-20 bg-[var(--carbon-deep)] border-b border-[rgba(255,30,56,0.22)] px-2.5 sm:px-4 md:px-6 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1 shrink-0 z-30 shadow-[0_4px_20px_rgba(0,0,0,0.8)] relative">
         <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-[var(--red-laser)] to-transparent" />
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-[var(--carbon-surface)] border border-[var(--red-laser)] flex items-center justify-center text-[var(--red-laser)] shadow-[0_0_15px_rgba(255,30,56,0.4)] theme-diamond-cut shrink-0"><Cpu size={20} className="animate-pulse" /></div>
-          <div className="min-w-0"><div className="flex items-center gap-2"><span className="font-mono text-[11px] sm:text-sm font-black tracking-widest text-white truncate">SOVEREIGN STUDIO ATO</span><span className="hidden sm:inline px-1.5 rounded bg-[rgba(255,30,56,0.15)] text-[var(--red-laser)] border border-[rgba(255,30,56,0.3)] font-mono text-[9px] font-bold">vNEXT</span></div><div className="hidden sm:block text-[9px] font-mono text-[var(--text-dim)]">CYBERNETIC CONTROL SURFACE // RUNTIME TRUTH BOUND</div></div>
+          <div className="min-w-0"><div className="flex items-center gap-2"><span className="font-mono text-[9px] sm:text-sm font-black tracking-wide text-white truncate">SOVEREIGN<span className="hidden lg:inline"> STUDIO ATO</span></span><span className="hidden xl:inline px-1.5 rounded bg-[rgba(255,30,56,0.15)] text-[var(--red-laser)] border border-[rgba(255,30,56,0.3)] font-mono text-[9px] font-bold">vNEXT</span></div><div className="hidden lg:block truncate text-[9px] font-mono text-[var(--text-dim)]">RUNTIME TRUTH BOUND</div></div>
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-3">
-          <CyborgOcularMatrix isTyping={isTyping} jobPhase={currentPhase} />
+        <CyborgOcularMatrix isTyping={isTyping} jobPhase={currentPhase} />
+        <div className="flex items-center justify-self-end gap-1 sm:gap-3">
           <button type="button" data-testid="operator-auth-btn" onClick={() => setAuthOpen(true)} className={cx('min-h-9 px-2 rounded border font-mono text-[9px] sm:text-[10px] font-bold flex items-center gap-1.5', user && !user.isGuest ? 'bg-[var(--carbon-surface)] border-[rgba(16,185,129,0.35)] text-white' : 'bg-[rgba(255,30,56,0.12)] border-[var(--red-laser)] text-white')}><Lock size={11} className={user && !user.isGuest ? 'text-[var(--emerald-seal)]' : 'text-[var(--red-laser)]'} /><span className="hidden sm:inline max-w-24 truncate">{user && !user.isGuest ? user.displayName : sessionReady ? 'AUTH' : 'SESSION…'}</span></button>
           <button type="button" data-testid="open-architecture-btn" onClick={() => setArchitectureOpen(true)} className="min-h-9 px-2 rounded border border-white/10 bg-[var(--carbon-surface)] text-[var(--text-muted)] hover:text-white hover:border-[var(--red-laser)] font-mono text-[9px] flex items-center gap-1"><Server size={12} className="text-[var(--red-laser)]" /><span className="hidden md:inline">SPEC</span></button>
           <button type="button" onClick={() => setAudioMuted(toggleAudioMute())} className="min-h-9 px-2 rounded border border-white/10 bg-[var(--carbon-surface)] text-[var(--text-muted)] hover:text-white">{audioMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}</button>
@@ -300,7 +306,7 @@ function Dashboard() {
             <div className="w-3/5 lg:w-3/4 min-w-0 h-full">{command}</div>
             <aside className="w-2/5 lg:w-1/4 min-w-[290px] max-w-[460px] h-full bg-[var(--carbon-deep)] border-l border-[rgba(255,30,56,0.18)] flex flex-col overflow-hidden">
               <div className="shrink-0"><NeuralLoadMonitor job={job} phase={currentPhase} /></div>
-              <div className="flex-1 min-h-0 border-b border-white/5"><RuntimeMonitor job={job} isPolling={isPolling} /></div>
+              <div className="flex-1 min-h-0 border-b border-white/5"><RuntimeMonitor job={job} isPolling={isPolling} readbackError={pollingError} /></div>
               <div className="h-[28%] min-h-[130px] border-b border-white/5">{workspacePanel}</div>
               <div className="h-[31%] min-h-[150px]">{publicationPanel}</div>
             </aside>

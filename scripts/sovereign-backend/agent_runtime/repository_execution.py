@@ -77,6 +77,7 @@ _SHELL_CONTROL_TOKENS: Final[frozenset[str]] = frozenset({"||", ";", "|", ">", "
 _RECONCILER_THREAD_LOCK = threading.Lock()
 _RECONCILER_THREAD: threading.Thread | None = None
 _LOGGER = logging.getLogger(__name__)
+_A2A_READBACK_INTERVAL_MS: Final[int] = 30_000
 
 
 class RepositoryExecutionError(RuntimeError):
@@ -198,6 +199,34 @@ def _block_job(conn: Any, job: StoredSovereignAgentJob, reason: str, stage: str)
         message=blocker,
     ))
     return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+
+
+def _record_task_readback(
+    conn: Any, job: StoredSovereignAgentJob, *, message: str, unavailable: bool = False,
+) -> StoredSovereignAgentJob:
+    """Persist observations without turning polling into execution progress.
+
+    Event writes leave updated_at unchanged: polling must not reset the execution
+    deadline. Throttle from persisted events, not a process-local heartbeat cache.
+    """
+    current = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+    if current.status != "running" or current.external_ref != job.external_ref:
+        return current
+    stage = "agent_zero_a2a_readback_unavailable" if unavailable else "agent_zero_a2a_task_observed"
+    event = SovereignAgentEvent(stage=stage, level="warning" if unavailable else "info", message=message)
+    for previous in reversed(current.events):
+        if previous.get("stage") not in {"agent_zero_a2a_task_observed", "agent_zero_a2a_readback_unavailable"}:
+            continue
+        previous_at = previous.get("at")
+        if (
+            previous.get("stage") == stage and previous.get("message") == event.message
+            and isinstance(previous_at, (int, float)) and not isinstance(previous_at, bool)
+            and 0 <= event.at - previous_at < _A2A_READBACK_INTERVAL_MS
+        ):
+            return current
+        break
+    append_agent_event(conn, current.job_id, event)
+    return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or current
 
 
 def _submit_after_claim(
@@ -510,6 +539,26 @@ def _closeout_repository_job(
             "repository_closeout_janitor_critical",
         )
 
+    # Observed work remains evidence even when the following regression blocks.
+    # Do not require passing tests before reporting real workspace changes.
+    diff_summary = sanitize_agent_text(patch.decode("utf-8", errors="replace"), 4000)
+    update_agent_job_state(
+        conn,
+        job_id=job.job_id,
+        status="running",
+        changed_files=status_result.changed_files,
+        diff_summary=diff_summary,
+    )
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="repository_regression_started",
+        level="info",
+        message=(
+            f"Observed {len(status_result.changed_files)} changed file(s) in the shared workspace. "
+            "Diff and Janitor checks passed; independent regression is now pending."
+        ),
+    ))
+    job = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+
     documentation_regression = _documentation_regression(job, status_result.changed_files, workspace_root)
     test_outputs: list[str] = []
     if documentation_regression is not None:
@@ -558,7 +607,6 @@ def _closeout_repository_job(
                 )
             test_outputs.append(str(test_result.output or "Auto-detected regression passed.")[:2000])
 
-    diff_summary = sanitize_agent_text(patch.decode("utf-8", errors="replace"), 4000)
     test_summary = sanitize_agent_text("\n".join(test_outputs), 4000)
     gate = evaluate_agent_evidence(EvidenceGateInput(
         job_id=job.job_id,
@@ -751,6 +799,11 @@ def reconcile_repository_execution(
             a2a_client_factory=a2a_client_factory,
         )
     except AgentZeroA2AError as exc:
+        _record_task_readback(
+            conn, job,
+            message=f"{exc.family}: Agent Zero task readback is unavailable; no task was resubmitted.",
+            unavailable=True,
+        )
         raise RepositoryExecutionTransientError(
             f"{exc.family}: task readback is unavailable; no resubmit was performed"
         ) from exc
@@ -768,7 +821,13 @@ def reconcile_repository_execution(
                 ),
                 "agent_zero_a2a_task_stalled",
             )
-        return job
+        return _record_task_readback(
+            conn, job,
+            message=(
+                f"Agent Zero tasks/get observed task {task.task_id} in state {task.state}. "
+                "This confirms a task readback, not new file changes or completed work."
+            ),
+        )
     if task.interrupted:
         return _block_job(
             conn,

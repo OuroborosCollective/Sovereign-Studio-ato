@@ -14,6 +14,8 @@ interface Props {
   onOpenSkills: () => void;
   onOpenIntegrations: () => void;
   onAbortJob?: () => void;
+  isAborting?: boolean;
+  abortError?: string;
   onTypingStateChange?: (typing: boolean) => void;
   activeToolchainName?: string;
   activeSkillsCount?: number;
@@ -39,7 +41,7 @@ function MessageCard({ message }: { message: ChatMessage }) {
   );
 }
 
-export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase = 'IDLE', activeJob, onOpenToolchain, onOpenSkills, onOpenIntegrations, onAbortJob, onTypingStateChange, activeToolchainName, activeSkillsCount = 0, activeIntegrationsCount = 0, agentMode = 'single', onAgentModeChange }: Props) {
+export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase = 'IDLE', activeJob, onOpenToolchain, onOpenSkills, onOpenIntegrations, onAbortJob, isAborting = false, abortError, onTypingStateChange, activeToolchainName, activeSkillsCount = 0, activeIntegrationsCount = 0, onAgentModeChange }: Props) {
   const [text, setText] = useState('');
   const executing = ACTIVE_PHASES.includes(jobPhase);
   const canSend = text.trim().length > 0 && !executing;
@@ -59,8 +61,9 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
     <section className="flex flex-col h-full bg-[var(--carbon-base)] border-r border-[rgba(255,30,56,0.18)] relative overflow-hidden" data-testid="vnext-command-surface">
       <div className="px-3 sm:px-4 py-2.5 border-b border-white/5 bg-[var(--carbon-deep)] flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 min-w-0"><Terminal size={14} className="text-[var(--red-laser)] shrink-0" /><span className="font-mono text-[10px] sm:text-[11px] font-black tracking-widest text-white truncate">SOVEREIGN MISSION CONSOLE</span>{latestRun && <span className="hidden lg:inline font-mono text-[8.5px] text-[var(--text-dim)] truncate">RUN // {latestRun}</span>}</div>
-        <div className="flex items-center gap-2"><span className={`font-mono text-[9px] font-black ${phaseTone}`}>{jobPhase}</span>{executing && onAbortJob && <button type="button" onClick={onAbortJob} className="min-h-8 px-2 rounded border border-[rgba(255,30,56,0.35)] bg-[rgba(255,30,56,0.08)] text-[var(--red-laser)] hover:bg-[var(--red-laser)] hover:text-white font-mono text-[9px] font-bold flex items-center gap-1"><Square size={10} /> ABORT</button>}</div>
+        <div className="flex items-center gap-2"><span className={`font-mono text-[9px] font-black ${phaseTone}`}>{jobPhase}</span>{executing && onAbortJob && <button type="button" onClick={onAbortJob} disabled={isAborting} aria-busy={isAborting} className="min-h-12 min-w-12 px-2 rounded border border-[rgba(255,30,56,0.35)] bg-[rgba(255,30,56,0.08)] text-[var(--red-laser)] hover:bg-[var(--red-laser)] hover:text-white disabled:opacity-50 font-mono text-[9px] font-bold flex items-center gap-1"><Square size={10} /> {isAborting ? 'REQUESTING…' : 'ABORT'}</button>}</div>
       </div>
+      {abortError && <div role="alert" className="shrink-0 px-3 py-2 text-[11px] text-[var(--red-alert)] break-words">Abort was not confirmed: {abortError}</div>}
 
       <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-3" data-testid="vnext-message-stream">{messages.map((message) => <MessageCard key={message.id} message={message} />)}</div>
 
@@ -71,11 +74,17 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
           <button type="button" onClick={() => { playKeystrokeChirp(); onOpenIntegrations(); }} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] px-2 font-mono"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><Blocks size={10} /> ATTACHMENTS</span><span className="block text-[9px] text-white mt-0.5">{activeIntegrationsCount} OBSERVED</span></button>
         </div>
 
-        <div data-testid="agent-mode-selector" className="mb-2 flex items-center gap-1.5 rounded-lg border border-white/5 bg-[var(--carbon-deep)] p-1.5 font-mono">
-          <span className="px-1 text-[8px] text-[var(--text-dim)]">EXECUTION</span>
-          <button type="button" data-testid="agent-mode-single" aria-pressed={agentMode === 'single'} disabled={executing} onClick={() => { playKeystrokeChirp(); onAgentModeChange?.('single'); }} className={`min-h-8 flex-1 rounded border px-2 text-[8.5px] font-black ${agentMode === 'single' ? 'border-[var(--emerald-seal)] bg-[rgba(16,185,129,0.12)] text-[var(--emerald-seal)]' : 'border-white/5 bg-[var(--carbon-surface)] text-[var(--text-muted)]'} disabled:opacity-50`}>1 AGENT · FREELLM</button>
-          <button type="button" data-testid="agent-mode-swarm" aria-pressed={agentMode === 'swarm'} disabled={executing} onClick={() => { playKeystrokeChirp(); onAgentModeChange?.('swarm'); }} className={`min-h-8 flex-1 rounded border px-2 text-[8.5px] font-black ${agentMode === 'swarm' ? 'border-[var(--red-laser)] bg-[rgba(255,30,56,0.12)] text-[var(--red-laser)]' : 'border-white/5 bg-[var(--carbon-surface)] text-[var(--text-muted)]'} disabled:opacity-50`}>SWARM · OPT-IN</button>
-          <span className="hidden sm:inline px-1 text-[8px] text-[var(--text-dim)]">SERVER-GATED</span>
+        <div data-testid="agent-mode-selector" className="mb-2 rounded-lg border border-white/5 bg-[var(--carbon-deep)] p-1.5 font-mono">
+          <div className="flex items-center gap-2">
+            <span data-testid="agent-mode-single" className="shrink-0 rounded border border-[rgba(16,185,129,0.3)] px-1.5 py-1 text-[7px] font-bold text-[var(--emerald-seal)]">1 AGENT · FREELLM</span>
+            <label htmlFor="mission-route" className="text-[8px] text-[var(--text-dim)]">ROUTE</label>
+            <select id="mission-route" aria-describedby="mission-route-availability" value="low" disabled={executing} onChange={() => onAgentModeChange?.('single')} className="min-h-11 min-w-0 flex-1 rounded border border-white/10 bg-[var(--carbon-surface)] px-2 text-[10px] text-white disabled:opacity-50">
+              <option value="low">Low · Free</option>
+              <option value="medium" disabled>Medium · Paid — unavailable</option>
+              <option value="high" disabled>High · Paid — unavailable</option>
+            </select>
+          </div>
+          <p id="mission-route-availability" className="mt-1 text-[8px] text-[var(--text-dim)]">Paid routes are not yet connected to Agent Zero.</p>
         </div>
 
         <div className="theme-diamond-cut rounded-xl border border-[rgba(255,30,56,0.28)] bg-[var(--carbon-deep)] p-2 shadow-[0_0_24px_rgba(255,30,56,0.08)]">
