@@ -9,9 +9,9 @@ network state, or persistence by itself.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
-import json
 from typing import Literal, Mapping, Any
+
+from .agent_run_receipts import canonical_sha256
 
 
 ProgressKind = Literal[
@@ -33,22 +33,19 @@ class CausalProgressContractError(ValueError):
     """Raised when a progress receipt or lease violates the canonical contract."""
 
 
-def _sha256(payload: Mapping[str, Any]) -> str:
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
 def _require_sha256(value: str, field: str, *, allow_empty: bool = False) -> str:
     clean = str(value or "").strip().lower()
     if allow_empty and not clean:
         return ""
     if len(clean) != 64 or any(ch not in "0123456789abcdef" for ch in clean):
         raise CausalProgressContractError(f"{field} must be a sha256 hex digest")
+    return clean
+
+
+def _require_git_sha(value: str, field: str) -> str:
+    clean = str(value or "").strip().lower()
+    if len(clean) != 40 or any(ch not in "0123456789abcdef" for ch in clean) or clean == "0" * 40:
+        raise CausalProgressContractError(f"{field} must be a non-zero full Git SHA")
     return clean
 
 
@@ -113,7 +110,7 @@ class CausalProgressReceiptV1:
             "workspaceId": str(workspace_id),
             "a2aTaskId": str(a2a_task_id),
             "repository": str(repository),
-            "repositoryRevision": str(repository_revision).lower(),
+            "repositoryRevision": _require_git_sha(repository_revision, "repository_revision"),
             "progressKind": progress_kind,
             "previousWorkspaceReadbackSha256": previous,
             "currentWorkspaceReadbackSha256": current,
@@ -132,7 +129,7 @@ class CausalProgressReceiptV1:
             current_workspace_readback_sha256=current,
             previous_receipt_sha256=predecessor,
             observed_epoch_ms=int(observed_epoch_ms),
-            receipt_sha256=_sha256(payload),
+            receipt_sha256=canonical_sha256(payload),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -204,8 +201,11 @@ class CausalProgressLeaseV1:
     ) -> "CausalProgressLeaseV1":
         if max_no_progress_seconds <= 0:
             raise CausalProgressContractError("max_no_progress_seconds must be positive")
-        if absolute_deadline_epoch_ms < 0 or observed_epoch_ms < 0:
-            raise CausalProgressContractError("epoch values must be non-negative")
+        source_revision = _require_git_sha(source_revision, "source_revision")
+        if absolute_deadline_epoch_ms <= 0 or observed_epoch_ms < 0:
+            raise CausalProgressContractError("absolute deadline must be positive and observed epoch non-negative")
+        if last_material_progress_epoch_ms > observed_epoch_ms:
+            contradicted = True
         receipt_sha = _require_sha256(
             last_progress_receipt_sha256,
             "last_progress_receipt_sha256",
@@ -236,7 +236,7 @@ class CausalProgressLeaseV1:
         payload = {
             "jobId": str(job_id),
             "a2aTaskId": str(a2a_task_id),
-            "sourceRevision": str(source_revision).lower(),
+            "sourceRevision": source_revision,
             "lastProgressReceiptSha256": receipt_sha,
             "lastMaterialProgressEpochMs": int(last_material_progress_epoch_ms),
             "maxNoProgressSeconds": int(max_no_progress_seconds),
@@ -248,12 +248,12 @@ class CausalProgressLeaseV1:
         return cls(
             job_id=str(job_id),
             a2a_task_id=str(a2a_task_id),
-            source_revision=str(source_revision).lower(),
+            source_revision=source_revision,
             last_progress_receipt_sha256=receipt_sha,
             last_material_progress_epoch_ms=int(last_material_progress_epoch_ms),
             max_no_progress_seconds=int(max_no_progress_seconds),
             absolute_deadline_epoch_ms=int(absolute_deadline_epoch_ms),
             verdict=verdict,
             reason=reason,
-            lease_sha256=_sha256(payload),
+            lease_sha256=canonical_sha256(payload),
         )
