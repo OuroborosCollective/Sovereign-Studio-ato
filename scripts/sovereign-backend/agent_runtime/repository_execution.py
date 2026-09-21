@@ -25,7 +25,11 @@ from .agent_zero_a2a import (
     AgentZeroA2ATaskLost,
 )
 from .contracts import SovereignAgentEvent, sanitize_agent_text
-from .causal_progress_lease import CausalProgressLeaseV1, CausalProgressReceiptV1
+from .causal_progress_lease import (
+    CausalProgressContractError,
+    CausalProgressLeaseV1,
+    CausalProgressReceiptV1,
+)
 from .agent_run_receipts import read_git_workspace_identity
 from .draft_pr_gate import draft_pr_input_from_job, prepare_draft_pr
 from .evidence_gate import EvidenceGateInput, evaluate_agent_evidence
@@ -1077,13 +1081,23 @@ def reconcile_repository_execution(
             if task.state == "submitted"
             else _repository_stall_seconds()
         )
-        lease = _observe_causal_progress(
-            conn,
-            job=job,
-            task_id=task.task_id,
-            workspace_root=workspace_root,
-            max_no_progress_seconds=max_no_progress_seconds,
-        )
+        try:
+            lease = _observe_causal_progress(
+                conn,
+                job=job,
+                task_id=task.task_id,
+                workspace_root=workspace_root,
+                max_no_progress_seconds=max_no_progress_seconds,
+            )
+        except CausalProgressContractError as exc:
+            return _cancel_stalled_repository_task(
+                conn,
+                job=job,
+                task_id=task.task_id,
+                reason=f"AGENT_ZERO_PROGRESS_LEASE_CONTRADICTED: {exc}.",
+                stage="agent_zero_progress_lease_contradicted",
+                a2a_client_factory=a2a_client_factory,
+            )
         if lease.verdict == "CONTRADICTED":
             return _cancel_stalled_repository_task(
                 conn,
@@ -1092,6 +1106,35 @@ def reconcile_repository_execution(
                 reason=f"AGENT_ZERO_PROGRESS_LEASE_CONTRADICTED: {lease.reason}.",
                 stage="agent_zero_progress_lease_contradicted",
                 a2a_client_factory=a2a_client_factory,
+            )
+        if lease.verdict == "UNVERIFIED":
+            lease_expires_ms = (
+                lease.last_material_progress_epoch_ms
+                + lease.max_no_progress_seconds * 1000
+            )
+            if int(time.time() * 1000) >= lease_expires_ms:
+                return _cancel_stalled_repository_task(
+                    conn,
+                    job=job,
+                    task_id=task.task_id,
+                    reason=(
+                        "AGENT_ZERO_PROGRESS_LEASE_UNVERIFIED: material progress "
+                        "evidence remained unavailable through the current lease boundary."
+                    ),
+                    stage="agent_zero_progress_lease_unverified",
+                    a2a_client_factory=a2a_client_factory,
+                )
+            _record_task_readback(
+                conn,
+                job,
+                message=(
+                    "Agent Zero remains live, but the material Git progress readback "
+                    "is unavailable; the existing verified lease is not renewed."
+                ),
+                unavailable=True,
+            )
+            raise RepositoryExecutionTransientError(
+                "material progress evidence is unavailable; no resubmit was performed"
             )
         if lease.verdict == "STALLED":
             submitted_stall = task.state == "submitted"
