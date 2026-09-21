@@ -204,11 +204,20 @@ def append_agent_progress_receipt(
     from .causal_progress_lease import CausalProgressReceiptV1
 
     canonical = CausalProgressReceiptV1.from_dict(receipt).to_dict()
+    material = canonical["progressKind"] != "REPOSITORY_MATERIALIZED"
     summary = {
-        "stage": "agent_zero_material_progress_observed",
+        "stage": (
+            "agent_zero_material_progress_observed"
+            if material
+            else "agent_zero_workspace_baseline_observed"
+        ),
         "level": "info",
         "message": sanitize_agent_text(
-            "Material repository progress recorded from an authoritative Git workspace readback.",
+            (
+                "Material repository progress recorded from an authoritative Git workspace readback."
+                if material
+                else "Authoritative Git workspace baseline recorded; this does not renew progress."
+            ),
             300,
         ),
         "at": int(__import__("time").time() * 1000),
@@ -223,7 +232,7 @@ def append_agent_progress_receipt(
             """,
             (
                 job_id,
-                summary["stage"],
+                "agent_zero_causal_progress_receipt",
                 summary["level"],
                 summary["message"],
                 _json(canonical),
@@ -266,7 +275,7 @@ def list_agent_progress_receipts(
             JOIN sovereign_agent_jobs AS job ON job.job_id = event.job_id
             WHERE event.job_id = %s
               AND job.user_id = %s
-              AND event.stage = 'agent_zero_material_progress_observed'
+              AND event.stage = 'agent_zero_causal_progress_receipt'
               AND event.payload ->> 'a2aTaskId' = %s
             ORDER BY event.created_at ASC, event.id ASC
             """,
