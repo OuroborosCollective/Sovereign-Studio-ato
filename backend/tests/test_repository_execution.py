@@ -866,7 +866,7 @@ def test_submitted_task_without_workspace_progress_is_cancelled_early(monkeypatc
     assert any(event.stage == "agent_zero_a2a_submitted_stalled" for event in state["events"])
 
 
-def test_submitted_task_with_workspace_changes_survives_queue_limit(monkeypatch):
+def test_submitted_task_with_workspace_changes_survives_queue_limit(monkeypatch, tmp_path):
     stale = replace(
         _job(),
         created_at=datetime.now(timezone.utc) - timedelta(seconds=301),
@@ -875,10 +875,21 @@ def test_submitted_task_with_workspace_changes_survives_queue_limit(monkeypatch)
     state = _patch_job_store(monkeypatch, stale)
     monkeypatch.setenv("SOVEREIGN_REPOSITORY_SUBMITTED_STALL_SECONDS", "300")
     monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "1800")
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
     monkeypatch.setattr(
         repository_execution,
-        "run_agent_job_tool",
-        lambda *_args, **_kwargs: _done_tool(changed_files=("README.md",)),
+        "repo_dir_for_workspace",
+        lambda _workspace_id, _root=None: repo,
+    )
+    monkeypatch.setattr(
+        repository_execution,
+        "read_git_workspace_identity",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            authoritative_readback_sha256="a" * 64,
+            base_commit_sha="b" * 40,
+            changed_paths=("README.md",),
+        ),
     )
 
     class Client:
