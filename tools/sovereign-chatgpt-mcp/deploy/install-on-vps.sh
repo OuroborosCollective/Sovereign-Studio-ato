@@ -1169,7 +1169,7 @@ python3 -m py_compile "$SOURCE_DIR/deploy/run-coordinated-release-readback.py" \
   || fail "coordinated release reconciler timer is missing"
 
 getent group sovereign-mcp >/dev/null 2>&1 || groupadd --system sovereign-mcp
-install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$PGBACKWEB_TEMPLATE_DIR" "$PATCHMON_TEMPLATE_DIR" "$CODE_SERVER_TEMPLATE_DIR" "$MILVUS_TEMPLATE_DIR" "$FREELLMAPI_TEMPLATE_DIR" "$BACKEND_TEMPLATE_DIR" "$INSTALL_ROOT/continuity-data" "$INSTALL_ROOT/tool-routing-state"
+install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$PGBACKWEB_TEMPLATE_DIR" "$PATCHMON_TEMPLATE_DIR" "$CODE_SERVER_TEMPLATE_DIR" "$MILVUS_TEMPLATE_DIR" "$FREELLMAPI_TEMPLATE_DIR" "$IT_TOOLS_TEMPLATE_DIR" "$BACKEND_TEMPLATE_DIR" "$INSTALL_ROOT/continuity-data" "$INSTALL_ROOT/tool-routing-state"
 for MANAGED_COMPOSE_ROOT in /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r /opt/patchmon-sovereign /opt/milvus-sovereign /opt/sovereign-freellmapi /opt/sovereign-it-tools /opt/sovereign-bytebase /opt/sovereign-metamcp; do
   if [[ -e "$MANAGED_COMPOSE_ROOT" || -L "$MANAGED_COMPOSE_ROOT" ]]; then
     [[ -d "$MANAGED_COMPOSE_ROOT" && ! -L "$MANAGED_COMPOSE_ROOT" ]] \

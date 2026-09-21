@@ -646,6 +646,11 @@ Change: Added digest-pinned IT-Tools as a private managed Compose sidecar and ex
 Learned: IT-Tools is a static browser UI, so a running container alone proves little; verified deployment must additionally prove the real Agent Zero container can reach the internal UI.
 Evidence: Pre-memory head `9d78549df383ad63c3bf754d7db6d9b8da4a7306` passed 66/66 focused local regressions plus Release Verification 35636412544, MCP 35636412289, Agent Backend 35636412286, Continuity 35636412253, Boundary Drift 35636412305 and Integration Plan 35636412343; PatchMon runtime was 4/4 healthy. Live sidecar deployment remains unclaimed until the merged exact revision passes the Agent-Zero HTTP canary.
 
+### 2026-09-21 — IT-Tools installer copy repair
+Change: Added the missing `IT_TOOLS_TEMPLATE_DIR` bootstrap directory before managed control-plane copy.
+Learned: Registering a managed stack is insufficient if its template target directory is not created before the fail-closed atomic installer copy.
+Evidence: Self-update of main `8739e61eff8988aa3996da87124f570e33af02d7` failed exactly at `copy_control_plane_file:templates/sovereign-it-tools/docker-compose.yml` and rolled back; after the repair 20 installer + 35 managed-compose tests, backend compile and `git diff --check` pass.
+
 ### 2026-09-21 — Wolfram source intelligence lane
 Change: Added consent-gated Wolfram CodeParser/CodeInspector/CodeFormatter source analysis over the existing CAG transport and exposed it to Sovottt as one read-only MCP tool; source is base64-bound data, formatter is preview-only with structural AST equality, and canonical/shipping backend mirrors remain byte-identical.
 Learned: CodeTools can add useful parser/inspection/format evidence without becoming runtime truth or a free Wolfram executor; source egress must remain an explicit per-call grant, and MCP registry/boundary contracts must move causally with every added public tool.

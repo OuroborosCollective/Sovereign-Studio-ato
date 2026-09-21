@@ -241,6 +241,10 @@ def test_patchmon_agent_paths_are_prepared_under_managed_root_before_worker_star
     assert '/opt/sovereign-bytebase' in managed_root_line
     assert '/opt/sovereign-metamcp' in managed_root_line
     assert '/opt/sovereign-it-tools' in managed_root_line
+    template_root_line = next(
+        line for line in script.splitlines() if line.startswith('install -d -m 0750 "$INSTALL_ROOT"')
+    )
+    assert '"$IT_TOOLS_TEMPLATE_DIR"' in template_root_line
     assert script.index('for MANAGED_COMPOSE_ROOT in ') < script.index('systemctl enable --now sovereign-chatgpt-command-worker.service')
     assert script.index('prepare_patchmon_agent_sandbox_paths\n') < script.index('systemctl enable --now sovereign-chatgpt-command-worker.service')
     assert '/opt/patchmon-sovereign' in worker_service
