@@ -24,15 +24,25 @@ from .agent_zero_a2a import (
     AgentZeroA2ASubmitOutcomeUnknown,
     AgentZeroA2ATaskLost,
 )
+from .causal_progress_lease import (
+    CausalProgressContractError,
+    CausalProgressLeaseV1,
+    CausalProgressReceiptV1,
+    latest_progress_receipt,
+    seen_workspace_readbacks,
+)
 from .contracts import SovereignAgentEvent, sanitize_agent_text
 from .draft_pr_gate import draft_pr_input_from_job, prepare_draft_pr
 from .evidence_gate import EvidenceGateInput, evaluate_agent_evidence
 from .git_workspace import git_diff_check, git_diff_full
+from .agent_run_receipts import ReceiptIdentityBlocked, read_git_workspace_identity
 from .job_lifecycle import create_sovereign_agent_job
 from .job_store import (
     StoredSovereignAgentJob,
     append_agent_event,
+    append_agent_progress_receipt,
     compare_and_swap_agent_job_external_ref,
+    list_agent_progress_receipts,
     list_reconcilable_repository_jobs,
     mark_draft_pr_prepared,
     read_agent_job,
@@ -104,6 +114,15 @@ def _repository_stall_seconds() -> float:
     return _bounded_env_seconds("SOVEREIGN_REPOSITORY_STALL_SECONDS", 1800.0, 300.0, 1800.0)
 
 
+def _repository_absolute_deadline_seconds() -> float:
+    return _bounded_env_seconds(
+        "SOVEREIGN_REPOSITORY_ABSOLUTE_DEADLINE_SECONDS",
+        14_400.0,
+        1_800.0,
+        86_400.0,
+    )
+
+
 def _repository_submitted_stall_seconds() -> float:
     # "submitted" is acknowledgement/queue state, not proof of active work. Agent Zero
     # has been observed processing a task internally while its FastA2A projection stayed
@@ -126,6 +145,153 @@ def _job_age_seconds(job: StoredSovereignAgentJob) -> float | None:
     if observed.tzinfo is None:
         observed = observed.replace(tzinfo=timezone.utc)
     return max(0.0, (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds())
+
+
+def _datetime_epoch_ms(value: object) -> int | None:
+    if not isinstance(value, datetime):
+        return None
+    observed = value
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=timezone.utc)
+    return int(observed.astimezone(timezone.utc).timestamp() * 1000)
+
+
+def _causal_progress_lease(
+    conn: Any,
+    *,
+    job: StoredSovereignAgentJob,
+    task_id: str,
+    workspace_root: Path | None,
+    max_no_progress_seconds: float,
+) -> CausalProgressLeaseV1:
+    """Reconcile material Git progress without treating liveness as progress."""
+
+    created_epoch_ms = _datetime_epoch_ms(job.created_at)
+    now_epoch_ms = int(time.time() * 1000)
+    if created_epoch_ms is None:
+        # Preserve the pre-SCPL behavior for legacy rows whose immutable creation
+        # time cannot be proven. They cannot earn a positive progress lease.
+        return CausalProgressLeaseV1.evaluate(
+            job_id=job.job_id,
+            a2a_task_id=task_id,
+            source_revision="0" * 40,
+            latest_receipt=None,
+            created_at_epoch_ms=0,
+            observed_at_epoch_ms=now_epoch_ms,
+            max_no_progress_seconds=max(1, int(max_no_progress_seconds)),
+            absolute_deadline_epoch_ms=max(now_epoch_ms + 1, 1),
+            readback_available=False,
+        )
+
+    absolute_deadline_epoch_ms = created_epoch_ms + int(_repository_absolute_deadline_seconds() * 1000)
+    raw_receipts = list_agent_progress_receipts(conn, job_id=job.job_id)
+    receipts: list[CausalProgressReceiptV1] = []
+    try:
+        receipts = [CausalProgressReceiptV1.from_dict(item) for item in raw_receipts]
+    except (CausalProgressContractError, TypeError, ValueError):
+        return CausalProgressLeaseV1.evaluate(
+            job_id=job.job_id,
+            a2a_task_id=task_id,
+            source_revision="0" * 40,
+            latest_receipt=None,
+            created_at_epoch_ms=created_epoch_ms,
+            observed_at_epoch_ms=now_epoch_ms,
+            max_no_progress_seconds=max(1, int(max_no_progress_seconds)),
+            absolute_deadline_epoch_ms=absolute_deadline_epoch_ms,
+            readback_available=False,
+        )
+
+    source_revision = receipts[0].repository_revision if receipts else ""
+    latest = None
+    if receipts:
+        try:
+            latest = latest_progress_receipt(
+                receipts,
+                job_id=job.job_id,
+                workspace_id=str(job.workspace_id or job.job_id),
+                a2a_task_id=task_id,
+                repository_revision=source_revision,
+            )
+        except CausalProgressContractError:
+            return CausalProgressLeaseV1.evaluate(
+                job_id=job.job_id,
+                a2a_task_id=task_id,
+                source_revision=source_revision or ("0" * 40),
+                latest_receipt=None,
+                created_at_epoch_ms=created_epoch_ms,
+                observed_at_epoch_ms=now_epoch_ms,
+                max_no_progress_seconds=max(1, int(max_no_progress_seconds)),
+                absolute_deadline_epoch_ms=absolute_deadline_epoch_ms,
+                readback_available=False,
+            )
+
+    last_progress_epoch_ms = latest.observed_at_epoch_ms if latest else created_epoch_ms
+    lease_due = now_epoch_ms - last_progress_epoch_ms >= int(max_no_progress_seconds * 1000)
+    absolute_due = now_epoch_ms >= absolute_deadline_epoch_ms
+    if not lease_due and not absolute_due:
+        return CausalProgressLeaseV1.evaluate(
+            job_id=job.job_id,
+            a2a_task_id=task_id,
+            source_revision=source_revision or ("0" * 40),
+            latest_receipt=latest,
+            created_at_epoch_ms=created_epoch_ms,
+            observed_at_epoch_ms=now_epoch_ms,
+            max_no_progress_seconds=max(1, int(max_no_progress_seconds)),
+            absolute_deadline_epoch_ms=absolute_deadline_epoch_ms,
+            readback_available=True,
+        )
+
+    try:
+        repo_path = repo_dir_for_workspace(str(job.workspace_id or job.job_id), workspace_root)
+        identity = read_git_workspace_identity(repo_path, repository=job.repo_url)
+    except (OSError, ReceiptIdentityBlocked, ValueError):
+        return CausalProgressLeaseV1.evaluate(
+            job_id=job.job_id,
+            a2a_task_id=task_id,
+            source_revision=source_revision or ("0" * 40),
+            latest_receipt=latest,
+            created_at_epoch_ms=created_epoch_ms,
+            observed_at_epoch_ms=now_epoch_ms,
+            max_no_progress_seconds=max(1, int(max_no_progress_seconds)),
+            absolute_deadline_epoch_ms=absolute_deadline_epoch_ms,
+            readback_available=False,
+        )
+
+    if not source_revision:
+        source_revision = identity.base_commit_sha
+    if (
+        identity.changed_paths
+        and identity.authoritative_readback_sha256 not in seen_workspace_readbacks(receipts)
+        and not absolute_due
+    ):
+        receipt = CausalProgressReceiptV1.build(
+            job_id=job.job_id,
+            workspace_id=str(job.workspace_id or job.job_id),
+            a2a_task_id=task_id,
+            repository=job.repo_url,
+            repository_revision=source_revision,
+            progress_kind="WORKSPACE_DELTA",
+            previous_workspace_readback_sha256=(
+                latest.current_workspace_readback_sha256 if latest else ""
+            ),
+            current_workspace_readback_sha256=identity.authoritative_readback_sha256,
+            previous_receipt_sha256=latest.receipt_sha256 if latest else "",
+            observed_at_epoch_ms=now_epoch_ms,
+        )
+        append_agent_progress_receipt(conn, job_id=job.job_id, receipt=receipt.to_dict())
+        latest = receipt
+
+    return CausalProgressLeaseV1.evaluate(
+        job_id=job.job_id,
+        a2a_task_id=task_id,
+        source_revision=source_revision,
+        latest_receipt=latest,
+        created_at_epoch_ms=created_epoch_ms,
+        observed_at_epoch_ms=now_epoch_ms,
+        max_no_progress_seconds=max(1, int(max_no_progress_seconds)),
+        absolute_deadline_epoch_ms=absolute_deadline_epoch_ms,
+        readback_available=True,
+    )
 
 
 def _configured_repository_url() -> str:
@@ -951,15 +1117,40 @@ def reconcile_repository_execution(
                 )
 
         if age_seconds is not None and age_seconds >= _repository_stall_seconds():
+            lease = _causal_progress_lease(
+                conn,
+                job=job,
+                task_id=task.task_id,
+                workspace_root=workspace_root,
+                max_no_progress_seconds=_repository_stall_seconds(),
+            )
+            if lease.verdict == "CONTINUE_VERIFIED":
+                return _record_task_readback(
+                    conn,
+                    job,
+                    message=(
+                        f"Agent Zero task {task.task_id} remains active under causal progress lease "
+                        f"{lease.lease_sha256[:16]}; liveness alone did not renew the lease."
+                    ),
+                )
+            reason_code = (
+                "AGENT_ZERO_CAUSAL_PROGRESS_UNVERIFIED"
+                if lease.verdict == "UNVERIFIED"
+                else "AGENT_ZERO_CAUSAL_PROGRESS_STALLED"
+            )
             return _cancel_stalled_repository_task(
                 conn,
                 job=job,
                 task_id=task.task_id,
                 reason=(
-                    "AGENT_ZERO_A2A_STALLED: the external task remained active beyond the "
-                    "bounded server reconciliation window."
+                    f"{reason_code}: {lease.reason}. "
+                    "Heartbeat/tasks-get activity is not material progress."
                 ),
-                stage="agent_zero_a2a_task_stalled",
+                stage=(
+                    "agent_zero_progress_lease_unverified"
+                    if lease.verdict == "UNVERIFIED"
+                    else "agent_zero_no_material_progress"
+                ),
                 a2a_client_factory=a2a_client_factory,
             )
         return _record_task_readback(
