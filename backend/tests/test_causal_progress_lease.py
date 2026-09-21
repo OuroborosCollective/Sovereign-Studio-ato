@@ -1,3 +1,4 @@
+from agent_runtime.job_store import list_agent_progress_receipts  # noqa: E402
 from agent_runtime.causal_progress_lease import (
     CausalProgressContractError,
     CausalProgressLeaseV1,
@@ -210,3 +211,77 @@ def test_successor_chain_requires_exact_receipt_and_workspace_predecessor():
         pass
     else:
         raise AssertionError("workspace predecessor mismatch must fail closed")
+
+class _ProgressChainCursor:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, _sql, _params):
+        return None
+
+    def fetchall(self):
+        return self.rows
+
+
+class _ProgressChainConnection:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def cursor(self):
+        return _ProgressChainCursor(self.rows)
+
+
+def test_persisted_progress_chain_readback_rejects_missing_predecessor():
+    first = CausalProgressReceiptV1.build(
+        job_id="job-1",
+        workspace_id="workspace-1",
+        a2a_task_id="task-1",
+        repository="repo",
+        repository_revision=REV_A,
+        progress_kind="REPOSITORY_MATERIALIZED",
+        previous_workspace_readback_sha256="",
+        current_workspace_readback_sha256=SHA_A,
+        observed_epoch_ms=1_000,
+    )
+    broken = CausalProgressReceiptV1.build(
+        job_id="job-1",
+        workspace_id="workspace-1",
+        a2a_task_id="task-1",
+        repository="repo",
+        repository_revision=REV_A,
+        progress_kind="WORKSPACE_DELTA",
+        previous_workspace_readback_sha256=SHA_A,
+        current_workspace_readback_sha256=SHA_C,
+        previous_receipt_sha256=SHA_B,
+        observed_epoch_ms=2_000,
+    )
+
+    conn = _ProgressChainConnection([
+        {"payload": first.to_dict()},
+        {"payload": broken.to_dict()},
+    ])
+    try:
+        list_agent_progress_receipts(conn, job_id="job-1")
+    except CausalProgressContractError:
+        pass
+    else:
+        raise AssertionError("missing predecessor must fail closed")
+
+
+def test_persisted_progress_chain_readback_rejects_invalid_row_instead_of_skipping():
+    conn = _ProgressChainConnection([
+        {"payload": {"schemaVersion": "sovereign.causal-progress-receipt.v1"}},
+    ])
+    try:
+        list_agent_progress_receipts(conn, job_id="job-1")
+    except (CausalProgressContractError, TypeError, ValueError):
+        pass
+    else:
+        raise AssertionError("invalid persisted progress evidence must not be skipped")
+
