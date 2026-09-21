@@ -122,6 +122,7 @@ def test_restart_recovery_claim_wins_once():
 
 
 def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
+    repository_execution._PROGRESS_PROBE_LAST_MS.clear()
     state = {"job": initial, "events": [], "progress_receipts": []}
 
     def read_agent_job(_conn, *, user_id, job_id):
