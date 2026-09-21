@@ -171,6 +171,43 @@ class CausalProgressReceiptV1:
         return receipt
 
 
+def validate_progress_successor(
+    previous: CausalProgressReceiptV1 | None,
+    current: CausalProgressReceiptV1,
+) -> None:
+    """Require one append-only causal successor; task IDs may change on retry."""
+
+    if previous is None:
+        if current.previous_receipt_sha256 or current.previous_workspace_readback_sha256:
+            raise CausalProgressContractError(
+                "first progress receipt may not claim a predecessor"
+            )
+        return
+    if (
+        current.job_id != previous.job_id
+        or current.workspace_id != previous.workspace_id
+        or current.repository != previous.repository
+    ):
+        raise CausalProgressContractError(
+            "progress receipt changed job, workspace, or repository identity"
+        )
+    if current.previous_receipt_sha256 != previous.receipt_sha256:
+        raise CausalProgressContractError(
+            "progress receipt predecessor does not match current head"
+        )
+    if (
+        current.previous_workspace_readback_sha256
+        != previous.current_workspace_readback_sha256
+    ):
+        raise CausalProgressContractError(
+            "progress receipt workspace predecessor does not match current head"
+        )
+    if current.observed_epoch_ms < previous.observed_epoch_ms:
+        raise CausalProgressContractError(
+            "progress receipt observation time moved backwards"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class CausalProgressLeaseV1:
     job_id: str
