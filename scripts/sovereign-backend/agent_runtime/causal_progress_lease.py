@@ -96,6 +96,15 @@ class CausalProgressReceiptV1:
         )
         if previous_workspace and previous_workspace == current:
             raise CausalProgressContractError("identical workspace readback is not material progress")
+        if progress_kind not in {
+            "A2A_STATE_TRANSITION",
+            "REPOSITORY_MATERIALIZED",
+            "WORKSPACE_DELTA",
+            "CLOSEOUT_TRANSITION",
+        }:
+            raise CausalProgressContractError("unsupported progress_kind")
+        if not str(job_id).strip() or not str(workspace_id).strip() or not str(a2a_task_id).strip():
+            raise CausalProgressContractError("job/workspace/task identity is required")
         if observed_at_epoch_ms < 0:
             raise CausalProgressContractError("observed_at_epoch_ms must be non-negative")
         payload = {
@@ -251,6 +260,8 @@ def latest_progress_receipt(
     repository_revision: str,
 ) -> CausalProgressReceiptV1 | None:
     previous_hash = ""
+    previous_workspace_hash = ""
+    previous_epoch_ms = -1
     latest: CausalProgressReceiptV1 | None = None
     for receipt in receipts:
         if (
@@ -262,7 +273,13 @@ def latest_progress_receipt(
             raise CausalProgressContractError("progress receipt identity mismatch")
         if receipt.previous_receipt_sha256 != previous_hash:
             raise CausalProgressContractError("progress receipt predecessor chain mismatch")
+        if receipt.previous_workspace_readback_sha256 != previous_workspace_hash:
+            raise CausalProgressContractError("progress workspace predecessor mismatch")
+        if receipt.observed_at_epoch_ms <= previous_epoch_ms:
+            raise CausalProgressContractError("progress receipt time must increase monotonically")
         previous_hash = receipt.receipt_sha256
+        previous_workspace_hash = receipt.current_workspace_readback_sha256
+        previous_epoch_ms = receipt.observed_at_epoch_ms
         latest = receipt
     return latest
 
