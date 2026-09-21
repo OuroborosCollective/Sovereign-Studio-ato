@@ -24,6 +24,8 @@ import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
 import { TestRunnerResultCard } from './TestRunnerResultCard';
 import { Ampel } from './Ampel';
+import { ActionSuggestionStrip } from './ActionSuggestionStrip';
+import { SOVEREIGN_PRESET_ACTIONS } from '../runtime/sovereignPresetActionRuntime';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1209,6 +1211,31 @@ describe('Palette Accessibility Enhancements', () => {
       const hiddenElements = container.querySelectorAll('[aria-hidden="true"]');
       // 3 status light dots + 1 non-compact status text label = 4 hidden elements
       expect(hiddenElements.length).toBe(4);
+    });
+  });
+
+  describe('ActionSuggestionStrip Accessibility Enhancements', () => {
+    it('renders section landmark, semantic list, and action buttons with focus-visible focus ring styles and tooltips', () => {
+      const onSelect = vi.fn();
+      render(
+        <ActionSuggestionStrip
+          actions={SOVEREIGN_PRESET_ACTIONS}
+          repoReady={true}
+          githubWriteReady={true}
+          agentReady={true}
+          onSelect={onSelect}
+        />,
+      );
+
+      const section = screen.getByTestId('sovereign-action-suggestion-strip');
+      expect(section).toHaveAttribute('aria-label', 'Sovereign Vorschläge');
+
+      const actionBtn = screen.getByRole('button', { name: /Feature-Vorschläge aus Architektur/i });
+      expect(actionBtn).toHaveClass('focus-visible:ring-2');
+      expect(actionBtn.getAttribute('title')).toContain('Feature-Vorschläge aus Architektur');
+
+      fireEvent.click(actionBtn);
+      expect(onSelect).toHaveBeenCalledWith('architecture_feature_suggestions');
     });
   });
 });

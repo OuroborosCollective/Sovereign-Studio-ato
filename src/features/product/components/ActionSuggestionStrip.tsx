@@ -71,6 +71,7 @@ export function ActionSuggestionStrip({
                 onClick={() => onSelect(action.id)}
                 aria-label={`${action.label}: ${action.description}`}
                 title={`${action.description}\n${gate.canStart ? gate.nextAction : `${gate.reason} ${gate.nextAction}`}`}
+                className="focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none transition-all"
                 style={{
                   minWidth: 138,
                   maxWidth: 178,
