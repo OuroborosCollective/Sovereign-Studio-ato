@@ -660,3 +660,11 @@ Evidence: Pre-memory head `bf6d2b94b71ea2ff03c68b5610267fc7c942dbf5`; Agent Back
 Change: Added an explicit main-only `publish_immutable_mcp` workflow-dispatch recovery mode that publishes/verifies the exact MCP image without implying VPS deployment.
 Learned: Manual VPS bootstrap cannot recover a missing MCP publisher if workflow-dispatch can only validate; image publication and deployment need separate bounded recovery stages.
 Evidence: Coordinated Release 35640973123 on `6325abbb90288c38197f07d6427d1eb6fd0f545f` failed at exact-revision image-workflow evidence while backend digest `sha256:80771f6ba2d08f4c328a3cb83a34c2b247765b024aabdb0dc8e002cdab67d34b` was verified; 13 bootstrap/deploy + 20 installer tests and `git diff --check` pass after the recovery-path change.
+
+
+### 2026-09-21 — Agent Zero Causal Progress Lease
+Status: SOURCE_REGRESSION_VERIFIED; production runtime proof pending
+Änderung: SCPL trennt A2A-Liveness von materieller Git-Progression, persistiert predecessor-/workspace-/taskgebundene Progress-Receipts im bestehenden Event-Store, dedupliziert bereits kreditierte Workspace-Fingerprints und begrenzt Weiterlauf zusätzlich durch eine absolute Deadline; #1525 bleibt alleiniger Worker-Heartbeat-/Fleet-Lease-Owner.
+Erkenntnis: Polling/working ist keine Fortschrittsevidence; selbst ein gültiger Progress-Receipt braucht eine atomar serialisierte predecessor chain, und fehlendes Job-Start-Binding muss fail-closed statt durch eine neu startende Deadline behandelt werden.
+Evidence: Pre-Memory PR #2055 head `4a77b8c392b60bdee27894940505fc63f7ce3f58`; Agent Backend run 35645339576: 1317 passed, 1 skipped plus N+1 malformed-JSON pass; Boundary Ledger 35645339491, Integration Plan 35645339592 und Continuity 35645339613 success; canonical/shipping blobs für cag_self_healing, causal_progress_lease, job_store und repository_execution identisch. Production bleibt UNVERIFIED, da der verfügbare Runtime/MCP-Readback keinen revisions-/digestverifizierten laufenden Stand lieferte.
+Next safe step: Finalen Memory-Head exakt neu prüfen; Draft PR nicht mergen/deployen, bevor Required Checks terminal grün, main weiterhin basegleich und ein späterer revisionsgleicher Agent-Zero/Workspace/PatchMon-Runtime-Readback verfügbar ist.
