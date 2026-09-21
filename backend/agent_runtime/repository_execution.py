@@ -371,6 +371,25 @@ def _observe_causal_progress(
     """Reconcile material Git progress without treating A2A liveness as progress."""
 
     now_ms = int(time.time() * 1000)
+    current_job = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id)
+    if (
+        current_job is None
+        or current_job.status != "running"
+        or current_job.external_ref != job.external_ref
+    ):
+        return CausalProgressLeaseV1.evaluate(
+            job_id=job.job_id,
+            a2a_task_id=task_id,
+            source_revision="",
+            last_progress_receipt_sha256="",
+            last_material_progress_epoch_ms=0,
+            max_no_progress_seconds=max_no_progress_seconds,
+            absolute_deadline_epoch_ms=max(1, now_ms + 1),
+            observed_epoch_ms=now_ms,
+            evidence_available=False,
+            contradicted=True,
+        )
+    job = current_job
     created_ms = _epoch_ms(job.created_at)
     absolute_deadline_ms = created_ms + int(_repository_absolute_deadline_seconds() * 1000)
 
@@ -433,6 +452,29 @@ def _observe_causal_progress(
                     workspace_readback_sha256=current_sha,
                 )
                 if task_transition or not fingerprint_seen:
+                    current_job = read_agent_job(
+                        conn,
+                        user_id=job.user_id,
+                        job_id=job.job_id,
+                    )
+                    if (
+                        current_job is None
+                        or current_job.status != "running"
+                        or current_job.external_ref != job.external_ref
+                    ):
+                        return CausalProgressLeaseV1.evaluate(
+                            job_id=job.job_id,
+                            a2a_task_id=task_id,
+                            source_revision=identity.base_commit_sha,
+                            last_progress_receipt_sha256=latest_receipt_sha,
+                            last_material_progress_epoch_ms=last_progress_ms,
+                            max_no_progress_seconds=max_no_progress_seconds,
+                            absolute_deadline_epoch_ms=absolute_deadline_ms,
+                            observed_epoch_ms=now_ms,
+                            evidence_available=True,
+                            contradicted=True,
+                        )
+                    job = current_job
                     receipt = CausalProgressReceiptV1.build(
                         job_id=job.job_id,
                         workspace_id=workspace_id,
@@ -1098,6 +1140,14 @@ def reconcile_repository_execution(
                 stage="agent_zero_progress_lease_contradicted",
                 a2a_client_factory=a2a_client_factory,
             )
+        current_job = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id)
+        if (
+            current_job is None
+            or current_job.status != "running"
+            or current_job.external_ref != job.external_ref
+        ):
+            return current_job or job
+        job = current_job
         if lease.verdict == "CONTRADICTED":
             return _cancel_stalled_repository_task(
                 conn,
