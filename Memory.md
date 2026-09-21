@@ -635,3 +635,8 @@ Evidence: targeted A2A tests 7/7 and repository-execution tests 31/31 pass local
 Change: Updated the vNext truth-contract tests to match the merged cyber-ocular geometry and to verify the truthful unavailable-completion message without case-sensitive wording drift.
 Learned: Release Verification run 35623545113 failed because two assertions lagged behind intentional UI copy/geometry changes; production behavior was already correct.
 Evidence: Pre-memory head `d3e88083a0b913a9134939486e0a589e0100640f` passed Release Verification 35626122857 with frontend-smoke 3791 total / 3789 passed / 0 failed / 2 skipped, plus Runtime Unit Tests, Playwright Smoke Gate and Integration Gate success; Agent Backend 35626122841, MCP 35626122862, Continuity 35626122859 and Integration Plan 35626122855 also passed.
+
+### 2026-09-21 — Stale Agent Zero submitted fail-closed follow-up
+Change: Bound unchanged A2A `submitted` state to 5 minutes by default, preserve independently observed workspace changes as progress, and require remote `tasks/cancel` confirmation for submitted/overall stalls.
+Learned: Agent Zero task `5c42f9f0-25c6-4a2a-bff1-54f2eeae5a14` died internally on an OpenRouter idle timeout while FastA2A still projected `submitted`; queue acknowledgement alone is not execution liveness.
+Evidence: Current-main PR #2045 pre-memory head `505693cf040c1429638c63624691394f788a2dec` passed Release Gate, Agent Runtime Tests, Revision Guardian, MCP Operator, Integration and Continuity; local repository-execution 33/33 + A2A 7/7 passed and canonical/shipping repository_execution mirrors are byte-identical.
