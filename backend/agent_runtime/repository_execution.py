@@ -40,6 +40,7 @@ from .job_store import (
     append_agent_event,
     append_agent_progress_receipt,
     has_agent_progress_fingerprint,
+    list_agent_progress_receipts,
     read_latest_agent_progress_receipt,
     compare_and_swap_agent_job_external_ref,
     list_reconcilable_repository_jobs,
@@ -393,7 +394,12 @@ def _observe_causal_progress(
     created_ms = _epoch_ms(job.created_at)
     absolute_deadline_ms = created_ms + int(_repository_absolute_deadline_seconds() * 1000)
 
-    latest_raw = read_latest_agent_progress_receipt(conn, job_id=job.job_id)
+    probe_due = _progress_probe_due(job.job_id, now_ms)
+    if probe_due:
+        chain = list_agent_progress_receipts(conn, job_id=job.job_id)
+        latest_raw = chain[-1] if chain else None
+    else:
+        latest_raw = read_latest_agent_progress_receipt(conn, job_id=job.job_id)
     latest = (
         CausalProgressReceiptV1.from_dict(latest_raw)
         if latest_raw is not None
@@ -430,14 +436,13 @@ def _observe_causal_progress(
             evidence_available=True,
             contradicted=True,
         )
-    task_transition = latest is not None and latest.a2a_task_id != task_id
     last_progress_ms = latest.observed_epoch_ms if latest is not None else created_ms
     latest_receipt_sha = latest.receipt_sha256 if latest is not None else ""
 
     repository_path = repo_dir_for_workspace(workspace_id, workspace_root)
     evidence_available = latest is not None
 
-    if _progress_probe_due(job.job_id, now_ms):
+    if probe_due:
         evidence_available = repository_path.is_dir() and (repository_path / ".git").exists()
         if evidence_available:
             try:
@@ -451,7 +456,7 @@ def _observe_causal_progress(
                     job_id=job.job_id,
                     workspace_readback_sha256=current_sha,
                 )
-                if task_transition or not fingerprint_seen:
+                if not fingerprint_seen:
                     current_job = read_agent_job(
                         conn,
                         user_id=job.user_id,
@@ -484,11 +489,7 @@ def _observe_causal_progress(
                         progress_kind=(
                             "REPOSITORY_MATERIALIZED"
                             if latest is None
-                            else (
-                                "A2A_STATE_TRANSITION"
-                                if task_transition
-                                else "WORKSPACE_DELTA"
-                            )
+                            else "WORKSPACE_DELTA"
                         ),
                         previous_workspace_readback_sha256=(
                             latest.current_workspace_readback_sha256 if latest is not None else ""
@@ -508,13 +509,15 @@ def _observe_causal_progress(
                         # head after our read but before the row lock was acquired. That
                         # race is not a contradiction if the persisted head really
                         # advanced for the same bound execution.
-                        concurrent_raw = read_latest_agent_progress_receipt(
+                        concurrent_chain = list_agent_progress_receipts(
                             conn,
                             job_id=job.job_id,
                         )
-                        if concurrent_raw is None:
+                        if not concurrent_chain:
                             raise
-                        concurrent = CausalProgressReceiptV1.from_dict(concurrent_raw)
+                        concurrent = CausalProgressReceiptV1.from_dict(
+                            concurrent_chain[-1]
+                        )
                         if (
                             concurrent.receipt_sha256 == latest_receipt_sha
                             or concurrent.job_id != job.job_id
