@@ -197,9 +197,19 @@ def append_agent_progress_receipt(
 ) -> str:
     """Persist one hash-validated SCPL material-progress receipt."""
 
-    from .causal_progress_lease import CausalProgressReceiptV1
+    from .causal_progress_lease import (
+        CausalProgressContractError,
+        CausalProgressReceiptV1,
+    )
 
-    canonical = CausalProgressReceiptV1.from_dict(receipt).to_dict()
+    parsed = CausalProgressReceiptV1.from_dict(receipt)
+    if parsed.job_id != job_id:
+        raise CausalProgressContractError("progress receipt job binding mismatch")
+    latest = read_latest_agent_progress_receipt(conn, job_id=job_id)
+    expected_predecessor = str(latest.get("receiptSha256") or "") if latest else ""
+    if parsed.previous_receipt_sha256 != expected_predecessor:
+        raise CausalProgressContractError("progress receipt predecessor mismatch")
+    canonical = parsed.to_dict()
     with conn.cursor() as cur:
         cur.execute(
             """
