@@ -382,7 +382,6 @@ def _observe_causal_progress(
     if latest is not None and (
         latest.job_id != job.job_id
         or latest.workspace_id != workspace_id
-        or latest.a2a_task_id != task_id
         or latest.repository != job.repo_url
     ):
         return CausalProgressLeaseV1.evaluate(
@@ -397,6 +396,7 @@ def _observe_causal_progress(
             evidence_available=True,
             contradicted=True,
         )
+    task_transition = latest is not None and latest.a2a_task_id != task_id
     last_progress_ms = latest.observed_epoch_ms if latest is not None else created_ms
     latest_receipt_sha = latest.receipt_sha256 if latest is not None else ""
 
@@ -412,11 +412,12 @@ def _observe_causal_progress(
                 evidence_available = False
             else:
                 current_sha = identity.authoritative_readback_sha256
-                if not has_agent_progress_fingerprint(
+                fingerprint_seen = has_agent_progress_fingerprint(
                     conn,
                     job_id=job.job_id,
                     workspace_readback_sha256=current_sha,
-                ):
+                )
+                if task_transition or not fingerprint_seen:
                     receipt = CausalProgressReceiptV1.build(
                         job_id=job.job_id,
                         workspace_id=workspace_id,
@@ -426,7 +427,11 @@ def _observe_causal_progress(
                         progress_kind=(
                             "REPOSITORY_MATERIALIZED"
                             if latest is None
-                            else "WORKSPACE_DELTA"
+                            else (
+                                "A2A_STATE_TRANSITION"
+                                if task_transition
+                                else "WORKSPACE_DELTA"
+                            )
                         ),
                         previous_workspace_readback_sha256=(
                             latest.current_workspace_readback_sha256 if latest is not None else ""
