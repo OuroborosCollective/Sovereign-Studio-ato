@@ -36,6 +36,17 @@ success, or runtime health.
 Repeated workspace fingerprints are not credited again. This prevents a simple
 A→B→A oscillation from earning an unbounded sequence of leases.
 
+A retry or replacement Agent Zero task ID does not itself renew progress. The
+next previously unseen authoritative Git workspace fingerprint may continue the
+same predecessor chain under the new task ID. The `A2A_STATE_TRANSITION` kind
+is reserved for an explicitly observed state transition and is not synthesized
+from task-ID replacement.
+
+The persisted predecessor chain is periodically read oldest-first and validated
+as a whole. Invalid JSON, invalid hashes, missing predecessors, repeated credited
+material fingerprints, or a bounded-chain overflow fail closed; historical rows
+are never silently skipped.
+
 ## Lease semantics
 
 `CausalProgressLeaseV1` returns one of:
@@ -45,6 +56,12 @@ A→B→A oscillation from earning an unbounded sequence of leases.
 - `STALLED` — no-progress window or absolute execution deadline is exhausted.
 - `UNVERIFIED` — the required material readback is currently unavailable.
 - `CONTRADICTED` — supplied progress evidence conflicts with the bound execution.
+
+`UNVERIFIED` never renews a lease. While the last verified lease is still valid
+the reconciler reports a transient evidence failure without resubmitting work. If
+evidence remains unavailable through that lease boundary, continuation is
+fail-closed and the existing remote-cancel/quarantine path is used without
+claiming that repository stasis itself was observed.
 
 An absolute deadline remains independent of material progress. Repeated changes
 therefore cannot make a repository mission immortal.
