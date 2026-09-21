@@ -32,6 +32,24 @@ from .causal_progress_lease import (
 )
 from .agent_run_receipts import read_git_workspace_identity
 from .draft_pr_gate import draft_pr_input_from_job, prepare_draft_pr
+from .durable_workflow import (
+    PermissionDecision,
+    StepKind,
+    WorkflowBinding,
+    WorkflowDefinition,
+    WorkflowStep,
+    approve_permission,
+    canonical_sha256,
+    create_permission_request,
+)
+from .durable_workflow_store import (
+    append_permission_receipt,
+    bind_repository_job_permission,
+    persist_workflow_run,
+    read_latest_permission_receipt,
+    read_permission_authority_head,
+)
+from .revocation_closure import RevocationClosureError, require_live_permission
 from .evidence_gate import EvidenceGateInput, evaluate_agent_evidence
 from .git_workspace import git_diff_check, git_diff_full
 from .job_lifecycle import create_sovereign_agent_job
@@ -565,6 +583,53 @@ def _observe_causal_progress(
     )
 
 
+def _repository_permission_binding(conn: Any, job_id: str) -> tuple[Any, int] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT binding.permission_id, binding.approved_receipt_hash
+            FROM repository_job_permission_bindings AS binding
+            WHERE binding.job_id = %s
+            LIMIT 1
+            """,
+            (job_id,),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    permission_id = (
+        str(row.get("permission_id") or "")
+        if isinstance(row, dict)
+        else str(row[0] or "")
+    )
+    approved_hash = (
+        str(row.get("approved_receipt_hash") or "")
+        if isinstance(row, dict)
+        else str(row[1] or "")
+    )
+    latest = read_latest_permission_receipt(conn, permission_id=permission_id)
+    if latest is None:
+        raise RevocationClosureError("repository job permission authority is unreadable")
+    receipt, sequence = latest
+    if receipt.receipt_hash != approved_hash and receipt.decision.value == "APPROVED":
+        raise RevocationClosureError("repository job permission binding does not match authority history")
+    return receipt, sequence
+
+
+def _require_repository_effect_authority(
+    conn: Any,
+    *,
+    job: StoredSovereignAgentJob,
+) -> bool:
+    binding = _repository_permission_binding(conn, job.job_id)
+    if binding is None:
+        return False
+    receipt, _sequence = binding
+    head = read_permission_authority_head(conn, permission_id=receipt.permission_id)
+    require_live_permission(receipt, head)
+    return True
+
+
 def _submit_after_claim(
     conn: Any,
     *,
@@ -573,6 +638,22 @@ def _submit_after_claim(
     retry: bool,
     a2a_client_factory: A2AClientFactory,
 ) -> StoredSovereignAgentJob:
+    try:
+        if not _require_repository_effect_authority(conn, job=job):
+            return _block_job(
+                conn,
+                job,
+                "Repository effect path is not bound to a live canonical permission; submit is blocked.",
+                "repository_permission_unbound",
+            )
+    except RevocationClosureError as exc:
+        return _block_job(
+            conn,
+            job,
+            f"REVOKED_BEFORE_EXTERNAL_EFFECT: {exc}",
+            "repository_revocation_blocked",
+        )
+
     try:
         task = a2a_client_factory().submit_repository_task(
             workspace_id=str(job.workspace_id or job.job_id),
@@ -618,6 +699,82 @@ def _submit_after_claim(
         ),
     ))
     return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+
+
+def _bind_repository_execution_permission(
+    conn: Any,
+    *,
+    job: StoredSovereignAgentJob,
+    expected_head_sha: str,
+) -> None:
+    if not expected_head_sha:
+        append_agent_event(conn, job.job_id, SovereignAgentEvent(
+            stage="repository_revocation_uncovered",
+            level="warning",
+            message=(
+                "SRCC revocation coverage is unavailable because this repository mission "
+                "was not bound to an exact expectedHeadSha."
+            ),
+        ))
+        return
+
+    from .durable_workflow import WorkflowState
+    step = WorkflowStep(
+        step_id="repository-a2a-submit",
+        kind=StepKind.TOOL_MUTATION,
+        allowed_from=(WorkflowState.READY,),
+        allowed_to=(WorkflowState.RUNNING,),
+        permission_required=True,
+        capability="repository.external-submit",
+        timeout_seconds=3600,
+        max_attempts=2,
+        idempotency_key=f"repository-submit:{job.job_id}",
+        required_readback_kinds=("agent_zero_a2a_task",),
+    )
+    definition = WorkflowDefinition.create(
+        workflow_id=f"repository-execution-{job.job_id}",
+        steps=(step,),
+    )
+    binding = WorkflowBinding(
+        workflow_run_id=f"repo-run-{job.job_id}",
+        workflow_definition_hash=definition.definition_hash,
+        owner_identity=str(job.user_id),
+        tenant_or_org_identity=str(job.user_id),
+        repository_identity=job.repo_url,
+        workspace_id=str(job.workspace_id or job.job_id),
+        base_revision=expected_head_sha,
+        head_revision=expected_head_sha,
+    )
+    persist_workflow_run(conn, binding)
+    requested = create_permission_request(
+        binding=binding,
+        definition=definition,
+        step_id=step.step_id,
+        tool_name="agent-zero-a2a-submit",
+        parameters={
+            "job_id": job.job_id,
+            "repository": job.repo_url,
+            "branch": job.branch,
+            "mission_sha256": canonical_sha256({"mission": job.mission}),
+        },
+        expected_changed_paths=(),
+        valid_until_epoch=int(time.time()) + 21600,
+        max_attempts=2,
+    )
+    append_permission_receipt(conn, receipt=requested, sequence=0)
+    approved = approve_permission(
+        requested,
+        approver_identity=f"owner-{job.user_id}",
+        approval_source="repository-run-owner-session",
+        observed_epoch=int(time.time()),
+    )
+    append_permission_receipt(conn, receipt=approved, sequence=1)
+    bind_repository_job_permission(conn, job_id=job.job_id, approved_receipt=approved)
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="repository_permission_bound",
+        level="success",
+        message="Repository submit authority is bound to an append-only permission chain.",
+    ))
 
 
 def start_repository_execution(
@@ -682,6 +839,12 @@ def start_repository_execution(
         ),
     ))
     job = read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
+
+    _bind_repository_execution_permission(
+        conn,
+        job=job,
+        expected_head_sha=str(payload.get("expectedHeadSha") or "").strip().lower(),
+    )
 
     pending_ref = _pending_submit_ref(job.job_id)
     if not compare_and_swap_agent_job_external_ref(
