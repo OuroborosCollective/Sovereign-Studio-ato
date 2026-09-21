@@ -74,6 +74,7 @@ def _job(*, external_ref: str | None = "agent-zero-a2a:task-original", status: s
         status=status,
         workspace_id="agent-test",
         external_ref=external_ref,
+        created_at=datetime.now(timezone.utc),
     )
 
 
@@ -1196,3 +1197,22 @@ def test_causal_progress_binds_retry_as_explicit_task_transition(monkeypatch, tm
     assert state["progress_receipts"][-1]["progressKind"] == "A2A_STATE_TRANSITION"
     assert state["progress_receipts"][-1]["a2aTaskId"] == "task-current"
     assert state["progress_receipts"][-1]["previousReceiptSha256"] == stale_receipt.receipt_sha256
+
+
+def test_active_task_with_missing_created_at_fails_closed(monkeypatch):
+    initial = replace(_job(), created_at=None)
+    state = _patch_job_store(monkeypatch, initial)
+
+    class Client:
+        def get_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+        def cancel_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="canceled")
+
+    result = repository_execution.reconcile_repository_execution(
+        object(), user_id=initial.user_id, job_id=initial.job_id,
+        a2a_client_factory=Client,
+    )
+    assert result.status == "blocked"
+    assert state["events"][-1].stage == "agent_zero_progress_lease_contradicted"
+    assert "contradicts" in (result.blocker or "").lower()
