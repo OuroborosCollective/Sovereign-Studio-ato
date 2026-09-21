@@ -143,6 +143,7 @@ def normalize_event_stages(events: Sequence[Any] | None) -> tuple[str, ...]:
             "agent_zero_a2a_task_observed",
             "agent_zero_a2a_readback_unavailable",
             "agent_zero_material_progress_observed",
+            "agent_zero_workspace_baseline_observed",
         }:
             continue
         if stage:
