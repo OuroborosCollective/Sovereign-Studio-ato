@@ -27,6 +27,11 @@ on:
         required: false
         default: ''
         type: string
+      publish_immutable_mcp:
+        description: Publish and verify the immutable MCP image for the exact main revision without deploying the VPS
+        required: false
+        default: false
+        type: boolean
       deploy_vps_via_public_ssh:
         description: Manually run the legacy public-runner VPS bootstrap (never used by automatic main pushes)
         required: false
@@ -905,7 +910,9 @@ jobs:
     needs: validate
     outputs:
       digest: ${{ steps.publish.outputs.digest }}
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish_immutable_mcp == true && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -943,7 +950,9 @@ jobs:
   verify-published-mcp-image:
     name: Verify published MCP digest
     needs: publish-mcp-image
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish_immutable_mcp == true && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
