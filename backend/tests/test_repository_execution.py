@@ -818,7 +818,7 @@ def test_active_task_stalls_fail_closed_after_bounded_window(monkeypatch):
     assert result.status == "blocked"
     assert "AGENT_ZERO_CAUSAL_PROGRESS_UNVERIFIED" in (result.blocker or "")
     assert "confirmed task state canceled" in (result.blocker or "")
-    assert any(event.stage == "agent_zero_a2a_task_stalled" for event in state["events"])
+    assert any(event.stage == "agent_zero_progress_lease_unverified" for event in state["events"])
 
 
 
