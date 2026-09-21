@@ -685,9 +685,16 @@ def _live_cag_schema_validator(body: bytes, content_type: str, component: Wolfra
 
 
 _CAG_NORMALIZED_RESULT_LIMIT = 4096
+_CAG_MAX_NORMALIZED_RESULT_LIMIT = 128 * 1024
 
 
-def _normalized_cag_result(body: bytes, content_type: str, component: WolframCagComponent) -> str:
+def _normalized_cag_result(
+    body: bytes,
+    content_type: str,
+    component: WolframCagComponent,
+    *,
+    limit: int = _CAG_NORMALIZED_RESULT_LIMIT,
+) -> str:
     """Return only the bounded provider result field, never the raw response envelope."""
     if component.expected_content_type == "text/plain":
         try:
@@ -716,7 +723,18 @@ def _normalized_cag_result(body: bytes, content_type: str, component: WolframCag
             if isinstance(raw_result, str)
             else json.dumps(raw_result, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
         )
-    if len(value.encode("utf-8")) > _CAG_NORMALIZED_RESULT_LIMIT:
+    selected_limit = int(limit)
+    if (
+        isinstance(limit, bool)
+        or selected_limit < 1
+        or selected_limit > _CAG_MAX_NORMALIZED_RESULT_LIMIT
+        or selected_limit > component.max_output_bytes
+    ):
+        raise WolframCagError(
+            "CAG normalized result limit is outside the bounded transport contract",
+            family=WolframCagErrorFamily.SCHEMA,
+        )
+    if len(value.encode("utf-8")) > selected_limit:
         raise WolframCagError(
             "CAG normalized result exceeds the bounded result limit",
             family=WolframCagErrorFamily.SCHEMA,
@@ -743,6 +761,7 @@ def execute_live_cag_request(
     payload: Mapping[str, Any],
     credential_resolver=None,
     session: Any | None = None,
+    normalized_result_limit: int = _CAG_NORMALIZED_RESULT_LIMIT,
 ) -> WolframCagReceipt:
     """Execute one live CAG request through the current official v1 contract.
 
@@ -755,6 +774,16 @@ def execute_live_cag_request(
     component = WOLFRAM_CAG_COMPONENT_MAP.get(capability_id)
     if component is None:
         raise WolframCagError("unknown CAG capability", family=WolframCagErrorFamily.SCHEMA)
+    if (
+        isinstance(normalized_result_limit, bool)
+        or int(normalized_result_limit) < 1
+        or int(normalized_result_limit) > _CAG_MAX_NORMALIZED_RESULT_LIMIT
+        or int(normalized_result_limit) > component.max_output_bytes
+    ):
+        raise WolframCagError(
+            "CAG normalized result limit is outside the bounded transport contract",
+            family=WolframCagErrorFamily.SCHEMA,
+        )
     normalized_payload = _normalize_live_cag_payload(capability_id, payload)
     if component.method == "GET":
         request_bytes = urllib.parse.urlencode(normalized_payload).encode("utf-8")
@@ -854,6 +883,7 @@ def execute_live_cag_request(
         credential=credential,
         transport=transport,
         schema_validator=_live_cag_schema_validator,
+        normalized_result_limit=int(normalized_result_limit),
     )
 
 
@@ -863,6 +893,7 @@ def execute_cag_request(
     credential: WolframCagCredential | None,
     transport,
     schema_validator,
+    normalized_result_limit: int = _CAG_NORMALIZED_RESULT_LIMIT,
 ) -> WolframCagReceipt:
     """Execute a bounded CAG transport call.
 
@@ -997,7 +1028,12 @@ def execute_cag_request(
             quota_remaining=outcome.quota_remaining,
             response_schema_hash=request.response_schema_hash,
             status=WolframCagStatus.SUCCEEDED_UNVERIFIED,
-            normalized_result=_normalized_cag_result(outcome.body, outcome.content_type, component),
+            normalized_result=_normalized_cag_result(
+                outcome.body,
+                outcome.content_type,
+                component,
+                limit=normalized_result_limit,
+            ),
         )
         receipt.validate()
         return receipt

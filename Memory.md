@@ -650,3 +650,8 @@ Evidence: Pre-memory head `9d78549df383ad63c3bf754d7db6d9b8da4a7306` passed 66/6
 Change: Added the missing `IT_TOOLS_TEMPLATE_DIR` bootstrap directory before managed control-plane copy.
 Learned: Registering a managed stack is insufficient if its template target directory is not created before the fail-closed atomic installer copy.
 Evidence: Self-update of main `8739e61eff8988aa3996da87124f570e33af02d7` failed exactly at `copy_control_plane_file:templates/sovereign-it-tools/docker-compose.yml` and rolled back; after the repair 20 installer + 35 managed-compose tests, backend compile and `git diff --check` pass.
+
+### 2026-09-21 — Wolfram source intelligence lane
+Change: Added consent-gated Wolfram CodeParser/CodeInspector/CodeFormatter parse, inspect and format-preview tooling over the existing CAG transport, with source-as-data encoding, 32-KiB input bound, per-call egress approval, structural formatter equivalence, Sovottt MCP exposure and a lane-only 128-KiB normalized-result window while normal CAG remains 4 KiB.
+Learned: Static CodeTools evidence is useful only when source egress, parser structure and result-size boundaries are explicit; provider success remains SUCCEEDED_UNVERIFIED and cannot replace repository/runtime truth.
+Evidence: Pre-memory head `bf6d2b94b71ea2ff03c68b5610267fc7c942dbf5`; Agent Backend #3261 SUCCESS; MCP #2414 SUCCESS with 1058 passed/12 skipped and live registry contract including `wolfram_source_intelligence`; Release Verification #5942 SUCCESS with frontend smoke 3789 passed/0 failed/2 skipped, 11 Playwright smoke and 90 integration tests; Boundary Ledger #1661, Integration Plan #2313 and Continuity #2820 SUCCESS.

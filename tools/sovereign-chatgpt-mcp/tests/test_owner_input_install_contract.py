@@ -254,11 +254,16 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert server.count("def wolfram_cag_status(") == 1
     assert server.count("def wolfram_cag_canary(") == 1
     assert server.count("def wolfram_cag_runtime_evidence_bind(") == 1
+    assert server.count("def wolfram_source_intelligence(") == 1
     assert "provider_runtime.wolfram_cag_status()" in server
     assert "provider_runtime.wolfram_cag_canary(components)" in server
+    assert "provider_runtime.wolfram_source_intelligence(" in server
     assert "provider_runtime.wolfram_cag_bind_runtime_evidence(" in server
     assert "def wolfram_cag_status(" in client
     assert "def wolfram_cag_canary(" in client
+    assert "def wolfram_source_intelligence(" in client
+    assert "source_egress_approved" in server
+    assert "source_egress_approved" in client
     assert "def wolfram_cag_bind_runtime_evidence(" in client
     assert server.count("def openrouter_provider_status(") == 1
     assert server.count("def openrouter_provider_activate(") == 1

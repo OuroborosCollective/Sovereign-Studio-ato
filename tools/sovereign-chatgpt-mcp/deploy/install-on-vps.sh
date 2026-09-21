@@ -62,7 +62,7 @@ MCP_UID="10001"
 MCP_GID="10001"
 MCP_HOST_PORT="8090"
 NEURO_RUNTIME_STATE_HOST_DIR="$INSTALL_ROOT/tool-routing-state/neuro-runtime"
-EXPECTED_MCP_TOOL_COUNT="254"
+EXPECTED_MCP_TOOL_COUNT="255"
 MCP_IMAGE_REPOSITORY="${SOVEREIGN_MCP_IMAGE_REPOSITORY:-ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp}"
 EXPECTED_REVISION="${SOVEREIGN_MCP_EXPECTED_REVISION:-}"
 EXPECTED_MCP_DIGEST="${SOVEREIGN_MCP_EXPECTED_DIGEST:-}"
@@ -1377,7 +1377,7 @@ if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
     SOVEREIGN_MCP_ENABLE_AURION_WRITE; do
     set_value "$MANAGED_ENV" "$OWNER_CAPABILITY" "1"
   done
-  EXPECTED_MCP_TOOL_COUNT="257"
+  EXPECTED_MCP_TOOL_COUNT="258"
 fi
 INSTALL_STAGE="bind_private_owner_github_capabilities_to_ephemeral_app_auth"
 if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
@@ -2134,6 +2134,7 @@ required_tools = {
     "aurion_account_role_apply",
     "teaching_lesson_simulate",
     "teaching_package_assess",
+    "wolfram_source_intelligence",
 }
 tools = asyncio.run(launcher.mcp.list_tools())
 tool_names = {tool.name for tool in tools}
@@ -2146,7 +2147,7 @@ neuro_tools = {
 }
 missing_tools = sorted(required_tools - tool_names)
 assert not missing_tools, {"missingRequiredTools": missing_tools, "toolCount": len(tool_names)}
-assert len(tool_names) == 257, {"expectedToolCount": 257, "actualToolCount": len(tool_names)}
+assert len(tool_names) == 258, {"expectedToolCount": 258, "actualToolCount": len(tool_names)}
 assert neuro_tools <= tool_names, sorted(neuro_tools - tool_names)
 registry = server._live_mcp_registry_evidence()
 assert registry.get("registry_runtime_verified") is True, registry
@@ -2227,6 +2228,7 @@ required_additions = {
     "neuro_runtime_contract_status",
     "teaching_lesson_simulate",
     "teaching_package_assess",
+    "wolfram_source_intelligence",
 }
 if (
     value.get("schemaVersion") != "sovereign.mcp-deployment-contract-surface.v1"
@@ -2271,6 +2273,7 @@ expected_additions = {
     "neuro_runtime_contract_status",
     "teaching_lesson_simulate",
     "teaching_package_assess",
+    "wolfram_source_intelligence",
 }
 
 
@@ -2708,7 +2711,7 @@ if predecessor_captured:
     additions = sorted(set(new_by_name) - set(previous_by_name))
     if len(previous_names) == 244 and expected_additions.isdisjoint(previous_names):
         if set(additions) != expected_additions:
-            raise SystemExit("244-tool predecessor did not receive exactly the five approved additions")
+            raise SystemExit("244-tool predecessor did not receive exactly the six approved additions")
     for name in previous_names:
         old = previous_by_name[name]
         new = new_by_name[name]
@@ -2901,7 +2904,7 @@ with tempfile.TemporaryDirectory(
     assert getattr(commit_tool.fn, "__sovereign_operating_profile_wrapped__", False)
 
     registered_tools = list(launcher.mcp._tool_manager.list_tools())
-    assert len({tool.name for tool in registered_tools}) == 257
+    assert len({tool.name for tool in registered_tools}) == 258
 
     def call_registered(tool_name: str, arguments: dict[str, object]):
         return asyncio.run(tool_manager.call_tool(tool_name, arguments, convert_result=False))
@@ -2910,11 +2913,11 @@ with tempfile.TemporaryDirectory(
     empty_status = call_registered("neuro_runtime_contract_status", {})
     assert empty_status.ok is True, empty_status
     assert empty_status.status == "NEURO_RUNTIME_CONTRACT_READY", empty_status
-    assert empty_status.evidence["toolCount"] == 257, empty_status
+    assert empty_status.evidence["toolCount"] == 258, empty_status
     assert empty_status.data["stateInitializedByThisCall"] is False, empty_status
     assert not isolated_state.exists(), "read-only status initialized isolated state"
     # Continuity is advisory provenance and intentionally not required for this
-    # deployment canary. Guard every one of the 252 non-neuro tools
+    # deployment canary. Guard every one of the 253 non-neuro tools
     # for the remainder of the canary while leaving only the five additive
     # Neuro/Teacher wrapper chains callable.
     guarded_tool_calls: list[str] = []
@@ -2930,7 +2933,7 @@ with tempfile.TemporaryDirectory(
 
         registered_tool.fn = forbidden_selected_tool_call
         guarded_tool_names.append(tool_name)
-    assert len(set(guarded_tool_names)) == 252, len(set(guarded_tool_names))
+    assert len(set(guarded_tool_names)) == 253, len(set(guarded_tool_names))
 
     now = datetime.now(timezone.utc)
     now = now.replace(microsecond=(now.microsecond // 1000) * 1000)
@@ -3287,8 +3290,8 @@ print(
     json.dumps(
         {
             "status": "NEURO_DEPLOYMENT_CANARY_VERIFIED",
-            "registryToolCount": 257,
-            "guardedPredecessorToolCount": 252,
+            "registryToolCount": 258,
+            "guardedPredecessorToolCount": 253,
             "quarantineNoMutation": True,
             "previewProposalOnly": True,
             "selectedToolsExecuted": False,

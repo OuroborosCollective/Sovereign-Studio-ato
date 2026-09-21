@@ -963,12 +963,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/server.py",
       "mirrorPaths": [],
       "symbol": "_patchmon_revision_from_payload",
-      "line": 2011,
+      "line": 2033,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "d4ed2850c5eda03f6393b717094d1d6b84fb05fa9e5e1bc2341df60647e1dff2",
+      "fileSha256": "65518cba6173a1d84d71ced8ed11f4745ba6af6be1224abccfe27a2b4bef8016",
       "anchorSha256": "89d6ce923bec8929a1cc3e2eab5011cafb2dd1164ae34ea15f09c2615b60e43a",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:3f1d9db3542e39e7968e32d5",
+      "candidateId": "llm-boundary:290b98b9e1a108ff7e2640f7",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_patchmon_revision_from_payload reads only fixed SHA field names from structured GitHub evidence; it neither infers free-language intent nor authorizes execution."
     },
@@ -976,12 +976,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/server.py",
       "mirrorPaths": [],
       "symbol": "_patchmon_revision_binding",
-      "line": 2049,
+      "line": 2071,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "d4ed2850c5eda03f6393b717094d1d6b84fb05fa9e5e1bc2341df60647e1dff2",
+      "fileSha256": "65518cba6173a1d84d71ced8ed11f4745ba6af6be1224abccfe27a2b4bef8016",
       "anchorSha256": "a443b2f0083390465b24f733ff09571e7981e7d5b370e40802c10f76943a914a",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:e3bc0686255c7bc780cb41a0",
+      "candidateId": "llm-boundary:afbce2429da8308103867d81",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_patchmon_revision_binding compares typed PR state, merge-commit and head SHA fields against one exact expected revision; it interprets no free language, selects no tool, and authorizes no effect."
     },
@@ -1090,5 +1090,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "d201de5cedc0dccb6268152bd0ef0ac47c1a193f9878fae13641514ed8f78714"
+  "ledgerSha256": "a3fe67d4c519b612799dc643f0522f76903e31d8b35cc277fbe2e93afb15c1ea"
 }

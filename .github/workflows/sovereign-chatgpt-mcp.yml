@@ -337,7 +337,7 @@ jobs:
           grep -q '"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only"' deploy/install-on-vps.sh
           grep -q '"read_only_tool_calls_persisted":false' deploy/install-on-vps.sh
           grep -q '"canary_persisted_outcome_tools":\["neuro_event_commit"\]' deploy/install-on-vps.sh
-          grep -q 'EXPECTED_MCP_TOOL_COUNT="254"' deploy/install-on-vps.sh
+          grep -q 'EXPECTED_MCP_TOOL_COUNT="255"' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_NEURO_RUNTIME_STATE_ROOT: /var/lib/sovereign-tool-routing/neuro-runtime' docker-compose.yml
           grep -q 'SOVEREIGN_NEURO_GLOBAL_MAX_EVENTS: "100000"' docker-compose.yml
           grep -q 'SOVEREIGN_NEURO_GLOBAL_MAX_BYTES: "268435456"' docker-compose.yml
@@ -735,8 +735,8 @@ jobs:
               'teaching_lesson_simulate',
               'teaching_package_assess',
           }
-          assert len(tool_names) == 254, len(tool_names)
-          assert {'agent_zero_backend_diagnostics', 'agent_zero_a2a_canary'} <= tool_names
+          assert len(tool_names) == 255, len(tool_names)
+          assert {'agent_zero_backend_diagnostics', 'agent_zero_a2a_canary', 'wolfram_source_intelligence'} <= tool_names
           assert neuro_tool_names <= tool_names, sorted(neuro_tool_names - tool_names)
           n8n_workflow_tool_names = {'n8n_workflow_plan', 'n8n_workflow_apply'}
           assert n8n_workflow_tool_names <= tool_names, sorted(n8n_workflow_tool_names - tool_names)
