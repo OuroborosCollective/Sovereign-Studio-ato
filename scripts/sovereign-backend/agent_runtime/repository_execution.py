@@ -407,6 +407,23 @@ def _observe_causal_progress(
                     job_id=job.job_id,
                     receipt=receipt.to_dict(),
                 )
+                observed_changes = tuple(identity.changed_paths)
+                if observed_changes and tuple(job.changed_files or ()) != observed_changes:
+                    update_agent_job_state(
+                        conn,
+                        job_id=job.job_id,
+                        status="running",
+                        changed_files=observed_changes,
+                    )
+                    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+                        stage="agent_zero_workspace_progress_observed",
+                        level="info",
+                        message=(
+                            f"Observed {len(observed_changes)} changed workspace file(s) from "
+                            "the authoritative Git workspace readback. This is material "
+                            "activity, not completion or quality evidence."
+                        ),
+                    ))
                 latest = receipt
                 latest_receipt_sha = receipt.receipt_sha256
                 last_progress_ms = receipt.observed_epoch_ms
@@ -1028,12 +1045,21 @@ def reconcile_repository_execution(
                 a2a_client_factory=a2a_client_factory,
             )
         if lease.verdict == "STALLED":
+            submitted_stall = task.state == "submitted"
             return _cancel_stalled_repository_task(
                 conn,
                 job=job,
                 task_id=task.task_id,
-                reason=f"AGENT_ZERO_NO_MATERIAL_PROGRESS: {lease.reason}.",
-                stage="agent_zero_no_material_progress",
+                reason=(
+                    f"AGENT_ZERO_A2A_SUBMITTED_STALLED: {lease.reason}."
+                    if submitted_stall
+                    else f"AGENT_ZERO_A2A_STALLED: {lease.reason}."
+                ),
+                stage=(
+                    "agent_zero_a2a_submitted_stalled"
+                    if submitted_stall
+                    else "agent_zero_a2a_task_stalled"
+                ),
                 a2a_client_factory=a2a_client_factory,
             )
         return _record_task_readback(
