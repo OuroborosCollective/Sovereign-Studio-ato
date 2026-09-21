@@ -190,6 +190,44 @@ def is_repository_a2a_job(job: StoredSovereignAgentJob | None) -> bool:
     return bool(job and str(job.external_ref or "").startswith(_A2A_NORMAL_PREFIX))
 
 
+def cancel_repository_a2a_job(
+    conn: Any,
+    *,
+    job: StoredSovereignAgentJob,
+    a2a_client_factory: A2AClientFactory = AgentZeroA2AClient.from_env,
+) -> StoredSovereignAgentJob:
+    """Cancel the one bound Agent Zero task and only unlock after proven cancellation."""
+    binding = _bound_task(str(job.external_ref or ""))
+    if binding is None:
+        raise RepositoryExecutionError("AGENT_ZERO_A2A_CANCEL_TASK_ID_MISSING")
+    task_id, _is_retry = binding
+    try:
+        task = a2a_client_factory().cancel_task(task_id)
+    except AgentZeroA2AError as exc:
+        raise RepositoryExecutionError(
+            f"{exc.family}: Agent Zero did not confirm cancellation."
+        ) from exc
+    if task.state != "canceled":
+        raise RepositoryExecutionError(
+            f"AGENT_ZERO_A2A_CANCEL_NOT_CONFIRMED: task state is {task.state}."
+        )
+    update_agent_job_state(
+        conn,
+        job_id=job.job_id,
+        status="blocked",
+        blocker="Cancelled by owner; Agent Zero A2A confirmed task state canceled.",
+    )
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="agent_zero_a2a_cancel_confirmed",
+        level="warning",
+        message=(
+            f"Agent Zero confirmed cancellation for task {task.task_id}. "
+            "The persisted run is unlocked and publication remains quarantined."
+        ),
+    ))
+    return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+
+
 def _block_job(conn: Any, job: StoredSovereignAgentJob, reason: str, stage: str) -> StoredSovereignAgentJob:
     blocker = sanitize_agent_text(reason, 1200) or "Repository execution blocked."
     update_agent_job_state(conn, job_id=job.job_id, status="blocked", blocker=blocker)
@@ -217,12 +255,9 @@ def _record_task_readback(
     for previous in reversed(current.events):
         if previous.get("stage") not in {"agent_zero_a2a_task_observed", "agent_zero_a2a_readback_unavailable"}:
             continue
-        previous_at = previous.get("at")
-        if (
-            previous.get("stage") == stage and previous.get("message") == event.message
-            and isinstance(previous_at, (int, float)) and not isinstance(previous_at, bool)
-            and 0 <= event.at - previous_at < _A2A_READBACK_INTERVAL_MS
-        ):
+        if previous.get("stage") == stage and previous.get("message") == event.message:
+            # Identical tasks/get observations are heartbeat noise, not new evidence.
+            # Keep one persisted observation until the external state/message changes.
             return current
         break
     append_agent_event(conn, current.job_id, event)

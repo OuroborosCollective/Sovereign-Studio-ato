@@ -171,6 +171,9 @@ def build_repository_task_prompt(
         "Do not push to GitHub, create or merge a PR, deploy, mutate a database, inspect or disclose secrets, "
         "or claim Sovereign evidence/success. "
         "Read only files needed for the requested mutation and write only inside the stated workspace. "
+        "Use fresh bounded terminal invocations for repository inspection and mutation. If a terminal command "
+        "times out or returns control without a shell prompt, reset that terminal session before the next command; "
+        "never keep issuing commands into a possibly busy session. "
         "Do not install dependencies or run tests, builds, linters, audits, package managers or other validation, "
         "even when the mission mentions them; Sovereign owns all regression, janitor and evidence gates after "
         "your workspace mutation. Once the requested file changes are saved, stop immediately and return a "
@@ -333,6 +336,23 @@ class AgentZeroA2AClient:
             "jsonrpc": "2.0",
             "id": str(uuid.uuid4()),
             "method": "tasks/get",
+            "params": {"id": normalized_task_id},
+        }
+        task = _parse_task(self._post_rpc(payload, submit=False))
+        if task.task_id != normalized_task_id:
+            raise AgentZeroA2AError(
+                "AGENT_ZERO_A2A_TASK_ID_MISMATCH",
+                "FAIL_CLOSED_ON_A2A_TASK_IDENTITY_MISMATCH",
+            )
+        return task
+
+    def cancel_task(self, task_id: str) -> AgentZeroA2ATask:
+        """Request A2A cancellation and require exact task/state readback."""
+        normalized_task_id = _normalize_task_id(task_id)
+        payload = {
+            "jsonrpc": "2.0",
+            "id": str(uuid.uuid4()),
+            "method": "tasks/cancel",
             "params": {"id": normalized_task_id},
         }
         task = _parse_task(self._post_rpc(payload, submit=False))

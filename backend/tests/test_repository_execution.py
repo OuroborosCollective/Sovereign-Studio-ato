@@ -943,7 +943,7 @@ def test_reconcilable_job_query_escapes_like_wildcards_for_pyformat_driver():
     assert list_reconcilable_repository_jobs(_PyformatConnection()) == ()
 
 
-def test_active_readback_is_persisted_throttled_and_never_resets_stall_clock(monkeypatch):
+def test_active_readback_persists_only_state_changes_and_never_resets_stall_clock(monkeypatch):
     import time
     initial = replace(_job(), updated_at=datetime.now(timezone.utc))
     state = _patch_job_store(monkeypatch, initial)
@@ -967,8 +967,26 @@ def test_active_readback_is_persisted_throttled_and_never_resets_stall_clock(mon
     assert len(state["events"]) == 1
     now += 31_000
     second = reconcile()
-    assert len(second.events) == 2
+    assert len(second.events) == 1
     assert second.updated_at == initial.updated_at
+
+
+def test_cancel_repository_a2a_job_requires_upstream_canceled_state(monkeypatch):
+    initial = _job()
+    state = _patch_job_store(monkeypatch, initial)
+
+    class Client:
+        def cancel_task(self, task_id):
+            assert task_id == "task-original"
+            return AgentZeroA2ATask(task_id=task_id, state="canceled")
+
+    result = repository_execution.cancel_repository_a2a_job(
+        object(), job=initial, a2a_client_factory=Client,
+    )
+
+    assert result.status == "blocked"
+    assert "confirmed task state canceled" in (result.blocker or "")
+    assert state["events"][-1].stage == "agent_zero_a2a_cancel_confirmed"
 
 
 def test_readback_failure_and_recovery_are_visible_without_duplicate_submit(monkeypatch):
