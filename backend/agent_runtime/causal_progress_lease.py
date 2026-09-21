@@ -29,6 +29,16 @@ LeaseVerdict = Literal[
 ]
 
 
+def progress_occurs_after_epoch(
+    receipt: "CausalProgressReceiptV1",
+    boundary_epoch_ms: int,
+) -> bool:
+    """Return whether one material progress receipt is causally after a bound epoch."""
+    if boundary_epoch_ms < 0:
+        raise CausalProgressContractError("boundary_epoch_ms must be non-negative")
+    return receipt.observed_epoch_ms > boundary_epoch_ms
+
+
 class CausalProgressContractError(ValueError):
     """Raised when a progress receipt or lease violates the canonical contract."""
 

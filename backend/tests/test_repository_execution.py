@@ -225,6 +225,7 @@ def test_start_repository_execution_queues_submit_without_transport(monkeypatch)
     assert transport_calls == []
     assert [event.stage for event in state["events"]] == [
         "repository_execution_contract_bound",
+        "repository_revocation_uncovered",
         "agent_zero_a2a_submit_queued",
     ]
 
@@ -250,7 +251,16 @@ def test_user_reconcile_does_not_execute_pending_submit(monkeypatch):
     assert transport_calls == []
 
 
+def _allow_test_repository_effect_authority(monkeypatch):
+    monkeypatch.setattr(
+        repository_execution,
+        "_require_repository_effect_authority",
+        lambda _conn, *, job: True,
+    )
+
+
 def test_server_worker_claims_pending_submit_and_binds_one_task(monkeypatch):
+    _allow_test_repository_effect_authority(monkeypatch)
     pending = repository_execution._pending_submit_ref("agent-test")
     state = _patch_job_store(monkeypatch, _job(external_ref=pending))
 
@@ -286,6 +296,7 @@ def test_server_worker_claims_pending_submit_and_binds_one_task(monkeypatch):
 
 
 def test_original_task_lost_resubmits_exactly_once_then_retry_lost_fails_closed(monkeypatch):
+    _allow_test_repository_effect_authority(monkeypatch)
     state = _patch_job_store(monkeypatch, _job())
 
     class Client:
@@ -422,6 +433,7 @@ def test_original_task_lost_with_unverifiable_workspace_blocks_without_resubmit(
 
 
 def test_ambiguous_submit_outcome_blocks_without_any_automatic_second_submit(monkeypatch):
+    _allow_test_repository_effect_authority(monkeypatch)
     claim = "agent-zero-a2a:claim:submit:a:test"
     state = _patch_job_store(monkeypatch, _job(external_ref=claim))
 

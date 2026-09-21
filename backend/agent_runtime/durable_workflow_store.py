@@ -10,7 +10,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .durable_workflow import ExecutionReceipt, PermissionReceipt, WorkflowBinding
+from .durable_workflow import ExecutionReceipt, PermissionDecision, PermissionReceipt, WorkflowBinding, canonical_sha256, permission_receipt_from_dict
+from .revocation_closure import PermissionAuthorityHead, RevocationReceipt, create_revocation_transition
 
 
 class DurableWorkflowStoreError(RuntimeError):
@@ -71,6 +72,117 @@ def append_permission_receipt(conn: Any, *, receipt: PermissionReceipt, sequence
     conn.commit()
 
 
+def read_latest_permission_receipt(conn: Any, *, permission_id: str) -> tuple[PermissionReceipt, int] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT receipt_sequence, canonical_body
+            FROM workflow_permission_receipts
+            WHERE permission_id = %s
+            ORDER BY receipt_sequence DESC, receipt_hash DESC
+            LIMIT 1
+            """,
+            (permission_id,),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    body = row.get("canonical_body") if isinstance(row, dict) else row[1]
+    if isinstance(body, str):
+        body = json.loads(body)
+    if not isinstance(body, dict):
+        raise DurableWorkflowStoreError("permission receipt canonical body is unreadable")
+    receipt = permission_receipt_from_dict(body)
+    sequence = int(row.get("receipt_sequence") if isinstance(row, dict) else row[0])
+    return receipt, sequence
+
+
+def read_permission_authority_head(conn: Any, *, permission_id: str) -> PermissionAuthorityHead | None:
+    latest = read_latest_permission_receipt(conn, permission_id=permission_id)
+    if latest is None:
+        return None
+    receipt, sequence = latest
+    payload = {
+        "permission_id": receipt.permission_id,
+        "workflow_run_id": receipt.binding.workflow_run_id,
+        "receipt_hash": receipt.receipt_hash,
+        "receipt_sequence": sequence,
+        "decision": receipt.decision.value,
+    }
+    return PermissionAuthorityHead(
+        permission_id=receipt.permission_id,
+        workflow_run_id=receipt.binding.workflow_run_id,
+        receipt_hash=receipt.receipt_hash,
+        receipt_sequence=sequence,
+        decision=receipt.decision,
+        readback_hash=canonical_sha256(payload),
+    )
+
+
+def bind_repository_job_permission(
+    conn: Any,
+    *,
+    job_id: str,
+    approved_receipt: PermissionReceipt,
+) -> str:
+    if not approved_receipt.verify() or approved_receipt.decision != PermissionDecision.APPROVED:
+        raise DurableWorkflowStoreError("repository job binding requires APPROVED permission")
+    payload = {
+        "schema_version": "sovereign.repository-job-permission-binding.v1",
+        "job_id": str(job_id),
+        "workflow_run_id": approved_receipt.binding.workflow_run_id,
+        "permission_id": approved_receipt.permission_id,
+        "approved_receipt_hash": approved_receipt.receipt_hash,
+    }
+    binding_hash = canonical_sha256(payload)
+    body = payload | {"binding_hash": binding_hash}
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO repository_job_permission_bindings (
+                job_id, workflow_run_id, permission_id,
+                approved_receipt_hash, binding_hash, canonical_body
+            ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+            """,
+            (
+                job_id,
+                approved_receipt.binding.workflow_run_id,
+                approved_receipt.permission_id,
+                approved_receipt.receipt_hash,
+                binding_hash,
+                _body(body),
+            ),
+        )
+    conn.commit()
+    return binding_hash
+
+
+def read_repository_job_permission_binding(conn: Any, *, job_id: str) -> dict[str, Any] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT canonical_body
+            FROM repository_job_permission_bindings
+            WHERE job_id = %s
+            LIMIT 1
+            """,
+            (job_id,),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    body = row.get("canonical_body") if isinstance(row, dict) else row[0]
+    if isinstance(body, str):
+        body = json.loads(body)
+    if not isinstance(body, dict):
+        raise DurableWorkflowStoreError("repository permission binding is unreadable")
+    material = dict(body)
+    observed = str(material.pop("binding_hash", ""))
+    if canonical_sha256(material) != observed:
+        raise DurableWorkflowStoreError("repository permission binding hash is contradicted")
+    return dict(body)
+
+
 def append_execution_receipt(conn: Any, *, receipt: ExecutionReceipt, sequence: int) -> None:
     """Append a self-verifying execution observation; never update an earlier verdict."""
     if sequence < 0 or not receipt.verify():
@@ -100,4 +212,6 @@ def append_execution_receipt(conn: Any, *, receipt: ExecutionReceipt, sequence: 
 
 __all__ = [
     "DurableWorkflowStoreError", "persist_workflow_run", "append_permission_receipt", "append_execution_receipt",
+    "read_latest_permission_receipt", "read_permission_authority_head",
+    "bind_repository_job_permission", "read_repository_job_permission_binding",
 ]

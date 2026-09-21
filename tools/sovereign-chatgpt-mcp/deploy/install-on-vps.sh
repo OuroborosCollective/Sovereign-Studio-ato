@@ -1254,6 +1254,18 @@ if ! valid_mcp_image_digest "$PREVIOUS_MCP_IMAGE_DIGEST"; then
 fi
 ROLLBACK_ARMED=1
 
+INSTALL_STAGE="prepare_control_plane_directory_ownership"
+set_managed_control_plane_directory_ownership "$BROKER_DIR" "broker"
+set_managed_control_plane_directory_ownership "$BIN_DIR" "bin"
+set_managed_control_plane_directory_ownership "$COMPOSE_TEMPLATE_ROOT" "templates"
+set_managed_control_plane_directory_ownership "$PGBACKWEB_TEMPLATE_DIR" "templates/pgbackweb-wq5r"
+set_managed_control_plane_directory_ownership "$PATCHMON_TEMPLATE_DIR" "templates/patchmon-sovereign"
+set_managed_control_plane_directory_ownership "$CODE_SERVER_TEMPLATE_DIR" "templates/code-server-46bq"
+set_managed_control_plane_directory_ownership "$MILVUS_TEMPLATE_DIR" "templates/milvus-sovereign"
+set_managed_control_plane_directory_ownership "$FREELLMAPI_TEMPLATE_DIR" "templates/sovereign-freellmapi"
+set_managed_control_plane_directory_ownership "$IT_TOOLS_TEMPLATE_DIR" "templates/sovereign-it-tools"
+set_managed_control_plane_directory_ownership "$BACKEND_TEMPLATE_DIR" "templates/sovereign-backend"
+
 INSTALL_STAGE="copy_control_plane_files"
 for file in Dockerfile requirements.txt policy.py github_installation_auth.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py desktop_worker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py github_issue_contracts.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py sovereign_rescue_widget.py server.py aurion_operator.py tool_extensions.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py predictive_tool_router.py tool_success_ranking.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py patchmon_operator.py patchmon_fleet.py n8n_workflow_runtime.py n8n_workflow_tools.py launcher.py docker-compose.yml; do
   install_managed_control_plane_file 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file" "runtime/$file"
@@ -1326,16 +1338,6 @@ grep -q '^StartLimitBurst=3$' "$TUNNEL_SERVICE" || fail "installed tunnel unit h
 if grep -Eq 'c[u]rl[[:space:]]' "$TUNNEL_SERVICE"; then
   fail "installed tunnel unit still contains a curl-based MCP probe"
 fi
-set_managed_control_plane_directory_ownership "$BROKER_DIR" "broker"
-set_managed_control_plane_directory_ownership "$BIN_DIR" "bin"
-set_managed_control_plane_directory_ownership "$COMPOSE_TEMPLATE_ROOT" "templates"
-set_managed_control_plane_directory_ownership "$PGBACKWEB_TEMPLATE_DIR" "templates/pgbackweb-wq5r"
-set_managed_control_plane_directory_ownership "$PATCHMON_TEMPLATE_DIR" "templates/patchmon-sovereign"
-set_managed_control_plane_directory_ownership "$CODE_SERVER_TEMPLATE_DIR" "templates/code-server-46bq"
-set_managed_control_plane_directory_ownership "$MILVUS_TEMPLATE_DIR" "templates/milvus-sovereign"
-set_managed_control_plane_directory_ownership "$FREELLMAPI_TEMPLATE_DIR" "templates/sovereign-freellmapi"
-set_managed_control_plane_directory_ownership "$IT_TOOLS_TEMPLATE_DIR" "templates/sovereign-it-tools"
-set_managed_control_plane_directory_ownership "$BACKEND_TEMPLATE_DIR" "templates/sovereign-backend"
 
 INSTALL_STAGE="prepare_private_environment_files"
 if [[ ! -f "$ENV_FILE" ]]; then
