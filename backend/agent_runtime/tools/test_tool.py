@@ -195,6 +195,10 @@ class TestTool(ToolBase):
                 status="blocked",
                 blocker="Custom test command is not allowlisted",
             )
+        bootstrap = self._ensure_node_dependencies(cwd, timeout, args)
+        if bootstrap is not None and not bootstrap.is_ok():
+            return bootstrap
+
         if verbose:
             print(f"Running: {' '.join(args)}")
 
@@ -241,6 +245,99 @@ class TestTool(ToolBase):
                 error=f"Test execution failed: {e}",
             )
 
+    def _ensure_node_dependencies(
+        self,
+        cwd: str,
+        timeout: int,
+        args: list[str],
+    ) -> ToolResult | None:
+        """Provision lockfile-bound Node dependencies before repository regression.
+
+        Production workspaces are intentionally clean checkouts. Running a real
+        pnpm/npm/npx regression without dependencies produces a false red even
+        when Agent Zero made a valid change. Dependency installation is therefore
+        bounded to the workspace, requires an exact lockfile, disables lifecycle
+        scripts, and never falls back to an unlocked install.
+        """
+        if not args or args[0] not in {"pnpm", "npm", "npx"}:
+            return None
+
+        root = Path(cwd)
+        package_json = root / "package.json"
+        if not package_json.is_file() or (root / "node_modules").is_dir():
+            return None
+
+        pnpm_lock = root / "pnpm-lock.yaml"
+        npm_lock = root / "package-lock.json"
+        if pnpm_lock.is_file():
+            install_args = ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"]
+            bootstrap_kind = "pnpm_frozen_lockfile"
+        elif npm_lock.is_file():
+            install_args = ["npm", "ci", "--ignore-scripts"]
+            bootstrap_kind = "npm_ci_lockfile"
+        else:
+            return ToolResult(
+                status="blocked",
+                blocker="Node dependency bootstrap requires pnpm-lock.yaml or package-lock.json",
+                metadata={"dependency_bootstrap": "lockfile_missing"},
+            )
+
+        install_timeout = min(max(timeout, 300), 600)
+        env = {
+            "PATH": os.environ.get("PATH", ""),
+            "FORCE_COLOR": "0",
+            "CI": "1",
+            "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0",
+        }
+        try:
+            result = subprocess.run(
+                install_args,
+                shell=False,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=install_timeout,
+                env=env,
+            )
+        except subprocess.TimeoutExpired:
+            return ToolResult(
+                status="blocked",
+                blocker=f"Node dependency bootstrap timed out after {install_timeout}s",
+                metadata={"dependency_bootstrap": bootstrap_kind},
+            )
+        except FileNotFoundError as exc:
+            return ToolResult(
+                status="blocked",
+                blocker=f"Node dependency bootstrap command not found: {exc}",
+                metadata={"dependency_bootstrap": bootstrap_kind},
+            )
+        except Exception as exc:
+            return ToolResult(
+                status="error",
+                error=f"Node dependency bootstrap failed: {exc}",
+                metadata={"dependency_bootstrap": bootstrap_kind},
+            )
+
+        output = (result.stdout + "\n" + result.stderr if result.stderr else result.stdout).strip()
+        if result.returncode != 0:
+            return ToolResult(
+                status="error",
+                output=output,
+                error=output or f"Node dependency bootstrap failed with exit code {result.returncode}",
+                metadata={
+                    "dependency_bootstrap": bootstrap_kind,
+                    "exit_code": result.returncode,
+                },
+                exit_code=result.returncode,
+            )
+
+        return ToolResult(
+            status="done",
+            output="Node dependency bootstrap completed from the repository lockfile.",
+            metadata={"dependency_bootstrap": bootstrap_kind, "exit_code": 0},
+            exit_code=0,
+        )
+
     def _run_command(
         self,
         args: list[str],
@@ -248,6 +345,10 @@ class TestTool(ToolBase):
         timeout: int,
     ) -> ToolResult:
         """Run a test command with arguments."""
+        bootstrap = self._ensure_node_dependencies(cwd, timeout, args)
+        if bootstrap is not None and not bootstrap.is_ok():
+            return bootstrap
+
         try:
             result = subprocess.run(
                 args,
