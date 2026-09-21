@@ -390,6 +390,84 @@ def list_agent_projections(conn: Any, *, user_id: str, job_id: str, limit: int =
     return tuple(projections)
 
 
+
+def append_agent_progress_receipt(
+    conn: Any,
+    *,
+    job_id: str,
+    receipt: Mapping[str, Any],
+    commit: bool = True,
+) -> str:
+    """Persist one hash-validated SCPL receipt without changing job lifecycle truth."""
+
+    from .causal_progress_lease import CausalProgressReceiptV1
+
+    canonical = CausalProgressReceiptV1.from_dict(receipt).to_dict()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO sovereign_agent_events (job_id, stage, level, message, payload)
+            VALUES (%s, 'agent_zero_material_progress_observed', 'info', %s, %s::jsonb)
+            """,
+            (
+                job_id,
+                sanitize_agent_text(
+                    f"Material workspace progress observed ({canonical['progressKind']}); "
+                    "this is activity evidence, not correctness or completion.",
+                    300,
+                ),
+                _json(canonical),
+            ),
+        )
+    if commit:
+        conn.commit()
+    return str(canonical["receiptSha256"])
+
+
+def list_agent_progress_receipts(
+    conn: Any,
+    *,
+    job_id: str,
+    limit: int = 256,
+) -> tuple[dict[str, Any], ...]:
+    """Read validated SCPL receipts oldest-first for one persisted Agent Job."""
+
+    from .causal_progress_lease import CausalProgressContractError, CausalProgressReceiptV1
+
+    safe_limit = max(1, min(int(limit), 512))
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT recent.payload
+            FROM (
+                SELECT event.payload, event.created_at, event.id
+                FROM sovereign_agent_events AS event
+                WHERE event.job_id = %s
+                  AND event.stage = 'agent_zero_material_progress_observed'
+                ORDER BY event.created_at DESC, event.id DESC
+                LIMIT %s
+            ) AS recent
+            ORDER BY recent.created_at ASC, recent.id ASC
+            """,
+            (job_id, safe_limit),
+        )
+        rows = cur.fetchall()
+    receipts: list[dict[str, Any]] = []
+    for row in rows:
+        raw = row.get("payload") if isinstance(row, Mapping) else None
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+        if not isinstance(raw, Mapping):
+            continue
+        try:
+            receipts.append(CausalProgressReceiptV1.from_dict(raw).to_dict())
+        except (CausalProgressContractError, TypeError, ValueError):
+            continue
+    return tuple(receipts)
+
 def update_agent_job_state(
     conn: Any,
     *,
