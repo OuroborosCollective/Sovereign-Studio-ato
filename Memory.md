@@ -629,3 +629,9 @@ Evidence: Pre-memory head `f2b3de5ca55e436da9c4db96a7bad2350ec42edd` passed Rele
 Change: Added exact A2A `tasks/cancel` confirmation, immutable-created-at stall enforcement, suppressed duplicate unchanged `tasks/get` heartbeats, hardened Agent Zero against reusing timed-out terminal sessions, clarified changed-file UI semantics, and replaced the header eye with a visibly distinct deterministic cyber-ocular HUD.
 Learned: Live job `agent-33db1102b0c34588a980ea248d7a3a58` was genuinely handed to Agent Zero, but `tasks/get` stayed `submitted` while Agent Zero logs showed the workspace task executing and a terminal `ls` returning no output for 30s; repeated submitted events were noise, not progress.
 Evidence: targeted A2A tests 7/7 and repository-execution tests 31/31 pass locally after integrating the monotonic stall fix; PR #2039 Agent Runtime Tests passed on pre-memory head `ce9e2b796a5e80bc368c44a11f24353234b48088`; live DB readback preserved the single task id `5c42f9f0-25c6-4a2a-bff1-54f2eeae5a14` without duplicate submit.
+
+
+### 2026-09-21 — Release Verification stale UI contract repair
+Change: Updated the vNext truth-contract tests to match the merged cyber-ocular geometry and to verify the truthful unavailable-completion message without case-sensitive wording drift.
+Learned: Release Verification run 35623545113 failed because two assertions lagged behind intentional UI copy/geometry changes; production behavior was already correct.
+Evidence: Pre-memory head `d3e88083a0b913a9134939486e0a589e0100640f` passed Release Verification 35626122857 with frontend-smoke 3791 total / 3789 passed / 0 failed / 2 skipped, plus Runtime Unit Tests, Playwright Smoke Gate and Integration Gate success; Agent Backend 35626122841, MCP 35626122862, Continuity 35626122859 and Integration Plan 35626122855 also passed.
