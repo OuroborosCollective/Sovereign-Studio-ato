@@ -1542,6 +1542,28 @@ def wolfram_cag_canary(components: list[str] | None = None) -> dict[str, Any]:
     return provider_runtime.wolfram_cag_canary(components)
 
 
+@mcp.tool(annotations=READ_ONLY)
+def wolfram_source_intelligence(
+    operation: Annotated[str, Field(pattern=r"^(?:parse|inspect|format_preview)$")],
+    source: Annotated[str, Field(min_length=1, max_length=32768)],
+    source_egress_approved: bool = False,
+) -> dict[str, Any]:
+    """Analyze Wolfram Language source with bounded CodeTools over CAG.
+
+    The supplied source is transmitted to the configured Wolfram CAG provider
+    only when source_egress_approved=true for this call. The source is treated
+    as data and is never evaluated as Wolfram Language code. Supported
+    operations are parse, inspect and format_preview; formatting never mutates a
+    workspace and returns safeToApply only after a parser-structure equivalence
+    check.
+    """
+    return provider_runtime.wolfram_source_intelligence(
+        operation=operation,
+        source=source,
+        source_egress_approved=source_egress_approved,
+    )
+
+
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def wolfram_cag_runtime_evidence_bind(expected_revision: str) -> dict[str, Any]:
     """Bind fresh 4/4 CAG canaries to exact Docker, PatchMon, image and authorization evidence."""
