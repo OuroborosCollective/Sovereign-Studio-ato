@@ -645,3 +645,8 @@ Evidence: Pre-memory head `c8aba8bc7004238685e3b7de056d5fea94acc6a2` passed Rele
 Change: Added digest-pinned IT-Tools as a private managed Compose sidecar and exposed it to Agent Zero only as an optional deterministic developer utility, with no public port or evidence authority.
 Learned: IT-Tools is a static browser UI, so a running container alone proves little; verified deployment must additionally prove the real Agent Zero container can reach the internal UI.
 Evidence: Pre-memory head `9d78549df383ad63c3bf754d7db6d9b8da4a7306` passed 66/66 focused local regressions plus Release Verification 35636412544, MCP 35636412289, Agent Backend 35636412286, Continuity 35636412253, Boundary Drift 35636412305 and Integration Plan 35636412343; PatchMon runtime was 4/4 healthy. Live sidecar deployment remains unclaimed until the merged exact revision passes the Agent-Zero HTTP canary.
+
+### 2026-09-21 — IT-Tools installer copy repair
+Change: Added the missing `IT_TOOLS_TEMPLATE_DIR` bootstrap directory before managed control-plane copy.
+Learned: Registering a managed stack is insufficient if its template target directory is not created before the fail-closed atomic installer copy.
+Evidence: Self-update of main `8739e61eff8988aa3996da87124f570e33af02d7` failed exactly at `copy_control_plane_file:templates/sovereign-it-tools/docker-compose.yml` and rolled back; after the repair 20 installer + 35 managed-compose tests, backend compile and `git diff --check` pass.
