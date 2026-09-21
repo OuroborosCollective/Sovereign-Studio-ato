@@ -270,8 +270,22 @@ class TestTool(ToolBase):
         pnpm_lock = root / "pnpm-lock.yaml"
         npm_lock = root / "package-lock.json"
         if pnpm_lock.is_file():
-            install_args = ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"]
-            bootstrap_kind = "pnpm_frozen_lockfile"
+            git_config = root / ".git" / "config"
+            trusted_sovereign_origin = False
+            if git_config.is_file():
+                config_text = git_config.read_text(encoding="utf-8", errors="replace")
+                trusted_sovereign_origin = (
+                    "https://github.com/OuroborosCollective/Sovereign-Studio-ato" in config_text
+                    or "git@github.com:OuroborosCollective/Sovereign-Studio-ato" in config_text
+                )
+            install_args = ["pnpm", "install", "--frozen-lockfile"]
+            bootstrap_kind = (
+                "pnpm_frozen_lockfile_sovereign_policy"
+                if trusted_sovereign_origin
+                else "pnpm_frozen_lockfile_ignore_scripts"
+            )
+            if not trusted_sovereign_origin:
+                install_args.append("--ignore-scripts")
         elif npm_lock.is_file():
             install_args = ["npm", "ci", "--ignore-scripts"]
             bootstrap_kind = "npm_ci_lockfile"
