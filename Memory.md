@@ -660,3 +660,9 @@ Evidence: Pre-memory head `bf6d2b94b71ea2ff03c68b5610267fc7c942dbf5`; Agent Back
 Change: Added an explicit main-only `publish_immutable_mcp` workflow-dispatch recovery mode that publishes/verifies the exact MCP image without implying VPS deployment.
 Learned: Manual VPS bootstrap cannot recover a missing MCP publisher if workflow-dispatch can only validate; image publication and deployment need separate bounded recovery stages.
 Evidence: Coordinated Release 35640973123 on `6325abbb90288c38197f07d6427d1eb6fd0f545f` failed at exact-revision image-workflow evidence while backend digest `sha256:80771f6ba2d08f4c328a3cb83a34c2b247765b024aabdb0dc8e002cdab67d34b` was verified; 13 bootstrap/deploy + 20 installer tests and `git diff --check` pass after the recovery-path change.
+
+
+### 2026-09-21 — Agent Zero causal progress lease
+Change: Added predecessor-hash-chained SCPL receipts so A2A liveness cannot renew repository runtime; only a new authoritative Git workspace fingerprint can extend the bounded no-progress lease, with repeated states and the absolute deadline fail-closed.
+Learned: Agent liveness and material repository progress are separate truths; polling, UI activity and repeated workspace states must never earn more autonomous runtime, while #1525 remains the liveness-only WorkerHost lease owner.
+Evidence: Pre-memory head `d375100d5e863e2a6ec3ae0baabe12bfdfa5676c`; Agent Backend 35643687149 SUCCESS (1318 passed/1 skipped + N+1 regression 1 passed); Release Verification 35643687030 SUCCESS (frontend smoke 3789 passed/0 failed/2 skipped, Playwright 11 passed/15 skipped, integration 90 passed); MCP 35643687162, Integration Plan 35643687139, Boundary Ledger 35643687042 and Continuity 35643687081 SUCCESS. Runtime deployment parity remains UNVERIFIED because the private PatchMon/Sovottt runtime readback is unavailable in this conversation.
