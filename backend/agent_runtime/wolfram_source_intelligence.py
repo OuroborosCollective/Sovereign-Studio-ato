@@ -87,9 +87,9 @@ def build_wolfram_source_expression(operation: str, source: str) -> tuple[str, s
         body = (
             'Module[{items,rows},'
             'items=PacletSymbol["CodeInspector","CodeInspect"][s];'
-            'rows=items/.CodeInspector\`InspectionObject[tag_,desc_,sev_,data_Association]:>'
+            'rows=items/.CodeInspector`InspectionObject[tag_,desc_,sev_,data_Association]:>'
             '<|"tag"->tag,"description"->desc,"severity"->sev,'
-            '"source"->Lookup[data,CodeParser\`Source,Null],'
+            '"source"->Lookup[data,CodeParser`Source,Null],'
             '"confidence"->Lookup[data,ConfidenceLevel,Null]|>;'
             'ExportString[<|'
             '"operation"->"inspect",'
