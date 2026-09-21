@@ -182,14 +182,18 @@ function statusSalt(status?: string): number {
   return [...status].reduce((sum, char) => sum + char.charCodeAt(0), 7);
 }
 
+const DONE_REGEX = /done|fertig|completed|complete|success|draft pr|green/;
+
 function isDoneStatus(status?: string): boolean {
   const clean = status?.toLowerCase() ?? '';
-  return ['done', 'fertig', 'completed', 'complete', 'success', 'draft pr', 'green'].some((token) => clean.includes(token));
+  return DONE_REGEX.test(clean);
 }
+
+const WORKING_REGEX = /working|arbeitet|running|schreibt|code|build|package|agent/;
 
 function isWorkingStatus(status?: string): boolean {
   const clean = status?.toLowerCase() ?? '';
-  return ['working', 'arbeitet', 'running', 'schreibt', 'code', 'build', 'package', 'agent'].some((token) => clean.includes(token));
+  return WORKING_REGEX.test(clean);
 }
 
 export function normalizeThinkingFrameIndex(index: number, total = CUTE_THINKING_FRAMES.length): number {
