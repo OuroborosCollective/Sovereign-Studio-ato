@@ -254,6 +254,9 @@ class CausalProgressLeaseV1:
         elif observed_epoch_ms >= absolute_deadline_epoch_ms:
             verdict = "STALLED"
             reason = "absolute repository execution deadline reached"
+        elif not evidence_available:
+            verdict = "UNVERIFIED"
+            reason = "material progress evidence is unavailable"
         elif (
             last_material_progress_epoch_ms > 0
             and observed_epoch_ms - last_material_progress_epoch_ms
@@ -261,9 +264,6 @@ class CausalProgressLeaseV1:
         ):
             verdict = "STALLED"
             reason = "no new material repository progress within the bounded lease"
-        elif not evidence_available:
-            verdict = "UNVERIFIED"
-            reason = "material progress evidence is unavailable"
         elif last_material_progress_epoch_ms <= 0:
             verdict = "NO_PROGRESS"
             reason = "no material repository progress has been observed"
