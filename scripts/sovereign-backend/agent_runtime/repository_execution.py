@@ -104,6 +104,19 @@ def _repository_stall_seconds() -> float:
     return _bounded_env_seconds("SOVEREIGN_REPOSITORY_STALL_SECONDS", 1800.0, 300.0, 86400.0)
 
 
+def _repository_submitted_stall_seconds() -> float:
+    # "submitted" is acknowledgement/queue state, not proof of active work. Agent Zero
+    # has been observed processing a task internally while its FastA2A projection stayed
+    # submitted after a provider failure. Bound that false-live state much more tightly,
+    # but preserve real workspace mutations when they can be independently observed.
+    return _bounded_env_seconds(
+        "SOVEREIGN_REPOSITORY_SUBMITTED_STALL_SECONDS",
+        300.0,
+        120.0,
+        1800.0,
+    )
+
+
 def _job_age_seconds(job: StoredSovereignAgentJob) -> float | None:
     # Polling/event writes refresh updated_at, so it cannot be the execution clock.
     # created_at is immutable and guarantees that a stuck external task cannot live forever.
@@ -228,6 +241,49 @@ def cancel_repository_a2a_job(
         ),
     ))
     return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+
+
+def _cancel_stalled_repository_task(
+    conn: Any,
+    *,
+    job: StoredSovereignAgentJob,
+    task_id: str,
+    reason: str,
+    stage: str,
+    a2a_client_factory: A2AClientFactory,
+) -> StoredSovereignAgentJob:
+    """Quarantine a stalled job and require a real remote cancellation readback."""
+    try:
+        cancelled = a2a_client_factory().cancel_task(task_id)
+    except AgentZeroA2AError as exc:
+        return _block_job(
+            conn,
+            job,
+            (
+                f"{reason} Remote cancellation was not confirmed ({exc.family}); "
+                "publication remains quarantined and no resubmit is allowed."
+            ),
+            stage,
+        )
+    if cancelled.state != "canceled":
+        return _block_job(
+            conn,
+            job,
+            (
+                f"{reason} Agent Zero cancel returned state {cancelled.state}; "
+                "publication remains quarantined and no resubmit is allowed."
+            ),
+            stage,
+        )
+    return _block_job(
+        conn,
+        job,
+        (
+            f"{reason} Agent Zero confirmed task state canceled; publication remains "
+            "quarantined and no resubmit is allowed."
+        ),
+        stage,
+    )
 
 
 def _block_job(conn: Any, job: StoredSovereignAgentJob, reason: str, stage: str) -> StoredSovereignAgentJob:
@@ -847,16 +903,64 @@ def reconcile_repository_execution(
 
     if task.active:
         age_seconds = _job_age_seconds(job)
+
+        if (
+            task.state == "submitted"
+            and age_seconds is not None
+            and age_seconds >= _repository_submitted_stall_seconds()
+        ):
+            # FastA2A "submitted" means acknowledged/queued, not working. Before
+            # treating a stale submitted projection as dead, independently inspect
+            # the shared workspace so real Agent Zero work is never discarded merely
+            # because the upstream state projection is stale.
+            progress = run_agent_job_tool(job, "git-status", {}, workspace_root)
+            observed_changes = (
+                tuple(progress.changed_files)
+                if progress.status == "done" and progress.changed_files
+                else ()
+            )
+            if observed_changes:
+                if tuple(job.changed_files or ()) != observed_changes:
+                    update_agent_job_state(
+                        conn,
+                        job_id=job.job_id,
+                        status="running",
+                        changed_files=observed_changes,
+                    )
+                    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+                        stage="agent_zero_workspace_progress_observed",
+                        level="info",
+                        message=(
+                            f"Observed {len(observed_changes)} changed workspace file(s) while "
+                            "Agent Zero still projected task state submitted. This is real "
+                            "workspace progress, not completion evidence."
+                        ),
+                    ))
+                    job = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+            else:
+                return _cancel_stalled_repository_task(
+                    conn,
+                    job=job,
+                    task_id=task.task_id,
+                    reason=(
+                        "AGENT_ZERO_A2A_SUBMITTED_STALLED: tasks/get remained submitted "
+                        "beyond the bounded queue window and no workspace changes were observed."
+                    ),
+                    stage="agent_zero_a2a_submitted_stalled",
+                    a2a_client_factory=a2a_client_factory,
+                )
+
         if age_seconds is not None and age_seconds >= _repository_stall_seconds():
-            return _block_job(
+            return _cancel_stalled_repository_task(
                 conn,
-                job,
-                (
+                job=job,
+                task_id=task.task_id,
+                reason=(
                     "AGENT_ZERO_A2A_STALLED: the external task remained active beyond the "
-                    "bounded server reconciliation window; workspace publication is quarantined "
-                    "and automatic resubmit is forbidden."
+                    "bounded server reconciliation window."
                 ),
-                "agent_zero_a2a_task_stalled",
+                stage="agent_zero_a2a_task_stalled",
+                a2a_client_factory=a2a_client_factory,
             )
         return _record_task_readback(
             conn, job,

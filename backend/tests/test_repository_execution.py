@@ -792,6 +792,10 @@ def test_active_task_stalls_fail_closed_after_bounded_window(monkeypatch):
             assert task_id == "task-original"
             return AgentZeroA2ATask(task_id=task_id, state="working")
 
+        def cancel_task(self, task_id):
+            assert task_id == "task-original"
+            return AgentZeroA2ATask(task_id=task_id, state="canceled")
+
     result = repository_execution.reconcile_repository_execution(
         object(),
         user_id="owner-test",
@@ -802,7 +806,83 @@ def test_active_task_stalls_fail_closed_after_bounded_window(monkeypatch):
     assert result is not None
     assert result.status == "blocked"
     assert "AGENT_ZERO_A2A_STALLED" in (result.blocker or "")
+    assert "confirmed task state canceled" in (result.blocker or "")
     assert any(event.stage == "agent_zero_a2a_task_stalled" for event in state["events"])
+
+
+def test_submitted_task_without_workspace_progress_is_cancelled_early(monkeypatch):
+    stale = replace(
+        _job(),
+        created_at=datetime.now(timezone.utc) - timedelta(seconds=301),
+        updated_at=datetime.now(timezone.utc),
+    )
+    state = _patch_job_store(monkeypatch, stale)
+    monkeypatch.setenv("SOVEREIGN_REPOSITORY_SUBMITTED_STALL_SECONDS", "300")
+    monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "1800")
+    monkeypatch.setattr(
+        repository_execution,
+        "run_agent_job_tool",
+        lambda *_args, **_kwargs: _done_tool(changed_files=()),
+    )
+
+    class Client:
+        def get_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="submitted")
+
+        def cancel_task(self, task_id):
+            assert task_id == "task-original"
+            return AgentZeroA2ATask(task_id=task_id, state="canceled")
+
+    result = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id="owner-test",
+        job_id="agent-test",
+        a2a_client_factory=Client,
+    )
+
+    assert result is not None
+    assert result.status == "blocked"
+    assert "AGENT_ZERO_A2A_SUBMITTED_STALLED" in (result.blocker or "")
+    assert "confirmed task state canceled" in (result.blocker or "")
+    assert any(event.stage == "agent_zero_a2a_submitted_stalled" for event in state["events"])
+
+
+def test_submitted_task_with_workspace_changes_survives_queue_limit(monkeypatch):
+    stale = replace(
+        _job(),
+        created_at=datetime.now(timezone.utc) - timedelta(seconds=301),
+        updated_at=datetime.now(timezone.utc),
+    )
+    state = _patch_job_store(monkeypatch, stale)
+    monkeypatch.setenv("SOVEREIGN_REPOSITORY_SUBMITTED_STALL_SECONDS", "300")
+    monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "1800")
+    monkeypatch.setattr(
+        repository_execution,
+        "run_agent_job_tool",
+        lambda *_args, **_kwargs: _done_tool(changed_files=("README.md",)),
+    )
+
+    class Client:
+        def get_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="submitted")
+
+        def cancel_task(self, _task_id):
+            raise AssertionError("real workspace progress must not be cancelled at the submitted limit")
+
+    result = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id="owner-test",
+        job_id="agent-test",
+        a2a_client_factory=Client,
+    )
+
+    assert result is not None
+    assert result.status == "running"
+    assert result.changed_files == ("README.md",)
+    assert any(
+        event.stage == "agent_zero_workspace_progress_observed"
+        for event in state["events"]
+    )
 
 
 def test_fresh_active_task_remains_running(monkeypatch):
