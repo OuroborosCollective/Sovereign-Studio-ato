@@ -105,7 +105,9 @@ def _repository_stall_seconds() -> float:
 
 
 def _job_age_seconds(job: StoredSovereignAgentJob) -> float | None:
-    observed = job.updated_at or job.created_at
+    # Polling/event writes refresh updated_at, so it cannot be the execution clock.
+    # created_at is immutable and guarantees that a stuck external task cannot live forever.
+    observed = job.created_at
     if not isinstance(observed, datetime):
         return None
     if observed.tzinfo is None:
