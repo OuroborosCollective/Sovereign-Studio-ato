@@ -2,6 +2,7 @@ from agent_runtime.causal_progress_lease import (
     CausalProgressContractError,
     CausalProgressLeaseV1,
     CausalProgressReceiptV1,
+    validate_progress_successor,
 )
 
 
@@ -158,3 +159,41 @@ def test_future_progress_epoch_is_contradicted():
         observed_epoch_ms=10_000,
     )
     assert lease.verdict == "CONTRADICTED"
+
+
+def test_successor_chain_requires_exact_receipt_and_workspace_predecessor():
+    first = CausalProgressReceiptV1.build(
+        job_id="job-1", workspace_id="workspace-1", a2a_task_id="task-1",
+        repository="repo", repository_revision=REV_A,
+        progress_kind="REPOSITORY_MATERIALIZED",
+        previous_workspace_readback_sha256="",
+        current_workspace_readback_sha256=SHA_B,
+        observed_epoch_ms=1_000,
+    )
+    second = CausalProgressReceiptV1.build(
+        job_id="job-1", workspace_id="workspace-1", a2a_task_id="task-2",
+        repository="repo", repository_revision=REV_A,
+        progress_kind="A2A_STATE_TRANSITION",
+        previous_workspace_readback_sha256=SHA_B,
+        current_workspace_readback_sha256=SHA_B,
+        previous_receipt_sha256=first.receipt_sha256,
+        observed_epoch_ms=2_000,
+    )
+    validate_progress_successor(None, first)
+    validate_progress_successor(first, second)
+
+    broken = CausalProgressReceiptV1.build(
+        job_id="job-1", workspace_id="workspace-1", a2a_task_id="task-2",
+        repository="repo", repository_revision=REV_A,
+        progress_kind="WORKSPACE_DELTA",
+        previous_workspace_readback_sha256=SHA_C,
+        current_workspace_readback_sha256=SHA_A,
+        previous_receipt_sha256=first.receipt_sha256,
+        observed_epoch_ms=2_000,
+    )
+    try:
+        validate_progress_successor(first, broken)
+    except CausalProgressContractError:
+        pass
+    else:
+        raise AssertionError("workspace predecessor mismatch must fail closed")
