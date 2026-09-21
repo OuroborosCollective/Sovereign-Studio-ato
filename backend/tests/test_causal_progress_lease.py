@@ -119,6 +119,19 @@ def test_lease_missing_or_contradicted_evidence_never_goes_green():
     )
     assert missing.verdict == "UNVERIFIED"
 
+    missing_after_window = CausalProgressLeaseV1.evaluate(
+        job_id="job-1",
+        a2a_task_id="task-1",
+        source_revision=REV_A,
+        last_progress_receipt_sha256=SHA_B,
+        last_material_progress_epoch_ms=1_000,
+        max_no_progress_seconds=30,
+        absolute_deadline_epoch_ms=100_000,
+        observed_epoch_ms=40_000,
+        evidence_available=False,
+    )
+    assert missing_after_window.verdict == "UNVERIFIED"
+
     contradicted = CausalProgressLeaseV1.evaluate(
         job_id="job-1",
         a2a_task_id="task-1",
