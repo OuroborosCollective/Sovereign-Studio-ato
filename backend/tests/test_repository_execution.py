@@ -965,7 +965,7 @@ def test_active_readback_is_persisted_throttled_and_never_resets_stall_clock(mon
     assert first.updated_at == initial.updated_at
     reconcile()
     assert len(state["events"]) == 1
-    now += 31_000
+    now += 301_000
     second = reconcile()
     assert len(second.events) == 2
     assert second.updated_at == initial.updated_at

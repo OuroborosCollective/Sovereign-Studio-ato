@@ -2180,14 +2180,35 @@ def register_sovereign_agent_routes(
             if job.status in ("completed", "failed", "blocked", "cleaned"):
                 return jsonify({"error": "Job ist bereits terminal", "status": job.status}), 400
             if is_repository_a2a_job(job):
+                blocker = (
+                    "Cancelled by owner. Agent Zero remote execution cancellation is not available; "
+                    "Sovereign has quarantined this persisted run so no closeout or publication can occur."
+                )
+                update_agent_job_state(
+                    conn,
+                    job_id=job_id,
+                    status="blocked",
+                    blocker=blocker,
+                )
+                append_agent_event(conn, job_id, SovereignAgentEvent(
+                    stage="agent_zero_a2a_publication_quarantined",
+                    level="warning",
+                    message=(
+                        "Owner abort accepted at the Sovereign authority boundary. The remote Agent Zero task "
+                        "may still terminate independently, but its workspace result is quarantined and cannot "
+                        "advance to closeout or Draft-PR publication."
+                    ),
+                ))
                 return jsonify({
-                    "ok": False,
+                    "ok": True,
                     "runtime": "sovereign-agent",
                     "jobId": job_id,
-                    "status": job.status,
-                    "blocker": "AGENT_ZERO_A2A_CANCEL_NOT_PROVEN",
-                    "error": "Cancellation is not supported by the connected Agent Zero task contract. The job remains active; no stop was confirmed.",
-                }), 409
+                    "status": "blocked",
+                    "blocker": "AGENT_ZERO_A2A_PUBLICATION_QUARANTINED",
+                    "remoteTaskCancelled": False,
+                    "publicationQuarantined": True,
+                    "message": blocker,
+                })
             update_agent_job_state(
                 conn,
                 job_id=job_id,

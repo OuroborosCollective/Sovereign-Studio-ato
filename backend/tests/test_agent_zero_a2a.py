@@ -146,6 +146,8 @@ def test_submit_timeout_is_ambiguous_and_never_downgraded_to_retry(monkeypatch, 
         AgentZeroA2AClient(config).submit_repository_task(
             workspace_id="agent-workspace-123",
             mission="Implement one bounded change.",
+            repository_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato.git",
+            branch="main",
         )
 
     assert error.value.family == "AGENT_ZERO_A2A_SUBMIT_OUTCOME_UNKNOWN"

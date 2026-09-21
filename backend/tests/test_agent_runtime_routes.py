@@ -1151,7 +1151,7 @@ def test_cancel_terminal_job_is_blocked():
     assert response.get_json()["error"] == "Job ist bereits terminal"
 
 
-def test_repository_abort_reports_capability_gap_without_faking_cancellation():
+def test_repository_abort_quarantines_publication_without_faking_remote_cancellation():
     conn = FakeConnection()
     seed_job(conn, "user-1", "agent-a2a", status="running")
     conn.jobs["agent-a2a"]["external_ref"] = "agent-zero-a2a:task-running"
@@ -1163,11 +1163,15 @@ def test_repository_abort_reports_capability_gap_without_faking_cancellation():
     response = app.test_client().post(
         "/api/user/agent/jobs/agent-a2a/cancel", headers={"X-Test-User": "user-1"},
     )
-    assert response.status_code == 409
-    assert response.get_json()["blocker"] == "AGENT_ZERO_A2A_CANCEL_NOT_PROVEN"
-    assert "no stop was confirmed" in response.get_json()["error"]
-    assert conn.jobs["agent-a2a"]["status"] == "running"
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["blocker"] == "AGENT_ZERO_A2A_PUBLICATION_QUARANTINED"
+    assert payload["remoteTaskCancelled"] is False
+    assert payload["publicationQuarantined"] is True
+    assert conn.jobs["agent-a2a"]["status"] == "blocked"
     assert conn.jobs["agent-a2a"]["external_ref"] == "agent-zero-a2a:task-running"
+    assert conn.events[-1]["stage"] == "agent_zero_a2a_publication_quarantined"
 
 
 def test_cleanup_requires_terminal_state():

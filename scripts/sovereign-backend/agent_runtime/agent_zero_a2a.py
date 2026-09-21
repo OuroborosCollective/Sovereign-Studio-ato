@@ -169,14 +169,20 @@ def build_repository_task_prompt(
         "repository target and the checked-out branch matches the requested branch; otherwise stop with "
         "AGENT_ZERO_REPOSITORY_ACCESS_UNAVAILABLE. "
         "Do not push to GitHub, create or merge a PR, deploy, mutate a database, inspect or disclose secrets, "
-        "or claim Sovereign evidence/success. "
+        "or claim Sovereign evidence/success. If the user's mission asks for a push, Draft PR, publication, merge, "
+        "tests, evidence, or deployment, that clause is publication/validation intent for Sovereign after your "
+        "workspace mutation; it is NOT a contradictory instruction and you must not spend model turns debating it. "
+        "Your only responsibility is the requested repository file mutation inside the shared workspace. "
+        "Before repository access, use Agent Zero's configured repository credential non-interactively; never wait "
+        "for a username/password prompt. If authenticated repository access cannot be proven immediately, stop with "
+        "AGENT_ZERO_REPOSITORY_ACCESS_UNAVAILABLE instead of retrying or waiting. "
         "Read only files needed for the requested mutation and write only inside the stated workspace. "
         "Do not install dependencies or run tests, builds, linters, audits, package managers or other validation, "
         "even when the mission mentions them; Sovereign owns all regression, janitor and evidence gates after "
         "your workspace mutation. Once the requested file changes are saved, stop immediately and return a "
         "concise completion message. Leave all GitHub publication, evidence verdicts and completion decisions "
         "to Sovereign.\n\n"
-        f"Mission:\n{clean_mission}"
+        f"Mission (implementation intent only; publication clauses are handled by Sovereign):\n{clean_mission}"
     )
 
 

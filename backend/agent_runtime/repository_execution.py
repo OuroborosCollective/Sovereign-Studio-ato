@@ -77,7 +77,7 @@ _SHELL_CONTROL_TOKENS: Final[frozenset[str]] = frozenset({"||", ";", "|", ">", "
 _RECONCILER_THREAD_LOCK = threading.Lock()
 _RECONCILER_THREAD: threading.Thread | None = None
 _LOGGER = logging.getLogger(__name__)
-_A2A_READBACK_INTERVAL_MS: Final[int] = 30_000
+_A2A_READBACK_INTERVAL_MS: Final[int] = 300_000
 
 
 class RepositoryExecutionError(RuntimeError):
@@ -101,7 +101,7 @@ def _repository_reconciler_poll_seconds() -> float:
 
 
 def _repository_stall_seconds() -> float:
-    return _bounded_env_seconds("SOVEREIGN_REPOSITORY_STALL_SECONDS", 1800.0, 300.0, 86400.0)
+    return _bounded_env_seconds("SOVEREIGN_REPOSITORY_STALL_SECONDS", 1800.0, 300.0, 1800.0)
 
 
 def _job_age_seconds(job: StoredSovereignAgentJob) -> float | None:
