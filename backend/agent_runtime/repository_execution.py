@@ -25,6 +25,8 @@ from .agent_zero_a2a import (
     AgentZeroA2ATaskLost,
 )
 from .contracts import SovereignAgentEvent, sanitize_agent_text
+from .causal_progress_lease import CausalProgressLeaseV1, CausalProgressReceiptV1
+from .agent_run_receipts import read_git_workspace_identity
 from .draft_pr_gate import draft_pr_input_from_job, prepare_draft_pr
 from .evidence_gate import EvidenceGateInput, evaluate_agent_evidence
 from .git_workspace import git_diff_check, git_diff_full
@@ -32,6 +34,9 @@ from .job_lifecycle import create_sovereign_agent_job
 from .job_store import (
     StoredSovereignAgentJob,
     append_agent_event,
+    append_agent_progress_receipt,
+    has_agent_progress_fingerprint,
+    read_latest_agent_progress_receipt,
     compare_and_swap_agent_job_external_ref,
     list_reconcilable_repository_jobs,
     mark_draft_pr_prepared,
@@ -102,6 +107,15 @@ def _repository_reconciler_poll_seconds() -> float:
 
 def _repository_stall_seconds() -> float:
     return _bounded_env_seconds("SOVEREIGN_REPOSITORY_STALL_SECONDS", 1800.0, 300.0, 1800.0)
+
+
+def _repository_absolute_deadline_seconds() -> float:
+    return _bounded_env_seconds(
+        "SOVEREIGN_REPOSITORY_ABSOLUTE_DEADLINE_SECONDS",
+        21_600.0,
+        1_800.0,
+        86_400.0,
+    )
 
 
 def _repository_submitted_stall_seconds() -> float:
@@ -320,6 +334,96 @@ def _record_task_readback(
         break
     append_agent_event(conn, current.job_id, event)
     return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or current
+
+
+def _epoch_ms(value: datetime | None) -> int:
+    if not isinstance(value, datetime):
+        return 0
+    observed = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    return int(observed.astimezone(timezone.utc).timestamp() * 1000)
+
+
+def _observe_causal_progress(
+    conn: Any,
+    *,
+    job: StoredSovereignAgentJob,
+    task_id: str,
+    workspace_root: Path | None,
+    max_no_progress_seconds: int,
+) -> CausalProgressLeaseV1:
+    """Reconcile material Git progress without treating A2A liveness as progress."""
+
+    now_ms = int(time.time() * 1000)
+    created_ms = _epoch_ms(job.created_at)
+    absolute_deadline_ms = created_ms + int(_repository_absolute_deadline_seconds() * 1000)
+    if created_ms <= 0:
+        absolute_deadline_ms = now_ms + int(_repository_absolute_deadline_seconds() * 1000)
+
+    latest_raw = read_latest_agent_progress_receipt(conn, job_id=job.job_id)
+    latest = (
+        CausalProgressReceiptV1.from_dict(latest_raw)
+        if latest_raw is not None
+        else None
+    )
+    last_progress_ms = latest.observed_epoch_ms if latest is not None else created_ms
+    latest_receipt_sha = latest.receipt_sha256 if latest is not None else ""
+
+    workspace_id = str(job.workspace_id or job.job_id)
+    repository_path = repo_dir_for_workspace(workspace_id, workspace_root)
+    evidence_available = repository_path.is_dir() and (repository_path / ".git").exists()
+
+    if evidence_available:
+        try:
+            identity = read_git_workspace_identity(repository_path, repository=job.repo_url)
+        except (OSError, RuntimeError, ValueError):
+            evidence_available = False
+        else:
+            current_sha = identity.authoritative_readback_sha256
+            if not has_agent_progress_fingerprint(
+                conn,
+                job_id=job.job_id,
+                workspace_readback_sha256=current_sha,
+            ):
+                receipt = CausalProgressReceiptV1.build(
+                    job_id=job.job_id,
+                    workspace_id=workspace_id,
+                    a2a_task_id=task_id,
+                    repository=job.repo_url,
+                    repository_revision=identity.base_commit_sha,
+                    progress_kind=(
+                        "REPOSITORY_MATERIALIZED"
+                        if latest is None
+                        else "WORKSPACE_DELTA"
+                    ),
+                    previous_workspace_readback_sha256=(
+                        latest.current_workspace_readback_sha256 if latest is not None else ""
+                    ),
+                    current_workspace_readback_sha256=current_sha,
+                    previous_receipt_sha256=latest_receipt_sha,
+                    observed_epoch_ms=now_ms,
+                )
+                append_agent_progress_receipt(
+                    conn,
+                    job_id=job.job_id,
+                    receipt=receipt.to_dict(),
+                )
+                latest = receipt
+                latest_receipt_sha = receipt.receipt_sha256
+                last_progress_ms = receipt.observed_epoch_ms
+
+    return CausalProgressLeaseV1.evaluate(
+        job_id=job.job_id,
+        a2a_task_id=task_id,
+        source_revision=(
+            latest.repository_revision if latest is not None else str(job.branch or "")
+        ),
+        last_progress_receipt_sha256=latest_receipt_sha,
+        last_material_progress_epoch_ms=last_progress_ms,
+        max_no_progress_seconds=max_no_progress_seconds,
+        absolute_deadline_epoch_ms=absolute_deadline_ms,
+        observed_epoch_ms=now_ms,
+        evidence_available=evidence_available,
+    )
 
 
 def _submit_after_claim(
@@ -902,64 +1006,34 @@ def reconcile_repository_execution(
         ) from exc
 
     if task.active:
-        age_seconds = _job_age_seconds(job)
-
-        if (
-            task.state == "submitted"
-            and age_seconds is not None
-            and age_seconds >= _repository_submitted_stall_seconds()
-        ):
-            # FastA2A "submitted" means acknowledged/queued, not working. Before
-            # treating a stale submitted projection as dead, independently inspect
-            # the shared workspace so real Agent Zero work is never discarded merely
-            # because the upstream state projection is stale.
-            progress = run_agent_job_tool(job, "git-status", {}, workspace_root)
-            observed_changes = (
-                tuple(progress.changed_files)
-                if progress.status == "done" and progress.changed_files
-                else ()
-            )
-            if observed_changes:
-                if tuple(job.changed_files or ()) != observed_changes:
-                    update_agent_job_state(
-                        conn,
-                        job_id=job.job_id,
-                        status="running",
-                        changed_files=observed_changes,
-                    )
-                    append_agent_event(conn, job.job_id, SovereignAgentEvent(
-                        stage="agent_zero_workspace_progress_observed",
-                        level="info",
-                        message=(
-                            f"Observed {len(observed_changes)} changed workspace file(s) while "
-                            "Agent Zero still projected task state submitted. This is real "
-                            "workspace progress, not completion evidence."
-                        ),
-                    ))
-                    job = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-            else:
-                return _cancel_stalled_repository_task(
-                    conn,
-                    job=job,
-                    task_id=task.task_id,
-                    reason=(
-                        "AGENT_ZERO_A2A_SUBMITTED_STALLED: tasks/get remained submitted "
-                        "beyond the bounded queue window and no workspace changes were observed."
-                    ),
-                    stage="agent_zero_a2a_submitted_stalled",
-                    a2a_client_factory=a2a_client_factory,
-                )
-
-        if age_seconds is not None and age_seconds >= _repository_stall_seconds():
+        max_no_progress_seconds = int(
+            _repository_submitted_stall_seconds()
+            if task.state == "submitted"
+            else _repository_stall_seconds()
+        )
+        lease = _observe_causal_progress(
+            conn,
+            job=job,
+            task_id=task.task_id,
+            workspace_root=workspace_root,
+            max_no_progress_seconds=max_no_progress_seconds,
+        )
+        if lease.verdict == "CONTRADICTED":
             return _cancel_stalled_repository_task(
                 conn,
                 job=job,
                 task_id=task.task_id,
-                reason=(
-                    "AGENT_ZERO_A2A_STALLED: the external task remained active beyond the "
-                    "bounded server reconciliation window."
-                ),
-                stage="agent_zero_a2a_task_stalled",
+                reason=f"AGENT_ZERO_PROGRESS_LEASE_CONTRADICTED: {lease.reason}.",
+                stage="agent_zero_progress_lease_contradicted",
+                a2a_client_factory=a2a_client_factory,
+            )
+        if lease.verdict == "STALLED":
+            return _cancel_stalled_repository_task(
+                conn,
+                job=job,
+                task_id=task.task_id,
+                reason=f"AGENT_ZERO_NO_MATERIAL_PROGRESS: {lease.reason}.",
+                stage="agent_zero_no_material_progress",
                 a2a_client_factory=a2a_client_factory,
             )
         return _record_task_readback(
