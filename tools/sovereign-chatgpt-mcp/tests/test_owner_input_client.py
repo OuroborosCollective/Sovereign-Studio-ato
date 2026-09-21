@@ -752,6 +752,64 @@ def test_wolfram_cag_canary_rejects_unknown_component_before_network(monkeypatch
         client.wolfram_cag_canary(["wolfram.cag.agent-one"])
 
 
+def test_wolfram_source_intelligence_requires_explicit_egress_and_is_secret_free(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "status": "WOLFRAM_SOURCE_INTELLIGENCE_SUCCEEDED_UNVERIFIED",
+            "sourceExecuted": False,
+            "sourceEgressOccurred": True,
+            "mutationPerformed": False,
+            "secretValuesReturned": False,
+        })
+    ])
+    client = ProviderRuntimeClient(session=session)
+
+    blocked = client.wolfram_source_intelligence(
+        operation="parse",
+        source="1+1",
+        source_egress_approved=False,
+    )
+    assert blocked["blocker"] == "source_egress_approval_required"
+    assert blocked["sourceEgressOccurred"] is False
+    assert session.calls == []
+
+    result = client.wolfram_source_intelligence(
+        operation="parse",
+        source="1+1",
+        source_egress_approved=True,
+    )
+    assert session.calls[0]["method"] == "POST"
+    assert session.calls[0]["url"] == "http://backend:8787/api/internal/wolfram-cag/source-intelligence"
+    assert session.calls[0]["json"] == {
+        "operation": "parse",
+        "source": "1+1",
+        "sourceEgressApproved": True,
+    }
+    assert result["protected_values_returned"] is False
+    assert result["secret_argument_accepted"] is False
+    assert result["sourceExecuted"] is False
+
+
+def test_wolfram_source_intelligence_rejects_invalid_or_oversize_source_before_network(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    client = ProviderRuntimeClient(session=FakeSession([]))
+    with pytest.raises(ValueError, match="operation"):
+        client.wolfram_source_intelligence(
+            operation="execute",
+            source="1+1",
+            source_egress_approved=True,
+        )
+    with pytest.raises(ValueError, match="32768"):
+        client.wolfram_source_intelligence(
+            operation="parse",
+            source="x" * 32769,
+            source_egress_approved=True,
+        )
+
+
 def test_openrouter_status_is_read_without_protected_values(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
