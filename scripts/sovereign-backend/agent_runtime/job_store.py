@@ -204,6 +204,7 @@ def append_agent_progress_receipt(
     from .causal_progress_lease import (
         CausalProgressContractError,
         CausalProgressReceiptV1,
+        validate_progress_successor,
     )
 
     canonical = CausalProgressReceiptV1.from_dict(receipt).to_dict()
@@ -240,21 +241,8 @@ def append_agent_progress_receipt(
                 raise CausalProgressContractError("previous progress receipt payload is invalid")
             previous = CausalProgressReceiptV1.from_dict(raw)
 
-        expected_predecessor = previous.receipt_sha256 if previous is not None else ""
-        if canonical["previousReceiptSha256"] != expected_predecessor:
-            raise CausalProgressContractError("progress receipt predecessor does not match current head")
-        if previous is None:
-            if canonical["previousWorkspaceReadbackSha256"]:
-                raise CausalProgressContractError(
-                    "first progress receipt may not claim a previous workspace readback"
-                )
-        else:
-            if canonical["previousWorkspaceReadbackSha256"] != previous.current_workspace_readback_sha256:
-                raise CausalProgressContractError(
-                    "progress receipt workspace predecessor does not match current head"
-                )
-            if int(canonical["observedEpochMs"]) < previous.observed_epoch_ms:
-                raise CausalProgressContractError("progress receipt observation time moved backwards")
+        current = CausalProgressReceiptV1.from_dict(canonical)
+        validate_progress_successor(previous, current)
 
         cur.execute(
             """
