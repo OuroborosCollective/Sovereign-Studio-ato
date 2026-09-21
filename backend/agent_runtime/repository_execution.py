@@ -497,31 +497,55 @@ def _observe_causal_progress(
                         previous_receipt_sha256=latest_receipt_sha,
                         observed_epoch_ms=now_ms,
                     )
-                    append_agent_progress_receipt(
-                        conn,
-                        job_id=job.job_id,
-                        receipt=receipt.to_dict(),
-                    )
-                    observed_changes = tuple(identity.changed_paths)
-                    if observed_changes and tuple(job.changed_files or ()) != observed_changes:
-                        update_agent_job_state(
+                    try:
+                        append_agent_progress_receipt(
                             conn,
                             job_id=job.job_id,
-                            status="running",
-                            changed_files=observed_changes,
+                            receipt=receipt.to_dict(),
                         )
-                        append_agent_event(conn, job.job_id, SovereignAgentEvent(
-                            stage="agent_zero_workspace_progress_observed",
-                            level="info",
-                            message=(
-                                f"Observed {len(observed_changes)} changed workspace file(s) from "
-                                "the authoritative Git workspace readback. This is material "
-                                "activity, not completion or quality evidence."
-                            ),
-                        ))
-                    latest = receipt
-                    latest_receipt_sha = receipt.receipt_sha256
-                    last_progress_ms = receipt.observed_epoch_ms
+                    except CausalProgressContractError:
+                        # Another reconciler may have advanced the append-only receipt
+                        # head after our read but before the row lock was acquired. That
+                        # race is not a contradiction if the persisted head really
+                        # advanced for the same bound execution.
+                        concurrent_raw = read_latest_agent_progress_receipt(
+                            conn,
+                            job_id=job.job_id,
+                        )
+                        if concurrent_raw is None:
+                            raise
+                        concurrent = CausalProgressReceiptV1.from_dict(concurrent_raw)
+                        if (
+                            concurrent.receipt_sha256 == latest_receipt_sha
+                            or concurrent.job_id != job.job_id
+                            or concurrent.workspace_id != workspace_id
+                            or concurrent.repository != job.repo_url
+                        ):
+                            raise
+                        latest = concurrent
+                        latest_receipt_sha = concurrent.receipt_sha256
+                        last_progress_ms = concurrent.observed_epoch_ms
+                    else:
+                        observed_changes = tuple(identity.changed_paths)
+                        if observed_changes and tuple(job.changed_files or ()) != observed_changes:
+                            update_agent_job_state(
+                                conn,
+                                job_id=job.job_id,
+                                status="running",
+                                changed_files=observed_changes,
+                            )
+                            append_agent_event(conn, job.job_id, SovereignAgentEvent(
+                                stage="agent_zero_workspace_progress_observed",
+                                level="info",
+                                message=(
+                                    f"Observed {len(observed_changes)} changed workspace file(s) from "
+                                    "the authoritative Git workspace readback. This is material "
+                                    "activity, not completion or quality evidence."
+                                ),
+                            ))
+                        latest = receipt
+                        latest_receipt_sha = receipt.receipt_sha256
+                        last_progress_ms = receipt.observed_epoch_ms
 
     return CausalProgressLeaseV1.evaluate(
         job_id=job.job_id,
