@@ -369,8 +369,6 @@ def _observe_causal_progress(
     now_ms = int(time.time() * 1000)
     created_ms = _epoch_ms(job.created_at)
     absolute_deadline_ms = created_ms + int(_repository_absolute_deadline_seconds() * 1000)
-    if created_ms <= 0:
-        absolute_deadline_ms = now_ms + int(_repository_absolute_deadline_seconds() * 1000)
 
     latest_raw = read_latest_agent_progress_receipt(conn, job_id=job.job_id)
     latest = (
@@ -378,6 +376,19 @@ def _observe_causal_progress(
         if latest_raw is not None
         else None
     )
+    if created_ms <= 0:
+        return CausalProgressLeaseV1.evaluate(
+            job_id=job.job_id,
+            a2a_task_id=task_id,
+            source_revision=(latest.repository_revision if latest is not None else ""),
+            last_progress_receipt_sha256=(latest.receipt_sha256 if latest is not None else ""),
+            last_material_progress_epoch_ms=(latest.observed_epoch_ms if latest is not None else 0),
+            max_no_progress_seconds=max_no_progress_seconds,
+            absolute_deadline_epoch_ms=max(1, now_ms + 1),
+            observed_epoch_ms=now_ms,
+            evidence_available=False,
+            contradicted=True,
+        )
     workspace_id = str(job.workspace_id or job.job_id)
     if latest is not None and (
         latest.job_id != job.job_id
