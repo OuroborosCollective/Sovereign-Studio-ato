@@ -781,7 +781,8 @@ def test_all_closeout_evidence_allows_prepare_but_never_creates_pr(monkeypatch):
 def test_active_task_stalls_fail_closed_after_bounded_window(monkeypatch):
     stale = replace(
         _job(),
-        updated_at=datetime.now(timezone.utc) - timedelta(seconds=601),
+        created_at=datetime.now(timezone.utc) - timedelta(seconds=601),
+        updated_at=datetime.now(timezone.utc),
     )
     state = _patch_job_store(monkeypatch, stale)
     monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
@@ -805,7 +806,11 @@ def test_active_task_stalls_fail_closed_after_bounded_window(monkeypatch):
 
 
 def test_fresh_active_task_remains_running(monkeypatch):
-    fresh = replace(_job(), updated_at=datetime.now(timezone.utc))
+    fresh = replace(
+        _job(),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
     _patch_job_store(monkeypatch, fresh)
     monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
 

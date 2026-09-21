@@ -105,7 +105,12 @@ def _repository_stall_seconds() -> float:
 
 
 def _job_age_seconds(job: StoredSovereignAgentJob) -> float | None:
-    observed = job.updated_at or job.created_at
+    # ``updated_at`` is a row-maintenance timestamp, not an execution clock.
+    # The database BEFORE UPDATE trigger refreshes it for every job update, so
+    # polling/readback-related writes can otherwise postpone the stall boundary
+    # forever. ``created_at`` is immutable for the persisted repository job and
+    # therefore provides the bounded wall-clock deadline required here.
+    observed = job.created_at
     if not isinstance(observed, datetime):
         return None
     if observed.tzinfo is None:
