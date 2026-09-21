@@ -51,3 +51,79 @@ def test_vitest_framework_always_uses_run_mode(monkeypatch, tmp_path: Path):
     assert result.status == "done"
     assert observed["args"][:3] == ["npx", "vitest", "run"]
     assert "--reporter=verbose" in observed["args"]
+
+
+def test_node_regression_bootstraps_frozen_dependencies_without_scripts(monkeypatch, tmp_path: Path):
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest run"}}', encoding="utf-8")
+    (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n", encoding="utf-8")
+    calls = []
+
+    class Completed:
+        returncode = 0
+        stdout = "ok"
+        stderr = ""
+
+    def fake_run(args, **kwargs):
+        calls.append((list(args), kwargs))
+        return Completed()
+
+    monkeypatch.setattr("agent_runtime.tools.test_tool.subprocess.run", fake_run)
+
+    result = TestTool().execute(
+        {"command": "pnpm test", "verbose": False, "timeout": 120},
+        str(tmp_path),
+    )
+
+    assert result.status == "done"
+    assert calls[0][0] == ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"]
+    assert calls[0][1]["env"]["CI"] == "1"
+    assert calls[1][0] == ["pnpm", "test"]
+
+
+def test_node_regression_fails_closed_without_lockfile(monkeypatch, tmp_path: Path):
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest run"}}', encoding="utf-8")
+
+    def unexpected_run(*_args, **_kwargs):
+        raise AssertionError("unlocked dependency bootstrap must not execute")
+
+    monkeypatch.setattr("agent_runtime.tools.test_tool.subprocess.run", unexpected_run)
+
+    result = TestTool().execute(
+        {"command": "pnpm test", "verbose": False},
+        str(tmp_path),
+    )
+
+    assert result.status == "blocked"
+    assert result.blocker == "Node dependency bootstrap requires pnpm-lock.yaml or package-lock.json"
+
+
+def test_canonical_sovereign_origin_uses_repository_build_policy(monkeypatch, tmp_path: Path):
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest run"}}', encoding="utf-8")
+    (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n", encoding="utf-8")
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "config").write_text(
+        '[remote "origin"]\n\turl = https://github.com/OuroborosCollective/Sovereign-Studio-ato.git\n',
+        encoding="utf-8",
+    )
+    calls = []
+
+    class Completed:
+        returncode = 0
+        stdout = "ok"
+        stderr = ""
+
+    def fake_run(args, **kwargs):
+        calls.append((list(args), kwargs))
+        return Completed()
+
+    monkeypatch.setattr("agent_runtime.tools.test_tool.subprocess.run", fake_run)
+
+    result = TestTool().execute(
+        {"command": "pnpm test", "verbose": False},
+        str(tmp_path),
+    )
+
+    assert result.status == "done"
+    assert calls[0][0] == ["pnpm", "install", "--frozen-lockfile"]
+    assert calls[1][0] == ["pnpm", "test"]
