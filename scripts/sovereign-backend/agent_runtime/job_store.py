@@ -188,6 +188,105 @@ def append_agent_event(conn: Any, job_id: str, event: SovereignAgentEvent) -> No
     conn.commit()
 
 
+def append_agent_progress_receipt(
+    conn: Any,
+    *,
+    job_id: str,
+    receipt: Mapping[str, Any],
+    commit: bool = True,
+) -> dict[str, Any]:
+    """Persist one hash-validated causal progress receipt.
+
+    The PostgreSQL event row supplies the operational observation timestamp.
+    The job-level event is only a bounded projection and never progress truth.
+    """
+
+    from .causal_progress_lease import CausalProgressReceiptV1
+
+    canonical = CausalProgressReceiptV1.from_dict(receipt).to_dict()
+    summary = {
+        "stage": "agent_zero_material_progress_observed",
+        "level": "info",
+        "message": sanitize_agent_text(
+            "Material repository progress recorded from an authoritative Git workspace readback.",
+            300,
+        ),
+        "at": int(__import__("time").time() * 1000),
+    }
+    created_at = None
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO sovereign_agent_events (job_id, stage, level, message, payload)
+            VALUES (%s, %s, %s, %s, %s::jsonb)
+            RETURNING created_at, id
+            """,
+            (
+                job_id,
+                summary["stage"],
+                summary["level"],
+                summary["message"],
+                _json(canonical),
+            ),
+        )
+        row = cur.fetchone()
+        if isinstance(row, Mapping):
+            created_at = row.get("created_at")
+        elif row:
+            created_at = row[0]
+        cur.execute(
+            """
+            UPDATE sovereign_agent_jobs
+            SET events = COALESCE(events, '[]'::jsonb) || %s::jsonb
+            WHERE job_id = %s
+            """,
+            (_json([summary]), job_id),
+        )
+    if commit:
+        conn.commit()
+    return {"receipt": canonical, "createdAt": created_at}
+
+
+def list_agent_progress_receipts(
+    conn: Any,
+    *,
+    user_id: str,
+    job_id: str,
+    a2a_task_id: str,
+) -> tuple[dict[str, Any], ...]:
+    """Read the complete validated progress chain for one bound A2A task."""
+
+    from .causal_progress_lease import CausalProgressReceiptV1
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT event.payload, event.created_at
+            FROM sovereign_agent_events AS event
+            JOIN sovereign_agent_jobs AS job ON job.job_id = event.job_id
+            WHERE event.job_id = %s
+              AND job.user_id = %s
+              AND event.stage = 'agent_zero_material_progress_observed'
+              AND event.payload ->> 'a2aTaskId' = %s
+            ORDER BY event.created_at ASC, event.id ASC
+            """,
+            (job_id, user_id, a2a_task_id),
+        )
+        rows = cur.fetchall()
+
+    receipts: list[dict[str, Any]] = []
+    for row in rows:
+        raw = row.get("payload") if isinstance(row, Mapping) else row[0]
+        created_at = row.get("created_at") if isinstance(row, Mapping) else row[1]
+        if isinstance(raw, str):
+            raw = json.loads(raw)
+        if not isinstance(raw, Mapping):
+            raise ValueError("causal progress event payload is not an object")
+        canonical = CausalProgressReceiptV1.from_dict(raw).to_dict()
+        receipts.append({"receipt": canonical, "createdAt": created_at})
+    return tuple(receipts)
+
+
 def append_agent_projection(conn: Any, *, job_id: str, projection: Mapping[str, Any]) -> None:
     """Persist a redacted projection observation without changing canonical job truth."""
     payload = dict(projection)
