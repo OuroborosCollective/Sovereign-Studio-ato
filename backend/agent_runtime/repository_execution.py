@@ -387,7 +387,7 @@ def _observe_causal_progress(
         return CausalProgressLeaseV1.evaluate(
             job_id=job.job_id,
             a2a_task_id=task_id,
-            source_revision=str(job.branch or ""),
+            source_revision=latest.repository_revision,
             last_progress_receipt_sha256=latest.receipt_sha256,
             last_material_progress_epoch_ms=latest.observed_epoch_ms,
             max_no_progress_seconds=max_no_progress_seconds,
@@ -470,7 +470,7 @@ def _observe_causal_progress(
         job_id=job.job_id,
         a2a_task_id=task_id,
         source_revision=(
-            latest.repository_revision if latest is not None else str(job.branch or "")
+            latest.repository_revision if latest is not None else ""
         ),
         last_progress_receipt_sha256=latest_receipt_sha,
         last_material_progress_epoch_ms=last_progress_ms,
