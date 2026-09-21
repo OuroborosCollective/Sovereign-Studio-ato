@@ -1146,3 +1146,35 @@ def test_late_readback_cannot_project_activity_on_a_terminal_job(monkeypatch):
     )
     assert result.status == "blocked"
     assert state["events"] == []
+
+
+def test_causal_progress_rejects_receipt_from_previous_a2a_task(monkeypatch, tmp_path):
+    initial = _job()
+    _patch_job_store(monkeypatch, initial)
+    stale_receipt = repository_execution.CausalProgressReceiptV1.build(
+        job_id=initial.job_id,
+        workspace_id=str(initial.workspace_id or initial.job_id),
+        a2a_task_id="task-previous",
+        repository=initial.repo_url,
+        repository_revision="a" * 40,
+        progress_kind="WORKSPACE_DELTA",
+        previous_workspace_readback_sha256="b" * 64,
+        current_workspace_readback_sha256="c" * 64,
+        observed_epoch_ms=int(time.time() * 1000),
+    )
+    monkeypatch.setattr(
+        repository_execution,
+        "read_latest_agent_progress_receipt",
+        lambda _conn, *, job_id: stale_receipt.to_dict(),
+    )
+
+    lease = repository_execution._observe_causal_progress(
+        object(),
+        job=initial,
+        task_id="task-current",
+        workspace_root=tmp_path,
+        max_no_progress_seconds=300,
+    )
+
+    assert lease.verdict == "CONTRADICTED"
+    assert "contradicts" in lease.reason
