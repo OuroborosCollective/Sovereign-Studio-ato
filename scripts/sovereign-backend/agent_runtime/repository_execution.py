@@ -209,6 +209,10 @@ def _observe_repository_material_progress(
     workspace_root: Path | None,
     force: bool = False,
 ) -> tuple[bool, tuple[dict[str, Any], ...], tuple[Any, ...], Any | None]:
+    current = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+    if current.status != "running" or current.external_ref != job.external_ref:
+        return False, (), (), None
+    job = current
     rows, receipts = _progress_chain(conn, job=job, task_id=task_id)
     if not _progress_readback_due(job.job_id, task_id, force=force or not receipts):
         return False, rows, receipts, None
