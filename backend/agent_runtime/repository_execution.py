@@ -101,7 +101,7 @@ def _repository_reconciler_poll_seconds() -> float:
 
 
 def _repository_stall_seconds() -> float:
-    return _bounded_env_seconds("SOVEREIGN_REPOSITORY_STALL_SECONDS", 1800.0, 300.0, 86400.0)
+    return _bounded_env_seconds("SOVEREIGN_REPOSITORY_STALL_SECONDS", 1800.0, 300.0, 1800.0)
 
 
 def _job_age_seconds(job: StoredSovereignAgentJob) -> float | None:

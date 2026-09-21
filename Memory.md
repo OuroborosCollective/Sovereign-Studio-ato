@@ -629,3 +629,8 @@ Evidence: Pre-memory head `f2b3de5ca55e436da9c4db96a7bad2350ec42edd` passed Rele
 Change: Added exact A2A `tasks/cancel` confirmation, immutable-created-at stall enforcement, suppressed duplicate unchanged `tasks/get` heartbeats, hardened Agent Zero against reusing timed-out terminal sessions, clarified changed-file UI semantics, and replaced the header eye with a visibly distinct deterministic cyber-ocular HUD.
 Learned: Live job `agent-33db1102b0c34588a980ea248d7a3a58` was genuinely handed to Agent Zero, but `tasks/get` stayed `submitted` while Agent Zero logs showed the workspace task executing and a terminal `ls` returning no output for 30s; repeated submitted events were noise, not progress.
 Evidence: targeted A2A tests 7/7 and repository-execution tests 31/31 pass locally after integrating the monotonic stall fix; PR #2039 Agent Runtime Tests passed on pre-memory head `ce9e2b796a5e80bc368c44a11f24353234b48088`; live DB readback preserved the single task id `5c42f9f0-25c6-4a2a-bff1-54f2eeae5a14` without duplicate submit.
+
+### 2026-09-21 — Agent Zero publication-intent fast-fail
+Change: Agent Zero now treats push/Draft-PR/test/deploy wording as downstream Sovereign intent, requires noninteractive repository access, and hard-caps repository task stall tolerance at 30 minutes.
+Learned: The live worker spent model turns debating a publication contradiction even though Sovereign owns publication; ambiguous repository access must fail fast instead of looking like progress.
+Evidence: post-#2039 main `266529f0d5c36208b84e5b5077b40de2f87674e0`; focused A2A 7/7 and repository-execution 31/31 pass; live run `agent-33db1102b0c34588a980ea248d7a3a58` was owner-quarantined after repeated submitted-only readback.
