@@ -83,6 +83,8 @@ def test_submit_sets_both_auth_headers_keeps_secret_out_of_body_and_is_nonblocki
     assert "Do not install dependencies or run tests, builds, linters, audits, package managers" in prompt
     assert "Sovereign owns all regression, janitor and evidence gates" in prompt
     assert "Once the requested file changes are saved, stop immediately" in prompt
+    assert "Use fresh bounded terminal invocations" in prompt
+    assert "reset that terminal session" in prompt
 
 
 def test_tasks_get_validates_exact_task_identity_and_state(monkeypatch, tmp_path: Path):
@@ -145,6 +147,8 @@ def test_submit_timeout_is_ambiguous_and_never_downgraded_to_retry(monkeypatch, 
     with pytest.raises(AgentZeroA2ASubmitOutcomeUnknown) as error:
         AgentZeroA2AClient(config).submit_repository_task(
             workspace_id="agent-workspace-123",
+            repository_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            branch="main",
             mission="Implement one bounded change.",
         )
 
@@ -167,3 +171,23 @@ def test_invalid_task_id_is_rejected_before_transport(monkeypatch, tmp_path: Pat
 
     assert error.value.family == "AGENT_ZERO_A2A_TASK_ID_INVALID"
     assert called is False
+
+
+def test_tasks_cancel_requires_exact_cancelled_task_readback(monkeypatch, tmp_path: Path):
+    config = _config(monkeypatch, tmp_path)
+
+    def fake_post(_url, **kwargs):
+        assert kwargs["json"]["method"] == "tasks/cancel"
+        assert kwargs["json"]["params"] == {"id": "task-cancel"}
+        return FakeResponse({
+            "jsonrpc": "2.0",
+            "id": kwargs["json"]["id"],
+            "result": {"id": "task-cancel", "status": {"state": "canceled"}},
+        })
+
+    monkeypatch.setattr("agent_runtime.agent_zero_a2a.requests.post", fake_post)
+    task = AgentZeroA2AClient(config).cancel_task("task-cancel")
+
+    assert task.task_id == "task-cancel"
+    assert task.state == "canceled"
+    assert task.failed is True
