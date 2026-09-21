@@ -641,6 +641,11 @@ Change: Consolidated the live Agent Zero stale-submitted cancellation/workspace-
 Learned: FastA2A `submitted` is not proof of progress, so stale queue state must be bounded while independently observed workspace mutations are preserved; publication wording belongs to Sovereign, not Agent Zero execution.
 Evidence: Pre-memory head `c8aba8bc7004238685e3b7de056d5fea94acc6a2` passed Release Verification #5924 (frontend smoke 3789 passed / 0 failed / 2 skipped, Runtime Unit, Playwright and Integration success), Agent Backend #3244, MCP #2392, Continuity #2804, Boundary Drift #1646 and Integration Plan #2297.
 
+### 2026-09-21 — Agent Zero IT-Tools private sidecar
+Change: Added digest-pinned IT-Tools as a private managed Compose sidecar and exposed it to Agent Zero only as an optional deterministic developer utility, with no public port or evidence authority.
+Learned: IT-Tools is a static browser UI, so a running container alone proves little; verified deployment must additionally prove the real Agent Zero container can reach the internal UI.
+Evidence: Pre-memory head `9d78549df383ad63c3bf754d7db6d9b8da4a7306` passed 66/66 focused local regressions plus Release Verification 35636412544, MCP 35636412289, Agent Backend 35636412286, Continuity 35636412253, Boundary Drift 35636412305 and Integration Plan 35636412343; PatchMon runtime was 4/4 healthy. Live sidecar deployment remains unclaimed until the merged exact revision passes the Agent-Zero HTTP canary.
+
 ### 2026-09-21 — Wolfram source intelligence lane
 Change: Added consent-gated Wolfram CodeParser/CodeInspector/CodeFormatter source analysis over the existing CAG transport and exposed it to Sovottt as one read-only MCP tool; source is base64-bound data, formatter is preview-only with structural AST equality, and canonical/shipping backend mirrors remain byte-identical.
 Learned: CodeTools can add useful parser/inspection/format evidence without becoming runtime truth or a free Wolfram executor; source egress must remain an explicit per-call grant, and MCP registry/boundary contracts must move causally with every added public tool.
