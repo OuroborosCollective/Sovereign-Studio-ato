@@ -1323,6 +1323,84 @@ def test_causal_progress_binds_retry_as_explicit_task_transition(monkeypatch, tm
     assert state["progress_receipts"][-1]["previousReceiptSha256"] == stale_receipt.receipt_sha256
 
 
+def test_concurrent_progress_head_advance_is_reconciled_without_false_contradiction(
+    monkeypatch, tmp_path
+):
+    initial = _job()
+    state = _patch_job_store(monkeypatch, initial)
+    previous = repository_execution.CausalProgressReceiptV1.build(
+        job_id=initial.job_id,
+        workspace_id=str(initial.workspace_id or initial.job_id),
+        a2a_task_id="task-original",
+        repository=initial.repo_url,
+        repository_revision="a" * 40,
+        progress_kind="REPOSITORY_MATERIALIZED",
+        previous_workspace_readback_sha256="",
+        current_workspace_readback_sha256="b" * 64,
+        observed_epoch_ms=int(time.time() * 1000) - 2_000,
+    )
+    state["progress_receipts"].append(previous.to_dict())
+
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    monkeypatch.setattr(
+        repository_execution,
+        "repo_dir_for_workspace",
+        lambda _workspace_id, _root=None: repo_path,
+    )
+    monkeypatch.setattr(
+        repository_execution,
+        "read_git_workspace_identity",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            authoritative_readback_sha256="c" * 64,
+            base_commit_sha="a" * 40,
+            changed_paths=("README.md",),
+        ),
+    )
+
+    real_append = repository_execution.append_agent_progress_receipt
+    advanced = {"done": False}
+
+    def racing_append(_conn, *, job_id, receipt, commit=True):
+        if advanced["done"]:
+            return real_append(_conn, job_id=job_id, receipt=receipt, commit=commit)
+        advanced["done"] = True
+        concurrent = repository_execution.CausalProgressReceiptV1.build(
+            job_id=initial.job_id,
+            workspace_id=str(initial.workspace_id or initial.job_id),
+            a2a_task_id="task-original",
+            repository=initial.repo_url,
+            repository_revision="a" * 40,
+            progress_kind="WORKSPACE_DELTA",
+            previous_workspace_readback_sha256=previous.current_workspace_readback_sha256,
+            current_workspace_readback_sha256="c" * 64,
+            previous_receipt_sha256=previous.receipt_sha256,
+            observed_epoch_ms=int(time.time() * 1000) - 500,
+        )
+        state["progress_receipts"].append(concurrent.to_dict())
+        raise repository_execution.CausalProgressContractError(
+            "progress receipt predecessor does not match current head"
+        )
+
+    monkeypatch.setattr(
+        repository_execution,
+        "append_agent_progress_receipt",
+        racing_append,
+    )
+
+    lease = repository_execution._observe_causal_progress(
+        object(),
+        job=initial,
+        task_id="task-original",
+        workspace_root=tmp_path,
+        max_no_progress_seconds=300,
+    )
+
+    assert lease.verdict == "CONTINUE_VERIFIED"
+    assert lease.last_progress_receipt_sha256 == state["progress_receipts"][-1]["receiptSha256"]
+    assert len(state["progress_receipts"]) == 2
+
+
 def test_active_task_with_missing_created_at_fails_closed(monkeypatch):
     initial = replace(_job(), created_at=None)
     state = _patch_job_store(monkeypatch, initial)
