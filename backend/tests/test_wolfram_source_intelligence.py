@@ -97,6 +97,7 @@ def test_parse_returns_revision_bound_static_evidence_without_runtime_claim():
     assert result["secretValuesReturned"] is False
     assert result["providerEvidence"]["capabilityId"] == "wolfram.cag.compute"
     assert calls[0]["payload"]["timeConstraint"] == 20
+    assert calls[0]["normalized_result_limit"] == 128 * 1024
 
 
 def test_inspector_preserves_structured_findings():
