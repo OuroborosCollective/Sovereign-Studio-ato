@@ -169,6 +169,10 @@ def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
         assert job_id == state["job"].job_id
         return dict(state["progress_receipts"][-1]) if state["progress_receipts"] else None
 
+    def list_progress(_conn, *, job_id, max_receipts=2048):
+        assert job_id == state["job"].job_id
+        return tuple(dict(item) for item in state["progress_receipts"][:max_receipts])
+
     def has_fingerprint(_conn, *, job_id, workspace_readback_sha256):
         assert job_id == state["job"].job_id
         return any(
@@ -181,6 +185,7 @@ def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
     monkeypatch.setattr(repository_execution, "update_agent_job_state", update)
     monkeypatch.setattr(repository_execution, "append_agent_event", append)
     monkeypatch.setattr(repository_execution, "append_agent_progress_receipt", append_progress)
+    monkeypatch.setattr(repository_execution, "list_agent_progress_receipts", list_progress)
     monkeypatch.setattr(repository_execution, "read_latest_agent_progress_receipt", latest_progress)
     monkeypatch.setattr(repository_execution, "has_agent_progress_fingerprint", has_fingerprint)
     return state
@@ -1273,7 +1278,7 @@ def test_progress_readback_unavailable_at_lease_boundary_cancels_without_claimin
     )
 
 
-def test_causal_progress_binds_retry_as_explicit_task_transition(monkeypatch, tmp_path):
+def test_retry_task_identity_does_not_renew_without_new_workspace_state(monkeypatch, tmp_path):
     initial = _job()
     state = _patch_job_store(monkeypatch, initial)
     stale_receipt = repository_execution.CausalProgressReceiptV1.build(
@@ -1287,11 +1292,7 @@ def test_causal_progress_binds_retry_as_explicit_task_transition(monkeypatch, tm
         current_workspace_readback_sha256="c" * 64,
         observed_epoch_ms=int(time.time() * 1000) - 1_000,
     )
-    monkeypatch.setattr(
-        repository_execution,
-        "read_latest_agent_progress_receipt",
-        lambda _conn, *, job_id: stale_receipt.to_dict(),
-    )
+    state["progress_receipts"].append(stale_receipt.to_dict())
     repo_path = tmp_path / "repo"
     (repo_path / ".git").mkdir(parents=True)
     monkeypatch.setattr(
@@ -1318,9 +1319,9 @@ def test_causal_progress_binds_retry_as_explicit_task_transition(monkeypatch, tm
     )
 
     assert lease.verdict == "CONTINUE_VERIFIED"
-    assert state["progress_receipts"][-1]["progressKind"] == "A2A_STATE_TRANSITION"
-    assert state["progress_receipts"][-1]["a2aTaskId"] == "task-current"
-    assert state["progress_receipts"][-1]["previousReceiptSha256"] == stale_receipt.receipt_sha256
+    assert lease.last_progress_receipt_sha256 == stale_receipt.receipt_sha256
+    assert len(state["progress_receipts"]) == 1
+    assert state["progress_receipts"][0]["a2aTaskId"] == "task-previous"
 
 
 def test_concurrent_progress_head_advance_is_reconciled_without_false_contradiction(
