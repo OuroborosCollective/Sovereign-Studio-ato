@@ -23,6 +23,7 @@ def test_managed_compose_stack_allowlist_is_exact() -> None:
         "patchmon-sovereign",
         "milvus-sovereign",
         "sovereign-freellmapi",
+        "sovereign-it-tools",
     }
     assert is_mutating_action("deploy_managed_compose_stack") is True
     assert is_mutating_action("memory_gateway_collection_canary") is True
@@ -31,6 +32,86 @@ def test_managed_compose_stack_allowlist_is_exact() -> None:
     assert is_mutating_action("litellm_provider_model_inventory") is False
     assert is_mutating_action("openai_project_runtime_evidence") is False
     assert is_mutating_action("managed_compose_stack_plan") is False
+
+
+def test_it_tools_template_is_private_digest_pinned_and_hardened() -> None:
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "templates"
+        / "sovereign-it-tools"
+        / "docker-compose.yml"
+    ).read_text("utf-8")
+
+    assert (
+        "ghcr.io/corentinth/it-tools:2024.10.22-7ca5933@"
+        "sha256:8b8128748339583ca951af03dfe02a9a4d7363f61a216226fc28030731a5a61f"
+    ) in template
+    assert ":latest" not in template
+    assert 'user: "101:101"' in template
+    assert "read_only: true" in template
+    assert "no-new-privileges:true" in template
+    assert "cap_drop:" in template and "- ALL" in template
+    assert "sovereign-private" in template
+    assert "ports:" not in template
+    assert "/var/run/docker.sock" not in template
+
+
+def test_it_tools_transport_requires_private_agent_network_and_hardening(tmp_path: Path) -> None:
+    runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
+    state = {
+        "present": True,
+        "running": True,
+        "project": "sovereign-it-tools",
+        "service": "it-tools",
+        "networks": ["sovereign-private"],
+        "publishedPorts": {},
+        "imageReference": (
+            "ghcr.io/corentinth/it-tools:2024.10.22-7ca5933@"
+            "sha256:8b8128748339583ca951af03dfe02a9a4d7363f61a216226fc28030731a5a61f"
+        ),
+        "repoDigests": [],
+        "runtimeUser": "101:101",
+        "readOnlyRootfs": True,
+        "privileged": False,
+        "capDrop": ["ALL"],
+        "securityOpt": ["no-new-privileges:true"],
+    }
+    assert runtime._it_tools_transport_ready(state) is True
+
+    state["publishedPorts"] = {"80/tcp": [{"HostIp": "0.0.0.0", "HostPort": "8080"}]}
+    assert runtime._it_tools_transport_ready(state) is False
+    state["publishedPorts"] = {}
+    state["readOnlyRootfs"] = False
+    assert runtime._it_tools_transport_ready(state) is False
+
+
+def test_it_tools_agent_zero_canary_proves_internal_http_path(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+
+    def runner(argv, **kwargs):
+        calls.append(argv)
+        if argv[:3] == ["docker", "exec", "agent-zero-xrev-agent-zero-1"]:
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                '{"bytes":4096,"sha256":"' + ("a" * 64) + '","status":200}\n',
+                "",
+            )
+        return subprocess.CompletedProcess(argv, 1, "", "not found")
+
+    runtime = ManagedComposeRuntime(runner=runner, template_root=str(tmp_path))
+    result = runtime._it_tools_agent_zero_canary()
+
+    assert result["ok"] is True
+    assert result["status"] == "IT_TOOLS_AGENT_ZERO_REACHABLE"
+    assert result["sourceContainer"] == "agent-zero-xrev-agent-zero-1"
+    assert result["targetUrl"] == "http://sovereign-it-tools/"
+    assert result["httpStatus"] == 200
+    assert result["responseBytes"] == 4096
+    assert result["responseSha256"] == "a" * 64
+    assert result["responseBodyReturned"] is False
+    assert result["secretValuesReturned"] is False
+    assert calls and calls[0][:3] == ["docker", "exec", "agent-zero-xrev-agent-zero-1"]
 
 
 def test_unknown_stack_is_blocked_before_any_runtime_call(tmp_path: Path) -> None:
