@@ -1,9 +1,9 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "6c71f993d03c1813be2084ecccffa886f8e74701",
-  "rawCandidateCount": 102,
-  "canonicalCandidateCount": 80,
+  "sourceRevision": "137bc2b658e44f41f63b70bb36f8ed5d2470012c",
+  "rawCandidateCount": 103,
+  "canonicalCandidateCount": 81,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
@@ -334,6 +334,19 @@
       "candidateId": "llm-boundary:b920302200d8043541bf4e13",
       "classification": "STRUCTURED_POLICY",
       "rationale": "toolchain_briefing evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
+    },
+    {
+      "canonicalPath": "src/features/product/runtime/cuteThinkingStatus.ts",
+      "mirrorPaths": [],
+      "symbol": "clean",
+      "line": 188,
+      "patternFamily": "javascript_keyword_intent",
+      "fileSha256": "219c3901edbfd6433c79d0cb10d9f1ad7072b9718dd4367122d17d10152dfb1d",
+      "anchorSha256": "7e62117811d828238cb90fb4deca7f1f51f8416f4e6f0552a0f62ff3f9002523",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:7745cf3feab1e7341997c98a",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "isDoneStatus and isWorkingStatus validate an explicit array of pre-defined keywords against a status string; they do not interpret free language or route requests."
     },
     {
       "canonicalPath": "src/features/product/runtime/generatedFileReview.ts",
@@ -1090,5 +1103,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "d201de5cedc0dccb6268152bd0ef0ac47c1a193f9878fae13641514ed8f78714"
+  "ledgerSha256": "cae3d86615afcd7f303ff23e32c37f8671b7208af9f4b5d276b9829278061868"
 }
