@@ -635,3 +635,8 @@ Evidence: targeted A2A tests 7/7 and repository-execution tests 31/31 pass local
 Change: Updated the vNext truth-contract tests to match the merged cyber-ocular geometry and to verify the truthful unavailable-completion message without case-sensitive wording drift.
 Learned: Release Verification run 35623545113 failed because two assertions lagged behind intentional UI copy/geometry changes; production behavior was already correct.
 Evidence: Pre-memory head `d3e88083a0b913a9134939486e0a589e0100640f` passed Release Verification 35626122857 with frontend-smoke 3791 total / 3789 passed / 0 failed / 2 skipped, plus Runtime Unit Tests, Playwright Smoke Gate and Integration Gate success; Agent Backend 35626122841, MCP 35626122862, Continuity 35626122859 and Integration Plan 35626122855 also passed.
+
+### 2026-09-21 — Open-PR runtime consolidation
+Change: Consolidated the live Agent Zero stale-submitted cancellation/workspace-progress repair with the non-contradictory publication-intent prompt and a hard 30-minute repository stall cap; obsolete competing PRs were retired.
+Learned: FastA2A `submitted` is not proof of progress, so stale queue state must be bounded while independently observed workspace mutations are preserved; publication wording belongs to Sovereign, not Agent Zero execution.
+Evidence: Pre-memory head `c8aba8bc7004238685e3b7de056d5fea94acc6a2` passed Release Verification #5924 (frontend smoke 3789 passed / 0 failed / 2 skipped, Runtime Unit, Playwright and Integration success), Agent Backend #3244, MCP #2392, Continuity #2804, Boundary Drift #1646 and Integration Plan #2297.
