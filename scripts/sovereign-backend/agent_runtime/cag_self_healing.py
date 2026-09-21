@@ -139,7 +139,11 @@ def normalize_event_stages(events: Sequence[Any] | None) -> tuple[str, ...]:
             stage = _bounded_text(item.get("stage"), 80)
         else:
             stage = _bounded_text(item, 80)
-        if stage in {"agent_zero_a2a_task_observed", "agent_zero_a2a_readback_unavailable"}:
+        if stage in {
+            "agent_zero_a2a_task_observed",
+            "agent_zero_a2a_readback_unavailable",
+            "agent_zero_material_progress_observed",
+        }:
             continue
         if stage:
             stages.append(stage)
