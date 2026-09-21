@@ -175,7 +175,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 732,
+      "line": 733,
       "methods": [
         "GET"
       ],
@@ -400,7 +400,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 758,
+      "line": 759,
       "methods": [
         "GET"
       ],
@@ -409,7 +409,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 770,
+      "line": 771,
       "methods": [
         "PATCH"
       ],
@@ -463,7 +463,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 7013,
+      "line": 7019,
       "methods": [
         "GET"
       ],
@@ -472,7 +472,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 7116,
+      "line": 7122,
       "methods": [
         "POST"
       ],
@@ -670,7 +670,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1057,
+      "line": 1058,
       "methods": [
         "GET"
       ],
@@ -679,7 +679,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1162,
+      "line": 1163,
       "methods": [
         "PATCH"
       ],
@@ -697,7 +697,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1378,
+      "line": 1379,
       "methods": [
         "POST"
       ],
@@ -706,7 +706,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1608,
+      "line": 1609,
       "methods": [
         "GET"
       ],
@@ -715,7 +715,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1430,
+      "line": 1431,
       "methods": [
         "GET"
       ],
@@ -724,7 +724,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1486,
+      "line": 1487,
       "methods": [
         "POST"
       ],
@@ -805,7 +805,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 497,
+      "line": 498,
       "methods": [
         "GET"
       ],
@@ -849,8 +849,98 @@
       "source_kind": "python-route"
     },
     {
+      "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+      "line": 1508,
+      "methods": [
+        "DELETE"
+      ],
+      "path": "/api/admin/self-healing/authority",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+      "line": 1508,
+      "methods": [
+        "DELETE"
+      ],
+      "path": "/api/admin/self-healing/authority",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+      "line": 1439,
+      "methods": [
+        "GET"
+      ],
+      "path": "/api/admin/self-healing/authority",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+      "line": 1439,
+      "methods": [
+        "GET"
+      ],
+      "path": "/api/admin/self-healing/authority",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+      "line": 1464,
+      "methods": [
+        "PUT"
+      ],
+      "path": "/api/admin/self-healing/authority",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+      "line": 1464,
+      "methods": [
+        "PUT"
+      ],
+      "path": "/api/admin/self-healing/authority",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+      "line": 1565,
+      "methods": [
+        "GET"
+      ],
+      "path": "/api/admin/self-healing/incidents",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+      "line": 1565,
+      "methods": [
+        "GET"
+      ],
+      "path": "/api/admin/self-healing/incidents",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+      "line": 1531,
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/admin/self-healing/incidents/<p>/approve",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+      "line": 1531,
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/admin/self-healing/incidents/<p>/approve",
+      "source_kind": "python-route"
+    },
+    {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 1477,
+      "line": 1478,
       "methods": [
         "GET"
       ],
@@ -859,7 +949,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 798,
+      "line": 799,
       "methods": [
         "GET"
       ],
@@ -868,7 +958,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 823,
+      "line": 824,
       "methods": [
         "POST"
       ],
@@ -877,7 +967,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 897,
+      "line": 898,
       "methods": [
         "DELETE"
       ],
@@ -886,7 +976,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 863,
+      "line": 864,
       "methods": [
         "PATCH"
       ],
@@ -895,7 +985,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 695,
+      "line": 696,
       "methods": [
         "GET"
       ],
@@ -904,7 +994,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 519,
+      "line": 520,
       "methods": [
         "GET"
       ],
@@ -913,7 +1003,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 572,
+      "line": 573,
       "methods": [
         "PATCH"
       ],
@@ -922,7 +1012,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 613,
+      "line": 614,
       "methods": [
         "POST"
       ],
@@ -1210,7 +1300,7 @@
     },
     {
       "file": "scripts/sovereign-backend/controller_board.py",
-      "line": 1431,
+      "line": 1387,
       "methods": [
         "GET"
       ],
@@ -1219,7 +1309,7 @@
     },
     {
       "file": "scripts/sovereign-backend/controller_board.py",
-      "line": 1462,
+      "line": 1418,
       "methods": [
         "POST"
       ],
@@ -1228,7 +1318,7 @@
     },
     {
       "file": "scripts/sovereign-backend/controller_board.py",
-      "line": 1609,
+      "line": 1565,
       "methods": [
         "GET"
       ],
@@ -1237,7 +1327,7 @@
     },
     {
       "file": "scripts/sovereign-backend/controller_board.py",
-      "line": 1276,
+      "line": 1232,
       "methods": [
         "GET"
       ],
@@ -1246,7 +1336,7 @@
     },
     {
       "file": "scripts/sovereign-backend/controller_board.py",
-      "line": 1359,
+      "line": 1315,
       "methods": [
         "GET"
       ],
@@ -1516,7 +1606,7 @@
     },
     {
       "file": "scripts/sovereign-backend/controller_board.py",
-      "line": 723,
+      "line": 668,
       "methods": [
         "POST"
       ],
@@ -1525,7 +1615,7 @@
     },
     {
       "file": "scripts/sovereign-backend/controller_board.py",
-      "line": 759,
+      "line": 704,
       "methods": [
         "POST"
       ],
@@ -1534,7 +1624,7 @@
     },
     {
       "file": "scripts/sovereign-backend/controller_board.py",
-      "line": 794,
+      "line": 739,
       "methods": [
         "POST"
       ],
@@ -1543,7 +1633,7 @@
     },
     {
       "file": "scripts/sovereign-backend/controller_board.py",
-      "line": 288,
+      "line": 284,
       "methods": [
         "GET"
       ],
@@ -1552,7 +1642,7 @@
     },
     {
       "file": "scripts/sovereign-backend/controller_board.py",
-      "line": 321,
+      "line": 317,
       "methods": [
         "POST"
       ],
@@ -1561,7 +1651,7 @@
     },
     {
       "file": "scripts/sovereign-backend/controller_board.py",
-      "line": 841,
+      "line": 786,
       "methods": [
         "GET"
       ],
@@ -1570,7 +1660,7 @@
     },
     {
       "file": "scripts/sovereign-backend/controller_board.py",
-      "line": 929,
+      "line": 874,
       "methods": [
         "POST"
       ],
@@ -1579,7 +1669,7 @@
     },
     {
       "file": "scripts/sovereign-backend/controller_board.py",
-      "line": 983,
+      "line": 928,
       "methods": [
         "POST"
       ],
@@ -1723,7 +1813,7 @@
     },
     {
       "file": "backend/wolfram_cag_runtime.py",
-      "line": 243,
+      "line": 321,
       "methods": [
         "POST"
       ],
@@ -1732,7 +1822,7 @@
     },
     {
       "file": "scripts/sovereign-backend/wolfram_cag_runtime.py",
-      "line": 243,
+      "line": 321,
       "methods": [
         "POST"
       ],
@@ -1741,7 +1831,25 @@
     },
     {
       "file": "backend/wolfram_cag_runtime.py",
-      "line": 237,
+      "line": 341,
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/internal/wolfram-cag/runtime-evidence-bind",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "scripts/sovereign-backend/wolfram_cag_runtime.py",
+      "line": 341,
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/internal/wolfram-cag/runtime-evidence-bind",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "backend/wolfram_cag_runtime.py",
+      "line": 315,
       "methods": [
         "GET"
       ],
@@ -1750,7 +1858,7 @@
     },
     {
       "file": "scripts/sovereign-backend/wolfram_cag_runtime.py",
-      "line": 237,
+      "line": 315,
       "methods": [
         "GET"
       ],
@@ -1939,7 +2047,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 7263,
+      "line": 7269,
       "methods": [
         "POST"
       ],
@@ -1948,7 +2056,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 8018,
+      "line": 8024,
       "methods": [
         "POST"
       ],
@@ -2461,7 +2569,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6854,
+      "line": 6860,
       "methods": [
         "GET"
       ],
@@ -2470,7 +2578,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6860,
+      "line": 6866,
       "methods": [
         "POST"
       ],
@@ -2479,7 +2587,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6819,
+      "line": 6825,
       "methods": [
         "GET"
       ],
@@ -2488,7 +2596,7 @@
     },
     {
       "file": "scripts/sovereign-backend/app.py",
-      "line": 6804,
+      "line": 6810,
       "methods": [
         "GET"
       ],
@@ -2506,7 +2614,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1253,
+      "line": 1263,
       "methods": [
         "POST"
       ],
@@ -2515,7 +2623,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1253,
+      "line": 1263,
       "methods": [
         "POST"
       ],
@@ -2524,7 +2632,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1312,
+      "line": 1322,
       "methods": [
         "POST"
       ],
@@ -2533,7 +2641,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1312,
+      "line": 1322,
       "methods": [
         "POST"
       ],
@@ -2542,7 +2650,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1493,
+      "line": 1503,
       "methods": [
         "GET"
       ],
@@ -2551,7 +2659,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1493,
+      "line": 1503,
       "methods": [
         "GET"
       ],
@@ -2560,7 +2668,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1553,
+      "line": 1568,
       "methods": [
         "POST"
       ],
@@ -2569,7 +2677,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1553,
+      "line": 1568,
       "methods": [
         "POST"
       ],
@@ -2578,7 +2686,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1717,
+      "line": 1741,
       "methods": [
         "GET"
       ],
@@ -2587,7 +2695,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1717,
+      "line": 1741,
       "methods": [
         "GET"
       ],
@@ -2596,7 +2704,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2148,
+      "line": 2172,
       "methods": [
         "POST"
       ],
@@ -2605,7 +2713,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2148,
+      "line": 2172,
       "methods": [
         "POST"
       ],
@@ -2614,7 +2722,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2289,
+      "line": 2323,
       "methods": [
         "POST"
       ],
@@ -2623,7 +2731,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2289,
+      "line": 2323,
       "methods": [
         "POST"
       ],
@@ -2632,7 +2740,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2184,
+      "line": 2218,
       "methods": [
         "POST"
       ],
@@ -2641,7 +2749,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2184,
+      "line": 2218,
       "methods": [
         "POST"
       ],
@@ -2650,7 +2758,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2267,
+      "line": 2301,
       "methods": [
         "POST"
       ],
@@ -2659,7 +2767,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2267,
+      "line": 2301,
       "methods": [
         "POST"
       ],
@@ -2668,7 +2776,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2390,
+      "line": 2424,
       "methods": [
         "POST"
       ],
@@ -2677,7 +2785,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2390,
+      "line": 2424,
       "methods": [
         "POST"
       ],
@@ -2686,7 +2794,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2322,
+      "line": 2356,
       "methods": [
         "POST"
       ],
@@ -2695,7 +2803,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2322,
+      "line": 2356,
       "methods": [
         "POST"
       ],
@@ -2704,7 +2812,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2109,
+      "line": 2133,
       "methods": [
         "POST"
       ],
@@ -2713,7 +2821,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2109,
+      "line": 2133,
       "methods": [
         "POST"
       ],
@@ -2722,7 +2830,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2024,
+      "line": 2048,
       "methods": [
         "GET"
       ],
@@ -2731,7 +2839,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2024,
+      "line": 2048,
       "methods": [
         "GET"
       ],
@@ -2740,7 +2848,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1745,
+      "line": 1769,
       "methods": [
         "GET"
       ],
@@ -2749,7 +2857,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1745,
+      "line": 1769,
       "methods": [
         "GET"
       ],
@@ -2758,7 +2866,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1788,
+      "line": 1812,
       "methods": [
         "POST"
       ],
@@ -2767,7 +2875,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1788,
+      "line": 1812,
       "methods": [
         "POST"
       ],
@@ -2776,7 +2884,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1934,
+      "line": 1958,
       "methods": [
         "GET"
       ],
@@ -2785,7 +2893,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1934,
+      "line": 1958,
       "methods": [
         "GET"
       ],
@@ -2794,7 +2902,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1871,
+      "line": 1895,
       "methods": [
         "POST"
       ],
@@ -2803,7 +2911,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1871,
+      "line": 1895,
       "methods": [
         "POST"
       ],
@@ -2812,7 +2920,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1903,
+      "line": 1927,
       "methods": [
         "POST"
       ],
@@ -2821,7 +2929,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1903,
+      "line": 1927,
       "methods": [
         "POST"
       ],
@@ -2830,7 +2938,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1837,
+      "line": 1861,
       "methods": [
         "POST"
       ],
@@ -2839,7 +2947,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1837,
+      "line": 1861,
       "methods": [
         "POST"
       ],
@@ -2848,7 +2956,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2632,
+      "line": 2666,
       "methods": [
         "POST"
       ],
@@ -2857,7 +2965,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2632,
+      "line": 2666,
       "methods": [
         "POST"
       ],
@@ -2866,7 +2974,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1981,
+      "line": 2005,
       "methods": [
         "GET"
       ],
@@ -2875,7 +2983,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1981,
+      "line": 2005,
       "methods": [
         "GET"
       ],
@@ -2884,7 +2992,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2246,
+      "line": 2280,
       "methods": [
         "POST"
       ],
@@ -2893,7 +3001,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2246,
+      "line": 2280,
       "methods": [
         "POST"
       ],
@@ -2902,7 +3010,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2231,
+      "line": 2265,
       "methods": [
         "POST"
       ],
@@ -2911,7 +3019,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2231,
+      "line": 2265,
       "methods": [
         "POST"
       ],
@@ -2920,7 +3028,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2221,
+      "line": 2255,
       "methods": [
         "POST"
       ],
@@ -2929,7 +3037,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2221,
+      "line": 2255,
       "methods": [
         "POST"
       ],
@@ -2938,7 +3046,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2226,
+      "line": 2260,
       "methods": [
         "POST"
       ],
@@ -2947,7 +3055,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2226,
+      "line": 2260,
       "methods": [
         "POST"
       ],
@@ -2956,7 +3064,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2241,
+      "line": 2275,
       "methods": [
         "POST"
       ],
@@ -2965,7 +3073,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2241,
+      "line": 2275,
       "methods": [
         "POST"
       ],
@@ -2974,7 +3082,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2236,
+      "line": 2270,
       "methods": [
         "POST"
       ],
@@ -2983,7 +3091,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2236,
+      "line": 2270,
       "methods": [
         "POST"
       ],
@@ -2992,7 +3100,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1589,
+      "line": 1613,
       "methods": [
         "POST"
       ],
@@ -3001,7 +3109,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1589,
+      "line": 1613,
       "methods": [
         "POST"
       ],
@@ -3010,7 +3118,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1628,
+      "line": 1652,
       "methods": [
         "GET"
       ],
@@ -3019,7 +3127,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1628,
+      "line": 1652,
       "methods": [
         "GET"
       ],
@@ -3028,7 +3136,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1670,
+      "line": 1694,
       "methods": [
         "POST"
       ],
@@ -3037,7 +3145,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1670,
+      "line": 1694,
       "methods": [
         "POST"
       ],
@@ -3046,7 +3154,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2691,
+      "line": 2725,
       "methods": [
         "POST"
       ],
@@ -3055,7 +3163,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2691,
+      "line": 2725,
       "methods": [
         "POST"
       ],
@@ -3064,7 +3172,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2663,
+      "line": 2697,
       "methods": [
         "POST"
       ],
@@ -3073,7 +3181,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2663,
+      "line": 2697,
       "methods": [
         "POST"
       ],
@@ -3082,7 +3190,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1394,
+      "line": 1404,
       "methods": [
         "POST"
       ],
@@ -3091,7 +3199,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1394,
+      "line": 1404,
       "methods": [
         "POST"
       ],
@@ -3100,7 +3208,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1513,
+      "line": 1523,
       "methods": [
         "POST"
       ],
@@ -3109,7 +3217,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1513,
+      "line": 1523,
       "methods": [
         "POST"
       ],
@@ -3118,7 +3226,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 629,
+      "line": 630,
       "methods": [
         "POST"
       ],
@@ -3127,7 +3235,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 629,
+      "line": 630,
       "methods": [
         "POST"
       ],
@@ -3136,7 +3244,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 606,
+      "line": 607,
       "methods": [
         "GET"
       ],
@@ -3145,7 +3253,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 606,
+      "line": 607,
       "methods": [
         "GET"
       ],
@@ -3154,7 +3262,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 668,
+      "line": 669,
       "methods": [
         "POST"
       ],
@@ -3163,7 +3271,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 668,
+      "line": 669,
       "methods": [
         "POST"
       ],
@@ -3172,7 +3280,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 906,
+      "line": 907,
       "methods": [
         "GET"
       ],
@@ -3181,7 +3289,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 906,
+      "line": 907,
       "methods": [
         "GET"
       ],
@@ -3190,7 +3298,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1007,
+      "line": 1008,
       "methods": [
         "POST"
       ],
@@ -3199,7 +3307,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1007,
+      "line": 1008,
       "methods": [
         "POST"
       ],
@@ -3208,7 +3316,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 929,
+      "line": 930,
       "methods": [
         "POST"
       ],
@@ -3217,7 +3325,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 929,
+      "line": 930,
       "methods": [
         "POST"
       ],
@@ -3244,7 +3352,7 @@
     },
     {
       "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2607,
+      "line": 2450,
       "methods": [
         "GET"
       ],
@@ -3253,7 +3361,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2607,
+      "line": 2450,
       "methods": [
         "GET"
       ],
@@ -3271,7 +3379,7 @@
     },
     {
       "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2676,
+      "line": 2519,
       "methods": [
         "POST"
       ],
@@ -3280,7 +3388,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2676,
+      "line": 2519,
       "methods": [
         "POST"
       ],
@@ -3289,7 +3397,7 @@
     },
     {
       "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2640,
+      "line": 2483,
       "methods": [
         "GET"
       ],
@@ -3298,7 +3406,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2640,
+      "line": 2483,
       "methods": [
         "GET"
       ],
@@ -3307,7 +3415,7 @@
     },
     {
       "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2656,
+      "line": 2499,
       "methods": [
         "POST"
       ],
@@ -3316,7 +3424,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2656,
+      "line": 2499,
       "methods": [
         "POST"
       ],
@@ -3325,7 +3433,7 @@
     },
     {
       "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2625,
+      "line": 2468,
       "methods": [
         "GET"
       ],
@@ -3334,7 +3442,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2625,
+      "line": 2468,
       "methods": [
         "GET"
       ],
@@ -3343,7 +3451,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1121,
+      "line": 1122,
       "methods": [
         "POST"
       ],
@@ -3352,7 +3460,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1121,
+      "line": 1122,
       "methods": [
         "POST"
       ],
@@ -3361,7 +3469,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1172,
+      "line": 1173,
       "methods": [
         "POST"
       ],
@@ -3370,7 +3478,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1172,
+      "line": 1173,
       "methods": [
         "POST"
       ],
@@ -3379,7 +3487,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1116,
+      "line": 1117,
       "methods": [
         "GET"
       ],
@@ -3388,7 +3496,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1116,
+      "line": 1117,
       "methods": [
         "GET"
       ],
@@ -3397,7 +3505,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1150,
+      "line": 1151,
       "methods": [
         "POST"
       ],
@@ -3406,7 +3514,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1150,
+      "line": 1151,
       "methods": [
         "POST"
       ],
@@ -3415,7 +3523,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 1478,
+      "line": 1488,
       "methods": [
         "POST"
       ],
@@ -3424,7 +3532,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 1478,
+      "line": 1488,
       "methods": [
         "POST"
       ],
@@ -3577,7 +3685,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1131,
+        "line": 1215,
         "method": "UNKNOWN",
         "path": "/api/admin/audit-log",
         "source_kind": "route-literal",
@@ -3594,7 +3702,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 732,
+          "line": 733,
           "methods": [
             "GET"
           ],
@@ -3606,7 +3714,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 952,
+        "line": 1036,
         "method": "UNKNOWN",
         "path": "/api/admin/billing/stats",
         "source_kind": "route-literal",
@@ -3635,7 +3743,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1165,
+        "line": 1249,
         "method": "UNKNOWN",
         "path": "/api/admin/credit-packages",
         "source_kind": "route-literal",
@@ -3684,7 +3792,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1180,
+        "line": 1264,
         "method": "UNKNOWN",
         "path": "/api/admin/credit-packages/<p>",
         "source_kind": "route-literal",
@@ -3733,7 +3841,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1187,
+        "line": 1271,
         "method": "UNKNOWN",
         "path": "/api/admin/credit-packages/<p>",
         "source_kind": "route-literal",
@@ -3782,7 +3890,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1170,
+        "line": 1254,
         "method": "UNKNOWN",
         "path": "/api/admin/credit-packages/init",
         "source_kind": "route-literal",
@@ -3799,7 +3907,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 758,
+          "line": 759,
           "methods": [
             "GET"
           ],
@@ -3811,7 +3919,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 956,
+        "line": 1040,
         "method": "UNKNOWN",
         "path": "/api/admin/launcher/tools",
         "source_kind": "route-literal",
@@ -3830,7 +3938,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 770,
+          "line": 771,
           "methods": [
             "PATCH"
           ],
@@ -3842,7 +3950,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 960,
+        "line": 1044,
         "method": "UNKNOWN",
         "path": "/api/admin/launcher/tools/<p>",
         "source_kind": "route-literal",
@@ -3873,7 +3981,7 @@
         "active_surface": true,
         "call_name": "fetch",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 806,
+        "line": 845,
         "method": "POST",
         "path": "/api/admin/llm/freellm/provider-credentials/auto",
         "source_kind": "request-call",
@@ -3904,7 +4012,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1121,
+        "line": 1205,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/openrouter/catalog/refresh",
         "source_kind": "route-literal",
@@ -3935,7 +4043,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1008,
+        "line": 1092,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/openrouter/free/status",
         "source_kind": "route-literal",
@@ -3968,7 +4076,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1004,
+        "line": 1088,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/openrouter/status",
         "source_kind": "route-literal",
@@ -4010,7 +4118,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1000,
+        "line": 1084,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/revolver-v3/providers",
         "source_kind": "route-literal",
@@ -4056,7 +4164,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1050,
+        "line": 1134,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/revolver-v3/providers",
         "source_kind": "route-literal",
@@ -4093,7 +4201,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1105,
+        "line": 1189,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/revolver-v3/providers/<p>",
         "source_kind": "route-literal",
@@ -4130,7 +4238,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1085,
+        "line": 1169,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/revolver-v3/providers/<p>/discover",
         "source_kind": "route-literal",
@@ -4167,7 +4275,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1058,
+        "line": 1142,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/revolver-v3/providers/<p>/owner-input",
         "source_kind": "route-literal",
@@ -4204,7 +4312,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1097,
+        "line": 1181,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/revolver-v3/providers/<p>/recheck",
         "source_kind": "route-literal",
@@ -4229,7 +4337,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 1057,
+          "line": 1058,
           "methods": [
             "GET"
           ],
@@ -4241,7 +4349,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 975,
+        "line": 1059,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/routes",
         "source_kind": "route-literal",
@@ -4262,7 +4370,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 1162,
+          "line": 1163,
           "methods": [
             "PATCH"
           ],
@@ -4274,7 +4382,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 979,
+        "line": 1063,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/routes/<p>",
         "source_kind": "route-literal",
@@ -4295,7 +4403,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 1378,
+          "line": 1379,
           "methods": [
             "POST"
           ],
@@ -4307,7 +4415,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 987,
+        "line": 1071,
         "method": "UNKNOWN",
         "path": "/api/admin/llm/routes/<p>/revolver-reset",
         "source_kind": "route-literal",
@@ -4340,7 +4448,7 @@
         "active_surface": true,
         "call_name": "fetch",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 744,
+        "line": 783,
         "method": "POST",
         "path": "/api/admin/owner-input/requests/<p>/resolve",
         "source_kind": "request-call",
@@ -4371,7 +4479,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1141,
+        "line": 1225,
         "method": "UNKNOWN",
         "path": "/api/admin/payment-methods",
         "source_kind": "route-literal",
@@ -4409,7 +4517,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1148,
+        "line": 1232,
         "method": "UNKNOWN",
         "path": "/api/admin/payment-methods/<p>",
         "source_kind": "route-literal",
@@ -4438,7 +4546,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1196,
+        "line": 1280,
         "method": "UNKNOWN",
         "path": "/api/admin/payment-methods/crypto/confirm",
         "source_kind": "route-literal",
@@ -4476,7 +4584,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1155,
+        "line": 1239,
         "method": "UNKNOWN",
         "path": "/api/admin/payment-methods/init",
         "source_kind": "route-literal",
@@ -4493,7 +4601,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 497,
+          "line": 498,
           "methods": [
             "GET"
           ],
@@ -4505,7 +4613,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 871,
+        "line": 955,
         "method": "UNKNOWN",
         "path": "/api/admin/ping",
         "source_kind": "route-literal",
@@ -4528,7 +4636,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 889,
+        "line": 973,
         "method": "UNKNOWN",
         "path": "/api/admin/platform/v1/canaries",
         "source_kind": "route-literal",
@@ -4550,7 +4658,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 881,
+        "line": 965,
         "method": "UNKNOWN",
         "path": "/api/admin/platform/v1/evidence",
         "source_kind": "route-literal",
@@ -4572,7 +4680,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 900,
+        "line": 984,
         "method": "UNKNOWN",
         "path": "/api/admin/platform/v1/openapi.json",
         "source_kind": "route-literal",
@@ -4594,7 +4702,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 875,
+        "line": 959,
         "method": "UNKNOWN",
         "path": "/api/admin/platform/v1/overview",
         "source_kind": "route-literal",
@@ -4614,8 +4722,316 @@
     {
       "backendRoutes": [
         {
+          "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1508,
+          "methods": [
+            "DELETE"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1508,
+          "methods": [
+            "DELETE"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1439,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1439,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1464,
+          "methods": [
+            "PUT"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1464,
+          "methods": [
+            "PUT"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
+        "call_name": "literal",
+        "file": "src/features/admin/api/adminApiClient.ts",
+        "line": 910,
+        "method": "UNKNOWN",
+        "path": "/api/admin/self-healing/authority",
+        "source_kind": "route-literal",
+        "surface_status": "active"
+      },
+      "status": "LITERAL_BOUND",
+      "testReferences": {
+        "backend": [
+          "backend/tests/test_cag_self_healing_runtime.py"
+        ],
+        "e2e": [],
+        "unit": []
+      }
+    },
+    {
+      "backendRoutes": [
+        {
+          "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1508,
+          "methods": [
+            "DELETE"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1508,
+          "methods": [
+            "DELETE"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1439,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1439,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1464,
+          "methods": [
+            "PUT"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1464,
+          "methods": [
+            "PUT"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
+        "call_name": "literal",
+        "file": "src/features/admin/api/adminApiClient.ts",
+        "line": 924,
+        "method": "UNKNOWN",
+        "path": "/api/admin/self-healing/authority",
+        "source_kind": "route-literal",
+        "surface_status": "active"
+      },
+      "status": "LITERAL_BOUND",
+      "testReferences": {
+        "backend": [
+          "backend/tests/test_cag_self_healing_runtime.py"
+        ],
+        "e2e": [],
+        "unit": []
+      }
+    },
+    {
+      "backendRoutes": [
+        {
+          "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1508,
+          "methods": [
+            "DELETE"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1508,
+          "methods": [
+            "DELETE"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1439,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1439,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1464,
+          "methods": [
+            "PUT"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1464,
+          "methods": [
+            "PUT"
+          ],
+          "path": "/api/admin/self-healing/authority",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
+        "call_name": "literal",
+        "file": "src/features/admin/api/adminApiClient.ts",
+        "line": 931,
+        "method": "UNKNOWN",
+        "path": "/api/admin/self-healing/authority",
+        "source_kind": "route-literal",
+        "surface_status": "active"
+      },
+      "status": "LITERAL_BOUND",
+      "testReferences": {
+        "backend": [
+          "backend/tests/test_cag_self_healing_runtime.py"
+        ],
+        "e2e": [],
+        "unit": []
+      }
+    },
+    {
+      "backendRoutes": [
+        {
+          "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1565,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/admin/self-healing/incidents",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1565,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/admin/self-healing/incidents",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
+        "call_name": "literal",
+        "file": "src/features/admin/api/adminApiClient.ts",
+        "line": 938,
+        "method": "UNKNOWN",
+        "path": "/api/admin/self-healing/incidents",
+        "source_kind": "route-literal",
+        "surface_status": "active"
+      },
+      "status": "LITERAL_BOUND",
+      "testReferences": {
+        "backend": [
+          "backend/tests/test_cag_self_healing_runtime.py"
+        ],
+        "e2e": [],
+        "unit": []
+      }
+    },
+    {
+      "backendRoutes": [
+        {
+          "file": "backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1531,
+          "methods": [
+            "POST"
+          ],
+          "path": "/api/admin/self-healing/incidents/<p>/approve",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
+          "line": 1531,
+          "methods": [
+            "POST"
+          ],
+          "path": "/api/admin/self-healing/incidents/<p>/approve",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
+        "call_name": "literal",
+        "file": "src/features/admin/api/adminApiClient.ts",
+        "line": 948,
+        "method": "UNKNOWN",
+        "path": "/api/admin/self-healing/incidents/<p>/approve",
+        "source_kind": "route-literal",
+        "surface_status": "active"
+      },
+      "status": "LITERAL_BOUND",
+      "testReferences": {
+        "backend": [
+          "backend/tests/test_cag_self_healing_runtime.py"
+        ],
+        "e2e": [],
+        "unit": []
+      }
+    },
+    {
+      "backendRoutes": [
+        {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 798,
+          "line": 799,
           "methods": [
             "GET"
           ],
@@ -4624,7 +5040,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 823,
+          "line": 824,
           "methods": [
             "POST"
           ],
@@ -4636,7 +5052,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1250,
+        "line": 1334,
         "method": "UNKNOWN",
         "path": "/api/admin/toolchain/tools",
         "source_kind": "route-literal",
@@ -4653,7 +5069,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 798,
+          "line": 799,
           "methods": [
             "GET"
           ],
@@ -4662,7 +5078,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 823,
+          "line": 824,
           "methods": [
             "POST"
           ],
@@ -4674,7 +5090,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1262,
+        "line": 1346,
         "method": "UNKNOWN",
         "path": "/api/admin/toolchain/tools",
         "source_kind": "route-literal",
@@ -4691,7 +5107,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 897,
+          "line": 898,
           "methods": [
             "DELETE"
           ],
@@ -4700,7 +5116,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 863,
+          "line": 864,
           "methods": [
             "PATCH"
           ],
@@ -4712,7 +5128,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1277,
+        "line": 1361,
         "method": "UNKNOWN",
         "path": "/api/admin/toolchain/tools/<p>",
         "source_kind": "route-literal",
@@ -4729,7 +5145,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 897,
+          "line": 898,
           "methods": [
             "DELETE"
           ],
@@ -4738,7 +5154,7 @@
         },
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 863,
+          "line": 864,
           "methods": [
             "PATCH"
           ],
@@ -4750,7 +5166,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1284,
+        "line": 1368,
         "method": "UNKNOWN",
         "path": "/api/admin/toolchain/tools/<p>",
         "source_kind": "route-literal",
@@ -4767,7 +5183,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 695,
+          "line": 696,
           "methods": [
             "GET"
           ],
@@ -4779,7 +5195,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 943,
+        "line": 1027,
         "method": "UNKNOWN",
         "path": "/api/admin/transactions",
         "source_kind": "route-literal",
@@ -4796,7 +5212,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 519,
+          "line": 520,
           "methods": [
             "GET"
           ],
@@ -4808,7 +5224,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 908,
+        "line": 992,
         "method": "UNKNOWN",
         "path": "/api/admin/users",
         "source_kind": "route-literal",
@@ -4825,7 +5241,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 572,
+          "line": 573,
           "methods": [
             "PATCH"
           ],
@@ -4837,7 +5253,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 912,
+        "line": 996,
         "method": "UNKNOWN",
         "path": "/api/admin/users/<p>",
         "source_kind": "route-literal",
@@ -4854,7 +5270,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 613,
+          "line": 614,
           "methods": [
             "POST"
           ],
@@ -4866,7 +5282,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 929,
+        "line": 1013,
         "method": "UNKNOWN",
         "path": "/api/admin/users/<p>/credit-adjustment",
         "source_kind": "route-literal",
@@ -4885,7 +5301,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/AdminPanel.tsx",
-        "line": 45,
+        "line": 46,
         "method": "UNKNOWN",
         "path": "/api/adminApiClient",
         "source_kind": "route-literal",
@@ -5108,6 +5524,34 @@
       "call": {
         "active_surface": true,
         "call_name": "literal",
+        "file": "src/features/admin/components/SelfHealingAuthorityCard.tsx",
+        "line": 7,
+        "method": "UNKNOWN",
+        "path": "/api/adminApiClient",
+        "source_kind": "route-literal",
+        "surface_status": "active"
+      },
+      "status": "LITERAL_ONLY",
+      "testReferences": {
+        "backend": [
+          "backend/tests/test_enterprise_platform_contract.py",
+          "backend/tests/test_frontend_endpoint_assurance.py",
+          "scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py",
+          "scripts/sovereign-backend/tests/test_llm_output_contract_recovery.py"
+        ],
+        "e2e": [],
+        "unit": [
+          "scripts/revision-guardian.contract.test.cjs",
+          "src/features/admin/components/TransactionTable.test.ts",
+          "src/features/admin/hooks/useAdminApi.providerSurface.test.ts"
+        ]
+      }
+    },
+    {
+      "backendRoutes": [],
+      "call": {
+        "active_surface": true,
+        "call_name": "literal",
         "file": "src/features/admin/components/TransactionTable.tsx",
         "line": 8,
         "method": "UNKNOWN",
@@ -5193,7 +5637,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/hooks/useAdminApi.ts",
-        "line": 25,
+        "line": 29,
         "method": "UNKNOWN",
         "path": "/api/adminApiClient",
         "source_kind": "route-literal",
@@ -6230,7 +6674,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/controller_board.py",
-          "line": 1431,
+          "line": 1387,
           "methods": [
             "GET"
           ],
@@ -6265,7 +6709,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/controller_board.py",
-          "line": 1462,
+          "line": 1418,
           "methods": [
             "POST"
           ],
@@ -7130,7 +7574,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 8018,
+          "line": 8024,
           "methods": [
             "POST"
           ],
@@ -7172,7 +7616,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 8018,
+          "line": 8024,
           "methods": [
             "POST"
           ],
@@ -7214,7 +7658,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 8018,
+          "line": 8024,
           "methods": [
             "POST"
           ],
@@ -7256,7 +7700,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 8018,
+          "line": 8024,
           "methods": [
             "POST"
           ],
@@ -7298,7 +7742,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 8018,
+          "line": 8024,
           "methods": [
             "POST"
           ],
@@ -7340,7 +7784,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 8018,
+          "line": 8024,
           "methods": [
             "POST"
           ],
@@ -7382,7 +7826,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 8018,
+          "line": 8024,
           "methods": [
             "POST"
           ],
@@ -9287,7 +9731,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6854,
+          "line": 6860,
           "methods": [
             "GET"
           ],
@@ -9299,7 +9743,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1233,
+        "line": 1317,
         "method": "UNKNOWN",
         "path": "/api/toolchain/universal/briefing",
         "source_kind": "route-literal",
@@ -9316,7 +9760,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6860,
+          "line": 6866,
           "methods": [
             "POST"
           ],
@@ -9347,7 +9791,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6860,
+          "line": 6866,
           "methods": [
             "POST"
           ],
@@ -9378,7 +9822,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6819,
+          "line": 6825,
           "methods": [
             "GET"
           ],
@@ -9409,7 +9853,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6819,
+          "line": 6825,
           "methods": [
             "GET"
           ],
@@ -9421,7 +9865,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1216,
+        "line": 1300,
         "method": "UNKNOWN",
         "path": "/api/toolchain/universal/manifest",
         "source_kind": "route-literal",
@@ -9440,7 +9884,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/app.py",
-          "line": 6804,
+          "line": 6810,
           "methods": [
             "GET"
           ],
@@ -9452,7 +9896,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/admin/api/adminApiClient.ts",
-        "line": 1224,
+        "line": 1308,
         "method": "UNKNOWN",
         "path": "/api/toolchain/universal/status",
         "source_kind": "route-literal",
@@ -9502,7 +9946,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1253,
+          "line": 1263,
           "methods": [
             "POST"
           ],
@@ -9511,7 +9955,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1253,
+          "line": 1263,
           "methods": [
             "POST"
           ],
@@ -9545,7 +9989,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1253,
+          "line": 1263,
           "methods": [
             "POST"
           ],
@@ -9554,7 +9998,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1253,
+          "line": 1263,
           "methods": [
             "POST"
           ],
@@ -9588,7 +10032,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1253,
+          "line": 1263,
           "methods": [
             "POST"
           ],
@@ -9597,7 +10041,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1253,
+          "line": 1263,
           "methods": [
             "POST"
           ],
@@ -9631,7 +10075,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1312,
+          "line": 1322,
           "methods": [
             "POST"
           ],
@@ -9640,7 +10084,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1312,
+          "line": 1322,
           "methods": [
             "POST"
           ],
@@ -9675,7 +10119,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1312,
+          "line": 1322,
           "methods": [
             "POST"
           ],
@@ -9684,7 +10128,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1312,
+          "line": 1322,
           "methods": [
             "POST"
           ],
@@ -9719,7 +10163,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1312,
+          "line": 1322,
           "methods": [
             "POST"
           ],
@@ -9728,7 +10172,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1312,
+          "line": 1322,
           "methods": [
             "POST"
           ],
@@ -9763,7 +10207,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -9772,7 +10216,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -9781,7 +10225,7 @@
         },
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -9790,7 +10234,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -9802,7 +10246,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 810,
+        "line": 811,
         "method": "GET",
         "path": "/api/user/agent/jobs",
         "source_kind": "request-call",
@@ -9815,6 +10259,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -9827,6 +10272,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -9835,7 +10281,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -9844,7 +10290,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -9853,7 +10299,7 @@
         },
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -9862,7 +10308,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -9874,7 +10320,7 @@
         "active_surface": true,
         "call_name": "this.repositoryFetcher",
         "file": "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts",
-        "line": 72,
+        "line": 86,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs",
         "source_kind": "route-call",
@@ -9887,6 +10333,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -9899,6 +10346,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -9907,7 +10355,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -9916,7 +10364,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -9925,7 +10373,7 @@
         },
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -9934,7 +10382,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -9946,7 +10394,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts",
-        "line": 73,
+        "line": 87,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs",
         "source_kind": "route-call",
@@ -9959,6 +10407,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -9971,6 +10420,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -9979,7 +10429,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -9988,7 +10438,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -9997,7 +10447,7 @@
         },
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -10006,7 +10456,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -10018,7 +10468,7 @@
         "active_surface": true,
         "call_name": "this.repositoryFetcher",
         "file": "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts",
-        "line": 93,
+        "line": 107,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs",
         "source_kind": "route-call",
@@ -10031,6 +10481,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10043,6 +10494,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10051,7 +10503,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -10060,7 +10512,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -10069,7 +10521,7 @@
         },
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -10078,7 +10530,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -10090,7 +10542,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts",
-        "line": 94,
+        "line": 108,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs",
         "source_kind": "route-call",
@@ -10103,6 +10555,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10115,6 +10568,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10123,7 +10577,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -10132,7 +10586,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -10141,7 +10595,7 @@
         },
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -10150,7 +10604,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -10175,6 +10629,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10187,6 +10642,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10195,7 +10651,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -10204,7 +10660,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -10213,7 +10669,7 @@
         },
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -10222,7 +10678,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -10234,7 +10690,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 557,
+        "line": 555,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs",
         "source_kind": "route-literal",
@@ -10247,6 +10703,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10259,6 +10716,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10267,7 +10725,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -10276,7 +10734,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1493,
+          "line": 1503,
           "methods": [
             "GET"
           ],
@@ -10285,7 +10743,7 @@
         },
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -10294,7 +10752,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1553,
+          "line": 1568,
           "methods": [
             "POST"
           ],
@@ -10306,7 +10764,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 811,
+        "line": 812,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs",
         "source_kind": "route-call",
@@ -10319,6 +10777,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10331,6 +10790,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10339,7 +10799,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1717,
+          "line": 1741,
           "methods": [
             "GET"
           ],
@@ -10348,7 +10808,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1717,
+          "line": 1741,
           "methods": [
             "GET"
           ],
@@ -10373,6 +10833,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10385,6 +10846,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10393,7 +10855,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1717,
+          "line": 1741,
           "methods": [
             "GET"
           ],
@@ -10402,7 +10864,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1717,
+          "line": 1741,
           "methods": [
             "GET"
           ],
@@ -10414,7 +10876,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 557,
+        "line": 555,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>",
         "source_kind": "route-literal",
@@ -10427,6 +10889,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10439,6 +10902,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10447,7 +10911,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2148,
+          "line": 2172,
           "methods": [
             "POST"
           ],
@@ -10456,7 +10920,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2148,
+          "line": 2172,
           "methods": [
             "POST"
           ],
@@ -10468,7 +10932,7 @@
         "active_surface": true,
         "call_name": "requestSnapshot",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 930,
+        "line": 931,
         "method": "POST",
         "path": "/api/user/agent/jobs/<p>/cancel",
         "source_kind": "request-call",
@@ -10481,6 +10945,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10493,6 +10958,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10501,7 +10967,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2148,
+          "line": 2172,
           "methods": [
             "POST"
           ],
@@ -10510,7 +10976,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2148,
+          "line": 2172,
           "methods": [
             "POST"
           ],
@@ -10522,7 +10988,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 930,
+        "line": 931,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/cancel",
         "source_kind": "route-call",
@@ -10535,6 +11001,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10547,6 +11014,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10555,7 +11023,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2289,
+          "line": 2323,
           "methods": [
             "POST"
           ],
@@ -10564,7 +11032,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2289,
+          "line": 2323,
           "methods": [
             "POST"
           ],
@@ -10589,6 +11057,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10601,6 +11070,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10609,7 +11079,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2267,
+          "line": 2301,
           "methods": [
             "POST"
           ],
@@ -10618,7 +11088,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2267,
+          "line": 2301,
           "methods": [
             "POST"
           ],
@@ -10643,6 +11113,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10655,6 +11126,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10663,7 +11135,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2390,
+          "line": 2424,
           "methods": [
             "POST"
           ],
@@ -10672,7 +11144,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2390,
+          "line": 2424,
           "methods": [
             "POST"
           ],
@@ -10684,7 +11156,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 967,
+        "line": 968,
         "method": "POST",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "request-call",
@@ -10697,6 +11169,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10709,6 +11182,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10717,7 +11191,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2390,
+          "line": 2424,
           "methods": [
             "POST"
           ],
@@ -10726,7 +11200,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2390,
+          "line": 2424,
           "methods": [
             "POST"
           ],
@@ -10751,6 +11225,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10763,6 +11238,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10771,7 +11247,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2390,
+          "line": 2424,
           "methods": [
             "POST"
           ],
@@ -10780,7 +11256,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2390,
+          "line": 2424,
           "methods": [
             "POST"
           ],
@@ -10792,7 +11268,7 @@
         "active_surface": true,
         "call_name": "isObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 567,
+        "line": 565,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "route-call",
@@ -10805,6 +11281,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10817,6 +11294,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10825,7 +11303,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2390,
+          "line": 2424,
           "methods": [
             "POST"
           ],
@@ -10834,7 +11312,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2390,
+          "line": 2424,
           "methods": [
             "POST"
           ],
@@ -10846,7 +11324,7 @@
         "active_surface": true,
         "call_name": "isObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 577,
+        "line": 575,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "route-call",
@@ -10859,6 +11337,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10871,6 +11350,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10879,7 +11359,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2390,
+          "line": 2424,
           "methods": [
             "POST"
           ],
@@ -10888,7 +11368,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2390,
+          "line": 2424,
           "methods": [
             "POST"
           ],
@@ -10900,7 +11380,7 @@
         "active_surface": true,
         "call_name": "isObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 666,
+        "line": 664,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "route-call",
@@ -10913,6 +11393,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10925,6 +11406,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10933,7 +11415,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2390,
+          "line": 2424,
           "methods": [
             "POST"
           ],
@@ -10942,7 +11424,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2390,
+          "line": 2424,
           "methods": [
             "POST"
           ],
@@ -10954,7 +11436,7 @@
         "active_surface": true,
         "call_name": "patternLearningEvidence",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 960,
+        "line": 961,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "route-call",
@@ -10967,6 +11449,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -10979,6 +11462,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10987,7 +11471,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2390,
+          "line": 2424,
           "methods": [
             "POST"
           ],
@@ -10996,7 +11480,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2390,
+          "line": 2424,
           "methods": [
             "POST"
           ],
@@ -11008,7 +11492,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 968,
+        "line": 969,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "route-call",
@@ -11021,6 +11505,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11033,6 +11518,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11041,7 +11527,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2322,
+          "line": 2356,
           "methods": [
             "POST"
           ],
@@ -11050,7 +11536,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2322,
+          "line": 2356,
           "methods": [
             "POST"
           ],
@@ -11062,7 +11548,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 935,
+        "line": 936,
         "method": "POST",
         "path": "/api/user/agent/jobs/<p>/draft-pr/prepare",
         "source_kind": "request-call",
@@ -11075,6 +11561,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11087,6 +11574,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11095,7 +11583,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2322,
+          "line": 2356,
           "methods": [
             "POST"
           ],
@@ -11104,7 +11592,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2322,
+          "line": 2356,
           "methods": [
             "POST"
           ],
@@ -11129,6 +11617,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11141,6 +11630,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11149,7 +11639,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2322,
+          "line": 2356,
           "methods": [
             "POST"
           ],
@@ -11158,7 +11648,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2322,
+          "line": 2356,
           "methods": [
             "POST"
           ],
@@ -11170,7 +11660,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 936,
+        "line": 937,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/prepare",
         "source_kind": "route-call",
@@ -11183,6 +11673,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11195,6 +11686,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11203,7 +11695,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2024,
+          "line": 2048,
           "methods": [
             "GET"
           ],
@@ -11212,7 +11704,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2024,
+          "line": 2048,
           "methods": [
             "GET"
           ],
@@ -11224,7 +11716,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 895,
+        "line": 896,
         "method": "GET",
         "path": "/api/user/agent/jobs/<p>/evidence-anchors",
         "source_kind": "request-call",
@@ -11237,6 +11729,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11249,6 +11742,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11257,7 +11751,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2024,
+          "line": 2048,
           "methods": [
             "GET"
           ],
@@ -11266,7 +11760,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2024,
+          "line": 2048,
           "methods": [
             "GET"
           ],
@@ -11291,6 +11785,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11303,6 +11798,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11311,7 +11807,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2024,
+          "line": 2048,
           "methods": [
             "GET"
           ],
@@ -11320,7 +11816,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2024,
+          "line": 2048,
           "methods": [
             "GET"
           ],
@@ -11332,7 +11828,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 896,
+        "line": 897,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/evidence-anchors",
         "source_kind": "route-call",
@@ -11345,6 +11841,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11357,6 +11854,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11365,7 +11863,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1934,
+          "line": 1958,
           "methods": [
             "GET"
           ],
@@ -11374,7 +11872,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1934,
+          "line": 1958,
           "methods": [
             "GET"
           ],
@@ -11386,7 +11884,7 @@
         "active_surface": true,
         "call_name": "this.fetcher",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 861,
+        "line": 862,
         "method": "GET",
         "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
         "source_kind": "request-call",
@@ -11399,6 +11897,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11411,6 +11910,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11419,7 +11919,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1934,
+          "line": 1958,
           "methods": [
             "GET"
           ],
@@ -11428,7 +11928,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1934,
+          "line": 1958,
           "methods": [
             "GET"
           ],
@@ -11440,7 +11940,7 @@
         "active_surface": true,
         "call_name": "readJson",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 563,
+        "line": 561,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
         "source_kind": "route-call",
@@ -11453,6 +11953,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11465,6 +11966,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11473,7 +11975,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1934,
+          "line": 1958,
           "methods": [
             "GET"
           ],
@@ -11482,7 +11984,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1934,
+          "line": 1958,
           "methods": [
             "GET"
           ],
@@ -11494,7 +11996,7 @@
         "active_surface": true,
         "call_name": "readJson",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 573,
+        "line": 571,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
         "source_kind": "route-call",
@@ -11507,6 +12009,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11519,6 +12022,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11527,7 +12031,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1934,
+          "line": 1958,
           "methods": [
             "GET"
           ],
@@ -11536,7 +12040,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1934,
+          "line": 1958,
           "methods": [
             "GET"
           ],
@@ -11548,7 +12052,7 @@
         "active_surface": true,
         "call_name": "readJson",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 662,
+        "line": 660,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
         "source_kind": "route-call",
@@ -11561,6 +12065,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11573,6 +12078,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11581,7 +12087,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1934,
+          "line": 1958,
           "methods": [
             "GET"
           ],
@@ -11590,7 +12096,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1934,
+          "line": 1958,
           "methods": [
             "GET"
           ],
@@ -11602,7 +12108,7 @@
         "active_surface": true,
         "call_name": "readJson",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 784,
+        "line": 785,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
         "source_kind": "route-call",
@@ -11615,6 +12121,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11627,6 +12134,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11635,7 +12143,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1934,
+          "line": 1958,
           "methods": [
             "GET"
           ],
@@ -11644,7 +12152,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1934,
+          "line": 1958,
           "methods": [
             "GET"
           ],
@@ -11656,7 +12164,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 862,
+        "line": 863,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
         "source_kind": "route-call",
@@ -11669,6 +12177,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11681,6 +12190,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11689,7 +12199,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1981,
+          "line": 2005,
           "methods": [
             "GET"
           ],
@@ -11698,7 +12208,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1981,
+          "line": 2005,
           "methods": [
             "GET"
           ],
@@ -11710,7 +12220,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 833,
+        "line": 834,
         "method": "GET",
         "path": "/api/user/agent/jobs/<p>/projections",
         "source_kind": "request-call",
@@ -11723,6 +12233,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11735,6 +12246,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11743,7 +12255,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1981,
+          "line": 2005,
           "methods": [
             "GET"
           ],
@@ -11752,7 +12264,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1981,
+          "line": 2005,
           "methods": [
             "GET"
           ],
@@ -11764,7 +12276,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 834,
+        "line": 835,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/projections",
         "source_kind": "route-call",
@@ -11777,6 +12289,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11789,6 +12302,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11797,7 +12311,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2246,
+          "line": 2280,
           "methods": [
             "POST"
           ],
@@ -11806,7 +12320,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2246,
+          "line": 2280,
           "methods": [
             "POST"
           ],
@@ -11831,6 +12345,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11843,6 +12358,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11851,7 +12367,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2221,
+          "line": 2255,
           "methods": [
             "POST"
           ],
@@ -11860,7 +12376,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2221,
+          "line": 2255,
           "methods": [
             "POST"
           ],
@@ -11885,6 +12401,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11897,6 +12414,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11905,7 +12423,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2241,
+          "line": 2275,
           "methods": [
             "POST"
           ],
@@ -11914,7 +12432,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2241,
+          "line": 2275,
           "methods": [
             "POST"
           ],
@@ -11926,7 +12444,7 @@
         "active_surface": true,
         "call_name": "requestJanitorTool",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 1055,
+        "line": 1056,
         "method": "POST",
         "path": "/api/user/agent/jobs/<p>/tools/janitor",
         "source_kind": "request-call",
@@ -11939,6 +12457,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -11951,6 +12470,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11959,7 +12479,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2241,
+          "line": 2275,
           "methods": [
             "POST"
           ],
@@ -11968,7 +12488,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2241,
+          "line": 2275,
           "methods": [
             "POST"
           ],
@@ -11980,7 +12500,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 1056,
+        "line": 1057,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/tools/janitor",
         "source_kind": "route-call",
@@ -11993,6 +12513,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -12005,6 +12526,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12013,7 +12535,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2236,
+          "line": 2270,
           "methods": [
             "POST"
           ],
@@ -12022,7 +12544,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2236,
+          "line": 2270,
           "methods": [
             "POST"
           ],
@@ -12047,6 +12569,7 @@
           "backend/tests/test_agent_draft_pr_routes.py",
           "backend/tests/test_agent_runtime_json_validation.py",
           "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_auto_code_review.py",
           "backend/tests/test_frontend_endpoint_assurance.py"
         ],
@@ -12059,6 +12582,7 @@
         "unit": [
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12067,7 +12591,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1589,
+          "line": 1613,
           "methods": [
             "POST"
           ],
@@ -12076,7 +12600,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1589,
+          "line": 1613,
           "methods": [
             "POST"
           ],
@@ -12110,7 +12634,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1589,
+          "line": 1613,
           "methods": [
             "POST"
           ],
@@ -12119,7 +12643,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1589,
+          "line": 1613,
           "methods": [
             "POST"
           ],
@@ -12153,7 +12677,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1628,
+          "line": 1652,
           "methods": [
             "GET"
           ],
@@ -12162,7 +12686,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1628,
+          "line": 1652,
           "methods": [
             "GET"
           ],
@@ -12196,7 +12720,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1628,
+          "line": 1652,
           "methods": [
             "GET"
           ],
@@ -12205,7 +12729,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1628,
+          "line": 1652,
           "methods": [
             "GET"
           ],
@@ -12239,7 +12763,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1670,
+          "line": 1694,
           "methods": [
             "POST"
           ],
@@ -12248,7 +12772,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1670,
+          "line": 1694,
           "methods": [
             "POST"
           ],
@@ -12282,7 +12806,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1670,
+          "line": 1694,
           "methods": [
             "POST"
           ],
@@ -12291,7 +12815,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1670,
+          "line": 1694,
           "methods": [
             "POST"
           ],
@@ -12325,7 +12849,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1670,
+          "line": 1694,
           "methods": [
             "POST"
           ],
@@ -12334,7 +12858,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1670,
+          "line": 1694,
           "methods": [
             "POST"
           ],
@@ -12368,7 +12892,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2691,
+          "line": 2725,
           "methods": [
             "POST"
           ],
@@ -12377,7 +12901,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2691,
+          "line": 2725,
           "methods": [
             "POST"
           ],
@@ -12410,7 +12934,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2691,
+          "line": 2725,
           "methods": [
             "POST"
           ],
@@ -12419,7 +12943,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2691,
+          "line": 2725,
           "methods": [
             "POST"
           ],
@@ -12452,7 +12976,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2691,
+          "line": 2725,
           "methods": [
             "POST"
           ],
@@ -12461,7 +12985,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2691,
+          "line": 2725,
           "methods": [
             "POST"
           ],
@@ -12494,7 +13018,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2691,
+          "line": 2725,
           "methods": [
             "POST"
           ],
@@ -12503,7 +13027,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2691,
+          "line": 2725,
           "methods": [
             "POST"
           ],
@@ -12536,7 +13060,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2663,
+          "line": 2697,
           "methods": [
             "POST"
           ],
@@ -12545,7 +13069,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2663,
+          "line": 2697,
           "methods": [
             "POST"
           ],
@@ -12576,7 +13100,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1394,
+          "line": 1404,
           "methods": [
             "POST"
           ],
@@ -12585,7 +13109,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1394,
+          "line": 1404,
           "methods": [
             "POST"
           ],
@@ -12619,7 +13143,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1513,
+          "line": 1523,
           "methods": [
             "POST"
           ],
@@ -12628,7 +13152,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1513,
+          "line": 1523,
           "methods": [
             "POST"
           ],
@@ -12640,7 +13164,7 @@
         "active_surface": true,
         "call_name": "this.fetcher",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 766,
+        "line": 768,
         "method": "POST",
         "path": "/api/user/agent/repository/run",
         "source_kind": "request-call",
@@ -12649,6 +13173,8 @@
       "status": "BOUND",
       "testReferences": {
         "backend": [
+          "backend/tests/test_agent_zero_only_execution_contract.py",
+          "backend/tests/test_agent_zero_only_production_smoke_contract.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -12672,7 +13198,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1513,
+          "line": 1523,
           "methods": [
             "POST"
           ],
@@ -12681,7 +13207,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1513,
+          "line": 1523,
           "methods": [
             "POST"
           ],
@@ -12693,7 +13219,7 @@
         "active_surface": true,
         "call_name": "this.repositoryFetcher",
         "file": "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts",
-        "line": 133,
+        "line": 147,
         "method": "UNKNOWN",
         "path": "/api/user/agent/repository/run",
         "source_kind": "route-call",
@@ -12702,6 +13228,8 @@
       "status": "PATH_BOUND_METHOD_UNKNOWN",
       "testReferences": {
         "backend": [
+          "backend/tests/test_agent_zero_only_execution_contract.py",
+          "backend/tests/test_agent_zero_only_production_smoke_contract.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -12725,7 +13253,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1513,
+          "line": 1523,
           "methods": [
             "POST"
           ],
@@ -12734,7 +13262,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1513,
+          "line": 1523,
           "methods": [
             "POST"
           ],
@@ -12746,7 +13274,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts",
-        "line": 134,
+        "line": 148,
         "method": "UNKNOWN",
         "path": "/api/user/agent/repository/run",
         "source_kind": "route-call",
@@ -12755,6 +13283,8 @@
       "status": "PATH_BOUND_METHOD_UNKNOWN",
       "testReferences": {
         "backend": [
+          "backend/tests/test_agent_zero_only_execution_contract.py",
+          "backend/tests/test_agent_zero_only_production_smoke_contract.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -12778,7 +13308,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1513,
+          "line": 1523,
           "methods": [
             "POST"
           ],
@@ -12787,7 +13317,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1513,
+          "line": 1523,
           "methods": [
             "POST"
           ],
@@ -12808,6 +13338,8 @@
       "status": "LITERAL_BOUND",
       "testReferences": {
         "backend": [
+          "backend/tests/test_agent_zero_only_execution_contract.py",
+          "backend/tests/test_agent_zero_only_production_smoke_contract.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -12831,7 +13363,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1513,
+          "line": 1523,
           "methods": [
             "POST"
           ],
@@ -12840,7 +13372,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1513,
+          "line": 1523,
           "methods": [
             "POST"
           ],
@@ -12852,7 +13384,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 767,
+        "line": 769,
         "method": "UNKNOWN",
         "path": "/api/user/agent/repository/run",
         "source_kind": "route-call",
@@ -12861,6 +13393,8 @@
       "status": "PATH_BOUND_METHOD_UNKNOWN",
       "testReferences": {
         "backend": [
+          "backend/tests/test_agent_zero_only_execution_contract.py",
+          "backend/tests/test_agent_zero_only_production_smoke_contract.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -12884,7 +13418,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 629,
+          "line": 630,
           "methods": [
             "POST"
           ],
@@ -12893,7 +13427,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 629,
+          "line": 630,
           "methods": [
             "POST"
           ],
@@ -12927,7 +13461,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 629,
+          "line": 630,
           "methods": [
             "POST"
           ],
@@ -12936,7 +13470,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 629,
+          "line": 630,
           "methods": [
             "POST"
           ],
@@ -12970,7 +13504,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 606,
+          "line": 607,
           "methods": [
             "GET"
           ],
@@ -12979,7 +13513,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 606,
+          "line": 607,
           "methods": [
             "GET"
           ],
@@ -13010,7 +13544,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 606,
+          "line": 607,
           "methods": [
             "GET"
           ],
@@ -13019,7 +13553,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 606,
+          "line": 607,
           "methods": [
             "GET"
           ],
@@ -13050,7 +13584,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 668,
+          "line": 669,
           "methods": [
             "POST"
           ],
@@ -13059,7 +13593,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 668,
+          "line": 669,
           "methods": [
             "POST"
           ],
@@ -13093,7 +13627,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 668,
+          "line": 669,
           "methods": [
             "POST"
           ],
@@ -13102,7 +13636,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 668,
+          "line": 669,
           "methods": [
             "POST"
           ],
@@ -13136,7 +13670,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1007,
+          "line": 1008,
           "methods": [
             "POST"
           ],
@@ -13145,7 +13679,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1007,
+          "line": 1008,
           "methods": [
             "POST"
           ],
@@ -13177,7 +13711,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1007,
+          "line": 1008,
           "methods": [
             "POST"
           ],
@@ -13186,7 +13720,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1007,
+          "line": 1008,
           "methods": [
             "POST"
           ],
@@ -13328,7 +13862,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 929,
+          "line": 930,
           "methods": [
             "POST"
           ],
@@ -13337,7 +13871,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 929,
+          "line": 930,
           "methods": [
             "POST"
           ],
@@ -13369,7 +13903,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 929,
+          "line": 930,
           "methods": [
             "POST"
           ],
@@ -13378,7 +13912,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 929,
+          "line": 930,
           "methods": [
             "POST"
           ],
@@ -13410,7 +13944,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2607,
+          "line": 2450,
           "methods": [
             "GET"
           ],
@@ -13419,7 +13953,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2607,
+          "line": 2450,
           "methods": [
             "GET"
           ],
@@ -13454,7 +13988,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2607,
+          "line": 2450,
           "methods": [
             "GET"
           ],
@@ -13463,7 +13997,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2607,
+          "line": 2450,
           "methods": [
             "GET"
           ],
@@ -13475,7 +14009,7 @@
         "active_surface": true,
         "call_name": "this.requestObject",
         "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 529,
+        "line": 532,
         "method": "GET",
         "path": "/api/user/agent/swarm/manifest",
         "source_kind": "request-call",
@@ -13498,7 +14032,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2676,
+          "line": 2519,
           "methods": [
             "POST"
           ],
@@ -13507,7 +14041,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2676,
+          "line": 2519,
           "methods": [
             "POST"
           ],
@@ -13553,7 +14087,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2640,
+          "line": 2483,
           "methods": [
             "GET"
           ],
@@ -13562,7 +14096,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2640,
+          "line": 2483,
           "methods": [
             "GET"
           ],
@@ -13571,7 +14105,7 @@
         },
         {
           "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2625,
+          "line": 2468,
           "methods": [
             "GET"
           ],
@@ -13580,7 +14114,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2625,
+          "line": 2468,
           "methods": [
             "GET"
           ],
@@ -13614,7 +14148,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2656,
+          "line": 2499,
           "methods": [
             "POST"
           ],
@@ -13623,7 +14157,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2656,
+          "line": 2499,
           "methods": [
             "POST"
           ],
@@ -13657,7 +14191,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1172,
+          "line": 1173,
           "methods": [
             "POST"
           ],
@@ -13666,7 +14200,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1172,
+          "line": 1173,
           "methods": [
             "POST"
           ],
@@ -13678,7 +14212,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 734,
+        "line": 737,
         "method": "POST",
         "path": "/api/user/agent/toolchain/handoff",
         "source_kind": "request-call",
@@ -13700,7 +14234,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1172,
+          "line": 1173,
           "methods": [
             "POST"
           ],
@@ -13709,7 +14243,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1172,
+          "line": 1173,
           "methods": [
             "POST"
           ],
@@ -13721,7 +14255,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 735,
+        "line": 738,
         "method": "UNKNOWN",
         "path": "/api/user/agent/toolchain/handoff",
         "source_kind": "route-call",
@@ -13743,7 +14277,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1116,
+          "line": 1117,
           "methods": [
             "GET"
           ],
@@ -13752,7 +14286,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1116,
+          "line": 1117,
           "methods": [
             "GET"
           ],
@@ -13764,7 +14298,7 @@
         "active_surface": true,
         "call_name": "this.requestObject",
         "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 513,
+        "line": 516,
         "method": "GET",
         "path": "/api/user/agent/toolchain/manifest",
         "source_kind": "request-call",
@@ -13788,7 +14322,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1116,
+          "line": 1117,
           "methods": [
             "GET"
           ],
@@ -13797,7 +14331,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1116,
+          "line": 1117,
           "methods": [
             "GET"
           ],
@@ -13833,7 +14367,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 1478,
+          "line": 1488,
           "methods": [
             "POST"
           ],
@@ -13842,7 +14376,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 1478,
+          "line": 1488,
           "methods": [
             "POST"
           ],
@@ -13902,7 +14436,9 @@
           "tools/sovereign-toolchain/tests/test_n8n_api_auth.py"
         ],
         "e2e": [],
-        "unit": []
+        "unit": [
+          "src/features/ai/providerManager.test.ts"
+        ]
       }
     },
     {
@@ -13937,7 +14473,9 @@
           "tools/sovereign-toolchain/tests/test_n8n_api_auth.py"
         ],
         "e2e": [],
-        "unit": []
+        "unit": [
+          "src/features/ai/providerManager.test.ts"
+        ]
       }
     },
     {
@@ -13958,7 +14496,9 @@
           "scripts/sovereign-backend/tests/test_llm_route_scanner.py"
         ],
         "e2e": [],
-        "unit": []
+        "unit": [
+          "src/features/ai/providerManager.test.ts"
+        ]
       }
     },
     {
@@ -13979,7 +14519,9 @@
           "scripts/sovereign-backend/tests/test_llm_route_scanner.py"
         ],
         "e2e": [],
-        "unit": []
+        "unit": [
+          "src/features/ai/providerManager.test.ts"
+        ]
       }
     },
     {
@@ -14904,7 +15446,7 @@
     },
     {
       "dynamic": false,
-      "line": 39,
+      "line": 40,
       "source": "src/features/admin/AdminPanel.tsx",
       "source_status": "active",
       "target": "src/features/admin/api/adminApiClient.ts",
@@ -14952,6 +15494,14 @@
     },
     {
       "dynamic": false,
+      "line": 31,
+      "source": "src/features/admin/AdminPanel.tsx",
+      "source_status": "active",
+      "target": "src/features/admin/components/SelfHealingAuthorityCard.tsx",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
       "line": 25,
       "source": "src/features/admin/AdminPanel.tsx",
       "source_status": "active",
@@ -14976,7 +15526,7 @@
     },
     {
       "dynamic": false,
-      "line": 31,
+      "line": 32,
       "source": "src/features/admin/AdminPanel.tsx",
       "source_status": "active",
       "target": "src/features/admin/hooks/useAdminApi.ts",
@@ -14984,7 +15534,7 @@
     },
     {
       "dynamic": false,
-      "line": 46,
+      "line": 47,
       "source": "src/features/admin/AdminPanel.tsx",
       "source_status": "active",
       "target": "src/features/user/useUserStore.ts",
@@ -15052,6 +15602,14 @@
       "source": "src/features/admin/components/PaymentMethodEditor.tsx",
       "source_status": "active",
       "target": "src/features/admin/api/adminApiClient.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 8,
+      "source": "src/features/admin/components/SelfHealingAuthorityCard.tsx",
+      "source_status": "active",
+      "target": "src/features/admin/hooks/useAdminApi.ts",
       "target_status": "active"
     },
     {
@@ -16776,7 +17334,7 @@
     },
     {
       "dynamic": false,
-      "line": 518,
+      "line": 517,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/billing/PaywallModal.tsx",
@@ -16784,7 +17342,7 @@
     },
     {
       "dynamic": false,
-      "line": 517,
+      "line": 516,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/billing/components/CreditDisplay.tsx",
@@ -16792,7 +17350,7 @@
     },
     {
       "dynamic": false,
-      "line": 509,
+      "line": 508,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/billing/useCreditGuard.ts",
@@ -16800,7 +17358,7 @@
     },
     {
       "dynamic": false,
-      "line": 510,
+      "line": 509,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/inference/areInferenceApi.ts",
@@ -16808,7 +17366,7 @@
     },
     {
       "dynamic": false,
-      "line": 516,
+      "line": 515,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/inference/arePredictiveBridge.ts",
@@ -16896,7 +17454,7 @@
     },
     {
       "dynamic": false,
-      "line": 487,
+      "line": 486,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/components/ChangelogPreviewCard.tsx",
@@ -16952,7 +17510,7 @@
     },
     {
       "dynamic": false,
-      "line": 486,
+      "line": 485,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/components/MissionValidatorCard.tsx",
@@ -17136,7 +17694,7 @@
     },
     {
       "dynamic": false,
-      "line": 322,
+      "line": 321,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/builderChatHelpers.ts",
@@ -17160,7 +17718,7 @@
     },
     {
       "dynamic": false,
-      "line": 251,
+      "line": 245,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/builderContainerTypes.ts",
@@ -17168,7 +17726,7 @@
     },
     {
       "dynamic": false,
-      "line": 334,
+      "line": 333,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/builderPALRuntime.ts",
@@ -17176,7 +17734,7 @@
     },
     {
       "dynamic": false,
-      "line": 315,
+      "line": 314,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/builderWorkbenchStatus.ts",
@@ -17184,7 +17742,7 @@
     },
     {
       "dynamic": false,
-      "line": 484,
+      "line": 483,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/changelogRuntime.ts",
@@ -17232,7 +17790,7 @@
     },
     {
       "dynamic": false,
-      "line": 482,
+      "line": 481,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/generatedFileDiffPreview.ts",
@@ -17272,7 +17830,7 @@
     },
     {
       "dynamic": false,
-      "line": 485,
+      "line": 484,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/missionValidatorRuntime.ts",
@@ -17312,7 +17870,7 @@
     },
     {
       "dynamic": false,
-      "line": 483,
+      "line": 482,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/semanticDiffNarratorRuntime.ts",
@@ -17376,7 +17934,7 @@
     },
     {
       "dynamic": false,
-      "line": 488,
+      "line": 487,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.ts",
@@ -17416,7 +17974,7 @@
     },
     {
       "dynamic": false,
-      "line": 503,
+      "line": 502,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/sovereignRepoEvidenceScopeRuntime.ts",
@@ -17424,7 +17982,7 @@
     },
     {
       "dynamic": false,
-      "line": 497,
+      "line": 496,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/sovereignSideMenuRuntime.ts",
@@ -17432,7 +17990,7 @@
     },
     {
       "dynamic": false,
-      "line": 493,
+      "line": 492,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/sovereignToolInspectionRuntime.ts",
@@ -17456,7 +18014,7 @@
     },
     {
       "dynamic": false,
-      "line": 481,
+      "line": 480,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/workerIntentDetector.ts",
@@ -17464,7 +18022,7 @@
     },
     {
       "dynamic": false,
-      "line": 525,
+      "line": 524,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/toolchain/components/SkillScanPanel.tsx",
@@ -17472,7 +18030,7 @@
     },
     {
       "dynamic": false,
-      "line": 524,
+      "line": 523,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/toolchain/skillRuntime.ts",
@@ -17480,7 +18038,7 @@
     },
     {
       "dynamic": false,
-      "line": 523,
+      "line": 522,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/toolchain/useSkillsStore.ts",
@@ -17488,7 +18046,7 @@
     },
     {
       "dynamic": false,
-      "line": 522,
+      "line": 521,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/toolchain/useToolchainStore.ts",
@@ -17496,7 +18054,7 @@
     },
     {
       "dynamic": false,
-      "line": 520,
+      "line": 519,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/user/components/LoginModal.tsx",
@@ -17504,7 +18062,7 @@
     },
     {
       "dynamic": false,
-      "line": 521,
+      "line": 520,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/user/components/UserProfile.tsx",
@@ -17512,7 +18070,7 @@
     },
     {
       "dynamic": false,
-      "line": 519,
+      "line": 518,
       "source": "src/features/product/containers/BuilderContainer.tsx",
       "source_status": "active",
       "target": "src/features/user/useUserStore.ts",
@@ -20615,10 +21173,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "c60436b9bbb99975f07517058b835513dae61e7795571dc94828714f9d06ff1e",
-  "revision": "0fb8045f648dac351fdf4fb5a5bc8c7476257f43",
+  "reportSha256": "6e5dcf0713ac8e591a006dcf9efdff0c80e08b3e486e634eba4ef82ce876187b",
+  "revision": "1d8bb83bd82bb2a33ffbc8f023c8d38e55a437fd",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "b58ca1bb47b179b9685e5c03ebd2d5c2735900c3fd6a7d8bc31e21ab0cc63ec6",
+  "sourceTreeSha256": "8262495e859823710e02d0b694dce5bc8bb9c6b22f2b530e2c2390aafea98731",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -20627,17 +21185,17 @@
     "activeReadRequestCount": 28,
     "activeReadWithoutTestEvidenceCount": 0,
     "activeRequestCount": 95,
-    "backendRouteCount": 391,
+    "backendRouteCount": 403,
     "boundActiveRequestCount": 95,
     "externalMethodUnknownCount": 0,
     "externalRequestCount": 30,
-    "frontendCallCount": 278,
-    "frontendModuleCount": 561,
-    "importEdgeCount": 759,
+    "frontendCallCount": 284,
+    "frontendModuleCount": 562,
+    "importEdgeCount": 761,
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
-    "testFileCount": 796,
+    "testFileCount": 802,
     "unmatchedActiveRequestCount": 0
   },
   "truthBoundary": {

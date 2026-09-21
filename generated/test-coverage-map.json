@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-09-17T16:53:37.668Z",
+  "generatedAt": "2026-09-21T17:15:45.556Z",
   "discovery": {
     "scope": "tracked repository test conventions",
     "excludedDirectories": [
@@ -31,20 +31,20 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 780,
+  "totalTestFiles": 786,
   "testRoots": {
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
     "backend": 1,
-    "backend/tests": 172,
+    "backend/tests": 176,
     "backend/tests/e2e": 1,
     "integrations/openhands/sovereign-mcp-toolset-plugin/tests": 1,
     "research": 1,
     "scripts": 12,
-    "scripts/sovereign-backend/tests": 81,
+    "scripts/sovereign-backend/tests": 82,
     "scripts/tests": 3,
     "sovereign-studio-rn/e2e": 7,
-    "src": 372,
+    "src": 373,
     "tests": 1,
     "tests/e2e": 5,
     "tools": 3,
@@ -332,6 +332,22 @@
       "category": "python-suite"
     },
     {
+      "file": "backend/tests/test_agent_zero_only_execution_contract.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_agent_zero_only_production_smoke_contract.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
       "file": "backend/tests/test_agent_zero_runtime.py",
       "language": "python",
       "testRoot": "backend/tests",
@@ -383,6 +399,22 @@
     },
     {
       "file": "backend/tests/test_bug_evidence_lane.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_cag_self_healing.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_cag_self_healing_runtime.py",
       "language": "python",
       "testRoot": "backend/tests",
       "gates": [],
@@ -2482,6 +2514,16 @@
       "category": "python-suite"
     },
     {
+      "file": "scripts/sovereign-backend/tests/test_wolfram_cag_runtime_binding.py",
+      "language": "python",
+      "testRoot": "scripts/sovereign-backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
       "file": "scripts/sovereign-backend/tests/test_wolfram_cag_staging_publication.py",
       "language": "python",
       "testRoot": "scripts/sovereign-backend/tests",
@@ -3198,6 +3240,25 @@
     },
     {
       "file": "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/executionFeedback.test.tsx",
       "language": "javascript-typescript",
       "testRoot": "src",
       "gates": [
