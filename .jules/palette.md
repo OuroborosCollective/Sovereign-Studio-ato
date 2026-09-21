@@ -57,3 +57,6 @@
 ## 2025-08-13 - [Overriding Visible Buttons via ARIA Labels]
 **Learning:** Overriding a button's visible text (e.g., 'Repo-Snapshot laden') with an 'aria-label' that does not match or include that exact text violates the WCAG 'Label in Name' requirement. It also disrupts testing frameworks and standard selectors looking for the visible text.
 **Action:** For buttons with descriptive, dynamic text content, rely on the visible text for the accessible name, and use the 'title' attribute exclusively for stateful hover descriptions rather than using aria-label overrides.
+## 2024-05-18 - Improve keyboard accessibility and tooltips for chat controls
+**Learning:** Custom styled interactive elements (like buttons created with Tailwind classes `bg-slate-800` etc.) inherently drop native browser focus rings. Without explicitly adding `focus-visible` styles, these elements become invisible to keyboard-only users navigating via Tab, severely breaking accessibility. Dynamic tooltips on send buttons based on state (`canSubmit`) also significantly clarify functionality when a button is disabled.
+**Action:** Always ensure custom interactive elements using Tailwind CSS include explicit `focus-visible` ring modifiers (e.g., `focus-visible:outline-none focus-visible:ring-2`) and maintain dynamic tooltips for state-dependent buttons.
