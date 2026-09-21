@@ -808,6 +808,14 @@ def test_active_task_stalls_fail_closed_after_bounded_window(monkeypatch):
     )
     state = _patch_job_store(monkeypatch, stale)
     monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
+    monkeypatch.setattr(
+        repository_execution,
+        "_observe_causal_progress",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            verdict="STALLED",
+            reason="no new material repository progress within the bounded lease",
+        ),
+    )
 
     class Client:
         def get_task(self, task_id):
@@ -843,8 +851,11 @@ def test_submitted_task_without_workspace_progress_is_cancelled_early(monkeypatc
     monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "1800")
     monkeypatch.setattr(
         repository_execution,
-        "run_agent_job_tool",
-        lambda *_args, **_kwargs: _done_tool(changed_files=()),
+        "_observe_causal_progress",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            verdict="STALLED",
+            reason="no new material repository progress within the bounded lease",
+        ),
     )
 
     class Client:
@@ -926,6 +937,14 @@ def test_fresh_active_task_remains_running(monkeypatch):
     )
     _patch_job_store(monkeypatch, fresh)
     monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
+    monkeypatch.setattr(
+        repository_execution,
+        "_observe_causal_progress",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            verdict="NO_PROGRESS",
+            reason="within existing lease",
+        ),
+    )
 
     class Client:
         def get_task(self, task_id):
@@ -1065,6 +1084,14 @@ def test_active_readback_persists_only_state_changes_and_never_resets_stall_cloc
     import time
     initial = replace(_job(), updated_at=datetime.now(timezone.utc))
     state = _patch_job_store(monkeypatch, initial)
+    monkeypatch.setattr(
+        repository_execution,
+        "_observe_causal_progress",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            verdict="NO_PROGRESS",
+            reason="within existing lease",
+        ),
+    )
     now = int(time.time() * 1000)
     monkeypatch.setattr("agent_runtime.contracts.time.time", lambda: now / 1000)
     class Client:
@@ -1110,6 +1137,14 @@ def test_cancel_repository_a2a_job_requires_upstream_canceled_state(monkeypatch)
 def test_readback_failure_and_recovery_are_visible_without_duplicate_submit(monkeypatch):
     initial = replace(_job(), updated_at=datetime.now(timezone.utc))
     state = _patch_job_store(monkeypatch, initial)
+    monkeypatch.setattr(
+        repository_execution,
+        "_observe_causal_progress",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            verdict="NO_PROGRESS",
+            reason="within existing lease",
+        ),
+    )
     class Client:
         unavailable = True
         def get_task(self, task_id):
@@ -1148,6 +1183,94 @@ def test_late_readback_cannot_project_activity_on_a_terminal_job(monkeypatch):
     )
     assert result.status == "blocked"
     assert state["events"] == []
+    assert state["progress_receipts"] == []
+
+
+def test_progress_readback_unavailable_inside_lease_is_transient(monkeypatch, tmp_path):
+    initial = replace(_job(), created_at=datetime.now(timezone.utc))
+    state = _patch_job_store(monkeypatch, initial)
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    monkeypatch.setattr(
+        repository_execution,
+        "repo_dir_for_workspace",
+        lambda _workspace_id, _root=None: repo_path,
+    )
+    monkeypatch.setattr(
+        repository_execution,
+        "read_git_workspace_identity",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("git readback unavailable")),
+    )
+
+    class Client:
+        def get_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+        def cancel_task(self, _task_id):
+            raise AssertionError("an in-window transient readback failure must not cancel the task")
+
+    with pytest.raises(
+        repository_execution.RepositoryExecutionTransientError,
+        match="material progress evidence is unavailable",
+    ):
+        repository_execution.reconcile_repository_execution(
+            object(),
+            user_id=initial.user_id,
+            job_id=initial.job_id,
+            workspace_root=tmp_path,
+            a2a_client_factory=Client,
+        )
+
+    assert state["job"].status == "running"
+    assert state["progress_receipts"] == []
+    assert state["events"][-1].stage == "agent_zero_a2a_readback_unavailable"
+
+
+def test_progress_readback_unavailable_at_lease_boundary_cancels_without_claiming_stall(
+    monkeypatch, tmp_path
+):
+    initial = replace(
+        _job(),
+        created_at=datetime.now(timezone.utc) - timedelta(seconds=301),
+    )
+    state = _patch_job_store(monkeypatch, initial)
+    monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    monkeypatch.setattr(
+        repository_execution,
+        "repo_dir_for_workspace",
+        lambda _workspace_id, _root=None: repo_path,
+    )
+    monkeypatch.setattr(
+        repository_execution,
+        "read_git_workspace_identity",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("git readback unavailable")),
+    )
+
+    class Client:
+        def get_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+        def cancel_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="canceled")
+
+    result = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id=initial.user_id,
+        job_id=initial.job_id,
+        workspace_root=tmp_path,
+        a2a_client_factory=Client,
+    )
+
+    assert result.status == "blocked"
+    assert "AGENT_ZERO_PROGRESS_LEASE_UNVERIFIED" in (result.blocker or "")
+    assert any(
+        event.stage == "agent_zero_progress_lease_unverified"
+        for event in state["events"]
+    )
+    assert not any(
+        event.stage == "agent_zero_a2a_task_stalled"
+        for event in state["events"]
+    )
 
 
 def test_causal_progress_binds_retry_as_explicit_task_transition(monkeypatch, tmp_path):
