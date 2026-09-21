@@ -205,6 +205,16 @@ def append_agent_progress_receipt(
     parsed = CausalProgressReceiptV1.from_dict(receipt)
     if parsed.job_id != job_id:
         raise CausalProgressContractError("progress receipt job binding mismatch")
+    # Serialize the predecessor check with all competing reconcilers. The row
+    # lock is persistence coordination only; progress truth still comes from
+    # the independently read Git workspace identity.
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT job_id FROM sovereign_agent_jobs WHERE job_id = %s FOR UPDATE",
+            (job_id,),
+        )
+        if cur.fetchone() is None:
+            raise CausalProgressContractError("progress receipt job does not exist")
     latest = read_latest_agent_progress_receipt(conn, job_id=job_id)
     expected_predecessor = str(latest.get("receiptSha256") or "") if latest else ""
     if parsed.previous_receipt_sha256 != expected_predecessor:
