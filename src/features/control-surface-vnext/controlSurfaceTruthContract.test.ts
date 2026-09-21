@@ -153,8 +153,8 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     expect(surface).not.toContain('md:hidden flex flex-col w-full h-full');
     const ocular = source('src/features/control-surface-vnext/components/CyborgOcularMatrix/CyborgOcularMatrix.tsx');
     expect(ocular).toContain('data-testid=\"vnext-cyborg-ocular-matrix\"');
-    expect(ocular).toContain('relative flex items-center');
-    expect(ocular).toContain('w-[88px] h-[48px] md:w-[112px] md:h-[58px]');
+    expect(ocular).toContain('relative flex h-[58px] w-[126px]');
+    expect(ocular).toContain('md:h-[66px] md:w-[146px]');
     expect(ocular).not.toContain('w-[52px] h-[34px]');
     expect(ocular).not.toContain('relative hidden sm:flex');
     const workspace = source('src/features/control-surface-vnext/components/WorkspaceProjection/WorkspaceProjection.tsx');

@@ -59,7 +59,7 @@ describe('execution feedback', () => {
 
   it('does not imply measured percentage progress from a running phase', () => {
     const { container } = render(<NeuralLoadMonitor phase="EXECUTING" />);
-    expect(screen.getByText(/completion percentage is unavailable/)).toBeVisible();
+    expect(screen.getByText(/completion percentage is unavailable/i)).toBeVisible();
     expect(container.textContent).not.toMatch(/\d+%/);
   });
 });
