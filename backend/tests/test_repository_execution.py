@@ -122,7 +122,7 @@ def test_restart_recovery_claim_wins_once():
 
 
 def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
-    state = {"job": initial, "events": []}
+    state = {"job": initial, "events": [], "progress_receipts": []}
 
     def read_agent_job(_conn, *, user_id, job_id):
         job = state["job"]
@@ -157,10 +157,29 @@ def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
         state["events"].append(event)
         state["job"] = replace(state["job"], events=(*state["job"].events, asdict(event)))
 
+    def append_progress(_conn, *, job_id, receipt, commit=True):
+        assert job_id == state["job"].job_id
+        state["progress_receipts"].append(dict(receipt))
+        return str(receipt["receiptSha256"])
+
+    def latest_progress(_conn, *, job_id):
+        assert job_id == state["job"].job_id
+        return dict(state["progress_receipts"][-1]) if state["progress_receipts"] else None
+
+    def has_fingerprint(_conn, *, job_id, workspace_readback_sha256):
+        assert job_id == state["job"].job_id
+        return any(
+            item.get("currentWorkspaceReadbackSha256") == workspace_readback_sha256
+            for item in state["progress_receipts"]
+        )
+
     monkeypatch.setattr(repository_execution, "read_agent_job", read_agent_job)
     monkeypatch.setattr(repository_execution, "compare_and_swap_agent_job_external_ref", cas)
     monkeypatch.setattr(repository_execution, "update_agent_job_state", update)
     monkeypatch.setattr(repository_execution, "append_agent_event", append)
+    monkeypatch.setattr(repository_execution, "append_agent_progress_receipt", append_progress)
+    monkeypatch.setattr(repository_execution, "read_latest_agent_progress_receipt", latest_progress)
+    monkeypatch.setattr(repository_execution, "has_agent_progress_fingerprint", has_fingerprint)
     return state
 
 
