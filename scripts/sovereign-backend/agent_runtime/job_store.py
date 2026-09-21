@@ -263,6 +263,75 @@ def append_agent_progress_receipt(
     return str(canonical["receiptSha256"])
 
 
+def list_agent_progress_receipts(
+    conn: Any,
+    *,
+    job_id: str,
+    max_receipts: int = 2048,
+) -> tuple[dict[str, Any], ...]:
+    """Read and verify the complete bounded SCPL chain oldest-first.
+
+    Invalid JSON, invalid hashes, missing predecessors and chain truncation are
+    evidence failures. They are never skipped or repaired optimistically.
+    """
+
+    from .causal_progress_lease import (
+        CausalProgressContractError,
+        CausalProgressReceiptV1,
+        validate_progress_successor,
+    )
+
+    safe_limit = max(1, min(int(max_receipts), 8192))
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT event.payload
+            FROM sovereign_agent_events AS event
+            WHERE event.job_id = %s
+              AND event.stage = 'agent_zero_material_progress_observed'
+            ORDER BY event.created_at ASC, event.id ASC
+            LIMIT %s
+            """,
+            (job_id, safe_limit + 1),
+        )
+        rows = cur.fetchall()
+    if len(rows) > safe_limit:
+        raise CausalProgressContractError(
+            "causal progress chain exceeds the bounded readback limit"
+        )
+
+    receipts: list[dict[str, Any]] = []
+    previous = None
+    seen_material_fingerprints: set[str] = set()
+    for row in rows:
+        raw = row.get("payload") if isinstance(row, Mapping) else row[0]
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise CausalProgressContractError(
+                    "causal progress receipt payload is invalid JSON"
+                ) from exc
+        if not isinstance(raw, Mapping):
+            raise CausalProgressContractError(
+                "causal progress receipt payload is not an object"
+            )
+        current = CausalProgressReceiptV1.from_dict(raw)
+        validate_progress_successor(previous, current)
+        if (
+            current.progress_kind != "A2A_STATE_TRANSITION"
+            and current.current_workspace_readback_sha256
+            in seen_material_fingerprints
+        ):
+            raise CausalProgressContractError(
+                "causal progress chain reuses a previously credited workspace fingerprint"
+            )
+        seen_material_fingerprints.add(current.current_workspace_readback_sha256)
+        receipts.append(current.to_dict())
+        previous = current
+    return tuple(receipts)
+
+
 def read_latest_agent_progress_receipt(
     conn: Any,
     *,
