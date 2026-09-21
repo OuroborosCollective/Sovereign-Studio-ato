@@ -122,7 +122,7 @@ def test_restart_recovery_claim_wins_once():
 
 
 def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
-    state = {"job": initial, "events": []}
+    state = {"job": initial, "events": [], "progress_receipts": []}
 
     def read_agent_job(_conn, *, user_id, job_id):
         job = state["job"]
@@ -160,7 +160,18 @@ def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
     monkeypatch.setattr(repository_execution, "read_agent_job", read_agent_job)
     monkeypatch.setattr(repository_execution, "compare_and_swap_agent_job_external_ref", cas)
     monkeypatch.setattr(repository_execution, "update_agent_job_state", update)
+    def append_progress(_conn, *, job_id, receipt, commit=True):
+        assert job_id == state["job"].job_id
+        state["progress_receipts"].append(dict(receipt))
+        return str(receipt["receiptSha256"])
+
+    def list_progress(_conn, *, job_id, limit=256):
+        assert job_id == state["job"].job_id
+        return tuple(state["progress_receipts"][-limit:])
+
     monkeypatch.setattr(repository_execution, "append_agent_event", append)
+    monkeypatch.setattr(repository_execution, "append_agent_progress_receipt", append_progress)
+    monkeypatch.setattr(repository_execution, "list_agent_progress_receipts", list_progress)
     return state
 
 
@@ -805,10 +816,139 @@ def test_active_task_stalls_fail_closed_after_bounded_window(monkeypatch):
 
     assert result is not None
     assert result.status == "blocked"
-    assert "AGENT_ZERO_A2A_STALLED" in (result.blocker or "")
+    assert "AGENT_ZERO_CAUSAL_PROGRESS_UNVERIFIED" in (result.blocker or "")
     assert "confirmed task state canceled" in (result.blocker or "")
     assert any(event.stage == "agent_zero_a2a_task_stalled" for event in state["events"])
 
+
+
+def test_material_workspace_delta_renews_active_task_lease(monkeypatch):
+    stale = replace(
+        _job(),
+        created_at=datetime.now(timezone.utc) - timedelta(seconds=601),
+        updated_at=datetime.now(timezone.utc),
+    )
+    state = _patch_job_store(monkeypatch, stale)
+    monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
+    monkeypatch.setattr(
+        repository_execution,
+        "read_git_workspace_identity",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            base_commit_sha="a" * 40,
+            authoritative_readback_sha256="1" * 64,
+            changed_paths=("backend/example.py",),
+        ),
+    )
+
+    class Client:
+        def get_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+
+        def cancel_task(self, _task_id):
+            raise AssertionError("new material workspace state must renew the bounded lease")
+
+    result = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id="owner-test",
+        job_id="agent-test",
+        workspace_root=Path("/tmp/scpl-test"),
+        a2a_client_factory=Client,
+    )
+
+    assert result is not None
+    assert result.status == "running"
+    assert len(state["progress_receipts"]) == 1
+    assert state["progress_receipts"][0]["progressKind"] == "WORKSPACE_DELTA"
+
+
+def test_identical_workspace_fingerprint_does_not_renew_lease_twice(monkeypatch):
+    base_now = 2_000_000.0
+    stale = replace(
+        _job(),
+        created_at=datetime.fromtimestamp(base_now - 601, tz=timezone.utc),
+        updated_at=datetime.fromtimestamp(base_now, tz=timezone.utc),
+    )
+    state = _patch_job_store(monkeypatch, stale)
+    monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
+    monkeypatch.setattr(repository_execution.time, "time", lambda: base_now)
+    monkeypatch.setattr(
+        repository_execution,
+        "read_git_workspace_identity",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            base_commit_sha="a" * 40,
+            authoritative_readback_sha256="1" * 64,
+            changed_paths=("backend/example.py",),
+        ),
+    )
+
+    class Client:
+        def get_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+
+        def cancel_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="canceled")
+
+    first = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id="owner-test",
+        job_id="agent-test",
+        workspace_root=Path("/tmp/scpl-test"),
+        a2a_client_factory=Client,
+    )
+    assert first is not None and first.status == "running"
+    assert len(state["progress_receipts"]) == 1
+
+    monkeypatch.setattr(repository_execution.time, "time", lambda: base_now + 301)
+    second = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id="owner-test",
+        job_id="agent-test",
+        workspace_root=Path("/tmp/scpl-test"),
+        a2a_client_factory=Client,
+    )
+    assert second is not None and second.status == "blocked"
+    assert len(state["progress_receipts"]) == 1
+    assert "AGENT_ZERO_CAUSAL_PROGRESS_STALLED" in (second.blocker or "")
+
+
+def test_absolute_deadline_blocks_even_with_new_workspace_fingerprint(monkeypatch):
+    base_now = 3_000_000.0
+    stale = replace(
+        _job(),
+        created_at=datetime.fromtimestamp(base_now - 14_401, tz=timezone.utc),
+        updated_at=datetime.fromtimestamp(base_now, tz=timezone.utc),
+    )
+    state = _patch_job_store(monkeypatch, stale)
+    monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
+    monkeypatch.setenv("SOVEREIGN_REPOSITORY_ABSOLUTE_DEADLINE_SECONDS", "14400")
+    monkeypatch.setattr(repository_execution.time, "time", lambda: base_now)
+    monkeypatch.setattr(
+        repository_execution,
+        "read_git_workspace_identity",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            base_commit_sha="a" * 40,
+            authoritative_readback_sha256="2" * 64,
+            changed_paths=("backend/example.py",),
+        ),
+    )
+
+    class Client:
+        def get_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+
+        def cancel_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="canceled")
+
+    result = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id="owner-test",
+        job_id="agent-test",
+        workspace_root=Path("/tmp/scpl-test"),
+        a2a_client_factory=Client,
+    )
+    assert result is not None and result.status == "blocked"
+    assert state["progress_receipts"] == []
+    assert "absolute repository execution deadline reached" in (result.blocker or "")
 
 def test_submitted_task_without_workspace_progress_is_cancelled_early(monkeypatch):
     stale = replace(
