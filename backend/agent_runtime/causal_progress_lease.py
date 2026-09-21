@@ -201,7 +201,7 @@ class CausalProgressLeaseV1:
     ) -> "CausalProgressLeaseV1":
         if max_no_progress_seconds <= 0:
             raise CausalProgressContractError("max_no_progress_seconds must be positive")
-        source_revision = _require_git_sha(source_revision, "source_revision")
+        source_revision = str(source_revision or "").strip().lower()
         if absolute_deadline_epoch_ms <= 0 or observed_epoch_ms < 0:
             raise CausalProgressContractError("absolute deadline must be positive and observed epoch non-negative")
         if last_material_progress_epoch_ms > observed_epoch_ms:
