@@ -1148,9 +1148,9 @@ def test_late_readback_cannot_project_activity_on_a_terminal_job(monkeypatch):
     assert state["events"] == []
 
 
-def test_causal_progress_rejects_receipt_from_previous_a2a_task(monkeypatch, tmp_path):
+def test_causal_progress_binds_retry_as_explicit_task_transition(monkeypatch, tmp_path):
     initial = _job()
-    _patch_job_store(monkeypatch, initial)
+    state = _patch_job_store(monkeypatch, initial)
     stale_receipt = repository_execution.CausalProgressReceiptV1.build(
         job_id=initial.job_id,
         workspace_id=str(initial.workspace_id or initial.job_id),
@@ -1160,12 +1160,28 @@ def test_causal_progress_rejects_receipt_from_previous_a2a_task(monkeypatch, tmp
         progress_kind="WORKSPACE_DELTA",
         previous_workspace_readback_sha256="b" * 64,
         current_workspace_readback_sha256="c" * 64,
-        observed_epoch_ms=int(time.time() * 1000),
+        observed_epoch_ms=int(time.time() * 1000) - 1_000,
     )
     monkeypatch.setattr(
         repository_execution,
         "read_latest_agent_progress_receipt",
         lambda _conn, *, job_id: stale_receipt.to_dict(),
+    )
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    monkeypatch.setattr(
+        repository_execution,
+        "repo_dir_for_workspace",
+        lambda _workspace_id, _root=None: repo_path,
+    )
+    monkeypatch.setattr(
+        repository_execution,
+        "read_git_workspace_identity",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            authoritative_readback_sha256="c" * 64,
+            base_commit_sha="a" * 40,
+            changed_paths=(),
+        ),
     )
 
     lease = repository_execution._observe_causal_progress(
@@ -1176,5 +1192,7 @@ def test_causal_progress_rejects_receipt_from_previous_a2a_task(monkeypatch, tmp
         max_no_progress_seconds=300,
     )
 
-    assert lease.verdict == "CONTRADICTED"
-    assert "contradicts" in lease.reason
+    assert lease.verdict == "CONTINUE_VERIFIED"
+    assert state["progress_receipts"][-1]["progressKind"] == "A2A_STATE_TRANSITION"
+    assert state["progress_receipts"][-1]["a2aTaskId"] == "task-current"
+    assert state["progress_receipts"][-1]["previousReceiptSha256"] == stale_receipt.receipt_sha256
