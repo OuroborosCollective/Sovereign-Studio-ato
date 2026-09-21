@@ -240,6 +240,7 @@ def test_patchmon_agent_paths_are_prepared_under_managed_root_before_worker_star
     )
     assert '/opt/sovereign-bytebase' in managed_root_line
     assert '/opt/sovereign-metamcp' in managed_root_line
+    assert '/opt/sovereign-it-tools' in managed_root_line
     assert script.index('for MANAGED_COMPOSE_ROOT in ') < script.index('systemctl enable --now sovereign-chatgpt-command-worker.service')
     assert script.index('prepare_patchmon_agent_sandbox_paths\n') < script.index('systemctl enable --now sovereign-chatgpt-command-worker.service')
     assert '/opt/patchmon-sovereign' in worker_service
@@ -299,6 +300,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "patchmon-sovereign-redis-1" in script
     assert "patchmon-sovereign-guacd-1" in script
     assert "sovereign-freellmapi" in required_container_line
+    assert "sovereign-it-tools" in required_container_line
     assert "sovereign-omniroute" not in required_container_line
     assert "sovereign-freellmpool" not in required_container_line
     assert "GITHUB_TOKEN" in script
@@ -326,6 +328,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert '/opt/patchmon-sovereign' in worker_service
     assert '/opt/milvus-sovereign' in worker_service
     assert '/opt/sovereign-freellmapi' in worker_service
+    assert '/opt/sovereign-it-tools' in worker_service
     assert '/opt/sovereign-omniroute' not in worker_service
     assert '/opt/sovereign-freellmpool' not in worker_service
     assert 'install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"' not in script
@@ -343,6 +346,9 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert 'templates/patchmon-sovereign' in script
     assert 'templates/milvus-sovereign' in script
     assert 'templates/sovereign-freellmapi' in script
+    assert 'templates/sovereign-it-tools' in script
+    assert 'IT_TOOLS_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-it-tools"' in script
+    assert 'install_managed_control_plane_file 0640 "$IT_TOOLS_TEMPLATE_SOURCE/docker-compose.yml" "$IT_TOOLS_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-it-tools/docker-compose.yml"' in script
     assert 'remove_managed_legacy_file "$COMPOSE_TEMPLATE_ROOT/sovereign-omniroute/docker-compose.yml" "templates/sovereign-omniroute/docker-compose.yml"' in script
     assert 'remove_managed_legacy_directory "$COMPOSE_TEMPLATE_ROOT/sovereign-omniroute" "templates/sovereign-omniroute"' in script
     assert 'install_managed_control_plane_file 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml" "templates/pgbackweb-wq5r/docker-compose.yml"' in script
@@ -356,6 +362,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert '"patchmon-sovereign"' in managed_stacks_line
     assert '"milvus-sovereign"' in managed_stacks_line
     assert '"sovereign-freellmapi"' in managed_stacks_line
+    assert '"sovereign-it-tools"' in managed_stacks_line
     assert '"sovereign-omniroute"' not in managed_stacks_line
     assert 'SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE' in script
     assert 'remove_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE' in script

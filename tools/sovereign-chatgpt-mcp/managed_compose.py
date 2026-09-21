@@ -65,6 +65,17 @@ FREELLMAPI_PROVIDER_SECRET_ROOT = "/opt/sovereign-owner-managed/freellm-provider
 FREELLMAPI_BOOTSTRAP_COMMAND = ["node", "/opt/sovereign/freellm-bootstrap.mjs"]
 FREELLMAPI_RUNTIME_UID = 1000
 FREELLMAPI_RUNTIME_GID = 1000
+IT_TOOLS_CONTAINER = "sovereign-it-tools"
+IT_TOOLS_IMAGE = (
+    "ghcr.io/corentinth/it-tools:2024.10.22-7ca5933@"
+    "sha256:8b8128748339583ca951af03dfe02a9a4d7363f61a216226fc28030731a5a61f"
+)
+IT_TOOLS_REPO_DIGEST = (
+    "ghcr.io/corentinth/it-tools@"
+    "sha256:8b8128748339583ca951af03dfe02a9a4d7363f61a216226fc28030731a5a61f"
+)
+IT_TOOLS_AGENT_ZERO_CONTAINER = "agent-zero-xrev-agent-zero-1"
+IT_TOOLS_INTERNAL_URL = "http://sovereign-it-tools/"
 FREELLMPOOL_CONTAINER = "sovereign-freellmpool"
 FREELLMPOOL_IMAGE = (
     "ghcr.io/ouroboroscollective/sovereign-freellmpool@"
@@ -203,6 +214,17 @@ STACKS: dict[str, ManagedStack] = {
             "/opt/sovereign-freellmapi",
             FREELLMAPI_PROVIDER_SECRET_ROOT,
         ),
+    ),
+    "sovereign-it-tools": ManagedStack(
+        stack_id="sovereign-it-tools",
+        project_name="sovereign-it-tools",
+        anchor_container=IT_TOOLS_CONTAINER,
+        expected_containers=(IT_TOOLS_CONTAINER,),
+        allowed_services=("it-tools",),
+        deploy_root="/opt/sovereign-it-tools",
+        template_name="sovereign-it-tools",
+        allowed_networks=("sovereign-private",),
+        allowed_bind_roots=("/opt/sovereign-it-tools",),
     ),
 }
 
@@ -450,12 +472,26 @@ class ManagedComposeRuntime:
     def plan(self, stack_id: str) -> dict[str, Any]:
         stack = self._stack(stack_id)
         files, bundle_sha = self._template_files(stack)
+        anchor = self._inspect(stack.anchor_container)
+        runtime_canary = (
+            self._it_tools_agent_zero_canary()
+            if stack.stack_id == "sovereign-it-tools" and anchor.get("running")
+            else {
+                "ok": False,
+                "status": "IT_TOOLS_NOT_RUNNING",
+                "responseBodyReturned": False,
+                "secretValuesReturned": False,
+            }
+            if stack.stack_id == "sovereign-it-tools"
+            else {"ok": True, "status": "NOT_REQUIRED"}
+        )
         return {
             "ok": True,
             "status": "PLAN_READY" if files else "TEMPLATE_NOT_REGISTERED",
             "stackId": stack.stack_id,
             "project": stack.project_name,
-            "anchor": self._inspect(stack.anchor_container),
+            "anchor": anchor,
+            "runtimeCanary": runtime_canary,
             "expectedContainers": list(stack.expected_containers),
             "deployRoot": stack.deploy_root,
             "templateRegistered": bool(files),
@@ -592,6 +628,19 @@ class ManagedComposeRuntime:
                 and image != FREELLMAPI_IMAGE
             ):
                 raise RuntimeError("FreeLLM API muss exakt auf v0.5.0 und den freigegebenen Digest gepinnt sein")
+            if stack.stack_id == "sovereign-it-tools" and service_name == "it-tools":
+                if image != IT_TOOLS_IMAGE:
+                    raise RuntimeError("IT-Tools muss exakt auf den freigegebenen Release-Digest gepinnt sein")
+                if str(service.get("user") or "") != "101:101":
+                    raise RuntimeError("IT-Tools muss mit der gepinnten Nicht-Root-Identität laufen")
+                if service.get("read_only") is not True:
+                    raise RuntimeError("IT-Tools muss ein read-only Root-Dateisystem verwenden")
+                if set(str(value) for value in (service.get("cap_drop") or [])) != {"ALL"}:
+                    raise RuntimeError("IT-Tools muss alle Linux-Capabilities verwerfen")
+                if "no-new-privileges:true" not in {
+                    str(value) for value in (service.get("security_opt") or [])
+                }:
+                    raise RuntimeError("IT-Tools muss no-new-privileges erzwingen")
             service_networks = service.get("networks")
             if isinstance(service_networks, dict):
                 used_networks = set(service_networks)
@@ -1778,6 +1827,92 @@ raise SystemExit(0 if verified is not None else 2)
         }
 
     @staticmethod
+    def _it_tools_transport_ready(state: dict[str, Any]) -> bool:
+        published = state.get("publishedPorts") or {}
+        security_opt = {str(value) for value in (state.get("securityOpt") or [])}
+        cap_drop = {str(value) for value in (state.get("capDrop") or [])}
+        image_reference = str(state.get("imageReference") or "")
+        repo_digests = {str(value) for value in (state.get("repoDigests") or [])}
+        return bool(
+            state.get("present")
+            and state.get("running")
+            and state.get("project") == "sovereign-it-tools"
+            and state.get("service") == "it-tools"
+            and set(state.get("networks") or []) == {"sovereign-private"}
+            and not published
+            and (
+                image_reference == IT_TOOLS_IMAGE
+                or IT_TOOLS_REPO_DIGEST in repo_digests
+            )
+            and state.get("runtimeUser") == "101:101"
+            and state.get("readOnlyRootfs") is True
+            and state.get("privileged") is False
+            and "ALL" in cap_drop
+            and "no-new-privileges:true" in security_opt
+        )
+
+    def _it_tools_agent_zero_canary(self) -> dict[str, Any]:
+        script = (
+            "import hashlib,json,urllib.request;"
+            f"r=urllib.request.urlopen({IT_TOOLS_INTERNAL_URL!r},timeout=5);"
+            "b=r.read(2000001);"
+            "print(json.dumps({'status':int(getattr(r,'status',0)),"
+            "'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()},"
+            "sort_keys=True,separators=(',',':')))"
+        )
+        last_family = "unknown"
+        for _attempt in range(15):
+            result = self._run(
+                [
+                    "docker",
+                    "exec",
+                    IT_TOOLS_AGENT_ZERO_CONTAINER,
+                    "python",
+                    "-c",
+                    script,
+                ],
+                timeout=15,
+            )
+            if result.get("ok"):
+                try:
+                    payload = json.loads(str(result.get("stdout") or "").strip().splitlines()[-1])
+                    status = int(payload.get("status") or 0)
+                    response_bytes = int(payload.get("bytes") or 0)
+                    response_sha256 = str(payload.get("sha256") or "")
+                except (IndexError, TypeError, ValueError, json.JSONDecodeError):
+                    last_family = "invalid_agent_zero_canary_response"
+                else:
+                    if (
+                        status == 200
+                        and 0 < response_bytes <= 2_000_000
+                        and re.fullmatch(r"[0-9a-f]{64}", response_sha256)
+                    ):
+                        return {
+                            "ok": True,
+                            "status": "IT_TOOLS_AGENT_ZERO_REACHABLE",
+                            "sourceContainer": IT_TOOLS_AGENT_ZERO_CONTAINER,
+                            "targetUrl": IT_TOOLS_INTERNAL_URL,
+                            "httpStatus": status,
+                            "responseBytes": response_bytes,
+                            "responseSha256": response_sha256,
+                            "responseBodyReturned": False,
+                            "secretValuesReturned": False,
+                        }
+                    last_family = "unexpected_http_response"
+            else:
+                last_family = "agent_zero_exec_or_network_unavailable"
+            time.sleep(2)
+        return {
+            "ok": False,
+            "status": "IT_TOOLS_AGENT_ZERO_UNREACHABLE",
+            "sourceContainer": IT_TOOLS_AGENT_ZERO_CONTAINER,
+            "targetUrl": IT_TOOLS_INTERNAL_URL,
+            "errorFamily": last_family,
+            "responseBodyReturned": False,
+            "secretValuesReturned": False,
+        }
+
+    @staticmethod
     def _backend_transport_ready(state: dict[str, Any]) -> bool:
         bindings = (state.get("publishedPorts") or {}).get("8787/tcp", [])
         loopback_ready = any(
@@ -2201,6 +2336,8 @@ const call = async (names, payload) => {
             transport_verified = self._code_server_transport_ready(states.get(stack.anchor_container, {}))
         elif stack.stack_id == "sovereign-freellmapi":
             transport_verified = self._freellmapi_transport_ready(states.get(stack.anchor_container, {}))
+        elif stack.stack_id == "sovereign-it-tools":
+            transport_verified = self._it_tools_transport_ready(states.get(stack.anchor_container, {}))
         else:
             transport_verified = True
 
@@ -2245,6 +2382,8 @@ const call = async (names, payload) => {
             }
         elif stack.stack_id == "code-server-46bq":
             runtime_canary = self._code_server_runtime_canary()
+        elif stack.stack_id == "sovereign-it-tools":
+            runtime_canary = self._it_tools_agent_zero_canary()
         else:
             runtime_canary = {"ok": True, "status": "NOT_REQUIRED"}
         runtime_ok = (

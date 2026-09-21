@@ -80,6 +80,9 @@ def test_submit_sets_both_auth_headers_keeps_secret_out_of_body_and_is_nonblocki
     assert "githubAccessToken" in prompt
     assert "Do not push to GitHub" in prompt
     assert "AGENT_ZERO_REPOSITORY_ACCESS_UNAVAILABLE" in prompt
+    assert "http://sovereign-it-tools/" in prompt
+    assert "its output is never Sovereign evidence, authority, validation, permission" in prompt
+    assert "Do not use it when it is not useful" in prompt
     assert "Do not install dependencies or run tests, builds, linters, audits, package managers" in prompt
     assert "Sovereign owns all regression, janitor and evidence gates" in prompt
     assert "Once the requested file changes are saved, stop immediately" in prompt
