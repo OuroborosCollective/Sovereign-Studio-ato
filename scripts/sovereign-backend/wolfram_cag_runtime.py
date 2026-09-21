@@ -1,10 +1,11 @@
 """Internal, secret-free runtime endpoints for Wolfram CAG live evidence.
 
-Only fixed canaries are exposed. Arbitrary CAG prompts are deliberately not an
-operator API here: semantic claim verification remains owned by the existing
-CAG receipt/evidence lane. The protected provider credential is resolved only
-inside ``execute_live_cag_request`` and never enters Flask request/response
-payloads.
+Fixed canaries remain the provider-health proof surface. A separate bounded
+source-intelligence route accepts Wolfram Language source only as data and
+wraps it in fixed CodeParser/CodeInspector/CodeFormatter expressions; it never
+offers arbitrary CAG prompts or free Wolfram Language evaluation. The protected
+provider credential is resolved only inside ``execute_live_cag_request`` and
+never enters Flask request/response payloads.
 """
 
 from __future__ import annotations
@@ -35,6 +36,11 @@ from agent_runtime.wolfram_cag_runtime_binding import (
     RuntimeBindingError,
     build_runtime_evidence_binding,
     persist_runtime_evidence_binding,
+)
+from agent_runtime.wolfram_source_intelligence import (
+    WOLFRAM_SOURCE_OPERATIONS,
+    WolframSourceIntelligenceError,
+    run_wolfram_source_intelligence,
 )
 
 ConnectionFactory = Callable[[], Any]
@@ -336,6 +342,41 @@ def register_wolfram_cag_runtime(app: Any, *, get_connection: ConnectionFactory)
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         result = run_cag_canaries(get_connection=get_connection, components=selected)
+        return jsonify(result), (200 if result.get("ok") else 409)
+
+    @app.route("/api/internal/wolfram-cag/source-intelligence", methods=["POST"])
+    def _source_intelligence():
+        if not _service_authorized():
+            return jsonify({"ok": False, "error": "service_unauthorized"}), 401
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or set(body) - {"operation", "source", "sourceEgressApproved"}:
+            return jsonify({"ok": False, "error": "invalid_request"}), 400
+        if body.get("sourceEgressApproved") is not True:
+            return jsonify({
+                "ok": False,
+                "status": "WOLFRAM_SOURCE_INTELLIGENCE_BLOCKED",
+                "blocker": "source_egress_approval_required",
+                "sourceEgressOccurred": False,
+                "mutationPerformed": False,
+                "secretValuesReturned": False,
+            }), 403
+        operation = str(body.get("operation") or "").strip()
+        source = body.get("source")
+        if operation not in WOLFRAM_SOURCE_OPERATIONS or not isinstance(source, str):
+            return jsonify({"ok": False, "error": "invalid_request"}), 400
+        try:
+            result = run_wolfram_source_intelligence(operation=operation, source=source)
+        except WolframSourceIntelligenceError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except WolframCagError as exc:
+            return jsonify({
+                "ok": False,
+                "status": "WOLFRAM_SOURCE_INTELLIGENCE_UPSTREAM_FAILED",
+                "error": exc.public_payload(),
+                "sourceEgressOccurred": True,
+                "mutationPerformed": False,
+                "secretValuesReturned": False,
+            }), 502
         return jsonify(result), (200 if result.get("ok") else 409)
 
     @app.route("/api/internal/wolfram-cag/runtime-evidence-bind", methods=["POST"])
