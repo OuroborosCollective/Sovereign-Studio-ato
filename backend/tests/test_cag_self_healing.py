@@ -147,6 +147,7 @@ def test_poll_observations_do_not_mask_or_change_lifecycle_verification() -> Non
     events = [{"stage": stage} for stage in original]
     events.extend({"stage": "agent_zero_a2a_task_observed"} for _ in range(200))
     events.append({"stage": "agent_zero_a2a_readback_unavailable"})
+    events.extend({"stage": "agent_zero_material_progress_observed"} for _ in range(200))
     events.append({"stage": "repository_ready_for_draft_pr"})
     stages = normalize_event_stages(events)
     assert stages == (*original, "repository_ready_for_draft_pr")
