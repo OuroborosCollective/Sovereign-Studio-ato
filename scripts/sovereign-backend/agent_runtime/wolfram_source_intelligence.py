@@ -154,6 +154,7 @@ def run_wolfram_source_intelligence(
     receipt = executor(
         capability_id="wolfram.cag.compute",
         payload={"code": code, "maxChars": 131072, "timeConstraint": 20},
+        normalized_result_limit=128 * 1024,
     )
     result = _decode_provider_json(str(receipt.normalized_result or ""))
 
