@@ -188,6 +188,214 @@ def append_agent_event(conn: Any, job_id: str, event: SovereignAgentEvent) -> No
     conn.commit()
 
 
+def append_agent_progress_receipt(
+    conn: Any,
+    *,
+    job_id: str,
+    receipt: Mapping[str, Any],
+    commit: bool = True,
+) -> str:
+    """Persist one hash-validated, predecessor-bound SCPL progress receipt.
+
+    The canonical job row is locked so two reconcilers cannot both extend the
+    same receipt head.  This is append-only persistence, not job-state truth.
+    """
+
+    from .causal_progress_lease import (
+        CausalProgressContractError,
+        CausalProgressReceiptV1,
+        validate_progress_successor,
+    )
+
+    canonical = CausalProgressReceiptV1.from_dict(receipt).to_dict()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT job_id FROM sovereign_agent_jobs WHERE job_id = %s FOR UPDATE",
+            (job_id,),
+        )
+        if cur.fetchone() is None:
+            raise CausalProgressContractError("progress receipt job does not exist")
+        cur.execute(
+            """
+            SELECT payload
+            FROM sovereign_agent_events
+            WHERE job_id = %s
+              AND stage = 'agent_zero_material_progress_observed'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (job_id,),
+        )
+        row = cur.fetchone()
+        previous = None
+        if row:
+            raw = row.get("payload") if isinstance(row, Mapping) else None
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise CausalProgressContractError(
+                        "previous progress receipt payload is invalid JSON"
+                    ) from exc
+            if not isinstance(raw, Mapping):
+                raise CausalProgressContractError("previous progress receipt payload is invalid")
+            previous = CausalProgressReceiptV1.from_dict(raw)
+
+        current = CausalProgressReceiptV1.from_dict(canonical)
+        validate_progress_successor(previous, current)
+
+        cur.execute(
+            """
+            INSERT INTO sovereign_agent_events (job_id, stage, level, message, payload)
+            VALUES (%s, 'agent_zero_material_progress_observed', 'info', %s, %s::jsonb)
+            """,
+            (
+                job_id,
+                sanitize_agent_text(
+                    f"Material repository progress observed: {canonical['progressKind']}.",
+                    300,
+                ),
+                _json(canonical),
+            ),
+        )
+    if commit:
+        conn.commit()
+    return str(canonical["receiptSha256"])
+
+
+def list_agent_progress_receipts(
+    conn: Any,
+    *,
+    job_id: str,
+    max_receipts: int = 2048,
+) -> tuple[dict[str, Any], ...]:
+    """Read and verify the complete bounded SCPL chain oldest-first.
+
+    Invalid JSON, invalid hashes, missing predecessors and chain truncation are
+    evidence failures. They are never skipped or repaired optimistically.
+    """
+
+    from .causal_progress_lease import (
+        CausalProgressContractError,
+        CausalProgressReceiptV1,
+        validate_progress_successor,
+    )
+
+    safe_limit = max(1, min(int(max_receipts), 8192))
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT event.payload
+            FROM sovereign_agent_events AS event
+            WHERE event.job_id = %s
+              AND event.stage = 'agent_zero_material_progress_observed'
+            ORDER BY event.created_at ASC, event.id ASC
+            LIMIT %s
+            """,
+            (job_id, safe_limit + 1),
+        )
+        rows = cur.fetchall()
+    if len(rows) > safe_limit:
+        raise CausalProgressContractError(
+            "causal progress chain exceeds the bounded readback limit"
+        )
+
+    receipts: list[dict[str, Any]] = []
+    previous = None
+    seen_material_fingerprints: set[str] = set()
+    for row in rows:
+        raw = row.get("payload") if isinstance(row, Mapping) else row[0]
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise CausalProgressContractError(
+                    "causal progress receipt payload is invalid JSON"
+                ) from exc
+        if not isinstance(raw, Mapping):
+            raise CausalProgressContractError(
+                "causal progress receipt payload is not an object"
+            )
+        current = CausalProgressReceiptV1.from_dict(raw)
+        validate_progress_successor(previous, current)
+        if (
+            current.progress_kind != "A2A_STATE_TRANSITION"
+            and current.current_workspace_readback_sha256
+            in seen_material_fingerprints
+        ):
+            raise CausalProgressContractError(
+                "causal progress chain reuses a previously credited workspace fingerprint"
+            )
+        seen_material_fingerprints.add(current.current_workspace_readback_sha256)
+        receipts.append(current.to_dict())
+        previous = current
+    return tuple(receipts)
+
+
+def read_latest_agent_progress_receipt(
+    conn: Any,
+    *,
+    job_id: str,
+) -> dict[str, Any] | None:
+    """Return the newest valid SCPL receipt for one job, or None."""
+
+    from .causal_progress_lease import (
+        CausalProgressContractError,
+        CausalProgressReceiptV1,
+    )
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT payload
+            FROM sovereign_agent_events
+            WHERE job_id = %s
+              AND stage = 'agent_zero_material_progress_observed'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (job_id,),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    raw = row.get("payload") if isinstance(row, Mapping) else None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(raw, Mapping):
+        return None
+    try:
+        return CausalProgressReceiptV1.from_dict(raw).to_dict()
+    except (CausalProgressContractError, TypeError, ValueError):
+        return None
+
+
+def has_agent_progress_fingerprint(
+    conn: Any,
+    *,
+    job_id: str,
+    workspace_readback_sha256: str,
+) -> bool:
+    """Return whether this authoritative workspace state was already credited."""
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT 1
+            FROM sovereign_agent_events
+            WHERE job_id = %s
+              AND stage = 'agent_zero_material_progress_observed'
+              AND payload->>'currentWorkspaceReadbackSha256' = %s
+            LIMIT 1
+            """,
+            (job_id, str(workspace_readback_sha256).lower()),
+        )
+        return cur.fetchone() is not None
+
+
 def append_agent_projection(conn: Any, *, job_id: str, projection: Mapping[str, Any]) -> None:
     """Persist a redacted projection observation without changing canonical job truth."""
     payload = dict(projection)

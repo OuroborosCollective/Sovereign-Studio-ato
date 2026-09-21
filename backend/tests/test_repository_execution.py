@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -74,6 +75,7 @@ def _job(*, external_ref: str | None = "agent-zero-a2a:task-original", status: s
         status=status,
         workspace_id="agent-test",
         external_ref=external_ref,
+        created_at=datetime.now(timezone.utc),
     )
 
 
@@ -122,7 +124,8 @@ def test_restart_recovery_claim_wins_once():
 
 
 def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
-    state = {"job": initial, "events": []}
+    repository_execution._PROGRESS_PROBE_LAST_MS.clear()
+    state = {"job": initial, "events": [], "progress_receipts": []}
 
     def read_agent_job(_conn, *, user_id, job_id):
         job = state["job"]
@@ -157,10 +160,34 @@ def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
         state["events"].append(event)
         state["job"] = replace(state["job"], events=(*state["job"].events, asdict(event)))
 
+    def append_progress(_conn, *, job_id, receipt, commit=True):
+        assert job_id == state["job"].job_id
+        state["progress_receipts"].append(dict(receipt))
+        return str(receipt["receiptSha256"])
+
+    def latest_progress(_conn, *, job_id):
+        assert job_id == state["job"].job_id
+        return dict(state["progress_receipts"][-1]) if state["progress_receipts"] else None
+
+    def list_progress(_conn, *, job_id, max_receipts=2048):
+        assert job_id == state["job"].job_id
+        return tuple(dict(item) for item in state["progress_receipts"][:max_receipts])
+
+    def has_fingerprint(_conn, *, job_id, workspace_readback_sha256):
+        assert job_id == state["job"].job_id
+        return any(
+            item.get("currentWorkspaceReadbackSha256") == workspace_readback_sha256
+            for item in state["progress_receipts"]
+        )
+
     monkeypatch.setattr(repository_execution, "read_agent_job", read_agent_job)
     monkeypatch.setattr(repository_execution, "compare_and_swap_agent_job_external_ref", cas)
     monkeypatch.setattr(repository_execution, "update_agent_job_state", update)
     monkeypatch.setattr(repository_execution, "append_agent_event", append)
+    monkeypatch.setattr(repository_execution, "append_agent_progress_receipt", append_progress)
+    monkeypatch.setattr(repository_execution, "list_agent_progress_receipts", list_progress)
+    monkeypatch.setattr(repository_execution, "read_latest_agent_progress_receipt", latest_progress)
+    monkeypatch.setattr(repository_execution, "has_agent_progress_fingerprint", has_fingerprint)
     return state
 
 
@@ -786,6 +813,14 @@ def test_active_task_stalls_fail_closed_after_bounded_window(monkeypatch):
     )
     state = _patch_job_store(monkeypatch, stale)
     monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
+    monkeypatch.setattr(
+        repository_execution,
+        "_observe_causal_progress",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            verdict="STALLED",
+            reason="no new material repository progress within the bounded lease",
+        ),
+    )
 
     class Client:
         def get_task(self, task_id):
@@ -821,8 +856,11 @@ def test_submitted_task_without_workspace_progress_is_cancelled_early(monkeypatc
     monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "1800")
     monkeypatch.setattr(
         repository_execution,
-        "run_agent_job_tool",
-        lambda *_args, **_kwargs: _done_tool(changed_files=()),
+        "_observe_causal_progress",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            verdict="STALLED",
+            reason="no new material repository progress within the bounded lease",
+        ),
     )
 
     class Client:
@@ -847,7 +885,7 @@ def test_submitted_task_without_workspace_progress_is_cancelled_early(monkeypatc
     assert any(event.stage == "agent_zero_a2a_submitted_stalled" for event in state["events"])
 
 
-def test_submitted_task_with_workspace_changes_survives_queue_limit(monkeypatch):
+def test_submitted_task_with_workspace_changes_survives_queue_limit(monkeypatch, tmp_path):
     stale = replace(
         _job(),
         created_at=datetime.now(timezone.utc) - timedelta(seconds=301),
@@ -856,10 +894,21 @@ def test_submitted_task_with_workspace_changes_survives_queue_limit(monkeypatch)
     state = _patch_job_store(monkeypatch, stale)
     monkeypatch.setenv("SOVEREIGN_REPOSITORY_SUBMITTED_STALL_SECONDS", "300")
     monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "1800")
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
     monkeypatch.setattr(
         repository_execution,
-        "run_agent_job_tool",
-        lambda *_args, **_kwargs: _done_tool(changed_files=("README.md",)),
+        "repo_dir_for_workspace",
+        lambda _workspace_id, _root=None: repo,
+    )
+    monkeypatch.setattr(
+        repository_execution,
+        "read_git_workspace_identity",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            authoritative_readback_sha256="a" * 64,
+            base_commit_sha="b" * 40,
+            changed_paths=("README.md",),
+        ),
     )
 
     class Client:
@@ -893,6 +942,14 @@ def test_fresh_active_task_remains_running(monkeypatch):
     )
     _patch_job_store(monkeypatch, fresh)
     monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
+    monkeypatch.setattr(
+        repository_execution,
+        "_observe_causal_progress",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            verdict="NO_PROGRESS",
+            reason="within existing lease",
+        ),
+    )
 
     class Client:
         def get_task(self, task_id):
@@ -1032,6 +1089,14 @@ def test_active_readback_persists_only_state_changes_and_never_resets_stall_cloc
     import time
     initial = replace(_job(), updated_at=datetime.now(timezone.utc))
     state = _patch_job_store(monkeypatch, initial)
+    monkeypatch.setattr(
+        repository_execution,
+        "_observe_causal_progress",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            verdict="NO_PROGRESS",
+            reason="within existing lease",
+        ),
+    )
     now = int(time.time() * 1000)
     monkeypatch.setattr("agent_runtime.contracts.time.time", lambda: now / 1000)
     class Client:
@@ -1077,6 +1142,14 @@ def test_cancel_repository_a2a_job_requires_upstream_canceled_state(monkeypatch)
 def test_readback_failure_and_recovery_are_visible_without_duplicate_submit(monkeypatch):
     initial = replace(_job(), updated_at=datetime.now(timezone.utc))
     state = _patch_job_store(monkeypatch, initial)
+    monkeypatch.setattr(
+        repository_execution,
+        "_observe_causal_progress",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            verdict="NO_PROGRESS",
+            reason="within existing lease",
+        ),
+    )
     class Client:
         unavailable = True
         def get_task(self, task_id):
@@ -1115,3 +1188,234 @@ def test_late_readback_cannot_project_activity_on_a_terminal_job(monkeypatch):
     )
     assert result.status == "blocked"
     assert state["events"] == []
+    assert state["progress_receipts"] == []
+
+
+def test_progress_readback_unavailable_inside_lease_is_transient(monkeypatch, tmp_path):
+    initial = replace(_job(), created_at=datetime.now(timezone.utc))
+    state = _patch_job_store(monkeypatch, initial)
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    monkeypatch.setattr(
+        repository_execution,
+        "repo_dir_for_workspace",
+        lambda _workspace_id, _root=None: repo_path,
+    )
+    monkeypatch.setattr(
+        repository_execution,
+        "read_git_workspace_identity",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("git readback unavailable")),
+    )
+
+    class Client:
+        def get_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+        def cancel_task(self, _task_id):
+            raise AssertionError("an in-window transient readback failure must not cancel the task")
+
+    with pytest.raises(
+        repository_execution.RepositoryExecutionTransientError,
+        match="material progress evidence is unavailable",
+    ):
+        repository_execution.reconcile_repository_execution(
+            object(),
+            user_id=initial.user_id,
+            job_id=initial.job_id,
+            workspace_root=tmp_path,
+            a2a_client_factory=Client,
+        )
+
+    assert state["job"].status == "running"
+    assert state["progress_receipts"] == []
+    assert state["events"][-1].stage == "agent_zero_a2a_readback_unavailable"
+
+
+def test_progress_readback_unavailable_at_lease_boundary_cancels_without_claiming_stall(
+    monkeypatch, tmp_path
+):
+    initial = replace(
+        _job(),
+        created_at=datetime.now(timezone.utc) - timedelta(seconds=301),
+    )
+    state = _patch_job_store(monkeypatch, initial)
+    monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    monkeypatch.setattr(
+        repository_execution,
+        "repo_dir_for_workspace",
+        lambda _workspace_id, _root=None: repo_path,
+    )
+    monkeypatch.setattr(
+        repository_execution,
+        "read_git_workspace_identity",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("git readback unavailable")),
+    )
+
+    class Client:
+        def get_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+        def cancel_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="canceled")
+
+    result = repository_execution.reconcile_repository_execution(
+        object(),
+        user_id=initial.user_id,
+        job_id=initial.job_id,
+        workspace_root=tmp_path,
+        a2a_client_factory=Client,
+    )
+
+    assert result.status == "blocked"
+    assert "AGENT_ZERO_PROGRESS_LEASE_UNVERIFIED" in (result.blocker or "")
+    assert any(
+        event.stage == "agent_zero_progress_lease_unverified"
+        for event in state["events"]
+    )
+    assert not any(
+        event.stage == "agent_zero_a2a_task_stalled"
+        for event in state["events"]
+    )
+
+
+def test_retry_task_identity_does_not_renew_without_new_workspace_state(monkeypatch, tmp_path):
+    initial = _job()
+    state = _patch_job_store(monkeypatch, initial)
+    stale_receipt = repository_execution.CausalProgressReceiptV1.build(
+        job_id=initial.job_id,
+        workspace_id=str(initial.workspace_id or initial.job_id),
+        a2a_task_id="task-previous",
+        repository=initial.repo_url,
+        repository_revision="a" * 40,
+        progress_kind="WORKSPACE_DELTA",
+        previous_workspace_readback_sha256="b" * 64,
+        current_workspace_readback_sha256="c" * 64,
+        observed_epoch_ms=int(time.time() * 1000) - 1_000,
+    )
+    state["progress_receipts"].append(stale_receipt.to_dict())
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    monkeypatch.setattr(
+        repository_execution,
+        "repo_dir_for_workspace",
+        lambda _workspace_id, _root=None: repo_path,
+    )
+    monkeypatch.setattr(
+        repository_execution,
+        "read_git_workspace_identity",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            authoritative_readback_sha256="c" * 64,
+            base_commit_sha="a" * 40,
+            changed_paths=(),
+        ),
+    )
+
+    lease = repository_execution._observe_causal_progress(
+        object(),
+        job=initial,
+        task_id="task-current",
+        workspace_root=tmp_path,
+        max_no_progress_seconds=300,
+    )
+
+    assert lease.verdict == "CONTINUE_VERIFIED"
+    assert lease.last_progress_receipt_sha256 == stale_receipt.receipt_sha256
+    assert len(state["progress_receipts"]) == 1
+    assert state["progress_receipts"][0]["a2aTaskId"] == "task-previous"
+
+
+def test_concurrent_progress_head_advance_is_reconciled_without_false_contradiction(
+    monkeypatch, tmp_path
+):
+    initial = _job()
+    state = _patch_job_store(monkeypatch, initial)
+    previous = repository_execution.CausalProgressReceiptV1.build(
+        job_id=initial.job_id,
+        workspace_id=str(initial.workspace_id or initial.job_id),
+        a2a_task_id="task-original",
+        repository=initial.repo_url,
+        repository_revision="a" * 40,
+        progress_kind="REPOSITORY_MATERIALIZED",
+        previous_workspace_readback_sha256="",
+        current_workspace_readback_sha256="b" * 64,
+        observed_epoch_ms=int(time.time() * 1000) - 2_000,
+    )
+    state["progress_receipts"].append(previous.to_dict())
+
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    monkeypatch.setattr(
+        repository_execution,
+        "repo_dir_for_workspace",
+        lambda _workspace_id, _root=None: repo_path,
+    )
+    monkeypatch.setattr(
+        repository_execution,
+        "read_git_workspace_identity",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            authoritative_readback_sha256="c" * 64,
+            base_commit_sha="a" * 40,
+            changed_paths=("README.md",),
+        ),
+    )
+
+    real_append = repository_execution.append_agent_progress_receipt
+    advanced = {"done": False}
+
+    def racing_append(_conn, *, job_id, receipt, commit=True):
+        if advanced["done"]:
+            return real_append(_conn, job_id=job_id, receipt=receipt, commit=commit)
+        advanced["done"] = True
+        concurrent = repository_execution.CausalProgressReceiptV1.build(
+            job_id=initial.job_id,
+            workspace_id=str(initial.workspace_id or initial.job_id),
+            a2a_task_id="task-original",
+            repository=initial.repo_url,
+            repository_revision="a" * 40,
+            progress_kind="WORKSPACE_DELTA",
+            previous_workspace_readback_sha256=previous.current_workspace_readback_sha256,
+            current_workspace_readback_sha256="c" * 64,
+            previous_receipt_sha256=previous.receipt_sha256,
+            observed_epoch_ms=int(time.time() * 1000) - 500,
+        )
+        state["progress_receipts"].append(concurrent.to_dict())
+        raise repository_execution.CausalProgressContractError(
+            "progress receipt predecessor does not match current head"
+        )
+
+    monkeypatch.setattr(
+        repository_execution,
+        "append_agent_progress_receipt",
+        racing_append,
+    )
+
+    lease = repository_execution._observe_causal_progress(
+        object(),
+        job=initial,
+        task_id="task-original",
+        workspace_root=tmp_path,
+        max_no_progress_seconds=300,
+    )
+
+    assert lease.verdict == "CONTINUE_VERIFIED"
+    assert lease.last_progress_receipt_sha256 == state["progress_receipts"][-1]["receiptSha256"]
+    assert len(state["progress_receipts"]) == 2
+
+
+def test_active_task_with_missing_created_at_fails_closed(monkeypatch):
+    initial = replace(_job(), created_at=None)
+    state = _patch_job_store(monkeypatch, initial)
+
+    class Client:
+        def get_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="working")
+        def cancel_task(self, task_id):
+            return AgentZeroA2ATask(task_id=task_id, state="canceled")
+
+    result = repository_execution.reconcile_repository_execution(
+        object(), user_id=initial.user_id, job_id=initial.job_id,
+        a2a_client_factory=Client,
+    )
+    assert result.status == "blocked"
+    assert state["events"][-1].stage == "agent_zero_progress_lease_contradicted"
+    assert "contradicts" in (result.blocker or "").lower()

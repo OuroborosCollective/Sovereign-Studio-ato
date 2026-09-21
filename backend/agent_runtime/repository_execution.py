@@ -25,6 +25,12 @@ from .agent_zero_a2a import (
     AgentZeroA2ATaskLost,
 )
 from .contracts import SovereignAgentEvent, sanitize_agent_text
+from .causal_progress_lease import (
+    CausalProgressContractError,
+    CausalProgressLeaseV1,
+    CausalProgressReceiptV1,
+)
+from .agent_run_receipts import read_git_workspace_identity
 from .draft_pr_gate import draft_pr_input_from_job, prepare_draft_pr
 from .evidence_gate import EvidenceGateInput, evaluate_agent_evidence
 from .git_workspace import git_diff_check, git_diff_full
@@ -32,6 +38,10 @@ from .job_lifecycle import create_sovereign_agent_job
 from .job_store import (
     StoredSovereignAgentJob,
     append_agent_event,
+    append_agent_progress_receipt,
+    has_agent_progress_fingerprint,
+    list_agent_progress_receipts,
+    read_latest_agent_progress_receipt,
     compare_and_swap_agent_job_external_ref,
     list_reconcilable_repository_jobs,
     mark_draft_pr_prepared,
@@ -78,6 +88,8 @@ _RECONCILER_THREAD_LOCK = threading.Lock()
 _RECONCILER_THREAD: threading.Thread | None = None
 _LOGGER = logging.getLogger(__name__)
 _A2A_READBACK_INTERVAL_MS: Final[int] = 30_000
+_PROGRESS_PROBE_LOCK = threading.Lock()
+_PROGRESS_PROBE_LAST_MS: dict[str, int] = {}
 
 
 class RepositoryExecutionError(RuntimeError):
@@ -102,6 +114,15 @@ def _repository_reconciler_poll_seconds() -> float:
 
 def _repository_stall_seconds() -> float:
     return _bounded_env_seconds("SOVEREIGN_REPOSITORY_STALL_SECONDS", 1800.0, 300.0, 1800.0)
+
+
+def _repository_absolute_deadline_seconds() -> float:
+    return _bounded_env_seconds(
+        "SOVEREIGN_REPOSITORY_ABSOLUTE_DEADLINE_SECONDS",
+        21_600.0,
+        1_800.0,
+        86_400.0,
+    )
 
 
 def _repository_submitted_stall_seconds() -> float:
@@ -320,6 +341,228 @@ def _record_task_readback(
         break
     append_agent_event(conn, current.job_id, event)
     return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or current
+
+
+def _progress_probe_due(job_id: str, observed_epoch_ms: int) -> bool:
+    """Throttle expensive Git readbacks without making the cache authoritative."""
+
+    with _PROGRESS_PROBE_LOCK:
+        previous = _PROGRESS_PROBE_LAST_MS.get(job_id)
+        if previous is not None and observed_epoch_ms - previous < _A2A_READBACK_INTERVAL_MS:
+            return False
+        _PROGRESS_PROBE_LAST_MS[job_id] = observed_epoch_ms
+        return True
+
+
+def _epoch_ms(value: datetime | None) -> int:
+    if not isinstance(value, datetime):
+        return 0
+    observed = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    return int(observed.astimezone(timezone.utc).timestamp() * 1000)
+
+
+def _observe_causal_progress(
+    conn: Any,
+    *,
+    job: StoredSovereignAgentJob,
+    task_id: str,
+    workspace_root: Path | None,
+    max_no_progress_seconds: int,
+) -> CausalProgressLeaseV1:
+    """Reconcile material Git progress without treating A2A liveness as progress."""
+
+    now_ms = int(time.time() * 1000)
+    current_job = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id)
+    if (
+        current_job is None
+        or current_job.status != "running"
+        or current_job.external_ref != job.external_ref
+    ):
+        return CausalProgressLeaseV1.evaluate(
+            job_id=job.job_id,
+            a2a_task_id=task_id,
+            source_revision="",
+            last_progress_receipt_sha256="",
+            last_material_progress_epoch_ms=0,
+            max_no_progress_seconds=max_no_progress_seconds,
+            absolute_deadline_epoch_ms=max(1, now_ms + 1),
+            observed_epoch_ms=now_ms,
+            evidence_available=False,
+            contradicted=True,
+        )
+    job = current_job
+    created_ms = _epoch_ms(job.created_at)
+    absolute_deadline_ms = created_ms + int(_repository_absolute_deadline_seconds() * 1000)
+
+    probe_due = _progress_probe_due(job.job_id, now_ms)
+    if probe_due:
+        chain = list_agent_progress_receipts(conn, job_id=job.job_id)
+        latest_raw = chain[-1] if chain else None
+    else:
+        latest_raw = read_latest_agent_progress_receipt(conn, job_id=job.job_id)
+    latest = (
+        CausalProgressReceiptV1.from_dict(latest_raw)
+        if latest_raw is not None
+        else None
+    )
+    if created_ms <= 0:
+        return CausalProgressLeaseV1.evaluate(
+            job_id=job.job_id,
+            a2a_task_id=task_id,
+            source_revision=(latest.repository_revision if latest is not None else ""),
+            last_progress_receipt_sha256=(latest.receipt_sha256 if latest is not None else ""),
+            last_material_progress_epoch_ms=(latest.observed_epoch_ms if latest is not None else 0),
+            max_no_progress_seconds=max_no_progress_seconds,
+            absolute_deadline_epoch_ms=max(1, now_ms + 1),
+            observed_epoch_ms=now_ms,
+            evidence_available=False,
+            contradicted=True,
+        )
+    workspace_id = str(job.workspace_id or job.job_id)
+    if latest is not None and (
+        latest.job_id != job.job_id
+        or latest.workspace_id != workspace_id
+        or latest.repository != job.repo_url
+    ):
+        return CausalProgressLeaseV1.evaluate(
+            job_id=job.job_id,
+            a2a_task_id=task_id,
+            source_revision=latest.repository_revision,
+            last_progress_receipt_sha256=latest.receipt_sha256,
+            last_material_progress_epoch_ms=latest.observed_epoch_ms,
+            max_no_progress_seconds=max_no_progress_seconds,
+            absolute_deadline_epoch_ms=absolute_deadline_ms,
+            observed_epoch_ms=now_ms,
+            evidence_available=True,
+            contradicted=True,
+        )
+    last_progress_ms = latest.observed_epoch_ms if latest is not None else created_ms
+    latest_receipt_sha = latest.receipt_sha256 if latest is not None else ""
+
+    repository_path = repo_dir_for_workspace(workspace_id, workspace_root)
+    evidence_available = latest is not None
+
+    if probe_due:
+        evidence_available = repository_path.is_dir() and (repository_path / ".git").exists()
+        if evidence_available:
+            try:
+                identity = read_git_workspace_identity(repository_path, repository=job.repo_url)
+            except (OSError, RuntimeError, ValueError):
+                evidence_available = False
+            else:
+                current_sha = identity.authoritative_readback_sha256
+                fingerprint_seen = has_agent_progress_fingerprint(
+                    conn,
+                    job_id=job.job_id,
+                    workspace_readback_sha256=current_sha,
+                )
+                if not fingerprint_seen:
+                    current_job = read_agent_job(
+                        conn,
+                        user_id=job.user_id,
+                        job_id=job.job_id,
+                    )
+                    if (
+                        current_job is None
+                        or current_job.status != "running"
+                        or current_job.external_ref != job.external_ref
+                    ):
+                        return CausalProgressLeaseV1.evaluate(
+                            job_id=job.job_id,
+                            a2a_task_id=task_id,
+                            source_revision=identity.base_commit_sha,
+                            last_progress_receipt_sha256=latest_receipt_sha,
+                            last_material_progress_epoch_ms=last_progress_ms,
+                            max_no_progress_seconds=max_no_progress_seconds,
+                            absolute_deadline_epoch_ms=absolute_deadline_ms,
+                            observed_epoch_ms=now_ms,
+                            evidence_available=True,
+                            contradicted=True,
+                        )
+                    job = current_job
+                    receipt = CausalProgressReceiptV1.build(
+                        job_id=job.job_id,
+                        workspace_id=workspace_id,
+                        a2a_task_id=task_id,
+                        repository=job.repo_url,
+                        repository_revision=identity.base_commit_sha,
+                        progress_kind=(
+                            "REPOSITORY_MATERIALIZED"
+                            if latest is None
+                            else "WORKSPACE_DELTA"
+                        ),
+                        previous_workspace_readback_sha256=(
+                            latest.current_workspace_readback_sha256 if latest is not None else ""
+                        ),
+                        current_workspace_readback_sha256=current_sha,
+                        previous_receipt_sha256=latest_receipt_sha,
+                        observed_epoch_ms=now_ms,
+                    )
+                    try:
+                        append_agent_progress_receipt(
+                            conn,
+                            job_id=job.job_id,
+                            receipt=receipt.to_dict(),
+                        )
+                    except CausalProgressContractError:
+                        # Another reconciler may have advanced the append-only receipt
+                        # head after our read but before the row lock was acquired. That
+                        # race is not a contradiction if the persisted head really
+                        # advanced for the same bound execution.
+                        concurrent_chain = list_agent_progress_receipts(
+                            conn,
+                            job_id=job.job_id,
+                        )
+                        if not concurrent_chain:
+                            raise
+                        concurrent = CausalProgressReceiptV1.from_dict(
+                            concurrent_chain[-1]
+                        )
+                        if (
+                            concurrent.receipt_sha256 == latest_receipt_sha
+                            or concurrent.job_id != job.job_id
+                            or concurrent.workspace_id != workspace_id
+                            or concurrent.repository != job.repo_url
+                        ):
+                            raise
+                        latest = concurrent
+                        latest_receipt_sha = concurrent.receipt_sha256
+                        last_progress_ms = concurrent.observed_epoch_ms
+                    else:
+                        observed_changes = tuple(identity.changed_paths)
+                        if observed_changes and tuple(job.changed_files or ()) != observed_changes:
+                            update_agent_job_state(
+                                conn,
+                                job_id=job.job_id,
+                                status="running",
+                                changed_files=observed_changes,
+                            )
+                            append_agent_event(conn, job.job_id, SovereignAgentEvent(
+                                stage="agent_zero_workspace_progress_observed",
+                                level="info",
+                                message=(
+                                    f"Observed {len(observed_changes)} changed workspace file(s) from "
+                                    "the authoritative Git workspace readback. This is material "
+                                    "activity, not completion or quality evidence."
+                                ),
+                            ))
+                        latest = receipt
+                        latest_receipt_sha = receipt.receipt_sha256
+                        last_progress_ms = receipt.observed_epoch_ms
+
+    return CausalProgressLeaseV1.evaluate(
+        job_id=job.job_id,
+        a2a_task_id=task_id,
+        source_revision=(
+            latest.repository_revision if latest is not None else ""
+        ),
+        last_progress_receipt_sha256=latest_receipt_sha,
+        last_material_progress_epoch_ms=last_progress_ms,
+        max_no_progress_seconds=max_no_progress_seconds,
+        absolute_deadline_epoch_ms=absolute_deadline_ms,
+        observed_epoch_ms=now_ms,
+        evidence_available=evidence_available,
+    )
 
 
 def _submit_after_claim(
@@ -902,64 +1145,90 @@ def reconcile_repository_execution(
         ) from exc
 
     if task.active:
-        age_seconds = _job_age_seconds(job)
-
-        if (
-            task.state == "submitted"
-            and age_seconds is not None
-            and age_seconds >= _repository_submitted_stall_seconds()
-        ):
-            # FastA2A "submitted" means acknowledged/queued, not working. Before
-            # treating a stale submitted projection as dead, independently inspect
-            # the shared workspace so real Agent Zero work is never discarded merely
-            # because the upstream state projection is stale.
-            progress = run_agent_job_tool(job, "git-status", {}, workspace_root)
-            observed_changes = (
-                tuple(progress.changed_files)
-                if progress.status == "done" and progress.changed_files
-                else ()
+        max_no_progress_seconds = int(
+            _repository_submitted_stall_seconds()
+            if task.state == "submitted"
+            else _repository_stall_seconds()
+        )
+        try:
+            lease = _observe_causal_progress(
+                conn,
+                job=job,
+                task_id=task.task_id,
+                workspace_root=workspace_root,
+                max_no_progress_seconds=max_no_progress_seconds,
             )
-            if observed_changes:
-                if tuple(job.changed_files or ()) != observed_changes:
-                    update_agent_job_state(
-                        conn,
-                        job_id=job.job_id,
-                        status="running",
-                        changed_files=observed_changes,
-                    )
-                    append_agent_event(conn, job.job_id, SovereignAgentEvent(
-                        stage="agent_zero_workspace_progress_observed",
-                        level="info",
-                        message=(
-                            f"Observed {len(observed_changes)} changed workspace file(s) while "
-                            "Agent Zero still projected task state submitted. This is real "
-                            "workspace progress, not completion evidence."
-                        ),
-                    ))
-                    job = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-            else:
+        except CausalProgressContractError as exc:
+            return _cancel_stalled_repository_task(
+                conn,
+                job=job,
+                task_id=task.task_id,
+                reason=f"AGENT_ZERO_PROGRESS_LEASE_CONTRADICTED: {exc}.",
+                stage="agent_zero_progress_lease_contradicted",
+                a2a_client_factory=a2a_client_factory,
+            )
+        current_job = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id)
+        if (
+            current_job is None
+            or current_job.status != "running"
+            or current_job.external_ref != job.external_ref
+        ):
+            return current_job or job
+        job = current_job
+        if lease.verdict == "CONTRADICTED":
+            return _cancel_stalled_repository_task(
+                conn,
+                job=job,
+                task_id=task.task_id,
+                reason=f"AGENT_ZERO_PROGRESS_LEASE_CONTRADICTED: {lease.reason}.",
+                stage="agent_zero_progress_lease_contradicted",
+                a2a_client_factory=a2a_client_factory,
+            )
+        if lease.verdict == "UNVERIFIED":
+            lease_expires_ms = (
+                lease.last_material_progress_epoch_ms
+                + lease.max_no_progress_seconds * 1000
+            )
+            if int(time.time() * 1000) >= lease_expires_ms:
                 return _cancel_stalled_repository_task(
                     conn,
                     job=job,
                     task_id=task.task_id,
                     reason=(
-                        "AGENT_ZERO_A2A_SUBMITTED_STALLED: tasks/get remained submitted "
-                        "beyond the bounded queue window and no workspace changes were observed."
+                        "AGENT_ZERO_PROGRESS_LEASE_UNVERIFIED: material progress "
+                        "evidence remained unavailable through the current lease boundary."
                     ),
-                    stage="agent_zero_a2a_submitted_stalled",
+                    stage="agent_zero_progress_lease_unverified",
                     a2a_client_factory=a2a_client_factory,
                 )
-
-        if age_seconds is not None and age_seconds >= _repository_stall_seconds():
+            _record_task_readback(
+                conn,
+                job,
+                message=(
+                    "Agent Zero remains live, but the material Git progress readback "
+                    "is unavailable; the existing verified lease is not renewed."
+                ),
+                unavailable=True,
+            )
+            raise RepositoryExecutionTransientError(
+                "material progress evidence is unavailable; no resubmit was performed"
+            )
+        if lease.verdict == "STALLED":
+            submitted_stall = task.state == "submitted"
             return _cancel_stalled_repository_task(
                 conn,
                 job=job,
                 task_id=task.task_id,
                 reason=(
-                    "AGENT_ZERO_A2A_STALLED: the external task remained active beyond the "
-                    "bounded server reconciliation window."
+                    f"AGENT_ZERO_A2A_SUBMITTED_STALLED: {lease.reason}."
+                    if submitted_stall
+                    else f"AGENT_ZERO_A2A_STALLED: {lease.reason}."
                 ),
-                stage="agent_zero_a2a_task_stalled",
+                stage=(
+                    "agent_zero_a2a_submitted_stalled"
+                    if submitted_stall
+                    else "agent_zero_a2a_task_stalled"
+                ),
                 a2a_client_factory=a2a_client_factory,
             )
         return _record_task_readback(

@@ -150,8 +150,8 @@ test('independent target runtime receipt uses a short-lived read-only Actions to
 });
 
 test('manual VPS bootstrap consumes one exact coordinated-release manifest instead of rebuilding the same revision', () => {
-  assert.match(mcpWorkflow, /publish-mcp-image:[\s\S]*if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
-  assert.match(mcpWorkflow, /verify-published-mcp-image:[\s\S]*if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
+  assert.match(mcpWorkflow, /publish-mcp-image:[\s\S]*?\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'\)/);
+  assert.match(mcpWorkflow, /verify-published-mcp-image:[\s\S]*?\(github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'\)/);
   assert.match(mcpWorkflow, /resolve-coordinated-release:/);
   assert.match(mcpWorkflow, /actions\/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b/);
   assert.match(mcpWorkflow, /actions\/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093/);
