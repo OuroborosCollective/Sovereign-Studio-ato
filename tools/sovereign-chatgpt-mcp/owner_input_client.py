@@ -23,6 +23,8 @@ WOLFRAM_CAG_COMPONENT_IDS = frozenset({
     "wolfram.cag.results",
     "wolfram.cag.context",
 })
+WOLFRAM_SOURCE_OPERATIONS = frozenset({"parse", "inspect", "format_preview"})
+MAX_WOLFRAM_SOURCE_BYTES = 32 * 1024
 RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
 EVIDENCE_ID_RE = re.compile(r"^evidence-[0-9a-f]{32}$")
 EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
@@ -311,6 +313,50 @@ class ProviderRuntimeClient(OwnerInputClient):
             json_body={"components": selected},
             expected=(200, 400, 401, 409, 500, 502, 503),
             timeout=300,
+        )
+        return {
+            **payload,
+            "protected_values_returned": False,
+            "secret_argument_accepted": False,
+        }
+
+    def wolfram_source_intelligence(
+        self,
+        *,
+        operation: str,
+        source: str,
+        source_egress_approved: bool = False,
+    ) -> dict[str, Any]:
+        selected_operation = str(operation or "").strip()
+        if selected_operation not in WOLFRAM_SOURCE_OPERATIONS:
+            raise ValueError("operation ist ungültig")
+        if not isinstance(source, str) or not source:
+            raise ValueError("source muss ein nicht-leerer String sein")
+        if "\x00" in source:
+            raise ValueError("source enthält ein unzulässiges NUL-Byte")
+        source_bytes = source.encode("utf-8")
+        if len(source_bytes) > MAX_WOLFRAM_SOURCE_BYTES:
+            raise ValueError("source überschreitet das 32768-Byte-Limit")
+        if source_egress_approved is not True:
+            return {
+                "ok": False,
+                "status": "WOLFRAM_SOURCE_INTELLIGENCE_BLOCKED",
+                "blocker": "source_egress_approval_required",
+                "sourceEgressOccurred": False,
+                "mutationPerformed": False,
+                "protected_values_returned": False,
+                "secret_argument_accepted": False,
+            }
+        payload = self._request(
+            "POST",
+            "/api/internal/wolfram-cag/source-intelligence",
+            json_body={
+                "operation": selected_operation,
+                "source": source,
+                "sourceEgressApproved": True,
+            },
+            expected=(200, 400, 401, 403, 409, 500, 502, 503),
+            timeout=180,
         )
         return {
             **payload,
