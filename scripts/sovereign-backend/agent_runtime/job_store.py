@@ -195,19 +195,18 @@ def append_agent_progress_receipt(
     receipt: Mapping[str, Any],
     commit: bool = True,
 ) -> str:
-    """Persist one hash-validated SCPL material-progress receipt."""
+    """Persist one hash-validated, predecessor-bound SCPL progress receipt.
+
+    The canonical job row is locked so two reconcilers cannot both extend the
+    same receipt head.  This is append-only persistence, not job-state truth.
+    """
 
     from .causal_progress_lease import (
         CausalProgressContractError,
         CausalProgressReceiptV1,
     )
 
-    parsed = CausalProgressReceiptV1.from_dict(receipt)
-    if parsed.job_id != job_id:
-        raise CausalProgressContractError("progress receipt job binding mismatch")
-    # Serialize the predecessor check with all competing reconcilers. The row
-    # lock is persistence coordination only; progress truth still comes from
-    # the independently read Git workspace identity.
+    canonical = CausalProgressReceiptV1.from_dict(receipt).to_dict()
     with conn.cursor() as cur:
         cur.execute(
             "SELECT job_id FROM sovereign_agent_jobs WHERE job_id = %s FOR UPDATE",
@@ -215,12 +214,48 @@ def append_agent_progress_receipt(
         )
         if cur.fetchone() is None:
             raise CausalProgressContractError("progress receipt job does not exist")
-    latest = read_latest_agent_progress_receipt(conn, job_id=job_id)
-    expected_predecessor = str(latest.get("receiptSha256") or "") if latest else ""
-    if parsed.previous_receipt_sha256 != expected_predecessor:
-        raise CausalProgressContractError("progress receipt predecessor mismatch")
-    canonical = parsed.to_dict()
-    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT payload
+            FROM sovereign_agent_events
+            WHERE job_id = %s
+              AND stage = 'agent_zero_material_progress_observed'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (job_id,),
+        )
+        row = cur.fetchone()
+        previous = None
+        if row:
+            raw = row.get("payload") if isinstance(row, Mapping) else None
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise CausalProgressContractError(
+                        "previous progress receipt payload is invalid JSON"
+                    ) from exc
+            if not isinstance(raw, Mapping):
+                raise CausalProgressContractError("previous progress receipt payload is invalid")
+            previous = CausalProgressReceiptV1.from_dict(raw)
+
+        expected_predecessor = previous.receipt_sha256 if previous is not None else ""
+        if canonical["previousReceiptSha256"] != expected_predecessor:
+            raise CausalProgressContractError("progress receipt predecessor does not match current head")
+        if previous is None:
+            if canonical["previousWorkspaceReadbackSha256"]:
+                raise CausalProgressContractError(
+                    "first progress receipt may not claim a previous workspace readback"
+                )
+        else:
+            if canonical["previousWorkspaceReadbackSha256"] != previous.current_workspace_readback_sha256:
+                raise CausalProgressContractError(
+                    "progress receipt workspace predecessor does not match current head"
+                )
+            if int(canonical["observedEpochMs"]) < previous.observed_epoch_ms:
+                raise CausalProgressContractError("progress receipt observation time moved backwards")
+
         cur.execute(
             """
             INSERT INTO sovereign_agent_events (job_id, stage, level, message, payload)
