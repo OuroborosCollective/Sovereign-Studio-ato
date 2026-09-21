@@ -378,10 +378,28 @@ def _observe_causal_progress(
         if latest_raw is not None
         else None
     )
+    workspace_id = str(job.workspace_id or job.job_id)
+    if latest is not None and (
+        latest.job_id != job.job_id
+        or latest.workspace_id != workspace_id
+        or latest.a2a_task_id != task_id
+        or latest.repository != job.repo_url
+    ):
+        return CausalProgressLeaseV1.evaluate(
+            job_id=job.job_id,
+            a2a_task_id=task_id,
+            source_revision=str(job.branch or ""),
+            last_progress_receipt_sha256=latest.receipt_sha256,
+            last_material_progress_epoch_ms=latest.observed_epoch_ms,
+            max_no_progress_seconds=max_no_progress_seconds,
+            absolute_deadline_epoch_ms=absolute_deadline_ms,
+            observed_epoch_ms=now_ms,
+            evidence_available=True,
+            contradicted=True,
+        )
     last_progress_ms = latest.observed_epoch_ms if latest is not None else created_ms
     latest_receipt_sha = latest.receipt_sha256 if latest is not None else ""
 
-    workspace_id = str(job.workspace_id or job.job_id)
     repository_path = repo_dir_for_workspace(workspace_id, workspace_root)
     evidence_available = latest is not None
 
