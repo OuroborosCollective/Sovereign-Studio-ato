@@ -83,6 +83,8 @@ _RECONCILER_THREAD_LOCK = threading.Lock()
 _RECONCILER_THREAD: threading.Thread | None = None
 _LOGGER = logging.getLogger(__name__)
 _A2A_READBACK_INTERVAL_MS: Final[int] = 30_000
+_PROGRESS_PROBE_LOCK = threading.Lock()
+_PROGRESS_PROBE_LAST_MS: dict[str, int] = {}
 
 
 class RepositoryExecutionError(RuntimeError):
@@ -336,6 +338,17 @@ def _record_task_readback(
     return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or current
 
 
+def _progress_probe_due(job_id: str, observed_epoch_ms: int) -> bool:
+    """Throttle expensive Git readbacks without making the cache authoritative."""
+
+    with _PROGRESS_PROBE_LOCK:
+        previous = _PROGRESS_PROBE_LAST_MS.get(job_id)
+        if previous is not None and observed_epoch_ms - previous < _A2A_READBACK_INTERVAL_MS:
+            return False
+        _PROGRESS_PROBE_LAST_MS[job_id] = observed_epoch_ms
+        return True
+
+
 def _epoch_ms(value: datetime | None) -> int:
     if not isinstance(value, datetime):
         return 0
@@ -370,63 +383,65 @@ def _observe_causal_progress(
 
     workspace_id = str(job.workspace_id or job.job_id)
     repository_path = repo_dir_for_workspace(workspace_id, workspace_root)
-    evidence_available = repository_path.is_dir() and (repository_path / ".git").exists()
+    evidence_available = latest is not None
 
-    if evidence_available:
-        try:
-            identity = read_git_workspace_identity(repository_path, repository=job.repo_url)
-        except (OSError, RuntimeError, ValueError):
-            evidence_available = False
-        else:
-            current_sha = identity.authoritative_readback_sha256
-            if not has_agent_progress_fingerprint(
-                conn,
-                job_id=job.job_id,
-                workspace_readback_sha256=current_sha,
-            ):
-                receipt = CausalProgressReceiptV1.build(
-                    job_id=job.job_id,
-                    workspace_id=workspace_id,
-                    a2a_task_id=task_id,
-                    repository=job.repo_url,
-                    repository_revision=identity.base_commit_sha,
-                    progress_kind=(
-                        "REPOSITORY_MATERIALIZED"
-                        if latest is None
-                        else "WORKSPACE_DELTA"
-                    ),
-                    previous_workspace_readback_sha256=(
-                        latest.current_workspace_readback_sha256 if latest is not None else ""
-                    ),
-                    current_workspace_readback_sha256=current_sha,
-                    previous_receipt_sha256=latest_receipt_sha,
-                    observed_epoch_ms=now_ms,
-                )
-                append_agent_progress_receipt(
+    if _progress_probe_due(job.job_id, now_ms):
+        evidence_available = repository_path.is_dir() and (repository_path / ".git").exists()
+        if evidence_available:
+            try:
+                identity = read_git_workspace_identity(repository_path, repository=job.repo_url)
+            except (OSError, RuntimeError, ValueError):
+                evidence_available = False
+            else:
+                current_sha = identity.authoritative_readback_sha256
+                if not has_agent_progress_fingerprint(
                     conn,
                     job_id=job.job_id,
-                    receipt=receipt.to_dict(),
-                )
-                observed_changes = tuple(identity.changed_paths)
-                if observed_changes and tuple(job.changed_files or ()) != observed_changes:
-                    update_agent_job_state(
+                    workspace_readback_sha256=current_sha,
+                ):
+                    receipt = CausalProgressReceiptV1.build(
+                        job_id=job.job_id,
+                        workspace_id=workspace_id,
+                        a2a_task_id=task_id,
+                        repository=job.repo_url,
+                        repository_revision=identity.base_commit_sha,
+                        progress_kind=(
+                            "REPOSITORY_MATERIALIZED"
+                            if latest is None
+                            else "WORKSPACE_DELTA"
+                        ),
+                        previous_workspace_readback_sha256=(
+                            latest.current_workspace_readback_sha256 if latest is not None else ""
+                        ),
+                        current_workspace_readback_sha256=current_sha,
+                        previous_receipt_sha256=latest_receipt_sha,
+                        observed_epoch_ms=now_ms,
+                    )
+                    append_agent_progress_receipt(
                         conn,
                         job_id=job.job_id,
-                        status="running",
-                        changed_files=observed_changes,
+                        receipt=receipt.to_dict(),
                     )
-                    append_agent_event(conn, job.job_id, SovereignAgentEvent(
-                        stage="agent_zero_workspace_progress_observed",
-                        level="info",
-                        message=(
-                            f"Observed {len(observed_changes)} changed workspace file(s) from "
-                            "the authoritative Git workspace readback. This is material "
-                            "activity, not completion or quality evidence."
-                        ),
-                    ))
-                latest = receipt
-                latest_receipt_sha = receipt.receipt_sha256
-                last_progress_ms = receipt.observed_epoch_ms
+                    observed_changes = tuple(identity.changed_paths)
+                    if observed_changes and tuple(job.changed_files or ()) != observed_changes:
+                        update_agent_job_state(
+                            conn,
+                            job_id=job.job_id,
+                            status="running",
+                            changed_files=observed_changes,
+                        )
+                        append_agent_event(conn, job.job_id, SovereignAgentEvent(
+                            stage="agent_zero_workspace_progress_observed",
+                            level="info",
+                            message=(
+                                f"Observed {len(observed_changes)} changed workspace file(s) from "
+                                "the authoritative Git workspace readback. This is material "
+                                "activity, not completion or quality evidence."
+                            ),
+                        ))
+                    latest = receipt
+                    latest_receipt_sha = receipt.receipt_sha256
+                    last_progress_ms = receipt.observed_epoch_ms
 
     return CausalProgressLeaseV1.evaluate(
         job_id=job.job_id,
