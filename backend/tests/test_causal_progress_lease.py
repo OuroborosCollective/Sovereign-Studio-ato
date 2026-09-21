@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from agent_runtime.causal_progress_lease import (
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from agent_runtime.causal_progress_lease import (  # noqa: E402
     CausalProgressContractError,
     CausalProgressLeaseV1,
     CausalProgressReceiptV1,
