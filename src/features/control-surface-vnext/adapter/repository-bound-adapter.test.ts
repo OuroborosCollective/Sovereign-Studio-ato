@@ -61,7 +61,7 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     }), { status: 202 }));
     const adapter = new SovereignProductionAdapter(fetcher as unknown as typeof fetch, config);
 
-    const accepted = await adapter.runSwarm('Ändere README.md.', [], [], 'single');
+    const accepted = await adapter.runRepositoryExecution('Ändere README.md.');
 
     expect(accepted).toEqual({ jobId: 'agent-repository-1' });
     expect(fetcher).toHaveBeenCalledTimes(1);
