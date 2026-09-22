@@ -112,6 +112,36 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     expect(backend).toContain('draft_pr_approval = approved and approval_kind == "draft_pr_readiness"');
   });
 
+  it('keeps advisory chat, explicit repository execution, and secret handling on separate boundaries', () => {
+    const surface = source('src/features/control-surface-vnext/App.tsx');
+    const chat = source('src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx');
+    const advisory = source('src/features/product/runtime/chatAdvisoryRuntime.ts');
+
+    expect(surface).toContain('evaluateInputPolicy(message)');
+    expect(surface).toContain('fetchSovereignAdvisoryChatReply');
+    expect(surface).toContain('adapter.runRepositoryExecution(mission)');
+    expect(surface).not.toContain('useSwarmRun');
+    expect(surface).not.toContain('swarmRun');
+    expect(surface).not.toContain('LiveWorkspaceMonitor');
+
+    const guard = surface.indexOf('const policy = evaluateInputPolicy(message);');
+    const firstMessageWrite = surface.indexOf("setMessages((current) => [...current, {", guard);
+    const llmCall = surface.indexOf('fetchSovereignAdvisoryChatReply({', guard);
+    expect(guard).toBeGreaterThanOrEqual(0);
+    expect(firstMessageWrite).toBeGreaterThan(guard);
+    expect(llmCall).toBeGreaterThan(guard);
+
+    expect(chat).toContain('onSendMessage?.(message)');
+    expect(chat).toContain('Auftrag starten');
+    expect(chat).not.toContain('useSwarmRun');
+    expect(chat).not.toContain('runSwarm');
+    expect(chat).not.toContain('SOVEREIGN_SWARM');
+
+    expect(advisory).toContain('ausschließlich Konversation und Beratung');
+    expect(advisory).toContain('Keine Keyword-Erkennung, keine Intent-Klassifizierung');
+    expect(advisory).toContain('⋯ → Auftrag starten');
+  });
+
   it('allows a backend guest session to upgrade directly to authenticated execution without token storage', () => {
     const auth = source('src/features/control-surface-vnext/components/Auth/OperatorAuthModal.tsx');
     expect(auth).toContain('user && !user.isGuest');
