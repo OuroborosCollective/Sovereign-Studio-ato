@@ -1,5 +1,4 @@
 import type {
-  AgentMode,
   DraftPR,
   DraftPrPreparation,
   IntegrationAttachment,
@@ -25,7 +24,7 @@ export interface RestoredRepositoryRun {
 }
 
 export interface SovereignBackendAdapter {
-  runSwarm(prompt: string, toolchains: string[], activeSkillIds?: string[], agentMode?: AgentMode): Promise<{ jobId: string }>;
+  runRepositoryExecution(mission: string): Promise<{ jobId: string }>;
   getJob(runId: string): Promise<SovereignJob>;
   resumeJob(runId: string, interactionId: string, response: string): Promise<void>;
   abortJob(runId: string): Promise<void>;
