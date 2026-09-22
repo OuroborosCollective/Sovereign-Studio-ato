@@ -12,18 +12,18 @@ The UI may only display that truth.
 
 ## Truth path
 
-The current runtime path is:
+For the vNext control surface, conversation and execution are deliberately separate:
 
-1. A chat message or setup action is received.
-2. The message is classified as normal chat, local status question, repo load, write intent, executor intent or repair/inspection request.
-3. A real GitHub repository tree is loaded when needed.
-4. Write intents are blocked until GitHub access is validated through the GitHub API for the loaded repository.
-5. The runtime chooses the smallest safe capability route.
-6. The Sovereign Action Stream records route decisions, blockers and results.
-7. Generated changes are reviewed by functional guards and file review.
-8. Draft PR publishing creates a branch, tree, commit and Draft PR only after guards pass.
-9. Workflow Watch reads GitHub Actions/check status for the produced commit.
-10. UI/Coach state is derived from runtime state, not DOM scraping, fake progress or provider text alone.
+1. Normal composer input is checked by the secure input guard before chat storage or LLM submission.
+2. Normal chat goes only to the advisory LLM runtime. It is not classified into an execution intent.
+3. A visible `⋯ → Auftrag starten` action on a concrete stored message is the only chat-side execution affordance.
+4. That explicit action passes the exact stored message text to the repository-bound execution adapter.
+5. The canonical repository route is `POST /api/user/agent/repository/run`; the adapter must not redirect vNext chat through a Swarm route or the retired Live Workspace Monitor.
+6. Runtime/job/workspace/evidence readback remains authoritative for execution state.
+7. Draft PR publishing and workflow verification remain separate gated operations.
+8. UI state is derived from runtime/readback state, not DOM scraping, fake progress or provider prose.
+
+Other product surfaces may retain separate capability-routing contracts, but they are not part of the vNext advisory-chat execution boundary.
 
 ## Runtime route categories
 
@@ -226,7 +226,7 @@ The UI should show state from these runtime sources:
 
 - repo snapshot readiness;
 - GitHub access state;
-- capability decision;
+- explicit execution selection;
 - action stream;
 - active blockers;
 - package/file review state;
