@@ -200,7 +200,7 @@ function run() {
   forbidText('src/App.tsx', /PlayReleaseChat|RESTORE_LATEST_JOB|BuilderContainer/, 'app:no-implicit-historical-truth', 'Default App must not mount the retired release chat, auto-adopt historical jobs, or mount Builder as current truth.');
 
   requireText(surface, /ensureGuestSession\(\)[\s\S]*user\.isGuest[\s\S]*setAuthOpen\(true\)/, 'vnext:session-before-agent', 'vNext resolves backend session and fails guest execution closed into authentication.');
-  requireText(surface, /useSwarmRun[\s\S]*setActiveRunId\(accepted\.jobId\)/, 'vnext:accepted-run', 'Only a backend-accepted persisted run id becomes current.');
+  requireText(surface, /runRepositoryExecution[\s\S]*setActiveRunId\(accepted\.jobId\)/, 'vnext:accepted-run', 'Only a backend-accepted persisted repository run id becomes current.');
   forbidText(surface, /listJobs\(|RESTORE_LATEST_JOB/, 'vnext:no-history-auto-adopt', 'vNext must not auto-adopt historical Agent runs.');
   requireText(adapterContext, /from ['"]\.\/repository-bound-adapter['"]/, 'vnext:repository-adapter-active', 'vNext context instantiates the repository-bound production adapter.');
   requireText(repositoryAdapter, /extends SovereignProductionAdapterBase/, 'vnext:repository-adapter-inherits-publication', 'Repository-bound vNext preserves the production Draft-PR publication contract by inheritance.');
