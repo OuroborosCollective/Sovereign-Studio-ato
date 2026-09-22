@@ -136,6 +136,32 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
     return null;
   }
 
+  override async runRepositoryExecution(mission: string): Promise<{ jobId: string }> {
+    if (!this.repositoryConfig.ready) throw new Error(this.repositoryConfig.reason);
+    const payload = buildRepositoryBoundRunRequest(mission, 'single');
+    const response = await this.repositoryFetcher(
+      endpoint(this.repositoryConfig.agentApiUrl, '/api/user/agent/repository/run'),
+      {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      },
+    );
+    const body: unknown = await response.json().catch(() => null);
+    const record = isRecord(body) ? body : {};
+    const nestedJob = isRecord(record.job) ? record.job : undefined;
+    const jobId = stringValue(record.jobId) || stringValue(nestedJob?.jobId);
+    if (jobId) return { jobId };
+    const reason = stringValue(record.reason)
+      || stringValue(record.error)
+      || stringValue(record.blocker);
+    throw new Error(reason || `Sovereign repository execution failed with HTTP ${response.status}.`);
+  }
+
   override async runSwarm(
     prompt: string,
     _toolchains: string[],
