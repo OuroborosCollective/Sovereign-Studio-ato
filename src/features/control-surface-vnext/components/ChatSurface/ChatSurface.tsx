@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { Blocks, Bot, BrainCircuit, Cpu, MoreHorizontal, Rocket, Send, Square, Terminal, User, Wrench } from 'lucide-react';
 import type { AgentMode, ChatMessage, JobPhase, SovereignJob } from '../../types/domain';
-import { playDispatchBlast, playKeystrokeChirp } from '../../utils/audio';
+import { playKeystrokeChirp } from '../../utils/audio';
 
 interface Props {
   messages: ChatMessage[];
