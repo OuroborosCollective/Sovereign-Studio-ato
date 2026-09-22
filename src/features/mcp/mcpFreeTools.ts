@@ -72,11 +72,15 @@ export async function executeMCPTool(config: MCPToolConfig): Promise<{
 async function executeMCPToolInternal(
   serverName: string,
   toolName: string,
-  _parameters: Record<string, unknown>,
-): Promise<never> {
-  throw new Error(
-    `MCP transport unavailable for ${serverName}/${toolName}. Register a concrete executor before use.`,
-  );
+  parameters: Record<string, unknown>,
+): Promise<unknown> {
+  const executor = getMCPToolRegistry().getToolExecutor(serverName, toolName);
+  if (!executor) {
+    throw new Error(
+      `MCP transport unavailable for ${serverName}/${toolName}. Register a concrete executor before use.`,
+    );
+  }
+  return executor(parameters);
 }
 
 function createToolEvent(
@@ -145,6 +149,10 @@ export class MCPToolRegistry {
     }));
   }
 
+  getToolExecutor(server: string, name: string): ((params: Record<string, unknown>) => Promise<unknown>) | undefined {
+    return this.tools.get(`${server}:${name}`)?.execute;
+  }
+
   async execute(
     server: string,
     name: string,
@@ -154,29 +162,18 @@ export class MCPToolRegistry {
   ): Promise<{ success: boolean; result?: unknown; error?: string; durationMs: number }> {
     const key = `${server}:${name}`;
     const tool = this.tools.get(key);
+
     if (!tool) {
-      return {
-        success: false,
-        error: `Tool ${server}:${name} is not registered`,
-        durationMs: 0,
-      };
+      return { success: false, error: `Tool ${server}:${name} not found`, durationMs: 0 };
     }
 
-    const startedAt = performance.now();
-    try {
-      const result = await tool.execute(params);
-      const durationMs = performance.now() - startedAt;
-      emitToolSignal(createToolEvent(name, 'success', durationMs, params, workspaceId, jobId));
-      return { success: true, result, durationMs };
-    } catch (error) {
-      const durationMs = performance.now() - startedAt;
-      emitToolSignal(createToolEvent(name, 'error', durationMs, params, workspaceId, jobId));
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-        durationMs,
-      };
-    }
+    return executeMCPTool({
+      serverName: server,
+      toolName: name,
+      parameters: params,
+      workspaceId,
+      jobId,
+    });
   }
 }
 
