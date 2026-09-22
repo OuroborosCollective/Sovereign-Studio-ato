@@ -676,3 +676,16 @@ Erkenntnis: Fehlende Beobachtbarkeit ist nicht dasselbe wie No-Progress, und neu
 Evidence: Pre-Memory head `f0778ef1378c226a6bd7ba0dd9c4e049205e8836` auf unverändertem `main@e3875a43f530333aad5670bd450b299aa2216a54`; Agent Backend 35649838961, MCP 35649838965, Release Verification 35649838956, Boundary Ledger 35649838951, Integration Plan 35649838945 und Continuity 35649838981 jeweils SUCCESS; Runtime Unit Tests, Web+Android Build, Artifact Smoke, Playwright Smoke und Integration Gate SUCCESS; canonical/shipping Mirrors für causal_progress_lease, job_store, repository_execution und cag_self_healing 4/4 blob-identisch. Amplitude-Projekt 850948 enthält aktuell keine Events, daher wurde keine erfundene SCPL-Telemetrie ergänzt. Production bleibt UNVERIFIED, weil kein revisions-/digestgleicher PatchMon/Docker-Runtime-Readback verfügbar ist.
 Next safe step: Memory-Head exact erneut durch alle Required Checks prüfen; Draft PR weder mergen noch deployen, solange Runtime-Parität nicht separat real belegt ist.
 
+
+
+### 2026-09-22 — N+1 malformed JSON hardening rebased onto current main
+Status: PARTIAL
+Task: Carry the reviewed N+1 malformed-JSON hardening from stale PR #2057 onto current main after PR sweep.
+Decisions:
+- Preserve `request.get_json(force=True, silent=True)` on all three N+1 POST endpoints so non-dictionary JSON reaches the existing typed 400 response instead of an unhandled parser exception.
+- Update both canonical backend and mirrored Sovereign backend files; do not weaken the existing payload contract.
+Touched surfaces: `backend/n_plus_one/routes.py`, `scripts/sovereign-backend/n_plus_one/routes.py`, existing `backend/tests/test_n1_json_validation.py`.
+Evidence: Original PR #2057 had all available CI lanes successful and failed only the mergeability freshness check because its base was stale; current main still contained the vulnerable `force=True` calls, so the narrow patch was reapplied on a fresh current-main branch.
+Learned: A stale but clean security fix should be re-derived against current ownership rather than merged through a divergent branch.
+Open: Current-main branch needs exact-head CI/runtime readback before merge.
+Next safe step: Create a Draft PR, require all checks, then merge only after green exact-head evidence.

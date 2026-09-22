@@ -262,7 +262,7 @@ def register_n_plus_one_routes(
     @app.route("/api/n-plus-one/voice/synthesize", methods=["POST"])
     @require_admin
     def n_plus_one_voice_synthesize():
-        body = request.get_json(force=True)
+        body = request.get_json(force=True, silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "Malformed payload; dictionary required"}), 400
         text = str(body.get("text") or "")
@@ -359,7 +359,7 @@ def register_n_plus_one_routes(
     @app.route("/api/n-plus-one/learning-candidates", methods=["POST"])
     @require_session
     def n_plus_one_create_learning_candidate():
-        body = request.get_json(force=True)
+        body = request.get_json(force=True, silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "Malformed payload; dictionary required"}), 400
         try:
@@ -432,7 +432,7 @@ def register_n_plus_one_routes(
     @app.route("/api/n-plus-one/linguistic/observe", methods=["POST"])
     @require_session
     def n_plus_one_linguistic_observe():
-        body = request.get_json(force=True)
+        body = request.get_json(force=True, silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "Malformed payload; dictionary required"}), 400
         text = str(body.get("text") or "")
