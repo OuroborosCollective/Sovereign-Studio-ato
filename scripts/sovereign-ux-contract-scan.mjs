@@ -75,6 +75,7 @@ function run() {
   const repositoryAdapter = 'src/features/control-surface-vnext/adapter/repository-bound-adapter.ts';
   const adapterContext = 'src/features/control-surface-vnext/adapter/context.tsx';
   const chat = 'src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx';
+  const advisoryRuntime = 'src/features/product/runtime/chatAdvisoryRuntime.ts';
   const publication = 'src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx';
   const operatorAuth = 'src/features/control-surface-vnext/components/Auth/OperatorAuthModal.tsx';
   const runtimeMonitor = 'src/features/control-surface-vnext/components/RuntimeMonitor/RuntimeMonitor.tsx';
@@ -95,7 +96,8 @@ function run() {
     [adapter, 'The live HTTP adapter base is required.'],
     [repositoryAdapter, 'The injected repository-bound vNext adapter is required.'],
     [adapterContext, 'Adapter dependency injection boundary is required.'],
-    [chat, 'Mission command surface is required.'],
+    [chat, 'Sovereign advisory chat surface is required.'],
+    [advisoryRuntime, 'Advisory-only chat runtime is required.'],
     [publication, 'Evidence-gated Draft PR publication surface is required.'],
     [operatorAuth, 'Backend-session operator authentication surface is required.'],
     [runtimeMonitor, 'Runtime readback projection is required.'],
@@ -137,9 +139,12 @@ function run() {
   requireText(agentClient, /jobPath\(jobId, '\/draft-pr\/create'\)/, 'client:draft-create-path', 'Canonical client owns the Draft PR create path.');
   requireText(agentClient, /signal\.draftVerified === true[\s\S]*prStateVerified[\s\S]*signal\.readbackVerified === true[\s\S]*signal\.checksReadbackVerified === true/, 'client:github-readback', 'Draft PR success requires draft/open/head/check readback evidence.');
 
-  requireText(chat, /value=\{text\}[\s\S]*setText\(event\.target\.value\)/, 'surface:composer-bound', 'Visible mission composer is bound to local command draft state only.');
-  requireText(chat, /data-testid="builder__start-task"[\s\S]*onClick=\{submit\}/, 'surface:send-visible', 'Visible dispatch button invokes the guarded submit handler.');
-  requireText(chat, /event\.key === 'Enter'[\s\S]*submit\(\)/, 'surface:enter-send-bound', 'Enter uses the same guarded submit handler.');
+  requireText(chat, /value=\{text\}[\s\S]*setText\(event\.target\.value\)/, 'surface:composer-bound', 'Visible composer is bound to local advisory draft state only.');
+  requireText(chat, /onSendMessage=\{?onSendMessage\}?/, 'surface:composer-advisory', 'Composer sends only to the advisory chat callback.');
+  requireText(chat, /data-testid="message-actions-/[\s\S]*Auftrag starten/, 'surface:message-action-visible', 'Explicit order action is visible on stored messages.');
+  forbidText(chat, /useSwarmRun|runSwarm|SOVEREIGN_SWARM|onClick=\{submitMission\}/, 'surface:no-swarm-boundary', 'vNext chat must not contain Swarm execution wiring or automatic mission dispatch.');
+  requireText(advisoryRuntime, /ausschließlich Konversation und Beratung|advisory-only|ADVISORY/, 'advisory:no-execution', 'Advisory runtime explicitly forbids execution.');
+  requireText(advisoryRuntime, /Keine Keyword-Erkennung|kein.*Intent|Intent-Klassifizierung/, 'advisory:no-intent-routing', 'Advisory runtime forbids keyword and intent routing.');
   requireText(surface, /ensureGuestSession\(\)/, 'surface:session-readback', 'Control surface resolves backend session before protected dispatch.');
   requireText(surface, /user\.isGuest[\s\S]*setAuthOpen\(true\)/, 'surface:guest-fail-closed', 'Guest execution fails closed into explicit authentication.');
   requireText(surface, /setActiveRunId\(accepted\.jobId\)/, 'surface:accepted-run-id', 'Only the backend-accepted persisted run id becomes current.');
