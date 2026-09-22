@@ -69,6 +69,16 @@ describe('DevChat Draft PR execution contract', () => {
     expect(startSection).not.toContain('Executor braucht GitHub-Zugang');
   });
 
+  it('binds Play-Release repository execution to the exact loaded commit head', () => {
+    const release = source('src/features/release/PlayReleaseChat.tsx');
+
+    expect(release).toContain('fetchDevChatRepoTree(parsedRepo)');
+    expect(release).toContain('readonly headSha: string;');
+    expect(release).toContain("/^[0-9a-f]{40}$/.test(args.target.headSha)");
+    expect(release).toContain('expectedHeadSha: args.target.headSha');
+    expect(release).toContain('Kein Repository-Job wurde gestartet.');
+  });
+
   it('does not mount the retired Rescue/ReSecure overlay and does not fall back to a simulator on the primary vNext surface', () => {
     const app = source('src/App.tsx');
     const surface = source('src/features/control-surface-vnext/App.tsx');

@@ -4,6 +4,7 @@ import {
   fetchDevChatWorkerHealth,
   fetchDevChatWorkerReply,
   fetchSovereignLlmRouteCatalog,
+  fetchDevChatRepoTree,
   parseDevChatGithubUrl,
   type DevChatWorkerDiagnostic,
   type DevChatWorkerMessage,
@@ -44,6 +45,7 @@ interface ChatEntry {
 interface ReleaseRepoTarget {
   readonly repoUrl: string;
   readonly branch: string;
+  readonly headSha: string;
   readonly label: string;
 }
 
@@ -264,9 +266,13 @@ export function PlayReleaseChat() {
   }): Promise<void> => {
     setActiveMenu('github');
     addMessage('system', `GitHub-Auftrag erkannt · ${args.target.label} · Start nur über die revisionsgebundene Agent-Runtime.`);
+    if (!/^[0-9a-f]{40}$/.test(args.target.headSha)) {
+      throw new Error('Repository-Run benötigt einen revisionsgebundenen 40-stelligen Commit-Head.');
+    }
     let snapshot = await agentClient.startRepositoryExecution({
       repoUrl: args.target.repoUrl,
       branch: args.target.branch,
+      expectedHeadSha: args.target.headSha,
       mission: args.actionTitle || args.text,
       evidenceText: args.text,
     });
@@ -464,14 +470,25 @@ export function PlayReleaseChat() {
 
     try {
       const parsedRepo = parseDevChatGithubUrl(text);
-      const nextRepoTarget = parsedRepo
-        ? {
-            repoUrl: parsedRepo.repoUrl,
-            branch: parsedRepo.branch,
-            label: `${parsedRepo.owner}/${parsedRepo.repo}`,
-          }
-        : repoTarget;
-      if (parsedRepo) setRepoTarget(nextRepoTarget);
+      let nextRepoTarget = repoTarget;
+      if (parsedRepo) {
+        const repoLoad = await fetchDevChatRepoTree(parsedRepo);
+        const headSha = repoLoad.snapshot?.headSha?.trim().toLowerCase() ?? '';
+        if (!repoLoad.ok || !repoLoad.snapshot || !/^[0-9a-f]{40}$/.test(headSha)) {
+          const errorText = repoLoad.error || 'Repository-Head konnte nicht revisionsgebunden gelesen werden.';
+          setRuntimeState('degraded');
+          setLastFailedText(text);
+          addMessage('system', `GitHub-Ziel blockiert: ${errorText} Kein Repository-Job wurde gestartet.`);
+          return;
+        }
+        nextRepoTarget = {
+          repoUrl: parsedRepo.repoUrl,
+          branch: parsedRepo.branch,
+          headSha,
+          label: `${parsedRepo.owner}/${parsedRepo.repo}`,
+        };
+        setRepoTarget(nextRepoTarget);
+      }
 
       if (nextRepoTarget) {
         const recentMessages = messages
