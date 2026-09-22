@@ -140,7 +140,7 @@ function run() {
   requireText(agentClient, /signal\.draftVerified === true[\s\S]*prStateVerified[\s\S]*signal\.readbackVerified === true[\s\S]*signal\.checksReadbackVerified === true/, 'client:github-readback', 'Draft PR success requires draft/open/head/check readback evidence.');
 
   requireText(chat, /value=\{text\}[\s\S]*setText\(event\.target\.value\)/, 'surface:composer-bound', 'Visible composer is bound to local advisory draft state only.');
-  requireText(chat, /onSendMessage=\{?onSendMessage\}?/, 'surface:composer-advisory', 'Composer sends only to the advisory chat callback.');
+  requireText(chat, /onSendMessage\?\.\(message\)/, 'surface:composer-advisory', 'Composer sends only to the advisory chat callback.');
   requireText(chat, /data-testid="message-actions-/[\s\S]*Auftrag starten/, 'surface:message-action-visible', 'Explicit order action is visible on stored messages.');
   forbidText(chat, /useSwarmRun|runSwarm|SOVEREIGN_SWARM|onClick=\{submitMission\}/, 'surface:no-swarm-boundary', 'vNext chat must not contain Swarm execution wiring or automatic mission dispatch.');
   requireText(advisoryRuntime, /ausschließlich Konversation und Beratung|advisory-only|ADVISORY/, 'advisory:no-execution', 'Advisory runtime explicitly forbids execution.');
