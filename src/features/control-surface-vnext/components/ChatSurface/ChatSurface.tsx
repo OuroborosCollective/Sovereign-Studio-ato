@@ -38,7 +38,7 @@ function MessageCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const human = message.sender === 'HUMAN' || message.role === 'human';
   const system = message.sender === 'SYSTEM' || message.role === 'system';
-  const actionable = human || message.role === 'assistant' || message.role === 'agent';
+  const actionable = human || (message.role === 'assistant' && message.sender !== 'RUNTIME_MONITOR') || message.role === 'agent';
 
   return (
     <motion.div initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} className={`flex gap-2.5 ${human ? 'justify-end' : 'justify-start'}`}>
