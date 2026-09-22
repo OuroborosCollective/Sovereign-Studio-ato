@@ -57,3 +57,7 @@
 ## 2025-08-13 - [Overriding Visible Buttons via ARIA Labels]
 **Learning:** Overriding a button's visible text (e.g., 'Repo-Snapshot laden') with an 'aria-label' that does not match or include that exact text violates the WCAG 'Label in Name' requirement. It also disrupts testing frameworks and standard selectors looking for the visible text.
 **Action:** For buttons with descriptive, dynamic text content, rely on the visible text for the accessible name, and use the 'title' attribute exclusively for stateful hover descriptions rather than using aria-label overrides.
+
+## 2026-09-22 - [Dynamic State Labels and Consistent Localization]
+**Learning:** Interactive components (like a send/dispatch button) that can be temporarily locked or disabled based on state (e.g., executing or empty input) need dynamic `aria-label` and `title` attributes. Furthermore, mixing localizations (like German ARIA labels in an English component) confuses screen readers.
+**Action:** Always provide state-dependent descriptive accessible names and native tooltips for interactive buttons. Additionally, verify the surrounding context language and use matching, consistent localization in all added accessible labels, tooltips, and status descriptions.

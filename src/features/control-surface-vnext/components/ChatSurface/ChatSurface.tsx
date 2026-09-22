@@ -90,7 +90,7 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
         <div className="theme-diamond-cut rounded-xl border border-[rgba(255,30,56,0.28)] bg-[var(--carbon-deep)] p-2 shadow-[0_0_24px_rgba(255,30,56,0.08)]">
           <textarea
             data-testid="mission__textarea"
-            aria-label="Mission an Sovereign"
+            aria-label="Mission to Sovereign"
             value={text}
             onChange={(event) => { setText(event.target.value); onTypingStateChange?.(event.target.value.length > 0); }}
             onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit(); } }}
@@ -100,7 +100,22 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
             placeholder={executing ? 'Mission locked while the persisted run is executing…' : 'Describe the mission. Runtime truth begins only after backend acceptance.'}
             className="w-full min-h-[72px] max-h-36 resize-none bg-transparent outline-none px-2 py-1.5 font-mono text-[11px] text-white placeholder:text-[var(--text-dim)] disabled:opacity-50"
           />
-          <div className="flex items-center justify-between gap-2 px-1 pt-1 border-t border-white/5"><div className="flex items-center gap-1 font-mono text-[8.5px] text-[var(--text-dim)]"><Cpu size={10} className="text-[var(--red-laser)]" /> ENTER dispatches · SHIFT+ENTER newline</div><motion.button whileTap={{ scale: 0.96 }} type="button" data-testid="builder__start-task" onClick={submit} disabled={!canSend} className="min-h-9 px-3 rounded-md bg-[var(--red-pulse)] text-white font-mono text-[10px] font-black flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed shadow-[0_0_12px_rgba(255,30,56,0.25)]"><Send size={11} /> DISPATCH</motion.button></div>
+          <div className="flex items-center justify-between gap-2 px-1 pt-1 border-t border-white/5">
+            <div className="flex items-center gap-1 font-mono text-[8.5px] text-[var(--text-dim)]">
+              <Cpu size={10} className="text-[var(--red-laser)]" /> ENTER dispatches · SHIFT+ENTER newline
+            </div>
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              type="button"
+              data-testid="builder__start-task"
+              onClick={submit}
+              disabled={!canSend}
+              title={executing ? 'Mission is locked' : text.trim().length === 0 ? 'Enter a mission to dispatch' : 'Dispatch mission'}
+              className="min-h-9 px-3 rounded-md bg-[var(--red-pulse)] text-white font-mono text-[10px] font-black flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed shadow-[0_0_12px_rgba(255,30,56,0.25)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--red-laser)]"
+            >
+              <Send size={11} /> DISPATCH
+            </motion.button>
+          </div>
         </div>
       </div>
     </section>
