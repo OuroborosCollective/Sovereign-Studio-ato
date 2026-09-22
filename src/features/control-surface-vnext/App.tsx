@@ -5,6 +5,8 @@ import { Code, Cpu, FolderGit2, GitMerge, Lock, Server, Terminal, Volume2, Volum
 import { useUserStore } from '../user/useUserStore';
 import { SovereignAdapterProvider, useSovereignAdapter } from './adapter/context';
 import type { SovereignBackendAdapter } from './adapter/interface';
+import { DEV_CHAT_WORKER_DEFAULT_MODEL, type DevChatWorkerMessage } from '../product/runtime/devChatWorkerBridge';
+import { fetchSovereignAdvisoryChatReply } from '../product/runtime/chatAdvisoryRuntime';
 import { ArchitectureModal } from './components/Architecture/ArchitectureModal';
 import { OperatorAuthModal } from './components/Auth/OperatorAuthModal';
 import { ChatSurface } from './components/ChatSurface/ChatSurface';
@@ -66,6 +68,8 @@ function Dashboard() {
   const [sessionRestoreAttempted, setSessionRestoreAttempted] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [isChatBusy, setIsChatBusy] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [audioMuted, setAudioMuted] = useState(getAudioMuted());
   const [authOpen, setAuthOpen] = useState(false);
   const [architectureOpen, setArchitectureOpen] = useState(false);
@@ -202,15 +206,86 @@ function Dashboard() {
   }, [job?.draftPR, job?.phase]);
 
   const currentPhase = job?.phase ?? fsmState.currentPhase;
+  const advisoryRuntimeContext = useMemo(() => {
+    if (!job) return 'active_run=none';
+    return [
+      `active_run=${job.runId}`,
+      `phase=${job.phase}`,
+      `source_status=${job.sourceStatus ?? 'unknown'}`,
+      `revision=${job.workspaceState.currentRevision || 'unverified'}`,
+      `next_action=${job.nextAction ?? 'none'}`,
+      job.error?.message ? `error=${job.error.message}` : 'error=none',
+    ].join('\\n');
+  }, [job]);
   const publishFailure = publishError instanceof Error ? publishError.message : prepareError instanceof Error ? prepareError.message : undefined;
 
-  const submitMission = async (mission: string) => {
+  const sendAdvisoryMessage = async (chatText: string) => {
+    const text = chatText.trim();
+    if (!text || isChatBusy) return;
+
+    const recentMessages: DevChatWorkerMessage[] = messages
+      .filter((message) => message.role === 'human' || message.role === 'assistant')
+      .slice(-8)
+      .map((message) => ({
+        role: message.role === 'human' ? 'user' : 'assistant',
+        content: message.content,
+      }));
+
+    setMessages((current) => [...current, {
+      id: `chat-owner-${Date.now()}`,
+      role: 'human',
+      sender: 'HUMAN',
+      content: text,
+      timestamp: new Date().toISOString(),
+    }]);
+    setChatError(null);
+    setIsChatBusy(true);
+
+    try {
+      const result = await fetchSovereignAdvisoryChatReply({
+        text,
+        recentMessages,
+        runtimeContext: advisoryRuntimeContext,
+        model: DEV_CHAT_WORKER_DEFAULT_MODEL,
+      });
+
+      if (!result.ok) {
+        setChatError('Sovereign kann gerade nicht antworten. Es wurde kein Auftrag gestartet.');
+        setMessages((current) => [...current, {
+          id: `chat-unavailable-${Date.now()}`,
+          role: 'system',
+          sender: 'SYSTEM',
+          content: 'CHAT-ANTWORT NICHT VERFÜGBAR. Keine Ausführung wurde gestartet.',
+          timestamp: new Date().toISOString(),
+        }]);
+        return;
+      }
+
+      setMessages((current) => [...current, {
+        id: `chat-sovereign-${Date.now()}`,
+        role: 'assistant',
+        sender: 'SOVEREIGN_SWARM',
+        content: result.content,
+        timestamp: new Date().toISOString(),
+      }]);
+    } finally {
+      setIsChatBusy(false);
+    }
+  };
+
+  const startOrderFromMessage = async (selectedText: string) => {
+    const mission = selectedText;
+    if (!mission.trim() || isChatBusy) return;
+    if (['DISPATCHING', 'PROVISIONING', 'EXECUTING', 'FINALIZING'].includes(currentPhase)) return;
+
     if (!sessionReady || !user || user.isGuest) {
       setMessages((current) => [...current, {
-        id: `auth-${Date.now()}`,
+        id: `auth-order-${Date.now()}`,
         role: 'system',
         sender: 'SYSTEM',
-        content: !sessionReady ? 'Backend session readback is still pending. No mission was sent.' : 'Repository execution requires an authenticated account. No mission was sent.',
+        content: !sessionReady
+          ? 'Der Backend-Session-Readback ist noch nicht bereit. Es wurde kein Auftrag gestartet.'
+          : 'Für einen Repository-Auftrag brauchst du zuerst eine authentifizierte Sitzung.',
         timestamp: new Date().toISOString(),
       }]);
       setAuthOpen(true);
@@ -218,22 +293,39 @@ function Dashboard() {
     }
 
     dispatchFsm({ type: 'SUBMIT_ORDER', payload: { objective: mission } });
-    setMessages((current) => [...current, { id: `owner-${Date.now()}`, role: 'human', sender: 'HUMAN', content: mission, timestamp: new Date().toISOString() }]);
+    setMessages((current) => [...current, {
+      id: `order-dispatch-${Date.now()}`,
+      role: 'system',
+      sender: 'SYSTEM',
+      content: '🚀 Ausgewählte Nachricht als Auftrag an Agent Zero übergeben. Der Text wurde vom Chat nicht umformuliert.',
+      timestamp: new Date().toISOString(),
+    }]);
+
     try {
-      const accepted = await swarmRun.mutateAsync({ prompt: mission, toolchains: selectedToolchain ? [selectedToolchain.id] : [], activeSkillIds, agentMode });
+      const accepted = await swarmRun.mutateAsync({
+        prompt: mission,
+        toolchains: selectedToolchain ? [selectedToolchain.id] : [],
+        activeSkillIds,
+        agentMode,
+      });
       setActiveRunId(accepted.jobId);
       dispatchFsm({ type: 'BACKEND_ACCEPTED', payload: { jobId: accepted.jobId } });
-      setMessages((current) => [...current.filter((message) => !message.id.startsWith('accepted-')), {
+      setMessages((current) => [...current, {
         id: `accepted-${accepted.jobId}`,
         role: 'assistant',
         sender: 'SOVEREIGN_SWARM',
-        content: `PERSISTED RUN ACCEPTED :: [${accepted.jobId}].\nAwaiting exact run/job/evidence readback. No completion or publication is implied.`,
+        content: `AUFTRAG ANGENOMMEN :: [${accepted.jobId}].\nDer Chat bleibt für Rückfragen verfügbar. Fortschritt und Ergebnis stammen aus dem echten Runtime-Readback.`,
         timestamp: new Date().toISOString(),
       }]);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      dispatchFsm({ type: 'EXECUTION_FAILED', payload: { error: message } });
-      setMessages((current) => [...current, { id: `failed-${Date.now()}`, role: 'system', sender: 'SYSTEM', content: `EXECUTION START FAILED :: ${message}`, timestamp: new Date().toISOString() }]);
+    } catch {
+      dispatchFsm({ type: 'EXECUTION_FAILED', payload: { error: 'Repository-Auftrag konnte nicht gestartet werden.' } });
+      setMessages((current) => [...current, {
+        id: `failed-${Date.now()}`,
+        role: 'system',
+        sender: 'SYSTEM',
+        content: 'Auftrag konnte nicht gestartet werden. Es wurde keine erfolgreiche Ausführung behauptet.',
+        timestamp: new Date().toISOString(),
+      }]);
     }
   };
 
@@ -249,7 +341,10 @@ function Dashboard() {
   const command = (
     <ChatSurface
       messages={messages}
-      onSendMessage={submitMission}
+      onSubmitOrder={startOrderFromMessage}
+      onSendMessage={sendAdvisoryMessage}
+      isChatBusy={isChatBusy}
+      chatError={chatError}
       jobPhase={currentPhase}
       activeJob={job}
       onAbortJob={activeRunId ? () => { void abort().catch(() => undefined); } : undefined}
