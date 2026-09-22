@@ -676,3 +676,18 @@ Erkenntnis: Fehlende Beobachtbarkeit ist nicht dasselbe wie No-Progress, und neu
 Evidence: Pre-Memory head `f0778ef1378c226a6bd7ba0dd9c4e049205e8836` auf unverändertem `main@e3875a43f530333aad5670bd450b299aa2216a54`; Agent Backend 35649838961, MCP 35649838965, Release Verification 35649838956, Boundary Ledger 35649838951, Integration Plan 35649838945 und Continuity 35649838981 jeweils SUCCESS; Runtime Unit Tests, Web+Android Build, Artifact Smoke, Playwright Smoke und Integration Gate SUCCESS; canonical/shipping Mirrors für causal_progress_lease, job_store, repository_execution und cag_self_healing 4/4 blob-identisch. Amplitude-Projekt 850948 enthält aktuell keine Events, daher wurde keine erfundene SCPL-Telemetrie ergänzt. Production bleibt UNVERIFIED, weil kein revisions-/digestgleicher PatchMon/Docker-Runtime-Readback verfügbar ist.
 Next safe step: Memory-Head exact erneut durch alle Required Checks prüfen; Draft PR weder mergen noch deployen, solange Runtime-Parität nicht separat real belegt ist.
 
+
+
+### 2026-09-22 — Advisory chat separated from explicit message execution
+Status: PARTIAL
+Task: Restore a real conversational LLM chat on the vNext eye/control-surface frontend while making Agent Zero execution explicit and message-selected.
+Decisions:
+- Normal chat input always uses the dedicated advisory LLM runtime; keywords such as “Auftrag starten” never authorize execution.
+- Every human/assistant message exposes a visible `⋯` action menu with `Auftrag starten`; clicking it passes that exact stored message text directly to the existing repository execution adapter.
+- Execution remains behind the existing authenticated backend/repository-job boundary. The chat LLM never constructs, rewrites or dispatches an execution request.
+- The advisory chat remains usable while a persisted job executes so status questions can be answered from runtime readback.
+Touched surfaces: `src/features/control-surface-vnext/App.tsx`, `src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx`, `src/features/product/runtime/chatAdvisoryRuntime.ts`, UX contract scan and runtime documentation.
+Evidence: Source inspection showed the former vNext composer bound normal input directly to execution; the repository adapter already owns `/api/user/agent/repository/run`. Focused advisory-runtime and ChatSurface regressions were added on the isolated branch; full CI/runtime readback remains pending.
+Learned: Conversation and execution are safer when separated by a user-visible capability boundary rather than by LLM intent interpretation.
+Open: Run focused tests, type-check, UX contract scan and build on the exact branch; then inspect CI/readback before merge or deployment.
+Next safe step: Create a Draft PR, let required checks run, and only merge after exact-head green evidence and owner approval.
