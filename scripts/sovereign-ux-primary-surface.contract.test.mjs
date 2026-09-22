@@ -35,7 +35,7 @@ describe('Sovereign vNext primary-surface contract', () => {
     const client = source('src/features/product/runtime/sovereignAgentClient.ts');
     const publication = source('src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx');
 
-    expect(surface).toContain('useSwarmRun');
+    expect(surface).toContain('runRepositoryExecution');
     expect(surface).toContain('useSovereignJob');
     expect(surface).toContain('setActiveRunId(accepted.jobId)');
     expect(repositoryAdapter).toContain("'/api/user/agent/repository/run'");
