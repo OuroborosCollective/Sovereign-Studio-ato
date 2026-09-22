@@ -41,7 +41,7 @@ describe('main app entry', () => {
     const publication = readSource('./features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx');
 
     expect(surface).toContain('SovereignAdapterProvider');
-    expect(surface).toContain('useSwarmRun');
+    expect(surface).toContain('runRepositoryExecution');
     expect(surface).toContain('useSovereignJob');
     expect(repositoryAdapter).toContain("'/api/user/agent/repository/run'");
     expect(repositoryAdapter).not.toContain("'/api/user/agent/swarm/run'");
