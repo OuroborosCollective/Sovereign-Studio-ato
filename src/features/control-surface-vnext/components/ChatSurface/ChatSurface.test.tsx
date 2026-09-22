@@ -66,4 +66,21 @@ describe('ChatSurface', () => {
     fireEvent.click(view.getByTestId('message-order-assistant-1'));
     expect(onSubmitOrder).not.toHaveBeenCalled();
   });
+  it('keeps runtime readback messages non-actionable', () => {
+    const view = render(
+      <ChatSurface
+        {...baseProps}
+        messages={[{
+          id: 'runtime-1',
+          role: 'assistant',
+          sender: 'RUNTIME_MONITOR',
+          content: 'PERSISTED RUN READBACK',
+          timestamp: '2026-09-22T10:00:00.000Z',
+        }]}
+      />,
+    );
+
+    expect(view.queryByTestId('message-actions-runtime-1')).toBeNull();
+  });
+
 });
