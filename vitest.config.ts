@@ -1,5 +1,7 @@
 import { defineConfig, configDefaults } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'url';
+import path from 'path';
 
 export default defineConfig({
   plugins: [react() as any],
@@ -14,5 +16,8 @@ export default defineConfig({
       'tests/e2e/**',
       'backend/tests/e2e/**',
     ],
+    alias: {
+      '@': path.resolve(path.dirname(fileURLToPath(import.meta.url)), './src'),
+    }
   },
 });
