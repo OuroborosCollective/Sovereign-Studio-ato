@@ -296,6 +296,21 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
     }
   }
 
+  async runRepositoryExecution(mission: string): Promise<{ jobId: string }> {
+    const normalizedMission = mission.trim();
+    if (!normalizedMission) throw new Error('Mission text is required.');
+    const repositoryUrl = extractGitHubRepositoryUrl(normalizedMission);
+    if (!repositoryUrl) {
+      throw new Error('Repository execution requires the repository-bound vNext adapter.');
+    }
+    const snapshot = await this.client.startRepositoryExecution({
+      mission: normalizedMission,
+      repoUrl: repositoryUrl,
+      branch: 'main',
+    });
+    return { jobId: snapshot.id };
+  }
+
   async runSwarm(
     prompt: string,
     _toolchains: string[],
