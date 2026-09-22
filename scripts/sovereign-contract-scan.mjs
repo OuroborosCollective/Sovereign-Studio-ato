@@ -201,6 +201,7 @@ function run() {
 
   requireText(surface, /ensureGuestSession\(\)[\s\S]*user\.isGuest[\s\S]*setAuthOpen\(true\)/, 'vnext:session-before-agent', 'vNext resolves backend session and fails guest execution closed into authentication.');
   requireText(surface, /runRepositoryExecution[\s\S]*setActiveRunId\(accepted\.jobId\)/, 'vnext:accepted-run', 'Only a backend-accepted persisted repository run id becomes current.');
+  forbidText(surface, /useSwarmRun|runSwarm|SOVEREIGN_SWARM|LiveWorkspaceMonitor/, 'vnext:no-legacy-execution-lane', 'vNext primary surface must not wire Swarm or the retired LiveWorkspaceMonitor into chat/execution.');
   forbidText(surface, /listJobs\(|RESTORE_LATEST_JOB/, 'vnext:no-history-auto-adopt', 'vNext must not auto-adopt historical Agent runs.');
   requireText(adapterContext, /from ['"]\.\/repository-bound-adapter['"]/, 'vnext:repository-adapter-active', 'vNext context instantiates the repository-bound production adapter.');
   requireText(repositoryAdapter, /extends SovereignProductionAdapterBase/, 'vnext:repository-adapter-inherits-publication', 'Repository-bound vNext preserves the production Draft-PR publication contract by inheritance.');
