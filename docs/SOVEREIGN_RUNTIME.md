@@ -267,3 +267,16 @@ Release checks should also include runtime/UX/live-path contract scans, Android 
 #504 Active blocker dedupe and honest status
 #505 Credential handling and Android clipboard guidance
 ```
+
+## vNext advisory chat boundary
+
+The vNext chat is a conversation surface, not an execution router.
+
+1. Composer input is checked by `secureInputGuard` before the message is stored or sent to the advisory LLM.
+2. Normal chat uses the dedicated advisory runtime only. It may explain architecture, discuss runtime readback, or answer questions.
+3. The advisory runtime never creates an execution contract, classifies intent, detects execution keywords, or dispatches work.
+4. A visible `⋯ → Auftrag starten` action on a concrete stored message is the only UI capability that starts repository execution.
+5. That action passes the exact stored message text to the existing repository-bound adapter and its canonical `/api/user/agent/repository/run` endpoint.
+6. Runtime/job/workspace/evidence readback remains the source of truth. The chat does not synthesize progress or completion.
+7. Swarm execution is not part of the vNext chat lane. The retired Live Workspace Monitor is not part of the vNext chat lane either; existing diagnostic surfaces remain separate.
+
