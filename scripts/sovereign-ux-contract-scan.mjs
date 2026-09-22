@@ -95,7 +95,8 @@ function run() {
     [adapter, 'The live HTTP adapter base is required.'],
     [repositoryAdapter, 'The injected repository-bound vNext adapter is required.'],
     [adapterContext, 'Adapter dependency injection boundary is required.'],
-    [chat, 'Mission command surface is required.'],
+    [chat, 'Sovereign advisory chat surface is required.'],
+    ['src/features/product/runtime/chatAdvisoryRuntime.ts', 'Dedicated advisory LLM runtime is required.'],
     [publication, 'Evidence-gated Draft PR publication surface is required.'],
     [operatorAuth, 'Backend-session operator authentication surface is required.'],
     [runtimeMonitor, 'Runtime readback projection is required.'],
@@ -137,12 +138,18 @@ function run() {
   requireText(agentClient, /jobPath\(jobId, '\/draft-pr\/create'\)/, 'client:draft-create-path', 'Canonical client owns the Draft PR create path.');
   requireText(agentClient, /signal\.draftVerified === true[\s\S]*prStateVerified[\s\S]*signal\.readbackVerified === true[\s\S]*signal\.checksReadbackVerified === true/, 'client:github-readback', 'Draft PR success requires draft/open/head/check readback evidence.');
 
-  requireText(chat, /value=\{text\}[\s\S]*setText\(event\.target\.value\)/, 'surface:composer-bound', 'Visible mission composer is bound to local command draft state only.');
+  requireText(chat, /value=\{text\}[\s\S]*setText\(event\.target\.value\)/, 'surface:composer-bound', 'Visible chat composer is bound to local chat state.');
+  requireText(chat, /onSendMessage\?\.\(mission\)/, 'surface:chat-send-only', 'Composer sends text only to the advisory chat callback and cannot dispatch execution directly.');
+  requireText(chat, /onStartOrder=\{onSubmitOrder\}/, 'surface:message-action-hook', 'Per-message execution is routed through the explicit message action callback.');
+  requireText(chat, /aria-label="Nachrichtenaktionen"/, 'surface:message-actions-visible', 'Human and assistant messages expose an explicit action menu.');
   requireText(chat, /data-testid="builder__start-task"[\s\S]*onClick=\{submit\}/, 'surface:send-visible', 'Visible dispatch button invokes the guarded submit handler.');
   requireText(chat, /event\.key === 'Enter'[\s\S]*submit\(\)/, 'surface:enter-send-bound', 'Enter uses the same guarded submit handler.');
   requireText(surface, /ensureGuestSession\(\)/, 'surface:session-readback', 'Control surface resolves backend session before protected dispatch.');
   requireText(surface, /user\.isGuest[\s\S]*setAuthOpen\(true\)/, 'surface:guest-fail-closed', 'Guest execution fails closed into explicit authentication.');
   requireText(surface, /setActiveRunId\(accepted\.jobId\)/, 'surface:accepted-run-id', 'Only the backend-accepted persisted run id becomes current.');
+  requireText(surface, /fetchSovereignAdvisoryChatReply\(/, 'surface:advisory-chat-runtime', 'Normal chat messages use the dedicated advisory LLM runtime.');
+  requireText(surface, /onSubmitOrder=\{startOrderFromMessage\}/, 'surface:explicit-message-execution', 'Agent Zero execution is reachable only from explicit message selection.');
+  forbidText(surface, /onSendMessage=\{submitMission\}|const submitMission = async/, 'surface:no-chat-to-executor-binding', 'The chat callback must not be bound directly to the executor.');
   forbidText(surface, /listJobs\(|RESTORE_LATEST_JOB/, 'surface:no-history-auto-adopt', 'vNext must not auto-adopt historic Agent jobs.');
 
   requireText(publication, /READ DRAFT-PR GATE/, 'publication:prepare-visible', 'Draft PR prepare is a separate visible action.');
