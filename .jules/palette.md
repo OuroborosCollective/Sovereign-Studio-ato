@@ -57,3 +57,7 @@
 ## 2025-08-13 - [Overriding Visible Buttons via ARIA Labels]
 **Learning:** Overriding a button's visible text (e.g., 'Repo-Snapshot laden') with an 'aria-label' that does not match or include that exact text violates the WCAG 'Label in Name' requirement. It also disrupts testing frameworks and standard selectors looking for the visible text.
 **Action:** For buttons with descriptive, dynamic text content, rely on the visible text for the accessible name, and use the 'title' attribute exclusively for stateful hover descriptions rather than using aria-label overrides.
+
+## 2025-08-14 - [Accessible Event Timelines and Event Streams]
+**Learning:** Collapsible task event streams and timelines benefit from semantic list containers (`<ul role="list">` and `<li>`) with decorative status symbols/bullets explicitly marked with `aria-hidden="true"`. Suppressing redundant `aria-label` overrides on buttons with visible text prevents WCAG 'Label in Name' failures while native `title` tooltips expose truncated event details to hover users.
+**Action:** Always wrap event history logs in `<ul role="list">` with `<li>` items, set `aria-hidden="true"` on status icons, and provide native `title` tooltips for detail strings.

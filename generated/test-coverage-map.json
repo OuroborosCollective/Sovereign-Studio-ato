@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-09-22T16:49:33.132Z",
+  "generatedAt": "2026-09-22T23:29:08.562Z",
   "discovery": {
     "scope": "tracked repository test conventions",
     "excludedDirectories": [

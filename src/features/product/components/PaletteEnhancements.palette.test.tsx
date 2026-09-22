@@ -22,6 +22,7 @@ import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
+import { AgentWorkTimeline } from './AgentWorkTimeline';
 import { TestRunnerResultCard } from './TestRunnerResultCard';
 import { Ampel } from './Ampel';
 import { PaywallModal } from '../../billing/PaywallModal';
@@ -1209,6 +1210,81 @@ describe('Palette Accessibility Enhancements', () => {
       const hiddenElements = container.querySelectorAll('[aria-hidden="true"]');
       // 3 status light dots + 1 non-compact status text label = 4 hidden elements
       expect(hiddenElements.length).toBe(4);
+    });
+  });
+
+  describe('AgentWorkTimeline Accessibility and Micro-UX Enhancements', () => {
+    it('renders event list with role="list", aria-hidden icons, title tooltips, and focus-visible ring styles', () => {
+      const mockSnapshot = {
+        id: 'work-timeline-123',
+        state: 'draft_pr_ready' as const,
+        jobId: 'job-99',
+        branchName: 'feature/timeline-ux',
+        commitSha: 'c0ff33112233',
+        repoFullName: 'owner/timeline-repo',
+        draftPrUrl: 'https://github.com/owner/timeline-repo/pull/1',
+        events: [
+          { id: 'ev-1', ts: Date.now() - 5000, state: 'intent_detected' as const, label: 'Auftrag erkannt', detail: 'Analysis complete' },
+          { id: 'ev-2', ts: Date.now() - 4000, state: 'executor_started' as const, label: 'Executor gestartet' },
+          { id: 'ev-3', ts: Date.now() - 3000, state: 'patch_generated' as const, label: 'Patch generiert' },
+          { id: 'ev-4', ts: Date.now() - 2000, state: 'tests_passed' as const, label: 'Tests bestanden' },
+          { id: 'ev-5', ts: Date.now() - 1000, state: 'draft_pr_ready' as const, label: 'Draft PR erstellt' },
+        ],
+        created: Date.now() - 6000,
+        updated: Date.now() - 1000,
+      };
+
+      const onOpenPr = vi.fn();
+      const onViewDiff = vi.fn();
+
+      const { container } = render(
+        <AgentWorkTimeline
+          snapshot={mockSnapshot}
+          onOpenPr={onOpenPr}
+          onViewDiff={onViewDiff}
+        />
+      );
+
+      const region = screen.getByRole('region', { name: 'Agent Work Timeline' });
+      expect(region).toBeInTheDocument();
+
+      const list = screen.getByRole('list', { name: 'Ereignisprotokoll' });
+      expect(list).toBeInTheDocument();
+
+      const listItems = screen.getAllByRole('listitem');
+      expect(listItems.length).toBeGreaterThan(0);
+
+      // Verify toggle button for hidden events
+      const expandBtn = screen.getByRole('button', { name: '1 ältere Ereignisse anzeigen' });
+      expect(expandBtn).toHaveAttribute('title', '1 ältere Ereignisse anzeigen');
+      expect(expandBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(expandBtn);
+
+      const collapseBtn = screen.getByRole('button', { name: 'Weniger Ereignisse anzeigen' });
+      expect(collapseBtn).toHaveAttribute('title', 'Weniger Ereignisse anzeigen');
+      expect(collapseBtn).toHaveClass('focus-visible:ring-2');
+
+      // Verify metadata tooltips
+      expect(screen.getByTitle('owner/timeline-repo')).toBeInTheDocument();
+      expect(screen.getByTitle('feature/timeline-ux')).toBeInTheDocument();
+      expect(screen.getByTitle('Commit SHA: c0ff33112233')).toBeInTheDocument();
+      expect(screen.getByTitle('Analysis complete')).toBeInTheDocument();
+
+      // Action buttons
+      const openPrBtn = screen.getByRole('button', { name: 'PR öffnen' });
+      expect(openPrBtn).toHaveAttribute('title', 'Draft PR auf GitHub öffnen');
+      expect(openPrBtn).toHaveClass('focus-visible:ring-2');
+
+      const viewDiffBtn = screen.getByRole('button', { name: 'Diff ansehen' });
+      expect(viewDiffBtn).toHaveAttribute('title', 'Diff-Vorschau der Änderungen anzeigen');
+      expect(viewDiffBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(openPrBtn);
+      expect(onOpenPr).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(viewDiffBtn);
+      expect(onViewDiff).toHaveBeenCalledTimes(1);
     });
   });
 });
