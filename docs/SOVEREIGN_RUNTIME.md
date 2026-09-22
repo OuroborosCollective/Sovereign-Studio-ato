@@ -12,18 +12,51 @@ The UI may only display that truth.
 
 ## Truth path
 
-The current runtime path is:
+The product separates conversation from execution:
 
-1. A chat message or setup action is received.
-2. The message is classified as normal chat, local status question, repo load, write intent, executor intent or repair/inspection request.
-3. A real GitHub repository tree is loaded when needed.
-4. Write intents are blocked until GitHub access is validated through the GitHub API for the loaded repository.
-5. The runtime chooses the smallest safe capability route.
-6. The Sovereign Action Stream records route decisions, blockers and results.
-7. Generated changes are reviewed by functional guards and file review.
-8. Draft PR publishing creates a branch, tree, commit and Draft PR only after guards pass.
-9. Workflow Watch reads GitHub Actions/check status for the produced commit.
-10. UI/Coach state is derived from runtime state, not DOM scraping, fake progress or provider text alone.
+1. A user message enters the advisory chat path.
+2. The LLM may answer, explain architecture, ask for missing information, or discuss implementation options. It never authorizes or dispatches execution.
+3. Human and assistant chat messages remain ordinary conversation records. No keyword, phrase or LLM intent classification starts an order.
+4. Each human and assistant message exposes an explicit UI action: `⋯ → Auftrag starten`.
+5. Only that user action passes the exact selected message text into the existing repository execution adapter.
+6. The repository adapter sends the selected text to the direct persisted repository-job endpoint (`/api/user/agent/repository/run`) and receives the backend job identity.
+7. Runtime/job/evidence readback remains the source of truth for execution status, blockers, tests, Draft PRs and publication.
+8. The chat may explain runtime state using readback facts, but it cannot create or upgrade those facts.
+9. The Sovereign Action Stream records explicit execution route decisions, blockers and results.
+10. UI/Coach state is derived from runtime state, not DOM scraping, fake progress, provider prose, or LLM intent guesses.
+
+## Advisory chat / explicit execution boundary
+
+The advisory LLM and Agent Zero are intentionally separate capabilities.
+
+```text
+Chat message
+    │
+    ▼
+Advisory LLM
+    │
+    ├── answer / architecture discussion / clarification
+    │
+    └── never executes
+
+Human selects one concrete message
+    │
+    ▼
+⋯ → Auftrag starten
+    │
+    ▼
+existing repository execution adapter
+    │
+    ▼
+Agent Zero / persisted job
+    │
+    ▼
+Runtime + Evidence + PatchMon readback
+```
+
+The action callback receives the selected chat message content directly. It must not re-run natural-language intent classification, ask an LLM to rewrite the task, or infer a different mission from the conversation.
+
+While an execution is active, the advisory chat remains available for questions. Any execution update shown in chat is a projection of readback state; it does not originate from the chat model.
 
 ## Runtime route categories
 
