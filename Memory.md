@@ -689,3 +689,18 @@ Evidence: Original PR #2057 had all available CI lanes successful and failed onl
 Learned: A stale but clean security fix should be re-derived against current ownership rather than merged through a divergent branch.
 Open: Current-main branch needs exact-head CI/runtime readback before merge.
 Next safe step: Create a Draft PR, require all checks, then merge only after green exact-head evidence.
+
+### 2026-09-22 — vNext advisory chat re-derived without Swarm or legacy Live Monitor
+Status: SOURCE_PATCHED; exact-head CI/runtime evidence pending.
+
+Änderung: Die vNext-Chat-Lane wurde auf dem aktuellen `main@af6f9051489aa4bdc8eb67021006a4fcb4ccf4ac` neu abgeleitet. Der Composer spricht ausschließlich mit dem Advisory-LLM. Eine sichtbare `⋯ → Auftrag starten` Aktion übergibt den exakten gespeicherten Nachrichtentext direkt an den bestehenden repository-bound Adapter und dessen `/api/user/agent/repository/run` Grenze.
+
+Erkenntnis: Swarm und der frühere Live Workspace Monitor dürfen keine versteckte zweite Wahrheit oder Ausführungsroute im neuen Chat bilden. Ebenso darf keine Keyword-/Intent-Logik aus Konversation automatisch eine Ausführung ableiten.
+
+Sicherheitsregel: `evaluateInputPolicy` wird vor Chat-Speicherung und Advisory-LLM-Aufruf ausgeführt; erkannte Secrets werden nicht als Chatnachricht oder Prompt weitergereicht.
+
+Evidence: Neuer Branch `fix/chat-advisory-current-main`; Advisory-Runtime, ChatSurface-Regressionen, Repository-Execution-Contract und UX-/Truth-Contract-Scans aktualisiert. `useSwarmRun`, `SOVEREIGN_SWARM` und `LiveWorkspaceMonitor` sind aus der vNext-Chat-Surface entfernt.
+
+Open: Exact-head Required Checks, Review und Runtime-Readback stehen noch aus.
+Next safe step: Draft PR erstellen, CI terminal abwarten, Review-Threads prüfen und erst danach unter Owner-Freigabe über Merge entscheiden.
+
