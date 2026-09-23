@@ -731,3 +731,13 @@ Evidence: Evidence Flywheel integration merged as main commit `9eb27019aeea7b858
 Learned: Post-merge source readback can expose shell-boundary defects that static integration contracts did not catch; the smallest causal repair is preferable to test relaxation or a second implementation path.
 Open: PR #2073 still needs the normal merge gate and post-merge main/runtime readback; no live PatchMon/host runtime claim is made because no remote device was available.
 Next safe step: Merge the exact verified head, resolve the new main revision, then repeat installer, CI and applicable runtime identity/readback checks.
+
+### 2026-09-23 — Hostinger sovereign-toolchain dotenv boundary repair
+Status: PARTIAL — repository fix prepared; Hostinger update revalidation pending
+Task: Remove an unnecessary .env dependency from tools/sovereign-toolchain/docker-compose.yml that can cause Hostinger to reject the project before runtime values are resolved.
+Decisions: Keep BROKER_GID and SOVEREIGN_MCP_IMAGE dynamic and immutable in the MCP deployment path; do not commit host-specific values or secrets. The toolchain Compose file contains no references requiring those variables, so the redundant env_file: .env declaration is removed.
+Touched surfaces: tools/sovereign-toolchain/docker-compose.yml; tools/sovereign-toolchain/tests/test_compose_contract.py.
+Evidence: exact main baseline 5511c638e8ba0384420979692dd63ed7ec1d4b9d; Compose before SHA-256 54e090ca6695ba62c42005d5db174b5e6896e399f5399724fb35eb5cdff6f347; after SHA-256 57ce56a785e40f08c4c3ec5f0648b936b899ee8161c20378cdd9c4f96a30c09a; repository schema diagnostics CLEAR; diff is exactly two deleted env_file lines plus one new regression test.
+Learned: Hostinger should not inherit MCP-only environment requirements merely because the toolchain Compose file declares a blanket .env file; host-specific broker/image identity remains owned by the MCP installer and runtime.
+Open: New draft PR and exact-head GitHub regression are pending; actual Hostinger revalidation still requires the Hostinger project endpoint/configuration to be reachable.
+Next safe step: publish the Draft PR, require terminal CI, then retry the Hostinger update and read back the project state.
