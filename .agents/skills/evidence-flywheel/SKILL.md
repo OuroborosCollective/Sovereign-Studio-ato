@@ -160,7 +160,7 @@ Never:
 - treat self-grading as independent verification;
 - infer runtime success from repository source or CI alone;
 - treat consent as evidence of execution;
-- persist a synthetic snapshot as live runtime truth;
+- persist a fake snapshot as live runtime truth;
 - introduce a second approval, registry or evidence authority;
 - reintroduce Swarm or awareness-monitor execution paths;
 - reintroduce LiteLLM routing.
