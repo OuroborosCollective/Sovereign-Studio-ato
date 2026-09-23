@@ -50,6 +50,7 @@ from .job_store import append_agent_evidence_anchor, append_agent_event, append_
 from .repository_execution import (
     RepositoryExecutionError,
     RepositoryExecutionTransientError,
+    configured_repository_url,
     cancel_repository_a2a_job,
     is_repository_a2a_job,
     reconcile_repository_execution,
@@ -1259,6 +1260,34 @@ def register_sovereign_agent_routes(
             }), status_code
         finally:
             _close(conn)
+
+    @app.route("/api/user/agent/repository/head", methods=["POST"])
+    @require_session
+    def user_read_repository_head():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        user_id = _current_session_user_id()
+        github_token, token_error = _github_access_token_for_session(body, user_id)
+        if token_error is not None:
+            return token_error
+        try:
+            repository = body.get("repository") or body.get("repoUrl") or configured_repository_url()
+            branch = body.get("branch") or body.get("baseBranch") or "main"
+            revision = resolve_github_head(repository, branch, token=github_token)
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "repository": revision["repository"],
+                "branch": revision["baseBranch"],
+                "headSha": revision["baseSha"],
+            }), 200
+        except (ValueError, HTTPError, URLError, TimeoutError) as exc:
+            return jsonify({
+                "ok": False,
+                "code": "repository_head_unverified",
+                "error": redact_secret_text(exc, 240),
+            }), 422
 
     @app.route("/api/user/agent/github-access/scope", methods=["POST"])
     @require_session
