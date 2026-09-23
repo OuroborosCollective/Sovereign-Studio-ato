@@ -689,3 +689,34 @@ Evidence: Original PR #2057 had all available CI lanes successful and failed onl
 Learned: A stale but clean security fix should be re-derived against current ownership rather than merged through a divergent branch.
 Open: Current-main branch needs exact-head CI/runtime readback before merge.
 Next safe step: Create a Draft PR, require all checks, then merge only after green exact-head evidence.
+### 2026-09-23 — Evidence Flywheel + consent boundary integration
+Status: PARTIAL — source patch and Draft PR created; exact-head CI/runtime verification pending
+Task: Integrate vendor-neutral evaluation patterns from the supplied skills archive into Sovereign without creating a second runtime, registry, approval system or evidence truth layer.
+Decisions: Add the revision-bound Evidence Flywheel skill to agent/runtime surfaces; bind engineering work to real baseline → bounded execution → causal failure analysis → minimal repair → regression/benchmark → independent readback; extend the existing consent pattern with Action Preview, authority/scope binding, causal Action Receipt and asynchronous revocation checks; preserve Agent Zero as the repository executor and do not reintroduce Swarm, awareness-monitor execution or LiteLLM.
+Touched surfaces: AGENTS.md; .agents/skills/evidence-flywheel/; tools/sovereign-chatgpt-mcp/skills/sovereign-evidence-flywheel/; existing consent/operational-assurance skills; evidence-flywheel architecture doc; installer contract; regression contract test.
+Evidence: Current main baseline 7e1aa5e354807ade245486ae9f4c3bb6ee495e53; Draft PR #2071 head before this Memory append 88f550ea29ab38b77d404a35405b231607e0dd6b; exact-head GitHub Actions were observed running/queued, not green. Supplied archive SHA-256 dbfb60b5e0fbd84c2fbf16c1ae3d527cfb3782e7455d896a9e6749781e5c8787.
+Learned: The useful archive contribution is the evaluation discipline itself; Sovereign already owns the necessary architecture, consent, registry, benchmark, CI and readback primitives, so duplicating them would increase drift rather than reduce it.
+Open: New Memory append changes the PR head; exact-head CI, runtime identity, PatchMon readback and any merge remain pending.
+Next safe step: Re-read this exact branch head, require terminal checks and only then consider the normal Owner/merge gate.
+
+
+### 2026-09-23 — Evidence Flywheel contract regression repair
+Status: PARTIAL — source regression repaired; exact-head revalidation pending
+Task: Repair the exact-head MCP gate failure introduced by the Evidence Flywheel integration.
+Decisions: Keep the regression test strict and align the canonical/packaged skill wording instead of weakening the assertion.
+Touched surfaces: `.agents/skills/evidence-flywheel/SKILL.md`, `tools/sovereign-chatgpt-mcp/skills/sovereign-evidence-flywheel/SKILL.md`.
+Evidence: Exact-head `9e9866252e786e2846037c98e52c25b97e28617a` had 1066 passed / 12 skipped / 1 failed; the sole failure was `test_evidence_flywheel_contract_contains_required_boundaries` because `causal failure-family analysis` was absent while the semantically equivalent `failure-family analysis` was present. The failing MCP workflow was `Sovereign ChatGPT MCP` run `35805757831`, job `107006753984`; all other terminal PR #2071 runs were successful, and all five PR #483 runs were successful.
+Learned: Contract tests must remain exact enough to protect the intended method, while canonical text should expose the required invariant unambiguously; mirror parity is preserved.
+Open: The repair changes the PR head, so no green claim or merge is valid until the new exact head is re-run through all required gates.
+Next safe step: Re-read the new PR head, require terminal exact-head CI, then perform the required independent/runtime readbacks before any merge decision.
+
+
+### 2026-09-23 — Evidence Flywheel mirror-contract regression repair
+Status: PARTIAL — source repair committed; exact-head revalidation pending
+Task: Repair the second MCP contract regression on PR #2071 without weakening the regression suite.
+Decisions: Keep the exact contract assertions; align the canonical and packaged flywheel skills byte-for-byte, expose the required Action Preview wording in both, and use the contract’s required `fake snapshot` invariant rather than removing the guard.
+Touched surfaces: `.agents/skills/evidence-flywheel/SKILL.md`; `tools/sovereign-chatgpt-mcp/skills/sovereign-evidence-flywheel/SKILL.md`.
+Evidence: Exact-head `58e291a3c56aa2a30f9d2461390ef373b7ca9b09` MCP run `35809701860` failed 2/1067 tests: canonical/runtime mirror parity and the required `fake snapshot` wording. The repair commits are `60acd77522d024af792e38e7937e282fe4dd4441` and `8e2cbfdc3cf8fd1d027f1d6dd13ed9ad1e89a695`; the packaged mirror now uses the canonical content.
+Learned: Contract tests are correctly detecting both semantic wording drift and mirror divergence; the right fix is canonical contract alignment, not test relaxation.
+Open: The new head still needs terminal exact-head CI and independent runtime/readback evidence before merge.
+Next safe step: Re-read the final branch head, require all required gates to finish green, then perform the normal runtime/PatchMon evidence checks before any merge.

@@ -214,6 +214,57 @@ function MyContainer() {
 }
 ```
 
+## Evidence-bound Consent 2.0
+
+The consent gate is an **authority boundary**, not an evidence boundary. A successful approval means only that the specified action was authorized.
+
+Before an external or otherwise sensitive effect, build a visible **Action Preview** bound to:
+
+- mission/job identity;
+- action/effect class;
+- target and exact revision;
+- allowed scope;
+- payload/content hash where relevant;
+- expected effect;
+- required readback.
+
+Then enforce this sequence:
+
+```
+Action Preview
+→ Authority / scope resolution
+→ explicit approval
+→ effect
+→ Action Receipt
+→ independent readback
+```
+
+### Receipt and revocation rules
+
+An Action Receipt records the actual effect identity and must not be synthesized from the preview. It is valid only for the exact mission/resource/revision/scope it describes.
+
+Revocation is checked on the asynchronous effect path as well as when approval is granted. A previously approved action must not execute after a newer `REVOKED` / `SUPERSEDED` authority head.
+
+A receipt never proves deployment or runtime state by itself. The target system must be read back independently.
+
+### Determinism and replay
+
+Do not use wall-clock randomness or mutable global consent state as evidence. Mission-bound authorization should use the existing canonical mission/job identity and revision/payload binding. Replays of the same effect must be explicitly classified through the existing idempotency checks.
+
+### Regression requirements
+
+Every new consent boundary must cover at least:
+
+1. no approval → blocked;
+2. exact approval → allowed;
+3. wrong mission/revision/scope → blocked;
+4. revoked/superseded approval → blocked;
+5. repeated effect → idempotency behavior is explicit;
+6. receipt exists only after the real effect;
+7. independent readback remains separate from consent.
+
+Do not use consent logs, UI state, mocks, or a model statement as substitute runtime evidence.
+
 ## Key Design Principles
 
 ### One-Time Consent Per Mission

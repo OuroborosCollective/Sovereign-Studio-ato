@@ -43,6 +43,10 @@ action
 
 Do not advance because a button is visible, a model says it succeeded, an exit code is zero, telemetry emitted an event or a container is merely alive.
 
+Every non-trivial engineering change follows the repository Evidence Flywheel: freeze the exact revision, establish a real baseline, execute only through bounded authority, classify the first causal failure, patch the smallest canonical owner, rerun the baseline and neighboring regressions, then independently read back the target system. Evaluation thresholds, flaky cases and expected outputs must never be weakened merely to obtain a green result.
+
+For sensitive or external effects, the minimum effect contract is: Action Preview → authority/scope resolution → explicit approval when required → effect → Action Receipt → independent target-system readback. Approval authorizes an effect; it does not prove that the effect happened. Asynchronous effects must re-check current authority/revocation before execution.
+
 ## Truth classes
 
 Use explicit states rather than a generic `done`:
