@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-09-22T16:49:33.132Z",
+  "generatedAt": "2026-09-23T18:14:18.992Z",
   "discovery": {
     "scope": "tracked repository test conventions",
     "excludedDirectories": [
@@ -31,7 +31,7 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 791,
+  "totalTestFiles": 793,
   "testRoots": {
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
@@ -48,9 +48,9 @@
     "tests": 2,
     "tests/e2e": 5,
     "tools": 3,
-    "tools/sovereign-chatgpt-mcp/tests": 107,
+    "tools/sovereign-chatgpt-mcp/tests": 108,
     "tools/sovereign-github-patch-mcp/tests": 4,
-    "tools/sovereign-toolchain/tests": 7
+    "tools/sovereign-toolchain/tests": 8
   },
   "files": [
     {
@@ -10186,6 +10186,14 @@
       "category": "python-suite"
     },
     {
+      "file": "tools/sovereign-chatgpt-mcp/tests/test_evidence_flywheel_skill_contract.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-chatgpt-mcp/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
       "file": "tools/sovereign-chatgpt-mcp/tests/test_fleet_maintenance.py",
       "language": "python",
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
@@ -10798,6 +10806,14 @@
     },
     {
       "file": "tools/sovereign-toolchain/tests/test_ci_evidence.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-toolchain/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-toolchain/tests/test_compose_contract.py",
       "language": "python",
       "testRoot": "tools/sovereign-toolchain/tests",
       "gates": [],

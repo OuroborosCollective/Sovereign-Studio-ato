@@ -57,3 +57,7 @@
 ## 2025-08-13 - [Overriding Visible Buttons via ARIA Labels]
 **Learning:** Overriding a button's visible text (e.g., 'Repo-Snapshot laden') with an 'aria-label' that does not match or include that exact text violates the WCAG 'Label in Name' requirement. It also disrupts testing frameworks and standard selectors looking for the visible text.
 **Action:** For buttons with descriptive, dynamic text content, rely on the visible text for the accessible name, and use the 'title' attribute exclusively for stateful hover descriptions rather than using aria-label overrides.
+
+## 2025-01-20 - Dynamic Title for Disabled Submit Button
+**Learning:** Providing a dynamic `title` attribute for disabled state buttons explains to users *why* the button is unavailable (e.g., 'Enter a message' vs 'Mission executing'), avoiding confusion without violating WCAG 2.5.3 by altering the `aria-label`.
+**Action:** Always add state-aware `title` attributes to primary action buttons that can be disabled based on input or processing state.
