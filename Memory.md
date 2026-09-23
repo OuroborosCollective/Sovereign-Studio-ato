@@ -689,3 +689,12 @@ Evidence: Original PR #2057 had all available CI lanes successful and failed onl
 Learned: A stale but clean security fix should be re-derived against current ownership rather than merged through a divergent branch.
 Open: Current-main branch needs exact-head CI/runtime readback before merge.
 Next safe step: Create a Draft PR, require all checks, then merge only after green exact-head evidence.
+### 2026-09-23 — Evidence Flywheel + consent boundary integration
+Status: PARTIAL — source patch and Draft PR created; exact-head CI/runtime verification pending
+Task: Integrate vendor-neutral evaluation patterns from the supplied skills archive into Sovereign without creating a second runtime, registry, approval system or evidence truth layer.
+Decisions: Add the revision-bound Evidence Flywheel skill to agent/runtime surfaces; bind engineering work to real baseline → bounded execution → causal failure analysis → minimal repair → regression/benchmark → independent readback; extend the existing consent pattern with Action Preview, authority/scope binding, causal Action Receipt and asynchronous revocation checks; preserve Agent Zero as the repository executor and do not reintroduce Swarm, awareness-monitor execution or LiteLLM.
+Touched surfaces: AGENTS.md; .agents/skills/evidence-flywheel/; tools/sovereign-chatgpt-mcp/skills/sovereign-evidence-flywheel/; existing consent/operational-assurance skills; evidence-flywheel architecture doc; installer contract; regression contract test.
+Evidence: Current main baseline 7e1aa5e354807ade245486ae9f4c3bb6ee495e53; Draft PR #2071 head before this Memory append 88f550ea29ab38b77d404a35405b231607e0dd6b; exact-head GitHub Actions were observed running/queued, not green. Supplied archive SHA-256 dbfb60b5e0fbd84c2fbf16c1ae3d527cfb3782e7455d896a9e6749781e5c8787.
+Learned: The useful archive contribution is the evaluation discipline itself; Sovereign already owns the necessary architecture, consent, registry, benchmark, CI and readback primitives, so duplicating them would increase drift rather than reduce it.
+Open: New Memory append changes the PR head; exact-head CI, runtime identity, PatchMon readback and any merge remain pending.
+Next safe step: Re-read this exact branch head, require terminal checks and only then consider the normal Owner/merge gate.
