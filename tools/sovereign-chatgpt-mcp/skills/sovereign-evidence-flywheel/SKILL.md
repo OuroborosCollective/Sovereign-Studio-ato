@@ -15,7 +15,7 @@ Canonical loop:
 exact revision
 → baseline
 → bounded execution
-→ failure-family analysis
+→ causal failure-family analysis
 → minimal fix
 → regression + baseline comparison
 → independent target readback
