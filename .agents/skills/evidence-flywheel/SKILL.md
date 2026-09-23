@@ -55,11 +55,11 @@ Do not lower a threshold, remove a failing case, or call self-grading sufficient
 Every mutation follows the existing Sovereign path:
 
 ```
-action preview
-→ authority / scope check
+Action Preview
+→ Authority / scope resolution
 → explicit approval when required
 → effect
-→ action receipt
+→ Action Receipt
 → independent readback
 ```
 
