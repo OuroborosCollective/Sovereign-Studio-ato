@@ -385,7 +385,16 @@ GENERIERE kompletten, produktionsreifen Code. Antworte mit Dateipfaden und Code.
   private extractGoals(analysis: string): string[] {
     const match = analysis.match(/REFACTOR_TASKS?[:\s]*([\s\S]*?)(?=#|$)/i);
     if (!match) return [];
-    return match[1].split(/[-•*]/).filter(s => s.trim()).map(s => s.trim()).filter(Boolean);
+    // ⚡ Bolt: Consolidating chained .filter().map().filter() into a single-pass loop reduces iteration overhead and allocations.
+    const parts = match[1].split(/[-•*]/);
+    const goals: string[] = [];
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (trimmed) {
+        goals.push(trimmed);
+      }
+    }
+    return goals;
   }
 
   private extractTasks(analysis: string): RefactorTask[] {
