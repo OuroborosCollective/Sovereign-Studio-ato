@@ -689,3 +689,21 @@ Evidence: Original PR #2057 had all available CI lanes successful and failed onl
 Learned: A stale but clean security fix should be re-derived against current ownership rather than merged through a divergent branch.
 Open: Current-main branch needs exact-head CI/runtime readback before merge.
 Next safe step: Create a Draft PR, require all checks, then merge only after green exact-head evidence.
+
+### 2026-09-23 — N+1 hardening current-main correction
+Status: VERIFIED repository regression; no new code delta required
+Task: Reconcile the 2026-09-22 N+1 malformed-JSON hardening note against the authoritative current main.
+Decisions:
+- Treat current main as canonical when the target endpoints already contain the intended fail-closed dictionary guard.
+- Do not create a duplicate code patch merely to reproduce a change that is already present on the exact current main.
+Touched surfaces: backend/n_plus_one/routes.py, scripts/sovereign-backend/n_plus_one/routes.py, backend/tests/test_n1_json_validation.py were verified read-only on current main.
+Evidence:
+- Current main/workspace revision 7e1aa5e354807ade245486ae9f4c3bb6ee495e53.
+- pytest backend/tests/test_n1_json_validation.py -q executed through the approved repository runner: 1 passed.
+- python3 -m py_compile scripts/sovereign-backend/app.py passed.
+- git diff --check passed.
+- Canonical/mirror report for both N+1 route files: mismatchCount=0.
+- Historical PR #2057 is closed and unmerged; its successful CI does not substitute for current-main evidence.
+Learned: The prior PARTIAL entry was stale relative to current main. The requested code hardening is already present; reapplying it would create redundant churn.
+Open: No N+1 code delta remains in this exact-main workspace. A production-live claim still requires the normal revision/runtime deployment readback and must not be inferred from repository tests alone.
+Next safe step: Keep main unchanged, retain this correction as provenance, and use the next evidence-gated integration target rather than manufacturing a duplicate patch.
