@@ -720,3 +720,14 @@ Evidence: Exact-head `58e291a3c56aa2a30f9d2461390ef373b7ca9b09` MCP run `3580970
 Learned: Contract tests are correctly detecting both semantic wording drift and mirror divergence; the right fix is canonical contract alignment, not test relaxation.
 Open: The new head still needs terminal exact-head CI and independent runtime/readback evidence before merge.
 Next safe step: Re-read the final branch head, require all required gates to finish green, then perform the normal runtime/PatchMon evidence checks before any merge.
+
+
+### 2026-09-23 — Evidence Flywheel installer boundary readback repair
+Status: PARTIAL — post-merge source defect repaired; final main/runtime readback pending
+Task: Repair the Evidence Flywheel installer command boundary found by independent post-merge readback.
+Decisions: Replace the literal \\n between the Neuro Teaching and Evidence Flywheel installer checks with a real shell command boundary; keep the fail-closed checks intact and do not weaken contracts or tests.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `Memory.md`.
+Evidence: Evidence Flywheel integration merged as main commit `9eb27019aeea7b8589814a5cce436f64aba76a8e`. Independent file readback found a literal \\n in the installer. Repair head is `d391adfcfae96483d682ed42603fff08f9aa6765`, PR #2073. Exact-head Required Checks: Continuity 2933, Integration Plan 2426, Agent Backend 3367, Release Verification 6057, Boundary Ledger 1759 and MCP 2540 all SUCCESS.
+Learned: Post-merge source readback can expose shell-boundary defects that static integration contracts did not catch; the smallest causal repair is preferable to test relaxation or a second implementation path.
+Open: PR #2073 still needs the normal merge gate and post-merge main/runtime readback; no live PatchMon/host runtime claim is made because no remote device was available.
+Next safe step: Merge the exact verified head, resolve the new main revision, then repeat installer, CI and applicable runtime identity/readback checks.
