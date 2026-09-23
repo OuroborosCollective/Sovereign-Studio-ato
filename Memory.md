@@ -709,3 +709,14 @@ Evidence: Exact-head `9e9866252e786e2846037c98e52c25b97e28617a` had 1066 passed 
 Learned: Contract tests must remain exact enough to protect the intended method, while canonical text should expose the required invariant unambiguously; mirror parity is preserved.
 Open: The repair changes the PR head, so no green claim or merge is valid until the new exact head is re-run through all required gates.
 Next safe step: Re-read the new PR head, require terminal exact-head CI, then perform the required independent/runtime readbacks before any merge decision.
+
+
+### 2026-09-23 — Evidence Flywheel mirror-contract regression repair
+Status: PARTIAL — source repair committed; exact-head revalidation pending
+Task: Repair the second MCP contract regression on PR #2071 without weakening the regression suite.
+Decisions: Keep the exact contract assertions; align the canonical and packaged flywheel skills byte-for-byte, expose the required Action Preview wording in both, and use the contract’s required `fake snapshot` invariant rather than removing the guard.
+Touched surfaces: `.agents/skills/evidence-flywheel/SKILL.md`; `tools/sovereign-chatgpt-mcp/skills/sovereign-evidence-flywheel/SKILL.md`.
+Evidence: Exact-head `58e291a3c56aa2a30f9d2461390ef373b7ca9b09` MCP run `35809701860` failed 2/1067 tests: canonical/runtime mirror parity and the required `fake snapshot` wording. The repair commits are `60acd77522d024af792e38e7937e282fe4dd4441` and `8e2cbfdc3cf8fd1d027f1d6dd13ed9ad1e89a695`; the packaged mirror now uses the canonical content.
+Learned: Contract tests are correctly detecting both semantic wording drift and mirror divergence; the right fix is canonical contract alignment, not test relaxation.
+Open: The new head still needs terminal exact-head CI and independent runtime/readback evidence before merge.
+Next safe step: Re-read the final branch head, require all required gates to finish green, then perform the normal runtime/PatchMon evidence checks before any merge.
