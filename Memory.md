@@ -741,3 +741,12 @@ Evidence: exact main baseline 5511c638e8ba0384420979692dd63ed7ec1d4b9d; Compose 
 Learned: Hostinger should not inherit MCP-only environment requirements merely because the toolchain Compose file declares a blanket .env file; host-specific broker/image identity remains owned by the MCP installer and runtime.
 Open: New draft PR and exact-head GitHub regression are pending; actual Hostinger revalidation still requires the Hostinger project endpoint/configuration to be reachable.
 Next safe step: publish the Draft PR, require terminal CI, then retry the Hostinger update and read back the project state.
+
+### 2026-09-23 — Sovereign vNext frontend video-contract repair
+Status: PARTIAL — repair prepared; exact-head CI and runtime readback pending
+Task: Repair the Sovereign frontend defects observed in the video: misleading Agent/route projection and repository A2A starts missing exact revision binding.
+Decisions: Keep repository execution strictly Free single-Agent-Zero; replace misleading FreeLLM/paid-route UI claims with the actual repository execution contract; bind every vNext repository start to a server-read exact HEAD SHA using the authenticated session GitHub readback and the configured Sovereign repository fallback.
+Touched surfaces: src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx; src/features/control-surface-vnext/adapter/repository-bound-adapter.ts; src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts; backend/agent_runtime/routes.py; backend/agent_runtime/repository_execution.py; backend/tests/test_agent_runtime_routes.py.
+Evidence: Video/readback showed the UI labeling the lane as FREELLM, exposing unavailable paid routes, and repository execution reaching repository_permission_unbound because no exact expectedHeadSha was supplied. The repair adds /api/user/agent/repository/head, resolves the server-held GitHub credential against the configured repository, and passes the returned 40-hex revision into the repository A2A request; regression coverage was added for the head-readback contract and exact revision binding.
+Learned: The frontend must project the execution contract actually owned by Agent Zero; repository permission/revocation cannot be proven from a mission alone and must be bound to a server-verified exact repository head.
+Open: New head requires terminal CI, frontend/backend regression, and independent runtime/PatchMon readback before any merge or green-state claim.

@@ -40,6 +40,7 @@ function isResumableRepositoryRun(candidate: JsonRecord): boolean {
 export function buildRepositoryBoundRunRequest(
   mission: string,
   agentMode: AgentMode = 'single',
+  expectedHeadSha?: string,
 ): JsonRecord {
   const normalizedMission = mission.trim();
   if (!normalizedMission) throw new Error('Mission text is required.');
@@ -47,12 +48,17 @@ export function buildRepositoryBoundRunRequest(
     throw new Error('The vNext Draft-PR path currently requires one Free single agent.');
   }
   const explicitRepositoryUrl = extractGitHubRepositoryUrl(normalizedMission);
+  const normalizedExpectedHeadSha = expectedHeadSha?.trim().toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(normalizedExpectedHeadSha || '')) {
+    throw new Error('Repository execution requires an exact expected repository HEAD SHA.');
+  }
   return {
     mission: normalizedMission,
     mode: 'free',
     agentMode: 'single',
     intentMode: 'repository_execution',
     repositoryBranch: 'main',
+    ...(normalizedExpectedHeadSha ? { expectedHeadSha: normalizedExpectedHeadSha } : {}),
     ...(explicitRepositoryUrl ? { repositoryUrl: explicitRepositoryUrl } : {}),
   };
 }
@@ -136,6 +142,33 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
     return null;
   }
 
+  private async getRepositoryHeadSnapshot(mission: string): Promise<{ headSha: string }> {
+    const repositoryUrl = extractGitHubRepositoryUrl(mission);
+    const response = await this.repositoryFetcher(
+      endpoint(this.repositoryConfig.agentApiUrl, '/api/user/agent/repository/head'),
+      {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...(repositoryUrl ? { repository: repositoryUrl } : {}),
+          branch: 'main',
+        }),
+      },
+    );
+    const body: unknown = await response.json().catch(() => null);
+    const record = isRecord(body) ? body : {};
+    const headSha = stringValue(record.headSha)?.toLowerCase();
+    if (!response.ok || !headSha || !/^[0-9a-f]{40}$/.test(headSha)) {
+      const reason = stringValue(record.error) || stringValue(record.code);
+      throw new Error(reason || `Repository HEAD readback failed with HTTP ${response.status}.`);
+    }
+    return { headSha };
+  }
+
   override async runSwarm(
     prompt: string,
     _toolchains: string[],
@@ -143,7 +176,8 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
     agentMode: AgentMode = 'single',
   ): Promise<{ jobId: string }> {
     if (!this.repositoryConfig.ready) throw new Error(this.repositoryConfig.reason);
-    const payload = buildRepositoryBoundRunRequest(prompt, agentMode);
+    const snapshot = await this.getRepositoryHeadSnapshot(prompt);
+    const payload = buildRepositoryBoundRunRequest(prompt, agentMode, snapshot.headSha);
     const response = await this.repositoryFetcher(
       endpoint(this.repositoryConfig.agentApiUrl, '/api/user/agent/repository/run'),
       {

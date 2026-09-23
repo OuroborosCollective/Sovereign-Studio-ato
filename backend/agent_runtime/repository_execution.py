@@ -167,7 +167,7 @@ def _job_age_seconds(job: StoredSovereignAgentJob) -> float | None:
     return max(0.0, (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds())
 
 
-def _configured_repository_url() -> str:
+def configured_repository_url() -> str:
     value = os.getenv(
         "SOVEREIGN_CONTROLLER_REPOSITORY",
         "OuroborosCollective/Sovereign-Studio-ato",
@@ -193,7 +193,7 @@ def _normalized_repository_payload(body: dict[str, Any]) -> dict[str, Any]:
     mission = str(body.get("mission") or "").strip()
     if not mission:
         raise RepositoryExecutionError("repository execution mission is required")
-    repo_url = str(body.get("repositoryUrl") or body.get("repoUrl") or _configured_repository_url()).strip()
+    repo_url = str(body.get("repositoryUrl") or body.get("repoUrl") or configured_repository_url()).strip()
     branch = str(body.get("repositoryBranch") or body.get("branch") or "main").strip() or "main"
     payload: dict[str, Any] = {
         "repoUrl": repo_url,

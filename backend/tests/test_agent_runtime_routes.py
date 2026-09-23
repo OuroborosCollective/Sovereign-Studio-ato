@@ -1409,6 +1409,39 @@ def test_rescue_paid_repair_reuses_free_executor_at_exact_head(monkeypatch):
 
 
 
+def test_repository_head_readback_uses_server_held_github_credential_and_configured_repo(monkeypatch):
+    conn = FakeConnection()
+    monkeypatch.setattr(routes_module, "_github_access_token_for_session", lambda body, user_id: ("server-held-token", None))
+    monkeypatch.setattr(
+        routes_module,
+        "configured_repository_url",
+        lambda: "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+    )
+    monkeypatch.setattr(
+        routes_module,
+        "resolve_github_head",
+        lambda repository, branch, token: {
+            "repository": repository,
+            "baseBranch": branch,
+            "baseSha": "a" * 40,
+        },
+    )
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/repository/head",
+        headers={"X-Test-User": "11111111-1111-4111-8111-111111111111"},
+        json={"branch": "main"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["repository"] == "https://github.com/OuroborosCollective/Sovereign-Studio-ato"
+    assert payload["branch"] == "main"
+    assert payload["headSha"] == "a" * 40
+
+
 def test_rescue_paid_repair_rejects_simple_content_type_before_reservation(monkeypatch):
     conn = FakeConnection()
     reserve_calls = []

@@ -19,19 +19,27 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     expect(fetcher.mock.calls[0][1]).toMatchObject({ method: 'POST', credentials: 'include' });
   });
 
-  it('keeps a normal repository instruction in repository execution even without a GitHub URL', () => {
-    expect(buildRepositoryBoundRunRequest('Please add the repository readme a smiley like this :)')).toEqual({
+  it('requires an exact repository HEAD before building a repository execution request', () => {
+    expect(() => buildRepositoryBoundRunRequest('Please add the repository readme a smiley like this :)')).toThrow(/exact expected repository HEAD SHA/i);
+    expect(buildRepositoryBoundRunRequest(
+      'Please add the repository readme a smiley like this :)',
+      'single',
+      'ABCDEF0123456789ABCDEF0123456789ABCDEF01',
+    )).toEqual({
       mission: 'Please add the repository readme a smiley like this :)',
       mode: 'free',
       agentMode: 'single',
       intentMode: 'repository_execution',
       repositoryBranch: 'main',
+      expectedHeadSha: 'abcdef0123456789abcdef0123456789abcdef01',
     });
   });
 
   it('keeps an explicit GitHub repository URL as a bounded target override', () => {
     expect(buildRepositoryBoundRunRequest(
       'Ändere README.md in https://github.com/OuroborosCollective/Sovereign-Studio-ato.',
+      'single',
+      'abcdef0123456789abcdef0123456789abcdef01',
     )).toEqual({
       mission: 'Ändere README.md in https://github.com/OuroborosCollective/Sovereign-Studio-ato.',
       mode: 'free',
@@ -39,11 +47,60 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
       intentMode: 'repository_execution',
       repositoryUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
       repositoryBranch: 'main',
+      expectedHeadSha: 'abcdef0123456789abcdef0123456789abcdef01',
     });
   });
 
   it('fails closed instead of silently enabling swarm on the Draft-PR-first path', () => {
-    expect(() => buildRepositoryBoundRunRequest('Ändere README.md.', 'swarm')).toThrow(/single agent/i);
+    expect(() => buildRepositoryBoundRunRequest('Ändere README.md.', 'swarm', 'abcdef0123456789abcdef0123456789abcdef01')).toThrow(/single agent/i);
+  });
+
+  it('reads the exact repository HEAD before dispatching the vNext mission', async () => {
+    const config: SovereignAgentConfig = {
+      enabled: true,
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://agent.example.test',
+      ready: true,
+      reason: 'ready',
+    };
+    const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/api/user/agent/repository/head')) {
+        return new Response(JSON.stringify({ ok: true, headSha: 'd'.repeat(40) }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true, jobId: 'agent-repository-1', job: { jobId: 'agent-repository-1' } }), { status: 202 });
+    });
+    const adapter = new SovereignProductionAdapter(fetcher as unknown as typeof fetch, config);
+
+    await expect(adapter.runSwarm(
+      'Ändere README.md in https://github.com/OuroborosCollective/Sovereign-Studio-ato.',
+      [], [], 'single',
+    )).resolves.toEqual({ jobId: 'agent-repository-1' });
+
+    const repositoryRequest = fetcher.mock.calls.find(([url]) => String(url).endsWith('/api/user/agent/repository/run'));
+    expect(repositoryRequest).toBeDefined();
+    expect(JSON.parse(String((repositoryRequest?.[1] as RequestInit).body))).toMatchObject({
+      expectedHeadSha: 'd'.repeat(40),
+      repositoryUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+    });
+  });
+
+  it('fails closed when the repository HEAD readback is unavailable', async () => {
+    const config: SovereignAgentConfig = {
+      enabled: true,
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://agent.example.test',
+      ready: true,
+      reason: 'ready',
+    };
+    const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/api/user/agent/repository/head')) return new Response(JSON.stringify({ ok: false, code: 'repository_head_unverified' }), { status: 422 });
+      return new Response(JSON.stringify({ ok: true, jobId: 'unexpected' }), { status: 202 });
+    });
+    const adapter = new SovereignProductionAdapter(fetcher as unknown as typeof fetch, config);
+
+    await expect(adapter.runSwarm('Ändere README.md.', [], [], 'single')).rejects.toThrow(/repository_head_unverified|HEAD readback failed/i);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/repository/head');
   });
 
   it('starts the vNext mission through the dedicated repository endpoint and returns the persisted job id', async () => {
@@ -54,25 +111,32 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
       ready: true,
       reason: 'ready',
     };
-    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
-      ok: true,
-      jobId: 'agent-repository-1',
-      job: { jobId: 'agent-repository-1' },
-    }), { status: 202 }));
+    const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/api/user/agent/repository/head')) {
+        return new Response(JSON.stringify({ ok: true, headSha: 'f'.repeat(40) }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        ok: true,
+        jobId: 'agent-repository-1',
+        job: { jobId: 'agent-repository-1' },
+      }), { status: 202 });
+    });
     const adapter = new SovereignProductionAdapter(fetcher as unknown as typeof fetch, config);
 
-    const accepted = await adapter.runSwarm('Ändere README.md.', [], [], 'single');
+    const accepted = await adapter.runSwarm(
+      'Ändere README.md in https://github.com/OuroborosCollective/Sovereign-Studio-ato.',
+      [], [], 'single',
+    );
 
     expect(accepted).toEqual({ jobId: 'agent-repository-1' });
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/repository/run');
-    const init = fetcher.mock.calls[0][1] as RequestInit;
-    expect(JSON.parse(String(init.body))).toEqual({
-      mission: 'Ändere README.md.',
+    const init = fetcher.mock.calls.find(([url]) => String(url).endsWith('/api/user/agent/repository/run'))?.[1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      mission: 'Ändere README.md in https://github.com/OuroborosCollective/Sovereign-Studio-ato.',
       mode: 'free',
       agentMode: 'single',
       intentMode: 'repository_execution',
       repositoryBranch: 'main',
+      expectedHeadSha: 'f'.repeat(40),
     });
   });
 
