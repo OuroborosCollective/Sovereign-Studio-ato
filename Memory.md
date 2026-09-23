@@ -698,3 +698,14 @@ Evidence: Current main baseline 7e1aa5e354807ade245486ae9f4c3bb6ee495e53; Draft 
 Learned: The useful archive contribution is the evaluation discipline itself; Sovereign already owns the necessary architecture, consent, registry, benchmark, CI and readback primitives, so duplicating them would increase drift rather than reduce it.
 Open: New Memory append changes the PR head; exact-head CI, runtime identity, PatchMon readback and any merge remain pending.
 Next safe step: Re-read this exact branch head, require terminal checks and only then consider the normal Owner/merge gate.
+
+
+### 2026-09-23 — Evidence Flywheel contract regression repair
+Status: PARTIAL — source regression repaired; exact-head revalidation pending
+Task: Repair the exact-head MCP gate failure introduced by the Evidence Flywheel integration.
+Decisions: Keep the regression test strict and align the canonical/packaged skill wording instead of weakening the assertion.
+Touched surfaces: `.agents/skills/evidence-flywheel/SKILL.md`, `tools/sovereign-chatgpt-mcp/skills/sovereign-evidence-flywheel/SKILL.md`.
+Evidence: Exact-head `9e9866252e786e2846037c98e52c25b97e28617a` had 1066 passed / 12 skipped / 1 failed; the sole failure was `test_evidence_flywheel_contract_contains_required_boundaries` because `causal failure-family analysis` was absent while the semantically equivalent `failure-family analysis` was present. The failing MCP workflow was `Sovereign ChatGPT MCP` run `35805757831`, job `107006753984`; all other terminal PR #2071 runs were successful, and all five PR #483 runs were successful.
+Learned: Contract tests must remain exact enough to protect the intended method, while canonical text should expose the required invariant unambiguously; mirror parity is preserved.
+Open: The repair changes the PR head, so no green claim or merge is valid until the new exact head is re-run through all required gates.
+Next safe step: Re-read the new PR head, require terminal exact-head CI, then perform the required independent/runtime readbacks before any merge decision.
