@@ -197,17 +197,13 @@ function newestEvidenceRevision(anchors: readonly SovereignWorkspaceEvidenceAnch
   return sorted[0]?.repositoryRevision ?? '';
 }
 
-function mapPersistedDraftPr(
-  pr: SovereignDraftPrPublicationReadback,
-  headBranch = '',
-  baseBranch = '',
-): DraftPR {
+function mapPersistedDraftPr(pr: SovereignDraftPrPublicationReadback): DraftPR {
   return {
     url: pr.prUrl,
     revision: pr.readbackHeadSha,
     pullRequestNumber: pr.prNumber,
-    branch: headBranch,
-    baseBranch,
+    branch: pr.headBranch,
+    baseBranch: pr.baseBranch,
     verifiedRevisionHash: pr.readbackHeadSha,
     publishedHeadSha: pr.publishedHeadSha,
     readbackHeadSha: pr.readbackHeadSha,
@@ -378,9 +374,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
     let publication: DraftPR | undefined;
     try {
       const readback = await this.client.getPublicationReadback(jobId);
-      publication = readback
-        ? mapPersistedDraftPr(readback, snapshot.branchName || snapshot.branch || '', snapshot.branch || '')
-        : undefined;
+      publication = readback ? mapPersistedDraftPr(readback) : undefined;
     } catch {
       publication = undefined;
     }
@@ -430,9 +424,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
     if (run.jobId) {
       try {
         const readback = await this.client.getPublicationReadback(run.jobId);
-        publication = readback
-          ? mapPersistedDraftPr(readback, snapshot?.branchName || snapshot?.branch || '', snapshot?.branch || '')
-          : undefined;
+        publication = readback ? mapPersistedDraftPr(readback) : undefined;
       } catch {
         publication = undefined;
       }

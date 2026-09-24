@@ -137,7 +137,11 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     expect(adapter).not.toContain('this.publications.get(');
     expect(client).toContain('githubDraftPrReadback');
     expect(client).toContain('getPublicationReadback(jobId: string)');
+    expect(client).toContain("'/publication-readback'");
+    expect(client).toContain('currentGitHubDraftPrReadback');
     expect(routes).toContain('"githubDraftPrReadback": read_latest_agent_github_draft_pr_readback(');
+    expect(routes).toContain('"/api/user/agent/jobs/<job_id>/publication-readback"');
+    expect(routes).toContain('verify_draft_pr_for_job(job, conn)');
     expect(store).toContain('def read_latest_agent_github_draft_pr_readback(');
     expect(adapter).not.toContain('publication: snapshot?.draftPrUrl');
   });

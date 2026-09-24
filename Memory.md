@@ -828,3 +828,13 @@ Evidence: Draft PR #2092 updated to exact head `99883c37be0064f9e0ffc5b5f0797d46
 Learned: The missing recovery layer was the frontend projection, not the absence of a backend publication receipt; the existing event store already held the strict GitHub readback and only needed a bounded, validated read model.
 Open: Current implementation rehydrates the historical verified receipt but does not yet perform a fresh GitHub GET on every reload, so post-publication external drift is not claimed as closed by this block.
 Next safe step: Let exact-head GitHub typecheck/unit/build and required gates finish, then add the smallest current-PR reconciliation/readback path before any merge or production-green claim.
+
+### 2026-09-24 — vNext live Draft-PR reconciliation
+Status: PARTIAL — current-readback source implemented; exact-head CI/runtime pending
+Task: Complete the remaining #1922 truth boundary by rechecking an existing Draft PR against current GitHub state on demand, while preserving the historical publication receipt.
+Decisions: Reuse the existing `GitHubApiDraftPrCreator._readback_evidence` logic in a new read-only `publication-readback` route; bind the live check to the persisted publication `publishedHeadSha`; return no verified publication when current GitHub identity/head/draft/check readback cannot be proven; keep normal evidence polling free of repeated GitHub calls.
+Touched surfaces: `backend/agent_runtime/draft_pr_create_gate.py`, `backend/agent_runtime/routes.py`, their shipping mirrors, `backend/tests/test_agent_draft_pr_create_gate.py`, `src/features/product/runtime/sovereignAgentClient.ts`, `src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts`, and the vNext truth contract test.
+Evidence: `git diff --check` and backend compile passed after the reconciliation changes; canonical/shipping Draft-PR gate and route mirrors remain byte-identical; Draft PR #2092 remains open/draft and not merged. The new client regression covers fresh current readback and fail-closed contradiction; local pytest execution remains constrained by the Sovottt repository check allowlist, so those tests require GitHub Actions for authoritative execution.
+Learned: Historical publication evidence alone is insufficient after GitHub-side drift; the correct recovery model is historical receipt for identity plus a separate current target readback before projecting `VERIFIED`.
+Open: Exact-head CI/typecheck/build and a real authenticated runtime canary are still required; no production-live or merge claim is made.
+Next safe step: Publish the completed reconciliation block through the Draft PR, require terminal exact-head CI, then perform the normal owner-gated post-merge/runtime readback sequence.

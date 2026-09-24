@@ -133,6 +133,8 @@ export interface SovereignDraftPrPublicationReadback {
   headSha: string;
   publishedHeadSha: string;
   readbackHeadSha: string;
+  headBranch: string;
+  baseBranch: string;
   draftVerified: true;
   prStateVerified: 'open';
   readbackVerified: true;
@@ -950,13 +952,13 @@ export class SovereignAgentClient {
     const requestedJobId = jobId.trim();
     if (!requestedJobId) throw new Error('Sovereign Agent job id is required.');
     const body = await requestObject({
-      url: endpoint(this.config.agentApiUrl, jobPath(requestedJobId, '/evidence-anchors?limit=100')),
+      url: endpoint(this.config.agentApiUrl, jobPath(requestedJobId, '/publication-readback')),
       init: { method: 'GET', headers: headers(), credentials: 'include' },
       fetcher: this.fetcher,
       fallback: 'Sovereign GitHub Draft PR publication readback',
     });
     const responseJobId = stringValue(body.jobId);
-    const raw = isObject(body.githubDraftPrReadback) ? body.githubDraftPrReadback : undefined;
+    const raw = isObject(body.currentGitHubDraftPrReadback) ? body.currentGitHubDraftPrReadback : undefined;
     if (!raw) return undefined;
     if (responseJobId !== requestedJobId || stringValue(raw.jobId) !== requestedJobId) {
       throw new Error('Sovereign GitHub Draft PR publication readback returned a mismatched job identity.');
@@ -1004,6 +1006,8 @@ export class SovereignAgentClient {
       headSha,
       publishedHeadSha,
       readbackHeadSha,
+      headBranch: stringValue(raw.headBranch),
+      baseBranch: stringValue(raw.baseBranch),
       draftVerified: true,
       prStateVerified: 'open',
       readbackVerified: true,
