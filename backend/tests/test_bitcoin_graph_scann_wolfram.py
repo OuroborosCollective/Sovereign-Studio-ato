@@ -233,7 +233,22 @@ def test_sqlite_store_resolves_intra_block_spend_and_enforces_single_spend(tmp_p
     db = tmp_path / "bitcoin.sqlite"
     store = BitcoinCanonicalStore(str(db))
     store.initialize()
-    raw = {
+
+    height0 = {
+        "height": 0,
+        "hash": "b" * 64,
+        "time": 0,
+        "nonce": 0,
+        "bits": "1d00ffff",
+        "tx": [{
+            "txid": "1" * 64,
+            "version": 2,
+            "locktime": 0,
+            "vin": [{"coinbase": "0101", "sequence": 0}],
+            "vout": [{"value": "1.00000000", "n": 0, "scriptPubKey": {"type": "p2pk"}}],
+        }],
+    }
+    height1 = {
         "height": 1,
         "hash": "a" * 64,
         "previousblockhash": "b" * 64,
@@ -245,7 +260,7 @@ def test_sqlite_store_resolves_intra_block_spend_and_enforces_single_spend(tmp_p
                 "txid": "c" * 64,
                 "version": 2,
                 "locktime": 0,
-                "vin": [{"coinbase": "0101", "sequence": 0}],
+                "vin": [{"coinbase": "0202", "sequence": 0}],
                 "vout": [{"value": "1.00000000", "n": 0, "scriptPubKey": {"type": "p2pk"}}],
             },
             {
@@ -257,27 +272,37 @@ def test_sqlite_store_resolves_intra_block_spend_and_enforces_single_spend(tmp_p
             },
         ],
     }
-    store.ingest_rpc_block(raw) if False else None
-    # Height 1 needs a persisted height 0 for the canonical chain contract.
-    genesis_like = {
-        **raw,
-        "height": 0,
-        "hash": "b" * 64,
-        "tx": [raw["tx"][0]],
-    }
-    store.ingest_rpc_block(genesis_like)
-    raw["previousblockhash"] = "b" * 64
-    store.ingest_rpc_block(raw)
+
+    store.ingest_rpc_block(height0)
+    store.ingest_rpc_block(height1)
+
     assert store.resolve_prevout("d" * 64, 0) is None
     assert store.resolve_prevout("c" * 64, 0).value_sat == 100_000_000
-    duplicate = dict(raw)
-    duplicate["height"] = 2
-    duplicate["hash"] = "e" * 64
-    duplicate["previousblockhash"] = "a" * 64
-    duplicate["tx"] = [raw["tx"][0], {
-        **raw["tx"][1],
-        "txid": "f" * 64,
-    }]
+
+    duplicate = {
+        "height": 2,
+        "hash": "e" * 64,
+        "previousblockhash": "a" * 64,
+        "time": 2,
+        "nonce": 0,
+        "bits": "1d00ffff",
+        "tx": [
+            {
+                "txid": "9" * 64,
+                "version": 2,
+                "locktime": 0,
+                "vin": [{"coinbase": "0303", "sequence": 0}],
+                "vout": [{"value": "1.00000000", "n": 0, "scriptPubKey": {"type": "p2pk"}}],
+            },
+            {
+                "txid": "f" * 64,
+                "version": 2,
+                "locktime": 0,
+                "vin": [{"txid": "c" * 64, "vout": 0, "sequence": 1}],
+                "vout": [{"value": "0.99999000", "n": 0, "scriptPubKey": {"type": "p2wpkh"}}],
+            },
+        ],
+    }
     with pytest.raises(BitcoinStoreError, match="already spent"):
         store.ingest_rpc_block(duplicate)
 
