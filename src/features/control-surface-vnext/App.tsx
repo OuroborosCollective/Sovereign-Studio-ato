@@ -246,13 +246,37 @@ function Dashboard() {
     setMessages((current) => [...current, { id: `owner-response-${Date.now()}`, role: 'human', sender: 'HUMAN', content: `[OWNER RESPONSE SENT TO RUN]: ${value.response}`, timestamp: new Date().toISOString() }]);
   };
 
+  const handleAbortActiveJob = async () => {
+    if (!activeRunId) return;
+    try {
+      await abort();
+      dispatchFsm({ type: 'CANCEL' });
+      setMessages((current) => [...current, {
+        id: `aborted-${Date.now()}`,
+        role: 'system',
+        sender: 'SYSTEM',
+        content: `EXECUTION CANCELLED :: ${activeRunId}`,
+        timestamp: new Date().toISOString(),
+      }]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMessages((current) => [...current, {
+        id: `abort-failed-${Date.now()}`,
+        role: 'system',
+        sender: 'SYSTEM',
+        content: `EXECUTION ABORT FAILED :: ${message}`,
+        timestamp: new Date().toISOString(),
+      }]);
+    }
+  };
+
   const command = (
     <ChatSurface
       messages={messages}
       onSendMessage={submitMission}
       jobPhase={currentPhase}
       activeJob={job}
-      onAbortJob={activeRunId ? () => { void abort().catch(() => undefined); } : undefined}
+      onAbortJob={activeRunId ? handleAbortActiveJob : undefined}
       isAborting={isAborting}
       abortError={abortError instanceof Error ? abortError.message : undefined}
       onTypingStateChange={setIsTyping}
