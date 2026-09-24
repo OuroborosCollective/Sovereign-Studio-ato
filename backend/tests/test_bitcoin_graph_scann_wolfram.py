@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import pytest
 
-from backend.agent_runtime.retrieval.bitcoin_graph import (
+from agent_runtime.retrieval.bitcoin_graph import (
     BitcoinBlock,
     BitcoinInput,
     BitcoinOutput,
@@ -14,7 +14,7 @@ from backend.agent_runtime.retrieval.bitcoin_graph import (
     canonical_sha256,
     transaction_feature_vector,
 )
-from backend.agent_runtime.retrieval.bitcoin_scann import (
+from agent_runtime.retrieval.bitcoin_scann import (
     AnnCandidate,
     BitcoinVectorRecord,
     BitcoinScannContractError,
@@ -22,7 +22,7 @@ from backend.agent_runtime.retrieval.bitcoin_scann import (
     rescore_ann_candidates,
     run_ann_then_exact,
 )
-from backend.agent_runtime.retrieval.bitcoin_wolfram_contract import (
+from agent_runtime.retrieval.bitcoin_wolfram_contract import (
     BitcoinCheck,
     ChronologyObservation,
     FeeObservation,
@@ -208,18 +208,18 @@ def test_canonical_hash_does_not_depend_on_mapping_order() -> None:
 
 
 def test_live_scann_adapter_does_not_require_scann_at_import_time() -> None:
-    from backend.agent_runtime.retrieval.bitcoin_scann_runtime import BitcoinScannRuntimeError
+    from agent_runtime.retrieval.bitcoin_scann_runtime import BitcoinScannRuntimeError
     assert issubclass(BitcoinScannRuntimeError, RuntimeError)
 
 
 def test_rpc_config_rejects_non_http_endpoint() -> None:
-    from backend.agent_runtime.retrieval.bitcoin_rpc import BitcoinCoreRpcConfig, BitcoinCoreRpcError
+    from agent_runtime.retrieval.bitcoin_rpc import BitcoinCoreRpcConfig, BitcoinCoreRpcError
     with pytest.raises(BitcoinCoreRpcError, match="HTTP"):
         BitcoinCoreRpcConfig("file:///tmp/bitcoin")
 
 
 def test_rpc_client_never_constructs_without_credentials() -> None:
-    from backend.agent_runtime.retrieval.bitcoin_rpc import BitcoinCoreRpcClient, BitcoinCoreRpcConfig, BitcoinCoreRpcError
+    from agent_runtime.retrieval.bitcoin_rpc import BitcoinCoreRpcClient, BitcoinCoreRpcConfig, BitcoinCoreRpcError
     import os
     os.environ.pop("BITCOIN_RPC_USER", None)
     os.environ.pop("BITCOIN_RPC_PASSWORD", None)
