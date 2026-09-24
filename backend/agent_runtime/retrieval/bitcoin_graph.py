@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 import hashlib
 import json
 import math
@@ -77,6 +78,21 @@ def _script_type(value: str) -> str:
     return normalized if normalized in _SCRIPT_TYPES else "unknown"
 
 
+def _btc_to_sat(value: Any) -> int:
+    """Convert a BTC decimal to satoshis without floating-point rounding."""
+    try:
+        scaled = (
+            Decimal(str(value))
+            .quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+            * Decimal(SATOSHIS_PER_BTC)
+        )
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise BitcoinGraphContractError("invalid BTC amount") from exc
+    if scaled != scaled.to_integral_value():
+        raise BitcoinGraphContractError("BTC amount cannot be represented in whole satoshis")
+    return int(scaled)
+
+
 @dataclass(frozen=True, slots=True)
 class PrevoutRef:
     txid: str
@@ -131,12 +147,6 @@ class BitcoinInput:
     def is_coinbase(self) -> bool:
         return self.prevout is None
 
-    @property
-    def age_blocks(self) -> int | None:
-        if self.prevout_height is None:
-            return None
-        return getattr(self, "_spend_height", None)
-
 
 @dataclass(frozen=True, slots=True)
 class BitcoinOutput:
@@ -145,7 +155,7 @@ class BitcoinOutput:
     script_type: str = "unknown"
     script_bytes: int = 0
     address: str | None = None
-    pubkey_hash: str | None = None
+    pubkey: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "vout", _require_non_negative_int(self.vout, "vout"))
@@ -205,8 +215,13 @@ class BitcoinTransaction:
             raise BitcoinGraphContractError("input_index values must be contiguous from zero")
         if tuple(item.vout for item in self.outputs) != tuple(range(len(self.outputs))):
             raise BitcoinGraphContractError("vout values must be contiguous from zero")
-        if self.coinbase != any(item.is_coinbase for item in self.inputs):
+        derived_coinbase = any(item.is_coinbase for item in self.inputs)
+        if self.coinbase != derived_coinbase:
             raise BitcoinGraphContractError("coinbase flag must match input structure")
+        if self.coinbase and len(self.inputs) != 1:
+            raise BitcoinGraphContractError("coinbase transaction must have exactly one input")
+        if not self.coinbase and not self.inputs:
+            raise BitcoinGraphContractError("non-coinbase transaction must have inputs")
 
     @property
     def input_value_sat(self) -> int | None:
@@ -265,7 +280,7 @@ class BitcoinTransaction:
                     "script_type": item.script_type,
                     "script_bytes": item.script_bytes,
                     "address": item.address,
-                    "pubkey_hash": item.pubkey_hash,
+                    "pubkey": item.pubkey,
                 }
                 for item in self.outputs
             ],
@@ -412,13 +427,15 @@ def transaction_from_rpc(
         outputs.append(
             BitcoinOutput(
                 vout=index,
-                value_sat=int(round(float(item.get("value", 0)) * SATOSHIS_PER_BTC))
-                if "value" in item
-                else int(item.get("value_sat", 0)),
+                value_sat=(
+                    _btc_to_sat(item.get("value"))
+                    if "value" in item
+                    else int(item.get("value_sat", 0))
+                ),
                 script_type=str(script.get("type") or "unknown"),
                 script_bytes=len(str(script.get("hex") or "")) // 2,
                 address=address,
-                pubkey_hash=(
+                pubkey=(
                     str(script.get("pubkey") or "")
                     if script.get("pubkey") else None
                 ),
