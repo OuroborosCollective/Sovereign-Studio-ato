@@ -136,14 +136,13 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
     return null;
   }
 
-  override async runSwarm(
+  override async runSingleAgent(
     prompt: string,
-    _toolchains: string[],
+    _toolchains: string[] = [],
     _activeSkillIds: string[] = [],
-    agentMode: AgentMode = 'single',
   ): Promise<{ jobId: string }> {
     if (!this.repositoryConfig.ready) throw new Error(this.repositoryConfig.reason);
-    const payload = buildRepositoryBoundRunRequest(prompt, agentMode);
+    const payload = buildRepositoryBoundRunRequest(prompt, 'single');
     const response = await this.repositoryFetcher(
       endpoint(this.repositoryConfig.agentApiUrl, '/api/user/agent/repository/run'),
       {

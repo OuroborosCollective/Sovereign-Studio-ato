@@ -1981,6 +1981,40 @@ def list_agent_runs(
     return tuple(stored_run_from_row(row) for row in rows)
 
 
+def read_latest_agent_response(
+    conn: Any,
+    *,
+    user_id: str,
+    run_id: str,
+) -> str | None:
+    """Read the bounded final assistant text from the canonical single-agent result evidence."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT evidence.payload
+            FROM agent_evidence AS evidence
+            JOIN agent_runs AS run ON run.run_id = evidence.run_id
+            WHERE run.user_id = %s::uuid
+              AND evidence.run_id = %s
+              AND evidence.kind = 'free_single_agent_result'
+            ORDER BY evidence.created_at DESC, evidence.evidence_id DESC
+            LIMIT 1
+            """,
+            (str(user_id), _validated_id(run_id, "run_id")),
+        )
+        row = cur.fetchone()
+    payload = row.get("payload") if isinstance(row, Mapping) else None
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(payload, Mapping):
+        return None
+    value = payload.get("assistantText")
+    return _bounded(value, 8000) or None
+
+
 def read_agent_events(
     conn: Any,
     *,

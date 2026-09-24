@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 import hashlib
 import hmac
 import json
@@ -23,6 +25,7 @@ from .cognitive_run_store import (
     NON_RESUMABLE_RUN_STATUSES,
     claim_agent_run_for_resume,
     create_agent_run,
+    read_latest_agent_response,
     link_agent_run_job,
     list_resumable_agent_runs,
     read_agent_run,
@@ -224,6 +227,20 @@ def _resume_lease_seconds() -> int:
 def _digest_json(value: object) -> str:
     payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _single_agent_run_cancelled(
+    get_connection: ConnectionFactory,
+    *,
+    user_id: str,
+    run_id: str,
+) -> bool:
+    conn = get_connection()
+    try:
+        run = read_agent_run(conn, user_id=user_id, run_id=run_id)
+    finally:
+        _close_connection(conn)
+    return bool(run and run.status == 'BLOCKED' and run.next_action == 'RUN_CANCELLED')
 
 
 def _stored_run_to_api(run: Any) -> dict[str, object]:
@@ -1470,6 +1487,18 @@ def start_cognitive_swarm_run(
                     capability_toolset.tools_for_role if capability_toolset else None
                 ),
             ))
+            if _single_agent_run_cancelled(get_connection, user_id=user_id, run_id=resolved_run_id):
+                return {
+                    "ok": True,
+                    "runtime": "sovereign-single-agent",
+                    "runId": resolved_run_id,
+                    "traceId": resolved_trace_id,
+                    "status": "BLOCKED",
+                    "reason": "Cancelled by owner.",
+                    "nextAction": "RUN_CANCELLED",
+                    "cancelled": True,
+                    "secretValuesReturned": False,
+                }, 200
             single_payload = (
                 single_result.get("result")
                 if isinstance(single_result.get("result"), dict)
@@ -1583,6 +1612,7 @@ def start_cognitive_swarm_run(
                         "repositoryTools": repository_summary,
                         "agentZeroCapabilities": capability_summary,
                         "jobEvidence": job_evidence,
+                        "assistantText": str(single_payload.get("assistant_text") or "").strip()[:8000],
                         "rawModelOutputPersisted": False,
                     },
                     agent_id="free_single_agent",
@@ -1652,6 +1682,18 @@ def start_cognitive_swarm_run(
                     ),
                     reason="free_route_failed_advanced_to_next_quota_scope",
                 )
+                if _single_agent_run_cancelled(get_connection, user_id=user_id, run_id=resolved_run_id):
+                    return {
+                        "ok": True,
+                        "runtime": "sovereign-single-agent",
+                        "runId": resolved_run_id,
+                        "traceId": resolved_trace_id,
+                        "status": "BLOCKED",
+                        "reason": "Cancelled by owner.",
+                        "nextAction": "RUN_CANCELLED",
+                        "cancelled": True,
+                        "secretValuesReturned": False,
+                    }, 200
                 if next_resolution is not None and not mutations:
                     next_model = route_provider_model(next_resolution.primary_route)
                     return start_cognitive_swarm_run(
@@ -1680,6 +1722,18 @@ def start_cognitive_swarm_run(
                         _free_task_id=free_task_id,
                         _free_mission_intent=mission_intent,
                     )
+            if _single_agent_run_cancelled(get_connection, user_id=user_id, run_id=resolved_run_id):
+                return {
+                    "ok": True,
+                    "runtime": "sovereign-single-agent",
+                    "runId": resolved_run_id,
+                    "traceId": resolved_trace_id,
+                    "status": "BLOCKED",
+                    "reason": "Cancelled by owner.",
+                    "nextAction": "RUN_CANCELLED",
+                    "cancelled": True,
+                    "secretValuesReturned": False,
+                }, 200
             conn = get_connection()
             try:
                 failed_state = transition_agent_run(
@@ -2464,6 +2518,214 @@ def register_cognitive_swarm_routes(
             "modelsResolvedFromDatabase": True,
             "manifest": manifest_payload(),
         })
+
+    @app.route("/api/user/agent/single/run", methods=["POST"])
+    @require_session
+    def user_run_single_agent():
+        body = request.get_json(force=True, silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        mission = str(body.get("mission") or "").strip()
+        evidence = str(body.get("evidence") or body.get("evidenceText") or "").strip()
+        if not mission:
+            return jsonify({"error": "mission is required"}), 400
+        if len(mission) > 20_000:
+            return jsonify({"error": "mission exceeds the bounded input limit"}), 400
+        if len(evidence) > 250_000:
+            return jsonify({"error": "evidence exceeds the bounded input limit"}), 400
+        if _contains_secret_shaped_text(mission) or _contains_secret_shaped_text(evidence):
+            return jsonify({"error": "secret-shaped material is forbidden in single-agent input"}), 400
+
+        user_id = _current_session_user_id()
+        run_id = f"run-{uuid.uuid4().hex}"
+        session_key = f"session-{uuid.uuid4().hex}"
+        trace_id = f"trace-{uuid.uuid4().hex}"
+        try:
+            conn = get_connection()
+            try:
+                received_state = create_agent_run(
+                    conn,
+                    user_id=user_id,
+                    run_id=run_id,
+                    session_key=session_key,
+                    mission=mission,
+                    supplied_evidence=evidence,
+                    trace_id=trace_id,
+                    max_active_specialists=1,
+                    max_iterations=_max_iterations(),
+                    job_id=None,
+                    a2a_context_id=None,
+                )
+            finally:
+                _close_connection(conn)
+        except Exception as exc:
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-single-agent",
+                "error": "agent run persistence unavailable",
+                "blocker": "AGENT_RUN_PERSISTENCE_UNAVAILABLE",
+                "errorType": type(exc).__name__,
+            }), 503
+
+        worker_done = threading.Event()
+
+        def execute_single() -> None:
+            try:
+                _start_run_without_github_authority(
+                    get_connection=get_connection,
+                    user_id=user_id,
+                    mission=mission,
+                    evidence=evidence,
+                    model=str(body.get("model") or "") or None,
+                    main_model=str(body.get("mainModel") or "") or None,
+                    agent_model=str(body.get("agentModel") or "") or None,
+                    mode="free",
+                    intent_mode="auto",
+                    agent_mode="single",
+                    run_id=run_id,
+                    session_key=session_key,
+                    trace_id=trace_id,
+                    _reuse_received_state=received_state,
+                )
+            except Exception as exc:
+                if _single_agent_run_cancelled(get_connection, user_id=user_id, run_id=run_id):
+                    return
+                try:
+                    conn = get_connection()
+                    try:
+                        transition_agent_run(
+                            conn,
+                            user_id=user_id,
+                            run_id=run_id,
+                            status="FAILED_RECOVERABLE",
+                            source="sovereign-single-agent",
+                            trace_id=trace_id,
+                            reason="Single-agent runner failed before a terminal result was persisted.",
+                            next_action="READ_PERSISTED_RUN_AND_RESUME",
+                            evidence_kind="single_agent_runner_failure",
+                            evidence_summary="Backend-owned single-agent runner failure was persisted for the existing run.",
+                            evidence_payload={"errorType": type(exc).__name__},
+                            agent_id="single_agent_runner",
+                        )
+                    finally:
+                        _close_connection(conn)
+                except Exception:
+                    pass
+            finally:
+                worker_done.set()
+
+        threading.Thread(
+            target=execute_single,
+            name=f"sovereign-single-agent-{run_id[-12:]}",
+            daemon=True,
+        ).start()
+
+        conn = get_connection()
+        try:
+            persisted = read_agent_run(conn, user_id=user_id, run_id=run_id)
+        finally:
+            _close_connection(conn)
+        if persisted is None:
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-single-agent",
+                "runId": run_id,
+                "traceId": trace_id,
+                "blocker": "AGENT_RUN_READBACK_UNAVAILABLE",
+                "reason": "Persisted single-agent run was not readable after acceptance.",
+                "nextAction": "RETRY_RUN_READBACK",
+                "secretValuesReturned": False,
+            }), 503
+
+        return jsonify({
+            "ok": True,
+            "runtime": "sovereign-single-agent",
+            "runId": run_id,
+            "traceId": trace_id,
+            "status": persisted.status,
+            "source": persisted.source,
+            "evidenceId": persisted.evidence_id,
+            "reason": persisted.reason,
+            "nextAction": persisted.next_action,
+            "accepted": True,
+            "executionDetached": True,
+            "secretValuesReturned": False,
+        }), 202
+
+    @app.route("/api/user/agent/single/runs/<run_id>", methods=["GET"])
+    @require_session
+    def user_get_single_agent_run(run_id: str):
+        user_id = _current_session_user_id()
+        conn = get_connection()
+        try:
+            run = read_agent_run(conn, user_id=user_id, run_id=run_id)
+            if not run:
+                return jsonify({"error": "run not found"}), 404
+            payload = _stored_run_to_api(run)
+            assistant_message = read_latest_agent_response(conn, user_id=user_id, run_id=run_id)
+            if assistant_message:
+                payload["assistantMessage"] = assistant_message
+            return jsonify({"runtime": "sovereign-single-agent", "run": payload})
+        finally:
+            _close_connection(conn)
+
+    @app.route("/api/user/agent/single/runs/<run_id>/cancel", methods=["POST"])
+    @require_session
+    def user_cancel_single_agent_run(run_id: str):
+        user_id = _current_session_user_id()
+        conn = get_connection()
+        try:
+            run = read_agent_run(conn, user_id=user_id, run_id=run_id)
+            if not run:
+                return jsonify({"error": "run not found"}), 404
+            if run.status in TERMINAL_RUN_STATUSES:
+                return jsonify({"error": "run is already terminal", "status": run.status}), 409
+            state = transition_agent_run(
+                conn,
+                user_id=user_id,
+                run_id=run_id,
+                status="BLOCKED",
+                source="sovereign-single-agent",
+                trace_id=run.trace_id,
+                reason="Cancelled by owner.",
+                next_action="RUN_CANCELLED",
+                evidence_kind="single_agent_cancel",
+                evidence_summary="Owner cancellation requested for the active single-agent run.",
+                evidence_payload={"cancelled": True, "source": "owner"},
+                agent_id="owner",
+            )
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-single-agent",
+                "runId": run_id,
+                "status": state["status"],
+                "nextAction": state["nextAction"],
+                "reason": state["reason"],
+                "cancelled": True,
+                "secretValuesReturned": False,
+            })
+        finally:
+            _close_connection(conn)
+
+    @app.route("/api/user/agent/single/runs/<run_id>/resume", methods=["POST"])
+    @require_session
+    def user_resume_single_agent_run(run_id: str):
+        body = request.get_json(force=True, silent=True) or {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        payload, status_code = resume_cognitive_swarm_run(
+            get_connection=get_connection,
+            user_id=_current_session_user_id(),
+            run_id=run_id,
+            evidence=str(body.get("evidence") or body.get("evidenceText") or ""),
+            model=str(body.get("model") or "") or None,
+            main_model=str(body.get("mainModel") or "") or None,
+            agent_model=str(body.get("agentModel") or "") or None,
+            mode="free",
+        )
+        return jsonify(payload), status_code
 
     @app.route("/api/user/agent/swarm/runs/resumable", methods=["GET"])
     @require_session

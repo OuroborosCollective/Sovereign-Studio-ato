@@ -24,8 +24,7 @@ export function useSovereignJob(jobId: string | null) {
       if (!jobId) throw new Error('No run ID');
       return adapter.abortJob(jobId);
     },
-    onSuccess: (snapshot) => {
-      queryClient.setQueryData(['sovereign-vnext-job', jobId], snapshot);
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['sovereign-vnext-job', jobId] });
     },
   });
