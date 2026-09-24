@@ -752,6 +752,16 @@ Learned: Aurion already provides the complete admin authority boundary; Sovereig
 Open: No valid admin OAuth bearer was available for a live privileged `tools/call`; deployed Sovereign MCP still runs revision `5511c638e8ba0384420979692dd63ed7ec1d4b9d` and its immutable digest is not exposed by current readback. Two unrelated baseline suites remain red on fresh main: `test_tool_success_ranking.py` (7 failures) and `test_coordinated_release_reconciler.py` (13 failures).
 Next safe step: Review the Draft PR at exact head, obtain authenticated Admin-MCP read/plan canary evidence, then consider deployment/merge only after the normal owner gate.
 
+### 2026-09-24 — Aurion Admin MCP live-count gate final main repair
+Status: PARTIAL — exact current-main repair prepared; CI/runtime activation pending
+Task: Re-derive the post-merge Aurion Admin MCP live tool-count repair directly from current `main` after the prior PR branch conflicted during synchronization.
+Decisions: Preserve the merged 288-tool Private Owner Mode expectation, but make the live FastMCP registry assertion consume `EXPECTED_MCP_TOOL_COUNT` instead of a second hardcoded 258 value; keep 255 for non-owner mode and retain existing Aurion scope/authority boundaries.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py`; `Memory.md`.
+Evidence: Fresh workspace based on `main@1f85621741107e7242841f7a87a91a4da2acd04d`; installer patch SHA `497bd98e7f2a92a28e1d5ddc54d8e39f79e472a10d12800908befeaf151b12db`; focused Aurion lane/install tests remain green on the available runtime; local installer-contract execution is CI-owned because PyYAML installation is disabled in the MCP container.
+Learned: The merged installer has two independent live tool-count assertions; both must bind to the same computed expectation or revisionsame activation fails closed.
+Open: Publish this clean current-main branch, require terminal exact-head CI, then rerun immutable MCP publish/self-update and verify live revision plus digest.
+Next safe step: Create the Draft PR and use GitHub Actions as the authoritative dependency/test environment before any merge.
+
 ### 2026-09-24 — Aurion Admin MCP post-merge installer count repair
 Status: PARTIAL — source repair verified; post-merge runtime retry pending
 Task: Repair the private MCP installer count after the merged Aurion Admin MCP lane caused the revisionsame Self-Update to fail at live tool-surface verification.
@@ -761,14 +771,3 @@ Evidence: Main merge `ad4df69377eecbc5ba46a4a0bb4c0afdaea87e34`; immutable MCP p
 Learned: Enabling a gated dynamic MCP surface in the installer requires the live expected tool count to follow the actual scope-gated registration, not the pre-integration baseline.
 Open: Repair needs a Draft PR and exact-head CI before another merge; Self-Update had rolled back cleanly and the running MCP remained on the prior verified digest.
 Next safe step: Publish the narrow repair, require terminal exact-head CI, then rerun the immutable MCP publish/self-update path and read back revision plus digest.
-
-### 2026-09-24 — Aurion Admin MCP live-count assertion made dynamic
-Status: PARTIAL — source repair prepared; exact-head CI and runtime retry pending
-Task: Correct the remaining hardcoded `258` assertion inside the install-time live FastMCP surface canary exposed by the post-merge Self-Update failure.
-Decisions: Pass the installer-computed `EXPECTED_MCP_TOOL_COUNT` into the live canary instead of hardcoding 258; retain 255 for non-owner mode and 288 for current Private Owner Mode with default read-only Aurion scopes; do not weaken the live registry verification.
-Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py`; `Memory.md`.
-Evidence: Self-Update on main `1f85621741107e7242841f7a87a91a4da2acd04d` failed at `verify_live_tool_surface_and_widget_domain`; source readback identified the independent hardcoded `assert len(tool_names) == 258`; Aurion lane 11/11 and install-contract 21/21 passed; fresh-workspace installer-contract execution was dependency-blocked only because local PyYAML installation is intentionally disabled and CI owns dependency resolution; `git diff --check` passed.
-Learned: The installer contained two separate tool-count authorities; changing the configured expected count alone did not update the live registry canary.
-Open: The final dynamic-count repair needs Draft PR CI and another immutable publish/self-update attempt.
-Next safe step: Publish this exact repair, require terminal green CI, then rerun the main immutable MCP publish and verify the live runtime revision/digest.
-Follow-up: PR #2085 now exists at head `b648c2fc1a1d9229da282bb743cb410e04b324bf`; Guardian repair run `35960250694` completed successfully, while the earlier custom evidence check remained stale in the PR status projection.
