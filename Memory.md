@@ -771,3 +771,13 @@ Evidence: Main merge `ad4df69377eecbc5ba46a4a0bb4c0afdaea87e34`; immutable MCP p
 Learned: Enabling a gated dynamic MCP surface in the installer requires the live expected tool count to follow the actual scope-gated registration, not the pre-integration baseline.
 Open: Repair needs a Draft PR and exact-head CI before another merge; Self-Update had rolled back cleanly and the running MCP remained on the prior verified digest.
 Next safe step: Publish the narrow repair, require terminal exact-head CI, then rerun the immutable MCP publish/self-update path and read back revision plus digest.
+
+### 2026-09-24 — Bitcoin full-chain graph × ScaNN × Wolfram evidence lane
+Status: PARTIAL; focused repository verification green, full PR suite/live chain ingest pending
+Task: Build the internal Bitcoin research pipeline that keeps canonical UTXO/transaction truth separate from approximate retrieval and mathematical counter-checking.
+Decisions: Bitcoin Core is the live source boundary; a persistent transactional UTXO/graph store is canonical; ScaNN is candidate retrieval only; exact rescore remains deterministic; Wolfram CAG is supplemental and cannot self-assert VERIFIED; no blockchain attribution is encoded in similarity.
+Touched surfaces: `backend/agent_runtime/retrieval/bitcoin_rpc.py`, `bitcoin_graph.py`, `bitcoin_canonical_store.py`, `bitcoin_chain_indexer.py`, `bitcoin_scann.py`, `bitcoin_scann_runtime.py`, `bitcoin_wolfram_contract.py`; shipping mirrors; retrieval regressions; backend CI; architecture documentation; Notion research architecture page.
+Evidence: PR #2088 head `f110bae5d2c8032d031b92c6872a17332b1ea87a`; focused Bitcoin Contract job passed compile +  tests on run `35966626003`; GitHub Integration Plan Lane and Continuity runs on the earlier synchronized head passed; live Wolfram kernel counter-checks returned `True`, `True`, and `Sqrt[2]`; Notion architecture page was created and re-fetched successfully.
+Learned: A full-chain graph needs same-transaction prevout resolution for intra-block spends and exact integer satoshi accounting; a separate storage boundary prevents ANN similarity from becoming truth.
+Open: Current PR's live ScaNN build/readback and full Agent Backend/Release runs are still pending; no real full-chain Bitcoin Core ingestion or production runtime evidence is claimed.
+Next safe step: Require terminal exact-head CI, then run the real Bitcoin Core → canonical-store ingest on an authorized node, build/read back the revision-bound ScaNN index, bind real Wolfram CAG receipts, and independently record the resulting evidence before any merge.
