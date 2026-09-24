@@ -761,3 +761,13 @@ Evidence: Main merge `ad4df69377eecbc5ba46a4a0bb4c0afdaea87e34`; immutable MCP p
 Learned: Enabling a gated dynamic MCP surface in the installer requires the live expected tool count to follow the actual scope-gated registration, not the pre-integration baseline.
 Open: Repair needs a Draft PR and exact-head CI before another merge; Self-Update had rolled back cleanly and the running MCP remained on the prior verified digest.
 Next safe step: Publish the narrow repair, require terminal exact-head CI, then rerun the immutable MCP publish/self-update path and read back revision plus digest.
+
+### 2026-09-24 — Aurion Admin MCP live-count assertion made dynamic
+Status: PARTIAL — source repair prepared; exact-head CI and runtime retry pending
+Task: Correct the remaining hardcoded `258` assertion inside the install-time live FastMCP surface canary exposed by the post-merge Self-Update failure.
+Decisions: Pass the installer-computed `EXPECTED_MCP_TOOL_COUNT` into the live canary instead of hardcoding 258; retain 255 for non-owner mode and 288 for current Private Owner Mode with default read-only Aurion scopes; do not weaken the live registry verification.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py`; `Memory.md`.
+Evidence: Self-Update on main `1f85621741107e7242841f7a87a91a4da2acd04d` failed at `verify_live_tool_surface_and_widget_domain`; source readback identified the independent hardcoded `assert len(tool_names) == 258`; Aurion lane 11/11 and install-contract 21/21 passed; fresh-workspace installer-contract execution was dependency-blocked only because local PyYAML installation is intentionally disabled and CI owns dependency resolution; `git diff --check` passed.
+Learned: The installer contained two separate tool-count authorities; changing the configured expected count alone did not update the live registry canary.
+Open: The final dynamic-count repair needs Draft PR CI and another immutable publish/self-update attempt.
+Next safe step: Publish this exact repair, require terminal green CI, then rerun the main immutable MCP publish and verify the live runtime revision/digest.
