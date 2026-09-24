@@ -163,7 +163,7 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
     )
 
     assert 'EXPECTED_MCP_TOOL_COUNT="255"' in script
-    assert 'EXPECTED_MCP_TOOL_COUNT="258"' in script.split('INSTALL_STAGE="configure_private_owner_mode"', 1)[1]
+    assert 'EXPECTED_MCP_TOOL_COUNT="288"' in script.split('INSTALL_STAGE="configure_private_owner_mode"', 1)[1]
     assert 'INSTALL_STAGE="capture_previous_mcp_tool_surface"' in script
     assert 'INSTALL_STAGE="verify_mcp_tool_surface_preservation"' in script
     assert "mcp_tool_contract_registry(include_schemas=True)" in script

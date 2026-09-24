@@ -1380,7 +1380,7 @@ if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
     SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP; do
     set_value "$MANAGED_ENV" "$OWNER_CAPABILITY" "1"
   done
-  EXPECTED_MCP_TOOL_COUNT="258"
+  EXPECTED_MCP_TOOL_COUNT="288"
 fi
 INSTALL_STAGE="bind_private_owner_github_capabilities_to_ephemeral_app_auth"
 if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
