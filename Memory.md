@@ -771,3 +771,13 @@ Evidence: Main merge `ad4df69377eecbc5ba46a4a0bb4c0afdaea87e34`; immutable MCP p
 Learned: Enabling a gated dynamic MCP surface in the installer requires the live expected tool count to follow the actual scope-gated registration, not the pre-integration baseline.
 Open: Repair needs a Draft PR and exact-head CI before another merge; Self-Update had rolled back cleanly and the running MCP remained on the prior verified digest.
 Next safe step: Publish the narrow repair, require terminal exact-head CI, then rerun the immutable MCP publish/self-update path and read back revision plus digest.
+
+### 2026-09-24 — Aurion Neuro-canary tool-count final repair
+Status: PARTIAL — exact current-main source repair verified; Draft PR pending
+Task: Remove the remaining stale 258 assumptions from the isolated Neuro deployment canary after the merged Aurion Admin MCP lane expanded the real Private Owner Mode tool surface.
+Decisions: Pass `EXPECTED_MCP_TOOL_COUNT` explicitly into the isolated canary and bind both registry-count assertions to it; keep the canary test harness at 258 because it intentionally does not enable the Aurion Admin MCP lane.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py`; `Memory.md`.
+Evidence: Current main before repair `3e362695060069646786bb5c8460948da9e7b79d`; Self-Update failure at `verify_isolated_neuro_runtime_canary`, phase `registry_surface`; focused installer-contract 9/9, Aurion lane 11/11, install-contract 21/21 and `git diff --check` pass after the final source/test correction.
+Learned: The Neuro runtime contract was already dynamic; the final activation blocker was stale deployment-canary literals, not a Neuro implementation defect.
+Open: Draft PR and exact-head GitHub CI remain pending; after merge, rerun immutable publish/self-update and verify the live revision plus digest.
+Next safe step: Create the Draft PR from the current-main branch and require terminal green exact-head CI.
