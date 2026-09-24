@@ -420,6 +420,16 @@ class BitcoinCanonicalStore:
             raise BitcoinStoreError("rewind height must be >= -1")
         with self._connection() as connection:
             connection.execute(
+                """
+                UPDATE outputs
+                SET spent_by_txid=NULL, spent_by_input_index=NULL
+                WHERE spent_by_txid IN (
+                    SELECT txid FROM transactions WHERE block_height > ?
+                )
+                """,
+                (int(height),),
+            )
+            connection.execute(
                 "DELETE FROM graph_edges WHERE block_height > ?", (int(height),)
             )
             connection.execute("DELETE FROM blocks WHERE height > ?", (int(height),))
