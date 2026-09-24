@@ -47,7 +47,7 @@ interface EventRowProps {
 const EventRow: React.FC<EventRowProps> = ({ event, isCurrent }) => {
   const color = lampForState(event.state);
   return (
-    <div
+    <li
       style={{
         display: 'flex',
         alignItems: 'flex-start',
@@ -57,6 +57,7 @@ const EventRow: React.FC<EventRowProps> = ({ event, isCurrent }) => {
       }}
     >
       <span
+        aria-hidden="true"
         style={{
           width: 16,
           textAlign: 'center',
@@ -74,6 +75,7 @@ const EventRow: React.FC<EventRowProps> = ({ event, isCurrent }) => {
         </span>
         {event.detail && (
           <span
+            title={event.detail}
             style={{
               fontSize: 11,
               color: C.textSub,
@@ -86,7 +88,7 @@ const EventRow: React.FC<EventRowProps> = ({ event, isCurrent }) => {
           </span>
         )}
       </div>
-    </div>
+    </li>
   );
 };
 
@@ -140,6 +142,8 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span
+          aria-hidden="true"
+          title={`Status: ${stateLabel}`}
           style={{
             width: 8,
             height: 8,
@@ -153,7 +157,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
           {headerLabel}
         </span>
         {repoFullName && (
-          <span style={{ fontSize: 11, color: C.textSub, fontFamily: 'monospace' }}>
+          <span title={repoFullName} style={{ fontSize: 11, color: C.textSub, fontFamily: 'monospace' }}>
             {repoFullName}
           </span>
         )}
@@ -162,7 +166,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
       <div style={{ fontSize: 11, color: lamp, fontWeight: 500 }}>
         {stateLabel}
         {jobId && state !== 'draft_pr_ready' && (
-          <span style={{ color: C.textSub, fontWeight: 400, marginLeft: 8, fontFamily: 'monospace' }}>
+          <span title={`Job ID: ${jobId}`} style={{ color: C.textSub, fontWeight: 400, marginLeft: 8, fontFamily: 'monospace' }}>
             Job: {jobId}
           </span>
         )}
@@ -182,6 +186,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
             <button
               type="button"
               onClick={() => setExpanded(true)}
+              className="focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none transition-all"
               style={{
                 background: 'none',
                 border: 'none',
@@ -190,23 +195,32 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
                 color: C.textSub,
                 fontSize: 11,
                 textAlign: 'left',
+                borderRadius: 4,
               }}
+              title={`${hiddenCount} ältere Ereignisse anzeigen`}
               aria-label={`${hiddenCount} ältere Ereignisse anzeigen`}
             >
               ↑ {hiddenCount} ältere Ereignisse
             </button>
           )}
-          {visibleEvents.map((event, idx) => (
-            <EventRow
-              key={event.id}
-              event={event}
-              isCurrent={idx === visibleEvents.length - 1}
-            />
-          ))}
+          <ul
+            role="list"
+            aria-label="Ereignisprotokoll"
+            style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 0 }}
+          >
+            {visibleEvents.map((event, idx) => (
+              <EventRow
+                key={event.id}
+                event={event}
+                isCurrent={idx === visibleEvents.length - 1}
+              />
+            ))}
+          </ul>
           {expanded && events.length > COLLAPSE_THRESHOLD && (
             <button
               type="button"
               onClick={() => setExpanded(false)}
+              className="focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none transition-all"
               style={{
                 background: 'none',
                 border: 'none',
@@ -215,7 +229,10 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
                 color: C.textSub,
                 fontSize: 11,
                 textAlign: 'left',
+                borderRadius: 4,
               }}
+              title="Weniger Ereignisse anzeigen"
+              aria-label="Weniger Ereignisse anzeigen"
             >
               ↓ Weniger anzeigen
             </button>
@@ -225,10 +242,10 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
 
       {branchName && (
         <div style={{ fontSize: 11, color: C.textSub, fontFamily: 'monospace' }}>
-          Branch: <span style={{ color: C.sky }}>{branchName}</span>
+          Branch: <span title={branchName} style={{ color: C.sky }}>{branchName}</span>
           {commitSha && (
             <>
-              {' · '}Commit: <span style={{ color: C.sky }}>{commitSha.slice(0, 7)}</span>
+              {' · '}Commit: <span title={`Commit SHA: ${commitSha}`} style={{ color: C.sky }}>{commitSha.slice(0, 7)}</span>
             </>
           )}
         </div>
@@ -236,6 +253,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
 
       {blockerReason && (
         <div
+          title={`Blockiert: ${blockerReason}`}
           style={{
             fontSize: 12,
             color: C.rose,
@@ -254,6 +272,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
             <button
               type="button"
               onClick={onOpenPr}
+              className="focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none transition-all"
               style={{
                 padding: '7px 14px',
                 borderRadius: 8,
@@ -264,7 +283,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
                 fontWeight: 500,
                 cursor: 'pointer',
               }}
-              aria-label="PR öffnen"
+              title="Draft PR auf GitHub öffnen"
             >
               PR öffnen
             </button>
@@ -273,6 +292,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
             <button
               type="button"
               onClick={onViewDiff}
+              className="focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none transition-all"
               style={{
                 padding: '7px 14px',
                 borderRadius: 8,
@@ -283,7 +303,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
                 fontWeight: 500,
                 cursor: 'pointer',
               }}
-              aria-label="Diff ansehen"
+              title="Diff-Vorschau der Änderungen anzeigen"
             >
               Diff ansehen
             </button>
