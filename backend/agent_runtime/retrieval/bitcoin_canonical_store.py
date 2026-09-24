@@ -38,6 +38,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     weight INTEGER,
     virtual_size INTEGER,
     coinbase INTEGER NOT NULL CHECK (coinbase IN (0,1)),
+    input_value_sat INTEGER,
+    output_value_sat INTEGER NOT NULL CHECK (output_value_sat >= 0),
+    fee_sat INTEGER CHECK (fee_sat IS NULL OR fee_sat >= 0),
     content_hash TEXT NOT NULL
 );
 
@@ -239,8 +242,8 @@ class BitcoinCanonicalStore:
                 """
                 INSERT INTO transactions(
                     txid,block_height,block_hash,block_time,version,locktime,
-                    weight,virtual_size,coinbase,content_hash
-                ) VALUES(?,?,?,?,?,?,?,?,?,?)
+                    weight,virtual_size,coinbase,input_value_sat,output_value_sat,fee_sat,content_hash
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     tx.txid,
@@ -252,6 +255,9 @@ class BitcoinCanonicalStore:
                     tx.weight,
                     tx.virtual_size,
                     int(tx.coinbase),
+                    tx.input_value_sat,
+                    tx.output_value_sat,
+                    tx.fee_sat,
                     tx.content_hash,
                 ),
             )
