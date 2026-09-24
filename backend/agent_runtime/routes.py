@@ -46,7 +46,7 @@ from .github_access import (
     verify_github_access_scope,
 )
 from .job_lifecycle import create_sovereign_agent_job, generate_agent_job_id
-from .job_store import append_agent_evidence_anchor, append_agent_event, append_agent_github_draft_pr_readback, list_agent_evidence_anchors, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
+from .job_store import append_agent_evidence_anchor, append_agent_event, append_agent_github_draft_pr_readback, list_agent_evidence_anchors, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, read_latest_agent_github_draft_pr_readback, update_agent_job_state
 from .repository_execution import (
     RepositoryExecutionError,
     RepositoryExecutionTransientError,
@@ -2124,6 +2124,7 @@ def register_sovereign_agent_routes(
                 "sessionBindingHash": envelope_session_binding_hash,
                 "attemptId": envelope_attempt_id,
                 "evidenceAnchors": current,
+                "githubDraftPrReadback": read_latest_agent_github_draft_pr_readback(conn, user_id=user_id, job_id=job_id),
                 "historicalEvidenceAnchors": historical,
                 "authoritative": False,
             })

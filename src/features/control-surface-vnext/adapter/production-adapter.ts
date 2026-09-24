@@ -1,6 +1,7 @@
 import {
   createSovereignAgentClient,
   type SovereignDraftPrCreateResponse,
+  type SovereignDraftPrPublicationReadback,
 } from '../../product/runtime/sovereignAgentClient';
 import {
   resolveSovereignAgentConfig,
@@ -196,6 +197,33 @@ function newestEvidenceRevision(anchors: readonly SovereignWorkspaceEvidenceAnch
   return sorted[0]?.repositoryRevision ?? '';
 }
 
+function mapPersistedDraftPr(
+  pr: SovereignDraftPrPublicationReadback,
+  headBranch = '',
+  baseBranch = '',
+): DraftPR {
+  return {
+    url: pr.prUrl,
+    revision: pr.readbackHeadSha,
+    pullRequestNumber: pr.prNumber,
+    branch: headBranch,
+    baseBranch,
+    verifiedRevisionHash: pr.readbackHeadSha,
+    publishedHeadSha: pr.publishedHeadSha,
+    readbackHeadSha: pr.readbackHeadSha,
+    ciState: pr.ciState,
+    draftVerified: true,
+    readbackVerified: true,
+    checksReadbackVerified: true,
+    checkRunCount: pr.checkRunCount,
+    checksPendingCount: pr.checksPendingCount,
+    checksSuccessCount: pr.checksSuccessCount,
+    checksFailureCount: pr.checksFailureCount,
+    statusContextCount: pr.statusContextCount,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 function mapDraftPr(response: SovereignDraftPrCreateResponse): DraftPR {
   const pr = response.draftPrCreate;
   return {
@@ -224,7 +252,6 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
   private readonly config: ReturnType<typeof resolveSovereignAgentConfig>;
   private readonly client: ReturnType<typeof createSovereignAgentClient>;
   private readonly fetcher: typeof fetch;
-  private readonly publications = new Map<string, DraftPR>();
   private lastPingMs?: number;
   private lastErrorMessage?: string;
 
@@ -348,7 +375,15 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       nextAction: snapshot.prState === 'ready' ? 'create_draft_pr' : undefined,
     };
     const phase = phaseFromJob(snapshot, run);
-    const publication = this.publications.get(jobId);
+    let publication: DraftPR | undefined;
+    try {
+      const readback = await this.client.getPublicationReadback(jobId);
+      publication = readback
+        ? mapPersistedDraftPr(readback, snapshot.branchName || snapshot.branch || '', snapshot.branch || '')
+        : undefined;
+    } catch {
+      publication = undefined;
+    }
     const now = new Date().toISOString();
     return {
       id: jobId,
@@ -391,7 +426,17 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       ? await this.getPendingApproval(run.runId)
       : undefined;
     const currentRevision = newestEvidenceRevision(anchors);
-    const publication = this.publications.get(runId);
+    let publication: DraftPR | undefined;
+    if (run.jobId) {
+      try {
+        const readback = await this.client.getPublicationReadback(run.jobId);
+        publication = readback
+          ? mapPersistedDraftPr(readback, snapshot?.branchName || snapshot?.branch || '', snapshot?.branch || '')
+          : undefined;
+      } catch {
+        publication = undefined;
+      }
+    }
     const now = new Date().toISOString();
     const pendingInteraction = phase === 'AWAITING_OWNER_INPUT'
       ? approval
@@ -519,9 +564,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       );
     }
     const created = await this.client.createDraftPr(jobId);
-    const publication = mapDraftPr(created);
-    this.publications.set(runId, publication);
-    return publication;
+    return mapDraftPr(created);
   }
 
   async getToolchains(): Promise<Toolchain[]> {
