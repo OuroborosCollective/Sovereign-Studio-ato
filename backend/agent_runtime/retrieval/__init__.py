@@ -92,6 +92,16 @@ from .bitcoin_scann import (
     recall_at_k as bitcoin_recall_at_k,
     run_ann_then_exact,
 )
+from .bitcoin_canonical_store import (
+    BitcoinStoreError,
+    StoredPrevout,
+    BitcoinCanonicalStore,
+)
+from .bitcoin_chain_indexer import (
+    BitcoinIngestError,
+    BitcoinIngestResult,
+    ingest_chain,
+)
 from .bitcoin_scann_runtime import (
     BitcoinScannRuntimeError,
     build_live_searcher,
@@ -173,6 +183,13 @@ __all__ = [
     "BitcoinScannRuntimeError",
     "build_live_searcher",
     "search_with_exact_rescore",
+    # Bitcoin canonical persistence
+    "BitcoinStoreError",
+    "StoredPrevout",
+    "BitcoinCanonicalStore",
+    "BitcoinIngestError",
+    "BitcoinIngestResult",
+    "ingest_chain",
     # Bitcoin Wolfram CAG contract
     "BitcoinWolframContractError",
     "BitcoinCheck",
