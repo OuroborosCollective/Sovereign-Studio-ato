@@ -771,4 +771,4 @@ Evidence: Self-Update on main `1f85621741107e7242841f7a87a91a4da2acd04d` failed 
 Learned: The installer contained two separate tool-count authorities; changing the configured expected count alone did not update the live registry canary.
 Open: The final dynamic-count repair needs Draft PR CI and another immutable publish/self-update attempt.
 Next safe step: Publish this exact repair, require terminal green CI, then rerun the main immutable MCP publish and verify the live runtime revision/digest.
-Follow-up: Branch is clean at `65ebd1c94e4115b1f8ee9486bc08065454070436`; final PR creation is pending GitHub write-lane recovery.
+Follow-up: PR #2085 now exists at head `b648c2fc1a1d9229da282bb743cb410e04b324bf`; Guardian repair run `35960250694` completed successfully, while the earlier custom evidence check remained stale in the PR status projection.
