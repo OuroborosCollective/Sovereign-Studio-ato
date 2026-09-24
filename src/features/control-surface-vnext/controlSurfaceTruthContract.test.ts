@@ -49,7 +49,7 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     expect(repositoryAdapter).not.toContain("'/api/user/agent/swarm/run'");
     expect(adapterBase).toContain("'/api/user/agent/single/run'");
     expect(adapterBase).toContain("/api/user/agent/single/runs/");
-    expect(adapterBase).toContain("/cancel`);");
+    expect(adapterBase).toContain("/api/user/agent/single/runs/${encodeURIComponent(runId)}/cancel");
 
     for (const token of [
       "'/api/user/agent/toolchain/manifest'",
@@ -135,7 +135,7 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     expect(adapter).not.toContain('new Map<string, DraftPR>()');
     expect(adapter).not.toContain('this.publications.set(');
     expect(adapter).not.toContain('this.publications.get(');
-    expect(client).toContain('githubDraftPrReadback');
+    expect(client).toContain('currentGitHubDraftPrReadback');
     expect(client).toContain('getPublicationReadback(jobId: string)');
     expect(client).toContain("'/publication-readback'");
     expect(client).toContain('currentGitHubDraftPrReadback');
