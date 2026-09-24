@@ -56,6 +56,8 @@ def test_byte_identical_package_and_snapshot_export_mirrors() -> None:
         "bitcoin_scann.py",
         "bitcoin_wolfram_contract.py",
         "bitcoin_scann_runtime.py",
+        "bitcoin_canonical_store.py",
+        "bitcoin_chain_indexer.py",
     ):
         canonical = _CANONICAL_ROOT / relative
         production = _PRODUCTION_ROOT / relative
