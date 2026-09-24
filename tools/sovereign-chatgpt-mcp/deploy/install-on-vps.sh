@@ -2815,6 +2815,7 @@ set +e
 CANARY_OUTPUT="$(
 docker exec -i \
   -e SOVEREIGN_EXPECTED_CANARY_REVISION="$EXPECTED_REVISION" \
+  -e SOVEREIGN_EXPECTED_MCP_TOOL_COUNT="$EXPECTED_MCP_TOOL_COUNT" \
   sovereign-chatgpt-mcp python - 2>&1 <<'PY'
 import asyncio
 from datetime import datetime, timezone
@@ -2910,7 +2911,8 @@ with tempfile.TemporaryDirectory(
     assert getattr(commit_tool.fn, "__sovereign_operating_profile_wrapped__", False)
 
     registered_tools = list(launcher.mcp._tool_manager.list_tools())
-    assert len({tool.name for tool in registered_tools}) == 258
+    expected_tool_count = int(os.environ["SOVEREIGN_EXPECTED_MCP_TOOL_COUNT"])
+    assert len({tool.name for tool in registered_tools}) == expected_tool_count
 
     def call_registered(tool_name: str, arguments: dict[str, object]):
         return asyncio.run(tool_manager.call_tool(tool_name, arguments, convert_result=False))
@@ -2919,7 +2921,7 @@ with tempfile.TemporaryDirectory(
     empty_status = call_registered("neuro_runtime_contract_status", {})
     assert empty_status.ok is True, empty_status
     assert empty_status.status == "NEURO_RUNTIME_CONTRACT_READY", empty_status
-    assert empty_status.evidence["toolCount"] == 258, empty_status
+    assert empty_status.evidence["toolCount"] == expected_tool_count, empty_status
     assert empty_status.data["stateInitializedByThisCall"] is False, empty_status
     assert not isolated_state.exists(), "read-only status initialized isolated state"
     # Continuity is advisory provenance and intentionally not required for this

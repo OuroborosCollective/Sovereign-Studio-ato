@@ -772,12 +772,12 @@ Learned: Enabling a gated dynamic MCP surface in the installer requires the live
 Open: Repair needs a Draft PR and exact-head CI before another merge; Self-Update had rolled back cleanly and the running MCP remained on the prior verified digest.
 Next safe step: Publish the narrow repair, require terminal exact-head CI, then rerun the immutable MCP publish/self-update path and read back revision plus digest.
 
-### 2026-09-24 — Bitcoin full-chain graph × ScaNN × Wolfram evidence lane
-Status: PARTIAL; focused repository verification green, full PR suite/live chain ingest pending
-Task: Build the internal Bitcoin research pipeline that keeps canonical UTXO/transaction truth separate from approximate retrieval and mathematical counter-checking.
-Decisions: Bitcoin Core is the live source boundary; a persistent transactional UTXO/graph store is canonical; ScaNN is candidate retrieval only; exact rescore remains deterministic; Wolfram CAG is supplemental and cannot self-assert VERIFIED; no blockchain attribution is encoded in similarity.
-Touched surfaces: `backend/agent_runtime/retrieval/bitcoin_rpc.py`, `bitcoin_graph.py`, `bitcoin_canonical_store.py`, `bitcoin_chain_indexer.py`, `bitcoin_scann.py`, `bitcoin_scann_runtime.py`, `bitcoin_wolfram_contract.py`; shipping mirrors; retrieval regressions; backend CI; architecture documentation; Notion research architecture page.
-Evidence: PR #2088 head `f110bae5d2c8032d031b92c6872a17332b1ea87a`; focused Bitcoin Contract job passed compile +  tests on run `35966626003`; GitHub Integration Plan Lane and Continuity runs on the earlier synchronized head passed; live Wolfram kernel counter-checks returned `True`, `True`, and `Sqrt[2]`; Notion architecture page was created and re-fetched successfully.
-Learned: A full-chain graph needs same-transaction prevout resolution for intra-block spends and exact integer satoshi accounting; a separate storage boundary prevents ANN similarity from becoming truth.
-Open: Current PR's live ScaNN build/readback and full Agent Backend/Release runs are still pending; no real full-chain Bitcoin Core ingestion or production runtime evidence is claimed.
-Next safe step: Require terminal exact-head CI, then run the real Bitcoin Core → canonical-store ingest on an authorized node, build/read back the revision-bound ScaNN index, bind real Wolfram CAG receipts, and independently record the resulting evidence before any merge.
+### 2026-09-24 — Aurion Neuro-canary tool-count final repair
+Status: PARTIAL — exact current-main source repair verified; Draft PR pending
+Task: Remove the remaining stale 258 assumptions from the isolated Neuro deployment canary after the merged Aurion Admin MCP lane expanded the real Private Owner Mode tool surface.
+Decisions: Pass `EXPECTED_MCP_TOOL_COUNT` explicitly into the isolated canary and bind both registry-count assertions to it; keep the canary test harness at 258 because it intentionally does not enable the Aurion Admin MCP lane.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py`; `Memory.md`.
+Evidence: Current main before repair `3e362695060069646786bb5c8460948da9e7b79d`; Self-Update failure at `verify_isolated_neuro_runtime_canary`, phase `registry_surface`; focused installer-contract 9/9, Aurion lane 11/11, install-contract 21/21 and `git diff --check` pass after the final source/test correction.
+Learned: The Neuro runtime contract was already dynamic; the final activation blocker was stale deployment-canary literals, not a Neuro implementation defect.
+Open: Draft PR and exact-head GitHub CI remain pending; after merge, rerun immutable publish/self-update and verify the live revision plus digest.
+Next safe step: Create the Draft PR from the current-main branch and require terminal green exact-head CI.
