@@ -791,3 +791,13 @@ Evidence: Isolated workspace `job-83df4958ae2b` on `main@6baf7dd7d2ab179f580be65
 Learned: The frontend can remain neutral about the revision while Sovereign itself binds the exact repository HEAD at the backend truth boundary; caller-supplied SHA remains accepted and unchanged when present.
 Open: Draft PR exact-head CI and immutable runtime deployment/readback are still required.
 Next safe step: Create the Draft PR, require terminal exact-head CI, then deploy and read back the exact revision/digest before claiming the frontend issue fixed live.
+
+### 2026-09-24 — Responsive Agent Abort repair
+Status: PARTIAL — source + regression verified; exact-head CI/runtime pending
+Task: Make long-running Agent executions react to user Abort reliably instead of appearing indefinitely active.
+Decisions: Await the real abort mutation in the vNext UI; surface abort failures instead of swallowing promise rejection; on confirmed cancellation immediately project the backend-returned job snapshot; bound only Agent Zero `tasks/cancel` A2A calls to 5 seconds while preserving the existing 30-second task read timeout and exact canceled-state readback.
+Touched surfaces: `src/features/control-surface-vnext/App.tsx`, `src/features/control-surface-vnext/hooks/useSovereignJob.ts`, `backend/agent_runtime/agent_zero_a2a.py`, `scripts/sovereign-backend/agent_runtime/agent_zero_a2a.py`, `backend/tests/test_agent_zero_a2a.py`.
+Evidence: Fresh workspace `job-9f06b0a9874a` based on `main@6d661043fb1a9320bdb3c134ea2251497944ad7d`; A2A cancel regression 7/7 passed; repository execution regression 38/38 passed; `git_diff_check` and backend compile passed during Draft PR creation; canonical/shipping A2A files were maintained identically. Route-test collection was blocked locally by missing `flask`; frontend/node validation is correctly delegated to GitHub Actions. Draft PR #2092 was created at exact head `2b28d1771a322db9e86332819f11a8e371644a25`; exact-head CI is pending.
+Learned: The cancel capability already existed end-to-end; the observable failure was asynchronous UI error swallowing plus a long A2A cancel read timeout. The correct repair preserves fail-closed cancellation while making the user-visible path bounded and state-reactive.
+Open: Exact-head GitHub frontend/typecheck/build and runtime evidence are still required; no merge or production-live claim is made.
+Next safe step: Re-read PR #2092 at its final exact head, require terminal green checks, then perform the normal owner-gated merge and post-merge runtime/readback.
