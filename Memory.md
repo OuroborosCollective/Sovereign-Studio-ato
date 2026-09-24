@@ -752,6 +752,16 @@ Learned: Aurion already provides the complete admin authority boundary; Sovereig
 Open: No valid admin OAuth bearer was available for a live privileged `tools/call`; deployed Sovereign MCP still runs revision `5511c638e8ba0384420979692dd63ed7ec1d4b9d` and its immutable digest is not exposed by current readback. Two unrelated baseline suites remain red on fresh main: `test_tool_success_ranking.py` (7 failures) and `test_coordinated_release_reconciler.py` (13 failures).
 Next safe step: Review the Draft PR at exact head, obtain authenticated Admin-MCP read/plan canary evidence, then consider deployment/merge only after the normal owner gate.
 
+### 2026-09-24 — Aurion Admin MCP live-count gate final main repair
+Status: PARTIAL — exact current-main repair prepared; CI/runtime activation pending
+Task: Re-derive the post-merge Aurion Admin MCP live tool-count repair directly from current `main` after the prior PR branch conflicted during synchronization.
+Decisions: Preserve the merged 288-tool Private Owner Mode expectation, but make the live FastMCP registry assertion consume `EXPECTED_MCP_TOOL_COUNT` instead of a second hardcoded 258 value; keep 255 for non-owner mode and retain existing Aurion scope/authority boundaries.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py`; `Memory.md`.
+Evidence: Fresh workspace based on `main@1f85621741107e7242841f7a87a91a4da2acd04d`; installer patch SHA `497bd98e7f2a92a28e1d5ddc54d8e39f79e472a10d12800908befeaf151b12db`; focused Aurion lane/install tests remain green on the available runtime; local installer-contract execution is CI-owned because PyYAML installation is disabled in the MCP container.
+Learned: The merged installer has two independent live tool-count assertions; both must bind to the same computed expectation or revisionsame activation fails closed.
+Open: Publish this clean current-main branch, require terminal exact-head CI, then rerun immutable MCP publish/self-update and verify live revision plus digest.
+Next safe step: Create the Draft PR and use GitHub Actions as the authoritative dependency/test environment before any merge.
+
 ### 2026-09-24 — Aurion Admin MCP post-merge installer count repair
 Status: PARTIAL — source repair verified; post-merge runtime retry pending
 Task: Repair the private MCP installer count after the merged Aurion Admin MCP lane caused the revisionsame Self-Update to fail at live tool-surface verification.
