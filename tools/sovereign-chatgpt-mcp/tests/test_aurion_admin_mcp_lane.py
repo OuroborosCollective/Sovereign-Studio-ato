@@ -217,12 +217,19 @@ def test_server_registers_the_existing_aurion_tool_surface_when_enabled(monkeypa
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP", "1")
     monkeypatch.setenv("AURION_ADMIN_MCP_SCOPES", READ_SCOPE)
     monkeypatch.setenv("AURION_ADMIN_MCP_WOLFRAM_ENABLED", "0")
+    original_server = sys.modules.get("server")
     sys.modules.pop("server", None)
-    server = importlib.import_module("server")
-    registered = {tool.name for tool in server.mcp._tool_manager.list_tools()}
-    expected = set(exposed_tool_names(frozenset({READ_SCOPE}), wolfram_enabled=False))
-    assert expected <= registered
-    assert "aurion_admin_glb_import" not in registered
+    try:
+        server = importlib.import_module("server")
+        registered = {tool.name for tool in server.mcp._tool_manager.list_tools()}
+        expected = set(exposed_tool_names(frozenset({READ_SCOPE}), wolfram_enabled=False))
+        assert expected <= registered
+        assert "aurion_admin_glb_import" not in registered
+    finally:
+        if original_server is None:
+            sys.modules.pop("server", None)
+        else:
+            sys.modules["server"] = original_server
 
 
 def test_resource_url_is_hard_bound_to_existing_aurion_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
