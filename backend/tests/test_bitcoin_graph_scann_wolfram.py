@@ -205,3 +205,24 @@ def test_canonical_hash_does_not_depend_on_mapping_order() -> None:
     first = canonical_sha256({"txid": "a", "fee_sat": 1000})
     second = canonical_sha256({"fee_sat": 1000, "txid": "a"})
     assert first == second
+
+
+def test_live_scann_adapter_does_not_require_scann_at_import_time() -> None:
+    from backend.agent_runtime.retrieval.bitcoin_scann_runtime import BitcoinScannRuntimeError
+    assert issubclass(BitcoinScannRuntimeError, RuntimeError)
+
+
+def test_rpc_config_rejects_non_http_endpoint() -> None:
+    from backend.agent_runtime.retrieval.bitcoin_rpc import BitcoinCoreRpcConfig, BitcoinCoreRpcError
+    with pytest.raises(BitcoinCoreRpcError, match="HTTP"):
+        BitcoinCoreRpcConfig("file:///tmp/bitcoin")
+
+
+def test_rpc_client_never_constructs_without_credentials() -> None:
+    from backend.agent_runtime.retrieval.bitcoin_rpc import BitcoinCoreRpcClient, BitcoinCoreRpcConfig, BitcoinCoreRpcError
+    import os
+    os.environ.pop("BITCOIN_RPC_USER", None)
+    os.environ.pop("BITCOIN_RPC_PASSWORD", None)
+    client = BitcoinCoreRpcClient(BitcoinCoreRpcConfig("http://127.0.0.1:8332"))
+    with pytest.raises(BitcoinCoreRpcError, match="credentials"):
+        client._authorization()
