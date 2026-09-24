@@ -5015,7 +5015,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       let textToAppend = fullText;
       
       if (streamFallbackMetadata?.fallbackUsed) {
-        textToAppend += `\n\n_Hinweis: ${streamFallbackMetadata.preferredModel} war nicht erreichbar, Antwort kam von ${streamFallbackMetadata.actualModel}._`;
+        appendRuntimeNotice(`Hinweis: ${streamFallbackMetadata.preferredModel} war nicht erreichbar, Antwort kam von ${streamFallbackMetadata.actualModel}.`);
       }
 
       appendGuardedWorkerText(textToAppend);
@@ -5036,7 +5036,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       let textToAppend = fallback.content;
 
       if (fallback.fallbackUsed) {
-        textToAppend += `\n\n_Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}._`;
+        appendRuntimeNotice(`Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}.`);
       }
 
       appendGuardedWorkerText(textToAppend);

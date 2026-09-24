@@ -742,11 +742,42 @@ Learned: Hostinger should not inherit MCP-only environment requirements merely b
 Open: New draft PR and exact-head GitHub regression are pending; actual Hostinger revalidation still requires the Hostinger project endpoint/configuration to be reachable.
 Next safe step: publish the Draft PR, require terminal CI, then retry the Hostinger update and read back the project state.
 
-### 2026-09-23 — Sovereign vNext frontend video-contract repair
-Status: PARTIAL — repair complete; exact-head CI recheck and runtime readback pending
-Task: Repair the Sovereign frontend defects observed in the video: misleading Agent/route projection and repository A2A starts missing exact revision binding.
-Decisions: Keep repository execution strictly Free single-Agent-Zero; replace misleading FreeLLM/paid-route UI claims with the actual repository execution contract; bind every vNext repository start to a server-read exact HEAD SHA using the authenticated session GitHub readback and the configured Sovereign repository fallback.
-Touched surfaces: src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx; src/features/control-surface-vnext/adapter/repository-bound-adapter.ts; src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts; backend/agent_runtime/routes.py; backend/agent_runtime/repository_execution.py; backend/tests/test_agent_runtime_routes.py.
-Evidence: Video/readback showed the UI labeling the lane as FREELLM, exposing unavailable paid routes, and repository execution reaching repository_permission_unbound because no exact expectedHeadSha was supplied. The repair adds /api/user/agent/repository/head, resolves the server-held GitHub credential against the configured repository, and passes the returned 40-hex revision into the repository A2A request; regression coverage was added for the head-readback contract and exact revision binding.
-Learned: The frontend must project the execution contract actually owned by Agent Zero; repository permission/revocation cannot be proven from a mission alone and must be bound to a server-verified exact repository head.
-Update: Exact-head CI exposed canonical/deployment mirror drift in backend/agent_runtime/routes.py; the deployed mirror was synchronized with the canonical route, mirror diff is now 0, controller contract is 20/20, repository execution regression is 38/38, and git diff --check passes. Open: rerun terminal CI on the same head, then perform independent runtime/PatchMon readback before any merge or green-state claim.
+### 2026-09-24 — Real Aurion Admin MCP tool-lane integration
+Status: PARTIAL — contract/runtime surfaces integrated; authenticated Admin-MCP canary and production activation remain pending
+Task: Integrate the existing Aurion Admin MCP as a Sovereign/Sovottt private tool-lane without inventing an API, authority or authentication layer.
+Decisions: Reuse the existing HTTPS `/admin-mcp` resource, Aurion's OIDC/JWKS + audience + persisted `role=admin` authority and the three existing scopes; expose the 53 registered Aurion tools through the Sovereign private broker with separate read and write dispatch actions; keep Aurion as final schema/authorization authority; no Keycloak/OAuth/FusionAuth changes and no new public `/admin-*` route.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/aurion_admin_mcp_lane.py`, `server.py`, `broker.py`, `command_contract.py`, Docker/install contracts, and regression tests.
+Evidence: Uploaded Aurion snapshot fingerprints matched `AURION_ADMIN_MCP_CONTRACT.md`, `server/adminMcp.ts`, `server/adminMcpProtocol.ts`, and `shared/aurionAuthoringContract.ts`; 53-tool registration order and handler mappings captured; Admin-MCP lane tests 11/11 and install contract 21/21; Aurion and MariaDB containers healthy; PatchMon fleet runtime verified; no feature deployment performed.
+Learned: Aurion already provides the complete admin authority boundary; Sovereign should remain an adapter/broker lane and must not reproduce Aurion authorization or write logic.
+Open: No valid admin OAuth bearer was available for a live privileged `tools/call`; deployed Sovereign MCP still runs revision `5511c638e8ba0384420979692dd63ed7ec1d4b9d` and its immutable digest is not exposed by current readback. Two unrelated baseline suites remain red on fresh main: `test_tool_success_ranking.py` (7 failures) and `test_coordinated_release_reconciler.py` (13 failures).
+Next safe step: Review the Draft PR at exact head, obtain authenticated Admin-MCP read/plan canary evidence, then consider deployment/merge only after the normal owner gate.
+
+### 2026-09-24 — Aurion Admin MCP live-count gate final main repair
+Status: PARTIAL — exact current-main repair prepared; CI/runtime activation pending
+Task: Re-derive the post-merge Aurion Admin MCP live tool-count repair directly from current `main` after the prior PR branch conflicted during synchronization.
+Decisions: Preserve the merged 288-tool Private Owner Mode expectation, but make the live FastMCP registry assertion consume `EXPECTED_MCP_TOOL_COUNT` instead of a second hardcoded 258 value; keep 255 for non-owner mode and retain existing Aurion scope/authority boundaries.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py`; `Memory.md`.
+Evidence: Fresh workspace based on `main@1f85621741107e7242841f7a87a91a4da2acd04d`; installer patch SHA `497bd98e7f2a92a28e1d5ddc54d8e39f79e472a10d12800908befeaf151b12db`; focused Aurion lane/install tests remain green on the available runtime; local installer-contract execution is CI-owned because PyYAML installation is disabled in the MCP container.
+Learned: The merged installer has two independent live tool-count assertions; both must bind to the same computed expectation or revisionsame activation fails closed.
+Open: Publish this clean current-main branch, require terminal exact-head CI, then rerun immutable MCP publish/self-update and verify live revision plus digest.
+Next safe step: Create the Draft PR and use GitHub Actions as the authoritative dependency/test environment before any merge.
+
+### 2026-09-24 — Aurion Admin MCP post-merge installer count repair
+Status: PARTIAL — source repair verified; post-merge runtime retry pending
+Task: Repair the private MCP installer count after the merged Aurion Admin MCP lane caused the revisionsame Self-Update to fail at live tool-surface verification.
+Decisions: Keep Aurion disabled by default, but in Private Owner Mode count the existing 258-tool surface plus the 30 default read-only Aurion Admin tools, yielding 288; do not broaden scopes or change Aurion authority.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py`.
+Evidence: Main merge `ad4df69377eecbc5ba46a4a0bb4c0afdaea87e34`; immutable MCP publish and digest verification run `35957957386` SUCCESS; failed Self-Update stage `verify_live_tool_surface_and_widget_domain`; focused regressions 9/9 installer-contract, 11/11 Aurion lane, 21/21 install-contract plus `git diff --check` green after repair.
+Learned: Enabling a gated dynamic MCP surface in the installer requires the live expected tool count to follow the actual scope-gated registration, not the pre-integration baseline.
+Open: Repair needs a Draft PR and exact-head CI before another merge; Self-Update had rolled back cleanly and the running MCP remained on the prior verified digest.
+Next safe step: Publish the narrow repair, require terminal exact-head CI, then rerun the immutable MCP publish/self-update path and read back revision plus digest.
+
+### 2026-09-24 — Aurion Neuro-canary tool-count final repair
+Status: PARTIAL — exact current-main source repair verified; Draft PR pending
+Task: Remove the remaining stale 258 assumptions from the isolated Neuro deployment canary after the merged Aurion Admin MCP lane expanded the real Private Owner Mode tool surface.
+Decisions: Pass `EXPECTED_MCP_TOOL_COUNT` explicitly into the isolated canary and bind both registry-count assertions to it; keep the canary test harness at 258 because it intentionally does not enable the Aurion Admin MCP lane.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py`; `Memory.md`.
+Evidence: Current main before repair `3e362695060069646786bb5c8460948da9e7b79d`; Self-Update failure at `verify_isolated_neuro_runtime_canary`, phase `registry_surface`; focused installer-contract 9/9, Aurion lane 11/11, install-contract 21/21 and `git diff --check` pass after the final source/test correction.
+Learned: The Neuro runtime contract was already dynamic; the final activation blocker was stale deployment-canary literals, not a Neuro implementation defect.
+Open: Draft PR and exact-head GitHub CI remain pending; after merge, rerun immutable publish/self-update and verify the live revision plus digest.
+Next safe step: Create the Draft PR from the current-main branch and require terminal green exact-head CI.
