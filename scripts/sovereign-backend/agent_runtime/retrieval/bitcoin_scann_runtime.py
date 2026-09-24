@@ -61,8 +61,13 @@ def build_live_searcher(
             num_leaves_to_search=leaf_search,
             training_sample_size=min(training_sample_size, len(ids)),
         )
-    builder = builder.score_ah(2)
-    builder = builder.reorder(reorder_candidates or min(len(ids), max(default_k * 5, default_k)))
+    if len(ids) < 10_000:
+        builder = builder.score_brute_force()
+    else:
+        builder = builder.score_ah(2)
+        builder = builder.reorder(
+            reorder_candidates or min(len(ids), max(default_k * 5, default_k))
+        )
     searcher = builder.build(docids=list(ids))
 
     def search(query: Sequence[float], k: int):
