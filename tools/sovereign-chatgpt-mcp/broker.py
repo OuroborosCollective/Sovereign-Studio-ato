@@ -13,6 +13,7 @@ from typing import Any
 
 from admin_mode import PrivateAdminRuntime
 from agent_zero_diagnostics import AgentZeroDiagnosticsRuntime
+from aurion_admin_mcp_lane import AurionAdminMcpRuntime
 from aurion_operator import AurionOperatorRuntime
 from browserless_reader import BrowserlessReplayReader
 from command_contract import (
@@ -78,6 +79,7 @@ class BrokerRuntime:
         )
         self.admin = PrivateAdminRuntime(self.operations)
         self.aurion = AurionOperatorRuntime()
+        self.aurion_admin_mcp = AurionAdminMcpRuntime()
         self.self_update = SelfUpdateRuntime()
         self.github = GitHubAdminRuntime(self.self_update)
 
@@ -578,6 +580,16 @@ class BrokerRuntime:
                 open_id=str(values.get("open_id") or ""),
                 role=str(values.get("role") or ""),
                 expected_revision=str(values.get("expected_revision") or ""),
+            ),
+            "aurion_admin_mcp_read": lambda values: self.aurion_admin_mcp.call(
+                tool_name=str(values.get("tool_name") or ""),
+                arguments=values.get("arguments") if isinstance(values.get("arguments"), dict) else {},
+                require_write=False,
+            ),
+            "aurion_admin_mcp_write": lambda values: self.aurion_admin_mcp.call(
+                tool_name=str(values.get("tool_name") or ""),
+                arguments=values.get("arguments") if isinstance(values.get("arguments"), dict) else {},
+                require_write=True,
             ),
             "aurion_account_role_apply": lambda values: self.aurion.account_role_apply(
                 open_id=str(values.get("open_id") or ""),

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "6c71f993d03c1813be2084ecccffa886f8e74701",
+  "sourceRevision": "bddaf8af4d01fa8be0d9357a89cbfb5d67aaaf34",
   "rawCandidateCount": 102,
   "canonicalCandidateCount": 80,
   "entries": [
@@ -963,12 +963,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/server.py",
       "mirrorPaths": [],
       "symbol": "_patchmon_revision_from_payload",
-      "line": 2033,
+      "line": 2044,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "65518cba6173a1d84d71ced8ed11f4745ba6af6be1224abccfe27a2b4bef8016",
+      "fileSha256": "3d26b754cdbeb8666caaf5427cd49a77e977b2de5ab67ba2ebbdb54bd629e930",
       "anchorSha256": "89d6ce923bec8929a1cc3e2eab5011cafb2dd1164ae34ea15f09c2615b60e43a",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:290b98b9e1a108ff7e2640f7",
+      "candidateId": "llm-boundary:f1b660eacaac212e2c2b4285",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_patchmon_revision_from_payload reads only fixed SHA field names from structured GitHub evidence; it neither infers free-language intent nor authorizes execution."
     },
@@ -976,12 +976,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/server.py",
       "mirrorPaths": [],
       "symbol": "_patchmon_revision_binding",
-      "line": 2071,
+      "line": 2082,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "65518cba6173a1d84d71ced8ed11f4745ba6af6be1224abccfe27a2b4bef8016",
+      "fileSha256": "3d26b754cdbeb8666caaf5427cd49a77e977b2de5ab67ba2ebbdb54bd629e930",
       "anchorSha256": "a443b2f0083390465b24f733ff09571e7981e7d5b370e40802c10f76943a914a",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:afbce2429da8308103867d81",
+      "candidateId": "llm-boundary:c4ec696fb12ae0510c00430e",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_patchmon_revision_binding compares typed PR state, merge-commit and head SHA fields against one exact expected revision; it interprets no free language, selects no tool, and authorizes no effect."
     },
@@ -1090,5 +1090,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "a3fe67d4c519b612799dc643f0522f76903e31d8b35cc277fbe2e93afb15c1ea"
+  "ledgerSha256": "8ba2bd8b786a09c57a5e5838d40c594a12d701334c91373dcc8fb560bea978df"
 }
