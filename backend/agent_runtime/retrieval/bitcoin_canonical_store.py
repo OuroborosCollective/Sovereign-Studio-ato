@@ -238,6 +238,41 @@ class BitcoinCanonicalStore:
         )
 
         for tx in block.transactions:
+            resolved_inputs: list[StoredPrevout | None] = []
+            for item in tx.inputs:
+                if item.prevout is None:
+                    resolved_inputs.append(None)
+                    continue
+                resolved = self._resolve_prevout_on_connection(connection, item.prevout)
+                if resolved is None:
+                    raise BitcoinStoreError(
+                        f"missing prevout {item.prevout.key} while ingesting {tx.txid}"
+                    )
+                if item.value_sat is not None and item.value_sat != resolved.value_sat:
+                    raise BitcoinStoreError(
+                        f"input value mismatch for {item.prevout.key} in {tx.txid}"
+                    )
+                resolved_inputs.append(resolved)
+
+            input_value_sat = (
+                None
+                if tx.coinbase
+                else sum(
+                    int(resolved.value_sat)
+                    for resolved in resolved_inputs
+                    if resolved is not None
+                )
+            )
+            fee_sat = (
+                None
+                if input_value_sat is None
+                else input_value_sat - tx.output_value_sat
+            )
+            if fee_sat is not None and fee_sat < 0:
+                raise BitcoinStoreError(
+                    f"output value exceeds input value for {tx.txid}"
+                )
+
             connection.execute(
                 """
                 INSERT INTO transactions(
@@ -255,29 +290,14 @@ class BitcoinCanonicalStore:
                     tx.weight,
                     tx.virtual_size,
                     int(tx.coinbase),
-                    tx.input_value_sat,
+                    input_value_sat,
                     tx.output_value_sat,
-                    tx.fee_sat,
+                    fee_sat,
                     tx.content_hash,
                 ),
             )
 
-            for item in tx.inputs:
-                resolved = (
-                    self._resolve_prevout_on_connection(connection, item.prevout)
-                    if item.prevout is not None
-                    else None
-                )
-                if item.prevout is not None:
-                    if resolved is None:
-                        raise BitcoinStoreError(
-                            f"missing prevout {item.prevout.key} while ingesting {tx.txid}"
-                        )
-                    if item.value_sat is not None and item.value_sat != resolved.value_sat:
-                        raise BitcoinStoreError(
-                            f"input value mismatch for {item.prevout.key} in {tx.txid}"
-                        )
-
+            for item, resolved in zip(tx.inputs, resolved_inputs):
                 connection.execute(
                     """
                     INSERT INTO inputs(
@@ -291,9 +311,12 @@ class BitcoinCanonicalStore:
                         item.prevout.txid if item.prevout else None,
                         item.prevout.vout if item.prevout else None,
                         item.sequence,
-                        item.script_type,
-                        item.value_sat if item.prevout else None,
-                        resolved.block_height if resolved else None,
+                        (
+                            str(resolved.script_pubkey.get("type") or item.script_type)
+                            if resolved is not None else item.script_type
+                        ),
+                        resolved.value_sat if resolved is not None else None,
+                        resolved.block_height if resolved is not None else None,
                         item.script_bytes,
                     ),
                 )
@@ -322,7 +345,7 @@ class BitcoinCanonicalStore:
                 updated = connection.execute(
                     """
                     UPDATE outputs
-                    SET spent_by_txid=?, spent_by_input_index=?
+                    SET spent_by_txid=?,spent_by_input_index=?
                     WHERE txid=? AND vout=? AND spent_by_txid IS NULL
                     """,
                     (
@@ -341,12 +364,12 @@ class BitcoinCanonicalStore:
             tx_node = f"t:{tx.txid}"
             connection.execute(
                 "INSERT OR IGNORE INTO graph_edges(source,target,relation,block_height) VALUES(?,?,?,?)",
-                (block_node, tx_node, "contains", block.height),
+                (block_node,tx_node,"contains",block.height),
             )
             for output in tx.outputs:
                 connection.execute(
                     "INSERT OR IGNORE INTO graph_edges(source,target,relation,block_height) VALUES(?,?,?,?)",
-                    (tx_node, f"o:{tx.txid}:{output.vout}", "creates", block.height),
+                    (tx_node,f"o:{tx.txid}:{output.vout}","creates",block.height),
                 )
             for item in tx.inputs:
                 if item.prevout is not None:
