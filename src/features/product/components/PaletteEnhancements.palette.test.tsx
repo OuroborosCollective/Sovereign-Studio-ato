@@ -24,6 +24,7 @@ import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
 import { TestRunnerResultCard } from './TestRunnerResultCard';
 import { Ampel } from './Ampel';
+import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1209,6 +1210,64 @@ describe('Palette Accessibility Enhancements', () => {
       const hiddenElements = container.querySelectorAll('[aria-hidden="true"]');
       // 3 status light dots + 1 non-compact status text label = 4 hidden elements
       expect(hiddenElements.length).toBe(4);
+    });
+  });
+
+  describe('WorkerBlockerCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders alert container with aria-hidden decorative icon, focus-visible ring styles, and native title tooltips', () => {
+      const mockBlocker = {
+        message: 'LLM-Runtime nicht erreichbar',
+        diagnostic: {
+          route: '/api/chat',
+          model: 'gemini-2.0-flash',
+          messageCount: 1,
+          scope: 'authentication' as const,
+          status: 401,
+          canClientFix: true,
+          nextAction: 'retry',
+        },
+        createdAt: Date.now(),
+      };
+
+      const onLogin = vi.fn();
+      const onRetry = vi.fn();
+      const onExplain = vi.fn();
+      const onAgentInstead = vi.fn();
+
+      const { container } = render(
+        <WorkerBlockerCard
+          blocker={mockBlocker}
+          onLogin={onLogin}
+          onRetry={onRetry}
+          onExplain={onExplain}
+          onAgentInstead={onAgentInstead}
+          userMessage="Fix this issue in code"
+          allowAgentAction={true}
+        />
+      );
+
+      const alert = screen.getByRole('alert');
+      expect(alert).toBeInTheDocument();
+
+      const warningIcon = container.querySelector('[aria-hidden="true"]');
+      expect(warningIcon).toBeInTheDocument();
+      expect(warningIcon).toHaveTextContent('⚠️');
+
+      const loginBtn = screen.getByRole('button', { name: 'Bei Sovereign anmelden' });
+      expect(loginBtn).toHaveAttribute('title', 'Bei Sovereign anmelden');
+      expect(loginBtn).toHaveClass('focus-visible:ring-2');
+
+      const retryBtn = screen.getByRole('button', { name: 'Worker-Anfrage erneut ausführen' });
+      expect(retryBtn).toHaveAttribute('title', 'Worker-Anfrage erneut ausführen');
+      expect(retryBtn).toHaveClass('focus-visible:ring-2');
+
+      const explainBtn = screen.getByRole('button', { name: 'Diagnose und Fehlerursache erklären' });
+      expect(explainBtn).toHaveAttribute('title', 'Diagnose und Fehlerursache erklären');
+      expect(explainBtn).toHaveClass('focus-visible:ring-2');
+
+      const agentBtn = screen.getByRole('button', { name: 'Sovereign Agent für Code-Auftrag nutzen' });
+      expect(agentBtn).toHaveAttribute('title', 'Sovereign Agent für diesen Code-Auftrag nutzen');
+      expect(agentBtn).toHaveClass('focus-visible:ring-2');
     });
   });
 });
