@@ -791,3 +791,13 @@ Evidence: Isolated workspace `job-83df4958ae2b` on `main@6baf7dd7d2ab179f580be65
 Learned: The frontend can remain neutral about the revision while Sovereign itself binds the exact repository HEAD at the backend truth boundary; caller-supplied SHA remains accepted and unchanged when present.
 Open: Draft PR exact-head CI and immutable runtime deployment/readback are still required.
 Next safe step: Create the Draft PR, require terminal exact-head CI, then deploy and read back the exact revision/digest before claiming the frontend issue fixed live.
+
+### 2026-09-25 — MergeBlastRadius gate optimization carried forward
+Status: PARTIAL — current-main patch prepared; CI/runtime readback pending
+Task: Carry forward the reviewed MergeBlastRadiusGate single-pass optimization from stale PR #2067 without importing its obsolete branch metadata.
+Decisions: Keep module-scope critical-path regex reuse, single-pass path deduplication/critical classification, imperative importer summation, and boolean evidence-missing evaluation. Add a focused regression for deduplicated critical-path scoring while retaining the current architecture enhancement suite.
+Touched surfaces: `src/features/product/runtime/mergeBlastRadiusGateRuntime.ts`, `src/features/product/runtime/architectureEnhancements.test.ts`.
+Evidence: Source PR #2067 head `a65d6b63f0be29810eb70c40e097397ed7dc9b56` was green but GitHub reported `mergeable_state=dirty` against current `main@395d3b38507bb1e62af7aabe7c2418496f400c50`. Fresh current-main workspace showed the intended runtime diff was confined to the gate implementation; the stale PR's `.jules/bolt.md` metadata was excluded. Focused regression was added without altering the existing high-blast-radius behavior test.
+Learned: Performance-only PRs can be safely salvaged by moving the deterministic algorithmic delta onto current main and testing the observable score/decision contract rather than merging a divergent branch unchanged.
+Open: Fresh current-main branch still needs exact-head CI and merge readback.
+Next safe step: Create the Draft PR, require terminal exact-head CI, then merge only the exact green head.
