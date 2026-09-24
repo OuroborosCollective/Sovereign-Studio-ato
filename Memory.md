@@ -801,3 +801,13 @@ Evidence: Source PR #2069 head `bcce3a17c717b954ea1ecfe50fb5184eac79e5e9` was gr
 Learned: A stale accessibility PR can be salvaged safely by transplanting only the functional delta and composing its regression with the current test suite instead of copying an obsolete aggregate test snapshot.
 Open: Fresh current-main branch still needs exact-head CI and merge readback.
 Next safe step: Run the targeted and required GitHub checks, then create and merge only the exact green head.
+
+### 2026-09-25 — Bitcoin Graph × ScaNN × Wolfram refresh after security merge
+Status: PARTIAL — current-main refresh prepared; exact-head CI pending
+Task: Refresh the Bitcoin UTXO graph, ScaNN candidate/exact-rescore bridge, bounded Wolfram CAG checks, canonical SQLite ingest, index manifest, and guarded Bitcoin Core workflow from superseded PR #2099 onto the latest main.
+Decisions: Carry only the functional retrieval/workflow/test/doc surface; preserve secret and dedicated-runner boundaries; do not import stale branch history.
+Touched surfaces: `.github/workflows/bitcoin-full-chain-index.yml`, `.github/workflows/sovereign-agent-backend.yml`, Bitcoin retrieval modules and mirrors, contract tests, and the architecture document.
+Evidence: Current main was reread before editing in workspace `job-76e0f5142130`. Exact source PR #2099 head `36182e08ecc5b5bd85f44f59e122bf01b8956f70` was materialized. `backend/tests/test_scann_production_mirror.py` passed 3/3 on the refresh; canonical/shipping retrieval files are byte-identical according to the materialization hashes.
+Learned: Keeping the retrieval feature isolated from unrelated main changes allows repeated safe refreshes while GitHub CI supplies the dependency-complete Bitcoin/ScaNN validation.
+Open: Publish a fresh current-main PR and require terminal exact-head CI before merge.
+Next safe step: Create the refreshed Draft PR, close superseded #2099, then merge only its exact green head.
