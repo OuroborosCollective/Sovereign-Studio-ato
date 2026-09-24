@@ -186,7 +186,9 @@ def register_free_revolver_runtime(
     @app.route("/api/admin/llm/revolver-v3/profiles/<profile_key>", methods=["PATCH"])
     @require_admin
     def admin_update_free_revolver_profile(profile_key: str):
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
         mode = str(body.get("mode") or "sequential").lower()
         if mode == "race":
             return jsonify({
