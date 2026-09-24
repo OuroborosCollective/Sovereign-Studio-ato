@@ -140,6 +140,21 @@ jobs:
       - name: Run Bitcoin retrieval contract tests
         run: |
           PYTHONPATH=backend:scripts/sovereign-backend python -m pytest backend/tests/test_bitcoin_graph_scann_wolfram.py -v
+      - name: Probe authorized Bitcoin Core tip ingest
+        env:
+          BITCOIN_RPC_URL: ${{ secrets.BITCOIN_RPC_URL }}
+          BITCOIN_RPC_USER: ${{ secrets.BITCOIN_RPC_USER }}
+          BITCOIN_RPC_PASSWORD: ${{ secrets.BITCOIN_RPC_PASSWORD }}
+          BITCOIN_CANONICAL_STORE: data/bitcoin/ci-tip.sqlite
+        run: |
+          set -euo pipefail
+          if [[ -z "${BITCOIN_RPC_URL}" || -z "${BITCOIN_RPC_USER}" || -z "${BITCOIN_RPC_PASSWORD}" ]]; then
+            echo "BITCOIN_CORE_LIVE=NOT_CONFIGURED"
+            echo "No authorized Bitcoin Core endpoint is configured in repository secrets."
+            exit 0
+          fi
+          PYTHONPATH=scripts/sovereign-backend python scripts/sovereign-backend/bitcoin_full_chain_ingest.py --depth 3
+
       - name: Build and read a live ScaNN index
         run: |
           set -euo pipefail
