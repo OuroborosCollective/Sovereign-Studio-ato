@@ -1267,13 +1267,13 @@ set_managed_control_plane_directory_ownership "$IT_TOOLS_TEMPLATE_DIR" "template
 set_managed_control_plane_directory_ownership "$BACKEND_TEMPLATE_DIR" "templates/sovereign-backend"
 
 INSTALL_STAGE="copy_control_plane_files"
-for file in Dockerfile requirements.txt policy.py github_installation_auth.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py desktop_worker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py github_issue_contracts.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py sovereign_rescue_widget.py server.py aurion_operator.py tool_extensions.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py predictive_tool_router.py tool_success_ranking.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py patchmon_operator.py patchmon_fleet.py n8n_workflow_runtime.py n8n_workflow_tools.py launcher.py docker-compose.yml; do
+for file in Dockerfile requirements.txt policy.py github_installation_auth.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py desktop_worker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py github_issue_contracts.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py sovereign_rescue_widget.py server.py aurion_admin_mcp_lane.py aurion_operator.py tool_extensions.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py predictive_tool_router.py tool_success_ranking.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py patchmon_operator.py patchmon_fleet.py n8n_workflow_runtime.py n8n_workflow_tools.py launcher.py docker-compose.yml; do
   install_managed_control_plane_file 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file" "runtime/$file"
 done
 install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/CONTEXT.md" "$INSTALL_ROOT/continuity-data/CONTEXT.md" "continuity-data/CONTEXT.md"
 install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/LEDGER.jsonl" "$INSTALL_ROOT/continuity-data/LEDGER.jsonl" "continuity-data/LEDGER.jsonl"
 
-for file in broker.py agent_zero_diagnostics.py agent_zero_backend_probe.py aurion_operator.py desktop_worker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_installation_auth.py ci_repair_tools.py llm_boundary_ledger.py llm_boundary_contract.py self_update.py policy.py self_heal.py managed_compose.py n8n_host_maintenance.py n8n_workflow_runtime.py patchmon_operator.py patchmon_fleet.py fleet_maintenance.py; do
+for file in broker.py agent_zero_diagnostics.py agent_zero_backend_probe.py aurion_admin_mcp_lane.py aurion_operator.py desktop_worker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_installation_auth.py ci_repair_tools.py llm_boundary_ledger.py llm_boundary_contract.py self_update.py policy.py self_heal.py managed_compose.py n8n_host_maintenance.py n8n_workflow_runtime.py patchmon_operator.py patchmon_fleet.py fleet_maintenance.py; do
   install_managed_control_plane_file 0640 "$SOURCE_DIR/$file" "$BROKER_DIR/$file" "broker/$file"
 done
 install_managed_control_plane_file 0640 "$SOURCE_DIR/config/sovereign-governance-mode.json" "$BROKER_GOVERNANCE_MODE" "broker/sovereign-governance-mode.json"
@@ -1376,10 +1376,11 @@ if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
     SOVEREIGN_MCP_ENABLE_SELF_UPDATE \
     SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE \
     SOVEREIGN_MCP_ENABLE_AURION_OPERATOR \
-    SOVEREIGN_MCP_ENABLE_AURION_WRITE; do
+    SOVEREIGN_MCP_ENABLE_AURION_WRITE \
+    SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP; do
     set_value "$MANAGED_ENV" "$OWNER_CAPABILITY" "1"
   done
-  EXPECTED_MCP_TOOL_COUNT="258"
+  EXPECTED_MCP_TOOL_COUNT="288"
 fi
 INSTALL_STAGE="bind_private_owner_github_capabilities_to_ephemeral_app_auth"
 if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
@@ -2113,12 +2114,14 @@ if ! docker exec sovereign-chatgpt-mcp python -c 'import neuro_architecture_cont
 fi
 
 INSTALL_STAGE="verify_live_tool_surface_and_widget_domain"
-docker exec -i sovereign-chatgpt-mcp python - <<'PY'
+docker exec -i sovereign-chatgpt-mcp python - "${EXPECTED_MCP_TOOL_COUNT}" <<'PY'
 import asyncio
+import sys
 
 import launcher
 import server
 
+expected_tool_count = int(sys.argv[1])
 required_tools = {
     "agent_zero_backend_diagnostics",
     "agent_zero_a2a_canary",
@@ -2150,7 +2153,7 @@ neuro_tools = {
 }
 missing_tools = sorted(required_tools - tool_names)
 assert not missing_tools, {"missingRequiredTools": missing_tools, "toolCount": len(tool_names)}
-assert len(tool_names) == 258, {"expectedToolCount": 258, "actualToolCount": len(tool_names)}
+assert len(tool_names) == expected_tool_count, {"expectedToolCount": expected_tool_count, "actualToolCount": len(tool_names)}
 assert neuro_tools <= tool_names, sorted(neuro_tools - tool_names)
 registry = server._live_mcp_registry_evidence()
 assert registry.get("registry_runtime_verified") is True, registry
@@ -2812,6 +2815,7 @@ set +e
 CANARY_OUTPUT="$(
 docker exec -i \
   -e SOVEREIGN_EXPECTED_CANARY_REVISION="$EXPECTED_REVISION" \
+  -e SOVEREIGN_EXPECTED_MCP_TOOL_COUNT="$EXPECTED_MCP_TOOL_COUNT" \
   sovereign-chatgpt-mcp python - 2>&1 <<'PY'
 import asyncio
 from datetime import datetime, timezone
@@ -2907,7 +2911,8 @@ with tempfile.TemporaryDirectory(
     assert getattr(commit_tool.fn, "__sovereign_operating_profile_wrapped__", False)
 
     registered_tools = list(launcher.mcp._tool_manager.list_tools())
-    assert len({tool.name for tool in registered_tools}) == 258
+    expected_tool_count = int(os.environ["SOVEREIGN_EXPECTED_MCP_TOOL_COUNT"])
+    assert len({tool.name for tool in registered_tools}) == expected_tool_count
 
     def call_registered(tool_name: str, arguments: dict[str, object]):
         return asyncio.run(tool_manager.call_tool(tool_name, arguments, convert_result=False))
@@ -2916,7 +2921,7 @@ with tempfile.TemporaryDirectory(
     empty_status = call_registered("neuro_runtime_contract_status", {})
     assert empty_status.ok is True, empty_status
     assert empty_status.status == "NEURO_RUNTIME_CONTRACT_READY", empty_status
-    assert empty_status.evidence["toolCount"] == 258, empty_status
+    assert empty_status.evidence["toolCount"] == expected_tool_count, empty_status
     assert empty_status.data["stateInitializedByThisCall"] is False, empty_status
     assert not isolated_state.exists(), "read-only status initialized isolated state"
     # Continuity is advisory provenance and intentionally not required for this

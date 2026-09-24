@@ -158,6 +158,18 @@ def test_aurion_operator_module_is_packaged_for_the_runtime_import_contract() ->
     assert "aurion_operator.AurionOperatorRuntime is not None" in installer
 
 
+def test_aurion_admin_mcp_lane_module_is_packaged_for_the_runtime_import_contract() -> None:
+    installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
+    runtime_copy_loop = installer.split('INSTALL_STAGE="copy_control_plane_files"', 1)[1].split("\ndone", 1)[0]
+    broker_copy_loop = installer.split("for file in broker.py", 1)[1].split("\ndone", 1)[0]
+
+    assert "aurion_admin_mcp_lane.py" in dockerfile
+    assert "aurion_admin_mcp_lane.py" in runtime_copy_loop
+    assert "aurion_admin_mcp_lane.py" in broker_copy_loop
+    assert "SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP" in installer
+
+
 def test_runtime_import_contract_failure_is_bounded_and_phase_diagnostic() -> None:
     installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
 
