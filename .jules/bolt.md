@@ -75,3 +75,7 @@
 ## $(date +%Y-%m-%d) - Optimize GitHub Repository Tree Processing
 **Learning:** When dealing with large arrays like GitHub repository file trees, using declarative array methods like `.filter()`, `.slice()`, and `.map()` sequentially can evaluate the entire array before the slice operation. Consolidating this into a single pass `for...of` loop with an early `break` dramatically improves efficiency and ensures bounded execution. Additionally, using `indexOf` and `substring` to get top-level directories avoids the string splitting array allocations of `.split('/')`, which saves significant garbage collection overhead.
 **Action:** When bounding processed array results (e.g., using `.slice(0, LIMIT)` after a `.filter()`), consolidate this into a single `for...of` loop with an explicit early `break` to ensure bounded execution and skip string splitting inside loops.
+
+## 2026-08-27 - [Consolidating Chained Slice and Map in Diff Preview]
+**Learning:** Bounding array evaluations (e.g. `slice(0, 80).map(...)`) after a string `split()` allocates large, unnecessary intermediate arrays which causes garbage collection pressure, particularly when parsing file contents or unified diffs.
+**Action:** When bounding processed array results, convert chained `.slice()` and `.map()` calls into a single bounded `for` loop (or `for...of` with `break`) to avoid creating intermediate arrays and skip processing elements outside the bounds.
