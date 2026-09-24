@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { executeMCPTool, MCPToolRegistry, getMCPToolRegistry, getAvailableMCPTools } from './mcpFreeTools';
 import * as predictiveBridge from '@/predictive/toolPredictiveBridge';
 
