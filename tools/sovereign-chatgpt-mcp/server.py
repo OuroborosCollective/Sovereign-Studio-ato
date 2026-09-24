@@ -12,6 +12,15 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from a2a_runtime_client import A2ARuntimeClient
+from aurion_admin_mcp_lane import (
+    ALL_AURION_ADMIN_TOOLS,
+    CONTRACTS,
+    TOOL_DESCRIPTIONS,
+    AurionAdminMcpRuntime,
+    exposed_tool_names,
+    required_scope_for_tool,
+    tool_mode,
+)
 from android_hardening import AndroidHardeningRuntime
 from broker_client import HostBrokerClient
 import ci_repair_tools
@@ -80,6 +89,8 @@ def _private_admin_capabilities() -> list[str]:
         capabilities.extend(("aurion_account_role_readback", "aurion_account_role_plan"))
         if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_WRITE", "0").strip() == "1":
             capabilities.append("aurion_account_role_apply")
+    if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP", "0").strip() == "1":
+        capabilities.append("aurion_admin_mcp_tool_lane")
     return capabilities
 
 
@@ -2309,6 +2320,44 @@ def rollback_backend_release(target_image_digest: str, confirmation_digest: str)
     )
 
 
+def _register_aurion_admin_mcp_tool_lane() -> None:
+    """Expose the existing Aurion Admin MCP tools through the private Sovereign broker."""
+    if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP", "0").strip() != "1":
+        return
+    lane = AurionAdminMcpRuntime()
+    scopes = lane._local_allowed_scopes()
+    for tool_name in exposed_tool_names(
+        scopes,
+        wolfram_enabled=os.getenv("AURION_ADMIN_MCP_WOLFRAM_ENABLED", "0").strip() == "1",
+    ):
+        required_scope = required_scope_for_tool(tool_name)
+        action = "aurion_admin_mcp_write" if tool_mode(tool_name) == "write" else "aurion_admin_mcp_read"
+        timeout = 240 if tool_mode(tool_name) == "write" else 120
+
+        def make_handler(selected_name: str, selected_action: str, selected_timeout: int) -> Any:
+            def handler(**kwargs: Any) -> dict[str, Any]:
+                return broker.call(
+                    selected_action,
+                    {"tool_name": selected_name, "arguments": dict(kwargs)},
+                    timeout=selected_timeout,
+                )
+            handler.__name__ = selected_name
+            handler.__doc__ = TOOL_DESCRIPTIONS[selected_name]
+            return handler
+
+        handler = make_handler(tool_name, action, timeout)
+        annotation = EXTERNAL_WRITE if tool_mode(tool_name) == "write" else NETWORK_READ
+        tool = mcp._tool_manager.add_tool(
+            handler,
+            name=tool_name,
+            description=TOOL_DESCRIPTIONS[tool_name],
+            annotations=annotation,
+            structured_output=False,
+        )
+        tool.parameters = CONTRACTS[tool_name]
+
+
+_register_aurion_admin_mcp_tool_lane()
 register_owner_input_widget(mcp)
 register_sovereign_rescue_widget(mcp, read_only_annotations=READ_ONLY)
 register_sovereign_cognitive_widget(

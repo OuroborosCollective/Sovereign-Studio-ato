@@ -741,3 +741,13 @@ Evidence: exact main baseline 5511c638e8ba0384420979692dd63ed7ec1d4b9d; Compose 
 Learned: Hostinger should not inherit MCP-only environment requirements merely because the toolchain Compose file declares a blanket .env file; host-specific broker/image identity remains owned by the MCP installer and runtime.
 Open: New draft PR and exact-head GitHub regression are pending; actual Hostinger revalidation still requires the Hostinger project endpoint/configuration to be reachable.
 Next safe step: publish the Draft PR, require terminal CI, then retry the Hostinger update and read back the project state.
+
+### 2026-09-24 — Real Aurion Admin MCP tool-lane integration
+Status: PARTIAL — contract/runtime surfaces integrated; authenticated Admin-MCP canary and production activation remain pending
+Task: Integrate the existing Aurion Admin MCP as a Sovereign/Sovottt private tool-lane without inventing an API, authority or authentication layer.
+Decisions: Reuse the existing HTTPS `/admin-mcp` resource, Aurion's OIDC/JWKS + audience + persisted `role=admin` authority and the three existing scopes; expose the 53 registered Aurion tools through the Sovereign private broker with separate read and write dispatch actions; keep Aurion as final schema/authorization authority; no Keycloak/OAuth/FusionAuth changes and no new public `/admin-*` route.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/aurion_admin_mcp_lane.py`, `server.py`, `broker.py`, `command_contract.py`, Docker/install contracts, and regression tests.
+Evidence: Uploaded Aurion snapshot fingerprints matched `AURION_ADMIN_MCP_CONTRACT.md`, `server/adminMcp.ts`, `server/adminMcpProtocol.ts`, and `shared/aurionAuthoringContract.ts`; 53-tool registration order and handler mappings captured; Admin-MCP lane tests 11/11 and install contract 21/21; Aurion and MariaDB containers healthy; PatchMon fleet runtime verified; no feature deployment performed.
+Learned: Aurion already provides the complete admin authority boundary; Sovereign should remain an adapter/broker lane and must not reproduce Aurion authorization or write logic.
+Open: No valid admin OAuth bearer was available for a live privileged `tools/call`; deployed Sovereign MCP still runs revision `5511c638e8ba0384420979692dd63ed7ec1d4b9d` and its immutable digest is not exposed by current readback. Two unrelated baseline suites remain red on fresh main: `test_tool_success_ranking.py` (7 failures) and `test_coordinated_release_reconciler.py` (13 failures).
+Next safe step: Review the Draft PR at exact head, obtain authenticated Admin-MCP read/plan canary evidence, then consider deployment/merge only after the normal owner gate.
