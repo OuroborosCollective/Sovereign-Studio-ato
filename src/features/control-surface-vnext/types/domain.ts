@@ -90,6 +90,7 @@ export interface SovereignJob {
   draftPrPreparation?: DraftPrPreparation;
   sourceStatus?: string;
   nextAction?: string;
+  assistantMessage?: string;
   error?: { message: string; code?: string };
 }
 
@@ -129,7 +130,7 @@ export type IntegrationArchitectureAttachment = IntegrationAttachment;
 export interface ChatMessage {
   id: string;
   role?: 'human' | 'system' | 'agent' | 'assistant';
-  sender?: 'HUMAN' | 'SOVEREIGN_SWARM' | 'SYSTEM' | 'RUNTIME_MONITOR';
+  sender?: 'HUMAN' | 'SOVEREIGN_SWARM' | 'SOVEREIGN_AGENT' | 'SYSTEM' | 'RUNTIME_MONITOR';
   content: string;
   timestamp: string;
   evidenceBadge?: string;

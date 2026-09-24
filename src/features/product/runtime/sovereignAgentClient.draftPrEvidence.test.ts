@@ -74,6 +74,59 @@ describe('SovereignAgentClient Draft PR execution evidence', () => {
     expect(result.draftPrCreate.ciState).toBe('pending');
   });
 
+  it('rehydrates publication only from a fresh current GitHub readback', async () => {
+    const sha = 'e'.repeat(40);
+    const fetcher = vi.fn(async () => jsonResponse({
+      ok: true,
+      jobId: 'job-current',
+      reconciliationStatus: 'VERIFIED',
+      currentGitHubDraftPrReadback: {
+        jobId: 'job-current',
+        prUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/9996',
+        prNumber: 9996,
+        headSha: sha,
+        publishedHeadSha: sha,
+        readbackHeadSha: sha,
+        draftVerified: true,
+        prStateVerified: 'open',
+        headBranch: 'sovereign/test-draft-flow',
+        baseBranch: 'main',
+        readbackVerified: true,
+        checksReadbackVerified: true,
+        ciState: 'pending',
+        checkRunCount: 2,
+        checksPendingCount: 1,
+        checksSuccessCount: 1,
+        checksFailureCount: 0,
+        statusContextCount: 0,
+        sourceHash: 'f'.repeat(64),
+      },
+    })) as unknown as typeof fetch;
+    const client = new SovereignAgentClient({ config: CONFIG, fetcher });
+
+    const result = await client.getPublicationReadback('job-current');
+
+    expect(result?.jobId).toBe('job-current');
+    expect(result?.readbackHeadSha).toBe(sha);
+    expect(result?.draftVerified).toBe(true);
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://sovereign.example/api/user/agent/jobs/job-current/publication-readback',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
+  it('does not retain the historical publication when current GitHub reconciliation is unavailable', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      ok: true,
+      jobId: 'job-stale',
+      reconciliationStatus: 'CONTRADICTED',
+      currentGitHubDraftPrReadback: null,
+    })) as unknown as typeof fetch;
+    const client = new SovereignAgentClient({ config: CONFIG, fetcher });
+
+    await expect(client.getPublicationReadback('job-stale')).resolves.toBeUndefined();
+  });
+
   it('rejects a Draft PR whose readback SHA differs from the workspace publication SHA', async () => {
     const published = 'b'.repeat(40);
     const readback = 'c'.repeat(40);

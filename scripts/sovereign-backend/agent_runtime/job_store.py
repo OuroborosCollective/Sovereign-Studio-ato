@@ -514,6 +514,75 @@ def append_agent_github_draft_pr_readback(
     return source_hash
 
 
+def read_latest_agent_github_draft_pr_readback(
+    conn: Any,
+    *,
+    user_id: str,
+    job_id: str,
+) -> dict[str, Any] | None:
+    """Read the newest persisted, hash-validated GitHub Draft-PR readback."""
+
+    from .fleet_supervisor import stable_hash
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT event.payload
+            FROM sovereign_agent_events AS event
+            JOIN sovereign_agent_jobs AS job ON job.job_id = event.job_id
+            WHERE event.job_id = %s
+              AND job.user_id = %s
+              AND event.stage = 'github_draft_pr_readback'
+            ORDER BY event.created_at DESC, event.id DESC
+            LIMIT 1
+            """,
+            (job_id, user_id),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    raw = row.get("payload") if isinstance(row, Mapping) else None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(raw, Mapping):
+        return None
+    canonical = {
+        "schemaVersion": str(raw.get("schemaVersion") or ""),
+        "prUrl": str(raw.get("prUrl") or ""),
+        "prNumber": raw.get("prNumber"),
+        "headSha": str(raw.get("headSha") or "").lower(),
+        "publishedHeadSha": str(raw.get("publishedHeadSha") or "").lower(),
+        "readbackHeadSha": str(raw.get("readbackHeadSha") or "").lower(),
+        "draftVerified": raw.get("draftVerified") is True,
+        "prStateVerified": str(raw.get("prStateVerified") or ""),
+        "readbackVerified": raw.get("readbackVerified") is True,
+        "checksReadbackVerified": raw.get("checksReadbackVerified") is True,
+        "ciState": str(raw.get("ciState") or "none"),
+        "checkRunCount": int(raw.get("checkRunCount") or 0),
+        "checksPendingCount": int(raw.get("checksPendingCount") or 0),
+        "checksSuccessCount": int(raw.get("checksSuccessCount") or 0),
+        "checksFailureCount": int(raw.get("checksFailureCount") or 0),
+        "statusContextCount": int(raw.get("statusContextCount") or 0),
+    }
+    if raw.get("sourceHash") != stable_hash(canonical) or raw.get("authoritative") is not True:
+        return None
+    if not (
+        canonical["schemaVersion"] == "sovereign.github-draft-pr-readback.v1"
+        and canonical["draftVerified"]
+        and canonical["prStateVerified"] == "open"
+        and canonical["readbackVerified"]
+        and canonical["checksReadbackVerified"]
+        and canonical["headSha"] == canonical["publishedHeadSha"] == canonical["readbackHeadSha"]
+    ):
+        return None
+    canonical["sourceHash"] = str(raw["sourceHash"])
+    canonical["jobId"] = job_id
+    return canonical
+
+
 def list_agent_evidence_anchors(
     conn: Any,
     *,

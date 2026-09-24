@@ -811,3 +811,13 @@ Evidence: Source PR #2097 head `b08af178a12d6fab4db1bfb964be7e785e5afd53` became
 Learned: A clean current-main refresh is safer than rebasing a stale performance branch when only two deterministic files carry the intended feature.
 Open: Fresh current-main Draft PR publication and exact-head CI remain pending.
 Next safe step: Publish the refreshed branch, close stale #2097, then merge only after terminal green checks.
+
+### 2026-09-25 — vNext Single-Agent final-base refresh
+Status: PARTIAL — current-main transplant prepared; exact-head CI pending
+Task: Refresh the Single-Agent execution, persisted run/job state, cancellation/resume path, strict Draft-PR publication readback, and vNext projection contracts onto the latest main after MergeBlastRadius and Bitcoin merges.
+Decisions: Preserve Agent-Zero-only repository execution, backend-owned persisted truth, strict GitHub readback, owner consent, and canonical/shipping mirror parity; carry the repaired current truth contract rather than the older failing assertion.
+Touched surfaces: vNext control-surface adapters, hooks/types/tests, Sovereign Agent client, backend Agent-Zero/run-store/job-store/routes/Draft-PR gate, and shipping mirrors.
+Evidence: Exact source PR #2101 head `38e1e909a295992dd217883aa9479675e19cf675` was materialized in fresh workspace `job-6c50ec45e8c8` from current main. Repository diff contains only the reviewed Single-Agent/publication-truth delta; no MergeBlastRadius or Bitcoin files were overwritten. Previous exact-head Release Gate failure was isolated to two stale source-string assertions; both were aligned before this refresh.
+Learned: Once the truth-contract assertions are bound to the actual runtime strings and fresh current-main state, the Single-Agent lane remains portable without reintroducing its historical adapter-local publication cache.
+Open: Publish the final-base refresh and wait for terminal exact-head CI.
+Next safe step: Create the final Draft PR, close superseded #2101, then merge only the exact green head.

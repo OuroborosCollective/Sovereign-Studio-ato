@@ -126,6 +126,28 @@ export interface SovereignDraftPrCreateResponse {
   };
 }
 
+export interface SovereignDraftPrPublicationReadback {
+  jobId: string;
+  prUrl: string;
+  prNumber: number;
+  headSha: string;
+  publishedHeadSha: string;
+  readbackHeadSha: string;
+  headBranch: string;
+  baseBranch: string;
+  draftVerified: true;
+  prStateVerified: 'open';
+  readbackVerified: true;
+  checksReadbackVerified: true;
+  ciState: SovereignDraftPrCiState;
+  checkRunCount: number;
+  checksPendingCount: number;
+  checksSuccessCount: number;
+  checksFailureCount: number;
+  statusContextCount: number;
+  sourceHash: string;
+}
+
 export interface SovereignJanitorFinding {
   id: string;
   ruleId: string;
@@ -925,6 +947,81 @@ export class SovereignAgentClient {
     }
     return anchors;
   }
+  async getPublicationReadback(jobId: string): Promise<SovereignDraftPrPublicationReadback | undefined> {
+    assertReady(this.config);
+    const requestedJobId = jobId.trim();
+    if (!requestedJobId) throw new Error('Sovereign Agent job id is required.');
+    const body = await requestObject({
+      url: endpoint(this.config.agentApiUrl, jobPath(requestedJobId, '/publication-readback')),
+      init: { method: 'GET', headers: headers(), credentials: 'include' },
+      fetcher: this.fetcher,
+      fallback: 'Sovereign GitHub Draft PR publication readback',
+    });
+    const responseJobId = stringValue(body.jobId);
+    const raw = isObject(body.currentGitHubDraftPrReadback) ? body.currentGitHubDraftPrReadback : undefined;
+    if (!raw) return undefined;
+    if (responseJobId !== requestedJobId || stringValue(raw.jobId) !== requestedJobId) {
+      throw new Error('Sovereign GitHub Draft PR publication readback returned a mismatched job identity.');
+    }
+    const prUrl = stringValue(raw.prUrl);
+    const headSha = stringValue(raw.headSha)?.toLowerCase();
+    const publishedHeadSha = stringValue(raw.publishedHeadSha)?.toLowerCase();
+    const readbackHeadSha = stringValue(raw.readbackHeadSha)?.toLowerCase();
+    const prNumber = integerValue(raw.prNumber);
+    const ciState = draftPrCiState(raw.ciState);
+    const checkRunCount = integerValue(raw.checkRunCount);
+    const checksPendingCount = integerValue(raw.checksPendingCount);
+    const checksSuccessCount = integerValue(raw.checksSuccessCount);
+    const checksFailureCount = integerValue(raw.checksFailureCount);
+    const statusContextCount = integerValue(raw.statusContextCount);
+    const sourceHash = stringValue(raw.sourceHash)?.toLowerCase();
+    const verified = (
+      isGithubPullRequestUrl(prUrl)
+      && isCommitSha(headSha)
+      && isCommitSha(publishedHeadSha)
+      && isCommitSha(readbackHeadSha)
+      && headSha === publishedHeadSha
+      && publishedHeadSha === readbackHeadSha
+      && typeof prNumber === 'number' && prNumber > 0
+      && raw.draftVerified === true
+      && stringValue(raw.prStateVerified) === 'open'
+      && raw.readbackVerified === true
+      && raw.checksReadbackVerified === true
+      && Boolean(ciState)
+      && typeof checkRunCount === 'number'
+      && typeof checksPendingCount === 'number'
+      && typeof checksSuccessCount === 'number'
+      && typeof checksFailureCount === 'number'
+      && typeof statusContextCount === 'number'
+      && SHA256_RE.test(sourceHash || '')
+      && checksPendingCount + checksSuccessCount + checksFailureCount === checkRunCount
+    );
+    if (!verified) {
+      throw new Error('Sovereign persisted Draft PR publication receipt failed validation.');
+    }
+    return {
+      jobId: requestedJobId,
+      prUrl,
+      prNumber,
+      headSha,
+      publishedHeadSha,
+      readbackHeadSha,
+      headBranch: stringValue(raw.headBranch),
+      baseBranch: stringValue(raw.baseBranch),
+      draftVerified: true,
+      prStateVerified: 'open',
+      readbackVerified: true,
+      checksReadbackVerified: true,
+      ciState,
+      checkRunCount,
+      checksPendingCount,
+      checksSuccessCount,
+      checksFailureCount,
+      statusContextCount,
+      sourceHash: sourceHash as string,
+    };
+  }
+
   async cancelJob(jobId: string): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
