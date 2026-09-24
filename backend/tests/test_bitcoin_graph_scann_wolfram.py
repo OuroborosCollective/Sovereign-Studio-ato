@@ -276,8 +276,8 @@ def test_sqlite_store_resolves_intra_block_spend_and_enforces_single_spend(tmp_p
     store.ingest_rpc_block(height0)
     store.ingest_rpc_block(height1)
 
-    assert store.resolve_prevout("d" * 64, 0) is None
     assert store.resolve_prevout("c" * 64, 0).value_sat == 100_000_000
+    assert store.resolve_prevout("d" * 64, 0).value_sat == 99_999_000
 
     duplicate = {
         "height": 2,
