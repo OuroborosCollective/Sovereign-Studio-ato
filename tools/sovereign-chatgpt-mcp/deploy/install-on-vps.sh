@@ -2114,12 +2114,14 @@ if ! docker exec sovereign-chatgpt-mcp python -c 'import neuro_architecture_cont
 fi
 
 INSTALL_STAGE="verify_live_tool_surface_and_widget_domain"
-docker exec -i sovereign-chatgpt-mcp python - <<'PY'
+docker exec -i sovereign-chatgpt-mcp python - "${EXPECTED_MCP_TOOL_COUNT}" <<'PY'
 import asyncio
+import sys
 
 import launcher
 import server
 
+expected_tool_count = int(sys.argv[1])
 required_tools = {
     "agent_zero_backend_diagnostics",
     "agent_zero_a2a_canary",
@@ -2151,7 +2153,7 @@ neuro_tools = {
 }
 missing_tools = sorted(required_tools - tool_names)
 assert not missing_tools, {"missingRequiredTools": missing_tools, "toolCount": len(tool_names)}
-assert len(tool_names) == 258, {"expectedToolCount": 258, "actualToolCount": len(tool_names)}
+assert len(tool_names) == expected_tool_count, {"expectedToolCount": expected_tool_count, "actualToolCount": len(tool_names)}
 assert neuro_tools <= tool_names, sorted(neuro_tools - tool_names)
 registry = server._live_mcp_registry_evidence()
 assert registry.get("registry_runtime_verified") is True, registry
