@@ -17,11 +17,38 @@ export interface MergeBlastRadiusResult {
   readonly requiresAdditionalEvidence: boolean;
 }
 
+// ⚡ Bolt: Hoist regular expression to module scope to prevent re-compiling inside array filter loops.
+const CRITICAL_PATH_REGEX = /(^|\/)(auth|billing|security|migrations?|workflows?|deploy|runtime)(\/|\.|$)/i;
+
+/**
+ * ⚡ Bolt: Consolidated single-pass merge blast radius gate evaluation.
+ * Avoids multi-pass array allocations (.filter, Set, [...Set], .reduce, .some)
+ * by deduplicating paths, categorizing critical surfaces, and summing importer impact in a single pass.
+ */
 export function buildMergeBlastRadiusGate(input: MergeBlastRadiusInput): MergeBlastRadiusResult {
-  const uniquePaths = [...new Set(input.changedPaths.filter(Boolean))];
+  const seenPaths = new Set<string>();
+  const uniquePaths: string[] = [];
+  const criticalPaths: string[] = [];
+
+  for (const path of input.changedPaths) {
+    if (path && !seenPaths.has(path)) {
+      seenPaths.add(path);
+      uniquePaths.push(path);
+      if (CRITICAL_PATH_REGEX.test(path)) {
+        criticalPaths.push(path);
+      }
+    }
+  }
+
   const changedLines = Math.max(0, input.totalAddedLines) + Math.max(0, input.totalRemovedLines);
-  const importerCount = (input.dependencyImpact ?? []).reduce((sum, entry) => sum + entry.importerCount, 0);
-  const criticalPaths = uniquePaths.filter((path) => /(^|\/)(auth|billing|security|migrations?|workflows?|deploy|runtime)(\/|\.|$)/i.test(path));
+
+  let importerCount = 0;
+  if (input.dependencyImpact) {
+    for (const entry of input.dependencyImpact) {
+      importerCount += entry.importerCount;
+    }
+  }
+
   const reasons: string[] = [];
   let score = 0;
 
@@ -36,8 +63,7 @@ export function buildMergeBlastRadiusGate(input: MergeBlastRadiusInput): MergeBl
   if (criticalPaths.length) reasons.push(`Critical surfaces changed: ${criticalPaths.join(', ')}.`);
 
   const level = score >= 75 ? 'critical' : score >= 50 ? 'high' : score >= 25 ? 'medium' : 'low';
-  const evidenceMissing = [input.testEvidenceReady, input.securityEvidenceReady, input.releaseEvidenceReady]
-    .some((value) => value === false);
+  const evidenceMissing = input.testEvidenceReady === false || input.securityEvidenceReady === false || input.releaseEvidenceReady === false;
   const requiresAdditionalEvidence = (level === 'high' || level === 'critical') && evidenceMissing;
   if (requiresAdditionalEvidence) reasons.push('High blast radius requires complete test, security, and release evidence.');
 
