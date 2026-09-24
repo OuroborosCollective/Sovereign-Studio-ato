@@ -22,6 +22,7 @@ import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
+import { AgentWorkTimeline } from './AgentWorkTimeline';
 import { TestRunnerResultCard } from './TestRunnerResultCard';
 import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
@@ -1323,6 +1324,63 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(continueBtn);
       expect(onContinue).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('AgentWorkTimeline Accessibility and Micro-UX Enhancements', () => {
+    it('renders semantic event list, native tooltips, and focus-visible action controls', () => {
+      const snapshot = {
+        id: 'work-timeline-123',
+        state: 'draft_pr_ready' as const,
+        jobId: 'job-99',
+        branchName: 'feature/timeline-ux',
+        commitSha: 'c0ff33112233',
+        repoFullName: 'owner/timeline-repo',
+        draftPrUrl: 'https://github.com/owner/timeline-repo/pull/1',
+        events: [
+          { id: 'ev-1', ts: Date.now() - 5000, state: 'intent_detected' as const, label: 'Auftrag erkannt', detail: 'Analysis complete' },
+          { id: 'ev-2', ts: Date.now() - 4000, state: 'executor_started' as const, label: 'Executor gestartet' },
+          { id: 'ev-3', ts: Date.now() - 3000, state: 'patch_generated' as const, label: 'Patch generiert' },
+          { id: 'ev-4', ts: Date.now() - 2000, state: 'tests_passed' as const, label: 'Tests bestanden' },
+          { id: 'ev-5', ts: Date.now() - 1000, state: 'draft_pr_ready' as const, label: 'Draft PR erstellt' },
+        ],
+        created: Date.now() - 6000,
+        updated: Date.now() - 1000,
+      };
+      const onOpenPr = vi.fn();
+      const onViewDiff = vi.fn();
+
+      render(<AgentWorkTimeline snapshot={snapshot} onOpenPr={onOpenPr} onViewDiff={onViewDiff} />);
+
+      expect(screen.getByRole('region', { name: 'Agent Work Timeline' })).toBeInTheDocument();
+      expect(screen.getByRole('list', { name: 'Ereignisprotokoll' })).toBeInTheDocument();
+      expect(screen.getAllByRole('listitem')).toHaveLength(4);
+
+      const expandBtn = screen.getByRole('button', { name: '1 ältere Ereignisse anzeigen' });
+      expect(expandBtn).toHaveAttribute('title', '1 ältere Ereignisse anzeigen');
+      expect(expandBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(expandBtn);
+
+      const collapseBtn = screen.getByRole('button', { name: 'Weniger Ereignisse anzeigen' });
+      expect(collapseBtn).toHaveAttribute('title', 'Weniger Ereignisse anzeigen');
+      expect(collapseBtn).toHaveClass('focus-visible:ring-2');
+      expect(screen.getByTitle('owner/timeline-repo')).toBeInTheDocument();
+      expect(screen.getByTitle('feature/timeline-ux')).toBeInTheDocument();
+      expect(screen.getByTitle('Commit SHA: c0ff33112233')).toBeInTheDocument();
+      expect(screen.getByTitle('Analysis complete')).toBeInTheDocument();
+
+      const openPrBtn = screen.getByRole('button', { name: 'PR öffnen' });
+      const viewDiffBtn = screen.getByRole('button', { name: 'Diff ansehen' });
+      expect(openPrBtn).toHaveAttribute('title', 'Draft PR auf GitHub öffnen');
+      expect(openPrBtn).toHaveClass('focus-visible:ring-2');
+      expect(viewDiffBtn).toHaveAttribute('title', 'Diff-Vorschau der Änderungen anzeigen');
+      expect(viewDiffBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(openPrBtn);
+      fireEvent.click(viewDiffBtn);
+      expect(onOpenPr).toHaveBeenCalledTimes(1);
+      expect(onViewDiff).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -791,3 +791,13 @@ Evidence: Isolated workspace `job-83df4958ae2b` on `main@6baf7dd7d2ab179f580be65
 Learned: The frontend can remain neutral about the revision while Sovereign itself binds the exact repository HEAD at the backend truth boundary; caller-supplied SHA remains accepted and unchanged when present.
 Open: Draft PR exact-head CI and immutable runtime deployment/readback are still required.
 Next safe step: Create the Draft PR, require terminal exact-head CI, then deploy and read back the exact revision/digest before claiming the frontend issue fixed live.
+
+### 2026-09-25 — AgentWorkTimeline a11y cleanup carried forward
+Status: PARTIAL — current-main patch prepared; CI/runtime readback pending
+Task: Carry forward the reviewed AgentWorkTimeline accessibility/micro-UX improvements without overwriting newer Palette tests already integrated on main.
+Decisions: Keep the semantic `<ul>/<li>` event structure, native detail/status/metadata tooltips, decorative `aria-hidden` indicators, focus-visible action affordances, and the existing current-main WorkerBlockerCard/MissionValidatorCard tests. Rework the stale PR test as an additive AgentWorkTimeline regression rather than deleting newer tests.
+Touched surfaces: `src/features/product/components/AgentWorkTimeline.tsx`, `src/features/product/components/PaletteEnhancements.palette.test.tsx`.
+Evidence: Source PR #2069 head `bcce3a17c717b954ea1ecfe50fb5184eac79e5e9` was green but GitHub reported `mergeable_state=dirty` against current `main@395d3b38507bb1e62af7aabe7c2418496f400c50`; its original test patch removed two newer test blocks. Fresh current-main workspace preserved those blocks, applied only the Timeline implementation delta, and added an additive Timeline accessibility regression.
+Learned: A stale accessibility PR can be salvaged safely by transplanting only the functional delta and composing its regression with the current test suite instead of copying an obsolete aggregate test snapshot.
+Open: Fresh current-main branch still needs exact-head CI and merge readback.
+Next safe step: Run the targeted and required GitHub checks, then create and merge only the exact green head.
