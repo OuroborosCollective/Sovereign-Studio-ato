@@ -25,6 +25,7 @@ import { AgentResultCard } from './AgentResultCard';
 import { TestRunnerResultCard } from './TestRunnerResultCard';
 import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
+import { MissionValidatorCard } from './MissionValidatorCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1268,6 +1269,60 @@ describe('Palette Accessibility Enhancements', () => {
       const agentBtn = screen.getByRole('button', { name: 'Sovereign Agent für Code-Auftrag nutzen' });
       expect(agentBtn).toHaveAttribute('title', 'Sovereign Agent für diesen Code-Auftrag nutzen');
       expect(agentBtn).toHaveClass('focus-visible:ring-2');
+    });
+  });
+
+  describe('MissionValidatorCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders card section linked to title, with score badge tooltips, structured list, and focus-visible buttons', () => {
+      const mockResult = {
+        score: 75,
+        status: 'ready' as const,
+        questions: ['Gibt es spezielle Randfälle?', 'Welches Framework wird bevorzugt?'],
+        resolvedTransport: 'gemini-live',
+        modelUsed: 'gemini-2.0-flash',
+      };
+
+      const onContinue = vi.fn();
+      const onEdit = vi.fn();
+
+      render(
+        <MissionValidatorCard
+          result={mockResult}
+          onContinue={onContinue}
+          onEdit={onEdit}
+        />
+      );
+
+      const section = screen.getByTestId('mission-validator-card');
+      expect(section).toHaveAttribute('aria-labelledby', 'mission-validator-title');
+
+      const heading = screen.getByRole('heading', { name: 'Pre-flight Mission Validator', level: 3 });
+      expect(heading).toHaveAttribute('id', 'mission-validator-title');
+
+      const scoreBadge = screen.getByTitle('Qualitätsscore: 75 von 100');
+      expect(scoreBadge).toBeInTheDocument();
+      expect(scoreBadge).toHaveAttribute('aria-label', 'Qualitätsscore: 75 von 100');
+
+      const list = screen.getByRole('list', { name: 'Empfohlene Ergänzungen zur Mission' });
+      expect(list).toBeInTheDocument();
+      expect(screen.getAllByRole('listitem')).toHaveLength(2);
+
+      const editBtn = screen.getByRole('button', { name: 'Mission ergänzen' });
+      expect(editBtn).toHaveAttribute('title', 'Mission im Eingabefeld bearbeiten und präzisieren');
+      expect(editBtn).toHaveClass('focus-visible:ring-2');
+
+      const continueBtn = screen.getByRole('button', { name: 'Trotzdem starten' });
+      expect(continueBtn).toHaveAttribute('title', 'Mission ohne Ergänzung direkt ausführen');
+      expect(continueBtn).toHaveClass('focus-visible:ring-2');
+
+      const sourceElement = screen.getByTitle('Quelle der Missionsevaluierung: gemini-live · gemini-2.0-flash');
+      expect(sourceElement).toBeInTheDocument();
+
+      fireEvent.click(editBtn);
+      expect(onEdit).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(continueBtn);
+      expect(onContinue).toHaveBeenCalledTimes(1);
     });
   });
 });
