@@ -134,7 +134,9 @@ jobs:
             agent_runtime/retrieval/bitcoin_graph.py \
             agent_runtime/retrieval/bitcoin_scann.py \
             agent_runtime/retrieval/bitcoin_scann_runtime.py \
-            agent_runtime/retrieval/bitcoin_wolfram_contract.py             agent_runtime/retrieval/bitcoin_canonical_store.py             agent_runtime/retrieval/bitcoin_chain_indexer.py
+            agent_runtime/retrieval/bitcoin_wolfram_contract.py \
+            agent_runtime/retrieval/bitcoin_canonical_store.py \
+            agent_runtime/retrieval/bitcoin_chain_indexer.py
       - name: Run Bitcoin retrieval contract tests
         run: |
           PYTHONPATH=backend:scripts/sovereign-backend python -m pytest backend/tests/test_bitcoin_graph_scann_wolfram.py -v
