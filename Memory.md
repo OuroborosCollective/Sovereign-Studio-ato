@@ -811,3 +811,13 @@ Evidence: Source PR #2097 head `b08af178a12d6fab4db1bfb964be7e785e5afd53` became
 Learned: A clean current-main refresh is safer than rebasing a stale performance branch when only two deterministic files carry the intended feature.
 Open: Fresh current-main Draft PR publication and exact-head CI remain pending.
 Next safe step: Publish the refreshed branch, close stale #2097, then merge only after terminal green checks.
+
+### 2026-09-25 — Bitcoin Graph × ScaNN × Wolfram final-base refresh
+Status: PARTIAL — latest main refresh prepared; CI/readback pending
+Task: Refresh the Bitcoin retrieval lane once more after the MergeBlastRadius merge shifted main, preserving the exact functional surface and mirror parity.
+Decisions: Reapply the already reviewed Bitcoin Graph, ScaNN exact-rescore, Wolfram bounded-check, canonical SQLite, manifest and guarded workflow files only; keep stale PR metadata out.
+Touched surfaces: `.github/workflows/bitcoin-full-chain-index.yml`, `.github/workflows/sovereign-agent-backend.yml`, Bitcoin retrieval modules/mirrors, tests and architecture document.
+Evidence: Current-main Memory was read first in workspace `job-b83e495a01fd`; exact PR #2102 head `27aa67196504d4b69307da3b88a0c0ea747eeef9` was materialized. `backend/tests/test_scann_production_mirror.py` passes 3/3 and all materialized Bitcoin mirror hashes match between canonical and shipping trees.
+Learned: The Bitcoin lane has no dependency on the unrelated MergeBlastRadius or security merges; it can be refreshed deterministically until a terminal exact-head CI run is available.
+Open: Publish current-main PR and require terminal Bitcoin Graph/ScaNN/Wolfram plus repository gates before merge.
+Next safe step: Create the fresh Draft PR, close superseded #2102, then merge only the exact green head.
