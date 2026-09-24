@@ -112,3 +112,24 @@ jobs:
           path: agent-runtime-pytest.log
           if-no-files-found: error
           retention-days: 3
+
+
+  bitcoin-retrieval-contracts:
+    name: Bitcoin Graph ScaNN Wolfram Contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Setup verified backend Python runtime
+        uses: ./.github/actions/setup-backend-python
+        with:
+          python-version: '3.11'
+      - name: Compile Bitcoin retrieval modules
+        run: |
+          cd backend
+          python -m py_compile             agent_runtime/retrieval/bitcoin_rpc.py             agent_runtime/retrieval/bitcoin_graph.py             agent_runtime/retrieval/bitcoin_scann.py             agent_runtime/retrieval/bitcoin_scann_runtime.py             agent_runtime/retrieval/bitcoin_wolfram_contract.py
+      - name: Run Bitcoin retrieval contract tests
+        run: |
+          python -m pytest backend/tests/test_bitcoin_graph_scann_wolfram.py -v
