@@ -801,3 +801,13 @@ Evidence: Source PR #2069 head `bcce3a17c717b954ea1ecfe50fb5184eac79e5e9` was gr
 Learned: A stale accessibility PR can be salvaged safely by transplanting only the functional delta and composing its regression with the current test suite instead of copying an obsolete aggregate test snapshot.
 Open: Fresh current-main branch still needs exact-head CI and merge readback.
 Next safe step: Run the targeted and required GitHub checks, then create and merge only the exact green head.
+
+### 2026-09-25 — MergeBlastRadius optimization current-main refresh
+Status: PARTIAL — functional delta prepared on fresh main; CI/readback pending
+Task: Refresh the reviewed single-pass MergeBlastRadius gate optimization from stale PR #2097 onto the latest main without carrying stale branch metadata.
+Decisions: Preserve the deterministic runtime optimization and focused score/decision regression; do not overwrite newer main content.
+Touched surfaces: `src/features/product/runtime/mergeBlastRadiusGateRuntime.ts`, `src/features/product/runtime/architectureEnhancements.test.ts`.
+Evidence: Source PR #2097 head `b08af178a12d6fab4db1bfb964be7e785e5afd53` became dirty after main advanced to the #2096 merge. Fresh workspace `job-f9257e03e4eb` materialized only the two functional/test paths from the exact source head; current-main Memory was read before editing.
+Learned: A clean current-main refresh is safer than rebasing a stale performance branch when only two deterministic files carry the intended feature.
+Open: Fresh current-main Draft PR publication and exact-head CI remain pending.
+Next safe step: Publish the refreshed branch, close stale #2097, then merge only after terminal green checks.
