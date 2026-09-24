@@ -22,10 +22,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: bitcoin-full-chain-index
+  cancel-in-progress: false
+
 jobs:
   bitcoin-full-chain:
     name: Authorized Bitcoin Core full-chain ingest
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, bitcoin-indexer]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -66,11 +70,11 @@ jobs:
           fi
           PYTHONPATH=scripts/sovereign-backend python scripts/sovereign-backend/bitcoin_full_chain_ingest.py "${args[@]}"
 
-      - name: Upload bounded ingest metadata
+      - name: Record full-chain ingest completion
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: bitcoin-canonical-ingest-${{ github.run_id }}
-          path: data/bitcoin
-          if-no-files-found: warn
-          retention-days: 7
+        run: |
+          set -euo pipefail
+          if [[ -f "${{ inputs.store_path }}" ]]; then
+            stat -c 'BITCOIN_CANONICAL_STORE_BYTES=%s' "${{ inputs.store_path }}"
+          fi
+          echo "BITCOIN_FULL_CHAIN_WORKFLOW_DONE=1"
