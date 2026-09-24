@@ -310,3 +310,80 @@ def test_sqlite_store_resolves_intra_block_spend_and_enforces_single_spend(tmp_p
 def test_chain_indexer_is_resumable_from_store_height() -> None:
     from agent_runtime.retrieval.bitcoin_chain_indexer import BitcoinIngestResult
     assert BitcoinIngestResult(0, 0, 0, {}, "").blocks_ingested == 0
+
+
+def test_bitcoin_index_manifest_is_shard_contiguous_and_content_addressed() -> None:
+    from agent_runtime.retrieval.bitcoin_index_manifest import (
+        BitcoinIndexManifestError,
+        BitcoinIndexShardManifest,
+        create_manifest,
+    )
+    shards = (
+        BitcoinIndexShardManifest(
+            shard_id="shard-0000",
+            block_start=0,
+            block_end=100,
+            transaction_start=0,
+            transaction_end=2,
+            vector_count=2,
+            corpus_hash="a" * 64,
+            index_hash="b" * 64,
+            index_relative_path="indices/0000",
+        ),
+        BitcoinIndexShardManifest(
+            shard_id="shard-0001",
+            block_start=101,
+            block_end=200,
+            transaction_start=2,
+            transaction_end=4,
+            vector_count=2,
+            corpus_hash="c" * 64,
+            index_hash="d" * 64,
+            index_relative_path="indices/0001",
+        ),
+    )
+    manifest = create_manifest(
+        source_graph_hash="e" * 64,
+        corpus_hash="f" * 64,
+        source_revision="1" * 40,
+        block_start=0,
+        block_end=200,
+        transaction_count=4,
+        vector_dimension=40,
+        scann_version="1.4.2",
+        distance_metric="squared_l2",
+        normalization="l2",
+        cpu_architecture="x86_64",
+        shard_transaction_limit=2,
+        shards=shards,
+    )
+    assert len(manifest.shards) == 2
+    assert len(manifest.manifest_hash) == 64
+    assert manifest.manifest_hash == manifest.manifest_hash
+
+    with pytest.raises(BitcoinIndexManifestError, match="contiguous"):
+        create_manifest(
+            source_graph_hash="e" * 64,
+            corpus_hash="f" * 64,
+            source_revision="1" * 40,
+            block_start=0,
+            block_end=200,
+            transaction_count=4,
+            vector_dimension=40,
+            scann_version="1.4.2",
+            distance_metric="squared_l2",
+            normalization="l2",
+            cpu_architecture="x86_64",
+            shard_transaction_limit=2,
+            shards=(shards[0], BitcoinIndexShardManifest(
+                shard_id="shard-0002",
+                block_start=101,
+                block_end=200,
+                transaction_start=3,
+                transaction_end=4,
+                vector_count=1,
+                corpus_hash="c" * 64,
+                index_hash="d" * 64,
+                index_relative_path="indices/0002",
+            )),
+        )
