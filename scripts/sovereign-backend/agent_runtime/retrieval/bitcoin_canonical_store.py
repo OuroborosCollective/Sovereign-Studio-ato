@@ -267,7 +267,7 @@ class BitcoinCanonicalStore:
                         raise BitcoinStoreError(
                             f"missing prevout {item.prevout.key} while ingesting {tx.txid}"
                         )
-                    if item.value_sat != resolved.value_sat:
+                    if item.value_sat is not None and item.value_sat != resolved.value_sat:
                         raise BitcoinStoreError(
                             f"input value mismatch for {item.prevout.key} in {tx.txid}"
                         )
