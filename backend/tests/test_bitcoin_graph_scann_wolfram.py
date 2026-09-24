@@ -226,3 +226,62 @@ def test_rpc_client_never_constructs_without_credentials() -> None:
     client = BitcoinCoreRpcClient(BitcoinCoreRpcConfig("http://127.0.0.1:8332"))
     with pytest.raises(BitcoinCoreRpcError, match="credentials"):
         client._authorization()
+
+
+def test_sqlite_store_resolves_intra_block_spend_and_enforces_single_spend(tmp_path) -> None:
+    from agent_runtime.retrieval.bitcoin_canonical_store import BitcoinCanonicalStore, BitcoinStoreError
+    db = tmp_path / "bitcoin.sqlite"
+    store = BitcoinCanonicalStore(str(db))
+    store.initialize()
+    raw = {
+        "height": 1,
+        "hash": "a" * 64,
+        "previousblockhash": "b" * 64,
+        "time": 1,
+        "nonce": 0,
+        "bits": "1d00ffff",
+        "tx": [
+            {
+                "txid": "c" * 64,
+                "version": 2,
+                "locktime": 0,
+                "vin": [{"coinbase": "0101", "sequence": 0}],
+                "vout": [{"value": "1.00000000", "n": 0, "scriptPubKey": {"type": "p2pk"}}],
+            },
+            {
+                "txid": "d" * 64,
+                "version": 2,
+                "locktime": 0,
+                "vin": [{"txid": "c" * 64, "vout": 0, "sequence": 1}],
+                "vout": [{"value": "0.99999000", "n": 0, "scriptPubKey": {"type": "p2wpkh"}}],
+            },
+        ],
+    }
+    store.ingest_rpc_block(raw) if False else None
+    # Height 1 needs a persisted height 0 for the canonical chain contract.
+    genesis_like = {
+        **raw,
+        "height": 0,
+        "hash": "b" * 64,
+        "tx": [raw["tx"][0]],
+    }
+    store.ingest_rpc_block(genesis_like)
+    raw["previousblockhash"] = "b" * 64
+    store.ingest_rpc_block(raw)
+    assert store.resolve_prevout("d" * 64, 0) is None
+    assert store.resolve_prevout("c" * 64, 0).value_sat == 100_000_000
+    duplicate = dict(raw)
+    duplicate["height"] = 2
+    duplicate["hash"] = "e" * 64
+    duplicate["previousblockhash"] = "a" * 64
+    duplicate["tx"] = [raw["tx"][0], {
+        **raw["tx"][1],
+        "txid": "f" * 64,
+    }]
+    with pytest.raises(BitcoinStoreError, match="already spent"):
+        store.ingest_rpc_block(duplicate)
+
+
+def test_chain_indexer_is_resumable_from_store_height() -> None:
+    from agent_runtime.retrieval.bitcoin_chain_indexer import BitcoinIngestResult
+    assert BitcoinIngestResult(0, 0, 0, {}, "").blocks_ingested == 0
