@@ -751,3 +751,13 @@ Evidence: Uploaded Aurion snapshot fingerprints matched `AURION_ADMIN_MCP_CONTRA
 Learned: Aurion already provides the complete admin authority boundary; Sovereign should remain an adapter/broker lane and must not reproduce Aurion authorization or write logic.
 Open: No valid admin OAuth bearer was available for a live privileged `tools/call`; deployed Sovereign MCP still runs revision `5511c638e8ba0384420979692dd63ed7ec1d4b9d` and its immutable digest is not exposed by current readback. Two unrelated baseline suites remain red on fresh main: `test_tool_success_ranking.py` (7 failures) and `test_coordinated_release_reconciler.py` (13 failures).
 Next safe step: Review the Draft PR at exact head, obtain authenticated Admin-MCP read/plan canary evidence, then consider deployment/merge only after the normal owner gate.
+
+### 2026-09-24 — Aurion Admin MCP post-merge installer count repair
+Status: PARTIAL — source repair verified; post-merge runtime retry pending
+Task: Repair the private MCP installer count after the merged Aurion Admin MCP lane caused the revisionsame Self-Update to fail at live tool-surface verification.
+Decisions: Keep Aurion disabled by default, but in Private Owner Mode count the existing 258-tool surface plus the 30 default read-only Aurion Admin tools, yielding 288; do not broaden scopes or change Aurion authority.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py`.
+Evidence: Main merge `ad4df69377eecbc5ba46a4a0bb4c0afdaea87e34`; immutable MCP publish and digest verification run `35957957386` SUCCESS; failed Self-Update stage `verify_live_tool_surface_and_widget_domain`; focused regressions 9/9 installer-contract, 11/11 Aurion lane, 21/21 install-contract plus `git diff --check` green after repair.
+Learned: Enabling a gated dynamic MCP surface in the installer requires the live expected tool count to follow the actual scope-gated registration, not the pre-integration baseline.
+Open: Repair needs a Draft PR and exact-head CI before another merge; Self-Update had rolled back cleanly and the running MCP remained on the prior verified digest.
+Next safe step: Publish the narrow repair, require terminal exact-head CI, then rerun the immutable MCP publish/self-update path and read back revision plus digest.
