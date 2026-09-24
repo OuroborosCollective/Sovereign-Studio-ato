@@ -23,6 +23,7 @@ from .cognitive_run_store import (
     AgentRunNotResumable,
     AgentRunResumeConflict,
     NON_RESUMABLE_RUN_STATUSES,
+    cancel_agent_run,
     claim_agent_run_for_resume,
     create_agent_run,
     read_latest_agent_response,
@@ -1090,6 +1091,7 @@ def start_cognitive_swarm_run(
     _free_repository_toolset: Any | None = None,
     _free_task_id: str | None = None,
     _free_mission_intent: Any | None = None,
+    expected_lease_token: str | None = None,
 ) -> tuple[dict[str, object], int]:
     """Execute the single persisted Agents SDK start path for REST and A2A."""
 
@@ -1617,6 +1619,7 @@ def start_cognitive_swarm_run(
                     },
                     agent_id="free_single_agent",
                     task_id=free_task_id,
+                    expected_lease_token=expected_lease_token,
                 )
             finally:
                 _close_connection(conn)
@@ -1721,6 +1724,7 @@ def start_cognitive_swarm_run(
                         _free_repository_toolset=repository_toolset,
                         _free_task_id=free_task_id,
                         _free_mission_intent=mission_intent,
+                        expected_lease_token=expected_lease_token,
                     )
             if _single_agent_run_cancelled(get_connection, user_id=user_id, run_id=resolved_run_id):
                 return {
@@ -1760,6 +1764,7 @@ def start_cognitive_swarm_run(
                     },
                     agent_id="free_single_agent",
                     task_id=free_task_id,
+                    expected_lease_token=expected_lease_token,
                 )
             finally:
                 _close_connection(conn)
@@ -2569,10 +2574,21 @@ def register_cognitive_swarm_routes(
                 "errorType": type(exc).__name__,
             }), 503
 
-        worker_done = threading.Event()
-
         def execute_single() -> None:
+            claim = None
             try:
+                conn = get_connection()
+                try:
+                    claim = claim_agent_run_for_resume(
+                        conn,
+                        user_id=user_id,
+                        run_id=run_id,
+                        supplied_evidence=evidence,
+                        trace_id=trace_id,
+                        lease_seconds=_resume_lease_seconds(),
+                    )
+                finally:
+                    _close_connection(conn)
                 _start_run_without_github_authority(
                     get_connection=get_connection,
                     user_id=user_id,
@@ -2588,7 +2604,10 @@ def register_cognitive_swarm_routes(
                     session_key=session_key,
                     trace_id=trace_id,
                     _reuse_received_state=received_state,
+                    expected_lease_token=claim.lease_token,
                 )
+            except (AgentRunResumeConflict, AgentRunNotResumable, AgentRunIterationLimit):
+                return
             except Exception as exc:
                 if _single_agent_run_cancelled(get_connection, user_id=user_id, run_id=run_id):
                     return
@@ -2600,7 +2619,7 @@ def register_cognitive_swarm_routes(
                             user_id=user_id,
                             run_id=run_id,
                             status="FAILED_RECOVERABLE",
-                            source="sovereign-single-agent",
+                            source="agents-sdk",
                             trace_id=trace_id,
                             reason="Single-agent runner failed before a terminal result was persisted.",
                             next_action="READ_PERSISTED_RUN_AND_RESUME",
@@ -2608,13 +2627,12 @@ def register_cognitive_swarm_routes(
                             evidence_summary="Backend-owned single-agent runner failure was persisted for the existing run.",
                             evidence_payload={"errorType": type(exc).__name__},
                             agent_id="single_agent_runner",
+                            expected_lease_token=claim.lease_token if claim is not None else None,
                         )
                     finally:
                         _close_connection(conn)
                 except Exception:
                     pass
-            finally:
-                worker_done.set()
 
         threading.Thread(
             target=execute_single,
@@ -2682,19 +2700,12 @@ def register_cognitive_swarm_routes(
                 return jsonify({"error": "run not found"}), 404
             if run.status in TERMINAL_RUN_STATUSES:
                 return jsonify({"error": "run is already terminal", "status": run.status}), 409
-            state = transition_agent_run(
+            state = cancel_agent_run(
                 conn,
                 user_id=user_id,
                 run_id=run_id,
-                status="BLOCKED",
-                source="sovereign-single-agent",
                 trace_id=run.trace_id,
                 reason="Cancelled by owner.",
-                next_action="RUN_CANCELLED",
-                evidence_kind="single_agent_cancel",
-                evidence_summary="Owner cancellation requested for the active single-agent run.",
-                evidence_payload={"cancelled": True, "source": "owner"},
-                agent_id="owner",
             )
             return jsonify({
                 "ok": True,
@@ -2703,7 +2714,9 @@ def register_cognitive_swarm_routes(
                 "status": state["status"],
                 "nextAction": state["nextAction"],
                 "reason": state["reason"],
-                "cancelled": True,
+                "cancelled": bool(state["cancelled"]),
+                "evidenceId": state["evidenceId"],
+                "eventId": state["eventId"],
                 "secretValuesReturned": False,
             })
         finally:

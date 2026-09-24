@@ -811,3 +811,10 @@ Evidence: Fresh workspace `job-9f06b0a9874a` based on `main@6d661043fb1a9320bdb3
 Learned: The cancel capability already existed end-to-end; the observable failure was asynchronous UI error swallowing plus a long A2A cancel read timeout. The correct repair preserves fail-closed cancellation while making the user-visible path bounded and state-reactive.
 Open: Exact-head GitHub frontend/typecheck/build and runtime evidence are still required; no merge or production-live claim is made.
 Next safe step: Re-read PR #2092 at its final exact head, require terminal green checks, then perform the normal owner-gated merge and post-merge runtime/readback.
+
+### 2026-09-24 — Single-Agent lease-backed cancel repair
+Status: PARTIAL — source + mirror + local compile/diff verified; CI/runtime pending
+Task: Remove the remaining Single-Agent cancel race and unleased detached execution gap without reintroducing Swarm execution.
+Change: The detached Single-Agent worker now claims the persisted run through the existing atomic resume-lease path before model execution; terminal single-agent/failure transitions preserve that lease token; owner cancel uses a controller-side cancel_agent_run transition that clears an active lease and persists BLOCKED + RUN_CANCELLED, invalidating stale worker writes. The historical sovereign-single-agent persistence source was removed in favor of the existing valid agents-sdk source contract.
+Evidence: backend/agent_runtime/cognitive_run_store.py and shipping mirror are byte-identical; backend/agent_runtime/cognitive_swarm_routes.py and shipping mirror are byte-identical; backend_compile and git_diff_check pass on workspace job-9f06b0a9874a; PR head before this patch remains 9f26e73da29f6d303be8ba722b78ea28fabc2050. GitHub Release Gate/Supplemental Checks are still not green, and production MCP remains stale/unverified, so no live-fix claim is made.
+Insight: The apparent no-abort/endless state was not only UI latency: an active run lease plus the invalid sovereign-single-agent persistence source could prevent the backend from recording cancellation/failure, while the old detached thread had no atomic ownership claim.
