@@ -92,6 +92,12 @@ from .bitcoin_scann import (
     recall_at_k as bitcoin_recall_at_k,
     run_ann_then_exact,
 )
+from .bitcoin_scann_runtime import (
+    BitcoinScannRuntimeError,
+    build_live_searcher,
+    search_with_exact_rescore,
+)
+
 from .bitcoin_wolfram_contract import (
     BitcoinWolframContractError,
     BitcoinCheck,
@@ -163,6 +169,10 @@ __all__ = [
     "rescore_ann_candidates",
     "bitcoin_recall_at_k",
     "run_ann_then_exact",
+    # Live ScaNN runtime
+    "BitcoinScannRuntimeError",
+    "build_live_searcher",
+    "search_with_exact_rescore",
     # Bitcoin Wolfram CAG contract
     "BitcoinWolframContractError",
     "BitcoinCheck",
