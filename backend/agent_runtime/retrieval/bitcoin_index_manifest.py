@@ -212,11 +212,26 @@ def create_manifest(
         ],
     }
     return BitcoinScannIndexManifest(
-        **body,
+        schema_version=body["schema_version"],
+        chain=body["chain"],
+        source_graph_hash=body["source_graph_hash"],
+        corpus_hash=body["corpus_hash"],
+        source_revision=body["source_revision"],
+        block_start=body["block_start"],
+        block_end=body["block_end"],
+        transaction_count=body["transaction_count"],
+        vector_dimension=body["vector_dimension"],
+        scann_version=body["scann_version"],
+        distance_metric=body["distance_metric"],
+        normalization=body["normalization"],
+        cpu_architecture=body["cpu_architecture"],
+        shard_transaction_limit=body["shard_transaction_limit"],
+        shards=shards,
         manifest_hash=_sha256(body),
     )
 
 
+__all__ = [
 __all__ = [
     "BitcoinIndexManifestError",
     "BitcoinIndexShardManifest",
