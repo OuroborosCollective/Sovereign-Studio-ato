@@ -72,11 +72,10 @@ def build_live_searcher(
         query_array = np.asarray(tuple(float(value) for value in query), dtype=np.float32)
         if query_array.ndim != 1 or int(query_array.shape[0]) != dimension:
             raise BitcoinScannRuntimeError("query dimension does not match ScaNN index")
-        neighbors, distances = searcher.search(
-            query_array,
-            final_num_neighbors=requested,
-            leaves_to_search=leaves_to_search,
-        )
+        search_kwargs = {"final_num_neighbors": requested}
+        if leaves_to_search is not None and len(ids) >= 100_000:
+            search_kwargs["leaves_to_search"] = leaves_to_search
+        neighbors, distances = searcher.search(query_array, **search_kwargs)
         return tuple(
             AnnCandidate(
                 record_id=ids[int(index)],
