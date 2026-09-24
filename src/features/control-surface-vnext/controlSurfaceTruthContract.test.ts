@@ -47,6 +47,9 @@ describe('Sovereign Control Surface vNext truth contract', () => {
       "intentMode: 'repository_execution'",
     ]) expect(repositoryAdapter).toContain(token);
     expect(repositoryAdapter).not.toContain("'/api/user/agent/swarm/run'");
+    expect(adapterBase).toContain("'/api/user/agent/single/run'");
+    expect(adapterBase).toContain("/api/user/agent/single/runs/");
+    expect(adapterBase).toContain("/cancel`);");
 
     for (const token of [
       "'/api/user/agent/toolchain/manifest'",
@@ -121,11 +124,25 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     expect(auth).not.toContain('localStorage');
   });
 
-  it('does not elevate an observed job Draft-PR URL into verified publication state', () => {
+  it('rehydrates verified Draft-PR publication from backend evidence instead of an adapter-local map', () => {
     const adapter = source('src/features/control-surface-vnext/adapter/production-adapter.ts');
-    expect(adapter).toContain('OBSERVED: backend job reports Draft PR URL');
-    expect(adapter).toContain('const publication = this.publications.get(runId)');
-    expect(adapter).toContain('this.publications.set(runId, publication)');
+    const client = source('src/features/product/runtime/sovereignAgentClient.ts');
+    const routes = source('backend/agent_runtime/routes.py');
+    const store = source('backend/agent_runtime/job_store.py');
+
+    expect(adapter).toContain('getPublicationReadback(jobId)');
+    expect(adapter).toContain('getPublicationReadback(run.jobId)');
+    expect(adapter).not.toContain('new Map<string, DraftPR>()');
+    expect(adapter).not.toContain('this.publications.set(');
+    expect(adapter).not.toContain('this.publications.get(');
+    expect(client).toContain('githubDraftPrReadback');
+    expect(client).toContain('getPublicationReadback(jobId: string)');
+    expect(client).toContain("'/publication-readback'");
+    expect(client).toContain('currentGitHubDraftPrReadback');
+    expect(routes).toContain('"githubDraftPrReadback": read_latest_agent_github_draft_pr_readback(');
+    expect(routes).toContain('"/api/user/agent/jobs/<job_id>/publication-readback"');
+    expect(routes).toContain('verify_draft_pr_for_job(job, conn)');
+    expect(store).toContain('def read_latest_agent_github_draft_pr_readback(');
     expect(adapter).not.toContain('publication: snapshot?.draftPrUrl');
   });
 

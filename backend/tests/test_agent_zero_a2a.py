@@ -176,12 +176,13 @@ def test_invalid_task_id_is_rejected_before_transport(monkeypatch, tmp_path: Pat
     assert called is False
 
 
-def test_tasks_cancel_requires_exact_cancelled_task_readback(monkeypatch, tmp_path: Path):
+def test_tasks_cancel_uses_bounded_timeout_and_requires_exact_cancelled_task_readback(monkeypatch, tmp_path: Path):
     config = _config(monkeypatch, tmp_path)
 
     def fake_post(_url, **kwargs):
         assert kwargs["json"]["method"] == "tasks/cancel"
         assert kwargs["json"]["params"] == {"id": "task-cancel"}
+        assert kwargs["timeout"] == 5
         return FakeResponse({
             "jsonrpc": "2.0",
             "id": kwargs["json"]["id"],

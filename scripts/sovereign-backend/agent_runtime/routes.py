@@ -31,7 +31,7 @@ from .productivity_insights import (
 from .contracts import SovereignAgentEvent, normalize_agent_job_result, sanitize_agent_text
 from .cognitive_run_store import read_agent_run_receipts
 from .cognitive_swarm_routes import start_cognitive_swarm_run
-from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal
+from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal, verify_draft_pr_for_job
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
 from .evidence_gate import EvidenceGateResult, evidence_gate_signal
 from .git_workspace import git_diff_full
@@ -46,7 +46,7 @@ from .github_access import (
     verify_github_access_scope,
 )
 from .job_lifecycle import create_sovereign_agent_job, generate_agent_job_id
-from .job_store import append_agent_evidence_anchor, append_agent_event, append_agent_github_draft_pr_readback, list_agent_evidence_anchors, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
+from .job_store import append_agent_evidence_anchor, append_agent_event, append_agent_github_draft_pr_readback, list_agent_evidence_anchors, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, read_latest_agent_github_draft_pr_readback, update_agent_job_state
 from .repository_execution import (
     RepositoryExecutionError,
     RepositoryExecutionTransientError,
@@ -2124,8 +2124,75 @@ def register_sovereign_agent_routes(
                 "sessionBindingHash": envelope_session_binding_hash,
                 "attemptId": envelope_attempt_id,
                 "evidenceAnchors": current,
+                "githubDraftPrReadback": read_latest_agent_github_draft_pr_readback(conn, user_id=user_id, job_id=job_id),
                 "historicalEvidenceAnchors": historical,
                 "authoritative": False,
+            })
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/publication-readback", methods=["GET"])
+    @require_session
+    def read_agent_publication_readback(job_id: str):
+        """Reconcile one existing Draft PR against the current live GitHub state."""
+        user_id = _current_session_user_id()
+        conn = db_connect()
+        try:
+            job = read_agent_job(conn, user_id=user_id, job_id=job_id)
+            if job is None:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            if not (job.pr_state == "created" and (job.pr_url or job.draft_pr_url)):
+                return jsonify({
+                    "ok": True,
+                    "jobId": job_id,
+                    "currentGitHubDraftPrReadback": None,
+                    "reconciliationStatus": "NOT_PUBLISHED",
+                })
+            try:
+                evidence = verify_draft_pr_for_job(job, conn)
+            except ValueError as exc:
+                return jsonify({
+                    "ok": True,
+                    "jobId": job_id,
+                    "currentGitHubDraftPrReadback": None,
+                    "reconciliationStatus": "CONTRADICTED",
+                    "blocker": str(exc),
+                })
+            except RuntimeError as exc:
+                return jsonify({
+                    "ok": True,
+                    "jobId": job_id,
+                    "currentGitHubDraftPrReadback": None,
+                    "reconciliationStatus": "UNAVAILABLE",
+                    "blocker": str(exc),
+                })
+            current = {
+                "jobId": job_id,
+                "prUrl": evidence.pr_url,
+                "prNumber": evidence.pr_number,
+                "headSha": evidence.readback_head_sha,
+                "publishedHeadSha": evidence.published_head_sha,
+                "readbackHeadSha": evidence.readback_head_sha,
+                "draftVerified": evidence.draft_verified is True,
+                "prStateVerified": evidence.state,
+                "headBranch": evidence.head_branch,
+                "baseBranch": evidence.base_branch,
+                "readbackVerified": evidence.readback_verified is True,
+                "checksReadbackVerified": evidence.checks_readback_verified is True,
+                "ciState": evidence.ci_state,
+                "checkRunCount": evidence.check_run_count,
+                "checksPendingCount": evidence.checks_pending_count,
+                "checksSuccessCount": evidence.checks_success_count,
+                "checksFailureCount": evidence.checks_failure_count,
+                "statusContextCount": evidence.status_context_count,
+            }
+            from .fleet_supervisor import stable_hash
+            current["sourceHash"] = stable_hash(current)
+            return jsonify({
+                "ok": True,
+                "jobId": job_id,
+                "currentGitHubDraftPrReadback": current,
+                "reconciliationStatus": "VERIFIED",
             })
         finally:
             _close(conn)

@@ -20,7 +20,7 @@ import { WorkspaceProjection } from './components/WorkspaceProjection/WorkspaceP
 import { INITIAL_FSM_STATE, jobStateReducer } from './fsm/jobStateMachine';
 import { useOwnerInteraction } from './hooks/useOwnerInteraction';
 import { useSovereignJob } from './hooks/useSovereignJob';
-import { useSwarmRun } from './hooks/useSwarmRun';
+import { useSingleAgentRun } from './hooks/useSwarmRun';
 import './theme/biomodular.css';
 import type { AgentMode, ChatMessage, OwnerInteractionResponse } from './types/domain';
 import { getAudioMuted, playKeystrokeChirp, toggleAudioMute } from './utils/audio';
@@ -73,7 +73,7 @@ function Dashboard() {
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<MobileTab>('chat');
-  const [agentMode, setAgentMode] = useState<AgentMode>('single');
+  const agentMode: AgentMode = 'single';
   const [fsmState, dispatchFsm] = useReducer(jobStateReducer, INITIAL_FSM_STATE);
   const isDesktopLayout = useDesktopLayout();
 
@@ -107,7 +107,7 @@ function Dashboard() {
     isPublishing,
     publishError,
   } = useSovereignJob(activeRunId);
-  const swarmRun = useSwarmRun();
+  const singleAgentRun = useSingleAgentRun();
   const { submitInteraction, isSubmitting: isInteracting } = useOwnerInteraction(activeRunId);
 
   const [messages, setMessages] = useState<ChatMessage[]>([{
@@ -145,7 +145,7 @@ function Dashboard() {
             {
               id: `restored-${restored.jobId}`,
               role: 'assistant' as const,
-              sender: 'SOVEREIGN_SWARM' as const,
+              sender: 'SOVEREIGN_AGENT' as const,
               content: `PERSISTED REPOSITORY SESSION RESTORED :: [${restored.jobId}].\nBackend readback resumed the existing job; no new mission was dispatched.${restored.status ? `\nPersisted state: ${restored.status}` : ''}`,
               timestamp: restoredAt,
             },
@@ -172,6 +172,21 @@ function Dashboard() {
   }, [job?.phase]);
 
   useEffect(() => {
+    if (!job?.assistantMessage || !activeRunId) return;
+    const id = `assistant-${activeRunId}`;
+    setMessages((current) => {
+      if (current.some((message) => message.id === id)) return current;
+      return [...current, {
+        id,
+        role: 'assistant',
+        sender: 'SOVEREIGN_AGENT',
+        content: job.assistantMessage,
+        timestamp: new Date().toISOString(),
+      }];
+    });
+  }, [activeRunId, job?.assistantMessage]);
+
+  useEffect(() => {
     const terminalPhase = job?.phase;
     if (!job?.error?.message || !activeRunId || !terminalPhase || !['BLOCKED', 'FAILED'].includes(terminalPhase)) return;
     setMessages((current) => {
@@ -193,7 +208,7 @@ function Dashboard() {
       return [...current, {
         id: `pr-${pr.pullRequestNumber}`,
         role: 'assistant',
-        sender: 'SOVEREIGN_SWARM',
+        sender: 'SOVEREIGN_AGENT',
         content: `DRAFT PR CREATED AND INDEPENDENTLY READ BACK.\n${pr.url}\nReadback head: ${pr.readbackHeadSha}\nCI: ${pr.ciState}. No merge was performed.`,
         evidenceBadge: `#${pr.pullRequestNumber} GITHUB READBACK`,
         timestamp: new Date().toISOString(),
@@ -220,13 +235,13 @@ function Dashboard() {
     dispatchFsm({ type: 'SUBMIT_ORDER', payload: { objective: mission } });
     setMessages((current) => [...current, { id: `owner-${Date.now()}`, role: 'human', sender: 'HUMAN', content: mission, timestamp: new Date().toISOString() }]);
     try {
-      const accepted = await swarmRun.mutateAsync({ prompt: mission, toolchains: selectedToolchain ? [selectedToolchain.id] : [], activeSkillIds, agentMode });
+      const accepted = await singleAgentRun.mutateAsync({ prompt: mission, toolchains: selectedToolchain ? [selectedToolchain.id] : [], activeSkillIds, agentMode });
       setActiveRunId(accepted.jobId);
       dispatchFsm({ type: 'BACKEND_ACCEPTED', payload: { jobId: accepted.jobId } });
       setMessages((current) => [...current.filter((message) => !message.id.startsWith('accepted-')), {
         id: `accepted-${accepted.jobId}`,
         role: 'assistant',
-        sender: 'SOVEREIGN_SWARM',
+        sender: 'SOVEREIGN_AGENT',
         content: `PERSISTED RUN ACCEPTED :: [${accepted.jobId}].\nAwaiting exact run/job/evidence readback. No completion or publication is implied.`,
         timestamp: new Date().toISOString(),
       }]);
@@ -246,13 +261,37 @@ function Dashboard() {
     setMessages((current) => [...current, { id: `owner-response-${Date.now()}`, role: 'human', sender: 'HUMAN', content: `[OWNER RESPONSE SENT TO RUN]: ${value.response}`, timestamp: new Date().toISOString() }]);
   };
 
+  const handleAbortActiveJob = async () => {
+    if (!activeRunId) return;
+    try {
+      await abort();
+      dispatchFsm({ type: 'CANCEL' });
+      setMessages((current) => [...current, {
+        id: `aborted-${Date.now()}`,
+        role: 'system',
+        sender: 'SYSTEM',
+        content: `EXECUTION CANCELLED :: ${activeRunId}`,
+        timestamp: new Date().toISOString(),
+      }]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMessages((current) => [...current, {
+        id: `abort-failed-${Date.now()}`,
+        role: 'system',
+        sender: 'SYSTEM',
+        content: `EXECUTION ABORT FAILED :: ${message}`,
+        timestamp: new Date().toISOString(),
+      }]);
+    }
+  };
+
   const command = (
     <ChatSurface
       messages={messages}
       onSendMessage={submitMission}
       jobPhase={currentPhase}
       activeJob={job}
-      onAbortJob={activeRunId ? () => { void abort().catch(() => undefined); } : undefined}
+      onAbortJob={activeRunId ? handleAbortActiveJob : undefined}
       isAborting={isAborting}
       abortError={abortError instanceof Error ? abortError.message : undefined}
       onTypingStateChange={setIsTyping}
@@ -263,7 +302,6 @@ function Dashboard() {
       activeSkillsCount={activeSkillIds.length}
       activeIntegrationsCount={(integrations.data ?? []).length}
       agentMode={agentMode}
-      onAgentModeChange={setAgentMode}
     />
   );
   const pollingError = readbackError instanceof Error ? readbackError.message : undefined;

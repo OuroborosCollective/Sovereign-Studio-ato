@@ -1311,6 +1311,153 @@ def claim_agent_run_for_resume(
     )
 
 
+def cancel_agent_run(
+    conn: Any,
+    *,
+    user_id: str,
+    run_id: str,
+    trace_id: str,
+    reason: str = "Cancelled by owner.",
+) -> dict[str, object]:
+    """Cancel one owned run even while an executor lease is active.
+
+    Cancellation is a controller decision, not a worker transition: it clears the
+    active lease so a stale executor can no longer persist the terminal result.
+    """
+    normalized_run_id = _validated_id(run_id, "run_id")
+    normalized_trace_id = _validated_id(trace_id, "trace_id")
+    normalized_reason = _bounded(reason, 2000) or "Cancelled by owner."
+    evidence_id = _new_id("evidence")
+    event_id = _new_id("event")
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM agent_runs
+                WHERE run_id = %s AND user_id = %s::uuid
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (normalized_run_id, str(user_id)),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise LookupError("agent run not found for authenticated user")
+            run = stored_run_from_row(row)
+            if run.status in TERMINAL_RUN_STATUSES:
+                return {
+                    "runId": normalized_run_id,
+                    "status": run.status,
+                    "cancelled": False,
+                    "reason": "run is already terminal",
+                }
+
+            payload_json = _json({
+                "cancelled": True,
+                "source": "owner",
+                "previousStatus": run.status,
+                "leaseWasActive": run.lease_active,
+                "rawLeaseTokenPersisted": False,
+            })
+            cur.execute(
+                """
+                INSERT INTO agent_evidence (
+                    evidence_id, run_id, task_id, agent_id, source, kind,
+                    summary, sha256, payload
+                ) VALUES (%s, %s, %s, 'owner', 'agents-sdk', 'single_agent_cancel', %s, %s, %s::jsonb)
+                """,
+                (
+                    evidence_id,
+                    normalized_run_id,
+                    run.resume_task_id,
+                    normalized_reason,
+                    _digest_text(payload_json),
+                    payload_json,
+                ),
+            )
+            cur.execute(
+                """
+                UPDATE agent_runs
+                SET status = 'BLOCKED',
+                    source = 'agents-sdk',
+                    evidence_id = %s,
+                    trace_id = %s,
+                    reason = %s,
+                    next_action = 'RUN_CANCELLED',
+                    iteration_count = LEAST(iteration_count + 1, max_iterations),
+                    lease_token = NULL,
+                    lease_expires_at = NULL,
+                    resume_task_id = NULL
+                WHERE run_id = %s AND user_id = %s::uuid
+                RETURNING run_id
+                """,
+                (
+                    evidence_id,
+                    normalized_trace_id,
+                    normalized_reason,
+                    normalized_run_id,
+                    str(user_id),
+                ),
+            )
+            if not cur.fetchone():
+                raise LookupError("agent run changed before cancellation could be persisted")
+            if run.resume_task_id:
+                cur.execute(
+                    """
+                    UPDATE agent_tasks
+                    SET status = 'BLOCKED',
+                        source = 'agents-sdk',
+                        evidence_id = %s,
+                        reason = %s,
+                        next_action = 'RUN_CANCELLED',
+                        completed_at = NOW()
+                    WHERE task_id = %s AND run_id = %s
+                    """,
+                    (
+                        evidence_id,
+                        normalized_reason,
+                        run.resume_task_id,
+                        normalized_run_id,
+                    ),
+                )
+            cur.execute(
+                """
+                INSERT INTO agent_events (
+                    event_id, run_id, task_id, agent_id, type, status, source,
+                    summary, evidence_id, trace_id, next_action
+                ) VALUES (%s, %s, %s, 'owner', 'run_cancelled', 'BLOCKED', 'agents-sdk',
+                          %s, %s, %s, 'RUN_CANCELLED')
+                """,
+                (
+                    event_id,
+                    normalized_run_id,
+                    run.resume_task_id,
+                    normalized_reason,
+                    evidence_id,
+                    normalized_trace_id,
+                ),
+            )
+        conn.commit()
+    except Exception:
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+        raise
+
+    return {
+        "runId": normalized_run_id,
+        "status": "BLOCKED",
+        "cancelled": True,
+        "evidenceId": evidence_id,
+        "eventId": event_id,
+        "traceId": normalized_trace_id,
+        "reason": normalized_reason,
+        "nextAction": "RUN_CANCELLED",
+    }
+
+
 def create_agent_task(
     conn: Any,
     *,
@@ -1979,6 +2126,40 @@ def list_agent_runs(
         )
         rows = cur.fetchall()
     return tuple(stored_run_from_row(row) for row in rows)
+
+
+def read_latest_agent_response(
+    conn: Any,
+    *,
+    user_id: str,
+    run_id: str,
+) -> str | None:
+    """Read the bounded final assistant text from the canonical single-agent result evidence."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT evidence.payload
+            FROM agent_evidence AS evidence
+            JOIN agent_runs AS run ON run.run_id = evidence.run_id
+            WHERE run.user_id = %s::uuid
+              AND evidence.run_id = %s
+              AND evidence.kind = 'free_single_agent_result'
+            ORDER BY evidence.created_at DESC, evidence.evidence_id DESC
+            LIMIT 1
+            """,
+            (str(user_id), _validated_id(run_id, "run_id")),
+        )
+        row = cur.fetchone()
+    payload = row.get("payload") if isinstance(row, Mapping) else None
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(payload, Mapping):
+        return None
+    value = payload.get("assistantText")
+    return _bounded(value, 8000) or None
 
 
 def read_agent_events(

@@ -801,3 +801,13 @@ Evidence: Source PR #2069 head `bcce3a17c717b954ea1ecfe50fb5184eac79e5e9` was gr
 Learned: A stale accessibility PR can be salvaged safely by transplanting only the functional delta and composing its regression with the current test suite instead of copying an obsolete aggregate test snapshot.
 Open: Fresh current-main branch still needs exact-head CI and merge readback.
 Next safe step: Run the targeted and required GitHub checks, then create and merge only the exact green head.
+
+### 2026-09-25 — vNext Single-Agent publication truth current-main refresh
+Status: PARTIAL — refreshed implementation prepared; exact-head CI/readback pending
+Task: Carry the reviewed vNext Single-Agent run persistence, cancel/resume, backend-linked Draft-PR publication readback, and frontend rehydration contract from stale PR #2092 onto current main.
+Decisions: Preserve Agent-Zero-only repository execution, persisted run/job identity, strict GitHub Draft-PR readback, owner-consent gate, and canonical/shipping backend mirrors; exclude stale branch history and duplicate legacy publication state.
+Touched surfaces: vNext control-surface adapters/types/tests plus backend Agent-Zero, run-store, job-store, routes, Draft-PR gate, and their shipping mirrors.
+Evidence: Source PR #2092 head `b546cf0b4e09c6704ffafd1b2d1ffcd6844bc3d7` was dirty against current main after prior merges. Fresh workspace `job-7934186c28df` started from current main, materialized only the #2092 functional/test paths, and preserved the current Memory history. Targeted `backend/tests/test_agent_zero_a2a.py` passed 7/7.
+Learned: The publication-truth integration remains independently portable when its persisted/readback contracts are transplanted as a bounded functional surface rather than merging a stale base wholesale.
+Open: Fresh current-main Draft PR exact-head CI and GitHub readback remain required.
+Next safe step: Publish the refreshed branch, close stale #2092, then merge only after terminal green checks.
