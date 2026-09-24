@@ -92,6 +92,12 @@ from .bitcoin_scann import (
     recall_at_k as bitcoin_recall_at_k,
     run_ann_then_exact,
 )
+from .bitcoin_index_manifest import (
+    BitcoinIndexManifestError,
+    BitcoinIndexShardManifest,
+    BitcoinScannIndexManifest,
+    create_manifest,
+)
 from .bitcoin_canonical_store import (
     BitcoinStoreError,
     StoredPrevout,
@@ -190,6 +196,11 @@ __all__ = [
     "BitcoinIngestError",
     "BitcoinIngestResult",
     "ingest_chain",
+    # Bitcoin index manifest
+    "BitcoinIndexManifestError",
+    "BitcoinIndexShardManifest",
+    "BitcoinScannIndexManifest",
+    "create_manifest",
     # Bitcoin Wolfram CAG contract
     "BitcoinWolframContractError",
     "BitcoinCheck",
