@@ -81,14 +81,24 @@ def build_live_searcher(
         if leaves_to_search is not None and len(ids) >= 100_000:
             search_kwargs["leaves_to_search"] = leaves_to_search
         neighbors, distances = searcher.search(query_array, **search_kwargs)
-        return tuple(
-            AnnCandidate(
-                record_id=ids[int(index)],
-                ann_score=float(score),
-                ann_rank=rank,
+        candidates = []
+        for rank, (docid, score) in enumerate(zip(neighbors, distances), start=1):
+            if isinstance(docid, (int,)):
+                record_id = ids[int(docid)]
+            else:
+                record_id = str(docid)
+            if record_id not in ids:
+                raise BitcoinScannRuntimeError(
+                    "ScaNN returned an unknown document identifier"
+                )
+            candidates.append(
+                AnnCandidate(
+                    record_id=record_id,
+                    ann_score=float(score),
+                    ann_rank=rank,
+                )
             )
-            for rank, (index, score) in enumerate(zip(neighbors, distances), start=1)
-        )
+        return tuple(candidates)
 
     return search
 
