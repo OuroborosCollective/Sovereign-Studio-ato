@@ -1,0 +1,207 @@
+from __future__ import annotations
+
+import math
+import pytest
+
+from backend.agent_runtime.retrieval.bitcoin_graph import (
+    BitcoinBlock,
+    BitcoinInput,
+    BitcoinOutput,
+    BitcoinTransaction,
+    PrevoutRef,
+    block_from_rpc,
+    build_snapshot,
+    canonical_sha256,
+    transaction_feature_vector,
+)
+from backend.agent_runtime.retrieval.bitcoin_scann import (
+    AnnCandidate,
+    BitcoinVectorRecord,
+    BitcoinScannContractError,
+    recall_at_k,
+    rescore_ann_candidates,
+    run_ann_then_exact,
+)
+from backend.agent_runtime.retrieval.bitcoin_wolfram_contract import (
+    BitcoinCheck,
+    ChronologyObservation,
+    FeeObservation,
+    UniqueSpendObservation,
+    build_cag_countercheck,
+    build_wolfram_expression,
+    evaluate_local,
+)
+
+
+def _tx(
+    txid: str,
+    *,
+    height: int,
+    block_hash: str,
+    inputs: tuple[BitcoinInput, ...],
+    outputs: tuple[BitcoinOutput, ...],
+    coinbase: bool = False,
+) -> BitcoinTransaction:
+    return BitcoinTransaction(
+        txid=txid,
+        block_height=height,
+        block_hash=block_hash,
+        block_time=1_000_000 + height,
+        version=2,
+        locktime=0,
+        inputs=inputs,
+        outputs=outputs,
+        virtual_size=100,
+        weight=400,
+        coinbase=coinbase,
+    )
+
+
+def test_rpc_btc_values_are_converted_to_exact_satoshis() -> None:
+    block = block_from_rpc(
+        {
+            "height": 1,
+            "hash": "a" * 64,
+            "previousblockhash": "b" * 64,
+            "time": 1,
+            "nonce": 0,
+            "bits": "1d00ffff",
+            "tx": [
+                {
+                    "txid": "c" * 64,
+                    "version": 2,
+                    "locktime": 0,
+                    "vin": [{"coinbase": "0101", "sequence": 0}],
+                    "vout": [{"value": "1.23456789", "n": 0, "scriptPubKey": {"type": "p2pk"}}],
+                }
+            ],
+        }
+    )
+    assert block.coinbase.output_value_sat == 123_456_789
+
+
+def test_fee_conservation_is_exact_in_satoshis() -> None:
+    tx = _tx(
+        "c" * 64,
+        height=2,
+        block_hash="a" * 64,
+        inputs=(
+            BitcoinInput(0, PrevoutRef("b" * 64, 0), 0, value_sat=5_000_000),
+        ),
+        outputs=(BitcoinOutput(0, 4_999_000, script_type="p2pkh"),),
+    )
+    assert tx.input_value_sat == 5_000_000
+    assert tx.output_value_sat == 4_999_000
+    assert tx.fee_sat == 1_000
+
+
+def test_graph_snapshot_edges_are_deterministic() -> None:
+    tx1 = _tx(
+        "1" * 64,
+        height=1,
+        block_hash="a" * 64,
+        inputs=(BitcoinInput(0, None, 0),),
+        outputs=(BitcoinOutput(0, 50 * 100_000_000, script_type="p2pk"),),
+        coinbase=True,
+    )
+    tx2 = _tx(
+        "2" * 64,
+        height=2,
+        block_hash="c" * 64,
+        inputs=(BitcoinInput(0, PrevoutRef("1" * 64, 0), 0, value_sat=50 * 100_000_000),),
+        outputs=(BitcoinOutput(0, 50 * 100_000_000 - 1000, script_type="p2pkh"),),
+    )
+    b1 = BitcoinBlock(1, "a" * 64, None, 1, 0, "1d00ffff", (tx1,))
+    b2 = BitcoinBlock(2, "c" * 64, "a" * 64, 2, 0, "1d00ffff", (tx2,))
+    one = build_snapshot((b2, b1))
+    two = build_snapshot((b1, b2))
+    assert one.content_hash == two.content_hash
+    relations = {(edge.source, edge.target, edge.relation) for edge in one.edges}
+    assert ("t:" + "1" * 64, "o:" + "1" * 64 + ":0", "creates") in relations
+    assert ("o:" + "1" * 64 + ":0", "t:" + "2" * 64, "spent_by") in relations
+
+
+def test_feature_vector_is_fixed_dimension_and_l2_normalized() -> None:
+    tx = _tx(
+        "d" * 64,
+        height=10,
+        block_hash="e" * 64,
+        inputs=(
+            BitcoinInput(0, PrevoutRef("a" * 64, 0), 1, value_sat=2_000_000),
+            BitcoinInput(1, PrevoutRef("b" * 64, 1), 1, value_sat=3_000_000),
+        ),
+        outputs=(
+            BitcoinOutput(0, 4_000_000, script_type="p2wpkh"),
+            BitcoinOutput(1, 990_000, script_type="p2tr"),
+        ),
+    )
+    vector = transaction_feature_vector(tx)
+    assert len(vector) == 40
+    assert math.isclose(math.sqrt(sum(value * value for value in vector)), 1.0, rel_tol=1e-12)
+
+
+def test_ann_candidates_are_exactly_rescored() -> None:
+    records = {
+        "tx:near": BitcoinVectorRecord("tx:near", (1.0, 0.0), "a" * 64),
+        "tx:far": BitcoinVectorRecord("tx:far", (0.0, 1.0), "b" * 64),
+    }
+    receipt = rescore_ann_candidates(
+        (1.0, 0.0),
+        records,
+        (AnnCandidate("tx:far", 0.99, 1), AnnCandidate("tx:near", 0.10, 2)),
+        k=2,
+    )
+    assert receipt.candidate_ids == ("tx:near", "tx:far")
+    assert receipt.candidates[0].exact_rank == 1
+
+
+def test_ann_path_is_only_a_candidate_generator() -> None:
+    records = {
+        "tx:a": BitcoinVectorRecord("tx:a", (1.0, 0.0), "a" * 64),
+        "tx:b": BitcoinVectorRecord("tx:b", (0.0, 1.0), "b" * 64),
+    }
+
+    def ann_searcher(query, k):
+        return (("tx:b", 0.2), ("tx:a", 0.9))
+
+    receipt = run_ann_then_exact((1.0, 0.0), records, ann_searcher, k=1)
+    assert receipt.candidate_ids == ("tx:a",)
+
+
+def test_unknown_ann_candidate_fails_closed() -> None:
+    records = {"tx:a": BitcoinVectorRecord("tx:a", (1.0, 0.0), "a" * 64)}
+    with pytest.raises(BitcoinScannContractError, match="not present"):
+        rescore_ann_candidates(
+            (1.0, 0.0),
+            records,
+            (("tx:missing", 0.1),),
+            k=1,
+        )
+
+
+def test_recall_is_bounded_and_deterministic() -> None:
+    assert recall_at_k(("a", "b", "c"), ("b", "a", "d"), 2) == 1.0
+    assert recall_at_k(("a",), ("a", "b"), 2) == 0.5
+
+
+def test_wolfram_fee_expression_and_local_reference_agree() -> None:
+    observation = FeeObservation(5_000_000, 4_999_000, 1_000)
+    expression = build_wolfram_expression(BitcoinCheck.FEE_CONSERVATION, observation)
+    assert expression == "FullSimplify[5000000 == 4999000 + 1000]"
+    assert evaluate_local(BitcoinCheck.FEE_CONSERVATION, observation) is True
+
+
+def test_wolfram_chronology_and_unique_spend_are_bounded() -> None:
+    chronology = ChronologyObservation(created_height=100, spend_height=101)
+    unique = UniqueSpendObservation(spend_count=1)
+    assert evaluate_local(BitcoinCheck.EDGE_CHRONOLOGY, chronology) is True
+    assert evaluate_local(BitcoinCheck.UNIQUE_SPEND, unique) is True
+    payload = build_cag_countercheck(BitcoinCheck.EDGE_CHRONOLOGY, chronology)
+    assert payload["component_id"] == "wolfram.cag.compute"
+    assert payload["truth_boundary"] == "supplemental_countercheck"
+
+
+def test_canonical_hash_does_not_depend_on_mapping_order() -> None:
+    first = canonical_sha256({"txid": "a", "fee_sat": 1000})
+    second = canonical_sha256({"fee_sat": 1000, "txid": "a"})
+    assert first == second
