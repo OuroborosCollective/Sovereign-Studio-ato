@@ -154,7 +154,8 @@ export interface SolutionPatternMatch {
   aha: string;
 }
 
-const KNOWN_NODES: SolutionPatternNode[] = [
+// Bolt ⚡ Optimization: O(1) Set lookup table for known solution pattern nodes
+const KNOWN_NODES_SET = new Set<string>([
   'scan-finding-registry',
   'workflow-watch',
   'workflow-repair-plan',
@@ -164,13 +165,15 @@ const KNOWN_NODES: SolutionPatternNode[] = [
   'draft-pr-publisher',
   'learning-memory',
   'telemetry',
-];
+]);
 
 const MAX_PATTERNS = 300;
 const MAX_REJECTIONS = 120;
 const MAX_TEXT = 1600;
 const MAX_LIST = 24;
 const SENSITIVE_TEXT = /(password|credential|private[_-]?key)\s*[:=]\s*\S+/gi;
+// Bolt ⚡ Optimization: Non-global regex for testing sensitivity without mutating or resetting lastIndex
+const SENSITIVE_TEXT_TEST = /(password|credential|private[_-]?key)\s*[:=]\s*\S+/i;
 
 function stableHash(input: string): string {
   let hash = 0x811c9dc5;
@@ -186,16 +189,26 @@ function sanitizeText(value = ''): string {
 }
 
 function hasSensitiveText(value = ''): boolean {
-  SENSITIVE_TEXT.lastIndex = 0;
-  return SENSITIVE_TEXT.test(value);
+  return SENSITIVE_TEXT_TEST.test(value);
 }
 
 function normalizeToken(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9:_./-]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
 }
 
+// Bolt ⚡ Optimization: Single-pass normalization and deduplication loop with early bound check.
+// Eliminates multiple intermediate array allocations (.map(), .filter(), Array.from(Set), .slice()).
 function normalizeList(values: string[] = []): string[] {
-  return Array.from(new Set(values.map((value) => normalizeToken(value)).filter(Boolean))).slice(0, MAX_LIST);
+  if (!values || !values.length) return [];
+  const set = new Set<string>();
+  for (let i = 0; i < values.length; i++) {
+    const token = normalizeToken(values[i]);
+    if (token) {
+      set.add(token);
+      if (set.size >= MAX_LIST) break;
+    }
+  }
+  return Array.from(set);
 }
 
 function fileExtension(path: string): string {
@@ -210,7 +223,7 @@ function textFingerprint(value?: string): string {
 }
 
 function knownNode(node: string): node is SolutionPatternNode {
-  return KNOWN_NODES.includes(node as SolutionPatternNode);
+  return KNOWN_NODES_SET.has(node);
 }
 
 function isPackageLearningInput(input: SolutionPatternLearningInput | SovereignPackageLearningInput): input is SovereignPackageLearningInput {
@@ -469,19 +482,31 @@ export function learnSolutionPattern(store: SolutionPatternStore, input: Solutio
     return { ok: false, accepted: false, store: rejected.store, rejection: rejected.rejection, validation: patternValidation, summary: `Pattern rejected softly: ${patternValidation.summary}` };
   }
 
-  const existing = store.patterns.find((item) => item.id === pattern.id);
-  const nextPatterns = existing
-    ? store.patterns.map((item) => item.id === pattern.id
-      ? {
+  // Bolt ⚡ Optimization: Single pass loop for finding/extending existing pattern or prepending new pattern
+  let existing = false;
+  const nextPatterns: SolutionPattern[] = [];
+  for (let i = 0; i < store.patterns.length; i++) {
+    const item = store.patterns[i];
+    if (item.id === pattern.id) {
+      existing = true;
+      nextPatterns.push({
         ...item,
         hits: item.hits + 1,
         successfulUses: item.successfulUses + (normalizedInput.fix.completed ? 1 : 0),
         confidence: normalizedInput.fix.completed ? 'completed' as const : item.confidence,
         evidence: pattern.evidence || item.evidence,
         updatedAt: now,
-      }
-      : item)
-    : [pattern, ...store.patterns].slice(0, MAX_PATTERNS);
+      });
+    } else {
+      nextPatterns.push(item);
+    }
+  }
+  if (!existing) {
+    nextPatterns.unshift(pattern);
+    if (nextPatterns.length > MAX_PATTERNS) {
+      nextPatterns.pop();
+    }
+  }
 
   const nextStore: SolutionPatternStore = {
     version: 1,
@@ -614,14 +639,26 @@ export function validateSolutionPatternMatches(matches: SolutionPatternMatch[]):
   return { valid: errors.length === 0, errors, warnings, summary: `${matches.length} match(es), ${errors.length} error(s), ${warnings.length} warning(s).` };
 }
 
+// Bolt ⚡ Optimization: Single-pass active pattern filtering and completed count accumulation
 export function buildSolutionPatternRuntimeSummary(store: SolutionPatternStore): string {
-  const active = store.patterns.filter((pattern) => pattern.status === 'active');
-  const completed = active.filter((pattern) => pattern.confidence === 'completed' || pattern.successfulUses > 0);
+  const active: SolutionPattern[] = [];
+  let completedCount = 0;
+
+  for (let i = 0; i < store.patterns.length; i++) {
+    const pattern = store.patterns[i];
+    if (pattern.status === 'active') {
+      active.push(pattern);
+      if (pattern.confidence === 'completed' || pattern.successfulUses > 0) {
+        completedCount++;
+      }
+    }
+  }
+
   const top = [...active].sort((a, b) => b.successfulUses - a.successfulUses || b.hits - a.hits).slice(0, 3);
 
   return [
     `${active.length} active solution pattern(s), ${store.rejections.length} rejected intake(s).`,
-    completed.length ? `${completed.length} proof-backed success pattern(s).` : 'No proof-backed success patterns yet.',
+    completedCount ? `${completedCount} proof-backed success pattern(s).` : 'No proof-backed success patterns yet.',
     top.length ? `Top patterns: ${top.map((pattern) => `${pattern.id}:${pattern.category}`).join(', ')}` : 'No pattern matches available yet.',
   ].join(' ');
 }
