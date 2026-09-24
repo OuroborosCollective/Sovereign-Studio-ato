@@ -49,7 +49,7 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     expect(repositoryAdapter).not.toContain("'/api/user/agent/swarm/run'");
     expect(adapterBase).toContain("'/api/user/agent/single/run'");
     expect(adapterBase).toContain("/api/user/agent/single/runs/");
-    expect(adapterBase).toContain("/cancel'");
+    expect(adapterBase).toContain("/cancel`);");
 
     for (const token of [
       "'/api/user/agent/toolchain/manifest'",
