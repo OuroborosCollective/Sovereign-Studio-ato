@@ -55,6 +55,11 @@ describe('maskSecrets', () => {
     expect(maskSecrets(`Failed with ${secret}`)).toBe('Failed with gsk_****');
   });
 
+  it('masks xAI style keys', () => {
+    const secret = 'xai-1234567890abcdefghijklmnopqrstuvwxyz';
+    expect(maskSecrets(`Failed with ${secret}`)).toBe('Failed with xai-****');
+  });
+
   it('masks OpenAI Project keys', () => {
     const secret = 'sk-proj-abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz01';
     expect(maskSecrets(`Using ${secret}`)).toBe('Using sk-proj-****');

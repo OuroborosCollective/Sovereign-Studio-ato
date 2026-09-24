@@ -10,6 +10,7 @@ const OPENAI_PROJ_REGEX = /sk-proj-[a-zA-Z0-9_-]{20,}/g;
 const ANTHROPIC_KEY_REGEX = /sk-ant-[a-zA-Z0-9_-]{20,}/g;
 const OPENAI_KEY_REGEX = /sk-[a-zA-Z0-9_-]{20,}/g;
 const GROQ_KEY_REGEX = /gsk_[a-zA-Z0-9_-]{20,}/g;
+const XAI_KEY_REGEX = /xai-[a-zA-Z0-9_-]{20,}/g;
 const HUGGINGFACE_KEY_REGEX = /hf_[a-zA-Z0-9]{8,100}/g;
 const TOGETHER_KEY_REGEX = /together_[a-zA-Z0-9]{8,100}/g;
 const POLLINATIONS_KEY_REGEX = /pollinations_[a-zA-Z0-9]{8,100}/g;
@@ -48,6 +49,7 @@ export function maskSecrets(text: string): string {
   masked = masked.replace(ANTHROPIC_KEY_REGEX, 'sk-ant-****');
   masked = masked.replace(OPENAI_KEY_REGEX, 'sk-****');
   masked = masked.replace(GROQ_KEY_REGEX, 'gsk_****');
+  masked = masked.replace(XAI_KEY_REGEX, 'xai-****');
 
   // HuggingFace, Together AI and Pollinations AI
   masked = masked.replace(HUGGINGFACE_KEY_REGEX, 'hf_****');
