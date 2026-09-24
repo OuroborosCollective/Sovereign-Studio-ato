@@ -165,6 +165,7 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
     assert 'EXPECTED_MCP_TOOL_COUNT="255"' in script
     assert 'EXPECTED_MCP_TOOL_COUNT="288"' in script.split('INSTALL_STAGE="configure_private_owner_mode"', 1)[1]
     assert 'python - "${EXPECTED_MCP_TOOL_COUNT}" <<\'PY\'' in script
+    assert 'SOVEREIGN_EXPECTED_MCP_TOOL_COUNT="$EXPECTED_MCP_TOOL_COUNT"' in script
     assert 'assert len(tool_names) == expected_tool_count' in script
     assert 'INSTALL_STAGE="capture_previous_mcp_tool_surface"' in script
     assert 'INSTALL_STAGE="verify_mcp_tool_surface_preservation"' in script
@@ -1074,6 +1075,7 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
         "SOVEREIGN_CANARY_TEST_PARENT": str(canary_parent),
         "SOVEREIGN_EXPECTED_CANARY_REVISION": revision,
         "SOVEREIGN_SOURCE_REVISION": revision,
+        "SOVEREIGN_EXPECTED_MCP_TOOL_COUNT": "258",
         "SOVEREIGN_NEURO_POLICY_SHA256": policy_sha256,
         "SOVEREIGN_NEURO_RUNTIME_TRACKING_ENABLED": "0",
         "SOVEREIGN_MCP_WORKSPACE_ROOT": str(tmp_path / "workspaces"),
