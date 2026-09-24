@@ -50,6 +50,7 @@ from .durable_workflow_store import (
     read_permission_authority_head,
 )
 from .revocation_closure import RevocationClosureError, require_live_permission
+from .rescue import resolve_github_head
 from .evidence_gate import EvidenceGateInput, evaluate_agent_evidence
 from .git_workspace import git_diff_check, git_diff_full
 from .job_lifecycle import create_sovereign_agent_job
@@ -175,6 +176,23 @@ def _configured_repository_url() -> str:
     if not _REPOSITORY_PATTERN.fullmatch(value):
         raise RepositoryExecutionError("SOVEREIGN_CONTROLLER_REPOSITORY is invalid")
     return f"https://github.com/{value}"
+
+
+def _resolve_expected_head_sha(repo_url: str, branch: str) -> str:
+    """Resolve a branch HEAD SHA via the public GitHub API (read-only)."""
+    try:
+        revision = resolve_github_head(repo_url, branch, token=None)
+    except (ValueError, OSError) as exc:
+        raise RepositoryExecutionError(
+            "repository head could not be resolved for "
+            f"{repo_url}#{branch}: {sanitize_agent_text(str(exc), 200)}"
+        ) from exc
+    sha = str(revision.get("baseSha") or "").strip().lower()
+    if not sha:
+        raise RepositoryExecutionError(
+            f"repository head resolved an empty SHA for {repo_url}#{branch}"
+        )
+    return sha
 
 
 def _normalized_repository_payload(body: dict[str, Any]) -> dict[str, Any]:
@@ -798,6 +816,11 @@ def start_repository_execution(
         raise RepositoryExecutionError("GITHUB_CREDENTIAL_FORBIDDEN_ON_EXECUTION")
 
     payload = _normalized_repository_payload(body)
+    if not str(payload.get("expectedHeadSha") or "").strip():
+        payload["expectedHeadSha"] = _resolve_expected_head_sha(
+            str(payload.get("repoUrl") or "").strip(),
+            str(payload.get("branch") or "main").strip() or "main",
+        )
     lifecycle = create_sovereign_agent_job(
         conn,
         user_id=user_id,

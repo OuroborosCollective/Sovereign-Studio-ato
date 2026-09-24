@@ -198,6 +198,14 @@ def test_start_repository_execution_queues_submit_without_transport(monkeypatch)
         lifecycle_calls.append(kwargs)
         return SimpleNamespace(job_id="agent-test")
     monkeypatch.setattr(repository_execution, "create_sovereign_agent_job", create_job)
+    resolved_heads: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        repository_execution,
+        "_resolve_expected_head_sha",
+        lambda repo_url, branch: resolved_heads.append((repo_url, branch)) or "a" * 40,
+    )
+    monkeypatch.setattr(repository_execution, "persist_workflow_run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(repository_execution, "_bind_repository_execution_permission", lambda *_args, **_kwargs: None)
     transport_calls: list[bool] = []
 
     def client_factory():
@@ -218,6 +226,8 @@ def test_start_repository_execution_queues_submit_without_transport(monkeypatch)
 
     assert result.status == "running"
     assert lifecycle_calls
+    assert resolved_heads == [("https://github.com/OuroborosCollective/Sovereign-Studio-ato", "main")]
+    assert lifecycle_calls[0]["payload"]["expectedHeadSha"] == "a" * 40
     assert "github_access_token" not in lifecycle_calls[0]
     assert lifecycle_calls[0]["clone_repo"] is False
     assert lifecycle_calls[0]["provision_workspace"] is True
@@ -225,7 +235,6 @@ def test_start_repository_execution_queues_submit_without_transport(monkeypatch)
     assert transport_calls == []
     assert [event.stage for event in state["events"]] == [
         "repository_execution_contract_bound",
-        "repository_revocation_uncovered",
         "agent_zero_a2a_submit_queued",
     ]
 

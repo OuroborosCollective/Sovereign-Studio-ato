@@ -781,3 +781,13 @@ Evidence: Current main before repair `3e362695060069646786bb5c8460948da9e7b79d`;
 Learned: The Neuro runtime contract was already dynamic; the final activation blocker was stale deployment-canary literals, not a Neuro implementation defect.
 Open: Draft PR and exact-head GitHub CI remain pending; after merge, rerun immutable publish/self-update and verify the live revision plus digest.
 Next safe step: Create the Draft PR from the current-main branch and require terminal green exact-head CI.
+
+### 2026-09-24 — Repository execution expectedHeadSha binding repair
+Status: PARTIAL — source + regression verified; live deployment pending
+Task: Bind missing repository `expectedHeadSha` server-side at the real repository execution boundary instead of requiring the frontend caller to supply it.
+Decisions: Resolve the selected GitHub branch HEAD read-only via the existing `resolve_github_head` path, reject empty resolution, preserve the exact SHA through the existing job lifecycle, and update the canonical/shipping execution mirrors together. Add a regression proving a missing caller SHA is filled before job creation.
+Touched surfaces: `backend/agent_runtime/repository_execution.py`, `scripts/sovereign-backend/agent_runtime/repository_execution.py`, `backend/tests/test_repository_execution.py`.
+Evidence: Isolated workspace `job-83df4958ae2b` on `main@6baf7dd7d2ab179f580be65cf2f29c40bcf34484`; `test_repository_execution.py` 38/38, `test_repository_single_a2a_contract.py` 4/4, `test_agent_zero_only_execution_contract.py` 4/4; canonical/shipping modified files remain byte-identical after applying the same patch. Running `sovereign-backend` is healthy but still on the pre-patch immutable runtime, so no production-live claim is made.
+Learned: The frontend can remain neutral about the revision while Sovereign itself binds the exact repository HEAD at the backend truth boundary; caller-supplied SHA remains accepted and unchanged when present.
+Open: Draft PR exact-head CI and immutable runtime deployment/readback are still required.
+Next safe step: Create the Draft PR, require terminal exact-head CI, then deploy and read back the exact revision/digest before claiming the frontend issue fixed live.
