@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import sqlite3
 import pytest
 
 from agent_runtime.retrieval.bitcoin_graph import (
@@ -278,7 +279,6 @@ def test_sqlite_store_resolves_intra_block_spend_and_enforces_single_spend(tmp_p
 
     assert store.resolve_prevout("c" * 64, 0).value_sat == 100_000_000
     assert store.resolve_prevout("d" * 64, 0).value_sat == 99_999_000
-    import sqlite3
     with sqlite3.connect(db) as connection:
         fee = connection.execute(
             "SELECT fee_sat FROM transactions WHERE txid=?",
