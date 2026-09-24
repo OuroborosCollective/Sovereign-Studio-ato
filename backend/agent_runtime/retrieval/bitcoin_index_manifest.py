@@ -232,7 +232,6 @@ def create_manifest(
 
 
 __all__ = [
-__all__ = [
     "BitcoinIndexManifestError",
     "BitcoinIndexShardManifest",
     "BitcoinScannIndexManifest",
