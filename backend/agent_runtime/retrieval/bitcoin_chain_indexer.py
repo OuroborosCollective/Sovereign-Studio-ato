@@ -1,15 +1,15 @@
-"""Streaming Bitcoin Core -> canonical UTXO/graph ingester.""
+"""Streaming Bitcoin Core -> canonical Bitcoin UTXO/graph indexer."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
-import json
-from typing import Iterable
 
-from .bitcoin_graph import block_from_rpc
 from .bitcoin_rpc import BitcoinCoreRpcClient
-from .bitcoin_canonical_store import BitcoinCanonicalStore, BitcoinStoreError
+from .bitcoin_canonical_store import BitcoinCanonicalStore
+
+
+class BitcoinIngestError(RuntimeError):
+    """Raised when a chain ingest request is invalid."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,14 +21,6 @@ class BitcoinIngestResult:
     last_block_hash: str
 
 
-def _snapshot_hash(height: int, block_hash: str) -> str:
-    payload = json.dumps(
-        {"height": int(height), "block_hash": str(block_hash).lower()},
-        sort_keys=True, separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
-
-
 def ingest_chain(
     client: BitcoinCoreRpcClient,
     store: BitcoinCanonicalStore,
@@ -36,20 +28,30 @@ def ingest_chain(
     start_height: int | None = None,
     end_height: int | None = None,
 ) -> BitcoinIngestResult:
-    """Ingest a contiguous block range with prevouts resolved from the store."""
+    """Ingest a contiguous block range from a real Bitcoin Core node.
+
+    Resume defaults to the block after the persisted height. Reorg recovery is
+    explicit: when the canonical store detects a different block at a height,
+    callers must locate the common ancestor and invoke rewind_to_height().
+    """
     store.initialize()
-    current = store.latest_height()
-    resolved_start = current + 1 if current is not None else 0
-    if start_height is not None:
-        resolved_start = max(0, int(start_height))
+    persisted_height = store.latest_height()
+    resolved_start = (
+        int(start_height)
+        if start_height is not None
+        else (persisted_height + 1 if persisted_height is not None else 0)
+    )
     resolved_end = client.get_block_count() if end_height is None else int(end_height)
+
+    if resolved_start < 0 or resolved_end < -1:
+        raise BitcoinIngestError("block heights must be >= 0")
     if resolved_end < resolved_start:
         return BitcoinIngestResult(
             start_height=resolved_start,
             end_height=resolved_end,
             blocks_ingested=0,
             rows=store.count_rows(),
-            last_block_hash="" if current is None else client.get_block_hash(current),
+            last_block_hash="",
         )
 
     blocks_ingested = 0
@@ -58,15 +60,7 @@ def ingest_chain(
         start_height=resolved_start,
         end_height=resolved_end,
     ):
-        with store._connection() as connection_for_resolver:
-            block = block_from_rpc(
-                raw_block,
-                prevout_resolver=lambda txid, vout: store.resolve_prevout_for_ingest(
-                    connection_for_resolver, txid, vout
-                ),
-            )
-            digest = _snapshot_hash(block.height, block.block_hash)
-            store.ingest_block(block, snapshot_hash=digest)
+        block = store.ingest_rpc_block(raw_block)
         blocks_ingested += 1
         last_hash = block.block_hash
 
@@ -79,4 +73,4 @@ def ingest_chain(
     )
 
 
-__all__ = ["BitcoinIngestResult", "ingest_chain"]
+__all__ = ["BitcoinIngestError", "BitcoinIngestResult", "ingest_chain"]
