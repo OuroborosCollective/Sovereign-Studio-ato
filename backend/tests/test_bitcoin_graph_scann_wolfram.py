@@ -394,3 +394,87 @@ def test_bitcoin_index_manifest_is_shard_contiguous_and_content_addressed() -> N
                 index_relative_path="indices/0002",
             )),
         )
+
+
+def test_reorg_rewind_releases_outputs_spent_by_removed_blocks(tmp_path) -> None:
+    from agent_runtime.retrieval.bitcoin_canonical_store import BitcoinCanonicalStore
+    db = tmp_path / "reorg.sqlite"
+    store = BitcoinCanonicalStore(str(db))
+    store.initialize()
+
+    def block(height, block_hash, previous, txid, spend_txid=None):
+        txs = [{
+            "txid": txid,
+            "version": 2,
+            "locktime": 0,
+            "vin": [{"coinbase": "01", "sequence": 0}],
+            "vout": [{"value": "1.00000000", "n": 0, "scriptPubKey": {"type": "p2pk"}}],
+        }]
+        if spend_txid:
+            txs.append({
+                "txid": spend_txid,
+                "version": 2,
+                "locktime": 0,
+                "vin": [{"txid": "a" * 64, "vout": 0, "sequence": 1}],
+                "vout": [{"value": "0.99999000", "n": 0, "scriptPubKey": {"type": "p2wpkh"}}],
+            })
+        payload = {
+            "height": height,
+            "hash": block_hash,
+            "previousblockhash": previous,
+            "time": height,
+            "nonce": 0,
+            "bits": "1d00ffff",
+            "tx": txs,
+        }
+        store.ingest_rpc_block(payload)
+
+    # Canonical height 0 creates an output that is spent by the orphan height 1.
+    genesis = {
+        "height": 0,
+        "hash": "b" * 64,
+        "time": 0,
+        "nonce": 0,
+        "bits": "1d00ffff",
+        "tx": [{
+            "txid": "a" * 64,
+            "version": 2,
+            "locktime": 0,
+            "vin": [{"coinbase": "01", "sequence": 0}],
+            "vout": [{"value": "1.00000000", "n": 0, "scriptPubKey": {"type": "p2pk"}}],
+        }],
+    }
+    store.ingest_rpc_block(genesis)
+    orphan = {
+        "height": 1,
+        "hash": "c" * 64,
+        "previousblockhash": "b" * 64,
+        "time": 1,
+        "nonce": 0,
+        "bits": "1d00ffff",
+        "tx": [
+            {
+                "txid": "d" * 64,
+                "version": 2,
+                "locktime": 0,
+                "vin": [{"coinbase": "02", "sequence": 0}],
+                "vout": [{"value": "1.00000000", "n": 0, "scriptPubKey": {"type": "p2pk"}}],
+            },
+            {
+                "txid": "e" * 64,
+                "version": 2,
+                "locktime": 0,
+                "vin": [{"txid": "a" * 64, "vout": 0, "sequence": 1}],
+                "vout": [{"value": "0.99999000", "n": 0, "scriptPubKey": {"type": "p2wpkh"}}],
+            },
+        ],
+    }
+    store.ingest_rpc_block(orphan)
+    store.rewind_to_height(0)
+
+    with sqlite3.connect(db) as connection:
+        spent_by = connection.execute(
+            "SELECT spent_by_txid FROM outputs WHERE txid=? AND vout=0",
+            ("a" * 64,),
+        ).fetchone()[0]
+    assert spent_by is None
