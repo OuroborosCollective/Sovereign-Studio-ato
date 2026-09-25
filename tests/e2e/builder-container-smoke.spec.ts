@@ -127,7 +127,7 @@ test.describe('Sovereign Control Surface vNext browser smoke', () => {
     });
 
     await page.reload();
-    const composer = page.getByLabel('Mission an Sovereign');
+    const composer = page.getByLabel('Describe the mission to Sovereign');
     await expect(composer).toBeVisible(EXTENDED_TIMEOUT);
     await composer.fill('Prüfe das Repository.');
     await page.getByTestId('builder__start-task').click();
