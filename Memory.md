@@ -823,6 +823,16 @@ Learned: Premium visual quality should be encoded as a durable system and applie
 Open: Re-run exact-head CI after this Memory entry changes the PR SHA; merge remains owner-authorized work only.
 Next safe step: Verify the new exact PR head, then proceed with the normal review/merge gate if explicitly authorized.
 
+### 2026-09-25 — Responsive truth-contract accessibility regression repair
+Status: PARTIAL / repair prepared; exact-head CI reset pending
+Task: Repair the failing responsive control-surface truth contract caused by the Modal accessibility hardening.
+Decisions: Keep `aria-labelledby` with the stable React `useId()` title binding; update the regression contract to assert the actual accessible-dialog semantics instead of weakening Modal back to `aria-label`.
+Touched surfaces: `src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts`; `Memory.md`.
+Evidence: PR #2106 exact head `4f946c4274b5fa15dc496b64d96856694f0caf27` Release Verification run `36161485222` failed 1/3820 frontend smoke tests because the unchanged truth-contract still expected `aria-label={title}`. The exact workflow log identified that stale assertion; the narrow replacement was applied in isolated workspace `job-ffa17689136c`, and the actual Modal source was re-read to verify it uses `aria-labelledby={titleId}`.
+Learned: Accessibility semantic hardening must update its source-of-truth contract assertions in the same change block; otherwise the regression suite correctly reports the contract mismatch.
+Open: The repaired head needs fresh exact-head CI; no merge or runtime-green claim is made yet.
+Next safe step: Publish the test + Memory repair to PR #2106, require terminal exact-head CI, then merge only the verified final head.
+
 
 ### 2026-09-25 — Owner consent instrumentation without card UI
 Status: PARTIAL / repository integration complete; exact-head CI pending
