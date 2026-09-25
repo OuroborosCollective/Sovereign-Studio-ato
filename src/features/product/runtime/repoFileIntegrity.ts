@@ -38,8 +38,15 @@ const MEDIUM_RISK_PATTERNS = [
 const CODE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.kt', '.java', '.py', '.go', '.rs', '.mjs', '.cjs'];
 const TEST_PATTERNS = [/\.test\./i, /\.spec\./i, /(^|\/)tests?\//i, /(^|\/)__tests__\//i];
 
+// ⚡ Bolt: Zero-allocation filename extraction using native string slicing while handling trailing slashes
 function fileNameOf(path: string): string {
-  return path.split('/').filter(Boolean).at(-1) ?? path;
+  let end = path.length;
+  while (end > 0 && path.charCodeAt(end - 1) === 47) {
+    end--;
+  }
+  if (end === 0) return path; // handles root path "/" or "///"
+  const lastSlash = path.lastIndexOf('/', end - 1);
+  return lastSlash === -1 ? path.slice(0, end) : path.slice(lastSlash + 1, end);
 }
 
 function isCodePath(path: string): boolean {
@@ -125,16 +132,30 @@ const INTEGRITY_RISK_ORDER: Readonly<Record<IntegrityRiskLevel, number>> = {
   low: 2,
 };
 
+// ⚡ Bolt: Single-pass map with fast native lexicographical comparison replacing slow localeCompare
 export function analyzeRepoFileIntegrityList(files: RepoFile[]): RepoFileIntegrityResult[] {
-  return files.map(analyzeRepoFileIntegrity).sort((a, b) => (
+  const results: RepoFileIntegrityResult[] = new Array(files.length);
+  for (let i = 0; i < files.length; i++) {
+    results[i] = analyzeRepoFileIntegrity(files[i]);
+  }
+  return results.sort((a, b) => (
     INTEGRITY_RISK_ORDER[a.riskLevel] - INTEGRITY_RISK_ORDER[b.riskLevel]
-    || a.path.localeCompare(b.path)
+    || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
   ));
 }
 
+// ⚡ Bolt: Single-pass accumulation avoiding multiple array filtering passes
 export function summarizeFileIntegrity(results: RepoFileIntegrityResult[]): string {
-  const high = results.filter((item) => item.riskLevel === 'high').length;
-  const medium = results.filter((item) => item.riskLevel === 'medium').length;
-  const low = results.filter((item) => item.riskLevel === 'low').length;
+  let high = 0;
+  let medium = 0;
+  let low = 0;
+
+  for (let i = 0; i < results.length; i++) {
+    const risk = results[i].riskLevel;
+    if (risk === 'high') high++;
+    else if (risk === 'medium') medium++;
+    else if (risk === 'low') low++;
+  }
+
   return `${results.length} entries analyzed (${high} high, ${medium} medium, ${low} low). Confidence: path-only.`;
 }
