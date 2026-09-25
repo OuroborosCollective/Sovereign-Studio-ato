@@ -62,3 +62,103 @@
 @media (prefers-reduced-motion: reduce) {
   .breathing-machine, .laser-scan-overlay { animation: none !important; }
 }
+
+
+/* Premium frontend system — durable instrumentation language. */
+:root {
+  --sovereign-space-1: 4px;
+  --sovereign-space-2: 8px;
+  --sovereign-space-3: 12px;
+  --sovereign-space-4: 16px;
+  --sovereign-space-5: 24px;
+  --sovereign-radius-control: 10px;
+  --sovereign-radius-panel: 14px;
+  --sovereign-causal-spine: rgba(255, 30, 56, 0.72);
+  --sovereign-focus-ring: rgba(255, 30, 56, 0.78);
+  --sovereign-evidence-ring: rgba(16, 185, 129, 0.68);
+}
+
+.sovereign-control-surface {
+  color: var(--text-main);
+  background:
+    radial-gradient(circle at 78% 0%, rgba(255, 30, 56, 0.055), transparent 28rem),
+    linear-gradient(180deg, var(--bg-void), var(--carbon-deep));
+  font-family: var(--font-sans);
+}
+
+.sovereign-control-surface button,
+.sovereign-control-surface a,
+.sovereign-control-surface select,
+.sovereign-control-surface textarea,
+.sovereign-control-surface input {
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+}
+
+.sovereign-control-surface button:not(:disabled),
+.sovereign-control-surface a {
+  cursor: pointer;
+}
+
+.sovereign-control-surface :is(button, a, select, textarea, input):focus-visible {
+  outline: 2px solid var(--sovereign-focus-ring);
+  outline-offset: 2px;
+}
+
+.sovereign-causal-spine {
+  position: relative;
+}
+
+.sovereign-causal-spine::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--sovereign-causal-spine) 18%, var(--sovereign-causal-spine) 82%, transparent);
+  box-shadow: 0 0 14px rgba(255, 30, 56, 0.24);
+  pointer-events: none;
+}
+
+.sovereign-evidence-seal {
+  border-color: var(--sovereign-evidence-ring) !important;
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.08), inset 0 0 18px rgba(16, 185, 129, 0.035);
+}
+
+.sovereign-instrument-panel {
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: var(--sovereign-radius-panel);
+  background: linear-gradient(180deg, rgba(19, 19, 24, 0.98), rgba(8, 8, 10, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 18px 42px rgba(0, 0, 0, 0.22);
+}
+
+.sovereign-instrument-label {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.sovereign-runtime-readback {
+  border-left: 2px solid var(--sovereign-causal-spine);
+  background: linear-gradient(90deg, rgba(255, 30, 56, 0.055), transparent 38%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sovereign-control-surface button,
+  .sovereign-control-surface a,
+  .sovereign-control-surface select,
+  .sovereign-control-surface textarea,
+  .sovereign-control-surface input {
+    transition: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .sovereign-causal-spine::before {
+    display: none;
+  }
+}
