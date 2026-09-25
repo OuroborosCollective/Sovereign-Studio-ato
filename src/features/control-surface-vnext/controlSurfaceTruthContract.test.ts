@@ -163,7 +163,7 @@ describe('Sovereign Control Surface vNext truth contract', () => {
     expect(surface).toContain('terminal-${activeRunId}');
     expect(modal).toContain('role="dialog"');
     expect(modal).toContain('aria-modal="true"');
-    expect(modal).toContain('aria-label={title}');
+    expect(modal).toContain('aria-labelledby={titleId}');
   });
 
   it('keeps the protected five-run evidence lane on vNext instead of historical side-menu or PAT choreography', () => {
