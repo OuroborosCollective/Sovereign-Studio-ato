@@ -61,3 +61,6 @@
 ## 2025-05-16 - [State-Dependent Button Titles vs Accessible Names]
 **Learning:** To improve accessibility for state-dependent interactive elements (like a submit button) that already have visible text, it is crucial to dynamically update their `title` attribute rather than dynamically replacing their `aria-label`. Completely replacing or overriding visible text with an `aria-label` violates WCAG 2.5.3 (Label in Name) and can disrupt standard user discovery.
 **Action:** Always dynamically update the `title` attribute for state-dependent tooltips on buttons with text, and reserve `aria-label` only for elements without readable text or when augmenting (not replacing) visible text.
+## 2025-02-27 - Consistent Localization in ARIA Attributes
+**Learning:** Mixing localizations (like German and English) in accessibility attributes (e.g., `aria-label="Mission an Sovereign"`) confuses screen readers and breaks the immersive experience for users relying on assistive technologies.
+**Action:** Always maintain a consistent language in accessibility attributes (like `aria-label`, `title`, and `placeholder`) throughout the app to match the primary UI language.
