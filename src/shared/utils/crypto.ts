@@ -4,6 +4,7 @@ export const makeId = () => crypto.randomUUID();
 // and instantiation overhead on every call to maskSecrets.
 const GITHUB_PAT_CLASSIC_REGEX = /(ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9_]{8,100}/g;
 const GITHUB_PAT_FINE_GRAINED_REGEX = /github_pat_[a-zA-Z0-9_]{20,200}/g;
+const GITLAB_PAT_REGEX = /glpat-[a-zA-Z0-9_-]{20,}/g;
 const GEMINI_API_KEY_REGEX = /AIza[a-zA-Z0-9_-]{26,60}/g;
 const OPENAI_OR_V1_REGEX = /sk-or-v1-[a-zA-Z0-9_-]{20,}/g;
 const OPENAI_PROJ_REGEX = /sk-proj-[a-zA-Z0-9_-]{20,}/g;
@@ -15,7 +16,7 @@ const HUGGINGFACE_KEY_REGEX = /hf_[a-zA-Z0-9]{8,100}/g;
 const TOGETHER_KEY_REGEX = /together_[a-zA-Z0-9]{8,100}/g;
 const POLLINATIONS_KEY_REGEX = /pollinations_[a-zA-Z0-9]{8,100}/g;
 const BEARER_TOKEN_REGEX = /Bearer\s+[a-zA-Z0-9._~+/-]+=*/gi;
-const LABEL_CREDENTIAL_REGEX = /(["']?)(oauth[_-]?token|oauth[_-]?secret|auth[_-]?secret|bearer[_-]?token|registration[_-]?token|access[_-]?key[_-]?id|aws[_-]?secret[_-]?access[_-]?key|encryption[_-]?secret|cipher[_-]?key|deploy[_-]?key|encryption[_-]?key|bot[_-]?token|passphrase|admin[_-]?key|admin[_-]?secret|admin[_-]?token|auth[_-]?key|access[_-]?secret|account[_-]?key|account[_-]?secret|client[_-]?secret|client[_-]?id|session[_-]?token|session[_-]?id|refresh[_-]?token|auth[_-]?token|id[_-]?token|api[_-]?secret|database[_-]?password|db[_-]?password|db[_-]?pass|master[_-]?password|master[_-]?key|secret[_-]?key|webhook[_-]?secret|webhook[_-]?token|webhook[_-]?key|ssh[_-]?private[_-]?key|ssh[_-]?key|signing[_-]?key|signing[_-]?secret|password|passwd|token|secret|api[_-]?key|access[_-]?token|private[_-]?key)\1(\s*[:=]\s*)["']?[a-zA-Z0-9_@#$%^&*.\-~+/=]+["']?/gi;
+const LABEL_CREDENTIAL_REGEX = /(["']?)(gitlab[_-]?token|redis[_-]?password|redis[_-]?pass|postgres[_-]?password|pg[_-]?password|oauth[_-]?token|oauth[_-]?secret|auth[_-]?secret|bearer[_-]?token|registration[_-]?token|access[_-]?key[_-]?id|aws[_-]?secret[_-]?access[_-]?key|encryption[_-]?secret|cipher[_-]?key|deploy[_-]?key|encryption[_-]?key|bot[_-]?token|passphrase|admin[_-]?key|admin[_-]?secret|admin[_-]?token|auth[_-]?key|access[_-]?secret|account[_-]?key|account[_-]?secret|client[_-]?secret|client[_-]?id|session[_-]?token|session[_-]?id|refresh[_-]?token|auth[_-]?token|id[_-]?token|api[_-]?secret|database[_-]?password|db[_-]?password|db[_-]?pass|master[_-]?password|master[_-]?key|secret[_-]?key|webhook[_-]?secret|webhook[_-]?token|webhook[_-]?key|ssh[_-]?private[_-]?key|ssh[_-]?key|signing[_-]?key|signing[_-]?secret|password|passwd|token|secret|api[_-]?key|access[_-]?token|private[_-]?key)\1(\s*[:=]\s*)["']?[a-zA-Z0-9_@#$%^&*.\-~+/=]+["']?/gi;
 
 // 1-slot memoization cache to optimize consecutive calls with identical text
 // (extremely common during high-frequency chat pacing or parent re-renders).
@@ -39,6 +40,9 @@ export function maskSecrets(text: string): string {
   // GitHub Personal Access Tokens (classic, fine-grained, app and refresh/session variants)
   masked = masked.replace(GITHUB_PAT_CLASSIC_REGEX, '$1_****');
   masked = masked.replace(GITHUB_PAT_FINE_GRAINED_REGEX, 'github_pat_****');
+
+  // GitLab Personal Access Tokens
+  masked = masked.replace(GITLAB_PAT_REGEX, 'glpat-****');
 
   // Google Cloud / Gemini API keys
   masked = masked.replace(GEMINI_API_KEY_REGEX, 'AIza****');
