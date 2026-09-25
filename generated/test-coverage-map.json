@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-09-23T16:52:08.944Z",
+  "generatedAt": "2026-09-25T01:23:34.130Z",
   "discovery": {
     "scope": "tracked repository test conventions",
     "excludedDirectories": [
@@ -31,12 +31,12 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 794,
+  "totalTestFiles": 797,
   "testRoots": {
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
     "backend": 1,
-    "backend/tests": 180,
+    "backend/tests": 181,
     "backend/tests/e2e": 1,
     "integrations/openhands/sovereign-mcp-toolset-plugin/tests": 1,
     "research": 1,
@@ -48,9 +48,9 @@
     "tests": 2,
     "tests/e2e": 5,
     "tools": 3,
-    "tools/sovereign-chatgpt-mcp/tests": 108,
+    "tools/sovereign-chatgpt-mcp/tests": 109,
     "tools/sovereign-github-patch-mcp/tests": 4,
-    "tools/sovereign-toolchain/tests": 7
+    "tools/sovereign-toolchain/tests": 8
   },
   "files": [
     {
@@ -1144,6 +1144,14 @@
     },
     {
       "file": "backend/tests/test_operator_projection_read_only.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_owner_input_json_validation.py",
       "language": "python",
       "testRoot": "backend/tests",
       "gates": [],
@@ -10012,6 +10020,14 @@
       "category": "python-suite"
     },
     {
+      "file": "tools/sovereign-chatgpt-mcp/tests/test_aurion_admin_mcp_lane.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-chatgpt-mcp/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
       "file": "tools/sovereign-chatgpt-mcp/tests/test_aurion_operator.py",
       "language": "python",
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
@@ -10844,6 +10860,14 @@
     },
     {
       "file": "tools/sovereign-toolchain/tests/test_ci_evidence.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-toolchain/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-toolchain/tests/test_compose_contract.py",
       "language": "python",
       "testRoot": "tools/sovereign-toolchain/tests",
       "gates": [],

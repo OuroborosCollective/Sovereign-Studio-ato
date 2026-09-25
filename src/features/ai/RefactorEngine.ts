@@ -376,16 +376,28 @@ GENERIERE kompletten, produktionsreifen Code. Antworte mit Dateipfaden und Code.
     return await this.generate(prompt, { temperature: 0.5, maxOutputTokens: 16384 });
   }
 
+  // ⚡ Bolt: Consolidated .split().map().filter() into a single-pass for...of loop to eliminate intermediate array allocations.
   private extractTechList(analysis: string): string[] {
     const match = analysis.match(/TECHNOLOGIEN?[:\s]*([^\n]+(?:\n[^\n]+)*)/i);
     if (!match) return [];
-    return match[1].split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+    const result: string[] = [];
+    for (const segment of match[1].split(/[,\n]/)) {
+      const trimmed = segment.trim();
+      if (trimmed) result.push(trimmed);
+    }
+    return result;
   }
 
+  // ⚡ Bolt: Consolidated .split().filter().map().filter() into a single-pass for...of loop to eliminate intermediate array allocations.
   private extractGoals(analysis: string): string[] {
     const match = analysis.match(/REFACTOR_TASKS?[:\s]*([\s\S]*?)(?=#|$)/i);
     if (!match) return [];
-    return match[1].split(/[-•*]/).filter(s => s.trim()).map(s => s.trim()).filter(Boolean);
+    const result: string[] = [];
+    for (const segment of match[1].split(/[-•*]/)) {
+      const trimmed = segment.trim();
+      if (trimmed) result.push(trimmed);
+    }
+    return result;
   }
 
   private extractTasks(analysis: string): RefactorTask[] {
