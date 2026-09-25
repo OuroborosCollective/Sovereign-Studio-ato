@@ -751,7 +751,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 747,
+      "line": 749,
       "methods": [
         "GET"
       ],
@@ -760,7 +760,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 773,
+      "line": 775,
       "methods": [
         "POST"
       ],
@@ -1768,7 +1768,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 720,
+      "line": 722,
       "methods": [
         "GET"
       ],
@@ -2227,7 +2227,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 643,
+      "line": 645,
       "methods": [
         "GET"
       ],
@@ -2236,7 +2236,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 567,
+      "line": 569,
       "methods": [
         "POST"
       ],
@@ -4454,7 +4454,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/owner_input_runtime.py",
-          "line": 773,
+          "line": 775,
           "methods": [
             "POST"
           ],
@@ -21183,10 +21183,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "8df16942a764f6d0ceff1858a20fb9b1ab1fc09a7f76f5c7ea82e41519875079",
-  "revision": "5511c638e8ba0384420979692dd63ed7ec1d4b9d",
+  "reportSha256": "9d1e7d160f242e8170d31d626bacf3cb7b76b1ba779c43d5c77b8b31863474bf",
+  "revision": "24574946488886cf1b1080c6d4ad8eb3ce67ef6c",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "885b80a3bf4d9512e7916acb1ecedba98538418bd5aa133d6d38748741ded899",
+  "sourceTreeSha256": "246e318d938627f658e2aedc6c0b164d769bfdc7ce34441bc04fbcfab9565c7d",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -21205,7 +21205,7 @@
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
-    "testFileCount": 810,
+    "testFileCount": 813,
     "unmatchedActiveRequestCount": 0
   },
   "truthBoundary": {

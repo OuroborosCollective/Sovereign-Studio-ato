@@ -83,3 +83,7 @@
 ## 2026-08-28 - [Replacing Array Spreads and Multi-Pass Mapping in Signal Receipts]
 **Learning:** Using `Math.min(...arr)` and `Math.max(...arr)` on dynamically allocated `.map()` arrays creates both significant heap allocation pressure and call-stack overflow risks (`RangeError: Maximum call stack size exceeded`) when processing large signal streams. Consolidating range calculations and set accumulation into a single $O(N)$ indexed `for` loop pass drops memory overhead to $O(1)$ and speeds up receipt generation by ~33%.
 **Action:** Avoid spreading large or dynamically generated arrays into functions like `Math.min` or `Math.max`. Instead, track min/max bounds imperatively in a single loop traversal alongside set populating.
+
+## 2024-09-25 - Avoid Redundant Array Manipulation Chains
+**Learning:** Chaining array methods like `.filter().map().filter()` on string segments from `.split()` creates multiple intermediate arrays, causing unnecessary allocations and garbage collection overhead.
+**Action:** Consolidate these highly redundant chains into a single-pass `for...of` loop to minimize intermediate allocations while preserving readability.
