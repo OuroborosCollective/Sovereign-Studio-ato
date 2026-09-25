@@ -811,3 +811,14 @@ Evidence: Source PR #2097 head `b08af178a12d6fab4db1bfb964be7e785e5afd53` became
 Learned: A clean current-main refresh is safer than rebasing a stale performance branch when only two deterministic files carry the intended feature.
 Open: Fresh current-main Draft PR publication and exact-head CI remain pending.
 Next safe step: Publish the refreshed branch, close stale #2097, then merge only after terminal green checks.
+
+
+### 2026-09-25 — Premium Sovereign control-surface design system
+Status: VERIFIED repository/CI; runtime deployment unchanged
+Task: Establish the production Frontend Design Premium layer for the canonical Sovereign Control Surface vNext.
+Decisions: Keep the existing vNext control surface and runtime-readback truth boundary; centralize durable visual intent in DESIGN.md and reusable premium instrumentation tokens in the existing biomodular theme; use carbon surfaces, laser-red causal signalling, emerald evidence seals, and restrained motion rather than a generic dashboard restyle.
+Touched surfaces: DESIGN.md; src/App.tsx; src/features/control-surface-vnext/theme/biomodular.css.
+Evidence: PR #2106 at the pre-memory head passed 38 terminal CI checks with no failures; PatchMon fleet evidence reported the PR head revision-bound and mergeable/clean; no production deployment mutation was performed. Runtime resolver separately reported the existing deployed MCP revision/digest gap, which is unrelated to this frontend source change and is not claimed fixed here.
+Learned: Premium visual quality should be encoded as a durable system and applied to the canonical shell without creating a parallel UI or weakening the runtime truth boundary.
+Open: Re-run exact-head CI after this Memory entry changes the PR SHA; merge remains owner-authorized work only.
+Next safe step: Verify the new exact PR head, then proceed with the normal review/merge gate if explicitly authorized.
