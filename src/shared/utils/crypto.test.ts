@@ -14,6 +14,12 @@ describe('maskSecrets', () => {
     expect(maskSecrets(text)).toBe('Could not authenticate with github_pat_****');
   });
 
+  it('masks GitLab Personal Access Tokens', () => {
+    const secret = 'glpat-abcdefghijklmnopqrstuvwxyz012345';
+    const text = `GitLab auth failed with ${secret}`;
+    expect(maskSecrets(text)).toBe('GitLab auth failed with glpat-****');
+  });
+
   it('masks GitHub token variants', () => {
     expect(maskSecrets('gho_1234567890abcdefghijklmnopqrstuvwx')).toBe('gho_****');
     expect(maskSecrets('ghu_1234567890abcdefghijklmnopqrstuvwx')).toBe('ghu_****');
@@ -125,6 +131,11 @@ describe('maskSecrets', () => {
     expect(maskSecrets('registration_token: reg_token_val_555')).toBe('registration_token: ****');
     expect(maskSecrets('access_key_id=AKIAIOSFODNN7EXAMPLE')).toBe('access_key_id=****');
     expect(maskSecrets('aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY')).toBe('aws_secret_access_key: ****');
+    expect(maskSecrets('gitlab_token: gl_secret_token_123')).toBe('gitlab_token: ****');
+    expect(maskSecrets('redis_password=redis_secret_pass_456')).toBe('redis_password=****');
+    expect(maskSecrets('redis_pass: redis_secret_pass_789')).toBe('redis_pass: ****');
+    expect(maskSecrets('postgres_password=pg_secret_pass_101')).toBe('postgres_password=****');
+    expect(maskSecrets('pg_password: pg_secret_pass_202')).toBe('pg_password: ****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
