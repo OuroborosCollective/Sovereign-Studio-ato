@@ -751,7 +751,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 747,
+      "line": 749,
       "methods": [
         "GET"
       ],
@@ -760,7 +760,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 773,
+      "line": 775,
       "methods": [
         "POST"
       ],
@@ -1768,7 +1768,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 720,
+      "line": 722,
       "methods": [
         "GET"
       ],
@@ -2227,7 +2227,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 643,
+      "line": 645,
       "methods": [
         "GET"
       ],
@@ -2236,7 +2236,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 567,
+      "line": 569,
       "methods": [
         "POST"
       ],
@@ -4454,7 +4454,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/owner_input_runtime.py",
-          "line": 773,
+          "line": 775,
           "methods": [
             "POST"
           ],
@@ -6739,7 +6739,7 @@
         "active_surface": true,
         "call_name": "this.requestObject",
         "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 443,
+        "line": 445,
         "method": "POST",
         "path": "/api/controller/approvals/<p>/decision",
         "source_kind": "request-call",
@@ -14027,7 +14027,7 @@
         "active_surface": true,
         "call_name": "this.requestObject",
         "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 532,
+        "line": 534,
         "method": "GET",
         "path": "/api/user/agent/swarm/manifest",
         "source_kind": "request-call",
@@ -14187,7 +14187,7 @@
         "active_surface": true,
         "call_name": "this.requestObject",
         "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 454,
+        "line": 456,
         "method": "POST",
         "path": "/api/user/agent/swarm/runs/<p>/resume",
         "source_kind": "request-call",
@@ -14316,7 +14316,7 @@
         "active_surface": true,
         "call_name": "this.requestObject",
         "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 516,
+        "line": 518,
         "method": "GET",
         "path": "/api/user/agent/toolchain/manifest",
         "source_kind": "request-call",
@@ -21183,10 +21183,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "8df16942a764f6d0ceff1858a20fb9b1ab1fc09a7f76f5c7ea82e41519875079",
-  "revision": "5511c638e8ba0384420979692dd63ed7ec1d4b9d",
+  "reportSha256": "820d89aa15a5260f6168b76f4413e15345e9d2752a5e863cb5a30b2925dcf4e9",
+  "revision": "fdacfc31ec21994098a543c041cd18561e1abff2",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "885b80a3bf4d9512e7916acb1ecedba98538418bd5aa133d6d38748741ded899",
+  "sourceTreeSha256": "818cede5d1bdea8b8776de753fd2dc54a97debcdcff4441175988e4c93b676ac",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -21205,7 +21205,7 @@
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
-    "testFileCount": 810,
+    "testFileCount": 814,
     "unmatchedActiveRequestCount": 0
   },
   "truthBoundary": {

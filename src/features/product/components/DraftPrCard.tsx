@@ -82,7 +82,7 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 16 }}>📝</span>
+        <span aria-hidden="true" style={{ fontSize: 16 }}>📝</span>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 600, color: C.accent, fontSize: 14 }}>
             Draft PR ready
@@ -115,7 +115,8 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
             href={buildStatus.runUrl}
             target="_blank"
             rel="noopener noreferrer"
-            title="GitHub Workflow Run öffnen"
+            title="GitHub Workflow Run in neuem Tab öffnen"
+            className="focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:outline-none rounded"
             style={{ color: C.sky, marginTop: 4, display: 'inline-block' }}
           >
             Run öffnen
@@ -135,6 +136,7 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
         <button
           type="button"
           onClick={onOpenBrowser}
+          className="focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:outline-none transition-opacity hover:opacity-90"
           style={{
             padding: '6px 12px',
             borderRadius: 8,
@@ -145,8 +147,8 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
             fontWeight: 500,
             cursor: 'pointer',
           }}
-          aria-label="Öffne PR im Browser"
-          title="Öffne PR im Browser"
+          aria-label="Draft PR auf GitHub im Browser öffnen"
+          title="Draft PR auf GitHub im Browser öffnen"
         >
           Im Browser öffnen
         </button>
@@ -154,6 +156,7 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
         <button
           type="button"
           onClick={onDiscussInChat}
+          className="focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:outline-none transition-opacity hover:opacity-90"
           style={{
             padding: '6px 12px',
             borderRadius: 8,
@@ -164,8 +167,8 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
             fontWeight: 500,
             cursor: 'pointer',
           }}
-          aria-label="Im Chat besprechen"
-          title="Im Chat besprechen"
+          aria-label="Draft PR im Chat besprechen"
+          title="Draft PR im Chat besprechen"
         >
           Im Chat besprechen
         </button>

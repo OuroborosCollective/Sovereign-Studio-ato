@@ -27,6 +27,7 @@ import { TestRunnerResultCard } from './TestRunnerResultCard';
 import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
+import { DraftPrCard } from './DraftPrCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1381,6 +1382,51 @@ describe('Palette Accessibility Enhancements', () => {
       fireEvent.click(viewDiffBtn);
       expect(onOpenPr).toHaveBeenCalledTimes(1);
       expect(onViewDiff).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('DraftPrCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders with decorative emoji aria-hidden, focus-visible classes, and descriptive titles/aria-labels on buttons and workflow link', () => {
+      const onOpenBrowser = vi.fn();
+      const onDiscussInChat = vi.fn();
+      const mockBuildStatus = {
+        state: 'success' as const,
+        label: 'Build erfolgreich',
+        detail: 'GitHub Workflow Run erfolgreich',
+        runUrl: 'https://github.com/owner/repo/actions/runs/123',
+      };
+
+      const { container } = render(
+        <DraftPrCard
+          url="https://github.com/owner/repo/pull/12"
+          changedFiles={['src/App.tsx']}
+          onOpenBrowser={onOpenBrowser}
+          onDiscussInChat={onDiscussInChat}
+          buildStatus={mockBuildStatus}
+        />
+      );
+
+      const emojiSpan = container.querySelector('[aria-hidden="true"]');
+      expect(emojiSpan).toBeInTheDocument();
+      expect(emojiSpan).toHaveTextContent('📝');
+
+      const openBtn = screen.getByRole('button', { name: 'Draft PR auf GitHub im Browser öffnen' });
+      expect(openBtn).toHaveAttribute('title', 'Draft PR auf GitHub im Browser öffnen');
+      expect(openBtn).toHaveClass('focus-visible:ring-2');
+
+      const discussBtn = screen.getByRole('button', { name: 'Draft PR im Chat besprechen' });
+      expect(discussBtn).toHaveAttribute('title', 'Draft PR im Chat besprechen');
+      expect(discussBtn).toHaveClass('focus-visible:ring-2');
+
+      const runLink = screen.getByRole('link', { name: 'Run öffnen' });
+      expect(runLink).toHaveAttribute('title', 'GitHub Workflow Run in neuem Tab öffnen');
+      expect(runLink).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(openBtn);
+      expect(onOpenBrowser).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(discussBtn);
+      expect(onDiscussInChat).toHaveBeenCalledTimes(1);
     });
   });
 });
