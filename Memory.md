@@ -822,3 +822,14 @@ Evidence: PR #2106 at the pre-memory head passed 38 terminal CI checks with no f
 Learned: Premium visual quality should be encoded as a durable system and applied to the canonical shell without creating a parallel UI or weakening the runtime truth boundary.
 Open: Re-run exact-head CI after this Memory entry changes the PR SHA; merge remains owner-authorized work only.
 Next safe step: Verify the new exact PR head, then proceed with the normal review/merge gate if explicitly authorized.
+
+
+### 2026-09-25 — Owner consent instrumentation without card UI
+Status: PARTIAL / repository integration complete; exact-head CI pending
+Task: Extend the canonical Sovereign Control Surface with a server-bound human-in-the-loop action/consent surface while preserving the existing runtime authority boundaries.
+Decisions: Treat consent as instrumentation, not a dashboard card; show server-supplied request facts and verbatim rationale; expose only explicit approve/reject decisions for approval interactions; keep protected approvals fail-closed; use the shared modal's least-destructive initial focus, Escape handling, focus trap and restoration; do not add authority, credentials or local state as a substitute for backend truth.
+Touched surfaces: src/features/control-surface-vnext/components/OwnerInteraction/OwnerInteractionModal.tsx; OwnerInteractionModal.test.tsx; Modal.tsx; adapter/production-adapter.ts; types/domain.ts; theme/biomodular.css; src/App.tsx; PR #2106 metadata.
+Evidence: Workspace SHA-bound edits succeeded; focused regression coverage was added; PR #2106 now points at d291ee0177e5b5d6120e2dbf637e29a9e1739385; no production deployment mutation occurred. Local command execution was unavailable because the bounded workspace runner rejected the requested commands as not allowlisted; this is not treated as a test result.
+Learned: Consent UX can reuse the existing approval endpoint and persisted-run model without creating a second authority layer; the UI can remain highly explicit without becoming a card grid.
+Open: Exact-head GitHub CI is still running; no runtime-green claim is made.
+Next safe step: Re-read the final PR head, verify terminal checks and review-thread state, then merge only through the owner-authorized exact-head gate.
