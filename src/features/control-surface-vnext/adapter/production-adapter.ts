@@ -391,6 +391,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
             requiresText: approval.requiresProtectedOwnerInput,
             timestamp: now,
             context: approval.nextAction || run.nextAction || approval.kind,
+            kind: 'approval',
           }
         : {
             id: run.runId,
@@ -399,6 +400,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
             requiresText: true,
             timestamp: now,
             context: run.nextAction,
+            kind: 'owner-directive',
           }
       : undefined;
     return {
