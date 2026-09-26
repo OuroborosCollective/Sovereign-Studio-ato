@@ -1,0 +1,80 @@
+name: Bitcoin Full Chain Index
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_height:
+        description: "First Bitcoin mainnet block height (default: resume from canonical store, or 0)"
+        required: false
+        default: ""
+        type: string
+      end_height:
+        description: "Last Bitcoin mainnet block height (default: current Core tip)"
+        required: false
+        default: ""
+        type: string
+      store_path:
+        description: "Canonical SQLite store path"
+        required: false
+        default: "data/bitcoin/canonical.sqlite"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bitcoin-full-chain-index
+  cancel-in-progress: false
+
+jobs:
+  bitcoin-full-chain:
+    name: Authorized Bitcoin Core full-chain ingest
+    runs-on: [self-hosted, linux, x64, bitcoin-indexer]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup verified backend Python runtime
+        uses: ./.github/actions/setup-backend-python
+        with:
+          python-version: '3.11'
+
+      - name: Require authorized Bitcoin Core credentials
+        env:
+          BITCOIN_RPC_URL: ${{ secrets.BITCOIN_RPC_URL }}
+          BITCOIN_RPC_USER: ${{ secrets.BITCOIN_RPC_USER }}
+          BITCOIN_RPC_PASSWORD: ${{ secrets.BITCOIN_RPC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [[ -n "${BITCOIN_RPC_URL}" ]] || { echo "::error::BITCOIN_RPC_URL is not configured"; exit 1; }
+          [[ -n "${BITCOIN_RPC_USER}" ]] || { echo "::error::BITCOIN_RPC_USER is not configured"; exit 1; }
+          [[ -n "${BITCOIN_RPC_PASSWORD}" ]] || { echo "::error::BITCOIN_RPC_PASSWORD is not configured"; exit 1; }
+          echo "BITCOIN_CORE_CREDENTIAL_BOUND=YES"
+
+      - name: Run canonical full-chain ingest
+        env:
+          BITCOIN_RPC_URL: ${{ secrets.BITCOIN_RPC_URL }}
+          BITCOIN_RPC_USER: ${{ secrets.BITCOIN_RPC_USER }}
+          BITCOIN_RPC_PASSWORD: ${{ secrets.BITCOIN_RPC_PASSWORD }}
+          BITCOIN_CANONICAL_STORE: ${{ inputs.store_path }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [[ -n "${{ inputs.start_height }}" ]]; then
+            args+=(--start-height "${{ inputs.start_height }}")
+          fi
+          if [[ -n "${{ inputs.end_height }}" ]]; then
+            args+=(--end-height "${{ inputs.end_height }}")
+          fi
+          PYTHONPATH=scripts/sovereign-backend python scripts/sovereign-backend/bitcoin_full_chain_ingest.py "${args[@]}"
+
+      - name: Record full-chain ingest completion
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -f "${{ inputs.store_path }}" ]]; then
+            stat -c 'BITCOIN_CANONICAL_STORE_BYTES=%s' "${{ inputs.store_path }}"
+          fi
+          echo "BITCOIN_FULL_CHAIN_WORKFLOW_DONE=1"
