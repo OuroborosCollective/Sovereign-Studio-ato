@@ -60,6 +60,7 @@ function PatternEntryRow({
         type="button"
         onClick={onSelect}
         disabled={!onSelect}
+        title={onSelect ? `Pattern-Details ansehen: ${entry.title}` : entry.title}
         className="w-full rounded border border-slate-700 bg-slate-900 p-3 text-left transition-colors hover:bg-slate-800 focus-visible:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-default disabled:bg-slate-900"
       >
         <div className="flex items-start gap-2">
@@ -109,28 +110,28 @@ export function PatternMemoryExplorer({
   const eraseReady = eraseConfirmationText.trim() === ERASE_CONFIRMATION && !isBusy && Boolean(onEraseUserData);
 
   return (
-    <section className="w-full max-w-[393px] space-y-4 text-sm text-slate-200">
+    <section aria-labelledby="pattern-memory-explorer-title" className="w-full max-w-[393px] space-y-4 text-sm text-slate-200">
       <div>
-        <h2 className="font-bold tracking-tight">Gelernte Patterns</h2>
+        <h2 id="pattern-memory-explorer-title" className="font-bold tracking-tight">Gelernte Patterns</h2>
         <p className="mt-0.5 text-xs text-slate-400">
           Sovereign lernt aus deiner Arbeit. Geprüfte Abläufe werden als lokale Patterns gespeichert.
         </p>
       </div>
 
-      <div className="flex gap-4 rounded border border-slate-700 bg-slate-900 p-3">
-        <div className="text-center">
+      <ul role="list" aria-label="Pattern-Statistik" className="flex gap-4 rounded border border-slate-700 bg-slate-900 p-3">
+        <li className="text-center" title={`${entries.length} Patterns gesamt`}>
           <div className="text-lg font-bold tabular-nums text-slate-100">{entries.length}</div>
           <div className="text-xs text-slate-400">gesamt</div>
-        </div>
-        <div className="text-center">
+        </li>
+        <li className="text-center" title={`${verifiedCount} Patterns geprüft`}>
           <div className="text-lg font-bold tabular-nums text-yellow-300">{verifiedCount}</div>
           <div className="text-xs text-slate-400">geprüft</div>
-        </div>
-        <div className="text-center">
+        </li>
+        <li className="text-center" title={`${localExecutableCount} Patterns lokal ausführbar`}>
           <div className="text-lg font-bold tabular-nums text-green-400">{localExecutableCount}</div>
           <div className="text-xs text-slate-400">lokal</div>
-        </div>
-      </div>
+        </li>
+      </ul>
 
       {entries.length === 0 && (
         <p className="text-xs text-slate-500 rounded border border-slate-800 bg-slate-900/60 p-3">
@@ -160,19 +161,25 @@ export function PatternMemoryExplorer({
           <p className="text-xs text-slate-500">
             Zur Bestätigung: <span className="font-mono text-slate-300">{ERASE_CONFIRMATION}</span>
           </p>
+          <label htmlFor="erase-user-data-input" className="sr-only">
+            Sicherheitsbestätigung zur Datenlöschung
+          </label>
           <input
+            id="erase-user-data-input"
             type="text"
             value={eraseConfirmationText}
             onChange={(e) => onEraseConfirmationTextChange(e.target.value)}
             disabled={isBusy}
             placeholder={ERASE_CONFIRMATION}
+            title="Sicherheitsbestätigung zur Datenlöschung"
             className="w-full rounded border border-slate-700 bg-slate-800 px-2 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-red-700 disabled:opacity-50"
           />
           <button
             type="button"
             onClick={onEraseUserData}
             disabled={!eraseReady}
-            className="rounded border border-red-800 bg-red-950/60 px-3 py-1 text-xs text-red-300 hover:bg-red-900/60 disabled:cursor-not-allowed disabled:opacity-40"
+            title={eraseReady ? 'Alle lokalen und remote Patterns dauerhaft löschen' : `Zur Bestätigung '${ERASE_CONFIRMATION}' eingeben`}
+            className="rounded border border-red-800 bg-red-950/60 px-3 py-1 text-xs text-red-300 hover:bg-red-900/60 focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:outline-none transition-all disabled:cursor-not-allowed disabled:opacity-40"
           >
             Nutzerdaten löschen
           </button>

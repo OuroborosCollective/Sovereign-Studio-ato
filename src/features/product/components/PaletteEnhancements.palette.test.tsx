@@ -27,6 +27,7 @@ import { TestRunnerResultCard } from './TestRunnerResultCard';
 import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
+import { PatternMemoryExplorer } from './PatternMemoryExplorer';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1390,6 +1391,79 @@ describe('Palette Accessibility Enhancements', () => {
       fireEvent.click(viewDiffBtn);
       expect(onOpenPr).toHaveBeenCalledTimes(1);
       expect(onViewDiff).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('PatternMemoryExplorer Accessibility and Micro-UX Enhancements', () => {
+    it('renders landmark section linked to header title, metrics list with tooltips, row button tooltips, linked input label, and stateful delete button tooltips', () => {
+      const mockEntries = [
+        {
+          id: 'pat-1',
+          ownerScope: 'local-user' as const,
+          sourceTraceId: 'trace-1',
+          title: 'Deploy Pipeline Fix',
+          summary: 'Applies verified CI fix',
+          tags: ['ci', 'deploy'],
+          vectorRef: 'vec-1',
+          objectRef: null,
+          verified: true,
+          localExecutable: true,
+          reuseCount: 3,
+          lastUsedAt: null,
+          createdAt: Date.now(),
+        },
+      ];
+
+      const onSelectEntry = vi.fn();
+      const onEraseUserData = vi.fn();
+      const onEraseTextChange = vi.fn();
+
+      const { rerender } = render(
+        <PatternMemoryExplorer
+          entries={mockEntries}
+          onSelectEntry={onSelectEntry}
+          onEraseUserData={onEraseUserData}
+          eraseConfirmationText=""
+          onEraseConfirmationTextChange={onEraseTextChange}
+        />
+      );
+
+      const heading = screen.getByRole('heading', { name: 'Gelernte Patterns', level: 2 });
+      expect(heading).toHaveAttribute('id', 'pattern-memory-explorer-title');
+
+      const metricsList = screen.getByRole('list', { name: 'Pattern-Statistik' });
+      expect(metricsList).toBeInTheDocument();
+
+      expect(screen.getByTitle('1 Patterns gesamt')).toBeInTheDocument();
+      expect(screen.getByTitle('1 Patterns geprüft')).toBeInTheDocument();
+      expect(screen.getByTitle('1 Patterns lokal ausführbar')).toBeInTheDocument();
+
+      const rowBtn = screen.getByRole('button', { name: /Deploy Pipeline Fix/i });
+      expect(rowBtn).toHaveAttribute('title', 'Pattern-Details ansehen: Deploy Pipeline Fix');
+
+      const input = screen.getByLabelText('Sicherheitsbestätigung zur Datenlöschung');
+      expect(input).toHaveAttribute('id', 'erase-user-data-input');
+      expect(input).toHaveAttribute('title', 'Sicherheitsbestätigung zur Datenlöschung');
+
+      let deleteBtn = screen.getByRole('button', { name: 'Nutzerdaten löschen' });
+      expect(deleteBtn).toBeDisabled();
+      expect(deleteBtn).toHaveAttribute('title', "Zur Bestätigung 'MEINE DATEN LÖSCHEN' eingeben");
+      expect(deleteBtn).toHaveClass('focus-visible:ring-2');
+
+      // Ready to erase state
+      rerender(
+        <PatternMemoryExplorer
+          entries={mockEntries}
+          onSelectEntry={onSelectEntry}
+          onEraseUserData={onEraseUserData}
+          eraseConfirmationText="MEINE DATEN LÖSCHEN"
+          onEraseConfirmationTextChange={onEraseTextChange}
+        />
+      );
+
+      deleteBtn = screen.getByRole('button', { name: 'Nutzerdaten löschen' });
+      expect(deleteBtn).not.toBeDisabled();
+      expect(deleteBtn).toHaveAttribute('title', 'Alle lokalen und remote Patterns dauerhaft löschen');
     });
   });
 });
