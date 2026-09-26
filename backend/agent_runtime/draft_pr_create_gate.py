@@ -20,7 +20,7 @@ from urllib.request import Request, urlopen
 
 from .contracts import sanitize_agent_text
 from .git_workspace import publish_workspace_branch, resolve_server_github_token
-from .job_store import StoredSovereignAgentJob
+from .job_store import StoredSovereignAgentJob, read_latest_agent_github_draft_pr_readback
 
 DraftPrCreateStatus = Literal["created", "blocked"]
 DraftPrCiState = Literal["none", "pending", "success", "failure"]
@@ -485,6 +485,47 @@ def draft_pr_create_request_from_job(job: StoredSovereignAgentJob) -> DraftPrCre
         test_summary=job.test_summary,
         existing_pr_url=job.pr_url or job.draft_pr_url,
         workspace_id=job.workspace_id,
+    )
+
+
+def verify_draft_pr_for_job(
+    job: StoredSovereignAgentJob,
+    conn: Any,
+    *,
+    token: str | None = None,
+) -> DraftPrPublicationEvidence:
+    """Perform one read-only, live GitHub Draft-PR verification bound to its persisted publication."""
+    request = draft_pr_create_request_from_job(job)
+    if not request.existing_pr_url or not _valid_pr_url(request.existing_pr_url):
+        raise ValueError("existing Draft PR identity is unavailable")
+    if request.pr_state != "created":
+        raise ValueError("current Draft PR readback requires pr_state=created")
+
+    historical = read_latest_agent_github_draft_pr_readback(
+        conn,
+        user_id=job.user_id,
+        job_id=job.job_id,
+    )
+    if historical is None:
+        raise RuntimeError("persisted Draft PR publication receipt unavailable")
+    expected_head_sha = str(historical.get("publishedHeadSha") or "").strip().lower()
+    if not _COMMIT_SHA.fullmatch(expected_head_sha):
+        raise ValueError("persisted Draft PR publication head SHA is invalid")
+
+    owner_repo = _repo_owner_name(request.repo_url)
+    pr_number = _pr_number_from_url(request.existing_pr_url)
+    safe_token = token or _server_github_token()
+    if not owner_repo or pr_number is None or not safe_token:
+        raise RuntimeError("current Draft PR readback prerequisites are unavailable")
+    owner, repo = owner_repo
+    return GitHubApiDraftPrCreator()._readback_evidence(
+        request,
+        safe_token,
+        owner,
+        repo,
+        pr_url=request.existing_pr_url,
+        pr_number=pr_number,
+        expected_head_sha=expected_head_sha,
     )
 
 

@@ -27,6 +27,7 @@ from .workspace_policy import (
 _A2A_TASK_ID_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
 _A2A_WORKSPACE_ID_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
 _A2A_READ_TIMEOUT_SECONDS: Final[int] = 30
+_A2A_CANCEL_TIMEOUT_SECONDS: Final[int] = 5
 # message/send is explicitly nonblocking. A slow acknowledgement must never tie
 # up the server-owned repository reconciler for minutes; an expired acceptance
 # window remains outcome-unknown and therefore fail-closed/no-resubmit.
@@ -227,16 +228,20 @@ class AgentZeroA2AClient:
         # protected token in headers rather than Agent Zero's token-in-URL mode.
         return f"{self.config.base_url.rstrip('/')}/a2a/"
 
-    def _post_rpc(self, payload: dict[str, Any], *, submit: bool) -> Mapping[str, Any]:
+    def _post_rpc(self, payload: dict[str, Any], *, submit: bool, timeout_seconds: int | None = None) -> Mapping[str, Any]:
         try:
             response = requests.post(
                 self.endpoint,
                 headers=self._headers(),
                 json=payload,
                 timeout=(
-                    _A2A_SUBMIT_TIMEOUT_SECONDS
-                    if submit
-                    else min(self.config.timeout_seconds, _A2A_READ_TIMEOUT_SECONDS)
+                    timeout_seconds
+                    if timeout_seconds is not None
+                    else (
+                        _A2A_SUBMIT_TIMEOUT_SECONDS
+                        if submit
+                        else min(self.config.timeout_seconds, _A2A_READ_TIMEOUT_SECONDS)
+                    )
                 ),
                 allow_redirects=False,
             )
@@ -366,7 +371,13 @@ class AgentZeroA2AClient:
             "method": "tasks/cancel",
             "params": {"id": normalized_task_id},
         }
-        task = _parse_task(self._post_rpc(payload, submit=False))
+        task = _parse_task(
+            self._post_rpc(
+                payload,
+                submit=False,
+                timeout_seconds=_A2A_CANCEL_TIMEOUT_SECONDS,
+            )
+        )
         if task.task_id != normalized_task_id:
             raise AgentZeroA2AError(
                 "AGENT_ZERO_A2A_TASK_ID_MISMATCH",

@@ -1,6 +1,7 @@
 import {
   createSovereignAgentClient,
   type SovereignDraftPrCreateResponse,
+  type SovereignDraftPrPublicationReadback,
 } from '../../product/runtime/sovereignAgentClient';
 import {
   resolveSovereignAgentConfig,
@@ -37,6 +38,7 @@ interface PersistedRun {
   maxIterations?: number;
   leaseActive?: boolean;
   resumeAvailable?: boolean;
+  assistantMessage?: string;
 }
 
 interface PendingApproval {
@@ -113,6 +115,7 @@ function parseRun(value: unknown): PersistedRun {
     maxIterations: numberValue(value.maxIterations),
     leaseActive: boolValue(value.leaseActive),
     resumeAvailable: boolValue(value.resumeAvailable),
+    assistantMessage: stringValue(value.assistantMessage),
   };
 }
 
@@ -133,7 +136,8 @@ function parsePendingApproval(value: unknown): PendingApproval | undefined {
   };
 }
 
-function phaseFromRun(status: string): JobPhase {
+function phaseFromRun(status: string, nextAction?: string): JobPhase {
+  if (status.toUpperCase() === 'BLOCKED' && nextAction === 'RUN_CANCELLED') return 'CANCELLED';
   switch (status.toUpperCase()) {
     case 'RECEIVED': return 'DISPATCHING';
     case 'QUEUED': return 'DISPATCHING';
@@ -193,6 +197,29 @@ function newestEvidenceRevision(anchors: readonly SovereignWorkspaceEvidenceAnch
   return sorted[0]?.repositoryRevision ?? '';
 }
 
+function mapPersistedDraftPr(pr: SovereignDraftPrPublicationReadback): DraftPR {
+  return {
+    url: pr.prUrl,
+    revision: pr.readbackHeadSha,
+    pullRequestNumber: pr.prNumber,
+    branch: pr.headBranch,
+    baseBranch: pr.baseBranch,
+    verifiedRevisionHash: pr.readbackHeadSha,
+    publishedHeadSha: pr.publishedHeadSha,
+    readbackHeadSha: pr.readbackHeadSha,
+    ciState: pr.ciState,
+    draftVerified: true,
+    readbackVerified: true,
+    checksReadbackVerified: true,
+    checkRunCount: pr.checkRunCount,
+    checksPendingCount: pr.checksPendingCount,
+    checksSuccessCount: pr.checksSuccessCount,
+    checksFailureCount: pr.checksFailureCount,
+    statusContextCount: pr.statusContextCount,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 function mapDraftPr(response: SovereignDraftPrCreateResponse): DraftPR {
   const pr = response.draftPrCreate;
   return {
@@ -221,7 +248,6 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
   private readonly config: ReturnType<typeof resolveSovereignAgentConfig>;
   private readonly client: ReturnType<typeof createSovereignAgentClient>;
   private readonly fetcher: typeof fetch;
-  private readonly publications = new Map<string, DraftPR>();
   private lastPingMs?: number;
   private lastErrorMessage?: string;
 
@@ -296,28 +322,36 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
     }
   }
 
-  async runSwarm(
+  async runSingleAgent(
     prompt: string,
-    _toolchains: string[],
+    _toolchains: string[] = [],
     _activeSkillIds: string[] = [],
-    agentMode: AgentMode = 'single',
   ): Promise<{ jobId: string }> {
     const mission = prompt.trim();
     if (!mission) throw new Error('Mission text is required.');
-    const result = await this.requestObject('/api/user/agent/swarm/run', {
+    const repositoryUrl = extractGitHubRepositoryUrl(mission);
+    if (repositoryUrl) {
+      const snapshot = await this.client.startRepositoryExecution({
+        mission,
+        repoUrl: repositoryUrl,
+        branch: 'main',
+      });
+      return { jobId: snapshot.jobId };
+    }
+    const result = await this.requestObject('/api/user/agent/single/run', {
       method: 'POST',
-      body: JSON.stringify(buildRunRequest(mission, agentMode)),
+      body: JSON.stringify({ mission, mode: 'free', agentMode: 'single' }),
     });
     const runId = stringValue(result.body.runId);
     if (runId) return { jobId: runId };
     const reason = stringValue(result.body.reason) || stringValue(result.body.error) || stringValue(result.body.blocker);
-    throw new Error(reason || `Sovereign swarm start failed with HTTP ${result.status}.`);
+    throw new Error(reason || `Sovereign single-agent start failed with HTTP ${result.status}.`);
   }
 
   private async getRun(runId: string): Promise<PersistedRun> {
     const requested = runId.trim();
     if (!requested) throw new Error('Run ID is required.');
-    const result = await this.requestObject(`/api/user/agent/swarm/runs/${encodeURIComponent(requested)}`, { method: 'GET' });
+    const result = await this.requestObject(`/api/user/agent/single/runs/${encodeURIComponent(requested)}`, { method: 'GET' });
     if (!result.ok) throw new Error(stringValue(result.body.error) || `Sovereign run readback HTTP ${result.status}.`);
     const run = parseRun(result.body.run);
     if (run.runId !== requested) throw new Error('Sovereign run readback identity mismatch.');
@@ -337,7 +371,13 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       nextAction: snapshot.prState === 'ready' ? 'create_draft_pr' : undefined,
     };
     const phase = phaseFromJob(snapshot, run);
-    const publication = this.publications.get(jobId);
+    let publication: DraftPR | undefined;
+    try {
+      const readback = await this.client.getPublicationReadback(jobId);
+      publication = readback ? mapPersistedDraftPr(readback) : undefined;
+    } catch {
+      publication = undefined;
+    }
     const now = new Date().toISOString();
     return {
       id: jobId,
@@ -371,7 +411,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       snapshot = await this.client.getJob(run.jobId);
       try { anchors = await this.client.getEvidenceAnchors(run.jobId); } catch { anchors = []; }
     }
-    const runPhase = phaseFromRun(run.status);
+    const runPhase = phaseFromRun(run.status, run.nextAction);
     const phase = projectRunAndJobPhase(
       runPhase,
       snapshot ? phaseFromJob(snapshot, run) : runPhase,
@@ -380,7 +420,15 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       ? await this.getPendingApproval(run.runId)
       : undefined;
     const currentRevision = newestEvidenceRevision(anchors);
-    const publication = this.publications.get(runId);
+    let publication: DraftPR | undefined;
+    if (run.jobId) {
+      try {
+        const readback = await this.client.getPublicationReadback(run.jobId);
+        publication = readback ? mapPersistedDraftPr(readback) : undefined;
+      } catch {
+        publication = undefined;
+      }
+    }
     const now = new Date().toISOString();
     const pendingInteraction = phase === 'AWAITING_OWNER_INPUT'
       ? approval
@@ -412,6 +460,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       updatedAt: now,
       sourceStatus: run.status,
       nextAction: run.nextAction,
+      assistantMessage: run.assistantMessage,
       logs: eventLogs(snapshot, run),
       workspaceState: {
         modifiedFiles: snapshot?.changedFiles ?? [],
@@ -453,7 +502,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       if (returnedRunId && returnedRunId !== runId) throw new Error('Sovereign approval decision returned a mismatched run identity.');
       return;
     }
-    const result = await this.requestObject(`/api/user/agent/swarm/runs/${encodeURIComponent(runId)}/resume`, {
+    const result = await this.requestObject(`/api/user/agent/single/runs/${encodeURIComponent(runId)}/resume`, {
       method: 'POST',
       body: JSON.stringify({ evidence, mode: 'auto' }),
     });
@@ -473,8 +522,8 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       return;
     }
     const run = await this.getRun(runId);
-    if (!run.jobId) throw new Error('This persisted run has no linked cancellable implementation job.');
-    await this.client.cancelJob(run.jobId);
+    const result = await this.requestObject(`/api/user/agent/single/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' });
+    if (!result.ok) throw new Error(stringValue(result.body.error) || stringValue(result.body.blocker) || `Single-agent cancel HTTP ${result.status}.`);
   }
 
   async prepareDraftPr(runId: string): Promise<DraftPrPreparation> {
@@ -509,9 +558,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       );
     }
     const created = await this.client.createDraftPr(jobId);
-    const publication = mapDraftPr(created);
-    this.publications.set(runId, publication);
-    return publication;
+    return mapDraftPr(created);
   }
 
   async getToolchains(): Promise<Toolchain[]> {
