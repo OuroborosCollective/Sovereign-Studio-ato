@@ -1369,7 +1369,6 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(expandBtn);
 
-      expect(expandBtn).toHaveAttribute('aria-expanded', 'true');
       const collapseBtn = screen.getByRole('button', { name: 'Weniger Ereignisse anzeigen' });
       expect(collapseBtn).toHaveAttribute('title', 'Weniger Ereignisse anzeigen');
       expect(collapseBtn).toHaveAttribute('aria-expanded', 'true');

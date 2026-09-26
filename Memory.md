@@ -863,3 +863,13 @@ Evidence: Current source baseline is `main@9b4c0a6ba45b9b726434742e6621b181264d6
 Learned: The control frame should read as an instrument surface whose semantic state comes from the existing runtime state model; time-of-view and local color constants add no truth and create avoidable drift.
 Open: Current exact-head component/test suite has not yet been executed by an allowlisted Node runner; Draft PR, terminal CI, browser/runtime verification and merge are pending.
 Next safe step: Publish the exact workspace head, consume terminal CI as the authoritative test result, then perform exact-head/revision/readback checks before any merge or live correctness claim.
+
+### 2026-09-26 — Timeline regression assertion repair
+Status: PARTIAL — test repair prepared; exact-head CI pending
+Task: Repair the AgentWorkTimeline accessibility regression that failed the Release Gate after the premium convergence.
+Decisions: Keep the component behavior unchanged; after expansion, assert the newly rendered collapse control instead of reading `aria-expanded` from the expand control that React correctly removes from the DOM.
+Touched surfaces: `src/features/product/components/PaletteEnhancements.palette.test.tsx`; `Memory.md`.
+Evidence: Exact-head Release Verification run `36256183818` bound to `f2792e1e888b00e686c24ecd745efaca9546cd94` failed only `Runtime Unit Tests`; frontend smoke reported 3818 passed, 1 failed, 2 skipped, identifying this Timeline test. Runtime source confirms `draft_pr_ready` is terminal and `isActiveState` excludes it. The failing assertion was a stale-reference check on the removed expand button; the narrow test-only repair was applied without changing runtime behavior.
+Learned: Expand/collapse tests must assert the control currently present in the DOM after the state transition, not the DOM node that the transition intentionally removes.
+Open: The rerun is currently executing against the same exact head; merge remains blocked until terminal green evidence.
+Next safe step: Consume the rerun result, then perform exact-head revision/review/readback checks before merge.
