@@ -2831,7 +2831,30 @@ import tempfile
 canary_phase = "bootstrap"
 
 
-def _safe_canary_exception_hook(error_type, _error, _traceback) -> None:
+def _safe_canary_exception_details(error_name, error) -> dict[str, object]:
+    if error_name == "AssertionError" and hasattr(error, "model_dump"):
+        dumped = error.model_dump()
+        data = dumped.get("data") if isinstance(dumped, dict) else None
+        evidence = dumped.get("evidence") if isinstance(dumped, dict) else None
+        return {
+            "ok": dumped.get("ok"),
+            "status": dumped.get("status"),
+            "failureFamily": dumped.get("failureFamily"),
+            "blocker": dumped.get("blocker"),
+            "evidenceToolCount": evidence.get("toolCount") if isinstance(evidence, dict) else None,
+            "dataModules": data.get("modules") if isinstance(data, dict) else None,
+            "dataDeploymentBinding": data.get("deploymentBinding") if isinstance(data, dict) else None,
+            "dataLedger": data.get("ledger") if isinstance(data, dict) else None,
+            "dataFoundationLedger": data.get("foundationLedger") if isinstance(data, dict) else None,
+            "dataAdmissions": data.get("admissions") if isinstance(data, dict) else None,
+            "dataGlobalLedgerQuota": data.get("globalLedgerQuota") if isinstance(data, dict) else None,
+            "dataToolOutcomeQuota": data.get("toolOutcomeQuota") if isinstance(data, dict) else None,
+            "stateInitializedByThisCall": data.get("stateInitializedByThisCall") if isinstance(data, dict) else None,
+        }
+    detail = str(error).strip()
+    return {"message": detail[:2000] if detail else error_name}
+
+def _safe_canary_exception_hook(error_type, error, _traceback) -> None:
     error_name = str(getattr(error_type, "__name__", "UnknownError"))
     if not error_name.isidentifier() or len(error_name) > 80:
         error_name = "UnknownError"
@@ -2841,6 +2864,7 @@ def _safe_canary_exception_hook(error_type, _error, _traceback) -> None:
                 "status": "NEURO_DEPLOYMENT_CANARY_FAILED",
                 "phase": canary_phase,
                 "errorType": error_name,
+                "errorDetails": _safe_canary_exception_details(error_name, error),
             },
             sort_keys=True,
             separators=(",", ":"),
