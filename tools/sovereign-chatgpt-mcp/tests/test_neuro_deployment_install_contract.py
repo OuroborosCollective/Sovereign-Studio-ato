@@ -87,7 +87,10 @@ def test_launcher_preserves_every_existing_registration_and_adds_one_teacher_reg
         "continuity",
         "operating_profile",
     ]
-    assert launcher.count("neuro_teaching_tools.register(server.mcp, server.runtime)") == 1
+    registration = "neuro_teaching_tools.register(server.mcp, server.runtime)"
+    assert launcher.count(registration) == 1
+    assert launcher.rfind(registration) < launcher.index("OUTPUT_CONTRACT_INSTALLATION =")
+    assert launcher.rfind(registration) > launcher.index("operating_profile.register(server.mcp)")
 
 
 def test_teacher_register_function_exposes_exactly_five_additive_tools() -> None:
