@@ -937,4 +937,13 @@ Evidence: Exact `main@21866343af61e13e83c9b7b366aa3549dc4487a1` failed `Sovereig
 Learned: Contract scanners must validate the actual injected production implementation, not a superseded base-class route that is no longer the vNext repository execution owner.
 Open: The scanner fix now needs exact-head GitHub CI; deployment remains blocked by the independent Neuro canary/registry evidence problem.
 Next safe step: Create/update the Draft PR from this exact workspace, consume terminal CI, then retry the current immutable MCP self-update only after the CI evidence is green.
+### 2026-09-26 — Neuro canary hook NameError repair
+Status: PARTIAL — hook repair prepared; terminal CI and runtime retry pending
+Task: Prevent the isolated Neuro deployment canary failure hook from masking a real AssertionError with its own NameError.
+Decision: Import Python `re` in the embedded canary because `_safe_canary_exception_details()` uses `re.sub`; no canary assertions or runtime semantics changed.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `Memory.md`.
+Evidence: Exact main `65832c46071ff06dc2af4c8821a0f9c289779def` had MCP image CI green and self-update restarted the container, but the post-install canary ended as `phase=unclassified;error=UnknownError`. Source inspection showed the hook calls `re.sub` without importing `re`; the live rollback container retained the old registry after failure.
+Learned: A diagnostic hook is part of the failure contract and must itself be dependency-complete; otherwise the original contract AssertionError becomes invisible and the self-update parser correctly falls back to UnknownError.
+Open: This exact branch needs terminal MCP/Release CI, then the immutable MCP self-update must be retried and its live registry/revision/digest read back.
+Next safe step: Consume exact-head CI, merge only when terminal green, then retry the same immutable self-update and verify the Neuro tool surface through the real MCP endpoint.
 
