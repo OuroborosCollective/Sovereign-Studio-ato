@@ -134,10 +134,14 @@ export function* generateTickWindows(
     const uniqueNodes = new Set<string>();
 
     for (const s of signals) {
-      if (s.metadata.tick >= startTick && s.metadata.tick <= endTick) {
+      const tick = s.metadata.tick;
+      if (tick >= startTick && tick <= endTick) {
         windowSignals.push(s);
-        uniqueTicks.add(s.metadata.tick);
+        uniqueTicks.add(tick);
         uniqueNodes.add(s.metadata.node);
+      } else if (tick > endTick) {
+        // ⚡ Bolt: Early loop termination - ordered signals guarantee subsequent ticks exceed endTick
+        break;
       }
     }
 
@@ -161,6 +165,42 @@ export function* generateTickWindows(
 }
 
 /**
+ * ⚡ Bolt: Extracts unique ticks from signals in a single O(N) pass.
+ * Avoids intermediate .map() array allocations, Set creation, and spread operations.
+ */
+function extractUniqueSortedTicks(signals: OrderedSignal[]): number[] {
+  if (signals.length === 0) return [];
+  const ticks: number[] = [];
+  let isMonotonic = true;
+  let lastTick = -1;
+  let hasLast = false;
+
+  for (let i = 0; i < signals.length; i++) {
+    const tick = signals[i].metadata.tick;
+    if (hasLast) {
+      if (tick < lastTick) {
+        isMonotonic = false;
+      }
+      if (tick !== lastTick) {
+        ticks.push(tick);
+        lastTick = tick;
+      }
+    } else {
+      ticks.push(tick);
+      lastTick = tick;
+      hasLast = true;
+    }
+  }
+
+  if (!isMonotonic) {
+    // Fallback if signals were not in canonical tick order
+    return [...new Set(ticks)].sort((a, b) => a - b);
+  }
+
+  return ticks;
+}
+
+/**
  * Computes the tick ranges for windows given signals and config.
  */
 function computeTickRanges(
@@ -170,7 +210,8 @@ function computeTickRanges(
 ): Array<[number, number]> {
   if (signals.length === 0) return [];
 
-  const ticks = [...new Set(signals.map((s) => s.metadata.tick))].sort();
+  // ⚡ Bolt: Single-pass O(N) tick extraction without intermediate .map() or Set allocations
+  const ticks = extractUniqueSortedTicks(signals);
   const ranges: Array<[number, number]> = [];
 
   let i = 0;
@@ -199,7 +240,8 @@ export function* generateOverlappingTickWindows(
   if (signals.length === 0) return;
 
   const fingerprint = createConfigFingerprint(config.windowSize, config.overlap, config.maxItems);
-  const ticks = [...new Set(signals.map((s) => s.metadata.tick))].sort();
+  // ⚡ Bolt: Single-pass O(N) tick extraction replacing .map() array allocation and Set spread
+  const ticks = extractUniqueSortedTicks(signals);
 
   let windowIndex = 0;
   let startIdx = 0;
@@ -215,9 +257,13 @@ export function* generateOverlappingTickWindows(
     const uniqueNodes = new Set<string>();
 
     for (const s of signals) {
-      if (s.metadata.tick >= startTick && s.metadata.tick <= endTick) {
+      const tick = s.metadata.tick;
+      if (tick >= startTick && tick <= endTick) {
         windowSignals.push(s);
         uniqueNodes.add(s.metadata.node);
+      } else if (tick > endTick) {
+        // ⚡ Bolt: Early loop termination - ordered signals guarantee subsequent ticks exceed endTick
+        break;
       }
     }
 
