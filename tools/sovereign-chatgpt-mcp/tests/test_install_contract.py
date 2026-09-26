@@ -192,6 +192,8 @@ def test_runtime_import_contract_failure_is_bounded_and_phase_diagnostic() -> No
     assert '"errorDetails": _safe_canary_exception_details(error_name, error)' in installer
     assert 'contract_status.{label}:{contract_status_summary(status)}' in installer
     assert 'return {"message": text_value}' in installer
+    assert 'message = details.get("message")' in installer
+    assert 'parts.append(f"message={message_value}")' in installer
     assert '"stateInitializedByThisCall": data.get("stateInitializedByThisCall")' in installer
     assert 'isolated neuro runtime canary failed: $CANARY_DIAGNOSTIC' in installer
     assert 'assert launcher.OPERATING_PROFILE_ENFORCEMENT.enforcedToolCount == launcher.OPERATING_PROFILE_ENFORCEMENT.mutableToolCount' in installer
