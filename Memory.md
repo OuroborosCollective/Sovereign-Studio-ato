@@ -928,3 +928,13 @@ Learned: A bare AssertionError has no payload, so diagnostic hooks must attach b
 Open: New CI/Draft PR plus exact-revision runtime retry are pending.
 Next safe step: Run terminal CI for this focused canary-evidence patch, merge if exact-head green, then retry the same immutable image path and consume the newly propagated assertion context.
 
+### 2026-09-26 — Live-path scanner truth alignment
+Status: PARTIAL — scanner contract repaired; PR/CI and runtime verification pending
+Task: Align the vNext live-path scanner with the repository-bound production adapter actually injected by the canonical control-surface context.
+Decisions: Keep `repository-bound-adapter.ts` as the vNext execution owner; change only the scanner's stale expectation from the legacy base adapter Swarm route to the repository-bound `/api/user/agent/repository/run` route and authenticated session contract.
+Touched surfaces: `scripts/sovereign-live-path-scan.mjs`; `Memory.md`.
+Evidence: Exact `main@21866343af61e13e83c9b7b366aa3549dc4487a1` failed `Sovereign Runtime Contract Scan` only at `vnext:production-adapter`. Source readback shows `context.tsx` imports `./repository-bound-adapter`, whose `runSingleAgent()` posts to `/api/user/agent/repository/run`; the base adapter intentionally retains non-repository single-agent readback at `/api/user/agent/single/runs/:id`.
+Learned: Contract scanners must validate the actual injected production implementation, not a superseded base-class route that is no longer the vNext repository execution owner.
+Open: The scanner fix now needs exact-head GitHub CI; deployment remains blocked by the independent Neuro canary/registry evidence problem.
+Next safe step: Create/update the Draft PR from this exact workspace, consume terminal CI, then retry the current immutable MCP self-update only after the CI evidence is green.
+
