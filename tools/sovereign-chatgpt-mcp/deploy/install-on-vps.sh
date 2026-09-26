@@ -2852,7 +2852,11 @@ def _safe_canary_exception_details(error_name, error) -> dict[str, object]:
             "stateInitializedByThisCall": data.get("stateInitializedByThisCall") if isinstance(data, dict) else None,
         }
     detail = str(error).strip()
-    return {"message": detail[:2000] if detail else error_name}
+    if detail:
+        text_value = re.sub(r"[^A-Za-z0-9_.:=-]+", "_", detail)[:1000]
+        if text_value:
+            return {"message": text_value}
+    return {"message": error_name}
 
 def _safe_canary_exception_hook(error_type, error, _traceback) -> None:
     error_name = str(getattr(error_type, "__name__", "UnknownError"))
@@ -2943,10 +2947,39 @@ with tempfile.TemporaryDirectory(
 
     canary_phase = "contract_status"
     empty_status = call_registered("neuro_runtime_contract_status", {})
-    assert empty_status.ok is True, empty_status
-    assert empty_status.status == "NEURO_RUNTIME_CONTRACT_READY", empty_status
-    assert empty_status.evidence["toolCount"] == expected_tool_count, empty_status
-    assert empty_status.data["stateInitializedByThisCall"] is False, empty_status
+
+    def contract_status_summary(status):
+        def safe_value(obj, key):
+            if isinstance(obj, dict):
+                return obj.get(key)
+            return getattr(obj, key, None)
+
+        evidence = safe_value(status, "evidence") or {}
+        data = safe_value(status, "data") or {}
+        return (
+            f"ok={safe_value(status, 'ok')},"
+            f"status={safe_value(status, 'status')},"
+            f"failureFamily={safe_value(status, 'failureFamily')},"
+            f"toolCount={safe_value(evidence, 'toolCount')},"
+            f"stateInitializedByThisCall={safe_value(data, 'stateInitializedByThisCall')}"
+        )
+
+    def require_contract_status(condition, label, status):
+        if not condition:
+            raise AssertionError(f"contract_status.{label}:{contract_status_summary(status)}")
+
+    require_contract_status(empty_status.ok is True, "ok", empty_status)
+    require_contract_status(empty_status.status == "NEURO_RUNTIME_CONTRACT_READY", "status", empty_status)
+    require_contract_status(
+        empty_status.evidence["toolCount"] == expected_tool_count,
+        "toolCount",
+        empty_status,
+    )
+    require_contract_status(
+        empty_status.data["stateInitializedByThisCall"] is False,
+        "stateInitializedByThisCall",
+        empty_status,
+    )
     assert not isolated_state.exists(), "read-only status initialized isolated state"
     # Continuity is advisory provenance and intentionally not required for this
     # deployment canary. Guard every one of the 253 non-neuro tools
@@ -3363,6 +3396,11 @@ def _compact_error_details(payload):
     if not isinstance(details, dict):
         return ""
     parts = []
+    message = details.get("message")
+    if isinstance(message, str) and message.strip():
+        message_value = re.sub(r"[^A-Za-z0-9_.:,=-]+", "_", message.strip())[:800]
+        if message_value:
+            parts.append(f"message={message_value}")
     for key in (
         "ok",
         "status",

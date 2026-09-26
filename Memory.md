@@ -918,4 +918,13 @@ Evidence: Release Verification `36262099192` on `616f2a2e466af8be09b71b23250c257
 Learned: Publication readback is a post-gate projection, not part of blocked/validating session rehydration. Conditioning it on the persisted backend state removes the redundant request without weakening verified Draft-PR readback.
 Open: Fresh exact-head CI and merge/runtime verification remain pending.
 Next safe step: Consume terminal CI; if green, merge only at exact head and retry the immutable self-update so the bounded Neuro canary evidence can expose the remaining contract defect.
+### 2026-09-26 — Neuro contract assertion evidence
+Status: PARTIAL — canary assertion context hardened; production re-run pending
+Task: Preserve the concrete contract-status assertion context when the isolated Neuro canary fails with a plain AssertionError.
+Decision: Add a secret-free `contract_status.<field>:...` assertion message for the four contract checks and preserve bounded AssertionError text in the existing diagnostic envelope.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_install_contract.py`; `Memory.md`.
+Evidence: Exact main revision `ab32b5afac2c0d3a89aafcaba5dbfbf2b4ed406e` failed the revised self-update at `verify_isolated_neuro_runtime_canary / contract_status / AssertionError`. The preceding exact-head CI for PR #2114 was terminal green, and the direct live container remains healthy, so the missing information is the failing contract field, not container liveness.
+Learned: A bare AssertionError has no payload, so diagnostic hooks must attach bounded, non-sensitive contract summaries at the assertion site to make the failure actionable.
+Open: New CI/Draft PR plus exact-revision runtime retry are pending.
+Next safe step: Run terminal CI for this focused canary-evidence patch, merge if exact-head green, then retry the same immutable image path and consume the newly propagated assertion context.
 
