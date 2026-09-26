@@ -25,6 +25,7 @@ def _load() -> ModuleType:
 
 
 def test_neuro_canary_diagnostic_accepts_bounded_details() -> None:
+    module = _load()
     reason = (
         "isolated neuro runtime canary failed: "
         "phase=contract_status;error=AssertionError;"
