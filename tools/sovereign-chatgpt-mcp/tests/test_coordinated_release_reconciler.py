@@ -24,6 +24,21 @@ def _load() -> ModuleType:
     return module
 
 
+def test_neuro_canary_diagnostic_accepts_bounded_details() -> None:
+    reason = (
+        "isolated neuro runtime canary failed: "
+        "phase=contract_status;error=AssertionError;"
+        "details=ok=False,status=NEURO_RUNTIME_CONTRACT_DEGRADED,"
+        "ledger=NOT_INITIALIZED,ledgerIntegrity=0,stateInitializedByThisCall=0"
+    )
+    match = module.MCP_NEURO_CANARY_FAILURE_RE.fullmatch(reason)
+    assert match is not None
+    assert match.group("phase") == "contract_status"
+    assert match.group("error_type") == "AssertionError"
+    assert "NEURO_RUNTIME_CONTRACT_DEGRADED" in (match.group("details") or "")
+
+
+
 def test_release_gate_accepts_only_exact_successful_revision(monkeypatch) -> None:
     module = _load()
     revision = "a" * 40
