@@ -1352,18 +1352,28 @@ describe('Palette Accessibility Enhancements', () => {
 
       render(<AgentWorkTimeline snapshot={snapshot} onOpenPr={onOpenPr} onViewDiff={onViewDiff} />);
 
-      expect(screen.getByRole('region', { name: 'Agent Work Timeline' })).toBeInTheDocument();
+      const timeline = screen.getByRole('region', { name: 'Agent Work Timeline' });
+      expect(timeline).toBeInTheDocument();
+      expect(timeline).toHaveAttribute('aria-busy', 'false');
+      expect(timeline).toHaveClass('sovereign-instrument-panel');
+      expect(timeline).toHaveClass('sovereign-runtime-timeline');
+      expect(timeline).toHaveClass('sovereign-runtime-timeline--verified');
       expect(screen.getByRole('list', { name: 'Ereignisprotokoll' })).toBeInTheDocument();
       expect(screen.getAllByRole('listitem')).toHaveLength(4);
 
       const expandBtn = screen.getByRole('button', { name: '1 ältere Ereignisse anzeigen' });
       expect(expandBtn).toHaveAttribute('title', '1 ältere Ereignisse anzeigen');
+      expect(expandBtn).toHaveAttribute('aria-expanded', 'false');
+      expect(expandBtn).toHaveAttribute('aria-controls', 'agent-work-events');
       expect(expandBtn).toHaveClass('focus-visible:ring-2');
 
       fireEvent.click(expandBtn);
 
+      expect(expandBtn).toHaveAttribute('aria-expanded', 'true');
       const collapseBtn = screen.getByRole('button', { name: 'Weniger Ereignisse anzeigen' });
       expect(collapseBtn).toHaveAttribute('title', 'Weniger Ereignisse anzeigen');
+      expect(collapseBtn).toHaveAttribute('aria-expanded', 'true');
+      expect(collapseBtn).toHaveAttribute('aria-controls', 'agent-work-events');
       expect(collapseBtn).toHaveClass('focus-visible:ring-2');
       expect(screen.getByTitle('owner/timeline-repo')).toBeInTheDocument();
       expect(screen.getByTitle('feature/timeline-ux')).toBeInTheDocument();

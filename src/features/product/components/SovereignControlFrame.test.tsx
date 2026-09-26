@@ -36,6 +36,9 @@ describe('SovereignControlFrame', () => {
     expect(screen.getByTestId('control-frame-center-workspace-monitor')).toContainElement(screen.getByTestId('workspace-monitor-child'));
     expect(screen.getByTestId('control-frame-bottom-nav')).toBeDefined();
     expect(screen.getByText('Sovereign Control')).toBeDefined();
+    expect(screen.getByTestId('sovereign-control-frame')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByTestId('control-frame-android-status-bar')).toHaveTextContent('Runtime readback');
+    expect(screen.getByTestId('control-frame-runtime-panel')).toBeInTheDocument();
   });
 
   describe('Palette Accessibility Enhancements', () => {
@@ -50,10 +53,13 @@ describe('SovereignControlFrame', () => {
       const toggleButton = screen.getByRole('button', { name: /Close runtime panel/i });
       expect(toggleButton).toHaveAttribute('aria-label', 'Close runtime panel');
       expect(toggleButton).toHaveAttribute('title', 'Close runtime panel');
+      expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+      expect(toggleButton).toHaveAttribute('aria-controls', 'control-frame-runtime-panel');
 
       fireEvent.click(toggleButton);
       expect(toggleButton).toHaveAttribute('aria-label', 'Open runtime panel');
       expect(toggleButton).toHaveAttribute('title', 'Open runtime panel');
+      expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
     });
 
     it('Module navigation buttons have title and aria-label', () => {
@@ -67,7 +73,22 @@ describe('SovereignControlFrame', () => {
         const moduleButton = screen.getByRole('button', { name: module.id.toUpperCase() });
         expect(moduleButton).toHaveAttribute('aria-label', module.id.toUpperCase());
         expect(moduleButton).toHaveAttribute('title', module.id.toUpperCase());
+        expect(moduleButton).toHaveAttribute('aria-pressed', String(module.id === state.activeModuleId));
+        expect(moduleButton).toHaveClass(`sovereign-control-frame__module-button--${module.signal}`);
       });
+    });
+
+    it('exposes keyboard-scrollable runtime evidence without claiming completion', () => {
+      render(
+        <SovereignControlFrame state={state}>
+          <div>Content</div>
+        </SovereignControlFrame>
+      );
+
+      expect(screen.getByTestId('control-frame-runtime-panel')).toBeInTheDocument();
+      expect(screen.getByText('Condition chain')).toBeInTheDocument();
+      expect(screen.getByText('Step: package-build')).toBeInTheDocument();
+      expect(screen.queryByText(/auto-completed|verified successfully/i)).not.toBeInTheDocument();
     });
   });
 });
