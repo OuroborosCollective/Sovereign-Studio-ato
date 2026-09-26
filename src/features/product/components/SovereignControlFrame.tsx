@@ -9,47 +9,32 @@ export interface SovereignControlFrameProps {
   readonly onModuleSelect?: (moduleId: SovereignControlFrameModuleId) => void;
 }
 
-const SIGNAL_COLOR = {
-  idle: '#30363d',
-  active: '#3fb950',
-  processing: '#58a6ff',
-  warning: '#d29922',
-  error: '#f85149',
-} as const;
-
 function currentModule(state: SovereignControlFrameState): SovereignControlModuleState {
   return state.modules.find((module) => module.id === state.activeModuleId) ?? state.modules[0];
 }
 
 function ControlLamp({ module }: { readonly module: SovereignControlModuleState }) {
-  const color = SIGNAL_COLOR[module.signal];
-  return (
-    <span
-      className="inline-block h-2.5 w-2.5 rounded-full"
-      style={{
-        background: module.signal === 'idle' ? '#21262d' : color,
-        boxShadow: module.signal === 'idle' ? 'none' : `0 0 7px ${color}`,
-      }}
-    />
-  );
+  return <span className={`sovereign-control-frame__lamp sovereign-control-frame__lamp--${module.signal}`} aria-hidden="true" />;
 }
 
 function RuntimePanel({ state, module }: { readonly state: SovereignControlFrameState; readonly module: SovereignControlModuleState }) {
   return (
-    <div className="border-t border-slate-800 bg-[#0d1117]" data-testid="control-frame-runtime-panel">
-      <div className="grid h-28 grid-cols-1 gap-2 overflow-hidden p-2 sm:grid-cols-2">
-        <div className="overflow-y-auto rounded-md border border-slate-800 bg-black/70 px-2 py-1 font-mono text-[10px] leading-5 text-slate-300">
+    <div className="sovereign-control-frame__runtime-panel" data-testid="control-frame-runtime-panel">
+      <div className="sovereign-control-frame__runtime-grid">
+        <div className="sovereign-control-frame__runtime-log" tabIndex={0}>
           {state.logs.length ? state.logs.map((line) => (
             <p key={`${line.moduleId}:${line.level}:${line.message}`}>
-              <span className="text-slate-600">[{line.moduleId}]</span> <span>{line.level.toUpperCase()}</span> <span>{line.message}</span>
+              <span className="sovereign-control-frame__runtime-key">[{line.moduleId}]</span>{' '}
+              <span>{line.level.toUpperCase()}</span>{' '}
+              <span>{line.message}</span>
             </p>
-          )) : <p className="text-slate-600">no active runtime signals</p>}
+          )) : <p className="sovereign-control-frame__runtime-empty">no active runtime signals</p>}
         </div>
-        <div className="overflow-y-auto rounded-md border border-slate-800 bg-[#161b22] p-2 font-mono text-[10px] text-slate-400">
-          <p className="mb-2 uppercase tracking-[0.18em] text-slate-500">Condition Chain</p>
+        <div className="sovereign-control-frame__conditions" tabIndex={0}>
+          <p className="sovereign-control-frame__section-label">Condition chain</p>
           {module.conditions.map((condition) => (
-            <p key={`${module.id}:${condition.label}`} className="flex justify-between gap-2 border-b border-slate-800 py-1">
-              <span className="truncate">{condition.label}</span>
+            <p key={`${module.id}:${condition.label}`} className="sovereign-control-frame__condition">
+              <span>{condition.label}</span>
               <span>{condition.status}</span>
             </p>
           ))}
@@ -62,52 +47,61 @@ function RuntimePanel({ state, module }: { readonly state: SovereignControlFrame
 export function SovereignControlFrame({ state, children, title = 'Sovereign Control', onModuleSelect }: SovereignControlFrameProps) {
   const [panelOpen, setPanelOpen] = useState(true);
   const active = currentModule(state);
-  const color = SIGNAL_COLOR[active.signal];
+  const runtimeBusy = state.modules.some((module) => module.signal === 'processing');
 
   return (
-    <section className="mx-auto flex h-[100dvh] w-full max-w-[393px] flex-col overflow-hidden bg-black text-slate-100" data-testid="sovereign-control-frame" data-layout="control-frame-around-workspace-monitor">
-      <div className="flex h-6 flex-shrink-0 items-center justify-between bg-black px-3 font-mono text-[9px] text-slate-500" data-testid="control-frame-android-status-bar">
-        <span>{new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}</span>
-        <span>conf <span style={{ color }}>{state.confidence.toFixed(2)}</span></span>
+    <section
+      className={`sovereign-control-frame sovereign-control-frame--${active.signal}`}
+      data-testid="sovereign-control-frame"
+      data-layout="control-frame-around-workspace-monitor"
+      aria-busy={runtimeBusy}
+    >
+      <div className="sovereign-control-frame__statusbar" data-testid="control-frame-android-status-bar" aria-label="Runtime readback summary">
+        <span className="sovereign-control-frame__status-label">Runtime readback</span>
+        <span className="sovereign-control-frame__confidence">
+          Confidence <strong className={`sovereign-control-frame__signal sovereign-control-frame__signal--${active.signal}`}>{state.confidence.toFixed(2)}</strong>
+        </span>
       </div>
 
-      <div className="flex h-12 flex-shrink-0 items-center gap-2 border-b border-slate-800 bg-[#0d1117] px-3" data-testid="control-frame-top-toolbar">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg border font-mono text-xs" style={{ color, borderColor: `${color}66`, background: `${color}14` }}>{active.id.slice(0, 3).toUpperCase()}</div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-mono text-xs font-bold text-slate-100">{title}</p>
-          <p className="truncate font-mono text-[9px] text-slate-500">{active.id} · {state.signalSummary}</p>
+      <div className="sovereign-control-frame__toolbar" data-testid="control-frame-top-toolbar">
+        <div className={`sovereign-control-frame__signal-mark sovereign-control-frame__signal-mark--${active.signal}`} aria-hidden="true">{active.id.slice(0, 3).toUpperCase()}</div>
+        <div className="sovereign-control-frame__heading">
+          <p className="sovereign-control-frame__title">{title}</p>
+          <p className="sovereign-control-frame__summary" aria-live="polite">{active.id} · {state.signalSummary}</p>
         </div>
-        <span className="rounded border px-2 py-1 font-mono text-[9px]" style={{ color, borderColor: `${color}55` }}>{state.overrideActive ? 'OVR' : 'AUTO'}</span>
+        <span className={`sovereign-control-frame__mode sovereign-control-frame__mode--${active.signal}`}>{state.overrideActive ? 'OVR' : 'AUTO'}</span>
         <button
           type="button"
-          className="h-8 w-8 rounded-md border border-slate-700 bg-slate-900 text-slate-400"
+          className="sovereign-control-frame__runtime-toggle"
           onClick={() => setPanelOpen((value) => !value)}
           aria-label={panelOpen ? 'Close runtime panel' : 'Open runtime panel'}
           title={panelOpen ? 'Close runtime panel' : 'Open runtime panel'}
+          aria-expanded={panelOpen}
+          aria-controls="control-frame-runtime-panel"
         >
           {panelOpen ? '▾' : '▴'}
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden bg-black" data-testid="control-frame-center-workspace-monitor">
+      <div className="sovereign-control-frame__workspace" data-testid="control-frame-center-workspace-monitor">
         {children}
       </div>
 
-      {panelOpen ? <RuntimePanel state={state} module={active} /> : null}
+      {panelOpen ? <div id="control-frame-runtime-panel"><RuntimePanel state={state} module={active} /></div> : null}
 
-      <nav className="grid h-14 flex-shrink-0 grid-cols-8 border-t border-slate-900 bg-black" data-testid="control-frame-bottom-nav">
+      <nav className="sovereign-control-frame__module-nav" data-testid="control-frame-bottom-nav" aria-label="Sovereign modules">
         {state.modules.map((module) => (
           <button
             key={module.id}
             type="button"
-            className="min-w-0 border-t-2 px-1 py-1 text-center"
-            style={{ borderColor: module.id === active.id ? SIGNAL_COLOR[module.signal] : 'transparent' }}
+            className={`sovereign-control-frame__module-button sovereign-control-frame__module-button--${module.signal}`}
+            aria-pressed={module.id === active.id}
             onClick={() => onModuleSelect?.(module.id)}
             aria-label={module.id.toUpperCase()}
             title={module.id.toUpperCase()}
           >
-            <span className="mx-auto mb-1 flex justify-center"><ControlLamp module={module} /></span>
-            <span className="block truncate font-mono text-[7.5px] text-slate-500">{module.id.slice(0, 3).toUpperCase()}</span>
+            <span className="sovereign-control-frame__lamp-wrap"><ControlLamp module={module} /></span>
+            <span className="sovereign-control-frame__module-name">{module.id.slice(0, 3).toUpperCase()}</span>
           </button>
         ))}
       </nav>

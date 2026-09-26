@@ -843,3 +843,33 @@ Evidence: Workspace SHA-bound edits succeeded; focused regression coverage was a
 Learned: Consent UX can reuse the existing approval endpoint and persisted-run model without creating a second authority layer; the UI can remain highly explicit without becoming a card grid.
 Open: Exact-head GitHub CI is still running; no runtime-green claim is made.
 Next safe step: Re-read the final PR head, verify terminal checks and review-thread state, then merge only through the owner-authorized exact-head gate.
+
+### 2026-09-25 — AgentWorkTimeline premium system convergence
+Status: PARTIAL — source/test delta prepared; CI and PR publication pending
+Task: Optimize the existing AgentWorkTimeline so it participates in the shared Sovereign premium design system instead of maintaining a parallel local palette and inline layout rules.
+Decisions: Preserve the runtime snapshot as the only state source; replace local color/geometry constants with shared biomodular tokens/classes; expose active state through `aria-busy`, status through a polite live region, blocker state through `role="alert"`, and expand/collapse through explicit `aria-expanded` + `aria-controls`; keep 44px interactive targets and responsive sizing.
+Touched surfaces: `src/features/product/components/AgentWorkTimeline.tsx`; `src/features/control-surface-vnext/theme/biomodular.css`; `src/features/product/components/PaletteEnhancements.palette.test.tsx`; `Memory.md`.
+Evidence: Isolated workspace `job-0824f8203ff8` is based exactly on main `fdacfc31ec21994098a543c041cd18561e1abff2`. Source diff now removes the Timeline-local palette and inline geometry, adds shared premium timeline classes, and extends the existing Timeline regression with class/ARIA assertions. The bounded local check runner rejected generic check commands as not allowlisted; this is not treated as a test result. A YAML/JSON schema scanner was intentionally not used as code validation because it cannot parse TSX/CSS and reported format mismatch on all three frontend files.
+Learned: The Echoes of Aurion inventory's core State → Evidence → Readback → Projection → Interaction → Command → State boundary is best reflected by making runtime status semantics explicit in the presentation layer rather than introducing client-side state claims.
+Open: Exact-head frontend CI, Draft-PR publication, review/merge, and production runtime/readback remain pending.
+Next safe step: Publish the exact current workspace head only after the owner-authorized Draft-PR gate, then require terminal CI and the normal runtime/readback checks before any live claim.
+
+### 2026-09-26 — SovereignControlFrame premium convergence
+Status: PARTIAL — source/test delta prepared; exact-head CI and publication pending
+Task: Continue the Frontend Design Premium integration from AgentWorkTimeline into the canonical SovereignControlFrame without creating a parallel UI or changing runtime truth ownership.
+Decisions: Remove screen-local signal colors, move frame geometry/semantics into shared biomodular tokens/classes, remove wall-clock display from the status surface, replace the 393px cap with responsive 320px+ behavior, use 44px runtime/module controls, add explicit `aria-busy`, `aria-expanded`, `aria-controls`, `aria-pressed`, keyboard-scrollable evidence regions, and keep runtime state projection-only.
+Touched surfaces: `src/features/product/components/SovereignControlFrame.tsx`; `src/features/product/components/SovereignControlFrame.test.tsx`; `src/features/control-surface-vnext/theme/biomodular.css`; `Memory.md`.
+Evidence: Current source baseline is `main@9b4c0a6ba45b9b726434742e6621b181264d6051`; working integration remains on the exact prior workspace head `fdacfc31ec21994098a543c041cd18561e1abff2`. Wolfram contrast calculation confirms project semantic text/state pairs against Carbon meet the intended contrast range except `Text Dim` as a non-primary metadata color (2.62:1); existing DESIGN.md already assigns Text Dim to low-priority metadata. PatchMon runtime evidence reports its core stack healthy, but unrelated active alerts/reboot/update conditions remain, so no deployment-green claim is made.
+Learned: The control frame should read as an instrument surface whose semantic state comes from the existing runtime state model; time-of-view and local color constants add no truth and create avoidable drift.
+Open: Current exact-head component/test suite has not yet been executed by an allowlisted Node runner; Draft PR, terminal CI, browser/runtime verification and merge are pending.
+Next safe step: Publish the exact workspace head, consume terminal CI as the authoritative test result, then perform exact-head/revision/readback checks before any merge or live correctness claim.
+
+### 2026-09-26 — Timeline regression assertion repair
+Status: PARTIAL — test repair prepared; exact-head CI pending
+Task: Repair the AgentWorkTimeline accessibility regression that failed the Release Gate after the premium convergence.
+Decisions: Keep the component behavior unchanged; after expansion, assert the newly rendered collapse control instead of reading `aria-expanded` from the expand control that React correctly removes from the DOM.
+Touched surfaces: `src/features/product/components/PaletteEnhancements.palette.test.tsx`; `Memory.md`.
+Evidence: Exact-head Release Verification run `36256183818` bound to `f2792e1e888b00e686c24ecd745efaca9546cd94` failed only `Runtime Unit Tests`; frontend smoke reported 3818 passed, 1 failed, 2 skipped, identifying this Timeline test. Runtime source confirms `draft_pr_ready` is terminal and `isActiveState` excludes it. The failing assertion was a stale-reference check on the removed expand button; the narrow test-only repair was applied without changing runtime behavior.
+Learned: Expand/collapse tests must assert the control currently present in the DOM after the state transition, not the DOM node that the transition intentionally removes.
+Open: The rerun is currently executing against the same exact head; merge remains blocked until terminal green evidence.
+Next safe step: Consume the rerun result, then perform exact-head revision/review/readback checks before merge.
