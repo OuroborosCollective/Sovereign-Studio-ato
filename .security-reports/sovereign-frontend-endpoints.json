@@ -751,7 +751,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 747,
+      "line": 749,
       "methods": [
         "GET"
       ],
@@ -760,7 +760,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 773,
+      "line": 775,
       "methods": [
         "POST"
       ],
@@ -1768,7 +1768,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 720,
+      "line": 722,
       "methods": [
         "GET"
       ],
@@ -2227,7 +2227,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 643,
+      "line": 645,
       "methods": [
         "GET"
       ],
@@ -2236,7 +2236,7 @@
     },
     {
       "file": "scripts/sovereign-backend/owner_input_runtime.py",
-      "line": 567,
+      "line": 569,
       "methods": [
         "POST"
       ],
@@ -2722,7 +2722,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2172,
+      "line": 2239,
       "methods": [
         "POST"
       ],
@@ -2731,7 +2731,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2172,
+      "line": 2239,
       "methods": [
         "POST"
       ],
@@ -2740,7 +2740,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2323,
+      "line": 2390,
       "methods": [
         "POST"
       ],
@@ -2749,7 +2749,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2323,
+      "line": 2390,
       "methods": [
         "POST"
       ],
@@ -2758,7 +2758,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2218,
+      "line": 2285,
       "methods": [
         "POST"
       ],
@@ -2767,7 +2767,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2218,
+      "line": 2285,
       "methods": [
         "POST"
       ],
@@ -2776,7 +2776,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2301,
+      "line": 2368,
       "methods": [
         "POST"
       ],
@@ -2785,7 +2785,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2301,
+      "line": 2368,
       "methods": [
         "POST"
       ],
@@ -2794,7 +2794,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2424,
+      "line": 2491,
       "methods": [
         "POST"
       ],
@@ -2803,7 +2803,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2424,
+      "line": 2491,
       "methods": [
         "POST"
       ],
@@ -2812,7 +2812,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2356,
+      "line": 2423,
       "methods": [
         "POST"
       ],
@@ -2821,7 +2821,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2356,
+      "line": 2423,
       "methods": [
         "POST"
       ],
@@ -2830,7 +2830,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2133,
+      "line": 2200,
       "methods": [
         "POST"
       ],
@@ -2839,7 +2839,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2133,
+      "line": 2200,
       "methods": [
         "POST"
       ],
@@ -2974,7 +2974,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2666,
+      "line": 2733,
       "methods": [
         "POST"
       ],
@@ -2983,7 +2983,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2666,
+      "line": 2733,
       "methods": [
         "POST"
       ],
@@ -3010,7 +3010,25 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2280,
+      "line": 2134,
+      "methods": [
+        "GET"
+      ],
+      "path": "/api/user/agent/jobs/<p>/publication-readback",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "scripts/sovereign-backend/agent_runtime/routes.py",
+      "line": 2134,
+      "methods": [
+        "GET"
+      ],
+      "path": "/api/user/agent/jobs/<p>/publication-readback",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "backend/agent_runtime/routes.py",
+      "line": 2347,
       "methods": [
         "POST"
       ],
@@ -3019,7 +3037,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2280,
+      "line": 2347,
       "methods": [
         "POST"
       ],
@@ -3028,7 +3046,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2265,
+      "line": 2332,
       "methods": [
         "POST"
       ],
@@ -3037,7 +3055,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2265,
+      "line": 2332,
       "methods": [
         "POST"
       ],
@@ -3046,7 +3064,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2255,
+      "line": 2322,
       "methods": [
         "POST"
       ],
@@ -3055,7 +3073,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2255,
+      "line": 2322,
       "methods": [
         "POST"
       ],
@@ -3064,7 +3082,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2260,
+      "line": 2327,
       "methods": [
         "POST"
       ],
@@ -3073,7 +3091,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2260,
+      "line": 2327,
       "methods": [
         "POST"
       ],
@@ -3082,7 +3100,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2275,
+      "line": 2342,
       "methods": [
         "POST"
       ],
@@ -3091,7 +3109,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2275,
+      "line": 2342,
       "methods": [
         "POST"
       ],
@@ -3100,7 +3118,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2270,
+      "line": 2337,
       "methods": [
         "POST"
       ],
@@ -3109,7 +3127,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2270,
+      "line": 2337,
       "methods": [
         "POST"
       ],
@@ -3172,7 +3190,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2725,
+      "line": 2792,
       "methods": [
         "POST"
       ],
@@ -3181,7 +3199,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2725,
+      "line": 2792,
       "methods": [
         "POST"
       ],
@@ -3190,7 +3208,7 @@
     },
     {
       "file": "backend/agent_runtime/routes.py",
-      "line": 2697,
+      "line": 2764,
       "methods": [
         "POST"
       ],
@@ -3199,7 +3217,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-      "line": 2697,
+      "line": 2764,
       "methods": [
         "POST"
       ],
@@ -3348,6 +3366,78 @@
         "POST"
       ],
       "path": "/api/user/agent/rescue/repairs/<p>/proof-pack",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "backend/agent_runtime/cognitive_swarm_routes.py",
+      "line": 2527,
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/user/agent/single/run",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+      "line": 2527,
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/user/agent/single/run",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "backend/agent_runtime/cognitive_swarm_routes.py",
+      "line": 2675,
+      "methods": [
+        "GET"
+      ],
+      "path": "/api/user/agent/single/runs/<p>",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+      "line": 2675,
+      "methods": [
+        "GET"
+      ],
+      "path": "/api/user/agent/single/runs/<p>",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "backend/agent_runtime/cognitive_swarm_routes.py",
+      "line": 2692,
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/user/agent/single/runs/<p>/cancel",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+      "line": 2692,
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/user/agent/single/runs/<p>/cancel",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "backend/agent_runtime/cognitive_swarm_routes.py",
+      "line": 2725,
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/user/agent/single/runs/<p>/resume",
+      "source_kind": "python-route"
+    },
+    {
+      "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+      "line": 2725,
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/user/agent/single/runs/<p>/resume",
       "source_kind": "python-route"
     },
     {
@@ -3370,7 +3460,7 @@
     },
     {
       "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2450,
+      "line": 2509,
       "methods": [
         "GET"
       ],
@@ -3379,7 +3469,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2450,
+      "line": 2509,
       "methods": [
         "GET"
       ],
@@ -3397,7 +3487,7 @@
     },
     {
       "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2519,
+      "line": 2794,
       "methods": [
         "POST"
       ],
@@ -3406,7 +3496,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2519,
+      "line": 2794,
       "methods": [
         "POST"
       ],
@@ -3415,7 +3505,7 @@
     },
     {
       "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2483,
+      "line": 2758,
       "methods": [
         "GET"
       ],
@@ -3424,7 +3514,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2483,
+      "line": 2758,
       "methods": [
         "GET"
       ],
@@ -3433,7 +3523,7 @@
     },
     {
       "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2499,
+      "line": 2774,
       "methods": [
         "POST"
       ],
@@ -3442,7 +3532,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2499,
+      "line": 2774,
       "methods": [
         "POST"
       ],
@@ -3451,7 +3541,7 @@
     },
     {
       "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2468,
+      "line": 2743,
       "methods": [
         "GET"
       ],
@@ -3460,7 +3550,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-      "line": 2468,
+      "line": 2743,
       "methods": [
         "GET"
       ],
@@ -4454,7 +4544,7 @@
       "backendRoutes": [
         {
           "file": "scripts/sovereign-backend/owner_input_runtime.py",
-          "line": 773,
+          "line": 775,
           "methods": [
             "POST"
           ],
@@ -6704,7 +6794,7 @@
         "active_surface": true,
         "call_name": "this.requestObject",
         "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 274,
+        "line": 300,
         "method": "GET",
         "path": "/api/controller/approvals",
         "source_kind": "request-call",
@@ -6739,7 +6829,7 @@
         "active_surface": true,
         "call_name": "this.requestObject",
         "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 443,
+        "line": 494,
         "method": "POST",
         "path": "/api/controller/approvals/<p>/decision",
         "source_kind": "request-call",
@@ -10264,7 +10354,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 811,
+        "line": 833,
         "method": "GET",
         "path": "/api/user/agent/jobs",
         "source_kind": "request-call",
@@ -10291,6 +10381,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10365,6 +10456,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10439,6 +10531,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10513,6 +10606,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10587,6 +10681,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10661,6 +10756,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10708,7 +10804,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 555,
+        "line": 577,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs",
         "source_kind": "route-literal",
@@ -10735,6 +10831,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10782,7 +10879,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 812,
+        "line": 834,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs",
         "source_kind": "route-call",
@@ -10809,6 +10906,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10865,6 +10963,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10894,7 +10993,7 @@
         "active_surface": true,
         "call_name": "literal",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 555,
+        "line": 577,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>",
         "source_kind": "route-literal",
@@ -10921,6 +11020,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10929,7 +11029,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2172,
+          "line": 2239,
           "methods": [
             "POST"
           ],
@@ -10938,7 +11038,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2172,
+          "line": 2239,
           "methods": [
             "POST"
           ],
@@ -10950,7 +11050,7 @@
         "active_surface": true,
         "call_name": "requestSnapshot",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 931,
+        "line": 1028,
         "method": "POST",
         "path": "/api/user/agent/jobs/<p>/cancel",
         "source_kind": "request-call",
@@ -10977,6 +11077,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -10985,7 +11086,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2172,
+          "line": 2239,
           "methods": [
             "POST"
           ],
@@ -10994,7 +11095,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2172,
+          "line": 2239,
           "methods": [
             "POST"
           ],
@@ -11006,7 +11107,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 931,
+        "line": 1028,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/cancel",
         "source_kind": "route-call",
@@ -11033,6 +11134,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11041,7 +11143,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2323,
+          "line": 2390,
           "methods": [
             "POST"
           ],
@@ -11050,7 +11152,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2323,
+          "line": 2390,
           "methods": [
             "POST"
           ],
@@ -11089,6 +11191,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11097,7 +11200,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2301,
+          "line": 2368,
           "methods": [
             "POST"
           ],
@@ -11106,7 +11209,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2301,
+          "line": 2368,
           "methods": [
             "POST"
           ],
@@ -11145,6 +11248,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11153,7 +11257,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2424,
+          "line": 2491,
           "methods": [
             "POST"
           ],
@@ -11162,7 +11266,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2424,
+          "line": 2491,
           "methods": [
             "POST"
           ],
@@ -11174,7 +11278,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 968,
+        "line": 1065,
         "method": "POST",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "request-call",
@@ -11201,6 +11305,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11209,7 +11314,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2424,
+          "line": 2491,
           "methods": [
             "POST"
           ],
@@ -11218,7 +11323,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2424,
+          "line": 2491,
           "methods": [
             "POST"
           ],
@@ -11257,6 +11362,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11265,7 +11371,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2424,
+          "line": 2491,
           "methods": [
             "POST"
           ],
@@ -11274,7 +11380,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2424,
+          "line": 2491,
           "methods": [
             "POST"
           ],
@@ -11286,7 +11392,7 @@
         "active_surface": true,
         "call_name": "isObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 565,
+        "line": 587,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "route-call",
@@ -11313,6 +11419,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11321,7 +11428,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2424,
+          "line": 2491,
           "methods": [
             "POST"
           ],
@@ -11330,7 +11437,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2424,
+          "line": 2491,
           "methods": [
             "POST"
           ],
@@ -11342,7 +11449,7 @@
         "active_surface": true,
         "call_name": "isObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 575,
+        "line": 597,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "route-call",
@@ -11369,6 +11476,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11377,7 +11485,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2424,
+          "line": 2491,
           "methods": [
             "POST"
           ],
@@ -11386,7 +11494,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2424,
+          "line": 2491,
           "methods": [
             "POST"
           ],
@@ -11398,7 +11506,7 @@
         "active_surface": true,
         "call_name": "isObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 664,
+        "line": 686,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "route-call",
@@ -11425,6 +11533,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11433,7 +11542,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2424,
+          "line": 2491,
           "methods": [
             "POST"
           ],
@@ -11442,7 +11551,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2424,
+          "line": 2491,
           "methods": [
             "POST"
           ],
@@ -11454,7 +11563,7 @@
         "active_surface": true,
         "call_name": "patternLearningEvidence",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 961,
+        "line": 1058,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "route-call",
@@ -11481,6 +11590,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11489,7 +11599,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2424,
+          "line": 2491,
           "methods": [
             "POST"
           ],
@@ -11498,7 +11608,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2424,
+          "line": 2491,
           "methods": [
             "POST"
           ],
@@ -11510,7 +11620,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 969,
+        "line": 1066,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/create",
         "source_kind": "route-call",
@@ -11537,6 +11647,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11545,7 +11656,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2356,
+          "line": 2423,
           "methods": [
             "POST"
           ],
@@ -11554,7 +11665,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2356,
+          "line": 2423,
           "methods": [
             "POST"
           ],
@@ -11566,7 +11677,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 936,
+        "line": 1033,
         "method": "POST",
         "path": "/api/user/agent/jobs/<p>/draft-pr/prepare",
         "source_kind": "request-call",
@@ -11593,6 +11704,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11601,7 +11713,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2356,
+          "line": 2423,
           "methods": [
             "POST"
           ],
@@ -11610,7 +11722,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2356,
+          "line": 2423,
           "methods": [
             "POST"
           ],
@@ -11649,6 +11761,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11657,7 +11770,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2356,
+          "line": 2423,
           "methods": [
             "POST"
           ],
@@ -11666,7 +11779,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2356,
+          "line": 2423,
           "methods": [
             "POST"
           ],
@@ -11678,7 +11791,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 937,
+        "line": 1034,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/draft-pr/prepare",
         "source_kind": "route-call",
@@ -11705,6 +11818,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11734,7 +11848,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 896,
+        "line": 918,
         "method": "GET",
         "path": "/api/user/agent/jobs/<p>/evidence-anchors",
         "source_kind": "request-call",
@@ -11761,6 +11875,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11817,6 +11932,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11846,7 +11962,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 897,
+        "line": 919,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/evidence-anchors",
         "source_kind": "route-call",
@@ -11873,6 +11989,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11902,7 +12019,7 @@
         "active_surface": true,
         "call_name": "this.fetcher",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 862,
+        "line": 884,
         "method": "GET",
         "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
         "source_kind": "request-call",
@@ -11929,6 +12046,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -11958,7 +12076,7 @@
         "active_surface": true,
         "call_name": "readJson",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 561,
+        "line": 583,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
         "source_kind": "route-call",
@@ -11985,6 +12103,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12014,7 +12133,7 @@
         "active_surface": true,
         "call_name": "readJson",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 571,
+        "line": 593,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
         "source_kind": "route-call",
@@ -12041,6 +12160,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12070,7 +12190,7 @@
         "active_surface": true,
         "call_name": "readJson",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 660,
+        "line": 682,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
         "source_kind": "route-call",
@@ -12097,6 +12217,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12126,7 +12247,7 @@
         "active_surface": true,
         "call_name": "readJson",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 785,
+        "line": 807,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
         "source_kind": "route-call",
@@ -12153,6 +12274,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12182,7 +12304,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 863,
+        "line": 885,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/live-workspace/desktop/frame",
         "source_kind": "route-call",
@@ -12209,6 +12331,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12238,7 +12361,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 834,
+        "line": 856,
         "method": "GET",
         "path": "/api/user/agent/jobs/<p>/projections",
         "source_kind": "request-call",
@@ -12265,6 +12388,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12294,7 +12418,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 835,
+        "line": 857,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/projections",
         "source_kind": "route-call",
@@ -12321,6 +12445,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12329,7 +12454,121 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2280,
+          "line": 2134,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/user/agent/jobs/<p>/publication-readback",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/routes.py",
+          "line": 2134,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/user/agent/jobs/<p>/publication-readback",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
+        "call_name": "requestObject",
+        "file": "src/features/product/runtime/sovereignAgentClient.ts",
+        "line": 954,
+        "method": "GET",
+        "path": "/api/user/agent/jobs/<p>/publication-readback",
+        "source_kind": "request-call",
+        "surface_status": "active"
+      },
+      "status": "BOUND",
+      "testReferences": {
+        "backend": [
+          "backend/tests/test_agent_draft_pr_create_routes.py",
+          "backend/tests/test_agent_draft_pr_routes.py",
+          "backend/tests/test_agent_runtime_json_validation.py",
+          "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
+          "backend/tests/test_auto_code_review.py",
+          "backend/tests/test_frontend_endpoint_assurance.py"
+        ],
+        "e2e": [
+          "tests/e2e/builder-container-smoke.spec.ts",
+          "tests/e2e/five-draft-pr-paths.spec.ts",
+          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
+          "tests/e2e/frontend-endpoint-runtime.spec.ts"
+        ],
+        "unit": [
+          "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
+          "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.test.ts"
+        ]
+      }
+    },
+    {
+      "backendRoutes": [
+        {
+          "file": "backend/agent_runtime/routes.py",
+          "line": 2134,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/user/agent/jobs/<p>/publication-readback",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/routes.py",
+          "line": 2134,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/user/agent/jobs/<p>/publication-readback",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
+        "call_name": "endpoint",
+        "file": "src/features/product/runtime/sovereignAgentClient.ts",
+        "line": 955,
+        "method": "UNKNOWN",
+        "path": "/api/user/agent/jobs/<p>/publication-readback",
+        "source_kind": "route-call",
+        "surface_status": "active"
+      },
+      "status": "PATH_BOUND_METHOD_UNKNOWN",
+      "testReferences": {
+        "backend": [
+          "backend/tests/test_agent_draft_pr_create_routes.py",
+          "backend/tests/test_agent_draft_pr_routes.py",
+          "backend/tests/test_agent_runtime_json_validation.py",
+          "backend/tests/test_agent_runtime_routes.py",
+          "backend/tests/test_agent_zero_only_execution_contract.py",
+          "backend/tests/test_auto_code_review.py",
+          "backend/tests/test_frontend_endpoint_assurance.py"
+        ],
+        "e2e": [
+          "tests/e2e/builder-container-smoke.spec.ts",
+          "tests/e2e/five-draft-pr-paths.spec.ts",
+          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
+          "tests/e2e/frontend-endpoint-runtime.spec.ts"
+        ],
+        "unit": [
+          "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
+          "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.test.ts"
+        ]
+      }
+    },
+    {
+      "backendRoutes": [
+        {
+          "file": "backend/agent_runtime/routes.py",
+          "line": 2347,
           "methods": [
             "POST"
           ],
@@ -12338,7 +12577,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2280,
+          "line": 2347,
           "methods": [
             "POST"
           ],
@@ -12377,6 +12616,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12385,7 +12625,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2255,
+          "line": 2322,
           "methods": [
             "POST"
           ],
@@ -12394,7 +12634,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2255,
+          "line": 2322,
           "methods": [
             "POST"
           ],
@@ -12433,6 +12673,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12441,7 +12682,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2275,
+          "line": 2342,
           "methods": [
             "POST"
           ],
@@ -12450,7 +12691,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2275,
+          "line": 2342,
           "methods": [
             "POST"
           ],
@@ -12462,7 +12703,7 @@
         "active_surface": true,
         "call_name": "requestJanitorTool",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 1056,
+        "line": 1153,
         "method": "POST",
         "path": "/api/user/agent/jobs/<p>/tools/janitor",
         "source_kind": "request-call",
@@ -12489,6 +12730,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12497,7 +12739,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2275,
+          "line": 2342,
           "methods": [
             "POST"
           ],
@@ -12506,7 +12748,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2275,
+          "line": 2342,
           "methods": [
             "POST"
           ],
@@ -12518,7 +12760,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 1057,
+        "line": 1154,
         "method": "UNKNOWN",
         "path": "/api/user/agent/jobs/<p>/tools/janitor",
         "source_kind": "route-call",
@@ -12545,6 +12787,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12553,7 +12796,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2270,
+          "line": 2337,
           "methods": [
             "POST"
           ],
@@ -12562,7 +12805,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2270,
+          "line": 2337,
           "methods": [
             "POST"
           ],
@@ -12601,6 +12844,7 @@
           "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/features/control-surface-vnext/liveSafeReporter.test.ts",
+          "src/features/product/runtime/sovereignAgentClient.draftPrEvidence.test.ts",
           "src/features/product/runtime/sovereignAgentClient.test.ts"
         ]
       }
@@ -12910,7 +13154,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2725,
+          "line": 2792,
           "methods": [
             "POST"
           ],
@@ -12919,7 +13163,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2725,
+          "line": 2792,
           "methods": [
             "POST"
           ],
@@ -12952,7 +13196,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2725,
+          "line": 2792,
           "methods": [
             "POST"
           ],
@@ -12961,7 +13205,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2725,
+          "line": 2792,
           "methods": [
             "POST"
           ],
@@ -12994,7 +13238,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2725,
+          "line": 2792,
           "methods": [
             "POST"
           ],
@@ -13003,7 +13247,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2725,
+          "line": 2792,
           "methods": [
             "POST"
           ],
@@ -13036,7 +13280,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2725,
+          "line": 2792,
           "methods": [
             "POST"
           ],
@@ -13045,7 +13289,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2725,
+          "line": 2792,
           "methods": [
             "POST"
           ],
@@ -13078,7 +13322,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/routes.py",
-          "line": 2697,
+          "line": 2764,
           "methods": [
             "POST"
           ],
@@ -13087,7 +13331,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/routes.py",
-          "line": 2697,
+          "line": 2764,
           "methods": [
             "POST"
           ],
@@ -13182,7 +13426,7 @@
         "active_surface": true,
         "call_name": "this.fetcher",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 768,
+        "line": 790,
         "method": "POST",
         "path": "/api/user/agent/repository/run",
         "source_kind": "request-call",
@@ -13237,7 +13481,7 @@
         "active_surface": true,
         "call_name": "this.repositoryFetcher",
         "file": "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts",
-        "line": 147,
+        "line": 146,
         "method": "UNKNOWN",
         "path": "/api/user/agent/repository/run",
         "source_kind": "route-call",
@@ -13292,7 +13536,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts",
-        "line": 148,
+        "line": 147,
         "method": "UNKNOWN",
         "path": "/api/user/agent/repository/run",
         "source_kind": "route-call",
@@ -13402,7 +13646,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 769,
+        "line": 791,
         "method": "UNKNOWN",
         "path": "/api/user/agent/repository/run",
         "source_kind": "route-call",
@@ -13962,108 +14206,20 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2450,
-          "methods": [
-            "GET"
-          ],
-          "path": "/api/user/agent/swarm/manifest",
-          "source_kind": "python-route"
-        },
-        {
-          "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2450,
-          "methods": [
-            "GET"
-          ],
-          "path": "/api/user/agent/swarm/manifest",
-          "source_kind": "python-route"
-        }
-      ],
-      "call": {
-        "active_surface": true,
-        "call_name": "this.requestObject",
-        "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 285,
-        "method": "GET",
-        "path": "/api/user/agent/swarm/manifest",
-        "source_kind": "request-call",
-        "surface_status": "active"
-      },
-      "status": "BOUND",
-      "testReferences": {
-        "backend": [
-          "backend/tests/test_cognitive_swarm_routes.py"
-        ],
-        "e2e": [],
-        "unit": [
-          "src/appShellContract.test.ts",
-          "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
-          "src/main.entry.test.ts"
-        ]
-      }
-    },
-    {
-      "backendRoutes": [
-        {
-          "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2450,
-          "methods": [
-            "GET"
-          ],
-          "path": "/api/user/agent/swarm/manifest",
-          "source_kind": "python-route"
-        },
-        {
-          "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2450,
-          "methods": [
-            "GET"
-          ],
-          "path": "/api/user/agent/swarm/manifest",
-          "source_kind": "python-route"
-        }
-      ],
-      "call": {
-        "active_surface": true,
-        "call_name": "this.requestObject",
-        "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 532,
-        "method": "GET",
-        "path": "/api/user/agent/swarm/manifest",
-        "source_kind": "request-call",
-        "surface_status": "active"
-      },
-      "status": "BOUND",
-      "testReferences": {
-        "backend": [
-          "backend/tests/test_cognitive_swarm_routes.py"
-        ],
-        "e2e": [],
-        "unit": [
-          "src/appShellContract.test.ts",
-          "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
-          "src/main.entry.test.ts"
-        ]
-      }
-    },
-    {
-      "backendRoutes": [
-        {
-          "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2519,
+          "line": 2527,
           "methods": [
             "POST"
           ],
-          "path": "/api/user/agent/swarm/run",
+          "path": "/api/user/agent/single/run",
           "source_kind": "python-route"
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2519,
+          "line": 2527,
           "methods": [
             "POST"
           ],
-          "path": "/api/user/agent/swarm/run",
+          "path": "/api/user/agent/single/run",
           "source_kind": "python-route"
         }
       ],
@@ -14071,32 +14227,141 @@
         "active_surface": true,
         "call_name": "this.requestObject",
         "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 307,
+        "line": 341,
         "method": "POST",
-        "path": "/api/user/agent/swarm/run",
+        "path": "/api/user/agent/single/run",
+        "source_kind": "request-call",
+        "surface_status": "active"
+      },
+      "status": "BOUND",
+      "testReferences": {
+        "backend": [],
+        "e2e": [],
+        "unit": [
+          "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts"
+        ]
+      }
+    },
+    {
+      "backendRoutes": [
+        {
+          "file": "backend/agent_runtime/cognitive_swarm_routes.py",
+          "line": 2692,
+          "methods": [
+            "POST"
+          ],
+          "path": "/api/user/agent/single/runs/<p>/cancel",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+          "line": 2692,
+          "methods": [
+            "POST"
+          ],
+          "path": "/api/user/agent/single/runs/<p>/cancel",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
+        "call_name": "this.requestObject",
+        "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
+        "line": 525,
+        "method": "POST",
+        "path": "/api/user/agent/single/runs/<p>/cancel",
+        "source_kind": "request-call",
+        "surface_status": "active"
+      },
+      "status": "BOUND",
+      "testReferences": {
+        "backend": [],
+        "e2e": [],
+        "unit": [
+          "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts"
+        ]
+      }
+    },
+    {
+      "backendRoutes": [
+        {
+          "file": "backend/agent_runtime/cognitive_swarm_routes.py",
+          "line": 2725,
+          "methods": [
+            "POST"
+          ],
+          "path": "/api/user/agent/single/runs/<p>/resume",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+          "line": 2725,
+          "methods": [
+            "POST"
+          ],
+          "path": "/api/user/agent/single/runs/<p>/resume",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
+        "call_name": "this.requestObject",
+        "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
+        "line": 505,
+        "method": "POST",
+        "path": "/api/user/agent/single/runs/<p>/resume",
+        "source_kind": "request-call",
+        "surface_status": "active"
+      },
+      "status": "BOUND",
+      "testReferences": {
+        "backend": [],
+        "e2e": [],
+        "unit": [
+          "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts"
+        ]
+      }
+    },
+    {
+      "backendRoutes": [
+        {
+          "file": "backend/agent_runtime/cognitive_swarm_routes.py",
+          "line": 2509,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/user/agent/swarm/manifest",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+          "line": 2509,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/user/agent/swarm/manifest",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
+        "call_name": "this.requestObject",
+        "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
+        "line": 311,
+        "method": "GET",
+        "path": "/api/user/agent/swarm/manifest",
         "source_kind": "request-call",
         "surface_status": "active"
       },
       "status": "BOUND",
       "testReferences": {
         "backend": [
-          "backend/tests/test_cognitive_swarm_routes.py",
-          "backend/tests/test_devchat_draft_pr_execution_contract.py",
-          "backend/tests/test_repository_single_a2a_contract.py",
-          "scripts/sovereign-backend/tests/test_controller_board_contract.py"
+          "backend/tests/test_cognitive_swarm_routes.py"
         ],
-        "e2e": [
-          "tests/e2e/frontend-endpoint-contract-smoke.spec.ts",
-          "tests/e2e/helpers/live-runtime-observation.ts"
-        ],
+        "e2e": [],
         "unit": [
-          "scripts/sovereign-ux-primary-surface.contract.test.mjs",
           "src/appShellContract.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
-          "src/features/control-surface-vnext/liveSafeReporter.test.ts",
-          "src/features/control-surface-vnext/liveToolDiagnostics.test.ts",
-          "src/features/control-surface-vnext/liveWorkspaceObservation.test.ts",
-          "src/features/product/runtime/devChatDraftPrExecutionContract.test.ts",
           "src/main.entry.test.ts"
         ]
       }
@@ -14105,7 +14370,51 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2483,
+          "line": 2509,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/user/agent/swarm/manifest",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+          "line": 2509,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/user/agent/swarm/manifest",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
+        "call_name": "this.requestObject",
+        "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
+        "line": 581,
+        "method": "GET",
+        "path": "/api/user/agent/swarm/manifest",
+        "source_kind": "request-call",
+        "surface_status": "active"
+      },
+      "status": "BOUND",
+      "testReferences": {
+        "backend": [
+          "backend/tests/test_cognitive_swarm_routes.py"
+        ],
+        "e2e": [],
+        "unit": [
+          "src/appShellContract.test.ts",
+          "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
+          "src/main.entry.test.ts"
+        ]
+      }
+    },
+    {
+      "backendRoutes": [
+        {
+          "file": "backend/agent_runtime/cognitive_swarm_routes.py",
+          "line": 2758,
           "methods": [
             "GET"
           ],
@@ -14114,7 +14423,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2483,
+          "line": 2758,
           "methods": [
             "GET"
           ],
@@ -14123,7 +14432,7 @@
         },
         {
           "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2468,
+          "line": 2743,
           "methods": [
             "GET"
           ],
@@ -14132,7 +14441,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2468,
+          "line": 2743,
           "methods": [
             "GET"
           ],
@@ -14144,52 +14453,9 @@
         "active_surface": true,
         "call_name": "this.requestObject",
         "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 320,
+        "line": 354,
         "method": "GET",
         "path": "/api/user/agent/swarm/runs/<p>",
-        "source_kind": "request-call",
-        "surface_status": "active"
-      },
-      "status": "BOUND",
-      "testReferences": {
-        "backend": [
-          "backend/tests/test_cognitive_swarm_routes.py",
-          "scripts/sovereign-backend/tests/test_controller_board_contract.py"
-        ],
-        "e2e": [],
-        "unit": [
-          "src/features/control-surface-vnext/liveSafeReporter.test.ts"
-        ]
-      }
-    },
-    {
-      "backendRoutes": [
-        {
-          "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2499,
-          "methods": [
-            "POST"
-          ],
-          "path": "/api/user/agent/swarm/runs/<p>/resume",
-          "source_kind": "python-route"
-        },
-        {
-          "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2499,
-          "methods": [
-            "POST"
-          ],
-          "path": "/api/user/agent/swarm/runs/<p>/resume",
-          "source_kind": "python-route"
-        }
-      ],
-      "call": {
-        "active_surface": true,
-        "call_name": "this.requestObject",
-        "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 454,
-        "method": "POST",
-        "path": "/api/user/agent/swarm/runs/<p>/resume",
         "source_kind": "request-call",
         "surface_status": "active"
       },
@@ -14230,7 +14496,7 @@
         "active_surface": true,
         "call_name": "requestObject",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 737,
+        "line": 759,
         "method": "POST",
         "path": "/api/user/agent/toolchain/handoff",
         "source_kind": "request-call",
@@ -14273,7 +14539,7 @@
         "active_surface": true,
         "call_name": "endpoint",
         "file": "src/features/product/runtime/sovereignAgentClient.ts",
-        "line": 738,
+        "line": 760,
         "method": "UNKNOWN",
         "path": "/api/user/agent/toolchain/handoff",
         "source_kind": "route-call",
@@ -14316,7 +14582,7 @@
         "active_surface": true,
         "call_name": "this.requestObject",
         "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 516,
+        "line": 565,
         "method": "GET",
         "path": "/api/user/agent/toolchain/manifest",
         "source_kind": "request-call",
@@ -16096,7 +16362,7 @@
     },
     {
       "dynamic": false,
-      "line": 22,
+      "line": 23,
       "source": "src/features/control-surface-vnext/adapter/production-adapter.ts",
       "source_status": "active",
       "target": "src/features/control-surface-vnext/fsm/runtimePhaseProjection.ts",
@@ -16112,7 +16378,7 @@
     },
     {
       "dynamic": false,
-      "line": 5,
+      "line": 6,
       "source": "src/features/control-surface-vnext/adapter/production-adapter.ts",
       "source_status": "active",
       "target": "src/features/product/runtime/sovereignAgentRuntime.ts",
@@ -21183,29 +21449,29 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "8df16942a764f6d0ceff1858a20fb9b1ab1fc09a7f76f5c7ea82e41519875079",
-  "revision": "5511c638e8ba0384420979692dd63ed7ec1d4b9d",
+  "reportSha256": "149db6d7a2846cc89065c1b3e5c921fe3e00c82fe250a23f895f601e94f1268a",
+  "revision": "9b4c0a6ba45b9b726434742e6621b181264d6051",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "885b80a3bf4d9512e7916acb1ecedba98538418bd5aa133d6d38748741ded899",
+  "sourceTreeSha256": "861b2b01ee4879647dd0122ded3cec4b993e3a6d749f9edc1ea9f0fbb0d93541",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
-    "activeMutationRequestCount": 67,
+    "activeMutationRequestCount": 68,
     "activeMutationWithoutTestEvidenceCount": 0,
-    "activeReadRequestCount": 28,
+    "activeReadRequestCount": 29,
     "activeReadWithoutTestEvidenceCount": 0,
-    "activeRequestCount": 95,
-    "backendRouteCount": 405,
-    "boundActiveRequestCount": 95,
+    "activeRequestCount": 97,
+    "backendRouteCount": 415,
+    "boundActiveRequestCount": 97,
     "externalMethodUnknownCount": 0,
     "externalRequestCount": 30,
-    "frontendCallCount": 284,
+    "frontendCallCount": 287,
     "frontendModuleCount": 562,
     "importEdgeCount": 761,
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
-    "testFileCount": 810,
+    "testFileCount": 815,
     "unmatchedActiveRequestCount": 0
   },
   "truthBoundary": {
