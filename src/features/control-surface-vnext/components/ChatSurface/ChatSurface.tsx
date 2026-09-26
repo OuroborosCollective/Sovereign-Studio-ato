@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Blocks, Bot, BrainCircuit, Cpu, Send, Square, Terminal, User, Wrench } from 'lucide-react';
 import type { AgentMode, ChatMessage, JobPhase, SovereignJob } from '../../types/domain';
 import { playDispatchBlast, playKeystrokeChirp } from '../../utils/audio';
+import { ChatMarkdown } from '../../../product/components/ChatMarkdown';
 
 interface Props {
   messages: ChatMessage[];
@@ -33,7 +34,9 @@ function MessageCard({ message }: { message: ChatMessage }) {
     <motion.div initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} className={`flex gap-2.5 ${human ? 'justify-end' : 'justify-start'}`}>
       {!human && <div className={`w-7 h-7 rounded-md shrink-0 flex items-center justify-center border ${system ? 'bg-[var(--carbon-surface)] border-white/10 text-[var(--text-muted)]' : 'bg-[rgba(255,30,56,0.12)] border-[rgba(255,30,56,0.3)] text-[var(--red-laser)]'}`}>{system ? <Terminal size={13} /> : <Bot size={13} />}</div>}
       <div className={`max-w-[88%] sm:max-w-[82%] rounded-lg border px-3 py-2.5 ${human ? 'bg-[rgba(255,30,56,0.11)] border-[rgba(255,30,56,0.25)]' : 'bg-[var(--carbon-deep)] border-white/5'}`}>
-        <div className="whitespace-pre-wrap break-words font-mono text-[10.5px] sm:text-[11px] leading-relaxed text-[var(--text-main)]">{message.content}</div>
+        <div className="whitespace-pre-wrap break-words font-mono text-[10.5px] sm:text-[11px] leading-relaxed text-[var(--text-main)]">
+          {human ? message.content : <ChatMarkdown content={message.content} />}
+        </div>
         <div className="mt-2 flex items-center justify-between gap-3 font-mono text-[8.5px] text-[var(--text-dim)]"><span>{human ? 'OWNER' : system ? 'CONTROL SURFACE' : 'SOVEREIGN READBACK'}</span>{message.evidenceBadge && <span className="text-[var(--emerald-seal)] font-bold">{message.evidenceBadge}</span>}</div>
       </div>
       {human && <div className="w-7 h-7 rounded-md shrink-0 flex items-center justify-center bg-[var(--carbon-surface)] border border-white/10 text-white"><User size={13} /></div>}
