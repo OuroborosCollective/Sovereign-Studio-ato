@@ -873,3 +873,13 @@ Evidence: Exact-head Release Verification run `36256183818` bound to `f2792e1e88
 Learned: Expand/collapse tests must assert the control currently present in the DOM after the state transition, not the DOM node that the transition intentionally removes.
 Open: The rerun is currently executing against the same exact head; merge remains blocked until terminal green evidence.
 Next safe step: Consume the rerun result, then perform exact-head revision/review/readback checks before merge.
+### 2026-09-26 — Neuro canary failure evidence hardening
+Status: PARTIAL — diagnostic instrumentation prepared; runtime repair not yet verified
+Task: Preserve the existing fail-closed Neuro deployment canary while making a contract-status AssertionError diagnostically actionable without returning credentials or mutating runtime state during diagnosis.
+Decisions: Keep the existing isolated read-only canary and its execution/approval boundaries unchanged; on failure, emit bounded, secret-free contract fields when the assertion carries the structured Neuro status object, and otherwise only a bounded error message.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_install_contract.py`; `Memory.md`.
+Evidence: Main remains `9215436b10c13115f50b2582da7e5422004ce043`. The failed self-update is bound to `verify_isolated_neuro_runtime_canary` / `contract_status` / `AssertionError`; direct runtime readback currently shows the existing container healthy, `MCP_PROTOCOL_READY`, and broker `BROKER_READY`, while aggregate self-update status remains FAILED. Source inspection confirms GitHub access uses the ephemeral GitHub App installation flow and removes persistent `GITHUB_TOKEN`; the secure tunnel transports only the loopback MCP endpoint.
+Learned: The prior canary failure envelope discarded the assertion payload entirely, so an exact structured contract defect could not be distinguished from other AssertionError paths. The repository already has read-only contract fields suitable for bounded diagnosis.
+Open: The V2 workspace/auth bridge still reports missing `GITHUB_TOKEN` and is not currently consuming the deployed tunnel/App-auth boundary; no persistent token has been introduced.
+Next safe step: Run the targeted installer-contract and Neuro tests on this branch, publish a Draft PR, consume terminal CI, then retry the exact revision-bound self-update and inspect the now-bounded canary evidence.
+
