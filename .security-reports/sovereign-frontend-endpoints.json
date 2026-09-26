@@ -14246,6 +14246,46 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cognitive_swarm_routes.py",
+          "line": 2675,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/user/agent/single/runs/<p>",
+          "source_kind": "python-route"
+        },
+        {
+          "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+          "line": 2675,
+          "methods": [
+            "GET"
+          ],
+          "path": "/api/user/agent/single/runs/<p>",
+          "source_kind": "python-route"
+        }
+      ],
+      "call": {
+        "active_surface": true,
+        "call_name": "this.requestObject",
+        "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
+        "line": 354,
+        "method": "GET",
+        "path": "/api/user/agent/single/runs/<p>",
+        "source_kind": "request-call",
+        "surface_status": "active"
+      },
+      "status": "BOUND",
+      "testReferences": {
+        "backend": [],
+        "e2e": [],
+        "unit": [
+          "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts"
+        ]
+      }
+    },
+    {
+      "backendRoutes": [
+        {
+          "file": "backend/agent_runtime/cognitive_swarm_routes.py",
           "line": 2692,
           "methods": [
             "POST"
@@ -14407,67 +14447,6 @@
           "src/appShellContract.test.ts",
           "src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts",
           "src/main.entry.test.ts"
-        ]
-      }
-    },
-    {
-      "backendRoutes": [
-        {
-          "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2758,
-          "methods": [
-            "GET"
-          ],
-          "path": "/api/user/agent/swarm/runs/<p>",
-          "source_kind": "python-route"
-        },
-        {
-          "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2758,
-          "methods": [
-            "GET"
-          ],
-          "path": "/api/user/agent/swarm/runs/<p>",
-          "source_kind": "python-route"
-        },
-        {
-          "file": "backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2743,
-          "methods": [
-            "GET"
-          ],
-          "path": "/api/user/agent/swarm/runs/resumable",
-          "source_kind": "python-route"
-        },
-        {
-          "file": "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
-          "line": 2743,
-          "methods": [
-            "GET"
-          ],
-          "path": "/api/user/agent/swarm/runs/resumable",
-          "source_kind": "python-route"
-        }
-      ],
-      "call": {
-        "active_surface": true,
-        "call_name": "this.requestObject",
-        "file": "src/features/control-surface-vnext/adapter/production-adapter.ts",
-        "line": 354,
-        "method": "GET",
-        "path": "/api/user/agent/swarm/runs/<p>",
-        "source_kind": "request-call",
-        "surface_status": "active"
-      },
-      "status": "BOUND",
-      "testReferences": {
-        "backend": [
-          "backend/tests/test_cognitive_swarm_routes.py",
-          "scripts/sovereign-backend/tests/test_controller_board_contract.py"
-        ],
-        "e2e": [],
-        "unit": [
-          "src/features/control-surface-vnext/liveSafeReporter.test.ts"
         ]
       }
     },
@@ -21449,10 +21428,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "149db6d7a2846cc89065c1b3e5c921fe3e00c82fe250a23f895f601e94f1268a",
-  "revision": "9b4c0a6ba45b9b726434742e6621b181264d6051",
+  "reportSha256": "29beecf98f955299dc4a24cd661a4ee98b20469178f42fed98fe32c8e4deecf5",
+  "revision": "4e0c3847564f516b494a288bb4b2981d68514a41",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "861b2b01ee4879647dd0122ded3cec4b993e3a6d749f9edc1ea9f0fbb0d93541",
+  "sourceTreeSha256": "0a32600969a18585f423dbac6f1cd70d317f9cddce4bf8ab5a408c30f7dba122",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,

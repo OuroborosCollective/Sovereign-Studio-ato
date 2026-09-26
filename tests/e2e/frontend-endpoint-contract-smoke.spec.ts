@@ -232,6 +232,7 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
       workspaceId,
       evidenceAnchors: [],
     }));
+    await page.route(`**/api/user/agent/jobs/${jobId}/publication-readback`, route => fulfillJson(route, {}));
 
     await page.goto('/');
     const app = page.locator('[data-testid="sovereign-chat-app"]');
@@ -371,6 +372,7 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
       evidenceAnchors: [],
     }));
 
+    await page.route(`**/api/user/agent/jobs/${jobId}/publication-readback`, route => fulfillJson(route, {}));
     await page.goto('/');
     await expect(page.locator('[data-testid="sovereign-control-surface-vnext"]')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(/PERSISTED REPOSITORY SESSION RESTORED/)).toBeVisible({ timeout: 10_000 });
