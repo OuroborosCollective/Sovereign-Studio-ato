@@ -372,11 +372,13 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
     };
     const phase = phaseFromJob(snapshot, run);
     let publication: DraftPR | undefined;
-    try {
-      const readback = await this.client.getPublicationReadback(jobId);
-      publication = readback ? mapPersistedDraftPr(readback) : undefined;
-    } catch {
-      publication = undefined;
+    if (snapshot.prState === 'ready' || snapshot.prState === 'created') {
+      try {
+        const readback = await this.client.getPublicationReadback(jobId);
+        publication = readback ? mapPersistedDraftPr(readback) : undefined;
+      } catch {
+        publication = undefined;
+      }
     }
     const now = new Date().toISOString();
     return {
@@ -421,7 +423,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       : undefined;
     const currentRevision = newestEvidenceRevision(anchors);
     let publication: DraftPR | undefined;
-    if (run.jobId) {
+    if (run.jobId && snapshot && (snapshot.prState === 'ready' || snapshot.prState === 'created')) {
       try {
         const readback = await this.client.getPublicationReadback(run.jobId);
         publication = readback ? mapPersistedDraftPr(readback) : undefined;
