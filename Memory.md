@@ -900,4 +900,13 @@ Evidence: Exact-head CI `36261661268` on `88ed11503383fa0a7505faf266afee31226a79
 Learned: New parser regression tests must use the repository's established dynamic module loader when testing executable deployment scripts.
 Open: Fresh exact-head CI, merge, and exact-revision runtime self-update remain pending.
 Next safe step: Consume the new CI run for this test-only correction, then continue with the existing exact-head and runtime evidence gates.
+### 2026-09-26 — UX scanner route truth alignment
+Status: PARTIAL — scanner contract corrected; terminal CI and runtime verification pending
+Task: Align the production UX contract scanner with the current generic adapter readback route.
+Decision: Keep the implementation on the current persisted single-agent readback path `/api/user/agent/single/runs/:id`; update only the scanner's stale Swarm-route expectation and message.
+Touched surfaces: `scripts/sovereign-ux-contract-scan.mjs`; `Memory.md`.
+Evidence: Release Verification `36261836922` on exact branch head `f5ddb80dd3680ff8ae3ead569b89b48ca314fc7c` ran 3820/3823 frontend smoke tests successfully and failed the UX scanner only at `adapter:generic-run-readback`. Direct source inspection of `production-adapter.ts` shows `getRun()` reads `/api/user/agent/single/runs/${encodeURIComponent(requested)}`.
+Learned: The correct repair is to remove stale contract expectations rather than reintroduce deprecated Swarm routing into the live adapter.
+Open: New exact-head CI on this scanner correction, then merge and retry the immutable runtime self-update.
+Next safe step: Consume terminal exact-head gates and keep the Neuro/Auth changes unchanged.
 
