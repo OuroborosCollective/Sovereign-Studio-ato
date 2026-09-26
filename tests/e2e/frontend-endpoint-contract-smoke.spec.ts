@@ -232,6 +232,9 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
       workspaceId,
       evidenceAnchors: [],
     }));
+    await page.route(`**/api/user/agent/jobs/${jobId}/publication-readback`, route => fulfillJson(route, {
+      publication: null
+    }));
 
     await page.goto('/');
     const app = page.locator('[data-testid="sovereign-chat-app"]');
@@ -369,6 +372,9 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
       jobId,
       workspaceId,
       evidenceAnchors: [],
+    }));
+    await page.route(`**/api/user/agent/jobs/${jobId}/publication-readback`, route => fulfillJson(route, {
+      publication: null
     }));
 
     await page.goto('/');

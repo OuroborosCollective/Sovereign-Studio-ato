@@ -125,7 +125,7 @@ function run() {
   requireText(repositoryAdapter, /credentials:\s*'include'/, 'adapter:http-only-session', 'Repository requests rely on the backend HTTP-only session.');
   requireText(repositoryAdapter, /'\/api\/user\/agent\/repository\/run'/, 'adapter:repository-run', 'vNext repository mission dispatch uses the direct persisted repository-job endpoint.');
   forbidText(repositoryAdapter, /'\/api\/user\/agent\/swarm\/run'/, 'adapter:no-repository-swarm-run', 'The vNext repository path must not dispatch through the Swarm run endpoint.');
-  requireText(adapter, /\/api\/user\/agent\/swarm\/runs\/\$\{encodeURIComponent\(requested\)\}/, 'adapter:generic-run-readback', 'The generic adapter still supports persisted Swarm-run readback for non-repository product paths.');
+  requireText(adapter, /\/api\/user\/agent\/single\/runs\/\$\{encodeURIComponent\(requested\)\}/, 'adapter:generic-run-readback', 'The generic adapter still supports persisted single-run readback for non-repository product paths.');
   requireText(adapter, /this\.client\.getJob\(jobId\)/, 'adapter:linked-job', 'Direct repository work is read through the exact backend job id.');
   requireText(adapter, /this\.client\.getEvidenceAnchors\(jobId\)/, 'adapter:evidence-anchors', 'Workspace revision comes from evidence anchors bound to the direct job id.');
   requireText(adapter, /this\.client\.prepareDraftPr\(jobId\)/, 'adapter:draft-prepare', 'Draft PR preparation uses the existing server gate against the exact job id.');
