@@ -909,4 +909,13 @@ Evidence: Release Verification `36261836922` on exact branch head `f5ddb80dd3680
 Learned: The correct repair is to remove stale contract expectations rather than reintroduce deprecated Swarm routing into the live adapter.
 Open: New exact-head CI on this scanner correction, then merge and retry the immutable runtime self-update.
 Next safe step: Consume terminal exact-head gates and keep the Neuro/Auth changes unchanged.
+### 2026-09-26 — Publication readback eligibility regression repair
+Status: PARTIAL — adapter repair prepared; terminal CI and runtime verification pending
+Task: Prevent vNext repository-session readback from probing the Draft-PR publication endpoint before a persisted job reaches an eligible Draft-PR state.
+Decision: Gate publication readback on backend-owned `prState` values `ready` or `created`; keep the existing independent GitHub readback path intact for actual Draft-PR-capable jobs.
+Touched surfaces: `src/features/control-surface-vnext/adapter/production-adapter.ts`; `Memory.md`.
+Evidence: Release Verification `36262099192` on `616f2a2e466af8be09b71b23250c257cc0666da2` failed only two Playwright endpoint-contract scenarios because the blocked persisted repository job triggered unexpected `GET /api/user/agent/jobs/<jobId>/publication-readback`; the backend lifecycle source defines `pr_state='ready'` in `mark_draft_pr_prepared` and `pr_state='created'` in `mark_draft_pr_created`.
+Learned: Publication readback is a post-gate projection, not part of blocked/validating session rehydration. Conditioning it on the persisted backend state removes the redundant request without weakening verified Draft-PR readback.
+Open: Fresh exact-head CI and merge/runtime verification remain pending.
+Next safe step: Consume terminal CI; if green, merge only at exact head and retry the immutable self-update so the bounded Neuro canary evidence can expose the remaining contract defect.
 
