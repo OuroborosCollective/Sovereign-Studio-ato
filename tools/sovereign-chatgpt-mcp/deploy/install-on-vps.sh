@@ -3358,6 +3358,48 @@ import sys
 
 phase_pattern = re.compile(r"^[a-z][a-z0-9_-]{0,79}$")
 error_pattern = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,79}$")
+def _compact_error_details(payload):
+    details = payload.get("errorDetails")
+    if not isinstance(details, dict):
+        return ""
+    parts = []
+    for key in (
+        "ok",
+        "status",
+        "blocker",
+        "stateInitializedByThisCall",
+        "evidenceToolCount",
+    ):
+        value = details.get(key)
+        if value is None:
+            continue
+        text_value = re.sub(r"[^A-Za-z0-9_.:-]+", "_", str(value))[:160]
+        if text_value:
+            parts.append(f"{key}={text_value}")
+    for key, label in (
+        ("dataModules", "modules"),
+        ("dataDeploymentBinding", "deployment"),
+        ("dataLedger", "ledger"),
+        ("dataFoundationLedger", "foundation"),
+        ("dataAdmissions", "admissions"),
+        ("dataGlobalLedgerQuota", "globalQuota"),
+        ("dataToolOutcomeQuota", "toolQuota"),
+    ):
+        value = details.get(key)
+        if not isinstance(value, dict):
+            continue
+        status = re.sub(r"[^A-Za-z0-9_.:-]+", "_", str(value.get("status") or ""))[:80]
+        if status:
+            parts.append(f"{label}={status}")
+        if "integrityVerified" in value:
+            parts.append(f"{label}Integrity={int(value.get('integrityVerified') is True)}")
+        if "ready" in value:
+            parts.append(f"{label}Ready={int(value.get('ready') is True)}")
+        if "exceeded" in value:
+            parts.append(f"{label}Exceeded={int(value.get('exceeded') is True)}")
+    compact = ",".join(parts)
+    return compact[:1200]
+
 for raw_line in reversed(sys.stdin.read().splitlines()):
     try:
         payload = json.loads(raw_line)
@@ -3374,12 +3416,13 @@ for raw_line in reversed(sys.stdin.read().splitlines()):
         and phase_pattern.fullmatch(phase)
         and error_pattern.fullmatch(error_type)
     ):
-        print(f"phase={phase};error={error_type}")
+        detail = _compact_error_details(payload)
+        print(f"phase={phase};error={error_type}" + (f";details={detail}" if detail else ""))
         break
 '
   )"
   unset CANARY_OUTPUT
-  if [[ ! "$CANARY_DIAGNOSTIC" =~ ^phase=[a-z][a-z0-9_-]{0,79}\;error=[A-Za-z_][A-Za-z0-9_]{0,79}$ ]]; then
+  if [[ ! "$CANARY_DIAGNOSTIC" =~ ^phase=[a-z][a-z0-9_-]{0,79}\;error=[A-Za-z_][A-Za-z0-9_]{0,79}(\;details=[A-Za-z0-9_.:,=-]{1,1200})?$ ]]; then
     CANARY_DIAGNOSTIC="phase=unclassified;error=UnknownError"
   fi
   fail "isolated neuro runtime canary failed: $CANARY_DIAGNOSTIC"
