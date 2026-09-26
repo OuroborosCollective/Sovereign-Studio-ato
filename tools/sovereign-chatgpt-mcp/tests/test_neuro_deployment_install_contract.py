@@ -1145,6 +1145,7 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
 
     assert failed.returncode != 0
     assert json.loads(failed.stdout.strip().splitlines()[-1]) == {
+        "errorDetails": {"message": "AssertionError"},
         "errorType": "AssertionError",
         "phase": "environment_binding",
         "status": "NEURO_DEPLOYMENT_CANARY_FAILED",

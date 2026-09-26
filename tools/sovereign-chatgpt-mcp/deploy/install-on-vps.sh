@@ -2831,7 +2831,30 @@ import tempfile
 canary_phase = "bootstrap"
 
 
-def _safe_canary_exception_hook(error_type, _error, _traceback) -> None:
+def _safe_canary_exception_details(error_name, error) -> dict[str, object]:
+    if error_name == "AssertionError" and hasattr(error, "model_dump"):
+        dumped = error.model_dump()
+        data = dumped.get("data") if isinstance(dumped, dict) else None
+        evidence = dumped.get("evidence") if isinstance(dumped, dict) else None
+        return {
+            "ok": dumped.get("ok"),
+            "status": dumped.get("status"),
+            "failureFamily": dumped.get("failureFamily"),
+            "blocker": dumped.get("blocker"),
+            "evidenceToolCount": evidence.get("toolCount") if isinstance(evidence, dict) else None,
+            "dataModules": data.get("modules") if isinstance(data, dict) else None,
+            "dataDeploymentBinding": data.get("deploymentBinding") if isinstance(data, dict) else None,
+            "dataLedger": data.get("ledger") if isinstance(data, dict) else None,
+            "dataFoundationLedger": data.get("foundationLedger") if isinstance(data, dict) else None,
+            "dataAdmissions": data.get("admissions") if isinstance(data, dict) else None,
+            "dataGlobalLedgerQuota": data.get("globalLedgerQuota") if isinstance(data, dict) else None,
+            "dataToolOutcomeQuota": data.get("toolOutcomeQuota") if isinstance(data, dict) else None,
+            "stateInitializedByThisCall": data.get("stateInitializedByThisCall") if isinstance(data, dict) else None,
+        }
+    detail = str(error).strip()
+    return {"message": detail[:2000] if detail else error_name}
+
+def _safe_canary_exception_hook(error_type, error, _traceback) -> None:
     error_name = str(getattr(error_type, "__name__", "UnknownError"))
     if not error_name.isidentifier() or len(error_name) > 80:
         error_name = "UnknownError"
@@ -2841,6 +2864,7 @@ def _safe_canary_exception_hook(error_type, _error, _traceback) -> None:
                 "status": "NEURO_DEPLOYMENT_CANARY_FAILED",
                 "phase": canary_phase,
                 "errorType": error_name,
+                "errorDetails": _safe_canary_exception_details(error_name, error),
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -3334,6 +3358,48 @@ import sys
 
 phase_pattern = re.compile(r"^[a-z][a-z0-9_-]{0,79}$")
 error_pattern = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,79}$")
+def _compact_error_details(payload):
+    details = payload.get("errorDetails")
+    if not isinstance(details, dict):
+        return ""
+    parts = []
+    for key in (
+        "ok",
+        "status",
+        "blocker",
+        "stateInitializedByThisCall",
+        "evidenceToolCount",
+    ):
+        value = details.get(key)
+        if value is None:
+            continue
+        text_value = re.sub(r"[^A-Za-z0-9_.:-]+", "_", str(value))[:160]
+        if text_value:
+            parts.append(f"{key}={text_value}")
+    for key, label in (
+        ("dataModules", "modules"),
+        ("dataDeploymentBinding", "deployment"),
+        ("dataLedger", "ledger"),
+        ("dataFoundationLedger", "foundation"),
+        ("dataAdmissions", "admissions"),
+        ("dataGlobalLedgerQuota", "globalQuota"),
+        ("dataToolOutcomeQuota", "toolQuota"),
+    ):
+        value = details.get(key)
+        if not isinstance(value, dict):
+            continue
+        status = re.sub(r"[^A-Za-z0-9_.:-]+", "_", str(value.get("status") or ""))[:80]
+        if status:
+            parts.append(f"{label}={status}")
+        if "integrityVerified" in value:
+            parts.append(f"{label}Integrity={int(value.get('integrityVerified') is True)}")
+        if "ready" in value:
+            parts.append(f"{label}Ready={int(value.get('ready') is True)}")
+        if "exceeded" in value:
+            parts.append(f"{label}Exceeded={int(value.get('exceeded') is True)}")
+    compact = ",".join(parts)
+    return compact[:1200]
+
 for raw_line in reversed(sys.stdin.read().splitlines()):
     try:
         payload = json.loads(raw_line)
@@ -3350,12 +3416,13 @@ for raw_line in reversed(sys.stdin.read().splitlines()):
         and phase_pattern.fullmatch(phase)
         and error_pattern.fullmatch(error_type)
     ):
-        print(f"phase={phase};error={error_type}")
+        detail = _compact_error_details(payload)
+        print(f"phase={phase};error={error_type}" + (f";details={detail}" if detail else ""))
         break
 '
   )"
   unset CANARY_OUTPUT
-  if [[ ! "$CANARY_DIAGNOSTIC" =~ ^phase=[a-z][a-z0-9_-]{0,79}\;error=[A-Za-z_][A-Za-z0-9_]{0,79}$ ]]; then
+  if [[ ! "$CANARY_DIAGNOSTIC" =~ ^phase=[a-z][a-z0-9_-]{0,79}\;error=[A-Za-z_][A-Za-z0-9_]{0,79}(\;details=[A-Za-z0-9_.:,=-]{1,1200})?$ ]]; then
     CANARY_DIAGNOSTIC="phase=unclassified;error=UnknownError"
   fi
   fail "isolated neuro runtime canary failed: $CANARY_DIAGNOSTIC"

@@ -33,7 +33,8 @@ MCP_INSTALL_FAILURE_RE = re.compile(
 MCP_NEURO_CANARY_FAILURE_RE = re.compile(
     r"^isolated neuro runtime canary failed: "
     r"phase=(?P<phase>[a-z][a-z0-9_-]{0,79});"
-    r"error=(?P<error_type>[A-Za-z_][A-Za-z0-9_]{0,79})$"
+    r"error=(?P<error_type>[A-Za-z_][A-Za-z0-9_]{0,79})"
+    r"(?:;details=(?P<details>[A-Za-z0-9_.:,=-]{1,1200}))?$"
 )
 MCP_NESTED_TOOLCHAIN_FAILURE_RE = re.compile(
     r"^revision-bound toolchain installer failed: "
@@ -813,6 +814,11 @@ def _safe_mcp_install_diagnostic(output: str) -> dict[str, Any] | None:
                 diagnostic["neuroCanary"] = {
                     "phase": canary_match.group("phase"),
                     "errorType": canary_match.group("error_type"),
+                    **(
+                        {"details": canary_match.group("details")}
+                        if canary_match.group("details")
+                        else {}
+                    ),
                 }
             toolchain_match = _safe_nested_toolchain_diagnostic(reason)
             if toolchain_match is not None:

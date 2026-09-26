@@ -873,3 +873,49 @@ Evidence: Exact-head Release Verification run `36256183818` bound to `f2792e1e88
 Learned: Expand/collapse tests must assert the control currently present in the DOM after the state transition, not the DOM node that the transition intentionally removes.
 Open: The rerun is currently executing against the same exact head; merge remains blocked until terminal green evidence.
 Next safe step: Consume the rerun result, then perform exact-head revision/review/readback checks before merge.
+### 2026-09-26 — Neuro canary failure evidence hardening
+Status: PARTIAL — diagnostic instrumentation prepared; runtime repair not yet verified
+Task: Preserve the existing fail-closed Neuro deployment canary while making a contract-status AssertionError diagnostically actionable without returning credentials or mutating runtime state during diagnosis.
+Decisions: Keep the existing isolated read-only canary and its execution/approval boundaries unchanged; on failure, emit bounded, secret-free contract fields when the assertion carries the structured Neuro status object, and otherwise only a bounded error message.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_install_contract.py`; `Memory.md`.
+Evidence: Main remains `9215436b10c13115f50b2582da7e5422004ce043`. The failed self-update is bound to `verify_isolated_neuro_runtime_canary` / `contract_status` / `AssertionError`; direct runtime readback currently shows the existing container healthy, `MCP_PROTOCOL_READY`, and broker `BROKER_READY`, while aggregate self-update status remains FAILED. Source inspection confirms GitHub access uses the ephemeral GitHub App installation flow and removes persistent `GITHUB_TOKEN`; the secure tunnel transports only the loopback MCP endpoint.
+Learned: The prior canary failure envelope discarded the assertion payload entirely, so an exact structured contract defect could not be distinguished from other AssertionError paths. The repository already has read-only contract fields suitable for bounded diagnosis.
+Open: The V2 workspace/auth bridge still reports missing `GITHUB_TOKEN` and is not currently consuming the deployed tunnel/App-auth boundary; no persistent token has been introduced.
+Next safe step: Run the targeted installer-contract and Neuro tests on this branch, publish a Draft PR, consume terminal CI, then retry the exact revision-bound self-update and inspect the now-bounded canary evidence.
+### 2026-09-26 — Neuro canary diagnostic propagation
+Status: PARTIAL — diagnostic propagation prepared; production runtime verification pending
+Task: Preserve bounded Neuro contract details from the isolated installer canary through the self-update failure reason and coordinated-release reconciler.
+Decisions: Keep the existing fail-closed canary and GitHub/tunnel auth boundaries unchanged; extend only the secret-free `phase=…;error=…` envelope with an optional compact `details=` field, while keeping historical detail strings valid.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/deploy/reconcile-main-release.py`; `tools/sovereign-chatgpt-mcp/tests/test_coordinated_release_reconciler.py`; `Memory.md`.
+Evidence: The previous exact-head MCP run on the branch reached 1078 passed, 12 skipped, 1 warning; its only failure was the expected fixture mismatch after the first evidence-envelope extension. Source inspection shows Self-Update passes the installer failure reason through its bounded status detail, while the reconciler previously rejected any appended diagnostic fields.
+Learned: The correct propagation boundary is the installer failure reason itself; no second GitHub credential path or tunnel-specific token handling is needed.
+Open: New exact-head CI after this propagation patch and subsequent production self-update remain pending.
+Next safe step: Consume terminal CI, then merge only after exact-head green evidence and retry the self-update to obtain the concrete `contract_status` mismatch.
+### 2026-09-26 — Neuro diagnostic parser regression repair
+Status: PARTIAL — test correction prepared; terminal CI and production verification pending
+Task: Correct the regression-test helper introduced for bounded Neuro canary diagnostic propagation.
+Decisions: Load the reconciler module through its existing `_load()` helper before asserting the parser contract; no production behavior changed.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/tests/test_coordinated_release_reconciler.py`; `Memory.md`.
+Evidence: Exact-head CI `36261661268` on `88ed11503383fa0a7505faf266afee31226a7932` reached 1079 passed, 12 skipped, 1 warning with one isolated `NameError` because the new test referenced an unloaded `module`. Source inspection confirmed the production parser patch itself was the exercised target and the test failure occurred before parser execution.
+Learned: New parser regression tests must use the repository's established dynamic module loader when testing executable deployment scripts.
+Open: Fresh exact-head CI, merge, and exact-revision runtime self-update remain pending.
+Next safe step: Consume the new CI run for this test-only correction, then continue with the existing exact-head and runtime evidence gates.
+### 2026-09-26 — UX scanner route truth alignment
+Status: PARTIAL — scanner contract corrected; terminal CI and runtime verification pending
+Task: Align the production UX contract scanner with the current generic adapter readback route.
+Decision: Keep the implementation on the current persisted single-agent readback path `/api/user/agent/single/runs/:id`; update only the scanner's stale Swarm-route expectation and message.
+Touched surfaces: `scripts/sovereign-ux-contract-scan.mjs`; `Memory.md`.
+Evidence: Release Verification `36261836922` on exact branch head `f5ddb80dd3680ff8ae3ead569b89b48ca314fc7c` ran 3820/3823 frontend smoke tests successfully and failed the UX scanner only at `adapter:generic-run-readback`. Direct source inspection of `production-adapter.ts` shows `getRun()` reads `/api/user/agent/single/runs/${encodeURIComponent(requested)}`.
+Learned: The correct repair is to remove stale contract expectations rather than reintroduce deprecated Swarm routing into the live adapter.
+Open: New exact-head CI on this scanner correction, then merge and retry the immutable runtime self-update.
+Next safe step: Consume terminal exact-head gates and keep the Neuro/Auth changes unchanged.
+### 2026-09-26 — Publication readback eligibility regression repair
+Status: PARTIAL — adapter repair prepared; terminal CI and runtime verification pending
+Task: Prevent vNext repository-session readback from probing the Draft-PR publication endpoint before a persisted job reaches an eligible Draft-PR state.
+Decision: Gate publication readback on backend-owned `prState` values `ready` or `created`; keep the existing independent GitHub readback path intact for actual Draft-PR-capable jobs.
+Touched surfaces: `src/features/control-surface-vnext/adapter/production-adapter.ts`; `Memory.md`.
+Evidence: Release Verification `36262099192` on `616f2a2e466af8be09b71b23250c257cc0666da2` failed only two Playwright endpoint-contract scenarios because the blocked persisted repository job triggered unexpected `GET /api/user/agent/jobs/<jobId>/publication-readback`; the backend lifecycle source defines `pr_state='ready'` in `mark_draft_pr_prepared` and `pr_state='created'` in `mark_draft_pr_created`.
+Learned: Publication readback is a post-gate projection, not part of blocked/validating session rehydration. Conditioning it on the persisted backend state removes the redundant request without weakening verified Draft-PR readback.
+Open: Fresh exact-head CI and merge/runtime verification remain pending.
+Next safe step: Consume terminal CI; if green, merge only at exact head and retry the immutable self-update so the bounded Neuro canary evidence can expose the remaining contract defect.
+
