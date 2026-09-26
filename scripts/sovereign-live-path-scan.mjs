@@ -170,7 +170,7 @@ function scanRuntimeContracts() {
   if (
     /new SovereignProductionAdapter\(\)/.test(adapterContext)
     && /credentials:\s*'include'/.test(adapter)
-    && /'\/api\/user\/agent\/swarm\/run'/.test(adapter)
+    && /'\/api\/user\/agent\/single\/run'/.test(adapter)
     && /setActiveRunId\(accepted\.jobId\)/.test(surface)
     && !/MockSovereignBackendAdapter|fallbackMock|\/api\/config\//.test(adapter)
   ) pass('vnext:production-adapter', 'vNext dispatch is bound to the single authenticated production adapter without simulator fallback.');
