@@ -3396,6 +3396,11 @@ def _compact_error_details(payload):
     if not isinstance(details, dict):
         return ""
     parts = []
+    message = details.get("message")
+    if isinstance(message, str) and message.strip():
+        message_value = re.sub(r"[^A-Za-z0-9_.:,=-]+", "_", message.strip())[:800]
+        if message_value:
+            parts.append(f"message={message_value}")
     for key in (
         "ok",
         "status",
