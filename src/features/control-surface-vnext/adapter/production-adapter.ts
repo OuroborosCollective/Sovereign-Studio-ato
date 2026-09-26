@@ -351,7 +351,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
   private async getRun(runId: string): Promise<PersistedRun> {
     const requested = runId.trim();
     if (!requested) throw new Error('Run ID is required.');
-    const result = await this.requestObject(`/api/user/agent/single/runs/${encodeURIComponent(requested)}`, { method: 'GET' });
+    const result = await this.requestObject(`/api/user/agent/swarm/runs/${encodeURIComponent(requested)}`, { method: 'GET' });
     if (!result.ok) throw new Error(stringValue(result.body.error) || `Sovereign run readback HTTP ${result.status}.`);
     const run = parseRun(result.body.run);
     if (run.runId !== requested) throw new Error('Sovereign run readback identity mismatch.');
