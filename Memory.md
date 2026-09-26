@@ -812,12 +812,34 @@ Learned: A clean current-main refresh is safer than rebasing a stale performance
 Open: Fresh current-main Draft PR publication and exact-head CI remain pending.
 Next safe step: Publish the refreshed branch, close stale #2097, then merge only after terminal green checks.
 
-### 2026-09-25 — Bitcoin Graph × ScaNN × Wolfram final-base refresh
-Status: PARTIAL — latest main refresh prepared; CI/readback pending
-Task: Refresh the Bitcoin retrieval lane once more after the MergeBlastRadius merge shifted main, preserving the exact functional surface and mirror parity.
-Decisions: Reapply the already reviewed Bitcoin Graph, ScaNN exact-rescore, Wolfram bounded-check, canonical SQLite, manifest and guarded workflow files only; keep stale PR metadata out.
-Touched surfaces: `.github/workflows/bitcoin-full-chain-index.yml`, `.github/workflows/sovereign-agent-backend.yml`, Bitcoin retrieval modules/mirrors, tests and architecture document.
-Evidence: Current-main Memory was read first in workspace `job-b83e495a01fd`; exact PR #2102 head `27aa67196504d4b69307da3b88a0c0ea747eeef9` was materialized. `backend/tests/test_scann_production_mirror.py` passes 3/3 and all materialized Bitcoin mirror hashes match between canonical and shipping trees.
-Learned: The Bitcoin lane has no dependency on the unrelated MergeBlastRadius or security merges; it can be refreshed deterministically until a terminal exact-head CI run is available.
-Open: Publish current-main PR and require terminal Bitcoin Graph/ScaNN/Wolfram plus repository gates before merge.
-Next safe step: Create the fresh Draft PR, close superseded #2102, then merge only the exact green head.
+
+### 2026-09-25 — Premium Sovereign control-surface design system
+Status: VERIFIED repository/CI; runtime deployment unchanged
+Task: Establish the production Frontend Design Premium layer for the canonical Sovereign Control Surface vNext.
+Decisions: Keep the existing vNext control surface and runtime-readback truth boundary; centralize durable visual intent in DESIGN.md and reusable premium instrumentation tokens in the existing biomodular theme; use carbon surfaces, laser-red causal signalling, emerald evidence seals, and restrained motion rather than a generic dashboard restyle.
+Touched surfaces: DESIGN.md; src/App.tsx; src/features/control-surface-vnext/theme/biomodular.css.
+Evidence: PR #2106 at the pre-memory head passed 38 terminal CI checks with no failures; PatchMon fleet evidence reported the PR head revision-bound and mergeable/clean; no production deployment mutation was performed. Runtime resolver separately reported the existing deployed MCP revision/digest gap, which is unrelated to this frontend source change and is not claimed fixed here.
+Learned: Premium visual quality should be encoded as a durable system and applied to the canonical shell without creating a parallel UI or weakening the runtime truth boundary.
+Open: Re-run exact-head CI after this Memory entry changes the PR SHA; merge remains owner-authorized work only.
+Next safe step: Verify the new exact PR head, then proceed with the normal review/merge gate if explicitly authorized.
+
+### 2026-09-25 — Responsive truth-contract accessibility regression repair
+Status: PARTIAL / repair prepared; exact-head CI reset pending
+Task: Repair the failing responsive control-surface truth contract caused by the Modal accessibility hardening.
+Decisions: Keep `aria-labelledby` with the stable React `useId()` title binding; update the regression contract to assert the actual accessible-dialog semantics instead of weakening Modal back to `aria-label`.
+Touched surfaces: `src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts`; `Memory.md`.
+Evidence: PR #2106 exact head `4f946c4274b5fa15dc496b64d96856694f0caf27` Release Verification run `36161485222` failed 1/3820 frontend smoke tests because the unchanged truth-contract still expected `aria-label={title}`. The exact workflow log identified that stale assertion; the narrow replacement was applied in isolated workspace `job-ffa17689136c`, and the actual Modal source was re-read to verify it uses `aria-labelledby={titleId}`.
+Learned: Accessibility semantic hardening must update its source-of-truth contract assertions in the same change block; otherwise the regression suite correctly reports the contract mismatch.
+Open: The repaired head needs fresh exact-head CI; no merge or runtime-green claim is made yet.
+Next safe step: Publish the test + Memory repair to PR #2106, require terminal exact-head CI, then merge only the verified final head.
+
+
+### 2026-09-25 — Owner consent instrumentation without card UI
+Status: PARTIAL / repository integration complete; exact-head CI pending
+Task: Extend the canonical Sovereign Control Surface with a server-bound human-in-the-loop action/consent surface while preserving the existing runtime authority boundaries.
+Decisions: Treat consent as instrumentation, not a dashboard card; show server-supplied request facts and verbatim rationale; expose only explicit approve/reject decisions for approval interactions; keep protected approvals fail-closed; use the shared modal's least-destructive initial focus, Escape handling, focus trap and restoration; do not add authority, credentials or local state as a substitute for backend truth.
+Touched surfaces: src/features/control-surface-vnext/components/OwnerInteraction/OwnerInteractionModal.tsx; OwnerInteractionModal.test.tsx; Modal.tsx; adapter/production-adapter.ts; types/domain.ts; theme/biomodular.css; src/App.tsx; PR #2106 metadata.
+Evidence: Workspace SHA-bound edits succeeded; focused regression coverage was added; PR #2106 now points at d291ee0177e5b5d6120e2dbf637e29a9e1739385; no production deployment mutation occurred. Local command execution was unavailable because the bounded workspace runner rejected the requested commands as not allowlisted; this is not treated as a test result.
+Learned: Consent UX can reuse the existing approval endpoint and persisted-run model without creating a second authority layer; the UI can remain highly explicit without becoming a card grid.
+Open: Exact-head GitHub CI is still running; no runtime-green claim is made.
+Next safe step: Re-read the final PR head, verify terminal checks and review-thread state, then merge only through the owner-authorized exact-head gate.
