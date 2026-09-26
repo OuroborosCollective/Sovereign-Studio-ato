@@ -1,7 +1,7 @@
 {
   "name": "Sovereign UX Contract Scan",
-  "generatedAt": "2026-08-26T01:20:20.795Z",
-  "status": "pass",
+  "generatedAt": "2026-09-26T18:50:06.635Z",
+  "status": "fail",
   "checks": [
     {
       "id": "file:src/index.css",
@@ -12,329 +12,121 @@
       }
     },
     {
+      "id": "file:src/main.tsx",
+      "ok": true,
+      "message": "App entry is required.",
+      "details": {
+        "filePath": "src/main.tsx"
+      }
+    },
+    {
       "id": "file:src/App.tsx",
       "ok": true,
-      "message": "App shell is required for global UX flow.",
+      "message": "Canonical App route is required.",
       "details": {
         "filePath": "src/App.tsx"
       }
     },
     {
-      "id": "file:src/main.tsx",
+      "id": "file:src/SovereignAppWrapper.tsx",
       "ok": true,
-      "message": "App entry is required for boot-path style imports.",
+      "message": "Passthrough app wrapper is required.",
       "details": {
-        "filePath": "src/main.tsx"
+        "filePath": "src/SovereignAppWrapper.tsx"
       }
     },
     {
-      "id": "file:src/styles/arelogic-brand.css",
+      "id": "file:src/features/control-surface-vnext/App.tsx",
       "ok": true,
-      "message": "ARELogic visual tokens must be part of the app style contract.",
+      "message": "Sovereign Control Surface vNext is required.",
       "details": {
-        "filePath": "src/styles/arelogic-brand.css"
+        "filePath": "src/features/control-surface-vnext/App.tsx"
       }
     },
     {
-      "id": "file:src/features/product/containers/RepoSnapshotContainer.tsx",
+      "id": "file:src/features/control-surface-vnext/adapter/production-adapter.ts",
       "ok": true,
-      "message": "Repo UX container is required.",
+      "message": "The live HTTP adapter base is required.",
       "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
+        "filePath": "src/features/control-surface-vnext/adapter/production-adapter.ts"
+      }
+    },
+    {
+      "id": "file:src/features/control-surface-vnext/adapter/repository-bound-adapter.ts",
+      "ok": true,
+      "message": "The injected repository-bound vNext adapter is required.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts"
+      }
+    },
+    {
+      "id": "file:src/features/control-surface-vnext/adapter/context.tsx",
+      "ok": true,
+      "message": "Adapter dependency injection boundary is required.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/adapter/context.tsx"
+      }
+    },
+    {
+      "id": "file:src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx",
+      "ok": true,
+      "message": "Mission command surface is required.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx"
+      }
+    },
+    {
+      "id": "file:src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx",
+      "ok": true,
+      "message": "Evidence-gated Draft PR publication surface is required.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx"
+      }
+    },
+    {
+      "id": "file:src/features/control-surface-vnext/components/Auth/OperatorAuthModal.tsx",
+      "ok": true,
+      "message": "Backend-session operator authentication surface is required.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/Auth/OperatorAuthModal.tsx"
+      }
+    },
+    {
+      "id": "file:src/features/control-surface-vnext/components/RuntimeMonitor/RuntimeMonitor.tsx",
+      "ok": true,
+      "message": "Runtime readback projection is required.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/RuntimeMonitor/RuntimeMonitor.tsx"
+      }
+    },
+    {
+      "id": "file:src/features/control-surface-vnext/components/WorkspaceProjection/WorkspaceProjection.tsx",
+      "ok": true,
+      "message": "Workspace evidence projection is required.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/WorkspaceProjection/WorkspaceProjection.tsx"
+      }
+    },
+    {
+      "id": "file:src/features/control-surface-vnext/components/IntegrationPlus/IntegrationModal.tsx",
+      "ok": true,
+      "message": "Read-only integration projection is required.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/IntegrationPlus/IntegrationModal.tsx"
+      }
+    },
+    {
+      "id": "file:src/features/product/runtime/sovereignAgentClient.ts",
+      "ok": true,
+      "message": "Existing strict Agent/Draft-PR client remains canonical.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignAgentClient.ts"
       }
     },
     {
       "id": "file:src/features/product/containers/BuilderContainer.tsx",
       "ok": true,
-      "message": "Builder UX container is required.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
-      }
-    },
-    {
-      "id": "file:src/features/product/runtime/sovereignProductTemplate.ts",
-      "ok": true,
-      "message": "Product template UX contract is required.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignProductTemplate.ts"
-      }
-    },
-    {
-      "id": "file:src/features/product/runtime/sovereignStyleContract.ts",
-      "ok": true,
-      "message": "Product style contract is required.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignStyleContract.ts"
-      }
-    },
-    {
-      "id": "file:src/features/product/runtime/sovereignComponentContracts.ts",
-      "ok": true,
-      "message": "Product component contract is required.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignComponentContracts.ts"
-      }
-    },
-    {
-      "id": "file:src/features/product/runtime/arelogicBrandContract.ts",
-      "ok": true,
-      "message": "ARELogic brand contract is required.",
-      "details": {
-        "filePath": "src/features/product/runtime/arelogicBrandContract.ts"
-      }
-    },
-    {
-      "id": "file:src/features/product/runtime/sovereignFormContracts.ts",
-      "ok": true,
-      "message": "Form contracts file is required.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
-      }
-    },
-    {
-      "id": "form:repo-url-contract",
-      "ok": true,
-      "message": "Repo URL form contract must exist.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
-      }
-    },
-    {
-      "id": "form:private-access-contract",
-      "ok": true,
-      "message": "Private access form contract must exist.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
-      }
-    },
-    {
-      "id": "form:branch-contract",
-      "ok": true,
-      "message": "Branch form contract must exist.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
-      }
-    },
-    {
-      "id": "form:mission-contract",
-      "ok": true,
-      "message": "Mission form contract must exist.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
-      }
-    },
-    {
-      "id": "form:sensitive-flag",
-      "ok": true,
-      "message": "Sensitive fields must be marked as sensitive.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
-      }
-    },
-    {
-      "id": "form:password-type",
-      "ok": true,
-      "message": "Private access must use password input type.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
-      }
-    },
-    {
-      "id": "form:autocomplete-off",
-      "ok": true,
-      "message": "Private access must use autocomplete off.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
-      }
-    },
-    {
-      "id": "form:repo-url-test-id",
-      "ok": true,
-      "message": "Repo URL must have stable test-id.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
-      }
-    },
-    {
-      "id": "form:private-access-test-id",
-      "ok": true,
-      "message": "Private access must have stable test-id.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
-      }
-    },
-    {
-      "id": "file:src/features/product/runtime/sovereignActionContracts.ts",
-      "ok": true,
-      "message": "Action contracts file is required.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
-      }
-    },
-    {
-      "id": "action:load-repo-contract",
-      "ok": true,
-      "message": "Load repo action contract must exist.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
-      }
-    },
-    {
-      "id": "action:save-session-contract",
-      "ok": true,
-      "message": "Save session action contract must exist.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
-      }
-    },
-    {
-      "id": "action:restore-session-contract",
-      "ok": true,
-      "message": "Restore session action contract must exist.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
-      }
-    },
-    {
-      "id": "action:clear-view-contract",
-      "ok": true,
-      "message": "Clear view action contract must exist.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
-      }
-    },
-    {
-      "id": "action:draft-pr-contract",
-      "ok": true,
-      "message": "Draft PR action contract must exist.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
-      }
-    },
-    {
-      "id": "action:repair-log-contract",
-      "ok": true,
-      "message": "Repair log action contract must exist.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
-      }
-    },
-    {
-      "id": "action:monitor-toggle-contract",
-      "ok": true,
-      "message": "Monitor toggle action contract must exist.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
-      }
-    },
-    {
-      "id": "action:load-repo-test-id",
-      "ok": true,
-      "message": "Load repo must have stable test-id.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
-      }
-    },
-    {
-      "id": "action:draft-pr-test-id",
-      "ok": true,
-      "message": "Draft PR must have stable test-id.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
-      }
-    },
-    {
-      "id": "action:primary-kind",
-      "ok": true,
-      "message": "Primary actions must be classified as primary.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
-      }
-    },
-    {
-      "id": "action:destructive-kind",
-      "ok": true,
-      "message": "Destructive actions must be classified as destructive.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
-      }
-    },
-    {
-      "id": "action:requires-repo-flag",
-      "ok": true,
-      "message": "Actions must have requiresRepo flag.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
-      }
-    },
-    {
-      "id": "main:brand-css-import",
-      "ok": true,
-      "message": "App entry must import ARELogic visual tokens after the base style layer.",
-      "details": {
-        "filePath": "src/main.tsx"
-      }
-    },
-    {
-      "id": "repo:title-visible",
-      "ok": true,
-      "message": "Repo card title must be visible.",
-      "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
-      }
-    },
-    {
-      "id": "repo:load-action-visible",
-      "ok": true,
-      "message": "Repo load action must be bound to contract.",
-      "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
-      }
-    },
-    {
-      "id": "repo:save-action-visible",
-      "ok": true,
-      "message": "Session save action must be bound to contract.",
-      "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
-      }
-    },
-    {
-      "id": "repo:restore-action-visible",
-      "ok": true,
-      "message": "Session restore action must be bound to contract.",
-      "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
-      }
-    },
-    {
-      "id": "repo:clear-action-visible",
-      "ok": true,
-      "message": "Clear view action must be bound to contract.",
-      "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
-      }
-    },
-    {
-      "id": "repo:status-pill-visible",
-      "ok": true,
-      "message": "Repo loaded/missing state must be visible.",
-      "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
-      }
-    },
-    {
-      "id": "repo:private-access-visible",
-      "ok": true,
-      "message": "Private access state must be visible.",
-      "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
-      }
-    },
-    {
-      "id": "builder:monitor-primary-visible",
-      "ok": true,
-      "message": "Builder must expose the monitor-first workbench and embedded LLM communication dock.",
+      "message": "Builder diagnostics remain a maintained secondary surface.",
       "details": {
         "filePath": "src/features/product/containers/BuilderContainer.tsx"
       }
@@ -342,709 +134,478 @@
     {
       "id": "file:src/features/product/components/LiveWorkspaceMonitor.tsx",
       "ok": true,
-      "message": "Real workspace monitor component is required.",
+      "message": "Real workspace monitor remains available as a diagnostic surface.",
       "details": {
         "filePath": "src/features/product/components/LiveWorkspaceMonitor.tsx"
       }
     },
     {
-      "id": "builder:desktop-readback-visible",
+      "id": "file:src/features/product/runtime/sovereignFormContracts.ts",
       "ok": true,
-      "message": "Monitor must expose the real desktop-readback surface.",
+      "message": "Form contracts remain available.",
       "details": {
-        "filePath": "src/features/product/components/LiveWorkspaceMonitor.tsx"
+        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
       }
     },
     {
-      "id": "builder:analyze-visible",
+      "id": "file:src/features/product/runtime/sovereignActionContracts.ts",
       "ok": true,
-      "message": "Analyze action must be bound to contract.",
+      "message": "Action contracts remain available.",
       "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
       }
     },
     {
-      "id": "builder:start-visible",
+      "id": "file:src/styles/arelogic-brand.css",
       "ok": true,
-      "message": "The monitor communication dock must submit through the live runtime handler.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
-      }
-    },
-    {
-      "id": "builder:repair-visible",
-      "ok": true,
-      "message": "Repair action must be bound to contract.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
-      }
-    },
-    {
-      "id": "builder:draft-visible",
-      "ok": true,
-      "message": "Draft PR action must be bound to contract.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
-      }
-    },
-    {
-      "id": "builder:route-guidance",
-      "ok": true,
-      "message": "Builder must show route/action guidance.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
-      }
-    },
-    {
-      "id": "builder:execution-guidance",
-      "ok": true,
-      "message": "Builder must show execution/access guidance.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
-      }
-    },
-    {
-      "id": "builder:disabled-reason",
-      "ok": true,
-      "message": "Builder must expose disabled reason from runtime state.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
-      }
-    },
-    {
-      "id": "repo:container-contract-bound",
-      "ok": true,
-      "message": "Repo snapshot must use container contract.",
-      "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
-      }
-    },
-    {
-      "id": "repo:repo-url-form-bound",
-      "ok": true,
-      "message": "Repo snapshot must bind repo URL form contract.",
-      "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
-      }
-    },
-    {
-      "id": "repo:private-access-form-bound",
-      "ok": true,
-      "message": "Repo snapshot must bind private access form contract.",
-      "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
-      }
-    },
-    {
-      "id": "repo:load-repo-action-bound",
-      "ok": true,
-      "message": "Repo snapshot must bind load repo action contract.",
-      "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
-      }
-    },
-    {
-      "id": "repo:save-session-action-bound",
-      "ok": true,
-      "message": "Repo snapshot must bind save session action contract.",
-      "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
-      }
-    },
-    {
-      "id": "repo:private-access-password-type",
-      "ok": true,
-      "message": "Private access must use password type from contract.",
-      "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
-      }
-    },
-    {
-      "id": "repo:private-access-autocomplete-off",
-      "ok": true,
-      "message": "Private access must use autocomplete off from contract.",
-      "details": {
-        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
-      }
-    },
-    {
-      "id": "builder:mission-form-bound",
-      "ok": true,
-      "message": "Builder must bind the mission input state to the live monitor communication dock.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
-      }
-    },
-    {
-      "id": "builder:analyze-mission-action-bound",
-      "ok": true,
-      "message": "Builder must bind analyze mission action contract.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
-      }
-    },
-    {
-      "id": "builder:draft-pr-action-bound",
-      "ok": true,
-      "message": "Builder must bind draft PR action contract.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
-      }
-    },
-    {
-      "id": "builder:repair-log-action-bound",
-      "ok": true,
-      "message": "Builder must bind repair log action contract.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
-      }
-    },
-    {
-      "id": "monitor:monitor-toggle-bound",
-      "ok": true,
-      "message": "Global monitor must bind monitor toggle action contract.",
-      "details": {
-        "filePath": "src/global-runtime-monitor.tsx"
-      }
-    },
-    {
-      "id": "template:repo-tab",
-      "ok": true,
-      "message": "Product template must expose repo tab.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignProductTemplate.ts"
-      }
-    },
-    {
-      "id": "template:builder-tab",
-      "ok": true,
-      "message": "Product template must expose builder tab.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignProductTemplate.ts"
-      }
-    },
-    {
-      "id": "template:files-tab",
-      "ok": true,
-      "message": "Product template must expose files tab.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignProductTemplate.ts"
-      }
-    },
-    {
-      "id": "template:diff-tab",
-      "ok": true,
-      "message": "Product template must expose diff tab.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignProductTemplate.ts"
-      }
-    },
-    {
-      "id": "template:monitor-or-telemetry-tab",
-      "ok": true,
-      "message": "Product template must expose monitor or telemetry visibility.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignProductTemplate.ts"
-      }
-    },
-    {
-      "id": "style:app-classes-contract",
-      "ok": true,
-      "message": "Style contract must expose app class names.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignStyleContract.ts"
-      }
-    },
-    {
-      "id": "style:tab-contract",
-      "ok": true,
-      "message": "Style contract must expose tab style metadata.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignStyleContract.ts"
-      }
-    },
-    {
-      "id": "style:data-role-contract",
-      "ok": true,
-      "message": "Style contract must expose stable data roles.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignStyleContract.ts"
-      }
-    },
-    {
-      "id": "style:mobile-priority-contract",
-      "ok": true,
-      "message": "Style contract must expose mobile priorities.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignStyleContract.ts"
-      }
-    },
-    {
-      "id": "component:app-shell-contract",
-      "ok": true,
-      "message": "Component contract must expose app shell contract.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignComponentContracts.ts"
-      }
-    },
-    {
-      "id": "component:tabbar-contract",
-      "ok": true,
-      "message": "Component contract must expose tabbar contract.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignComponentContracts.ts"
-      }
-    },
-    {
-      "id": "component:action-button-contract",
-      "ok": true,
-      "message": "Component contract must expose action button contract.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignComponentContracts.ts"
-      }
-    },
-    {
-      "id": "component:test-id-pattern",
-      "ok": true,
-      "message": "Component contract must expose test id pattern.",
-      "details": {
-        "filePath": "src/features/product/runtime/sovereignComponentContracts.ts"
-      }
-    },
-    {
-      "id": "brand:priority-contract",
-      "ok": true,
-      "message": "Brand contract must expose priority ordering.",
-      "details": {
-        "filePath": "src/features/product/runtime/arelogicBrandContract.ts"
-      }
-    },
-    {
-      "id": "brand:priority-order",
-      "ok": true,
-      "message": "Brand visuals must remain behind runtime, accessibility and component contracts.",
-      "details": {
-        "filePath": "src/features/product/runtime/arelogicBrandContract.ts"
-      }
-    },
-    {
-      "id": "brand:token-contract",
-      "ok": true,
-      "message": "Brand contract must expose token definitions.",
-      "details": {
-        "filePath": "src/features/product/runtime/arelogicBrandContract.ts"
-      }
-    },
-    {
-      "id": "brand:void-token-contract",
-      "ok": true,
-      "message": "Brand contract must expose ARE void token.",
-      "details": {
-        "filePath": "src/features/product/runtime/arelogicBrandContract.ts"
-      }
-    },
-    {
-      "id": "brand:ion-token-contract",
-      "ok": true,
-      "message": "Brand contract must expose ARE ion token.",
-      "details": {
-        "filePath": "src/features/product/runtime/arelogicBrandContract.ts"
-      }
-    },
-    {
-      "id": "brand:matter-token-contract",
-      "ok": true,
-      "message": "Brand contract must expose ARE matter token.",
-      "details": {
-        "filePath": "src/features/product/runtime/arelogicBrandContract.ts"
-      }
-    },
-    {
-      "id": "brand:sovereign-style-link",
-      "ok": true,
-      "message": "Brand contract must attach to Sovereign style contracts instead of replacing them.",
-      "details": {
-        "filePath": "src/features/product/runtime/arelogicBrandContract.ts"
-      }
-    },
-    {
-      "id": "brand-css:void-token",
-      "ok": true,
-      "message": "Brand CSS must expose ARE void token.",
+      "message": "ARELogic visual tokens remain required.",
       "details": {
         "filePath": "src/styles/arelogic-brand.css"
       }
     },
     {
-      "id": "brand-css:ion-token",
+      "id": "main:brand-css",
       "ok": true,
-      "message": "Brand CSS must expose ARE ion token.",
-      "details": {
-        "filePath": "src/styles/arelogic-brand.css"
-      }
-    },
-    {
-      "id": "brand-css:matter-token",
-      "ok": true,
-      "message": "Brand CSS must expose ARE matter token.",
-      "details": {
-        "filePath": "src/styles/arelogic-brand.css"
-      }
-    },
-    {
-      "id": "brand-css:shell-binding",
-      "ok": true,
-      "message": "Brand CSS must bind through existing Sovereign shell class.",
-      "details": {
-        "filePath": "src/styles/arelogic-brand.css"
-      }
-    },
-    {
-      "id": "brand-css:tab-binding",
-      "ok": true,
-      "message": "Brand CSS must bind through existing Sovereign tab class.",
-      "details": {
-        "filePath": "src/styles/arelogic-brand.css"
-      }
-    },
-    {
-      "id": "brand-css:status-binding",
-      "ok": true,
-      "message": "Brand CSS must bind through existing Sovereign status classes.",
-      "details": {
-        "filePath": "src/styles/arelogic-brand.css"
-      }
-    },
-    {
-      "id": "css:root-tokens",
-      "ok": true,
-      "message": "CSS root tokens must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:surface-token",
-      "ok": true,
-      "message": "Surface design token must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:accent-token",
-      "ok": true,
-      "message": "Accent design token must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:good-token",
-      "ok": true,
-      "message": "Good status token must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:warn-token",
-      "ok": true,
-      "message": "Warning status token must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:bad-token",
-      "ok": true,
-      "message": "Bad status token must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:safe-area",
-      "ok": true,
-      "message": "Android safe-area support must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:mobile-media-query",
-      "ok": true,
-      "message": "Mobile media query must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:card-rounding",
-      "ok": true,
-      "message": "Card/pill visual rounding must be defined.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:depth",
-      "ok": true,
-      "message": "Visual depth/shadow must be defined.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:app-shell-class",
-      "ok": true,
-      "message": "Stable app shell class must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:app-title-class",
-      "ok": true,
-      "message": "Stable app title class must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:tabbar-class",
-      "ok": true,
-      "message": "Stable tabbar class must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:tab-class",
-      "ok": true,
-      "message": "Stable tab class must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:active-tab-class",
-      "ok": true,
-      "message": "Stable active tab class must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:card-class",
-      "ok": true,
-      "message": "Stable card class must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:select-class",
-      "ok": true,
-      "message": "Stable select class must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:status-pill-class",
-      "ok": true,
-      "message": "Stable status pill class must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "monitor:global-copy",
-      "ok": true,
-      "message": "Global monitor must provide readable status copy and log controls.",
-      "details": {
-        "filePath": "src/global-runtime-monitor.tsx"
-      }
-    },
-    {
-      "id": "monitor:coach-state-event",
-      "ok": true,
-      "message": "Global monitor must read coach state events.",
-      "details": {
-        "filePath": "src/global-runtime-monitor.tsx"
-      }
-    },
-    {
-      "id": "monitor:telemetry-event",
-      "ok": true,
-      "message": "Global monitor must read telemetry events.",
-      "details": {
-        "filePath": "src/global-runtime-monitor.tsx"
-      }
-    },
-    {
-      "id": "monitor:css-class",
-      "ok": true,
-      "message": "Global monitor CSS class must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "monitor:log-css-class",
-      "ok": true,
-      "message": "Global monitor log CSS class must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "monitor:status-dot-css-class",
-      "ok": true,
-      "message": "Global monitor status dot CSS class must exist.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "wrapper:passthrough-only",
-      "ok": true,
-      "message": "Runtime wrapper must stay a passthrough instead of adding another shell.",
-      "details": {
-        "filePath": "src/SovereignAppWrapper.tsx"
-      }
-    },
-    {
-      "id": "wrapper:no-second-shell",
-      "ok": true,
-      "message": "Runtime wrapper must not add a second visible shell.",
-      "details": {
-        "filePath": "src/SovereignAppWrapper.tsx"
-      }
-    },
-    {
-      "id": "app:monitor-root-test-id",
-      "ok": true,
-      "message": "App must expose the monitor-first live root.",
-      "details": {
-        "filePath": "src/App.tsx"
-      }
-    },
-    {
-      "id": "app:monitor-layout-bound",
-      "ok": true,
-      "message": "App must declare monitor-first live workspace layout.",
-      "details": {
-        "filePath": "src/App.tsx"
-      }
-    },
-    {
-      "id": "app:monitor-aria-label-bound",
-      "ok": true,
-      "message": "App must expose the Sovereign Workspace Monitor aria label.",
-      "details": {
-        "filePath": "src/App.tsx"
-      }
-    },
-    {
-      "id": "app:no-chat-only-layout",
-      "ok": true,
-      "message": "The legacy chat-only app layout must not return.",
-      "details": {
-        "filePath": "src/App.tsx"
-      }
-    },
-    {
-      "id": "builder:root-test-id-bound",
-      "ok": true,
-      "message": "Builder must expose stable root test-id.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
-      }
-    },
-    {
-      "id": "builder:primary-surface-layout-bound",
-      "ok": true,
-      "message": "Builder must keep the workspace monitor primary while using a separate technical inspector layout.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
-      }
-    },
-    {
-      "id": "builder:runtime-backed-tools",
-      "ok": true,
-      "message": "Builder must expose runtime-backed tools or action stream.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx"
-      }
-    },
-    {
-      "id": "ux:next-action-visible",
-      "ok": true,
-      "message": "A next action must be visible to the user.",
-      "details": {
-        "matches": [
-          "src/global-runtime-monitor.tsx",
-          "src/features/product/containers/RepoSnapshotContainer.tsx"
-        ]
-      }
-    },
-    {
-      "id": "ux:log-visible",
-      "ok": true,
-      "message": "At least one user-visible log or telemetry surface should exist.",
-      "details": {
-        "matches": [
-          "src/global-runtime-monitor.tsx",
-          "src/features/product/containers/TelemetryContainer.tsx",
-          "src/features/product/containers/RepoSnapshotContainer.tsx"
-        ]
-      }
-    },
-    {
-      "id": "builder:minimum-actions",
-      "ok": true,
-      "message": "Builder should expose multiple clear actions.",
-      "details": {
-        "filePath": "src/features/product/containers/BuilderContainer.tsx",
-        "count": 64,
-        "min": 4
-      }
-    },
-    {
-      "id": "css:no-root-fallback",
-      "ok": true,
-      "message": "CSS should use contract classes instead of fragile root selectors.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "css:no-nth-of-type",
-      "ok": true,
-      "message": "CSS should use contract selectors instead of nth-of-type patterns.",
-      "details": {
-        "filePath": "src/index.css"
-      }
-    },
-    {
-      "id": "main:no-root-fallback",
-      "ok": true,
-      "message": "main.tsx should use contract class selectors instead of fragile root selectors.",
+      "message": "App entry imports ARELogic brand CSS.",
       "details": {
         "filePath": "src/main.tsx"
       }
-    }
-  ],
-  "warnings": [
+    },
     {
-      "id": "ux:duplicate-monitor-surface",
-      "message": "Global monitor exists while repo-local monitor markup still exists. CSS may hide it, but future cleanup is recommended.",
+      "id": "wrapper:passthrough",
+      "ok": true,
+      "message": "Wrapper remains truth-neutral passthrough.",
       "details": {
-        "repoMonitorCount": 1
+        "filePath": "src/SovereignAppWrapper.tsx"
+      }
+    },
+    {
+      "id": "wrapper:no-shadow-state",
+      "ok": true,
+      "message": "Wrapper must not own product truth or persistence.",
+      "details": {
+        "filePath": "src/SovereignAppWrapper.tsx"
+      }
+    },
+    {
+      "id": "app:vnext-primary",
+      "ok": true,
+      "message": "App renders Sovereign Control Surface vNext as the primary product surface.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:root-test-id",
+      "ok": true,
+      "message": "Primary app has a stable root test id.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:layout",
+      "ok": true,
+      "message": "Primary app identifies the vNext layout.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:primary-marker",
+      "ok": true,
+      "message": "Primary surface identity is explicit.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:truth-scope",
+      "ok": true,
+      "message": "Runtime-readback-only truth scope is explicit.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:observatory-separated",
+      "ok": true,
+      "message": "Evidence Observatory remains an explicit non-default route.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:no-retired-primary",
+      "ok": true,
+      "message": "Default App must not mount the retired release chat, auto-adopt historical jobs, or mount Builder as current truth.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "adapter:repository-default",
+      "ok": true,
+      "message": "The default injected vNext adapter is the repository-bound live adapter.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/adapter/context.tsx"
+      }
+    },
+    {
+      "id": "adapter:http-only-session",
+      "ok": true,
+      "message": "Repository requests rely on the backend HTTP-only session.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts"
+      }
+    },
+    {
+      "id": "adapter:repository-run",
+      "ok": true,
+      "message": "vNext repository mission dispatch uses the direct persisted repository-job endpoint.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts"
+      }
+    },
+    {
+      "id": "adapter:no-repository-swarm-run",
+      "ok": true,
+      "message": "The vNext repository path must not dispatch through the Swarm run endpoint.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts"
+      }
+    },
+    {
+      "id": "adapter:generic-run-readback",
+      "ok": false,
+      "message": "The generic adapter still supports persisted Swarm-run readback for non-repository product paths.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/adapter/production-adapter.ts",
+        "pattern": "/\\/api\\/user\\/agent\\/swarm\\/runs\\/\\$\\{encodeURIComponent\\(requested\\)\\}/"
+      }
+    },
+    {
+      "id": "adapter:linked-job",
+      "ok": true,
+      "message": "Direct repository work is read through the exact backend job id.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/adapter/production-adapter.ts"
+      }
+    },
+    {
+      "id": "adapter:evidence-anchors",
+      "ok": true,
+      "message": "Workspace revision comes from evidence anchors bound to the direct job id.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/adapter/production-adapter.ts"
+      }
+    },
+    {
+      "id": "adapter:draft-prepare",
+      "ok": true,
+      "message": "Draft PR preparation uses the existing server gate against the exact job id.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/adapter/production-adapter.ts"
+      }
+    },
+    {
+      "id": "adapter:draft-create",
+      "ok": true,
+      "message": "Draft PR creation delegates to the existing strict client against the exact job id.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/adapter/production-adapter.ts"
+      }
+    },
+    {
+      "id": "adapter:no-simulated-truth-base",
+      "ok": true,
+      "message": "The live adapter base must not contain simulator fallback, guessed config APIs, bearer-session state, or local persistence.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/adapter/production-adapter.ts"
+      }
+    },
+    {
+      "id": "adapter:no-simulated-truth",
+      "ok": true,
+      "message": "The injected repository adapter must not contain simulator fallback, guessed config APIs, bearer-session state, or local persistence.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts"
+      }
+    },
+    {
+      "id": "client:draft-prepare-path",
+      "ok": true,
+      "message": "Canonical client owns the Draft PR prepare path.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignAgentClient.ts"
+      }
+    },
+    {
+      "id": "client:draft-create-path",
+      "ok": true,
+      "message": "Canonical client owns the Draft PR create path.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignAgentClient.ts"
+      }
+    },
+    {
+      "id": "client:github-readback",
+      "ok": true,
+      "message": "Draft PR success requires draft/open/head/check readback evidence.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignAgentClient.ts"
+      }
+    },
+    {
+      "id": "surface:composer-bound",
+      "ok": true,
+      "message": "Visible mission composer is bound to local command draft state only.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx"
+      }
+    },
+    {
+      "id": "surface:send-visible",
+      "ok": true,
+      "message": "Visible dispatch button invokes the guarded submit handler.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx"
+      }
+    },
+    {
+      "id": "surface:enter-send-bound",
+      "ok": true,
+      "message": "Enter uses the same guarded submit handler.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx"
+      }
+    },
+    {
+      "id": "surface:session-readback",
+      "ok": true,
+      "message": "Control surface resolves backend session before protected dispatch.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/App.tsx"
+      }
+    },
+    {
+      "id": "surface:guest-fail-closed",
+      "ok": true,
+      "message": "Guest execution fails closed into explicit authentication.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/App.tsx"
+      }
+    },
+    {
+      "id": "surface:accepted-run-id",
+      "ok": true,
+      "message": "Only the backend-accepted persisted run id becomes current.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/App.tsx"
+      }
+    },
+    {
+      "id": "surface:no-history-auto-adopt",
+      "ok": true,
+      "message": "vNext must not auto-adopt historic Agent jobs.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/App.tsx"
+      }
+    },
+    {
+      "id": "publication:prepare-visible",
+      "ok": true,
+      "message": "Draft PR prepare is a separate visible action.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx"
+      }
+    },
+    {
+      "id": "publication:consent-visible",
+      "ok": true,
+      "message": "External GitHub write consent is visible.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx"
+      }
+    },
+    {
+      "id": "publication:no-merge",
+      "ok": true,
+      "message": "Publication explicitly excludes merge and main push.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx"
+      }
+    },
+    {
+      "id": "publication:readback-claim",
+      "ok": true,
+      "message": "Publication success is explicitly bound to GitHub readback.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx"
+      }
+    },
+    {
+      "id": "publication:create-visible",
+      "ok": true,
+      "message": "Confirmed Draft PR action has a stable visible control.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx"
+      }
+    },
+    {
+      "id": "auth:backend-store",
+      "ok": true,
+      "message": "Operator auth uses the canonical backend session store.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/Auth/OperatorAuthModal.tsx"
+      }
+    },
+    {
+      "id": "auth:account-key",
+      "ok": true,
+      "message": "Account-key authentication is sent through the backend session boundary.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/Auth/OperatorAuthModal.tsx"
+      }
+    },
+    {
+      "id": "auth:no-browser-token",
+      "ok": true,
+      "message": "Operator auth must not persist or construct a browser bearer session token.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/Auth/OperatorAuthModal.tsx"
+      }
+    },
+    {
+      "id": "monitor:empty-honest",
+      "ok": true,
+      "message": "Runtime monitor has an explicit no-readback empty state.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/RuntimeMonitor/RuntimeMonitor.tsx"
+      }
+    },
+    {
+      "id": "monitor:no-synthesis",
+      "ok": true,
+      "message": "Runtime monitor explicitly refuses synthesized evidence.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/RuntimeMonitor/RuntimeMonitor.tsx"
+      }
+    },
+    {
+      "id": "workspace:revision-unverified",
+      "ok": true,
+      "message": "Workspace shows unverified revision until evidence supplies it.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/WorkspaceProjection/WorkspaceProjection.tsx"
+      }
+    },
+    {
+      "id": "workspace:no-global-clean-claim",
+      "ok": true,
+      "message": "Empty changed-file projection does not claim global clean state.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/WorkspaceProjection/WorkspaceProjection.tsx"
+      }
+    },
+    {
+      "id": "integration:read-only",
+      "ok": true,
+      "message": "Integration projection remains read-only until a real server contract exists.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/components/IntegrationPlus/IntegrationModal.tsx"
+      }
+    },
+    {
+      "id": "form:repo-url",
+      "ok": true,
+      "message": "Repo URL contract remains defined.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
+      }
+    },
+    {
+      "id": "form:private-access",
+      "ok": true,
+      "message": "Private-access contract remains defined.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
+      }
+    },
+    {
+      "id": "form:sensitive",
+      "ok": true,
+      "message": "Sensitive form fields remain marked.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
+      }
+    },
+    {
+      "id": "form:password",
+      "ok": true,
+      "message": "Private access remains password-typed.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignFormContracts.ts"
+      }
+    },
+    {
+      "id": "action:draft-pr",
+      "ok": true,
+      "message": "Draft PR action contract remains defined.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
+      }
+    },
+    {
+      "id": "action:load-repo",
+      "ok": true,
+      "message": "Repository load action contract remains defined.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignActionContracts.ts"
+      }
+    },
+    {
+      "id": "builder:secondary-diagnostics",
+      "ok": true,
+      "message": "Builder retains diagnostic/action-stream capability as a secondary surface.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "monitor:desktop-readback",
+      "ok": true,
+      "message": "Legacy real desktop readback remains available only as a diagnostic surface.",
+      "details": {
+        "filePath": "src/features/product/components/LiveWorkspaceMonitor.tsx"
+      }
+    },
+    {
+      "id": "css:responsive",
+      "ok": true,
+      "message": "Responsive CSS remains present.",
+      "details": {
+        "filePath": "src/index.css"
+      }
+    },
+    {
+      "id": "app:no-retired-shell",
+      "ok": true,
+      "message": "Retired product/dashboard shells must stay out of the live App route.",
+      "details": {
+        "filePath": "src/App.tsx"
       }
     }
   ],
-  "errors": []
+  "warnings": [],
+  "errors": [
+    {
+      "id": "adapter:generic-run-readback",
+      "message": "The generic adapter still supports persisted Swarm-run readback for non-repository product paths.",
+      "details": {
+        "filePath": "src/features/control-surface-vnext/adapter/production-adapter.ts",
+        "pattern": "/\\/api\\/user\\/agent\\/swarm\\/runs\\/\\$\\{encodeURIComponent\\(requested\\)\\}/"
+      }
+    }
+  ]
 }
