@@ -29,6 +29,8 @@ export interface OwnerInteraction {
   requiresText: boolean;
   timestamp?: string;
   context?: string;
+  /** Server-owned approval/directive category; presentation-only, never an authority grant. */
+  kind?: string;
 }
 
 export interface OwnerInteractionResponse { interactionId: string; response: string; }
