@@ -891,4 +891,13 @@ Evidence: The previous exact-head MCP run on the branch reached 1078 passed, 12 
 Learned: The correct propagation boundary is the installer failure reason itself; no second GitHub credential path or tunnel-specific token handling is needed.
 Open: New exact-head CI after this propagation patch and subsequent production self-update remain pending.
 Next safe step: Consume terminal CI, then merge only after exact-head green evidence and retry the self-update to obtain the concrete `contract_status` mismatch.
+### 2026-09-26 — Neuro diagnostic parser regression repair
+Status: PARTIAL — test correction prepared; terminal CI and production verification pending
+Task: Correct the regression-test helper introduced for bounded Neuro canary diagnostic propagation.
+Decisions: Load the reconciler module through its existing `_load()` helper before asserting the parser contract; no production behavior changed.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/tests/test_coordinated_release_reconciler.py`; `Memory.md`.
+Evidence: Exact-head CI `36261661268` on `88ed11503383fa0a7505faf266afee31226a7932` reached 1079 passed, 12 skipped, 1 warning with one isolated `NameError` because the new test referenced an unloaded `module`. Source inspection confirmed the production parser patch itself was the exercised target and the test failure occurred before parser execution.
+Learned: New parser regression tests must use the repository's established dynamic module loader when testing executable deployment scripts.
+Open: Fresh exact-head CI, merge, and exact-revision runtime self-update remain pending.
+Next safe step: Consume the new CI run for this test-only correction, then continue with the existing exact-head and runtime evidence gates.
 
