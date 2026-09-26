@@ -882,4 +882,13 @@ Evidence: Main remains `9215436b10c13115f50b2582da7e5422004ce043`. The failed se
 Learned: The prior canary failure envelope discarded the assertion payload entirely, so an exact structured contract defect could not be distinguished from other AssertionError paths. The repository already has read-only contract fields suitable for bounded diagnosis.
 Open: The V2 workspace/auth bridge still reports missing `GITHUB_TOKEN` and is not currently consuming the deployed tunnel/App-auth boundary; no persistent token has been introduced.
 Next safe step: Run the targeted installer-contract and Neuro tests on this branch, publish a Draft PR, consume terminal CI, then retry the exact revision-bound self-update and inspect the now-bounded canary evidence.
+### 2026-09-26 — Neuro canary diagnostic propagation
+Status: PARTIAL — diagnostic propagation prepared; production runtime verification pending
+Task: Preserve bounded Neuro contract details from the isolated installer canary through the self-update failure reason and coordinated-release reconciler.
+Decisions: Keep the existing fail-closed canary and GitHub/tunnel auth boundaries unchanged; extend only the secret-free `phase=…;error=…` envelope with an optional compact `details=` field, while keeping historical detail strings valid.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/deploy/reconcile-main-release.py`; `tools/sovereign-chatgpt-mcp/tests/test_coordinated_release_reconciler.py`; `Memory.md`.
+Evidence: The previous exact-head MCP run on the branch reached 1078 passed, 12 skipped, 1 warning; its only failure was the expected fixture mismatch after the first evidence-envelope extension. Source inspection shows Self-Update passes the installer failure reason through its bounded status detail, while the reconciler previously rejected any appended diagnostic fields.
+Learned: The correct propagation boundary is the installer failure reason itself; no second GitHub credential path or tunnel-specific token handling is needed.
+Open: New exact-head CI after this propagation patch and subsequent production self-update remain pending.
+Next safe step: Consume terminal CI, then merge only after exact-head green evidence and retry the self-update to obtain the concrete `contract_status` mismatch.
 
