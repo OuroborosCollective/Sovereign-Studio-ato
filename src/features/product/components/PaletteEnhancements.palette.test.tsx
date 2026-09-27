@@ -27,6 +27,7 @@ import { TestRunnerResultCard } from './TestRunnerResultCard';
 import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
+import { SecurityBlockCard } from './SecurityBlockCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -883,7 +884,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={true}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoad}
           onClose={vi.fn()}
         />
       );
@@ -1390,6 +1391,46 @@ describe('Palette Accessibility Enhancements', () => {
       fireEvent.click(viewDiffBtn);
       expect(onOpenPr).toHaveBeenCalledTimes(1);
       expect(onViewDiff).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('SecurityBlockCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders alert dialog with aria-hidden lock icon, focus-visible ring styles, and descriptive titles and aria-labels on action buttons', () => {
+      const onOpenSecureAccess = vi.fn();
+      const onDismiss = vi.fn();
+
+      const { container } = render(
+        <SecurityBlockCard
+          title="Sicherheitswarnung: Token erkannt"
+          text="In der Nachricht wurde ein Token erkannt. Bitte geben Sie keine Zugangsdaten im Chat ein."
+          hint="Verwenden Sie den sicheren Bereich zur Konfiguration."
+          buttonLabel="Sicheren Bereich öffnen"
+          onOpenSecureAccess={onOpenSecureAccess}
+          onDismiss={onDismiss}
+        />
+      );
+
+      const alert = screen.getByRole('alert', { name: 'Sicherheitswarnung: Token erkannt' });
+      expect(alert).toBeInTheDocument();
+
+      const lockIcon = container.querySelector('[aria-hidden="true"]');
+      expect(lockIcon).toBeInTheDocument();
+      expect(lockIcon).toHaveTextContent('🔒');
+
+      const actionBtn = screen.getByRole('button', { name: 'Sicheren Bereich öffnen' });
+      expect(actionBtn).toHaveAttribute('title', 'Sicheren Bereich öffnen');
+      expect(actionBtn).toHaveClass('focus-visible:ring-2');
+
+      const dismissBtn = screen.getByRole('button', { name: 'Sicherheitswarnung schließen' });
+      expect(dismissBtn).toHaveAttribute('title', 'Sicherheitswarnung schließen');
+      expect(dismissBtn).toHaveAttribute('aria-label', 'Sicherheitswarnung schließen');
+      expect(dismissBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(actionBtn);
+      expect(onOpenSecureAccess).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(dismissBtn);
+      expect(onDismiss).toHaveBeenCalledTimes(1);
     });
   });
 });
