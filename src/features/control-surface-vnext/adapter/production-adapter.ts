@@ -361,7 +361,8 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
   private async getDirectRepositoryJob(jobId: string): Promise<SovereignJob> {
     const snapshot = await this.client.getJob(jobId);
     let anchors: SovereignWorkspaceEvidenceAnchor[] = [];
-    try { anchors = await this.client.getEvidenceAnchors(jobId); } catch { anchors = []; }
+    let readbackError = '';
+    try { anchors = await this.client.getEvidenceAnchors(jobId); } catch (error) { readbackError = error instanceof Error ? error.message : String(error); }
     const run: PersistedRun = {
       runId: jobId,
       jobId,
@@ -394,6 +395,8 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       workspaceState: {
         modifiedFiles: snapshot.changedFiles,
         currentRevision: newestEvidenceRevision(anchors),
+        readbackState: readbackError ? 'unavailable' : 'live',
+        ...(readbackError ? { readbackError } : {}),
         diffStats: { additions: 0, deletions: 0, filesChanged: snapshot.changedFiles.length },
       },
       draftPR: publication,

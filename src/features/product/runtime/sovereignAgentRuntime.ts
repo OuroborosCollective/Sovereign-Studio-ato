@@ -105,6 +105,7 @@ export interface SovereignAgentJobSnapshot {
   jobId?: string;
   runtimeId?: string;
   workspaceId?: string;
+  repositoryRevision?: string;
   status: SovereignAgentJobStatus;
   repoUrl?: string;
   branch?: string;
@@ -235,6 +236,10 @@ export function summarizeSovereignAgentJob(snapshot: SovereignAgentJobSnapshot):
 
 export function isSovereignAgentTerminalStatus(status: SovereignAgentJobStatus): boolean {
   return status === 'blocked' || status === 'failed' || status === 'completed' || status === 'cleaned';
+}
+
+export function isSovereignAgentReadbackTerminal(status: SovereignAgentJobStatus, readbackAvailable: boolean): boolean {
+  return readbackAvailable || isSovereignAgentTerminalStatus(status) === true;
 }
 
 export function maskSovereignAgentSensitiveText(value: string): string {

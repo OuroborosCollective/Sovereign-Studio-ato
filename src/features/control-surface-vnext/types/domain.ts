@@ -16,8 +16,11 @@ export type JobPhase =
 
 export interface WorkspaceState {
   modifiedFiles: string[];
-  /** Empty until an evidence anchor supplies an exact repository revision. */
+  /** Exact repository revision when bound by job/evidence readback. */
   currentRevision: string;
+  /** Distinguishes live, stale and unavailable readback without fabricating progress. */
+  readbackState?: 'live' | 'stale' | 'unavailable';
+  readbackError?: string;
   diffStats?: { additions: number; deletions: number; filesChanged: number };
   fileDetails?: Array<{ path: string; status: 'modified' | 'added' | 'deleted'; diff: string }>;
 }
