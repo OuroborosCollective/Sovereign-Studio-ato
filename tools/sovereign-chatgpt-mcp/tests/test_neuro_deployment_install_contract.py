@@ -1006,7 +1006,7 @@ def test_installer_runs_a_clean_real_registry_neuro_canary_without_selected_tool
     assert '"allowed_effects": ["read"]' in canary
     assert '[contract["name"] for contract in selected_contracts] == ["mcp_self_update_status"]' in canary
     assert 'registered_tool.fn = forbidden_selected_tool_call' in canary
-    assert 'assert len(set(guarded_tool_names)) == 253' in canary
+    assert 'assert len(set(guarded_tool_names)) == expected_tool_count - 5' in canary
     assert '__sovereign_success_tracking__' in canary
     assert '__sovereign_operating_profile_wrapped__' in canary
     assert 'guarded_tool_calls == []' in canary
