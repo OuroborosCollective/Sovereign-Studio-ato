@@ -2999,7 +2999,7 @@ with tempfile.TemporaryDirectory(
 
         registered_tool.fn = forbidden_selected_tool_call
         guarded_tool_names.append(tool_name)
-    assert len(set(guarded_tool_names)) == 253, len(set(guarded_tool_names))
+    assert len(set(guarded_tool_names)) == expected_tool_count - 5, len(set(guarded_tool_names))
 
     now = datetime.now(timezone.utc)
     now = now.replace(microsecond=(now.microsecond // 1000) * 1000)
