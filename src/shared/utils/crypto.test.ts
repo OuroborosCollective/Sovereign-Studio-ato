@@ -109,6 +109,12 @@ describe('maskSecrets', () => {
     expect(maskSecrets('database_password: db_secret_pass_123')).toBe('database_password: ****');
     expect(maskSecrets('db_password=db_secret_pass_456')).toBe('db_password=****');
     expect(maskSecrets('db_pass: db_secret_pass_789')).toBe('db_pass: ****');
+    expect(maskSecrets('database_secret: db_sec_val_101')).toBe('database_secret: ****');
+    expect(maskSecrets('db_secret=db_sec_val_202')).toBe('db_secret=****');
+    expect(maskSecrets('database_key: db_key_val_303')).toBe('database_key: ****');
+    expect(maskSecrets('db_key=db_key_val_404')).toBe('db_key=****');
+    expect(maskSecrets('connection_string: postgresql://usr:pwd@localhost/db')).toBe('connection_string: ****');
+    expect(maskSecrets('conn_str=mysql://usr:pwd@localhost/db')).toBe('conn_str=****');
     expect(maskSecrets('master_password=master_pass_101')).toBe('master_password=****');
     expect(maskSecrets('master_key: master_key_val_202')).toBe('master_key: ****');
     expect(maskSecrets('secret_key=secret_key_val_303')).toBe('secret_key=****');
