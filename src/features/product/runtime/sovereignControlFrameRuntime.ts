@@ -80,14 +80,23 @@ function phaseFromSignal(signal: SovereignControlSignal): SovereignControlPhase 
   return 'idle';
 }
 
+// ⚡ Bolt: Single-pass indexed loops avoid array allocations from .filter().length
 function activePatternCount(store: SolutionPatternStore): number {
-  return Array.isArray(store.patterns) ? store.patterns.filter((pattern) => pattern.status === 'active').length : 0;
+  if (!Array.isArray(store.patterns)) return 0;
+  let count = 0;
+  for (let i = 0; i < store.patterns.length; i++) {
+    if (store.patterns[i].status === 'active') count++;
+  }
+  return count;
 }
 
 function scanFindingCount(registry: ScanFindingRegistry): number {
-  return Array.isArray(registry.findings)
-    ? registry.findings.filter((finding) => finding.status === 'active').length
-    : 0;
+  if (!Array.isArray(registry.findings)) return 0;
+  let count = 0;
+  for (let i = 0; i < registry.findings.length; i++) {
+    if (registry.findings[i].status === 'active') count++;
+  }
+  return count;
 }
 
 function activeStepId(runtime: SequentialRuntimeState): string {
@@ -251,19 +260,37 @@ export function deriveSovereignControlFrameState(input: SovereignControlFrameSta
 
   const activeModule = selectActiveModule(modules);
 
-  const logs: SovereignControlLogLine[] = modules
-    .filter((module) => module.signal !== 'idle')
-    .map((module) => ({
-      level: module.signal === 'error' ? 'error' : module.signal === 'warning' ? 'warn' : module.signal === 'processing' ? 'signal' : 'info',
-      moduleId: module.id,
-      message: module.detail,
-    }));
+  // ⚡ Bolt: Single-pass loop consolidates log extraction and status counts, avoiding 5 array allocations
+  const logs: SovereignControlLogLine[] = [];
+  let processingCount = 0;
+  let warningCount = 0;
+  let errorCount = 0;
+
+  for (let i = 0; i < modules.length; i++) {
+    const module = modules[i];
+    const signal = module.signal;
+    if (signal === 'processing') {
+      processingCount++;
+    } else if (signal === 'warning') {
+      warningCount++;
+    } else if (signal === 'error') {
+      errorCount++;
+    }
+
+    if (signal !== 'idle') {
+      logs.push({
+        level: signal === 'error' ? 'error' : signal === 'warning' ? 'warn' : signal === 'processing' ? 'signal' : 'info',
+        moduleId: module.id,
+        message: module.detail,
+      });
+    }
+  }
 
   return {
     activeModuleId: activeModule.id,
     modules,
     logs,
-    signalSummary: `${modules.filter((module) => module.signal === 'processing').length} processing · ${modules.filter((module) => module.signal === 'warning').length} warning · ${modules.filter((module) => module.signal === 'error').length} error`,
+    signalSummary: `${processingCount} processing · ${warningCount} warning · ${errorCount} error`,
     sessionSummary: `step=${activeStepId(input.sequentialRuntime)} · package=${input.hasPackage ? 'yes' : 'no'} · diff=${input.hasDiffSources ? 'yes' : 'no'}`,
     activePatternCount: patterns,
     confidence: Math.min(1, Math.max(0, (patterns > 0 ? 0.25 : 0) + (input.repoReady ? 0.25 : 0) + (input.hasPackage ? 0.25 : 0) + (input.hasDiffSources ? 0.25 : 0))),
