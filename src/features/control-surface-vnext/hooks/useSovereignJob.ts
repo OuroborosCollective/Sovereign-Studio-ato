@@ -13,8 +13,9 @@ export function useSovereignJob(jobId: string | null) {
       return adapter.getJob(jobId);
     },
     enabled: Boolean(jobId),
-    refetchInterval: (result) => {
-      const phase = result.state.data?.phase;
+    refetchInterval: (query) => {
+      if (query.state.error) return false;
+      const phase = query.state.data?.phase;
       return phase && TERMINAL.has(phase) ? false : 1500;
     },
   });
