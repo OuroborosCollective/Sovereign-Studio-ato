@@ -197,6 +197,10 @@ function newestEvidenceRevision(anchors: readonly SovereignWorkspaceEvidenceAnch
   return sorted[0]?.repositoryRevision ?? '';
 }
 
+function projectionKinds(projections: readonly { projectionKind: string }[]): string[] {
+  return [...new Set(projections.map((projection) => projection.projectionKind))].sort();
+}
+
 function mapPersistedDraftPr(pr: SovereignDraftPrPublicationReadback): DraftPR {
   return {
     url: pr.prUrl,
@@ -361,8 +365,10 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
   private async getDirectRepositoryJob(jobId: string): Promise<SovereignJob> {
     const snapshot = await this.client.getJob(jobId);
     let anchors: SovereignWorkspaceEvidenceAnchor[] = [];
+    let liveProjectionKinds: string[] = [];
     let readbackError = '';
     try { anchors = await this.client.getEvidenceAnchors(jobId); } catch (error) { readbackError = error instanceof Error ? error.message : String(error); }
+    try { liveProjectionKinds = projectionKinds(await this.client.getProjections(jobId)); } catch (error) { readbackError = readbackError || (error instanceof Error ? error.message : String(error)); }
     const run: PersistedRun = {
       runId: jobId,
       jobId,
@@ -397,6 +403,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
         currentRevision: newestEvidenceRevision(anchors),
         readbackState: readbackError ? 'unavailable' : 'live',
         ...(readbackError ? { readbackError } : {}),
+        liveProjectionKinds,
         diffStats: { additions: 0, deletions: 0, filesChanged: snapshot.changedFiles.length },
       },
       draftPR: publication,
@@ -412,9 +419,12 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
     const run = await this.getRun(runId);
     let snapshot: SovereignAgentJobSnapshot | undefined;
     let anchors: SovereignWorkspaceEvidenceAnchor[] = [];
+    let liveProjectionKinds: string[] = [];
+    let readbackError = '';
     if (run.jobId) {
       snapshot = await this.client.getJob(run.jobId);
-      try { anchors = await this.client.getEvidenceAnchors(run.jobId); } catch { anchors = []; }
+      try { anchors = await this.client.getEvidenceAnchors(run.jobId); } catch (error) { readbackError = error instanceof Error ? error.message : String(error); }
+      try { liveProjectionKinds = projectionKinds(await this.client.getProjections(run.jobId)); } catch (error) { readbackError = readbackError || (error instanceof Error ? error.message : String(error)); }
     }
     const runPhase = phaseFromRun(run.status, run.nextAction);
     const phase = projectRunAndJobPhase(
@@ -470,6 +480,9 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       workspaceState: {
         modifiedFiles: snapshot?.changedFiles ?? [],
         currentRevision,
+        readbackState: readbackError ? 'unavailable' : 'live',
+        ...(readbackError ? { readbackError } : {}),
+        liveProjectionKinds,
         diffStats: snapshot ? { additions: 0, deletions: 0, filesChanged: snapshot.changedFiles.length } : undefined,
       },
       pendingInteraction,
