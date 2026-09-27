@@ -947,3 +947,12 @@ Learned: A diagnostic hook is part of the failure contract and must itself be de
 Open: This exact branch needs terminal MCP/Release CI, then the immutable MCP self-update must be retried and its live registry/revision/digest read back.
 Next safe step: Consume exact-head CI, merge only when terminal green, then retry the same immutable self-update and verify the Neuro tool surface through the real MCP endpoint.
 
+### 2026-09-26 — Neuro tool-lane registration ordering hardening
+Status: PARTIAL — launcher ordering repair prepared; CI and runtime retry pending
+Task: Keep the five Neuro/Teacher registrations after all other module registrations so the canonical lane is present when the deployment canary counts the live tool surface.
+Decision: Move the existing single Neuro registration call to the end of module registration and before output-contract/enforcement installation; keep the expected Private Owner Mode count at 288.
+Touched surfaces: tools/sovereign-chatgpt-mcp/launcher.py; tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py; Memory.md.
+Evidence: main 658f2837cca76c17ac0a37b32e9a0d69979a80f4 reached the isolated deployment canary and reported a runtime registry count of 283 against the expected 288. The predecessor comparison showed no removal of five legacy tool implementations.
+Learned: The observed five-tool delta is consistent with the Neuro/Teacher lane being absent after composition; lowering the 288 gate would hide the defect.
+Open: Exact-head CI and the production self-update retry remain pending.
+Next safe step: Consume terminal exact-head CI, retry the exact current-main self-update, then verify the live Neuro names and total registry count.

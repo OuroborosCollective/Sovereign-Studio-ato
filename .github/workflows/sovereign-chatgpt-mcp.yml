@@ -884,6 +884,43 @@ jobs:
           }, sort_keys=True, separators=(",", ":")))
           PY
 
+      - name: Verify private-owner registry count in candidate image
+        run: |
+          set -euo pipefail
+          docker run --rm -i \
+            --network none \
+            --env SOVEREIGN_MCP_PRIVATE_OWNER_MODE=1 \
+            --env SOVEREIGN_MCP_ENABLE_AURION_OPERATOR=1 \
+            --env SOVEREIGN_MCP_ENABLE_AURION_WRITE=1 \
+            --env SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP=1 \
+            --env AURION_ADMIN_MCP_SCOPES=aurion.admin.read \
+            --env AURION_ADMIN_MCP_WOLFRAM_ENABLED=0 \
+            --env SOVEREIGN_MCP_GITHUB_APP_ID= \
+            --env SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID= \
+            --env SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE= \
+            --entrypoint /opt/venv/bin/python \
+            "sovereign-chatgpt-mcp:${SOVEREIGN_SOURCE_REVISION}" - <<'PY'
+          import json
+          import launcher
+
+          names = {tool.name for tool in launcher.mcp._tool_manager.list_tools()}
+          neuro = {
+              'neuro_event_commit',
+              'neuro_event_route_preview',
+              'neuro_runtime_contract_status',
+              'teaching_lesson_simulate',
+              'teaching_package_assess',
+          }
+          print(json.dumps({
+              'status': 'PRIVATE_OWNER_REGISTRY_VERIFIED',
+              'toolCount': len(names),
+              'missingNeuroTools': sorted(neuro - names),
+              'secretValuesReturned': False,
+          }, sort_keys=True, separators=(',', ':')))
+          assert len(names) == 288, len(names)
+          assert neuro <= names, sorted(neuro - names)
+          PY
+
       - name: Assert Docker socket is absent from MCP container contract
         run: |
           set -euo pipefail

@@ -79,15 +79,18 @@ def test_launcher_preserves_every_existing_registration_and_adds_one_teacher_reg
         "skill_supply_chain_tools",
         "openai_project_access_tools",
         "operational_governance_tools",
-        "neuro_teaching_tools",
         "n8n_workflow_tools",
         "operational_assurance_tools",
         "proven_learning_tools",
         "toolchain_composition",
         "continuity",
         "operating_profile",
+        "neuro_teaching_tools",
     ]
-    assert launcher.count("neuro_teaching_tools.register(server.mcp, server.runtime)") == 1
+    registration = "neuro_teaching_tools.register(server.mcp, server.runtime)"
+    assert launcher.count(registration) == 1
+    assert launcher.rfind(registration) < launcher.index("OUTPUT_CONTRACT_INSTALLATION =")
+    assert launcher.rfind(registration) > launcher.index("operating_profile.register(server.mcp)")
 
 
 def test_teacher_register_function_exposes_exactly_five_additive_tools() -> None:
