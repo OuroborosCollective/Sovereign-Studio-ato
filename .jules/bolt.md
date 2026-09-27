@@ -83,3 +83,7 @@
 ## 2026-08-28 - [Replacing Array Spreads and Multi-Pass Mapping in Signal Receipts]
 **Learning:** Using `Math.min(...arr)` and `Math.max(...arr)` on dynamically allocated `.map()` arrays creates both significant heap allocation pressure and call-stack overflow risks (`RangeError: Maximum call stack size exceeded`) when processing large signal streams. Consolidating range calculations and set accumulation into a single $O(N)$ indexed `for` loop pass drops memory overhead to $O(1)$ and speeds up receipt generation by ~33%.
 **Action:** Avoid spreading large or dynamically generated arrays into functions like `Math.min` or `Math.max`. Instead, track min/max bounds imperatively in a single loop traversal alongside set populating.
+
+## 2024-09-27 - Bounded iterations for performance
+**Learning:** Using `.map().filter().slice(0, LIMIT)` on potentially large external API datasets (like GitHub repo trees) processes the entire unbounded array in O(N) time and generates multiple intermediate arrays, causing unnecessary CPU and GC overhead.
+**Action:** When a bounding limit like `.slice(0, 500)` is required on transformed data, replace the chain with a single `for...of` loop and an explicit `if (count >= LIMIT) break;` condition to guarantee bounded O(LIMIT) execution and avoid temporary array allocations.
