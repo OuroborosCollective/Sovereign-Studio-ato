@@ -79,13 +79,13 @@ def test_launcher_preserves_every_existing_registration_and_adds_one_teacher_reg
         "skill_supply_chain_tools",
         "openai_project_access_tools",
         "operational_governance_tools",
-        "neuro_teaching_tools",
         "n8n_workflow_tools",
         "operational_assurance_tools",
         "proven_learning_tools",
         "toolchain_composition",
         "continuity",
         "operating_profile",
+        "neuro_teaching_tools",
     ]
     registration = "neuro_teaching_tools.register(server.mcp, server.runtime)"
     assert launcher.count(registration) == 1
