@@ -21,6 +21,7 @@ export interface WorkspaceState {
   /** Distinguishes live, stale and unavailable readback without fabricating progress. */
   readbackState?: 'live' | 'stale' | 'unavailable';
   readbackError?: string;
+  liveProjectionKinds?: string[];
   diffStats?: { additions: number; deletions: number; filesChanged: number };
   fileDetails?: Array<{ path: string; status: 'modified' | 'added' | 'deleted'; diff: string }>;
 }
