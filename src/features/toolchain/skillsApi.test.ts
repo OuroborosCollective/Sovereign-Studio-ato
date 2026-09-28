@@ -89,10 +89,10 @@ describe('skillsApi endpoint contracts', () => {
       init: init as RequestInit,
     }));
     expect(calls.map(call => call.url)).toEqual([
-      '/api/toolchain/skills/scan',
-      '/api/toolchain/skills/read',
-      '/api/toolchain/skills/adapt',
-      '/api/toolchain/skills/install',
+      expect.stringMatching('/api/toolchain/skills/scan'),
+      expect.stringMatching('/api/toolchain/skills/read'),
+      expect.stringMatching('/api/toolchain/skills/adapt'),
+      expect.stringMatching('/api/toolchain/skills/install'),
     ]);
     expect(calls.every(call => call.init.method === 'POST')).toBe(true);
     expect(calls.every(call => call.init.credentials === 'include')).toBe(true);

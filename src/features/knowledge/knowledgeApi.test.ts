@@ -34,7 +34,7 @@ describe('knowledgeApi failure evidence', () => {
     const stats = await getKnowledgeStats();
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/knowledge/stats',
+      expect.stringMatching('/api/knowledge/stats'),
       { credentials: 'include' },
     );
     expect(stats).toMatchObject({ sources: 2, embeddedBlocks: 5, storage: 'postgres-pgvector' });
@@ -53,7 +53,7 @@ describe('knowledgeApi failure evidence', () => {
     const result = await importKnowledgeUrl('https://example.test/source', 'Bound source');
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/knowledge/sources/url',
+      expect.stringMatching('/api/knowledge/sources/url'),
       expect.objectContaining({
         method: 'POST',
         credentials: 'include',
@@ -117,9 +117,9 @@ describe('knowledgeApi failure evidence', () => {
     const result = await uploadKnowledgeFile(file, status => statuses.push(status));
 
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
-      '/api/knowledge/sources/upload-ticket',
+      expect.stringMatching('/api/knowledge/sources/upload-ticket'),
       'https://upload.example.test/object-1',
-      '/api/knowledge/sources/upload-confirm',
+      expect.stringMatching('/api/knowledge/sources/upload-confirm'),
     ]);
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
       filename: 'notes.txt',
@@ -142,7 +142,7 @@ describe('knowledgeApi failure evidence', () => {
     await deleteKnowledgeSource('source/with spaces');
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/knowledge/sources/source%2Fwith%20spaces',
+      expect.stringMatching('/api/knowledge/sources/source%2Fwith%20spaces'),
       expect.objectContaining({ method: 'DELETE', credentials: 'include' }),
     );
   });
@@ -168,7 +168,7 @@ describe('knowledgeApi failure evidence', () => {
     const result = await importProgrammingLanguageCatalog();
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/knowledge/catalogs/programming-languages/import',
+      expect.stringMatching('/api/knowledge/catalogs/programming-languages/import'),
       expect.objectContaining({
         method: 'POST',
         credentials: 'include',

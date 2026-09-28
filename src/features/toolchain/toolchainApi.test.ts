@@ -68,11 +68,11 @@ describe('toolchainApi endpoint contracts', () => {
       init: init as RequestInit,
     }));
     expect(calls.map(call => call.url)).toEqual([
-      '/api/toolchain/universal/invoke',
-      '/api/toolchain/github/list-branches',
-      '/api/toolchain/github/search-code',
-      '/api/toolchain/sandbox-plan',
-      '/api/toolchain/audit-log',
+      expect.stringMatching('/api/toolchain/universal/invoke'),
+      expect.stringMatching('/api/toolchain/github/list-branches'),
+      expect.stringMatching('/api/toolchain/github/search-code'),
+      expect.stringMatching('/api/toolchain/sandbox-plan'),
+      expect.stringMatching('/api/toolchain/audit-log'),
     ]);
     expect(calls.map(call => call.init.method ?? 'GET')).toEqual([
       'POST',

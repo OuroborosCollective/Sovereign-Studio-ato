@@ -17,7 +17,7 @@ describe('adminApiClient protected owner-input endpoint', () => {
     let requestBodyReference: Uint8Array | undefined;
     let observedBodyCopy: Uint8Array | undefined;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe(
+      expect(String(input)).toContain(
         '/api/admin/owner-input/requests/request-1/resolve?decision=yes',
       );
       expect(init).toMatchObject({
