@@ -22,6 +22,7 @@ describe('primaryBridgeConfig', () => {
 
   it('normalizes HTTPS backend URLs and rejects non-HTTPS paths', () => {
     expect(normalizePrimaryBridgeUrl('https://backend.example/path///')).toBe('https://backend.example/path');
+    expect(normalizePrimaryBridgeUrl('/api/sovereign')).toBe('/api/sovereign');
     expect(() => normalizePrimaryBridgeUrl('http://bad.example')).toThrow('HTTPS');
   });
 });
