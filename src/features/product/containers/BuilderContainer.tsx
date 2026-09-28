@@ -2365,7 +2365,7 @@ export function BuilderContainer({
       ))
     : [];
   const githubAccessApiBase = useMemo(
-    () => agentConfig?.agentApiUrl || resolveSovereignAgentConfig().agentApiUrl || SOVEREIGN_WORKER_BASE,
+    () => agentConfig?.agentApiUrl || resolveSovereignAgentConfig().agentApiUrl || '',
     [agentConfig],
   );
   const scopedAgentIsRunning = Boolean(
