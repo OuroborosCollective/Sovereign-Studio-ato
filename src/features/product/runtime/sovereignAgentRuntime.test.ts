@@ -14,11 +14,10 @@ describe('sovereignAgentRuntime', () => {
   it('uses only the internal backend mode', () => {
     expect(resolveSovereignAgentConfig({ enabled: true, agentApiUrl: 'https://agent.example.test' })).toMatchObject({ ready: true, deploymentMode: 'sovereign-agent-backend' });
   });
-  it('uses the current HTTPS or localhost origin when no build-time backend URL is present', () => {
-    vi.stubGlobal('window', { location: { origin: 'https://studio.example.test' } });
+  it('does not implicitly enable an agent runtime from the browser origin', () => {
     const config = resolveSovereignAgentConfig();
-    expect(config.agentApiUrl).toBe('https://studio.example.test');
-    expect(config).toMatchObject({ ready: true, deploymentMode: 'sovereign-agent-backend' });
+    expect(config.agentApiUrl).toBe('');
+    expect(config).toMatchObject({ enabled: false, ready: false, deploymentMode: 'disabled' });
   });
   it('rejects unsafe non-local HTTP URLs', () => {
     expect(resolveSovereignAgentConfig({ enabled: true, agentApiUrl: 'http://agent.example.test' }).ready).toBe(false);
