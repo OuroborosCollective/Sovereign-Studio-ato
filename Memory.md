@@ -956,3 +956,13 @@ Evidence: main 658f2837cca76c17ac0a37b32e9a0d69979a80f4 reached the isolated dep
 Learned: The observed five-tool delta is consistent with the Neuro/Teacher lane being absent after composition; lowering the 288 gate would hide the defect.
 Open: Exact-head CI and the production self-update retry remain pending.
 Next safe step: Consume terminal exact-head CI, retry the exact current-main self-update, then verify the live Neuro names and total registry count.
+
+### 2026-09-29 — Unified-App Error Hunter: CI gateway fixture drift
+Status: PARTIAL — root cause fixed in branch; terminal CI and runtime verification pending
+Task: Repair the unified frontend/backend same-origin contract after the release unit gate failed on the exact unified-app revision.
+Decisions: Keep the web product's API defaults same-origin; scope the production `VITE_ADMIN_API_BASE` gateway override to native/package build paths and explicitly clear it for browser unit tests. Keep the GitHub App OAuth callback absolute because it is an external provider redirect binding, not a browser API base.
+Touched surfaces: `.github/workflows/android.yml`; `src/features/product/llm/adapters/primaryBridgeAdapter.test.ts`; `scripts/audit-test-coverage-map.mjs`; `tests/e2e/frontend-endpoint-contract-smoke.spec.ts`; `scripts/frontend_test_gate.py`; `Memory.md`.
+Evidence: Android validation run `36491277485`, job `109160197936`, checked out exact `0b2f24db548386e23d45cead1dc1636eecdee2df` and failed the `endpoint-client-vitest` stage with 9 failures / 16 passes / 0 skips. The same job exposed `VITE_ADMIN_API_BASE=https://sovereign-backend.arelorian.de` as a job-level environment value. All nine failures were endpoint-client assertions whose expected contract is now relative/same-origin. Branch `sovereign/chatgpt/1790634034-unified-app-error-hunter` is 5 commits ahead of main with no divergence and contains the scoped CI/test-contract fixes; no OAuth callback was rewritten.
+Learned: A native build-time gateway variable must not leak into browser unit-test evaluation of same-origin defaults; otherwise the test suite measures CI configuration instead of the unified web product contract. Provider redirect URIs remain a separate absolute boundary.
+Open: Terminal CI for the new head and independent runtime/readback evidence are still required before merge or any Green-State claim.
+Next safe step: Open the Draft PR, consume the targeted/broad GitHub checks on the new exact head, then review the adjacent endpoint/route and authority-boundary families for additional confirmed drift.
