@@ -8004,8 +8004,7 @@
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
-          "src/features/product/containers/BuilderContainer.test.tsx",
-          "src/features/product/llm/primaryBridgeConfig.test.ts"
+          "src/features/product/containers/BuilderContainer.test.tsx"
         ]
       }
     },
@@ -8041,8 +8040,7 @@
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
-          "src/features/product/containers/BuilderContainer.test.tsx",
-          "src/features/product/llm/primaryBridgeConfig.test.ts"
+          "src/features/product/containers/BuilderContainer.test.tsx"
         ]
       }
     },
@@ -8078,8 +8076,7 @@
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
-          "src/features/product/containers/BuilderContainer.test.tsx",
-          "src/features/product/llm/primaryBridgeConfig.test.ts"
+          "src/features/product/containers/BuilderContainer.test.tsx"
         ]
       }
     },
@@ -8115,8 +8112,7 @@
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
-          "src/features/product/containers/BuilderContainer.test.tsx",
-          "src/features/product/llm/primaryBridgeConfig.test.ts"
+          "src/features/product/containers/BuilderContainer.test.tsx"
         ]
       }
     },
@@ -8152,8 +8148,7 @@
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
-          "src/features/product/containers/BuilderContainer.test.tsx",
-          "src/features/product/llm/primaryBridgeConfig.test.ts"
+          "src/features/product/containers/BuilderContainer.test.tsx"
         ]
       }
     },
@@ -8189,8 +8184,7 @@
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
-          "src/features/product/containers/BuilderContainer.test.tsx",
-          "src/features/product/llm/primaryBridgeConfig.test.ts"
+          "src/features/product/containers/BuilderContainer.test.tsx"
         ]
       }
     },
@@ -8226,8 +8220,7 @@
           "tests/e2e/frontend-endpoint-runtime.spec.ts"
         ],
         "unit": [
-          "src/features/product/containers/BuilderContainer.test.tsx",
-          "src/features/product/llm/primaryBridgeConfig.test.ts"
+          "src/features/product/containers/BuilderContainer.test.tsx"
         ]
       }
     },
@@ -21428,10 +21421,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "a7c137ada7ddeb0fa58e6921270afd3c4dffd9bd52708b514b49df577872212f",
+  "reportSha256": "763d0b6df2fea492ea2f9986bae055da08914d8bd23d773fbcda96cff89c5023",
   "revision": "0b2f24db548386e23d45cead1dc1636eecdee2df",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "886f47c60817463750e70ff5fc8da815d24a44284d59f0e4def630d0d36f32d4",
+  "sourceTreeSha256": "1a8b78978c9cdeb08def907ea2bf41e2eda43b06ba9d85a7ba5a8d6b33d4cfe6",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
