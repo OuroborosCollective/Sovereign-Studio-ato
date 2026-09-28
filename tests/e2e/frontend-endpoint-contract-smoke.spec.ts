@@ -246,11 +246,13 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     expect(coverageResponse.status()).toBe(200);
     const coveragePayload = await coverageResponse.json() as {
       schemaVersion?: string;
+      productArchitecture?: string;
       totalTestFiles?: number;
       testRoots?: Record<string, number>;
       files?: Array<{ file?: string }>;
     };
     expect(coveragePayload.schemaVersion).toBe('sovereign.test-coverage-map.v2');
+    expect(coveragePayload.productArchitecture).toBe('unified-app');
     expect(coveragePayload.totalTestFiles).toBeGreaterThan(0);
     expect(coveragePayload.files).toHaveLength(coveragePayload.totalTestFiles);
     const publishedTestPaths = new Set((coveragePayload.files ?? []).map((entry) => entry.file));
