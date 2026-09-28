@@ -60,6 +60,13 @@ describe('maskSecrets', () => {
     expect(maskSecrets(`Failed with ${secret}`)).toBe('Failed with xai-****');
   });
 
+  it('masks Mistral, Resend, SendGrid and Supabase tokens', () => {
+    expect(maskSecrets('mistral-1234567890abcdefghijklmnopqrstuvwxyz')).toBe('mistral-****');
+    expect(maskSecrets('re_1234567890abcdefghijklmnopqrstuvwxyz')).toBe('re_****');
+    expect(maskSecrets('SG.1234567890abcdefghijklmnopqrst.1234567890abcdefghijklmnopqrstuvwxyz1234567890')).toBe('SG.****');
+    expect(maskSecrets('sbp_1234567890abcdefghijklmnopqrstuvwxyz')).toBe('sbp_****');
+  });
+
   it('masks OpenAI Project keys', () => {
     const secret = 'sk-proj-abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz01';
     expect(maskSecrets(`Using ${secret}`)).toBe('Using sk-proj-****');
@@ -125,6 +132,12 @@ describe('maskSecrets', () => {
     expect(maskSecrets('registration_token: reg_token_val_555')).toBe('registration_token: ****');
     expect(maskSecrets('access_key_id=AKIAIOSFODNN7EXAMPLE')).toBe('access_key_id=****');
     expect(maskSecrets('aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY')).toBe('aws_secret_access_key: ****');
+    expect(maskSecrets('mistral_key: mistral_secret_val_123')).toBe('mistral_key: ****');
+    expect(maskSecrets('cohere_key=cohere_secret_val_456')).toBe('cohere_key=****');
+    expect(maskSecrets('resend_key: resend_val_789')).toBe('resend_key: ****');
+    expect(maskSecrets('sendgrid_key=sendgrid_val_101')).toBe('sendgrid_key=****');
+    expect(maskSecrets('supabase_key: supabase_anon_val_202')).toBe('supabase_key: ****');
+    expect(maskSecrets('supabase_secret=supabase_service_role_val_303')).toBe('supabase_secret=****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
