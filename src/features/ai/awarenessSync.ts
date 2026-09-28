@@ -63,11 +63,16 @@ export async function runAwarenessSync(
   model: string = "gemini-1.5-flash",
   onProviderSwitch?: (from: ProviderType, to: ProviderType, error: string) => void
 ): Promise<AwarenessSyncResult> {
-  const filePaths = repoFiles
-    .filter((f) => f.type === "blob")
-    .slice(0, 80)
-    .map((f) => f.path)
-    .join("\n");
+  let filePaths = "";
+  let fileCount = 0;
+  for (const f of repoFiles) {
+    if (f.type === "blob") {
+      if (fileCount > 0) filePaths += "\n";
+      filePaths += f.path;
+      fileCount++;
+      if (fileCount >= 80) break;
+    }
+  }
 
   const prompt = `Du bist ein erfahrener Software-Architekt. Analysiere das folgende GitHub-Repository und gib eine strukturierte Übersicht zurück.
 
@@ -174,15 +179,32 @@ VERBESSERUNGSVORSCHLÄGE:
   const structure = extractSection(rawText, "STRUKTUR");
   const suggestionsText = extractSection(rawText, "VERBESSERUNGSVORSCHLÄGE");
 
-  const technologies = techLine
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
+  const technologies: string[] = [];
+  if (techLine) {
+    let start = 0;
+    for (let i = 0; i <= techLine.length; i++) {
+      if (i === techLine.length || techLine[i] === ',') {
+        const t = techLine.substring(start, i).trim();
+        if (t) technologies.push(t);
+        start = i + 1;
+      }
+    }
+  }
 
-  const suggestions = suggestionsText
-    .split("\n")
-    .map((s) => s.replace(/^[-•*]\s*/, "").trim())
-    .filter(Boolean);
+  const suggestions: string[] = [];
+  if (suggestionsText) {
+    let start = 0;
+    for (let i = 0; i <= suggestionsText.length; i++) {
+      if (i === suggestionsText.length || suggestionsText.charCodeAt(i) === 10) {
+        const line = suggestionsText.substring(start, i).trim();
+        if (line) {
+          const s = line.replace(/^[-•*]\s*/, "").trim();
+          if (s) suggestions.push(s);
+        }
+        start = i + 1;
+      }
+    }
+  }
 
   return { 
     summary, 

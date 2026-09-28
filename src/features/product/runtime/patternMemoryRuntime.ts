@@ -126,7 +126,15 @@ function normalizeTag(value: string): string {
 }
 
 function normalizeTags(tags: string[] = []): string[] {
-  return Array.from(new Set(tags.map(normalizeTag).filter(Boolean))).slice(0, MAX_TAGS);
+  const tagSet = new Set<string>();
+  for (let i = 0; i < tags.length; i++) {
+    const t = normalizeTag(tags[i]);
+    if (t) {
+      tagSet.add(t);
+      if (tagSet.size >= MAX_TAGS) break;
+    }
+  }
+  return Array.from(tagSet);
 }
 
 function knownScope(scope: string): scope is PatternOwnerScope {

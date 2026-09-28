@@ -20,7 +20,15 @@ export interface PublishGateResult {
 const MAX_RECOMMENDATIONS = 3;
 
 function compactRecommendations(items: string[]): string[] {
-  return items.map((item) => item.trim()).filter(Boolean).slice(0, MAX_RECOMMENDATIONS);
+  const res: string[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const t = items[i].trim();
+    if (t) {
+      res.push(t);
+      if (res.length >= MAX_RECOMMENDATIONS) break;
+    }
+  }
+  return res;
 }
 
 function canUseWindow(): boolean {

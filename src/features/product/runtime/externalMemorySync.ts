@@ -161,7 +161,15 @@ function normalizeTag(value: string): string {
 }
 
 function normalizeTags(values: string[]): string[] {
-  return Array.from(new Set(values.map(normalizeTag).filter(Boolean))).slice(0, 16);
+  const tagSet = new Set<string>();
+  for (let i = 0; i < values.length; i++) {
+    const t = normalizeTag(values[i]);
+    if (t) {
+      tagSet.add(t);
+      if (tagSet.size >= 16) break;
+    }
+  }
+  return Array.from(tagSet);
 }
 
 function safeUrl(value: string): URL | null {

@@ -243,7 +243,15 @@ function firstChangedFile(input: SovereignPackageLearningInput): string {
 function packageSteps(input: SovereignPackageLearningInput): string[] {
   const phaseSteps = input.brain.plan?.phases?.flatMap((phase) => phase.actions ?? []) ?? [];
   const patchSteps = input.brain.execution?.patches?.map((patch) => `${patch.type ?? 'patch'} ${patch.file ?? 'unknown-file'}: ${patch.description ?? 'LLM patch'}`) ?? [];
-  return [...phaseSteps, ...patchSteps, input.brain.plan?.strategy ?? 'Validate generated package through runtime guards'].filter(Boolean).slice(0, MAX_LIST);
+  const combined = [...phaseSteps, ...patchSteps, input.brain.plan?.strategy ?? 'Validate generated package through runtime guards'];
+  const res: string[] = [];
+  for (let i = 0; i < combined.length; i++) {
+    if (combined[i]) {
+      res.push(combined[i]);
+      if (res.length >= MAX_LIST) break;
+    }
+  }
+  return res;
 }
 
 function normalizePackageLearningInput(input: SovereignPackageLearningInput): SolutionPatternLearningInput {
@@ -337,7 +345,14 @@ export function buildSolutionPattern(input: SolutionPatternLearningInput): Solut
   const contextPaths = normalizeList(input.problem.contextPaths);
   const contextSignals = normalizeList(input.problem.contextSignals);
   const changedFiles = normalizeList(input.fix.changedFiles);
-  const steps = input.fix.steps.map(sanitizeText).filter(Boolean).slice(0, MAX_LIST);
+  const steps: string[] = [];
+  for (let i = 0; i < input.fix.steps.length; i++) {
+    const s = sanitizeText(input.fix.steps[i]);
+    if (s) {
+      steps.push(s);
+      if (steps.length >= MAX_LIST) break;
+    }
+  }
   const tags = normalizeList(input.tags ?? []);
   const outputNodes = Array.from(new Set(input.outputNodes));
   const extension = fileExtension(input.problem.filePath);
@@ -358,7 +373,17 @@ export function buildSolutionPattern(input: SolutionPatternLearningInput): Solut
     beforeFingerprint: textFingerprint(input.problem.beforeSnippet),
     solutionSummary,
     afterFingerprint: textFingerprint(input.fix.afterSnippet),
-    conditions: Array.from(new Set([...contextPaths, ...contextSignals, extension].filter(Boolean))).slice(0, MAX_LIST),
+    conditions: (() => {
+      const combined = [...contextPaths, ...contextSignals, extension];
+      const conditionSet = new Set<string>();
+      for (let i = 0; i < combined.length; i++) {
+        if (combined[i]) {
+          conditionSet.add(combined[i]);
+          if (conditionSet.size >= MAX_LIST) break;
+        }
+      }
+      return Array.from(conditionSet);
+    })(),
     recommendedSteps: steps,
     evidence: sanitizeText(input.fix.proof || input.fix.afterSnippet || input.fix.summary),
     intakeNode: input.intakeNode,

@@ -129,7 +129,17 @@ export function buildLearningMemoryPattern(input: LearningMemoryIntake): Learnin
   const now = input.now ?? Date.now();
   const summary = sanitizeText(input.summary);
   const evidence = sanitizeText(input.evidence);
-  const tags = Array.from(new Set((input.tags ?? []).map(normalizeTag).filter(Boolean))).slice(0, MAX_TAGS);
+  // Replaced chained .map().filter().slice() to avoid intermediate array allocation overhead
+  const tagSet = new Set<string>();
+  const inputTags = input.tags ?? [];
+  for (let i = 0; i < inputTags.length; i++) {
+    const t = normalizeTag(inputTags[i]);
+    if (t) {
+      tagSet.add(t);
+      if (tagSet.size >= MAX_TAGS) break;
+    }
+  }
+  const tags = Array.from(tagSet);
   const id = `learn-${stableHash([
     input.kind,
     input.sourceNode,

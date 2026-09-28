@@ -273,7 +273,13 @@ export class RefactorEngine {
   }
 
   async analyzeRepo(repoUrl: string, files: RefactorFile[]): Promise<RefactorPlan> {
-    const fileList = files.filter(f => f.type === 'blob').map(f => f.path).join('\n');
+    let fileList = "";
+    for (const f of files) {
+      if (f.type === 'blob') {
+        if (fileList) fileList += '\n';
+        fileList += f.path;
+      }
+    }
     const prompt = `Analysiere dieses Repository und erstelle einen Refactor-Plan.
 
 REPOSITORY: ${repoUrl}
@@ -379,13 +385,34 @@ GENERIERE kompletten, produktionsreifen Code. Antworte mit Dateipfaden und Code.
   private extractTechList(analysis: string): string[] {
     const match = analysis.match(/TECHNOLOGIEN?[:\s]*([^\n]+(?:\n[^\n]+)*)/i);
     if (!match) return [];
-    return match[1].split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+    const list = match[1];
+    const tech: string[] = [];
+    let start = 0;
+    for (let i = 0; i <= list.length; i++) {
+      if (i === list.length || list[i] === ',' || list.charCodeAt(i) === 10) {
+        const t = list.substring(start, i).trim();
+        if (t) tech.push(t);
+        start = i + 1;
+      }
+    }
+    return tech;
   }
 
   private extractGoals(analysis: string): string[] {
     const match = analysis.match(/REFACTOR_TASKS?[:\s]*([\s\S]*?)(?=#|$)/i);
     if (!match) return [];
-    return match[1].split(/[-•*]/).filter(s => s.trim()).map(s => s.trim()).filter(Boolean);
+    const list = match[1];
+    const goals: string[] = [];
+    let start = 0;
+    for (let i = 0; i <= list.length; i++) {
+      const char = list[i];
+      if (i === list.length || char === '-' || char === '•' || char === '*') {
+        const g = list.substring(start, i).trim();
+        if (g) goals.push(g);
+        start = i + 1;
+      }
+    }
+    return goals;
   }
 
   private extractTasks(analysis: string): RefactorTask[] {

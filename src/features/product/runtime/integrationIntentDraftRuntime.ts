@@ -206,7 +206,12 @@ function deriveAffectedFiles(input: string, repoFiles?: RepoFile[], options?: Cr
         topDirs.add(parts[0]);
       }
     }
-    return Array.from(topDirs).slice(0, 3).map((d) => `${d}/`);
+    const res: string[] = [];
+    for (const d of topDirs) {
+      res.push(`${d}/`);
+      if (res.length >= 3) break;
+    }
+    return res;
   }
 
   return affected;
