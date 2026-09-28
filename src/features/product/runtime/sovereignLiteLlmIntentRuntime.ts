@@ -11,7 +11,7 @@ import {
 
 const BACKEND_BASE = (
   (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined)?.trim()
-  || 'https://sovereign-backend.arelorian.de'
+  || ''
 ).replace(/\/$/, '');
 
 export const SOVEREIGN_DIRECT_LLM_ROUTES = `${BACKEND_BASE}/api/llm/routes` as const;

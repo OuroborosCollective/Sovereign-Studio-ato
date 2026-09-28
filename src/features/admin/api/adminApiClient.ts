@@ -19,7 +19,7 @@ export const ADMIN_API_BASE: string = configuredAdminApiBase
   ? configuredAdminApiBase.replace(/\/$/, '')
   : backendServedAdmin
     ? window.location.origin
-    : 'https://sovereign-backend.arelorian.de';
+    : '';
 
 let adminKeyInMemory = '';
 

@@ -74,9 +74,14 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
     fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
     config: SovereignAgentConfig = resolveSovereignAgentConfig(),
   ) {
-    super(fetcher, config);
+    const repositoryConfig = resolveSovereignAgentConfig({
+      enabled: true,
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: config.agentApiUrl,
+    });
+    super(fetcher, repositoryConfig);
     this.repositoryFetcher = fetcher;
-    this.repositoryConfig = config;
+    this.repositoryConfig = repositoryConfig;
   }
 
   override async checkHealth(): Promise<{ status: string; latencyMs: number }> {

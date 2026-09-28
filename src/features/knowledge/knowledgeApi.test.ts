@@ -34,7 +34,7 @@ describe('knowledgeApi failure evidence', () => {
     const stats = await getKnowledgeStats();
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://sovereign-backend.arelorian.de/api/knowledge/stats',
+      '/api/knowledge/stats',
       { credentials: 'include' },
     );
     expect(stats).toMatchObject({ sources: 2, embeddedBlocks: 5, storage: 'postgres-pgvector' });
@@ -53,7 +53,7 @@ describe('knowledgeApi failure evidence', () => {
     const result = await importKnowledgeUrl('https://example.test/source', 'Bound source');
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://sovereign-backend.arelorian.de/api/knowledge/sources/url',
+      '/api/knowledge/sources/url',
       expect.objectContaining({
         method: 'POST',
         credentials: 'include',
@@ -117,9 +117,9 @@ describe('knowledgeApi failure evidence', () => {
     const result = await uploadKnowledgeFile(file, status => statuses.push(status));
 
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
-      'https://sovereign-backend.arelorian.de/api/knowledge/sources/upload-ticket',
+      '/api/knowledge/sources/upload-ticket',
       'https://upload.example.test/object-1',
-      'https://sovereign-backend.arelorian.de/api/knowledge/sources/upload-confirm',
+      '/api/knowledge/sources/upload-confirm',
     ]);
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
       filename: 'notes.txt',
@@ -142,7 +142,7 @@ describe('knowledgeApi failure evidence', () => {
     await deleteKnowledgeSource('source/with spaces');
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://sovereign-backend.arelorian.de/api/knowledge/sources/source%2Fwith%20spaces',
+      '/api/knowledge/sources/source%2Fwith%20spaces',
       expect.objectContaining({ method: 'DELETE', credentials: 'include' }),
     );
   });
@@ -168,7 +168,7 @@ describe('knowledgeApi failure evidence', () => {
     const result = await importProgrammingLanguageCatalog();
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://sovereign-backend.arelorian.de/api/knowledge/catalogs/programming-languages/import',
+      '/api/knowledge/catalogs/programming-languages/import',
       expect.objectContaining({
         method: 'POST',
         credentials: 'include',

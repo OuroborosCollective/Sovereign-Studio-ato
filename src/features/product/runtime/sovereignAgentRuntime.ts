@@ -166,12 +166,11 @@ export function createSovereignAgentHealthReport(config: SovereignAgentConfig): 
 
 export function resolveSovereignAgentConfig(input: SovereignAgentConfigInput = {}): SovereignAgentConfig {
   const agentApiUrl = normalizeUrl(
-    input.agentApiUrl
-      || readWindowOverride('__SOVEREIGN_AGENT_API_URL__')
-      || readBuildEnv('VITE_SOVEREIGN_AGENT_API_URL')
-      || readBuildEnv('VITE_SOVEREIGN_BACKEND_URL')
-      || readSameOriginBackendUrl()
-      || '',
+    input.agentApiUrl !== undefined
+      ? input.agentApiUrl
+      : readWindowOverride('__SOVEREIGN_AGENT_API_URL__')
+        || readBuildEnv('VITE_SOVEREIGN_AGENT_API_URL')
+        || '',
   );
   const enabled = typeof input.enabled === 'boolean' ? input.enabled : Boolean(agentApiUrl);
   const deploymentMode: SovereignAgentDeploymentMode = input.deploymentMode
@@ -179,7 +178,6 @@ export function resolveSovereignAgentConfig(input: SovereignAgentConfigInput = {
   const urlSafe = !agentApiUrl || isHttpsUrl(agentApiUrl) || isLocalUrl(agentApiUrl);
   const ready = enabled
     && deploymentMode === 'sovereign-agent-backend'
-    && Boolean(agentApiUrl)
     && urlSafe;
 
   return {

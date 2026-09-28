@@ -2365,7 +2365,7 @@ export function BuilderContainer({
       ))
     : [];
   const githubAccessApiBase = useMemo(
-    () => agentConfig?.agentApiUrl || resolveSovereignAgentConfig().agentApiUrl || SOVEREIGN_WORKER_BASE,
+    () => agentConfig?.agentApiUrl || resolveSovereignAgentConfig().agentApiUrl || '',
     [agentConfig],
   );
   const scopedAgentIsRunning = Boolean(
@@ -5507,7 +5507,7 @@ Das echte Repo-Setup wurde geöffnet.`);
       ].filter(Boolean).join(" ")}
       data-role={builderContainerContract.dataRole}
       data-testid={builderContainerContract.testId}
-      data-layout={chatPrimary ? "chat-primary-agent-zero-background" : "chat-inspector-modules"}
+      data-layout={chatPrimary ? "chat-primary-backend" : "chat-inspector-modules"}
       aria-label={builderContainerContract.ariaLabel}
       style={{
         width: "100%",

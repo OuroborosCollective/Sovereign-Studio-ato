@@ -7,7 +7,7 @@
 
 const API_BASE: string =
   (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
-  'https://sovereign-backend.arelorian.de';
+  '';
 
 async function skillFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
