@@ -5,9 +5,9 @@ describe('primaryBridgeConfig', () => {
   it('uses the authenticated Sovereign backend as the only online route', () => {
     const config = resolvePrimaryBridgeConfig();
     expect(config.ready).toBe(true);
-    expect(config.backendBaseUrl).toBe('https://sovereign-backend.arelorian.de');
-    expect(config.routesUrl).toBe('https://sovereign-backend.arelorian.de/api/llm/routes');
-    expect(config.chatUrl).toBe('https://sovereign-backend.arelorian.de/api/llm/chat');
+    expect(config.backendBaseUrl).toBe('');
+    expect(config.routesUrl).toBe('/api/llm/routes');
+    expect(config.chatUrl).toBe('/api/llm/chat');
     expect(config.accountId).toBe('');
     expect(config.proxyKey).toBe('');
     expect(config.model).toBe('');

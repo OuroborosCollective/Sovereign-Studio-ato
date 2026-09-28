@@ -1,4 +1,4 @@
-const DEFAULT_BACKEND_URL = 'https://sovereign-backend.arelorian.de';
+const DEFAULT_BACKEND_URL = '';
 
 type ImportMetaWithEnv = ImportMeta & { env?: Record<string, string | undefined> };
 
@@ -56,7 +56,7 @@ export function resolvePrimaryBridgeConfig(overrides: { proxyUrl?: string; model
 
 export function normalizePrimaryBridgeUrl(value: string): string {
   const trimmed = value.trim();
-  if (!trimmed) throw new Error('Sovereign backend URL is missing.');
-  if (!/^https:\/\//i.test(trimmed)) throw new Error('Sovereign backend URL must use HTTPS.');
+  if (!trimmed) return '';
+  if (!/^(?:https?:\/\/|\/)/i.test(trimmed)) throw new Error('Sovereign backend URL must use HTTPS or same-origin routing.');
   return trimmed.replace(/\/+$/, '');
 }

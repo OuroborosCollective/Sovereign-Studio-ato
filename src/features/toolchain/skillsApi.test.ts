@@ -89,10 +89,10 @@ describe('skillsApi endpoint contracts', () => {
       init: init as RequestInit,
     }));
     expect(calls.map(call => call.url)).toEqual([
-      'https://sovereign-backend.arelorian.de/api/toolchain/skills/scan',
-      'https://sovereign-backend.arelorian.de/api/toolchain/skills/read',
-      'https://sovereign-backend.arelorian.de/api/toolchain/skills/adapt',
-      'https://sovereign-backend.arelorian.de/api/toolchain/skills/install',
+      '/api/toolchain/skills/scan',
+      '/api/toolchain/skills/read',
+      '/api/toolchain/skills/adapt',
+      '/api/toolchain/skills/install',
     ]);
     expect(calls.every(call => call.init.method === 'POST')).toBe(true);
     expect(calls.every(call => call.init.credentials === 'include')).toBe(true);
