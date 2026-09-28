@@ -584,7 +584,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   it("renders the AppControl DevChat shell structure", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     const root = screen.getByTestId("builder-container");
-    expect(root).toHaveAttribute("data-layout", "chat-primary-agent-zero-background");
+    expect(root).toHaveAttribute("data-layout", "chat-primary-backend");
     expect(root).toHaveAttribute("aria-label", "Sovereign Builder");
     expect(screen.getAllByText("Sovereign").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText("Monitor")).toBeNull();
@@ -672,7 +672,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined());
-    expect(screen.getByTestId('builder-container')).toHaveAttribute('data-layout', 'chat-primary-agent-zero-background');
+    expect(screen.getByTestId('builder-container')).toHaveAttribute('data-layout', 'chat-primary-backend');
     expect(screen.getByTestId('primary-surface-tab')).toHaveAttribute('data-primary-surface', 'chat');
     expect(screen.getByRole('button', { name: 'Sovereign Chat' })).toHaveTextContent('CHAT');
     expect(screen.queryByText('monitor runtime output')).toBeNull();
