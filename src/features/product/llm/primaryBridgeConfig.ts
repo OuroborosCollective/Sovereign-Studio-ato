@@ -57,6 +57,6 @@ export function resolvePrimaryBridgeConfig(overrides: { proxyUrl?: string; model
 export function normalizePrimaryBridgeUrl(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return '';
-  if (!/^(?:https?:\/\/|\/)/i.test(trimmed)) throw new Error('Sovereign backend URL must use HTTPS or same-origin routing.');
+  if (!/^(?:https:\/\/|\/)/i.test(trimmed)) throw new Error('Sovereign backend URL must use HTTPS or same-origin routing.');
   return trimmed.replace(/\/+$/, '');
 }

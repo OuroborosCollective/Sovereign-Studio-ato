@@ -140,6 +140,12 @@ function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
 }
 
+function readSameOriginBackendUrl(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const origin = window.location?.origin?.trim();
+  return origin && origin !== 'null' ? origin : undefined;
+}
+
 function isLocalUrl(value: string): boolean {
   return /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?($|\/)/i.test(value);
 }
