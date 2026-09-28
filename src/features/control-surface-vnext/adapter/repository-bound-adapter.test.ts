@@ -46,6 +46,21 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     expect(() => buildRepositoryBoundRunRequest('Ändere README.md.', 'swarm')).toThrow(/single agent/i);
   });
 
+  it('defaults the vNext adapter to explicit same-origin repository execution without an external agent host', async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL) => new Response(JSON.stringify({
+      ok: true,
+      jobId: 'agent-same-origin-1',
+      job: { jobId: 'agent-same-origin-1' },
+    }), { status: 202 }));
+    const adapter = new SovereignProductionAdapter(fetcher as typeof fetch);
+
+    await expect(adapter.runSingleAgent('Prüfe den aktuellen Build.')).resolves.toEqual({ jobId: 'agent-same-origin-1' });
+    expect(fetcher).toHaveBeenCalledWith('/api/user/agent/repository/run', expect.objectContaining({
+      method: 'POST',
+      credentials: 'include',
+    }));
+  });
+
   it('starts the vNext mission through the dedicated repository endpoint and returns the persisted job id', async () => {
     const config: SovereignAgentConfig = {
       enabled: true,

@@ -19,6 +19,18 @@ describe('sovereignAgentRuntime', () => {
     expect(config.agentApiUrl).toBe('');
     expect(config).toMatchObject({ enabled: false, ready: false, deploymentMode: 'disabled' });
   });
+  it('allows an explicit same-origin backend mode without inventing an external agent host', () => {
+    expect(resolveSovereignAgentConfig({
+      enabled: true,
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: '',
+    })).toMatchObject({
+      enabled: true,
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: '',
+      ready: true,
+    });
+  });
   it('rejects unsafe non-local HTTP URLs', () => {
     expect(resolveSovereignAgentConfig({ enabled: true, agentApiUrl: 'http://agent.example.test' }).ready).toBe(false);
   });
