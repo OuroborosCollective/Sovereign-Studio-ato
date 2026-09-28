@@ -27,7 +27,9 @@ env:
   NODE_VERSION: '22'
   PNPM_VERSION: 9.12.2
   CI: 'true'
-  VITE_ADMIN_API_BASE: https://sovereign-backend.arelorian.de
+  # The default browser suite exercises the unified same-origin web app.
+  # External/backend gateway targets are scoped to explicit live/native jobs below.
+  VITE_ADMIN_API_BASE: ''
 
 concurrency:
   group: sovereign-e2e-smoke-${{ github.ref }}

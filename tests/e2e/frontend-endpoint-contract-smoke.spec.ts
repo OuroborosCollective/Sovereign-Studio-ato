@@ -156,7 +156,7 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
   });
 
   test('the built vNext surface dispatches one persisted repository job and preserves a backend blocker without synthesizing publication', async ({ page }) => {
-    const observed: Array<{ method: string; path: string }> = [];
+    const observed: Array<{ method: string; path: string; origin: string }> = [];
     const unexpectedApiRequests: Array<{ method: string; path: string }> = [];
     const repositoryBodies: Array<Record<string, unknown>> = [];
     const pageErrors: string[] = [];
@@ -181,7 +181,9 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     page.on('pageerror', error => pageErrors.push(error.message));
     page.on('request', request => {
       const url = new URL(request.url());
-      if (url.pathname.startsWith('/api/')) observed.push({ method: request.method(), path: url.pathname });
+      if (url.pathname.startsWith('/api/')) {
+        observed.push({ method: request.method(), path: url.pathname, origin: url.origin });
+      }
     });
 
     await page.route('**/api/**', async route => {
@@ -274,6 +276,9 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     await expect(page.getByText('BLOCKED').first()).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/Smoke blocker preserved from persisted repository job/).first()).toBeVisible({ timeout: 10_000 });
 
+    expect(observed.length).toBeGreaterThan(0);
+    const appOrigin = new URL(page.url()).origin;
+    expect(observed.every(item => item.origin === appOrigin)).toBe(true);
     expect(repositoryBodies).toHaveLength(1);
     expect(repositoryBodies[0]).toEqual({
       mission: 'Prüfe den aktuellen Build und ändere nichts ohne die bestehenden Runtime-Gates.',
