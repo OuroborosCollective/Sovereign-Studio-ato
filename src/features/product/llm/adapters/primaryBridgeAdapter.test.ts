@@ -65,8 +65,10 @@ describe('primaryBridgeAdapter', () => {
       }));
     vi.stubGlobal('fetch', fetchMock);
 
+    // No explicit gateway override: this test exercises the unified web
+    // application's same-origin backend default.
     const adapter = createPrimaryBridgeAdapter({
-      proxyUrl: 'https://sovereign-backend.arelorian.de',
+      proxyUrl: '',
       model: 'revolver-free-provider-model',
     });
     const result = await adapter.run({
