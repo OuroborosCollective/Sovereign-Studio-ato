@@ -61,3 +61,7 @@
 ## 2025-05-16 - [State-Dependent Button Titles vs Accessible Names]
 **Learning:** To improve accessibility for state-dependent interactive elements (like a submit button) that already have visible text, it is crucial to dynamically update their `title` attribute rather than dynamically replacing their `aria-label`. Completely replacing or overriding visible text with an `aria-label` violates WCAG 2.5.3 (Label in Name) and can disrupt standard user discovery.
 **Action:** Always dynamically update the `title` attribute for state-dependent tooltips on buttons with text, and reserve `aria-label` only for elements without readable text or when augmenting (not replacing) visible text.
+
+## 2024-10-24 - Descriptive Titles for Dense Indicator Buttons
+**Learning:** Summary indicator buttons using dense visual typography are hard to read for users and lack clarity. Dynamically updating native title attributes improves discoverability without cluttering the UI.
+**Action:** Always add state-dependent native title tooltips to dense visual metric indicators, and ensure consistent localization in aria-labels across the app.
