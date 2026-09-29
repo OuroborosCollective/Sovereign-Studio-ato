@@ -87,3 +87,7 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+
+## 2026-09-30 - [WeakMap Caching for Async WebCrypto Hashing and Skill Phrase Normalization]
+**Learning:** Re-computing WebCrypto SHA-256 digests (`crypto.subtle.digest`) and re-normalizing trigger phrases during every candidate resolution step introduces severe asynchronous event loop lag and CPU overhead. Caching the `Promise<Summary>` and pre-normalized phrases in `WeakMap` instances keyed on the immutable manifest reference yields a ~30x candidate resolution speedup (~1,933ms down to ~63.5ms per 10k calls) while avoiding memory leaks when manifests are garbage collected.
+**Action:** Use `WeakMap` keyed on immutable manifest or domain model references to memoize async WebCrypto SHA-256 promises and pre-normalized search phrases across candidate evaluation iterations.

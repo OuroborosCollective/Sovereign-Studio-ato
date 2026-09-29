@@ -92,6 +92,25 @@ const MANIFEST_FIELDS = new Set([
   'requiredEvidence', 'references', 'scripts', 'ownerPolicyHash',
 ]);
 
+const ALLOWED_EFFECTS_BY_MODE: Record<SovereignSkillMode, readonly SovereignSkillEffectClass[]> = {
+  ASSESS: ['read_only'],
+  PROPOSE: ['read_only'],
+  APPLY: ['read_only', 'workspace_mutation'],
+  OPERATE: ['read_only', 'workspace_mutation', 'external_mutation'],
+};
+
+const NORM_TEXT_PATTERN = /[^a-z0-9_.:/-]+/g;
+
+// Module-scoped caches for immutable manifest summaries and phrase normalizations
+const SUMMARY_CACHE = new WeakMap<SovereignSkillManifestV1, Promise<SovereignSkillSummaryV1>>();
+
+interface NormalizedSkillPhrases {
+  readonly triggers: readonly { readonly raw: string; readonly norm: string }[];
+  readonly antiTriggers: readonly { readonly raw: string; readonly norm: string }[];
+}
+
+const PHRASE_NORM_CACHE = new WeakMap<SovereignSkillManifestV1, NormalizedSkillPhrases>();
+
 function requireString(value: unknown, label: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new Error(`${label} must be a non-empty string`);
@@ -211,25 +230,44 @@ export function parseSovereignSkillManifestV1(payload: unknown): SovereignSkillM
   });
 }
 
-export async function summarizeSovereignSkill(manifest: SovereignSkillManifestV1): Promise<SovereignSkillSummaryV1> {
-  const manifestHash = await sha256(canonicalize(manifest));
-  return Object.freeze({
-    schemaVersion: manifest.schemaVersion,
-    skillId: manifest.skillId,
-    version: manifest.version,
-    description: manifest.description,
-    triggers: manifest.triggers,
-    antiTriggers: manifest.antiTriggers,
-    modes: manifest.modes,
-    requiredCapabilities: manifest.requiredCapabilities,
-    forbiddenCapabilities: manifest.forbiddenCapabilities,
-    effects: Object.freeze(Array.from(new Set(manifest.scripts.map((script) => script.effectClass))).sort()),
-    manifestHash,
-  });
+export function summarizeSovereignSkill(manifest: SovereignSkillManifestV1): Promise<SovereignSkillSummaryV1> {
+  let cached = SUMMARY_CACHE.get(manifest);
+  if (!cached) {
+    cached = (async () => {
+      const manifestHash = await sha256(canonicalize(manifest));
+      return Object.freeze({
+        schemaVersion: manifest.schemaVersion,
+        skillId: manifest.skillId,
+        version: manifest.version,
+        description: manifest.description,
+        triggers: manifest.triggers,
+        antiTriggers: manifest.antiTriggers,
+        modes: manifest.modes,
+        requiredCapabilities: manifest.requiredCapabilities,
+        forbiddenCapabilities: manifest.forbiddenCapabilities,
+        effects: Object.freeze(Array.from(new Set(manifest.scripts.map((script) => script.effectClass))).sort()),
+        manifestHash,
+      });
+    })();
+    SUMMARY_CACHE.set(manifest, cached);
+  }
+  return cached;
 }
 
 function normalizedText(value: string): string {
-  return (value.toLowerCase().match(/[a-z0-9_.:/-]+/g) ?? []).join(' ');
+  return value.toLowerCase().replace(NORM_TEXT_PATTERN, ' ').trim();
+}
+
+function getNormalizedPhrases(manifest: SovereignSkillManifestV1): NormalizedSkillPhrases {
+  let cached = PHRASE_NORM_CACHE.get(manifest);
+  if (!cached) {
+    cached = {
+      triggers: manifest.triggers.map((t) => ({ raw: t, norm: normalizedText(t) })),
+      antiTriggers: manifest.antiTriggers.map((t) => ({ raw: t, norm: normalizedText(t) })),
+    };
+    PHRASE_NORM_CACHE.set(manifest, cached);
+  }
+  return cached;
 }
 
 export async function resolveSovereignSkillCandidate(input: {
@@ -241,9 +279,18 @@ export async function resolveSovereignSkillCandidate(input: {
 }): Promise<SovereignSkillCandidateDecision> {
   const summary = await summarizeSovereignSkill(input.manifest);
   const text = normalizedText(input.requestText);
-  const match = (phrase: string) => text.includes(normalizedText(phrase));
-  const matchedTriggers = input.manifest.triggers.filter(match).sort();
-  const matchedAntiTriggers = input.manifest.antiTriggers.filter(match).sort();
+  const phrases = getNormalizedPhrases(input.manifest);
+
+  const matchedTriggers = phrases.triggers
+    .filter((t) => text.includes(t.norm))
+    .map((t) => t.raw)
+    .sort();
+
+  const matchedAntiTriggers = phrases.antiTriggers
+    .filter((a) => text.includes(a.norm))
+    .map((a) => a.raw)
+    .sort();
+
   const staged = new Set(input.stagedCapabilities);
   const missingCapabilities = input.manifest.requiredCapabilities.filter((capability) => !staged.has(capability)).sort();
   const forbiddenStaged = input.manifest.forbiddenCapabilities.some((capability) => staged.has(capability));
@@ -272,12 +319,6 @@ export function visibleSkillEffectsForMode(
   manifest: SovereignSkillManifestV1,
   mode: SovereignSkillMode,
 ): readonly SovereignSkillEffectClass[] {
-  const allowed: Record<SovereignSkillMode, readonly SovereignSkillEffectClass[]> = {
-    ASSESS: ['read_only'],
-    PROPOSE: ['read_only'],
-    APPLY: ['read_only', 'workspace_mutation'],
-    OPERATE: ['read_only', 'workspace_mutation', 'external_mutation'],
-  };
   const declared = new Set(manifest.scripts.map((script) => script.effectClass));
-  return Object.freeze(allowed[mode].filter((effect) => declared.has(effect)));
+  return Object.freeze(ALLOWED_EFFECTS_BY_MODE[mode].filter((effect) => declared.has(effect)));
 }
