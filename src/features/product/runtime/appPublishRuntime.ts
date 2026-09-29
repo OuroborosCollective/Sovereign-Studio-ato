@@ -20,7 +20,18 @@ export interface PublishGateResult {
 const MAX_RECOMMENDATIONS = 3;
 
 function compactRecommendations(items: string[]): string[] {
-  return items.map((item) => item.trim()).filter(Boolean).slice(0, MAX_RECOMMENDATIONS);
+  // Bolt ⚡ Optimization: Single pass bounded iteration.
+  // Replaces map().filter().slice() to immediately exit upon hitting recommendation limits.
+  // Expected Impact: Avoids evaluating entire items list which saves memory allocations.
+  const result: string[] = [];
+  for (const item of items) {
+    const trimmed = item.trim();
+    if (trimmed) {
+      result.push(trimmed);
+      if (result.length >= MAX_RECOMMENDATIONS) break;
+    }
+  }
+  return result;
 }
 
 function canUseWindow(): boolean {

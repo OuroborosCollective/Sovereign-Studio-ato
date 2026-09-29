@@ -272,7 +272,17 @@ async function loadRepoDirectly(draft: SetupDraft, detail: MobileRepoSetupDetail
     if (!treeResponse.ok) throw new Error(`GitHub Tree Fehler: ${treeResponse.status}`);
     const treeData = await treeResponse.json() as { tree?: unknown };
     const rawTree = Array.isArray(treeData.tree) ? treeData.tree : [];
-    const files = rawTree.map(directRepoFileFromUnknown).filter((file): file is DirectRepoFile => Boolean(file)).slice(0, 500);
+    // Bolt ⚡ Optimization: Bounded iteration over large repo tree arrays.
+    // Skips O(N) mapping and filtering passes over potentially huge repo trees.
+    // Expected Impact: Processing bounded strictly to 500 records, reducing parsing GC overhead heavily.
+    const files: DirectRepoFile[] = [];
+    for (const item of rawTree) {
+      const file = directRepoFileFromUnknown(item);
+      if (file) {
+        files.push(file);
+        if (files.length >= 500) break;
+      }
+    }
     if (!files.length) throw new Error('GitHub Tree Fehler: empty tree');
     const repoStatus = `${files.length} echte Repo-Einträge geladen (${defaultBranch})`;
     saveDirectSnapshot({ repoUrl: draft.repoUrl, repoBranch: defaultBranch, repoStatus, repoFiles: files });

@@ -41,12 +41,24 @@ export function createDurableRepoSnapshot(input: {
   repoFiles: RepoFile[];
   savedAt?: number;
 }): DurableRepoSnapshot {
+  // Bolt ⚡ Optimization: Bounded single-pass iteration.
+  // Replaces chained `.map().filter().slice()` which evaluates the entire array and creates massive intermediate arrays.
+  // Expected Impact: Eliminates O(N) intermediate allocations when input.repoFiles > MAX_FILES.
+  const repoFiles: RepoFile[] = [];
+  for (const item of input.repoFiles) {
+    const file = normalizeRepoFile(item);
+    if (file) {
+      repoFiles.push(file);
+      if (repoFiles.length >= MAX_FILES) break;
+    }
+  }
+
   return {
     version: 1,
     repoUrl: cleanText(input.repoUrl),
     repoBranch: cleanText(input.repoBranch, 160),
     repoStatus: cleanText(input.repoStatus, 1000),
-    repoFiles: input.repoFiles.map(normalizeRepoFile).filter((file): file is RepoFile => Boolean(file)).slice(0, MAX_FILES),
+    repoFiles,
     savedAt: typeof input.savedAt === 'number' && Number.isFinite(input.savedAt) && input.savedAt > 0 ? input.savedAt : Date.now(),
   };
 }

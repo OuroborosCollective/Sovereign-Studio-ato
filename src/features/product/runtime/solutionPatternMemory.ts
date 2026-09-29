@@ -337,7 +337,17 @@ export function buildSolutionPattern(input: SolutionPatternLearningInput): Solut
   const contextPaths = normalizeList(input.problem.contextPaths);
   const contextSignals = normalizeList(input.problem.contextSignals);
   const changedFiles = normalizeList(input.fix.changedFiles);
-  const steps = input.fix.steps.map(sanitizeText).filter(Boolean).slice(0, MAX_LIST);
+  // Bolt ⚡ Optimization: Bounded early exit processing.
+  // Drops chained array evaluators to bound memory allocation to MAX_LIST.
+  // Expected Impact: Constant O(1) memory bound for step allocations instead of scaling with input array length.
+  const steps: string[] = [];
+  for (const item of input.fix.steps) {
+    const step = sanitizeText(item);
+    if (step) {
+      steps.push(step);
+      if (steps.length >= MAX_LIST) break;
+    }
+  }
   const tags = normalizeList(input.tags ?? []);
   const outputNodes = Array.from(new Set(input.outputNodes));
   const extension = fileExtension(input.problem.filePath);
