@@ -83,3 +83,7 @@
 ## 2026-08-28 - [Replacing Array Spreads and Multi-Pass Mapping in Signal Receipts]
 **Learning:** Using `Math.min(...arr)` and `Math.max(...arr)` on dynamically allocated `.map()` arrays creates both significant heap allocation pressure and call-stack overflow risks (`RangeError: Maximum call stack size exceeded`) when processing large signal streams. Consolidating range calculations and set accumulation into a single $O(N)$ indexed `for` loop pass drops memory overhead to $O(1)$ and speeds up receipt generation by ~33%.
 **Action:** Avoid spreading large or dynamically generated arrays into functions like `Math.min` or `Math.max`. Instead, track min/max bounds imperatively in a single loop traversal alongside set populating.
+
+## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
+**Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
+**Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.

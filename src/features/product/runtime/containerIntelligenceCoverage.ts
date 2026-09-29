@@ -39,6 +39,8 @@ const REQUIRED_AREAS: ContainerIntelligenceArea[] = [
   'ui-guidance',
 ];
 
+const REQUIRED_AREAS_SET = new Set<string>(REQUIRED_AREAS);
+
 export const CONTAINER_INTELLIGENCE_COVERAGE: ContainerIntelligenceCoverageEntry[] = [
   {
     id: 'repo-snapshot',
@@ -203,16 +205,6 @@ export const CONTAINER_INTELLIGENCE_COVERAGE: ContainerIntelligenceCoverageEntry
   },
 ];
 
-function hasDuplicates(values: string[]): string[] {
-  const seen = new Set<string>();
-  const duplicates = new Set<string>();
-  for (const value of values) {
-    if (seen.has(value)) duplicates.add(value);
-    seen.add(value);
-  }
-  return [...duplicates];
-}
-
 function validateEntry(entry: ContainerIntelligenceCoverageEntry): string[] {
   const errors: string[] = [];
   if (!entry.id.trim()) errors.push('Container coverage id is required.');
@@ -222,15 +214,31 @@ function validateEntry(entry: ContainerIntelligenceCoverageEntry): string[] {
   if (!Array.isArray(entry.coveredAreas)) errors.push(`Container ${entry.id} coveredAreas must be an array.`);
   if (!Array.isArray(entry.missingAreas)) errors.push(`Container ${entry.id} missingAreas must be an array.`);
   if (!entry.nextAction.trim()) errors.push(`Container ${entry.id} nextAction is required.`);
-  const unknownAreas = [...entry.coveredAreas, ...entry.missingAreas].filter((area) => !REQUIRED_AREAS.includes(area));
+
+  const missingAreasSet = new Set(entry.missingAreas);
+  const unknownAreas: string[] = [];
+  const overlap: string[] = [];
+
+  for (const area of entry.coveredAreas) {
+    if (!REQUIRED_AREAS_SET.has(area)) unknownAreas.push(area);
+    if (missingAreasSet.has(area)) overlap.push(area);
+  }
+  for (const area of entry.missingAreas) {
+    if (!REQUIRED_AREAS_SET.has(area)) unknownAreas.push(area);
+  }
+
   if (unknownAreas.length) errors.push(`Container ${entry.id} has unknown area(s): ${unknownAreas.join(', ')}`);
-  const overlap = entry.coveredAreas.filter((area) => entry.missingAreas.includes(area));
   if (overlap.length) errors.push(`Container ${entry.id} area(s) cannot be both covered and missing: ${overlap.join(', ')}`);
   if (entry.status === 'covered' && entry.missingAreas.length > 0) errors.push(`Container ${entry.id} is covered but still has missing areas.`);
   if (entry.status !== 'covered' && entry.missingAreas.length === 0) errors.push(`Container ${entry.id} is not covered but has no missing areas.`);
+
   // Semantic validation: 'covered' status requires ALL REQUIRED_AREAS to be present
   if (entry.status === 'covered') {
-    const missingRequired = REQUIRED_AREAS.filter((area) => !entry.coveredAreas.includes(area));
+    const coveredAreasSet = new Set(entry.coveredAreas);
+    const missingRequired: string[] = [];
+    for (const area of REQUIRED_AREAS) {
+      if (!coveredAreasSet.has(area)) missingRequired.push(area);
+    }
     if (missingRequired.length > 0) {
       errors.push(`Container ${entry.id} is marked 'covered' but missing required areas: ${missingRequired.join(', ')}`);
     }
@@ -242,16 +250,43 @@ export function buildContainerIntelligenceCoverageReport(
   entries = CONTAINER_INTELLIGENCE_COVERAGE,
 ): ContainerIntelligenceCoverageReport {
   const errors: string[] = [];
-  const ids = entries.map((entry) => entry.id);
-  const paths = entries.map((entry) => entry.containerPath);
-  const duplicateIds = hasDuplicates(ids);
-  const duplicatePaths = hasDuplicates(paths);
-  if (duplicateIds.length) errors.push(`Duplicate container coverage id(s): ${duplicateIds.join(', ')}`);
-  if (duplicatePaths.length) errors.push(`Duplicate container path(s): ${duplicatePaths.join(', ')}`);
-  for (const entry of entries) errors.push(...validateEntry(entry));
-  const coveredCount = entries.filter((entry) => entry.status === 'covered').length;
-  const partialCount = entries.filter((entry) => entry.status === 'partial').length;
-  const missingCount = entries.filter((entry) => entry.status === 'missing').length;
+  const seenIds = new Set<string>();
+  const duplicateIds = new Set<string>();
+  const seenPaths = new Set<string>();
+  const duplicatePaths = new Set<string>();
+
+  let coveredCount = 0;
+  let partialCount = 0;
+  let missingCount = 0;
+
+  // ⚡ Bolt: Single-pass accumulation of duplicate checks, status counters, and entry validation
+  // eliminates intermediate .map() array allocations and multiple .filter() array traversals.
+  const entryErrors: string[] = [];
+
+  for (const entry of entries) {
+    if (seenIds.has(entry.id)) {
+      duplicateIds.add(entry.id);
+    } else {
+      seenIds.add(entry.id);
+    }
+
+    if (seenPaths.has(entry.containerPath)) {
+      duplicatePaths.add(entry.containerPath);
+    } else {
+      seenPaths.add(entry.containerPath);
+    }
+
+    if (entry.status === 'covered') coveredCount++;
+    else if (entry.status === 'partial') partialCount++;
+    else if (entry.status === 'missing') missingCount++;
+
+    entryErrors.push(...validateEntry(entry));
+  }
+
+  if (duplicateIds.size > 0) errors.push(`Duplicate container coverage id(s): ${Array.from(duplicateIds).join(', ')}`);
+  if (duplicatePaths.size > 0) errors.push(`Duplicate container path(s): ${Array.from(duplicatePaths).join(', ')}`);
+  errors.push(...entryErrors);
+
   return {
     valid: errors.length === 0,
     errors,
