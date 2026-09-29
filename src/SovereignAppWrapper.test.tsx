@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 vi.mock('./features/control-surface-vnext/App', () => ({
   default: () => (
     <section data-testid="sovereign-control-surface-vnext">
-      <textarea aria-label="Mission an Sovereign" />
+      <textarea aria-label="Mission to Sovereign" />
       <nav aria-label="Sovereign mobile projections" />
     </section>
   ),
@@ -65,7 +65,7 @@ describe('SovereignAppWrapper - vNext runtime-readback UI contract', () => {
       expect(screen.getByTestId('sovereign-control-surface-vnext')).toBeDefined();
     });
 
-    expect(screen.getByLabelText('Mission an Sovereign')).toBeDefined();
+    expect(screen.getByLabelText('Mission to Sovereign')).toBeDefined();
     expect(screen.queryByLabelText('LLM Route')).toBeNull();
     expect(screen.queryByLabelText('Sovereign Hauptmenü')).toBeNull();
     expect(screen.queryByTestId('live-workspace-monitor-desktop')).toBeNull();
