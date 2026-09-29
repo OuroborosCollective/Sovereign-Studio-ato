@@ -16413,10 +16413,18 @@
     },
     {
       "dynamic": false,
-      "line": 5,
+      "line": 6,
       "source": "src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx",
       "source_status": "active",
       "target": "src/features/control-surface-vnext/utils/audio.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 5,
+      "source": "src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx",
+      "source_status": "active",
+      "target": "src/features/product/components/ChatMarkdown.tsx",
       "target_status": "active"
     },
     {
@@ -21428,10 +21436,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "bb9c43ddcb4266ae248eaa5a163844c38422c81eaee23a9bd09efcb4ff896a65",
-  "revision": "98e6c09b41454b7533bd78b68ee6776c97faadee",
+  "reportSha256": "154942195085196dd4b48ec6153e02731c978ef4a3013cd0aed104df6c7453c5",
+  "revision": "baf99929eeeb424a794f1c5f864b16f5870ba005",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "5d3ab130fb180b57aa434a976b2b4c6b618c9a1b5683de870847a551f5a06f80",
+  "sourceTreeSha256": "089fd01cf6ff27cfa8b394e0d5e1d768d5533edef8b693bfc8bb6c7cdce380d3",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -21446,7 +21454,7 @@
     "externalRequestCount": 30,
     "frontendCallCount": 287,
     "frontendModuleCount": 562,
-    "importEdgeCount": 761,
+    "importEdgeCount": 762,
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
