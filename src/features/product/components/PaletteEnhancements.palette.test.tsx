@@ -1080,7 +1080,7 @@ describe('Palette Accessibility Enhancements', () => {
   });
 
   describe('AgentResultCard Accessibility and Micro-UX Enhancements', () => {
-    it('renders with title tooltips on metadata and styled action buttons with descriptive tooltips', () => {
+    it('renders with title tooltips on metadata, semantic list, and styled action buttons with descriptive tooltips', () => {
       const mockSnapshot = {
         id: 'work-123',
         state: 'draft_pr_ready' as const,
@@ -1109,6 +1109,9 @@ describe('Palette Accessibility Enhancements', () => {
       const region = screen.getByRole('region', { name: 'Agent Ergebnis' });
       expect(region).toBeInTheDocument();
 
+      const detailsList = screen.getByRole('list', { name: 'Ergebnis-Details' });
+      expect(detailsList).toBeInTheDocument();
+
       expect(screen.getByTitle('Pull Request #42')).toBeInTheDocument();
       expect(screen.getByTitle('owner/repo')).toBeInTheDocument();
       expect(screen.getByTitle('feature/amazing-ux')).toBeInTheDocument();
@@ -1118,14 +1121,17 @@ describe('Palette Accessibility Enhancements', () => {
       const openBtn = screen.getByRole('button', { name: 'Öffnen' });
       expect(openBtn).toHaveAttribute('title', 'Draft PR auf GitHub öffnen');
       expect(openBtn).toHaveClass('focus-visible:ring-2');
+      expect(openBtn).toHaveClass('transition-opacity');
 
       const diffBtn = screen.getByRole('button', { name: 'Diff ansehen' });
       expect(diffBtn).toHaveAttribute('title', 'Diff-Vorschau der Änderungen anzeigen');
       expect(diffBtn).toHaveClass('focus-visible:ring-2');
+      expect(diffBtn).toHaveClass('transition-opacity');
 
       const watchBtn = screen.getByRole('button', { name: 'Checks beobachten' });
       expect(watchBtn).toHaveAttribute('title', 'GitHub Commit Checks live beobachten');
       expect(watchBtn).toHaveClass('focus-visible:ring-2');
+      expect(watchBtn).toHaveClass('transition-opacity');
 
       fireEvent.click(openBtn);
       expect(onOpen).toHaveBeenCalledTimes(1);
