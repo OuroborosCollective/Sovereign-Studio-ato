@@ -125,6 +125,8 @@ describe('maskSecrets', () => {
     expect(maskSecrets('registration_token: reg_token_val_555')).toBe('registration_token: ****');
     expect(maskSecrets('access_key_id=AKIAIOSFODNN7EXAMPLE')).toBe('access_key_id=****');
     expect(maskSecrets('aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY')).toBe('aws_secret_access_key: ****');
+    expect(maskSecrets('private_key_passphrase: my_secret_passphrase')).toBe('private_key_passphrase: ****');
+    expect(maskSecrets('key_passphrase=my_key_passphrase_123')).toBe('key_passphrase=****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
