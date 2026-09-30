@@ -3037,7 +3037,7 @@ export function BuilderContainer({
     });
   }, [appendChatLine]);
 
-  const appendGuardedWorkerText = useCallback((text: string) => {
+  const appendGuardedWorkerText = useCallback((text: string, metadata?: Record<string, any>) => {
     const claimCheck = checkChatClaim(text, agentWorkSnapshot);
     const guardedText = claimCheck.allowed || !claimCheck.honestFallback
       ? text
@@ -3048,6 +3048,7 @@ export function BuilderContainer({
     appendChatLine({
       role: 'assistant',
       text: guardedText,
+      metadata,
       monitorProjection: {
         schemaVersion: 'sovereign.monitor-communication-projection.v1',
         sourceKind: 'LLM_RESPONSE',
@@ -5014,11 +5015,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       appendActionEvent(buildWorkerResponseEvent());
       let textToAppend = fullText;
       
-      if (streamFallbackMetadata?.fallbackUsed) {
-        appendRuntimeNotice(`Hinweis: ${streamFallbackMetadata.preferredModel} war nicht erreichbar, Antwort kam von ${streamFallbackMetadata.actualModel}.`);
-      }
+      // Fallback is now handled via inline chat message metadata
 
-      appendGuardedWorkerText(textToAppend);
+      const meta = streamFallbackMetadata?.fallbackUsed ? { fallback: { preferredModel: streamFallbackMetadata.preferredModel, actualModel: streamFallbackMetadata.actualModel } } : undefined;
+      appendGuardedWorkerText(textToAppend, meta);
       await quarantineOnlineAnswer(fullText, streamFallbackMetadata?.actualModel ?? requestedChatModel);
       return;
     }
@@ -5035,11 +5035,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       appendActionEvent(buildWorkerResponseEvent());
       let textToAppend = fallback.content;
 
-      if (fallback.fallbackUsed) {
-        appendRuntimeNotice(`Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}.`);
-      }
+      // Fallback is now handled via inline chat message metadata
 
-      appendGuardedWorkerText(textToAppend);
+      const meta = fallback.fallbackUsed ? { fallback: { preferredModel: fallback.preferredModel, actualModel: fallback.actualModel } } : undefined;
+      appendGuardedWorkerText(textToAppend, meta);
       await quarantineOnlineAnswer(fallback.content, fallback.actualModel ?? requestedChatModel);
       return;
     }

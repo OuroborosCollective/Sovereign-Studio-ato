@@ -34,6 +34,7 @@ function MessageCard({ message }: { message: ChatMessage }) {
       {!human && <div className={`w-7 h-7 rounded-md shrink-0 flex items-center justify-center border ${system ? 'bg-[var(--carbon-surface)] border-white/10 text-[var(--text-muted)]' : 'bg-[rgba(255,30,56,0.12)] border-[rgba(255,30,56,0.3)] text-[var(--red-laser)]'}`}>{system ? <Terminal size={13} /> : <Bot size={13} />}</div>}
       <div className={`max-w-[88%] sm:max-w-[82%] rounded-lg border px-3 py-2.5 ${human ? 'bg-[rgba(255,30,56,0.11)] border-[rgba(255,30,56,0.25)]' : 'bg-[var(--carbon-deep)] border-white/5'}`}>
         <div className="whitespace-pre-wrap break-words font-mono text-[10.5px] sm:text-[11px] leading-relaxed text-[var(--text-main)]">{message.content}</div>
+        {message.metadata?.fallback && <div className="mt-1 text-[9px] text-[var(--orange-dim)] italic">Hinweis: {message.metadata.fallback.preferredModel} war nicht erreichbar, Antwort kam von {message.metadata.fallback.actualModel}.</div>}
         <div className="mt-2 flex items-center justify-between gap-3 font-mono text-[8.5px] text-[var(--text-dim)]"><span>{human ? 'OWNER' : system ? 'CONTROL SURFACE' : 'SOVEREIGN READBACK'}</span>{message.evidenceBadge && <span className="text-[var(--emerald-seal)] font-bold">{message.evidenceBadge}</span>}</div>
       </div>
       {human && <div className="w-7 h-7 rounded-md shrink-0 flex items-center justify-center bg-[var(--carbon-surface)] border border-white/10 text-white"><User size={13} /></div>}

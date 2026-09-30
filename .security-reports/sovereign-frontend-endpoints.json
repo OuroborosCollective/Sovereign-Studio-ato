@@ -850,7 +850,7 @@
     },
     {
       "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1508,
+      "line": 1488,
       "methods": [
         "DELETE"
       ],
@@ -859,7 +859,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1508,
+      "line": 1488,
       "methods": [
         "DELETE"
       ],
@@ -868,7 +868,7 @@
     },
     {
       "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1439,
+      "line": 1419,
       "methods": [
         "GET"
       ],
@@ -877,7 +877,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1439,
+      "line": 1419,
       "methods": [
         "GET"
       ],
@@ -886,7 +886,7 @@
     },
     {
       "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1464,
+      "line": 1444,
       "methods": [
         "PUT"
       ],
@@ -895,7 +895,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1464,
+      "line": 1444,
       "methods": [
         "PUT"
       ],
@@ -904,7 +904,7 @@
     },
     {
       "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1565,
+      "line": 1545,
       "methods": [
         "GET"
       ],
@@ -913,7 +913,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1565,
+      "line": 1545,
       "methods": [
         "GET"
       ],
@@ -922,7 +922,7 @@
     },
     {
       "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1531,
+      "line": 1511,
       "methods": [
         "POST"
       ],
@@ -931,7 +931,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1531,
+      "line": 1511,
       "methods": [
         "POST"
       ],
@@ -4831,7 +4831,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1508,
+          "line": 1488,
           "methods": [
             "DELETE"
           ],
@@ -4840,7 +4840,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1508,
+          "line": 1488,
           "methods": [
             "DELETE"
           ],
@@ -4849,7 +4849,7 @@
         },
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1439,
+          "line": 1419,
           "methods": [
             "GET"
           ],
@@ -4858,7 +4858,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1439,
+          "line": 1419,
           "methods": [
             "GET"
           ],
@@ -4867,7 +4867,7 @@
         },
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1464,
+          "line": 1444,
           "methods": [
             "PUT"
           ],
@@ -4876,7 +4876,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1464,
+          "line": 1444,
           "methods": [
             "PUT"
           ],
@@ -4907,7 +4907,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1508,
+          "line": 1488,
           "methods": [
             "DELETE"
           ],
@@ -4916,7 +4916,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1508,
+          "line": 1488,
           "methods": [
             "DELETE"
           ],
@@ -4925,7 +4925,7 @@
         },
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1439,
+          "line": 1419,
           "methods": [
             "GET"
           ],
@@ -4934,7 +4934,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1439,
+          "line": 1419,
           "methods": [
             "GET"
           ],
@@ -4943,7 +4943,7 @@
         },
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1464,
+          "line": 1444,
           "methods": [
             "PUT"
           ],
@@ -4952,7 +4952,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1464,
+          "line": 1444,
           "methods": [
             "PUT"
           ],
@@ -4983,7 +4983,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1508,
+          "line": 1488,
           "methods": [
             "DELETE"
           ],
@@ -4992,7 +4992,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1508,
+          "line": 1488,
           "methods": [
             "DELETE"
           ],
@@ -5001,7 +5001,7 @@
         },
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1439,
+          "line": 1419,
           "methods": [
             "GET"
           ],
@@ -5010,7 +5010,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1439,
+          "line": 1419,
           "methods": [
             "GET"
           ],
@@ -5019,7 +5019,7 @@
         },
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1464,
+          "line": 1444,
           "methods": [
             "PUT"
           ],
@@ -5028,7 +5028,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1464,
+          "line": 1444,
           "methods": [
             "PUT"
           ],
@@ -5059,7 +5059,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1565,
+          "line": 1545,
           "methods": [
             "GET"
           ],
@@ -5068,7 +5068,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1565,
+          "line": 1545,
           "methods": [
             "GET"
           ],
@@ -5099,7 +5099,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1531,
+          "line": 1511,
           "methods": [
             "POST"
           ],
@@ -5108,7 +5108,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1531,
+          "line": 1511,
           "methods": [
             "POST"
           ],
@@ -13435,8 +13435,9 @@
       "status": "BOUND",
       "testReferences": {
         "backend": [
-          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_agent_zero_only_production_smoke_contract.py",
+          "backend/tests/test_cag_self_healing.py",
+          "backend/tests/test_cag_self_healing_runtime.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -13490,8 +13491,9 @@
       "status": "PATH_BOUND_METHOD_UNKNOWN",
       "testReferences": {
         "backend": [
-          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_agent_zero_only_production_smoke_contract.py",
+          "backend/tests/test_cag_self_healing.py",
+          "backend/tests/test_cag_self_healing_runtime.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -13545,8 +13547,9 @@
       "status": "PATH_BOUND_METHOD_UNKNOWN",
       "testReferences": {
         "backend": [
-          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_agent_zero_only_production_smoke_contract.py",
+          "backend/tests/test_cag_self_healing.py",
+          "backend/tests/test_cag_self_healing_runtime.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -13600,8 +13603,9 @@
       "status": "LITERAL_BOUND",
       "testReferences": {
         "backend": [
-          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_agent_zero_only_production_smoke_contract.py",
+          "backend/tests/test_cag_self_healing.py",
+          "backend/tests/test_cag_self_healing_runtime.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -13655,8 +13659,9 @@
       "status": "PATH_BOUND_METHOD_UNKNOWN",
       "testReferences": {
         "backend": [
-          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_agent_zero_only_production_smoke_contract.py",
+          "backend/tests/test_cag_self_healing.py",
+          "backend/tests/test_cag_self_healing_runtime.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -21428,10 +21433,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "bb9c43ddcb4266ae248eaa5a163844c38422c81eaee23a9bd09efcb4ff896a65",
-  "revision": "98e6c09b41454b7533bd78b68ee6776c97faadee",
+  "reportSha256": "d89852f1fc91b3cd7a1fedcb4e54b9890e6c4c4430400fc2ef8df386731859ab",
+  "revision": "bd13f0cb8e3c79b46c4bc0955b646ba5e20e3c62",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "5d3ab130fb180b57aa434a976b2b4c6b618c9a1b5683de870847a551f5a06f80",
+  "sourceTreeSha256": "87bac51ba877386b90cade59fea1158b42b2fedee7e3bb46ecf0ae9a70ac6295",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
