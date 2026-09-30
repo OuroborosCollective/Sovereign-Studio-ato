@@ -51,7 +51,7 @@ from .repository_execution import (
     RepositoryExecutionError,
     RepositoryExecutionTransientError,
     cancel_repository_execution,
-    is_repository_a2a_job,
+    is_repository_executor_job,
     reconcile_repository_execution,
     start_repository_execution,
 )
@@ -1193,7 +1193,7 @@ def register_sovereign_agent_routes(
                 "code": "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE",
                 "error": (
                     "Toolchain handoff is diagnostic only. Repository clone/mutation "
-                    "must use /api/user/agent/repository/run and sovereign-local-runner."
+                    "must use /api/user/agent/repository/run; Sovereign-local-runner is the only repository executor."
                 ),
             }), 409
         evidence_text = str(body.get("evidenceText") or body.get("logText") or "")
@@ -1535,7 +1535,7 @@ def register_sovereign_agent_routes(
                 "code": "GITHUB_CREDENTIAL_FORBIDDEN_ON_EXECUTION",
                 "error": (
                     "Repository execution never accepts a Sovereign GitHub OAuth/token credential. "
-                    "Agent Zero owns repository access for implementation."
+                    "Sovereign-local-runner owns repository access and implementation."
                 ),
             }), 400
         conn = _connection()
@@ -2247,7 +2247,7 @@ def register_sovereign_agent_routes(
                 return jsonify({"error": "Job nicht gefunden"}), 404
             if job.status in ("completed", "failed", "blocked", "cleaned"):
                 return jsonify({"error": "Job ist bereits terminal", "status": job.status}), 400
-            if is_repository_a2a_job(job):
+            if is_repository_executor_job(job):
                 try:
                     cancelled = cancel_repository_execution(conn, job=job)
                 except RepositoryExecutionError as exc:

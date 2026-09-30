@@ -51,7 +51,7 @@ from .repository_execution import (
     RepositoryExecutionError,
     RepositoryExecutionTransientError,
     cancel_repository_execution,
-    is_repository_a2a_job,
+    is_repository_executor_job,
     reconcile_repository_execution,
     start_repository_execution,
 )
@@ -2247,7 +2247,7 @@ def register_sovereign_agent_routes(
                 return jsonify({"error": "Job nicht gefunden"}), 404
             if job.status in ("completed", "failed", "blocked", "cleaned"):
                 return jsonify({"error": "Job ist bereits terminal", "status": job.status}), 400
-            if is_repository_a2a_job(job):
+            if is_repository_executor_job(job):
                 try:
                     cancelled = cancel_repository_execution(conn, job=job)
                 except RepositoryExecutionError as exc:
