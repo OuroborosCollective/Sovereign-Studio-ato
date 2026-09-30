@@ -46,7 +46,8 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     expect(() => buildRepositoryBoundRunRequest('Ändere README.md.', 'swarm')).toThrow(/single agent/i);
   });
 
-  it('defaults the vNext adapter to explicit same-origin repository execution without an external agent host', async () => {
+  it('defaults the vNext adapter to the real browser origin without an external agent host', async () => {
+    vi.stubGlobal('window', { location: { origin: 'https://knd.arelorian.de' } });
     const fetcher = vi.fn(async (_url: RequestInfo | URL) => new Response(JSON.stringify({
       ok: true,
       jobId: 'agent-same-origin-1',
@@ -55,7 +56,7 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     const adapter = new SovereignProductionAdapter(fetcher as typeof fetch);
 
     await expect(adapter.runSingleAgent('Prüfe den aktuellen Build.')).resolves.toEqual({ jobId: 'agent-same-origin-1' });
-    expect(fetcher).toHaveBeenCalledWith('/api/user/agent/repository/run', expect.objectContaining({
+    expect(fetcher).toHaveBeenCalledWith('https://knd.arelorian.de/api/user/agent/repository/run', expect.objectContaining({
       method: 'POST',
       credentials: 'include',
     }));
