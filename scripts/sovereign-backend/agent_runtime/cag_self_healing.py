@@ -20,8 +20,8 @@ OBSERVATION_SCHEMA_VERSION: Final[str] = "sovereign.cag-self-healing-observation
 REPAIR_SCHEMA_VERSION: Final[str] = "sovereign.cag-self-healing-repair.v1"
 AUTHORITY_SCHEMA_VERSION: Final[str] = "sovereign.cag-self-healing-authority.v1"
 
-EXPECTED_EXTERNAL_EXECUTOR: Final[str] = "agent-zero-a2a"
-EXPECTED_A2A_PATH: Final[str] = "/a2a/"
+EXPECTED_REPOSITORY_EXECUTOR: Final[str] = "sovereign-local-runner"
+EXPECTED_REPOSITORY_EXECUTION_PATH: Final[str] = "/api/user/agent/repository/run"
 CURRENT_REPOSITORY_EXECUTION_BILLING_MODE: Final[str] = "free"
 MAX_EVENT_STAGES: Final[int] = 80
 
@@ -48,7 +48,7 @@ FAILURE_BITS: Final[dict[FailureFamily, int]] = {
 
 REPAIR_STRATEGIES: Final[dict[FailureFamily, str]] = {
     FailureFamily.EXECUTOR_MISMATCH: "REPAIR_CONTROL_PLANE_EXECUTOR_ROUTE",
-    FailureFamily.ENDPOINT_ROUTE_MISMATCH: "REPAIR_CONTROL_PLANE_A2A_ENDPOINT",
+    FailureFamily.ENDPOINT_ROUTE_MISMATCH: "REPAIR_CONTROL_PLANE_EXECUTOR_ENDPOINT",
     FailureFamily.HANDOFF_TIMEOUT_WITH_READBACK: "RETRY_READBACK_NO_RESUBMIT",
     FailureFamily.JOB_STATE_TRANSITION_VIOLATION: "REPAIR_CONTROL_PLANE_STATE_MACHINE",
     FailureFamily.BILLING_ROUTE_MISMATCH: "REPAIR_CONTROL_PLANE_BILLING_GUARD",
@@ -72,19 +72,21 @@ _ALLOWED_AUTHORITY_MODES: Final[frozenset[str]] = frozenset({
     "AUTO_BOUNDED_CODE_REPAIR",
 })
 
-_AGENT_ZERO_REF_PREFIX: Final[str] = "agent-zero-a2a:"
-_PENDING_PREFIX: Final[str] = "agent-zero-a2a:pending:submit:"
-_CLAIM_PREFIX: Final[str] = "agent-zero-a2a:claim:"
-_RETRY_PREFIX: Final[str] = "agent-zero-a2a:retry:"
+_EXECUTOR_REF_PREFIX: Final[str] = "sovereign-local-runner:"
+_PENDING_PREFIX: Final[str] = "sovereign-local-runner:pending:submit:"
+_CLAIM_PREFIX: Final[str] = "sovereign-local-runner:claim:"
+_RETRY_PREFIX: Final[str] = "sovereign-local-runner:retry:"
 
 _SIGNIFICANT_STAGE_ORDER: Final[tuple[str, ...]] = (
     "agent_job_created",
-    "agent_zero_repository_access_delegated",
+    "sovereign_repository_checked_out",
     "repository_execution_contract_bound",
-    "agent_zero_a2a_submit_queued",
-    "agent_zero_a2a_submitted",
+    "sovereign_local_execution_queued",
+    "sovereign_executor_started",
+    "sovereign_executor_bound",
     "repository_ready_for_draft_pr",
 )
+
 
 _SECRETISH = re.compile(
     r"(?:authorization\s*:|bearer\s+|api[_-]?key|password|secret|token|gh[pousr]_[A-Za-z0-9_]{12,}|sk-[A-Za-z0-9_-]{12,})",
@@ -121,13 +123,13 @@ def classify_external_ref(external_ref: Any) -> str:
     if not value:
         return "missing"
     if value.startswith(_PENDING_PREFIX):
-        return "agent-zero-a2a-pending"
+        return "sovereign-local-runner-pending"
     if value.startswith(_CLAIM_PREFIX):
-        return "agent-zero-a2a-claim"
+        return "sovereign-local-runner-claim"
     if value.startswith(_RETRY_PREFIX):
-        return "agent-zero-a2a-retry"
-    if value.startswith(_AGENT_ZERO_REF_PREFIX):
-        return EXPECTED_EXTERNAL_EXECUTOR
+        return "sovereign-local-runner-retry"
+    if value.startswith(_EXECUTOR_REF_PREFIX):
+        return EXPECTED_REPOSITORY_EXECUTOR
     return "unexpected-executor"
 
 
@@ -139,7 +141,14 @@ def normalize_event_stages(events: Sequence[Any] | None) -> tuple[str, ...]:
             stage = _bounded_text(item.get("stage"), 80)
         else:
             stage = _bounded_text(item, 80)
-        if stage in {"agent_zero_a2a_task_observed", "agent_zero_a2a_readback_unavailable", "agent_zero_material_progress_observed"}:
+        if stage in {
+            "agent_zero_a2a_task_observed",
+            "agent_zero_a2a_readback_unavailable",
+            "agent_zero_material_progress_observed",
+            "sovereign_local_task_observed",
+            "sovereign_local_readback_unavailable",
+            "sovereign_local_material_progress_observed",
+        }:
             continue
         if stage:
             stages.append(stage)
@@ -157,16 +166,12 @@ def transition_order_valid(event_stages: Sequence[str]) -> bool:
         return False
 
     if "repository_ready_for_draft_pr" in positions:
-        completion_evidence = (
-            "agent_zero_a2a_submitted" in positions
-            or "agent_zero_a2a_retry_submitted" in positions
-            or "agent_zero_a2a_lost_workspace_changes_detected" in positions
-        )
+        completion_evidence = "sovereign_executor_bound" in positions
         if not completion_evidence:
             return False
-    if "agent_zero_a2a_submitted" in positions and "agent_zero_a2a_submit_queued" not in positions:
+    if "sovereign_executor_bound" in positions and "sovereign_local_execution_queued" not in positions:
         return False
-    if "agent_zero_a2a_submit_queued" in positions and "agent_zero_repository_access_delegated" not in positions:
+    if "sovereign_local_execution_queued" in positions and "sovereign_repository_checked_out" not in positions:
         return False
     return True
 
@@ -234,23 +239,23 @@ class SelfHealingObservation:
 def detect_failures(observation: SelfHealingObservation) -> tuple[FailureFamily, ...]:
     failures: list[FailureFamily] = []
 
-    executor_is_agent_zero = observation.external_ref_class in {
-        EXPECTED_EXTERNAL_EXECUTOR,
-        "agent-zero-a2a-pending",
-        "agent-zero-a2a-claim",
-        "agent-zero-a2a-retry",
+    executor_is_sovereign = observation.external_ref_class in {
+        EXPECTED_REPOSITORY_EXECUTOR,
+        "sovereign-local-runner-pending",
+        "sovereign-local-runner-claim",
+        "sovereign-local-runner-retry",
     }
-    if not executor_is_agent_zero:
+    if not executor_is_sovereign:
         failures.append(FailureFamily.EXECUTOR_MISMATCH)
 
     if observation.observed_endpoint_path != observation.expected_endpoint_path:
         failures.append(FailureFamily.ENDPOINT_ROUTE_MISMATCH)
 
     if observation.handoff_timed_out and observation.external_ref_class in {
-        EXPECTED_EXTERNAL_EXECUTOR,
-        "agent-zero-a2a-pending",
-        "agent-zero-a2a-claim",
-        "agent-zero-a2a-retry",
+        EXPECTED_REPOSITORY_EXECUTOR,
+        "sovereign-local-runner-pending",
+        "sovereign-local-runner-claim",
+        "sovereign-local-runner-retry",
     }:
         failures.append(FailureFamily.HANDOFF_TIMEOUT_WITH_READBACK)
 
@@ -292,10 +297,10 @@ def build_cag_verification_code(observation: SelfHealingObservation) -> str:
     no mission text, repository content, credentials or raw provider payloads.
     """
     allowed_executor_classes = {
-        EXPECTED_EXTERNAL_EXECUTOR,
-        "agent-zero-a2a-pending",
-        "agent-zero-a2a-claim",
-        "agent-zero-a2a-retry",
+        EXPECTED_REPOSITORY_EXECUTOR,
+        "sovereign-local-runner-pending",
+        "sovereign-local-runner-claim",
+        "sovereign-local-runner-retry",
     }
     executor_values = ",".join(_wl_string(value) for value in sorted(allowed_executor_classes))
     transition_valid = transition_order_valid(observation.event_stages)
@@ -416,7 +421,7 @@ def build_repair_contract(
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
         raise SelfHealingContractError("controller repository identity is invalid")
     target_files = _repair_target_files(family)
-    action_kind = "readback-only" if family in SAFE_READBACK_FAMILIES else "agent-zero-code-repair"
+    action_kind = "readback-only" if family in SAFE_READBACK_FAMILIES else "sovereign-local-code-repair"
     body: dict[str, Any] = {
         "schemaVersion": REPAIR_SCHEMA_VERSION,
         "sourceJobId": observation.job_id,
@@ -426,7 +431,7 @@ def build_repair_contract(
         "repairStrategy": REPAIR_STRATEGIES[family],
         "actionKind": action_kind,
         "controllerRepository": repo,
-        "requiredExecutor": EXPECTED_EXTERNAL_EXECUTOR,
+        "requiredExecutor": EXPECTED_REPOSITORY_EXECUTOR,
         "targetFiles": list(target_files),
         "cagRequestSha256": cag_request_sha256,
         "cagResponseSha256": cag_response_sha256,
@@ -439,12 +444,12 @@ def build_repair_contract(
             "automatic-production-deploy",
             "credit-ledger-manual-edit",
             "billing-guard-disable",
-            "duplicate-agent-zero-submit",
+            "duplicate-local-executor-submit",
         ],
         "requiredEvidence": [
             "exact-head-regression",
             "git-diff-check",
-            "agent-zero-only-executor",
+            "sovereign-local-only-executor",
             "post-repair-runtime-readback",
             "action-receipt",
         ],
@@ -459,30 +464,30 @@ def build_repair_contract(
         ),
         "truthNotice": (
             "CAG verifies the formal failure mask only; runtime evidence remains authoritative "
-            "and Agent Zero remains the sole repository implementation executor."
+            "and Sovereign-local-runner remains the sole repository implementation executor."
         ),
     }
     body["repairContractSha256"] = sha256_json(body)
     return body
 
 
-def build_agent_zero_repair_mission(repair_contract: Mapping[str, Any]) -> str:
+def build_sovereign_repair_mission(repair_contract: Mapping[str, Any]) -> str:
     family = FailureFamily(str(repair_contract.get("failureFamily") or ""))
     target_files = [str(path) for path in (repair_contract.get("targetFiles") or [])]
     contract_sha = str(repair_contract.get("repairContractSha256") or "")
     if not _SHA256.fullmatch(contract_sha):
         raise SelfHealingContractError("repair contract hash is invalid")
     if family in SAFE_READBACK_FAMILIES:
-        raise SelfHealingContractError("readback-only repairs do not create Agent Zero code missions")
+        raise SelfHealingContractError("readback-only repairs do not create code missions")
 
     focus = {
         FailureFamily.EXECUTOR_MISMATCH: (
-            "Restore the canonical repository execution route so exactly one Agent Zero A2A task is the "
+            "Restore the canonical repository execution route so exactly one Sovereign-local-runner task is the "
             "only external repository implementation worker. Do not introduce GitHub OAuth execution, "
             "Coding Agent, swarm repository execution or alternate checkout paths."
         ),
         FailureFamily.ENDPOINT_ROUTE_MISMATCH: (
-            "Restore the Agent Zero A2A JSON-RPC endpoint contract to the mounted /a2a/ path, preserving "
+            "Restore the Sovereign-local-runner JSON-RPC endpoint contract to the mounted /a2a/ path, preserving "
             "header-only protected authentication and nonblocking message/send plus tasks/get readback."
         ),
         FailureFamily.JOB_STATE_TRANSITION_VIOLATION: (
@@ -534,8 +539,8 @@ __all__ = [
     "AUTHORITY_SCHEMA_VERSION",
     "CODE_REPAIR_FAMILIES",
     "CURRENT_REPOSITORY_EXECUTION_BILLING_MODE",
-    "EXPECTED_A2A_PATH",
-    "EXPECTED_EXTERNAL_EXECUTOR",
+    "EXPECTED_REPOSITORY_EXECUTION_PATH",
+    "EXPECTED_REPOSITORY_EXECUTOR",
     "FAILURE_BITS",
     "FAILURE_ORDER",
     "FailureFamily",
@@ -547,7 +552,7 @@ __all__ = [
     "SelfHealingContractError",
     "SelfHealingObservation",
     "authority_allows",
-    "build_agent_zero_repair_mission",
+    "build_sovereign_repair_mission",
     "build_cag_verification_code",
     "build_repair_contract",
     "cag_agrees_with_local_verdict",

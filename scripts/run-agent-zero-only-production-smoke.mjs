@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { createHash, randomBytes } from 'node:crypto';
 import { chromium, request as playwrightRequest } from '@playwright/test';
 
 const APP_URL = (process.env.SOVEREIGN_E2E_APP_URL || 'https://sovereign-backend.arelorian.de/app/').replace(/\/+$/, '');
@@ -9,10 +10,10 @@ const EXPECTED_REVISION = String(process.env.SOVEREIGN_E2E_EXPECTED_REVISION || 
 const EXPECTED_IMAGE_DIGEST = String(process.env.SOVEREIGN_E2E_EXPECTED_IMAGE_DIGEST || '').trim().toLowerCase();
 const CONFIGURED_ACCOUNT_KEY = String(process.env.SOVEREIGN_E2E_ACCOUNT_KEY || '').trim();
 const RUN_ID = String(process.env.GITHUB_RUN_ID || `local-${Date.now()}`).replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 80);
-const EVIDENCE_PATH = 'test-results/agent-zero-only-production-smoke.json';
+const EVIDENCE_PATH = 'test-results/sovereign-local-only-production-smoke.json';
 const EMPTY_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 const JOB_ID_RE = /^agent-[0-9a-f]{32}$/;
-const FINAL_A2A_REF_RE = /^agent-zero-a2a:(?!pending:|claim:|retry:)[A-Za-z0-9._:-]{1,200}$/;
+const FINAL_SOVEREIGN_REF_RE = /^sovereign-local-runner:(?!pending:|claim:|retry:)[A-Za-z0-9._:-]{1,200}$/;
 const POLL_TIMEOUT_MS = Math.max(240_000, Math.min(Number.parseInt(process.env.SOVEREIGN_E2E_REPOSITORY_READY_TIMEOUT_MS || '900000', 10) || 900_000, 1_200_000));
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -98,9 +99,9 @@ async function provisionAccountKey() {
   const api = await playwrightRequest.newContext({ baseURL: BACKEND_URL });
   let password = `Sovereign-AgentZero-Smoke-${randomBytes(24).toString('base64url')}!9a`;
   try {
-    const email = `agent-zero-only-${RUN_ID}-${randomBytes(6).toString('hex')}@tests.sovereign.invalid`;
+    const email = `sovereign-local-only-${RUN_ID}-${randomBytes(6).toString('hex')}@tests.sovereign.invalid`;
     const registration = await api.post('/api/auth/register', {
-      data: { email, password, displayName: `Agent Zero Only Smoke ${RUN_ID}` },
+      data: { email, password, displayName: `Sovereign Local Smoke ${RUN_ID}` },
     });
     assert(registration.status() === 200, `EPHEMERAL_REGISTRATION_HTTP_${registration.status()}`);
     const user = record(await registration.json().catch(() => null));
@@ -109,7 +110,7 @@ async function provisionAccountKey() {
     assert(user.creditStateVerified === true, 'EPHEMERAL_ACCOUNT_CREDIT_STATE_UNVERIFIED');
 
     const issued = await api.post('/api/security/account-keys', {
-      data: { label: `Agent Zero only production smoke ${RUN_ID}` },
+      data: { label: `Sovereign local only production smoke ${RUN_ID}` },
     });
     assert(issued.status() === 201, `EPHEMERAL_ACCOUNT_KEY_HTTP_${issued.status()}`);
     const issuedBody = record(await issued.json().catch(() => null));
@@ -309,16 +310,16 @@ async function waitForRepositoryEvidence(page, apiOrigin, jobId, workspaceId) {
     assert(sha256(stringValue(job.mission)) === sha256(smokeInstruction), 'REPOSITORY_JOB_MISSION_IDENTITY_DRIFT');
 
     const stages = eventStages(job);
-    const failedA2AStage = stages.find((stage) => [
+    const failedLocalExecutionStage = stages.find((stage) => [
       'agent_zero_a2a_submit_failed',
       'agent_zero_a2a_submit_outcome_unknown',
-      'agent_zero_a2a_task_failed',
-      'agent_zero_a2a_task_interrupted',
-      'agent_zero_a2a_task_stalled',
-      'agent_zero_a2a_retry_task_lost',
+      'sovereign_executor_execution_failed',
+      'sovereign_executor_execution_blocked',
+      'sovereign_executor_execution_stalled',
+      'sovereign_executor_execution_failed',
     ].includes(stage));
-    assert(!failedA2AStage, `AGENT_ZERO_A2A_FAILURE_${failedA2AStage || 'UNKNOWN'}`);
-    assert(countStage(stages, 'agent_zero_a2a_retry_submitted') === 0, 'AGENT_ZERO_A2A_RETRY_FORBIDDEN_IN_SMOKE');
+    assert(!failedLocalExecutionStage, `SOVEREIGN_LOCAL_EXECUTION_FAILURE_${failedLocalExecutionStage || 'UNKNOWN'}`);
+    assert(countStage(stages, 'sovereign_executor_retry_forbidden') === 0, 'SOVEREIGN_LOCAL_RETRY_FORBIDDEN_IN_SMOKE');
 
     const ready = stages.includes('repository_ready_for_draft_pr') && job.prState === 'ready';
     if (ready) return job;
@@ -380,7 +381,7 @@ async function main() {
   await mkdir('test-results', { recursive: true });
 
   const evidence = {
-    schemaVersion: 'sovereign.agent-zero-only-production-smoke.v1',
+    schemaVersion: 'sovereign.sovereign-local-only-production-smoke.v1',
     runId: RUN_ID,
     status: 'RUNNING',
     checkedAt: new Date().toISOString(),
@@ -437,12 +438,12 @@ async function main() {
     const finalRef = stringValue(finalJob.externalRef);
     const changedFiles = Array.isArray(finalJob.changedFiles) ? finalJob.changedFiles.map(String) : [];
 
-    assert(countStage(stages, 'agent_zero_repository_access_delegated') === 1, 'AGENT_ZERO_REPOSITORY_DELEGATION_EVENT_COUNT_INVALID');
-    assert(countStage(stages, 'agent_zero_a2a_submit_queued') === 1, 'AGENT_ZERO_A2A_QUEUE_EVENT_COUNT_INVALID');
-    assert(countStage(stages, 'agent_zero_a2a_submitted') === 1, 'AGENT_ZERO_A2A_SUBMISSION_COUNT_NOT_EXACTLY_ONE');
-    assert(countStage(stages, 'agent_zero_a2a_retry_submitted') === 0, 'AGENT_ZERO_A2A_RETRY_PRESENT');
-    assert(FINAL_A2A_REF_RE.test(finalRef), 'FINAL_AGENT_ZERO_A2A_BINDING_NOT_SINGLE_OR_STABLE');
-    assert(!stages.includes('repo_clone_completed'), 'SOVEREIGN_REPOSITORY_CLONE_EVENT_FORBIDDEN');
+    assert(countStage(stages, 'sovereign_repository_checked_out') === 1, 'SOVEREIGN_REPOSITORY_CHECKOUT_EVENT_COUNT_INVALID');
+    assert(countStage(stages, 'sovereign_local_execution_queued') === 1, 'SOVEREIGN_LOCAL_QUEUE_EVENT_COUNT_INVALID');
+    assert(countStage(stages, 'sovereign_executor_bound') === 1, 'SOVEREIGN_LOCAL_EXECUTION_BIND_COUNT_NOT_EXACTLY_ONE');
+    assert(countStage(stages, 'sovereign_executor_bound') === 1, 'SOVEREIGN_LOCAL_EXECUTION_BIND_COUNT_NOT_EXACTLY_ONE');
+    assert(FINAL_SOVEREIGN_REF_RE.test(finalRef), 'FINAL_SOVEREIGN_LOCAL_BINDING_NOT_SINGLE_OR_STABLE');
+    assert(stages.includes('repo_clone_completed') || stages.includes('sovereign_repository_checked_out'), 'SOVEREIGN_REPOSITORY_CHECKOUT_EVIDENCE_MISSING');
     assert(changedFiles.length === 1 && changedFiles[0] === 'testfile', 'JOB_CHANGED_FILES_NOT_EXACTLY_TESTFILE');
     assert(typeof finalJob.diffSummary === 'string' && finalJob.diffSummary.includes('testfile'), 'TESTFILE_DIFF_EVIDENCE_MISSING');
     assert(typeof finalJob.testSummary === 'string' && finalJob.testSummary.trim().length > 0, 'SOVEREIGN_REGRESSION_EVIDENCE_MISSING');
@@ -477,8 +478,7 @@ async function main() {
       changedFiles,
       missionSha256: sha256(stringValue(finalJob.mission)),
       eventStages: stages,
-      exactOneAgentZeroA2ATask: countStage(stages, 'agent_zero_a2a_submitted') === 1
-        && countStage(stages, 'agent_zero_a2a_retry_submitted') === 0,
+      exactlyOneSovereignLocalExecution: countStage(stages, 'sovereign_executor_bound') === 1,
       regressionEvidencePresent: typeof finalJob.testSummary === 'string' && finalJob.testSummary.trim().length > 0,
       diffEvidencePresent: typeof finalJob.diffSummary === 'string' && finalJob.diffSummary.includes('testfile'),
       draftPrPublished: Boolean(finalJob.draftPrUrl || finalJob.prUrl),
@@ -538,7 +538,7 @@ async function main() {
       identity.key = '';
     }
     await writeFile(EVIDENCE_PATH, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
-    console.log(`AGENT_ZERO_ONLY_PRODUCTION_SMOKE_${evidence.status} evidence=${EVIDENCE_PATH}`);
+    console.log(`SOVEREIGN_LOCAL_ONLY_PRODUCTION_SMOKE_${evidence.status} evidence=${EVIDENCE_PATH}`);
   }
 }
 

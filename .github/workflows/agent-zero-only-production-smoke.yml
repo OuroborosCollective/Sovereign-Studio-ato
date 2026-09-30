@@ -1,4 +1,4 @@
-name: Agent Zero Only Production Smoke
+name: Sovereign Local Production Smoke
 
 on:
   workflow_dispatch:
@@ -16,12 +16,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: agent-zero-only-production-smoke
+  group: sovereign-local-only-production-smoke
   cancel-in-progress: false
 
 jobs:
   production-smoke:
-    name: Deployed UI to Agent Zero Repository Smoke
+    name: Deployed UI to Sovereign Local Repository Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -83,14 +83,14 @@ jobs:
 
       - name: Run deployed Agent-Zero-only repository smoke
         shell: bash
-        run: node scripts/run-agent-zero-only-production-smoke.mjs
+        run: node scripts/run-sovereign-local-only-production-smoke.mjs
 
       - name: Upload causal smoke evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: agent-zero-only-production-smoke-${{ github.run_id }}
-          path: test-results/agent-zero-only-production-smoke.json
+          name: sovereign-local-only-production-smoke-${{ github.run_id }}
+          path: test-results/sovereign-local-only-production-smoke.json
           if-no-files-found: error
           retention-days: 14
 
@@ -99,7 +99,7 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## Agent Zero Only Production Smoke"
+            echo "## Sovereign Local Production Smoke"
             echo ""
             echo "- Deployed UI: https://sovereign-backend.arelorian.de/app/"
             echo "- Production backend: https://sovereign-backend.arelorian.de"
@@ -109,5 +109,5 @@ jobs:
             echo "- Workflow repository permission: contents: read"
             echo "- No GitHub token is provided to the smoke process"
             echo "- No Draft-PR publication step exists in this workflow"
-            echo "- Evidence artifact: agent-zero-only-production-smoke-${{ github.run_id }}"
+            echo "- Evidence artifact: sovereign-local-only-production-smoke-${{ github.run_id }}"
           } >> "$GITHUB_STEP_SUMMARY"

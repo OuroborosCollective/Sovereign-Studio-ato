@@ -1531,7 +1531,7 @@ def register_sovereign_agent_routes(
             return jsonify({
                 "ok": False,
                 "runtime": "sovereign-agent",
-                "execution": "repository-single-a2a",
+                "execution": "repository-single-sovereign-local",
                 "code": "GITHUB_CREDENTIAL_FORBIDDEN_ON_EXECUTION",
                 "error": (
                     "Repository execution never accepts a Sovereign GitHub OAuth/token credential. "
@@ -1551,14 +1551,14 @@ def register_sovereign_agent_routes(
                 return jsonify({
                     "ok": False,
                     "runtime": "sovereign-agent",
-                    "execution": "repository-single-a2a",
+                    "execution": "repository-single-sovereign-local",
                     "error": sanitize_agent_text(str(exc), 400),
                 }), 400
             ok = job.status not in ("blocked", "failed")
             return jsonify({
                 "ok": ok,
                 "runtime": "sovereign-agent",
-                "execution": "repository-single-a2a",
+                "execution": "repository-single-sovereign-local",
                 "jobId": job.job_id,
                 "job": _job_to_api(job),
             }), 202 if ok else 409
