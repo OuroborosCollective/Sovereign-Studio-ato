@@ -166,7 +166,7 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
     )
 
     assert 'EXPECTED_MCP_TOOL_COUNT="255"' in script
-    assert 'EXPECTED_MCP_TOOL_COUNT="288"' in script.split('INSTALL_STAGE="configure_private_owner_mode"', 1)[1]
+    assert 'EXPECTED_MCP_TOOL_COUNT="258"' in script.split('INSTALL_STAGE="configure_private_owner_mode"', 1)[1]
     assert 'python - "${EXPECTED_MCP_TOOL_COUNT}" <<\'PY\'' in script
     assert 'SOVEREIGN_EXPECTED_MCP_TOOL_COUNT="$EXPECTED_MCP_TOOL_COUNT"' in script
     assert 'assert len(tool_names) == expected_tool_count' in script
