@@ -65,3 +65,7 @@
 ## 2024-10-24 - Descriptive Titles for Dense Indicator Buttons
 **Learning:** Summary indicator buttons using dense visual typography are hard to read for users and lack clarity. Dynamically updating native title attributes improves discoverability without cluttering the UI.
 **Action:** Always add state-dependent native title tooltips to dense visual metric indicators, and ensure consistent localization in aria-labels across the app.
+
+## 2025-02-17 - [Header Navigation Utility Button Accessibility]
+**Learning:** Icon-only and compact utility buttons in application headers (like audio toggles and compact spec links) often miss state-dependent accessible names and tooltips, making their function opaque to screen reader users and discoverability poor for sighted users.
+**Action:** Always provide state-dependent `aria-label` and `title` attributes for header utility buttons to ensure standard-compliant discoverability.
