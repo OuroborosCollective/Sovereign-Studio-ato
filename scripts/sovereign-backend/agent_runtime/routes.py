@@ -2256,7 +2256,7 @@ def register_sovereign_agent_routes(
                         "runtime": "sovereign-agent",
                         "jobId": job_id,
                         "status": job.status,
-                        "blocker": "AGENT_ZERO_A2A_CANCEL_NOT_PROVEN",
+                        "blocker": "SOVEREIGN_LOCAL_CANCEL_NOT_PROVEN",
                         "error": str(exc),
                     }), 409
                 return jsonify({
