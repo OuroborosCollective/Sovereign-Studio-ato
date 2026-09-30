@@ -125,6 +125,12 @@ describe('maskSecrets', () => {
     expect(maskSecrets('registration_token: reg_token_val_555')).toBe('registration_token: ****');
     expect(maskSecrets('access_key_id=AKIAIOSFODNN7EXAMPLE')).toBe('access_key_id=****');
     expect(maskSecrets('aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY')).toBe('aws_secret_access_key: ****');
+    expect(maskSecrets('tenant_secret: tenant_sec_val_101')).toBe('tenant_secret: ****');
+    expect(maskSecrets('tenant_key=tenant_key_val_202')).toBe('tenant_key=****');
+    expect(maskSecrets('license_key: lic_key_val_303')).toBe('license_key: ****');
+    expect(maskSecrets('license_secret=lic_sec_val_404')).toBe('license_secret=****');
+    expect(maskSecrets('org_key: org_key_val_505')).toBe('org_key: ****');
+    expect(maskSecrets('org_secret=org_sec_val_606')).toBe('org_secret=****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
