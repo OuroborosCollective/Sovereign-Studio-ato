@@ -367,7 +367,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       runId: jobId,
       jobId,
       status: snapshot.status.toUpperCase(),
-      source: 'repository-single-a2a',
+      source: 'repository-single-sovereign-local',
       reason: snapshot.lastError,
       nextAction: snapshot.prState === 'ready' ? 'create_draft_pr' : undefined,
     };
