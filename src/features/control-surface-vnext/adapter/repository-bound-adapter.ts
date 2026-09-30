@@ -28,12 +28,12 @@ const RESUMABLE_REPOSITORY_STATUSES = new Set(['running', 'validating']);
 function isResumableRepositoryRun(candidate: JsonRecord): boolean {
   const status = stringValue(candidate.status)?.toLowerCase();
   const workspaceId = stringValue(candidate.workspaceId);
-  const externalRef = stringValue(candidate.externalRef);
+  const executor = stringValue(candidate.executor);
   return Boolean(
     status
     && RESUMABLE_REPOSITORY_STATUSES.has(status)
     && workspaceId
-    && externalRef?.startsWith('agent-zero-a2a:'),
+    && executor === 'sovereign-local-runner',
   );
 }
 

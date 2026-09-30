@@ -42,7 +42,7 @@ def _approved():
         timeout_seconds=300,
         max_attempts=2,
         idempotency_key="repository-submit:test",
-        required_readback_kinds=("agent_zero_a2a_task",),
+        required_readback_kinds=("sovereign_local_execution",),
     )
     definition = WorkflowDefinition.create(workflow_id="repository-test", steps=(step,))
     binding = WorkflowBinding(
