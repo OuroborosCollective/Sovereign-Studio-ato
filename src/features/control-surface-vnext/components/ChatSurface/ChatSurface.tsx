@@ -80,12 +80,10 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
             <span data-testid="agent-mode-single" className="shrink-0 rounded border border-[rgba(16,185,129,0.3)] px-1.5 py-1 text-[7px] font-bold text-[var(--emerald-seal)]">1 AGENT · FREELLM</span>
             <label htmlFor="mission-route" className="text-[8px] text-[var(--text-dim)]">ROUTE</label>
             <select id="mission-route" aria-describedby="mission-route-availability" value="low" disabled={executing} onChange={() => onAgentModeChange?.('single')} className="min-h-11 min-w-0 flex-1 rounded border border-white/10 bg-[var(--carbon-surface)] px-2 text-[10px] text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20">
-              <option value="low">Low · Free</option>
-              <option value="medium" disabled>Medium · Paid — unavailable</option>
-              <option value="high" disabled>High · Paid — unavailable</option>
+              <option value="low">Sovereign · Free</option>
             </select>
           </div>
-          <p id="mission-route-availability" className="mt-1 text-[8px] text-[var(--text-dim)]">Paid routes are not yet connected to Agent Zero.</p>
+          <p id="mission-route-availability" className="mt-1 text-[8px] text-[var(--text-dim)]">Repository execution is owned by Sovereign-local-runner. No external executor is used.</p>
         </div>
 
         <div className="theme-diamond-cut rounded-xl border border-[rgba(255,30,56,0.28)] bg-[var(--carbon-deep)] p-2 shadow-[0_0_24px_rgba(255,30,56,0.08)]">

@@ -10,7 +10,7 @@ def source(relative: str) -> str:
     return (ROOT / relative).read_text("utf-8")
 
 
-def test_agent_zero_only_production_smoke_has_no_github_or_publication_authority() -> None:
+def test_sovereign_local_production_smoke_has_no_github_or_publication_authority() -> None:
     workflow = source(".github/workflows/agent-zero-only-production-smoke.yml")
     script = source("scripts/run-agent-zero-only-production-smoke.mjs")
 
@@ -42,15 +42,15 @@ def test_agent_zero_only_production_smoke_has_no_github_or_publication_authority
     assert "DIRECT_GITHUB_MUTATION_USED" in script
 
 
-def test_agent_zero_only_production_smoke_requires_single_a2a_and_exact_testfile_readback() -> None:
+def test_sovereign_local_production_smoke_requires_single_local_executor_and_exact_testfile_readback() -> None:
     script = source("scripts/run-agent-zero-only-production-smoke.mjs")
 
-    assert "agent_zero_repository_access_delegated" in script
-    assert "agent_zero_a2a_submit_queued" in script
-    assert "agent_zero_a2a_submitted" in script
-    assert "agent_zero_a2a_retry_submitted" in script
-    assert "AGENT_ZERO_A2A_SUBMISSION_COUNT_NOT_EXACTLY_ONE" in script
-    assert "AGENT_ZERO_A2A_RETRY_PRESENT" in script
+    assert "sovereign_repository_checked_out" in script
+    assert "sovereign_local_execution_queued" in script
+    assert "sovereign_executor_bound" in script
+    assert "sovereign_executor_retry_forbidden" in script
+    assert "SOVEREIGN_LOCAL_EXECUTION_BIND_COUNT_NOT_EXACTLY_ONE" in script
+    assert "SOVEREIGN_LOCAL_EXECUTOR_RETRY_FORBIDDEN" not in script
     assert "/tools/file" in script
     assert "/tools/git-status" in script
     assert "TESTFILE_NOT_EMPTY" in script
@@ -60,7 +60,7 @@ def test_agent_zero_only_production_smoke_requires_single_a2a_and_exact_testfile
     assert "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" in script
 
 
-def test_agent_zero_only_production_smoke_uses_exact_owner_mission_and_runtime_identity() -> None:
+def test_sovereign_local_production_smoke_uses_exact_owner_mission_and_runtime_identity() -> None:
     script = source("scripts/run-agent-zero-only-production-smoke.mjs")
 
     assert (

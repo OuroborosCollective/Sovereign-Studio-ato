@@ -143,6 +143,8 @@ export function normalizeWorkspacePath(path: string): string | null {
  * @deprecated Pass intentKind to decideAgentWorkspaceIntent instead.
  */
 export function classifyWorkspaceIntent(_message: string): AgentWorkspaceIntentKind {
+  // Runtime routing is owned by the declared intent boundary. This deterministic
+  // compatibility helper never infers write intent from user text.
   return 'none';
 }
 

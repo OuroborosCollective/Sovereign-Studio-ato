@@ -12,7 +12,7 @@ const REPO_URL = process.env.SOVEREIGN_E2E_REPO_URL?.trim() || '';
 const BACKEND_URL = process.env.SOVEREIGN_E2E_BACKEND_PROXY_TARGET?.trim() || '';
 const RUN_ID = process.env.GITHUB_RUN_ID?.trim() || `local-${Date.now()}`;
 const OWNED_MARKER_PREFIX = `[live-vnext:${RUN_ID}:`;
-const A2A_TASK_REF = /^agent-zero-a2a:(?:retry:)?[A-Za-z0-9._:-]{1,200}$/;
+const SOVEREIGN_EXECUTOR_REF = /^sovereign-local-runner:(?:retry:)?[A-Za-z0-9._:-]{1,200}$/;
 const JOB_ID = /^agent-[0-9a-f]{32}$/;
 const A2A_ADMISSION_TIMEOUT_MS = (() => {
   const configured = Number.parseInt(process.env.SOVEREIGN_E2E_A2A_ADMISSION_TIMEOUT_MS || '900000', 10);
@@ -253,9 +253,9 @@ function mission(pathId: string): { marker: string; text: string } {
   };
 }
 
-function requireA2ATaskRef(value: string | null | undefined, stage: string): string {
+function requireSovereignExecutorRef(value: string | null | undefined, stage: string): string {
   const ref = String(value || '');
-  if (!A2A_TASK_REF.test(ref) || ref.includes(':claim:')) throw new Error(`${stage}: persistent Agent Zero A2A task binding missing or transient`);
+  if (!SOVEREIGN_EXECUTOR_REF.test(ref) || ref.includes(':claim:')) throw new Error(`${stage}: persistent Sovereign-local-runner binding missing or transient`);
   return ref;
 }
 
@@ -295,7 +295,7 @@ async function submitMission(page: Page, text: string): Promise<LiveRunProof> {
   expect(start.route).toBe('repository.start');
   expect(start.jobId).toMatch(JOB_ID);
   expect(start.workspaceId).toBeTruthy();
-  const startExternalRef = requireA2ATaskRef(start.externalRef, 'repository.start');
+  const startExternalRef = requireSovereignExecutorRef(start.externalRef, 'repository.start');
 
   const accepted = page.getByText(/PERSISTED RUN ACCEPTED :: \[agent-[0-9a-f]{32}\]/).last();
   await expect(accepted).toBeVisible({ timeout: 45_000 });
@@ -340,7 +340,7 @@ async function verifyLinkedJobReadback(page: Page, proof: LiveRunProof): Promise
       throw new Error(`LIVE_REPOSITORY_JOB_TERMINAL_${String(observed.status).toUpperCase()}`);
     }
     if (observed.prState === 'ready' && (observed.repositoryExecution.changedFileCount || 0) > 0) {
-      proof.execution.externalRef = requireA2ATaskRef(observed.externalRef, 'job.ready');
+      proof.execution.externalRef = requireSovereignExecutorRef(observed.externalRef, 'job.ready');
       proof.execution.prState = 'ready';
       proof.execution.changedFileCount = observed.repositoryExecution.changedFileCount!;
       return;
@@ -505,7 +505,7 @@ test.describe('five canonical vNext repository runs reach independently verified
       expect(item.persistedJobId).toMatch(JOB_ID);
       expect(item.execution.jobId).toBe(item.persistedJobId);
       expect(item.execution.workspaceId).toBeTruthy();
-      expect(item.execution.externalRef).toMatch(A2A_TASK_REF);
+      expect(item.execution.externalRef).toMatch(SOVEREIGN_EXECUTOR_REF);
       expect(item.execution.externalRef).not.toContain(':claim:');
       expect(item.execution.prState).toBe('ready');
       expect(item.execution.changedFileCount).toBeGreaterThan(0);
@@ -513,7 +513,7 @@ test.describe('five canonical vNext repository runs reach independently verified
   });
 
   for (const pathId of ['p1', 'p2', 'p3', 'p4', 'p5']) {
-    test(`canonical vNext ${pathId}: repository job → one Agent Zero A2A task → consent → GitHub readback`, async ({ page, request }) => {
+    test(`canonical vNext ${pathId}: repository job → one Sovereign-local-runner execution → consent → GitHub readback`, async ({ page, request }) => {
       await executeCanonicalVNextRun(page, request, pathId);
     });
   }

@@ -13,7 +13,7 @@ from agent_runtime.cag_self_healing import (
     SelfHealingContractError,
     SelfHealingObservation,
     authority_allows,
-    build_agent_zero_repair_mission,
+    build_sovereign_repair_mission,
     build_cag_verification_code,
     build_repair_contract,
     cag_agrees_with_local_verdict,
@@ -34,15 +34,16 @@ def observation(**overrides) -> SelfHealingObservation:
     values = {
         "job_id": "agent-test-job",
         "job_status": "running",
-        "external_ref_class": "agent-zero-a2a",
-        "observed_endpoint_path": "/a2a/",
-        "expected_endpoint_path": "/a2a/",
+        "external_ref_class": "sovereign-local-runner",
+        "observed_endpoint_path": "/api/user/agent/repository/run",
+        "expected_endpoint_path": "/api/user/agent/repository/run",
         "event_stages": (
             "agent_job_created",
-            "agent_zero_repository_access_delegated",
+            "sovereign_repository_checked_out",
             "repository_execution_contract_bound",
-            "agent_zero_a2a_submit_queued",
-            "agent_zero_a2a_submitted",
+            "sovereign_local_execution_queued",
+            "sovereign_executor_started",
+            "sovereign_executor_bound",
         ),
         "handoff_timed_out": False,
         "task_readback_available": False,
@@ -59,15 +60,15 @@ def observation(**overrides) -> SelfHealingObservation:
     return SelfHealingObservation(**values)
 
 
-def test_healthy_agent_zero_free_path_has_no_failure() -> None:
+def test_healthy_sovereign_local_free_path_has_no_failure() -> None:
     item = observation()
     assert detect_failures(item) == ()
     assert failure_mask(()) == 0
     assert cag_agrees_with_local_verdict(item, "0") is True
     code = build_cag_verification_code(item)
     assert "Total[{" in code
-    assert "/a2a/" in code
-    assert "agent-zero-a2a" in code
+    assert "/api/user/agent/repository/run" in code
+    assert "sovereign-local-runner" in code
     assert "Authorization" not in code
 
 
@@ -110,14 +111,15 @@ def test_each_v1_failure_family_is_deterministically_detectable(
     assert cag_agrees_with_local_verdict(item, str(mask)) is True
 
 
-def test_transition_contract_requires_agent_zero_evidence_before_draft_ready() -> None:
+def test_transition_contract_requires_local_executor_evidence_before_draft_ready() -> None:
     assert transition_order_valid(
         (
             "agent_job_created",
-            "agent_zero_repository_access_delegated",
+            "sovereign_repository_checked_out",
             "repository_execution_contract_bound",
-            "agent_zero_a2a_submit_queued",
-            "agent_zero_a2a_submitted",
+            "sovereign_local_execution_queued",
+            "sovereign_executor_started",
+            "sovereign_executor_bound",
             "repository_ready_for_draft_pr",
         )
     )
@@ -130,11 +132,16 @@ def test_transition_contract_requires_agent_zero_evidence_before_draft_ready() -
     )
 
 
-def test_recorded_production_start_order_is_valid_without_broadening_authority() -> None:
+def test_recorded_local_execution_start_order_is_valid_without_broadening_authority() -> None:
     # Exact stage order observed for the 2026-09-20 video job, stripped of IDs.
     stages = (
-        "agent_job_created", "workspace_created", "agent_zero_repository_access_delegated",
-        "repository_execution_contract_bound", "agent_zero_a2a_submit_queued", "agent_zero_a2a_submitted",
+        "agent_job_created",
+        "workspace_created",
+        "sovereign_repository_checked_out",
+        "repository_execution_contract_bound",
+        "sovereign_local_execution_queued",
+        "sovereign_executor_started",
+        "sovereign_executor_bound",
     )
     assert detect_failures(observation(event_stages=stages)) == ()
     assert cag_agrees_with_local_verdict(observation(event_stages=stages), "0")
@@ -145,9 +152,9 @@ def test_recorded_production_start_order_is_valid_without_broadening_authority()
 def test_poll_observations_do_not_mask_or_change_lifecycle_verification() -> None:
     original = observation().event_stages
     events = [{"stage": stage} for stage in original]
-    events.extend({"stage": "agent_zero_a2a_task_observed"} for _ in range(200))
-    events.append({"stage": "agent_zero_a2a_readback_unavailable"})
-    events.extend({"stage": "agent_zero_material_progress_observed"} for _ in range(200))
+    events.extend({"stage": "sovereign_local_task_observed"} for _ in range(200))
+    events.append({"stage": "sovereign_local_readback_unavailable"})
+    events.extend({"stage": "sovereign_local_material_progress_observed"} for _ in range(200))
     events.append({"stage": "repository_ready_for_draft_pr"})
     stages = normalize_event_stages(events)
     assert stages == (*original, "repository_ready_for_draft_pr")
@@ -170,7 +177,7 @@ def test_cag_mask_parser_fails_closed_and_divergence_is_rejected() -> None:
         parse_cag_failure_mask("999999")
 
 
-def test_repair_contract_keeps_agent_zero_as_only_code_executor() -> None:
+def test_repair_contract_keeps_sovereign_local_runner_as_only_code_executor() -> None:
     item = observation(observed_endpoint_path="/wrong")
     failures = detect_failures(item)
     contract = build_repair_contract(
@@ -182,12 +189,12 @@ def test_repair_contract_keeps_agent_zero_as_only_code_executor() -> None:
         controller_repository="OuroborosCollective/Sovereign-Studio-ato",
     )
     assert contract["failureFamily"] == "ENDPOINT_ROUTE_MISMATCH"
-    assert contract["requiredExecutor"] == "agent-zero-a2a"
+    assert contract["requiredExecutor"] == "sovereign-local-runner"
     assert contract["authorityRequirement"] == "AUTO_BOUNDED_CODE_REPAIR"
     assert "automatic-merge" in contract["forbiddenEffects"]
     assert contract["sourceRevision"] == REVISION
-    mission = build_agent_zero_repair_mission(contract)
-    assert "Agent Zero" in mission
+    mission = build_sovereign_repair_mission(contract)
+    assert "Sovereign-local-runner" in mission
     assert "automatic merge" not in mission.lower()
     assert contract["repairContractSha256"] in mission
 
@@ -206,7 +213,7 @@ def test_readback_timeout_never_generates_a_code_repair_mission() -> None:
     assert contract["authorityRequirement"] == "AUTO_SAFE"
     assert contract["targetFiles"] == []
     with pytest.raises(SelfHealingContractError, match="readback-only"):
-        build_agent_zero_repair_mission(contract)
+        build_sovereign_repair_mission(contract)
 
 
 def test_multiple_failure_families_never_collapse_into_one_automatic_repair() -> None:

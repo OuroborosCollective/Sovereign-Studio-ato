@@ -1,10 +1,10 @@
 """Runtime controller for bounded CAG-assisted self-healing.
 
-The controller observes the persisted Agent-Zero-only repository workflow,
+The controller observes the persisted Sovereign-local repository workflow,
 derives deterministic invariant violations, asks Wolfram CAG to recompute the
 bounded failure mask, and only then evaluates a revocable standing authority.
-CAG never mutates. Repository repairs are always new Agent Zero A2A jobs;
-handoff recovery is readback-only and never resubmits an unknown effect.
+CAG never mutates. Repository repairs are always new Sovereign-local jobs;
+workspace recovery is readback-only and never replays an unknown effect.
 """
 from __future__ import annotations
 
@@ -18,25 +18,23 @@ import re
 import threading
 import time
 from typing import Any, Callable, Mapping, Sequence
-from urllib.parse import urlsplit
 import uuid
 
 from .adapters.wolfram_agenttools import (
     WolframCagError,
     execute_live_cag_request,
 )
-from .agent_zero_a2a import AgentZeroA2AClient, AgentZeroA2AError, AgentZeroA2ATaskLost
 from .cag_self_healing import (
     AUTHORITY_SCHEMA_VERSION,
     CURRENT_REPOSITORY_EXECUTION_BILLING_MODE,
-    EXPECTED_A2A_PATH,
+    EXPECTED_REPOSITORY_EXECUTION_PATH,
     FAILURE_ORDER,
     SCHEMA_VERSION,
     FailureFamily,
     SelfHealingContractError,
     SelfHealingObservation,
     authority_allows,
-    build_agent_zero_repair_mission,
+    build_sovereign_repair_mission,
     build_cag_verification_code,
     build_repair_contract,
     cag_agrees_with_local_verdict,
@@ -197,7 +195,7 @@ def _candidate_jobs(connection: Any, limit: int = _MAX_CANDIDATES) -> tuple[Stor
             WHERE updated_at >= NOW() - (%s * INTERVAL '1 hour')
               AND status IN ('running','blocked','validating','completed')
               AND (
-                    external_ref LIKE 'agent-zero-a2a:%%'
+                    external_ref LIKE 'sovereign-local-runner:%%'
                     OR EXISTS (
                         SELECT 1
                         FROM jsonb_array_elements(COALESCE(events, '[]'::jsonb)) AS event
@@ -253,59 +251,41 @@ def _billing_summary(connection: Any, job_id: str) -> dict[str, Any]:
     }
 
 
-def _agent_zero_endpoint_path() -> str:
-    try:
-        endpoint = AgentZeroA2AClient.from_env().endpoint
-    except AgentZeroA2AError:
-        return ""
-    try:
-        return str(urlsplit(endpoint).path or "")
-    except ValueError:
-        return ""
+def _repository_execution_route_path() -> str:
+    return EXPECTED_REPOSITORY_EXECUTION_PATH
 
 
-def _bound_task_id(external_ref: str) -> str:
-    value = str(external_ref or "")
-    if value.startswith("agent-zero-a2a:retry:"):
-        return value[len("agent-zero-a2a:retry:"):]
-    if (
-        value.startswith("agent-zero-a2a:")
-        and not value.startswith("agent-zero-a2a:pending:")
-        and not value.startswith("agent-zero-a2a:claim:")
-    ):
-        return value[len("agent-zero-a2a:"):]
-    return ""
-
-
-def _readback_available_for_timeout(job: StoredSovereignAgentJob, timed_out: bool) -> bool:
+def _readback_available_for_timeout(
+    job: StoredSovereignAgentJob,
+    timed_out: bool,
+    workspace_root: Path | None,
+) -> bool:
     if not timed_out:
         return False
-    task_id = _bound_task_id(str(job.external_ref or ""))
-    if not task_id:
-        return False
-    try:
-        AgentZeroA2AClient.from_env().get_task(task_id)
-        return True
-    except (AgentZeroA2AError, AgentZeroA2ATaskLost):
-        return False
+    result = run_agent_job_tool(job, "git-status", {}, workspace_root)
+    return result.status == "done" and bool(result.changed_files)
 
 
-def _build_observation(connection: Any, job: StoredSovereignAgentJob) -> SelfHealingObservation:
+def _build_observation(
+    connection: Any,
+    job: StoredSovereignAgentJob,
+    workspace_root: Path | None,
+) -> SelfHealingObservation:
     billing = _billing_summary(connection, job.job_id)
     stages = normalize_event_stages(job.events)
     age = _age_seconds(job)
     external_class = classify_external_ref(job.external_ref)
     timed_out = (
-        "AGENT_ZERO_A2A_STALLED" in str(job.blocker or "")
+        "SOVEREIGN_LOCAL_EXECUTION_STALLED" in str(job.blocker or "")
         or (
             job.status == "running"
             and age is not None
             and age >= _stall_seconds()
             and external_class in {
-                "agent-zero-a2a",
-                "agent-zero-a2a-pending",
-                "agent-zero-a2a-claim",
-                "agent-zero-a2a-retry",
+                "sovereign-local-runner",
+                "sovereign-local-runner-pending",
+                "sovereign-local-runner-claim",
+                "sovereign-local-runner-retry",
             }
         )
     )
@@ -313,11 +293,11 @@ def _build_observation(connection: Any, job: StoredSovereignAgentJob) -> SelfHea
         job_id=job.job_id,
         job_status=job.status,
         external_ref_class=external_class,
-        observed_endpoint_path=_agent_zero_endpoint_path(),
-        expected_endpoint_path=EXPECTED_A2A_PATH,
+        observed_endpoint_path=_repository_execution_route_path(),
+        expected_endpoint_path=EXPECTED_REPOSITORY_EXECUTION_PATH,
         event_stages=stages,
         handoff_timed_out=timed_out,
-        task_readback_available=_readback_available_for_timeout(job, timed_out),
+        task_readback_available=_readback_available_for_timeout(job, timed_out, workspace_root),
         workspace_changes_present=bool(job.changed_files),
         billing_mode=CURRENT_REPOSITORY_EXECUTION_BILLING_MODE,
         billing_settlement_count=int(billing["settlementCount"]),
@@ -724,7 +704,7 @@ def _start_code_repair(
     repair_contract: Mapping[str, Any],
     authority_owner_admin_id: str,
 ) -> str:
-    mission = build_agent_zero_repair_mission(repair_contract)
+    mission = build_sovereign_repair_mission(repair_contract)
     source_revision = str(repair_contract.get("sourceRevision") or "")
     if not _SHA40.fullmatch(source_revision):
         raise SelfHealingContractError("code repair requires exact controller source revision")
@@ -750,7 +730,7 @@ def _start_code_repair(
         level="success",
         message=(
             f"Bounded self-healing repair started for incident {incident_id}; "
-            "Agent Zero is the only repository implementation worker and automatic merge is forbidden."
+            "Sovereign-local-runner is the only repository implementation worker and automatic merge is forbidden."
         ),
     ))
     return job.job_id
@@ -779,7 +759,7 @@ def process_cag_self_healing_once(
     for candidate in candidates:
         connection = get_connection()
         try:
-            observation = _build_observation(connection, candidate)
+            observation = _build_observation(connection, candidate, workspace_root)
             local_failures = detect_failures(observation)
             if not local_failures:
                 continue
@@ -1064,7 +1044,7 @@ def process_cag_self_healing_once(
                         payload={
                             "repairContractSha256": repair_contract["repairContractSha256"],
                             "resubmitted": False,
-                            "taskReadbackVerified": True,
+                            "workspaceGitReadbackVerified": True,
                             **({"manualApprovalSha256": manual_approval_sha} if manual_approval_sha else {}),
                         },
                     )
@@ -1097,14 +1077,14 @@ def process_cag_self_healing_once(
                     connection,
                     incident_id=incident_id,
                     status="REPAIR_BLOCKED",
-                    blocker=f"AGENT_ZERO_REPAIR_START_FAILED:{type(exc).__name__}",
+                    blocker=f"SOVEREIGN_LOCAL_REPAIR_START_FAILED:{type(exc).__name__}",
                 )
                 _persist_action_receipt(
                     connection,
                     incident_id=incident_id,
                     action_kind="REPAIR_BLOCKED",
                     effect_class="external-write",
-                    payload={"reason": "AGENT_ZERO_REPAIR_START_FAILED"},
+                    payload={"reason": "SOVEREIGN_LOCAL_REPAIR_START_FAILED"},
                 )
                 continue
             repair_started += 1
@@ -1124,7 +1104,7 @@ def process_cag_self_healing_once(
                 payload={
                     "repairContractSha256": repair_contract["repairContractSha256"],
                     "repairJobId": repair_job_id,
-                    "executor": "agent-zero-a2a",
+                    "executor": "sovereign-local-runner",
                     "automaticMerge": False,
                     **({"manualApprovalSha256": manual_approval_sha} if manual_approval_sha else {}),
                 },
@@ -1454,7 +1434,7 @@ def register_cag_self_healing_admin_routes(
                 "authority": _authority_projection(_authority_row(connection, owner_admin_id)),
                 "consentNotice": (
                     "Standing authority is scoped, rate-limited, expiring and immediately revocable. "
-                    "CAG never gains mutation authority and Agent Zero remains the only repository executor."
+                    "CAG never gains mutation authority and Sovereign-local-runner remains the only repository executor."
                 ),
                 "secretValuesReturned": False,
             }), 200

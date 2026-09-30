@@ -50,8 +50,8 @@ from .job_store import append_agent_evidence_anchor, append_agent_event, append_
 from .repository_execution import (
     RepositoryExecutionError,
     RepositoryExecutionTransientError,
-    cancel_repository_a2a_job,
-    is_repository_a2a_job,
+    cancel_repository_execution,
+    is_repository_executor_job,
     reconcile_repository_execution,
     start_repository_execution,
 )
@@ -1193,7 +1193,7 @@ def register_sovereign_agent_routes(
                 "code": "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE",
                 "error": (
                     "Toolchain handoff is diagnostic only. Repository clone/mutation "
-                    "must use /api/user/agent/repository/run and Agent Zero A2A."
+                    "must use /api/user/agent/repository/run; Sovereign-local-runner is the only repository executor."
                 ),
             }), 409
         evidence_text = str(body.get("evidenceText") or body.get("logText") or "")
@@ -1531,11 +1531,11 @@ def register_sovereign_agent_routes(
             return jsonify({
                 "ok": False,
                 "runtime": "sovereign-agent",
-                "execution": "repository-single-a2a",
+                "execution": "repository-single-sovereign-local",
                 "code": "GITHUB_CREDENTIAL_FORBIDDEN_ON_EXECUTION",
                 "error": (
                     "Repository execution never accepts a Sovereign GitHub OAuth/token credential. "
-                    "Agent Zero owns repository access for implementation."
+                    "Sovereign-local-runner owns repository access and implementation."
                 ),
             }), 400
         conn = _connection()
@@ -1551,14 +1551,14 @@ def register_sovereign_agent_routes(
                 return jsonify({
                     "ok": False,
                     "runtime": "sovereign-agent",
-                    "execution": "repository-single-a2a",
+                    "execution": "repository-single-sovereign-local",
                     "error": sanitize_agent_text(str(exc), 400),
                 }), 400
             ok = job.status not in ("blocked", "failed")
             return jsonify({
                 "ok": ok,
                 "runtime": "sovereign-agent",
-                "execution": "repository-single-a2a",
+                "execution": "repository-single-sovereign-local",
                 "jobId": job.job_id,
                 "job": _job_to_api(job),
             }), 202 if ok else 409
@@ -1585,7 +1585,7 @@ def register_sovereign_agent_routes(
                 "code": "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE",
                 "error": (
                     "User-facing repository clone/mutation is exclusive to "
-                    "/api/user/agent/repository/run and Agent Zero A2A."
+                    "/api/user/agent/repository/run and sovereign-local-runner."
                 ),
             }), 409
         payload = {**body}
@@ -2247,16 +2247,16 @@ def register_sovereign_agent_routes(
                 return jsonify({"error": "Job nicht gefunden"}), 404
             if job.status in ("completed", "failed", "blocked", "cleaned"):
                 return jsonify({"error": "Job ist bereits terminal", "status": job.status}), 400
-            if is_repository_a2a_job(job):
+            if is_repository_executor_job(job):
                 try:
-                    cancelled = cancel_repository_a2a_job(conn, job=job)
+                    cancelled = cancel_repository_execution(conn, job=job)
                 except RepositoryExecutionError as exc:
                     return jsonify({
                         "ok": False,
                         "runtime": "sovereign-agent",
                         "jobId": job_id,
                         "status": job.status,
-                        "blocker": "AGENT_ZERO_A2A_CANCEL_NOT_PROVEN",
+                        "blocker": "SOVEREIGN_LOCAL_CANCEL_NOT_PROVEN",
                         "error": str(exc),
                     }), 409
                 return jsonify({

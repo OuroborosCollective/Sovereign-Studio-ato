@@ -727,7 +727,7 @@ export class SovereignAgentClient {
   async startJob(input: SovereignAgentStartJobInput): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);
     if (input.cloneRepo === true || Boolean(input.stagedFiles?.length)) {
-      throw new Error('Repository mutation requires startRepositoryExecution() and the Agent Zero A2A route.');
+      throw new Error('Repository mutation requires startRepositoryExecution() and the Sovereign-local-runner route.');
     }
     const job = this.buildJobRequest(input);
     const snapshot = await requestSnapshot({
@@ -753,7 +753,7 @@ export class SovereignAgentClient {
   async startToolchainJob(input: SovereignToolchainStartJobInput): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);
     if (input.cloneRepo === true || Boolean(input.stagedFiles?.length)) {
-      throw new Error('Repository mutation requires startRepositoryExecution() and the Agent Zero A2A route.');
+      throw new Error('Repository mutation requires startRepositoryExecution() and the Sovereign-local-runner route.');
     }
     const job = this.buildJobRequest(input);
     const body = await requestObject({

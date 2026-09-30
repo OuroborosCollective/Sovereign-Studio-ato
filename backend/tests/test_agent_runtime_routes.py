@@ -1151,30 +1151,30 @@ def test_cancel_terminal_job_is_blocked():
     assert response.get_json()["error"] == "Job ist bereits terminal"
 
 
-def test_repository_abort_requires_real_a2a_cancel_confirmation(monkeypatch):
+def test_repository_abort_records_sovereign_local_cancel(monkeypatch):
     conn = FakeConnection()
-    seed_job(conn, "user-1", "agent-a2a", status="running")
-    conn.jobs["agent-a2a"]["external_ref"] = "agent-zero-a2a:task-running"
+    seed_job(conn, "user-1", "agent-local", status="running")
+    conn.jobs["agent-local"]["external_ref"] = "sovereign-local-runner:agent-local"
     app = create_test_app(conn)
     denied = app.test_client().post(
-        "/api/user/agent/jobs/agent-a2a/cancel", headers={"X-Test-User": "other-user"},
+        "/api/user/agent/jobs/agent-local/cancel", headers={"X-Test-User": "other-user"},
     )
     assert denied.status_code == 404
 
     def confirmed_cancel(_conn, *, job):
         conn.jobs[job.job_id]["status"] = "blocked"
-        conn.jobs[job.job_id]["blocker"] = "Cancelled by owner; Agent Zero A2A confirmed task state canceled."
+        conn.jobs[job.job_id]["blocker"] = "Cancelled by owner; Sovereign-local-runner will perform no further work."
         return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id)
 
-    monkeypatch.setattr("agent_runtime.routes.cancel_repository_a2a_job", confirmed_cancel)
+    monkeypatch.setattr("agent_runtime.routes.cancel_repository_execution", confirmed_cancel)
     response = app.test_client().post(
-        "/api/user/agent/jobs/agent-a2a/cancel", headers={"X-Test-User": "user-1"},
+        "/api/user/agent/jobs/agent-local/cancel", headers={"X-Test-User": "user-1"},
     )
     assert response.status_code == 200
     assert response.get_json()["ok"] is True
     assert response.get_json()["status"] == "blocked"
-    assert "confirmed task state canceled" in response.get_json()["blocker"]
-    assert conn.jobs["agent-a2a"]["status"] == "blocked"
+    assert "Sovereign-local-runner will perform no further work." in response.get_json()["blocker"]
+    assert conn.jobs["agent-local"]["status"] == "blocked"
 
 
 def test_cleanup_requires_terminal_state():

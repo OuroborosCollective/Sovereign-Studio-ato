@@ -10,30 +10,25 @@ def _source(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
-def test_single_a2a_repository_runtime_has_no_swarm_or_auto_publication_dependency():
+def test_single_sovereign_repository_runtime_has_no_external_executor_dependency():
     runtime = _source("backend/agent_runtime/repository_execution.py")
-    a2a = _source("backend/agent_runtime/agent_zero_a2a.py")
-
     for forbidden in (
-        "run_cognitive_swarm",
-        "create_repository_swarm_tasks",
-        "cognitive_swarm",
-        "/swarm/run",
+        "AgentZeroA2AClient",
+        "AgentZeroA2AError",
+        "AgentZeroA2ASubmitOutcomeUnknown",
+        "AgentZeroA2ATaskLost",
+        "agent-zero-a2a:",
         "create_draft_pr_for_job",
-        "repository_merge",
-        "merge_pr",
+        "repository_merge_pr",
+        "merge_pr(",
     ):
         assert forbidden not in runtime
-
-    assert "message/send" in a2a
-    assert '"blocking": False' in a2a
-    assert "tasks/get" in a2a
-    assert '"Authorization": f"Bearer {token}"' in a2a
-    assert '"X-API-KEY": token' in a2a
-    assert "/a0/sovereign-workspaces" in a2a
+    assert "BoundRepositoryToolset" in runtime
+    assert "run_free_single_agent(" in runtime
+    assert "sovereign-local-runner:" in runtime
 
 
-def test_repository_http_boundary_and_frontend_are_not_swarm_backed():
+def test_repository_http_boundary_and_frontend_use_the_unified_local_route():
     routes = _source("backend/agent_runtime/routes.py")
     repository_adapter = _source(
         "src/features/control-surface-vnext/adapter/repository-bound-adapter.ts"
@@ -43,6 +38,7 @@ def test_repository_http_boundary_and_frontend_are_not_swarm_backed():
     assert '@app.route("/api/user/agent/repository/run", methods=["POST"])' in routes
     assert "start_repository_execution(" in routes
     assert "reconcile_repository_execution(" in routes
+    assert "cancel_repository_execution(" in routes
 
     assert "'/api/user/agent/repository/run'" in repository_adapter
     assert "'/api/user/agent/swarm/run'" not in repository_adapter
@@ -50,19 +46,20 @@ def test_repository_http_boundary_and_frontend_are_not_swarm_backed():
     assert "'/api/user/agent/swarm/run'" not in client
     assert "mode: 'free'" in client
     assert "agentMode: 'single'" in client
+    assert "Sovereign-local-runner" in client
 
 
-def test_external_ref_is_atomic_task_authority_and_recovery_is_bounded():
+def test_external_ref_is_atomic_local_executor_authority_and_recovery_is_bounded():
     store = _source("backend/agent_runtime/job_store.py")
     runtime = _source("backend/agent_runtime/repository_execution.py")
 
     assert "external_ref IS NOT DISTINCT FROM %s" in store
     assert "RETURNING job_id" in store
-    assert '"agent-zero-a2a:"' in runtime
-    assert '"agent-zero-a2a:retry:"' in runtime
-    assert "AgentZeroA2ASubmitOutcomeUnknown" in runtime
-    assert "automatic resubmit is forbidden" in runtime
-    assert "no further resubmit is allowed" in runtime
+    assert '"sovereign-local-runner:"' in runtime
+    assert '"sovereign-local-runner:retry:"' in runtime
+    assert '"sovereign-local-runner:pending:submit:"' in runtime
+    assert '"sovereign-local-runner:claim:"' in runtime
+    assert "automatic resubmit" not in runtime
 
 
 def test_closeout_prepares_but_does_not_create_or_merge_product_pr():

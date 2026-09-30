@@ -1,13 +1,12 @@
-"""Single-Agent repository execution through one Agent Zero A2A task.
+"""Single-Agent repository execution through Sovereign's internal executor.
 
-This is intentionally not a cognitive-swarm adapter.  Sovereign owns the
-persisted job, repository clone, shared workspace, evidence closeout and Draft-PR
-gates. Agent Zero is one bounded external implementation worker only.
+Sovereign owns the persisted job, repository checkout, workspace mutation,
+evidence closeout and Draft-PR gates. No external execution worker is used.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import asyncio
 import hashlib
 import logging
 import os
@@ -18,19 +17,16 @@ import time
 from typing import Any, Callable, Final
 import uuid
 
-from .agent_zero_a2a import (
-    AgentZeroA2AClient,
-    AgentZeroA2AError,
-    AgentZeroA2ASubmitOutcomeUnknown,
-    AgentZeroA2ATaskLost,
-)
 from .contracts import SovereignAgentEvent, sanitize_agent_text
-from .causal_progress_lease import (
-    CausalProgressContractError,
-    CausalProgressLeaseV1,
-    CausalProgressReceiptV1,
+from .cognitive_repository_tools import BoundRepositoryToolset, create_repository_single_agent_task
+from .cognitive_run_store import (
+    create_agent_run,
+    read_agent_run,
+    read_agent_task_ids,
+    record_agent_stage_event,
+    transition_agent_run,
 )
-from .agent_run_receipts import read_git_workspace_identity
+from .cognitive_swarm_agents import MissionIntent, run_free_single_agent
 from .draft_pr_gate import draft_pr_input_from_job, prepare_draft_pr
 from .durable_workflow import (
     PermissionDecision,
@@ -57,10 +53,6 @@ from .job_lifecycle import create_sovereign_agent_job
 from .job_store import (
     StoredSovereignAgentJob,
     append_agent_event,
-    append_agent_progress_receipt,
-    has_agent_progress_fingerprint,
-    list_agent_progress_receipts,
-    read_latest_agent_progress_receipt,
     compare_and_swap_agent_job_external_ref,
     list_reconcilable_repository_jobs,
     mark_draft_pr_prepared,
@@ -69,16 +61,17 @@ from .job_store import (
 )
 from .tool_runner import run_agent_job_tool
 from .workspace_policy import repo_dir_for_workspace, validate_workspace_relative_path
+from llm_execution_resolver import FREE_SINGLE_AGENT_PROFILE, load_execution_resolution
+from llm_transport import route_provider_model
 
 
 ConnectionFactory = Callable[[], Any]
-A2AClientFactory = Callable[[], AgentZeroA2AClient]
 
 _REPOSITORY_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-_A2A_NORMAL_PREFIX: Final[str] = "agent-zero-a2a:"
-_A2A_RETRY_PREFIX: Final[str] = "agent-zero-a2a:retry:"
-_A2A_PENDING_PREFIX: Final[str] = "agent-zero-a2a:pending:submit:"
-_A2A_CLAIM_PREFIX: Final[str] = "agent-zero-a2a:claim:"
+_EXECUTOR_PREFIX: Final[str] = "sovereign-local-runner:"
+_EXECUTOR_RETRY_PREFIX: Final[str] = "sovereign-local-runner:retry:"
+_EXECUTOR_PENDING_PREFIX: Final[str] = "sovereign-local-runner:pending:submit:"
+_EXECUTOR_CLAIM_PREFIX: Final[str] = "sovereign-local-runner:claim:"
 _MAX_CLOSEOUT_DIFF_BYTES: Final[int] = 2_000_000
 _MAX_CLOSEOUT_CHANGED_FILES: Final[int] = 50
 _MAX_DOCUMENTATION_REGRESSION_BYTES: Final[int] = 1_000_000
@@ -106,9 +99,6 @@ _SHELL_CONTROL_TOKENS: Final[frozenset[str]] = frozenset({"||", ";", "|", ">", "
 _RECONCILER_THREAD_LOCK = threading.Lock()
 _RECONCILER_THREAD: threading.Thread | None = None
 _LOGGER = logging.getLogger(__name__)
-_A2A_READBACK_INTERVAL_MS: Final[int] = 30_000
-_PROGRESS_PROBE_LOCK = threading.Lock()
-_PROGRESS_PROBE_LAST_MS: dict[str, int] = {}
 
 
 class RepositoryExecutionError(RuntimeError):
@@ -129,43 +119,6 @@ def _bounded_env_seconds(name: str, default: float, minimum: float, maximum: flo
 
 def _repository_reconciler_poll_seconds() -> float:
     return _bounded_env_seconds("SOVEREIGN_REPOSITORY_RECONCILER_POLL_SECONDS", 2.0, 0.5, 30.0)
-
-
-def _repository_stall_seconds() -> float:
-    return _bounded_env_seconds("SOVEREIGN_REPOSITORY_STALL_SECONDS", 1800.0, 300.0, 1800.0)
-
-
-def _repository_absolute_deadline_seconds() -> float:
-    return _bounded_env_seconds(
-        "SOVEREIGN_REPOSITORY_ABSOLUTE_DEADLINE_SECONDS",
-        21_600.0,
-        1_800.0,
-        86_400.0,
-    )
-
-
-def _repository_submitted_stall_seconds() -> float:
-    # "submitted" is acknowledgement/queue state, not proof of active work. Agent Zero
-    # has been observed processing a task internally while its FastA2A projection stayed
-    # submitted after a provider failure. Bound that false-live state much more tightly,
-    # but preserve real workspace mutations when they can be independently observed.
-    return _bounded_env_seconds(
-        "SOVEREIGN_REPOSITORY_SUBMITTED_STALL_SECONDS",
-        300.0,
-        120.0,
-        1800.0,
-    )
-
-
-def _job_age_seconds(job: StoredSovereignAgentJob) -> float | None:
-    # Polling/event writes refresh updated_at, so it cannot be the execution clock.
-    # created_at is immutable and guarantees that a stuck external task cannot live forever.
-    observed = job.created_at
-    if not isinstance(observed, datetime):
-        return None
-    if observed.tzinfo is None:
-        observed = observed.replace(tzinfo=timezone.utc)
-    return max(0.0, (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds())
 
 
 def _configured_repository_url() -> str:
@@ -228,119 +181,42 @@ def _normalized_repository_payload(body: dict[str, Any]) -> dict[str, Any]:
 
 def _claim(kind: str, identity: str = "") -> str:
     digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16] if identity else "new"
-    return f"{_A2A_CLAIM_PREFIX}{kind}:{digest}:{uuid.uuid4().hex}"
+    return f"{_EXECUTOR_CLAIM_PREFIX}{kind}:{digest}:{uuid.uuid4().hex}"
 
 
-def _normal_ref(task_id: str) -> str:
-    return f"{_A2A_NORMAL_PREFIX}{task_id}"
+def _executor_ref(job_id: str, retry: bool = False) -> str:
+    return f"{_EXECUTOR_RETRY_PREFIX if retry else _EXECUTOR_PREFIX}{job_id}"
 
 
 def _pending_submit_ref(job_id: str) -> str:
     digest = hashlib.sha256(job_id.encode("utf-8")).hexdigest()[:24]
-    return f"{_A2A_PENDING_PREFIX}{digest}"
+    return f"{_EXECUTOR_PENDING_PREFIX}{digest}"
 
 
-def _retry_ref(task_id: str) -> str:
-    return f"{_A2A_RETRY_PREFIX}{task_id}"
+def is_repository_executor_job(job: StoredSovereignAgentJob | None) -> bool:
+    return bool(job and str(job.external_ref or "").startswith(_EXECUTOR_PREFIX))
 
 
-def _bound_task(external_ref: str) -> tuple[str, bool] | None:
-    if external_ref.startswith(_A2A_RETRY_PREFIX):
-        task_id = external_ref[len(_A2A_RETRY_PREFIX):]
-        return (task_id, True) if task_id else None
-    if (
-        external_ref.startswith(_A2A_NORMAL_PREFIX)
-        and not external_ref.startswith(_A2A_CLAIM_PREFIX)
-        and not external_ref.startswith(_A2A_PENDING_PREFIX)
-    ):
-        task_id = external_ref[len(_A2A_NORMAL_PREFIX):]
-        return (task_id, False) if task_id else None
-    return None
-
-
-def is_repository_a2a_job(job: StoredSovereignAgentJob | None) -> bool:
-    return bool(job and str(job.external_ref or "").startswith(_A2A_NORMAL_PREFIX))
-
-
-def cancel_repository_a2a_job(
+def cancel_repository_execution(
     conn: Any,
     *,
     job: StoredSovereignAgentJob,
-    a2a_client_factory: A2AClientFactory = AgentZeroA2AClient.from_env,
 ) -> StoredSovereignAgentJob:
-    """Cancel the one bound Agent Zero task and only unlock after proven cancellation."""
-    binding = _bound_task(str(job.external_ref or ""))
-    if binding is None:
-        raise RepositoryExecutionError("AGENT_ZERO_A2A_CANCEL_TASK_ID_MISSING")
-    task_id, _is_retry = binding
-    try:
-        task = a2a_client_factory().cancel_task(task_id)
-    except AgentZeroA2AError as exc:
-        raise RepositoryExecutionError(
-            f"{exc.family}: Agent Zero did not confirm cancellation."
-        ) from exc
-    if task.state != "canceled":
-        raise RepositoryExecutionError(
-            f"AGENT_ZERO_A2A_CANCEL_NOT_CONFIRMED: task state is {task.state}."
-        )
-    update_agent_job_state(
+    """Stop the persisted Sovereign-local job without contacting another executor."""
+    if job.status in {"completed", "failed", "blocked", "cleaned"}:
+        return job
+    updated = update_agent_job_state(
         conn,
         job_id=job.job_id,
         status="blocked",
-        blocker="Cancelled by owner; Agent Zero A2A confirmed task state canceled.",
+        blocker="Cancelled by owner; Sovereign-local-runner will perform no further work.",
     )
     append_agent_event(conn, job.job_id, SovereignAgentEvent(
-        stage="agent_zero_a2a_cancel_confirmed",
+        stage="sovereign_executor_cancelled",
         level="warning",
-        message=(
-            f"Agent Zero confirmed cancellation for task {task.task_id}. "
-            "The persisted run is unlocked and publication remains quarantined."
-        ),
+        message="Owner cancellation recorded locally; no external executor cancellation is required.",
     ))
     return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-
-
-def _cancel_stalled_repository_task(
-    conn: Any,
-    *,
-    job: StoredSovereignAgentJob,
-    task_id: str,
-    reason: str,
-    stage: str,
-    a2a_client_factory: A2AClientFactory,
-) -> StoredSovereignAgentJob:
-    """Quarantine a stalled job and require a real remote cancellation readback."""
-    try:
-        cancelled = a2a_client_factory().cancel_task(task_id)
-    except AgentZeroA2AError as exc:
-        return _block_job(
-            conn,
-            job,
-            (
-                f"{reason} Remote cancellation was not confirmed ({exc.family}); "
-                "publication remains quarantined and no resubmit is allowed."
-            ),
-            stage,
-        )
-    if cancelled.state != "canceled":
-        return _block_job(
-            conn,
-            job,
-            (
-                f"{reason} Agent Zero cancel returned state {cancelled.state}; "
-                "publication remains quarantined and no resubmit is allowed."
-            ),
-            stage,
-        )
-    return _block_job(
-        conn,
-        job,
-        (
-            f"{reason} Agent Zero confirmed task state canceled; publication remains "
-            "quarantined and no resubmit is allowed."
-        ),
-        stage,
-    )
 
 
 def _block_job(conn: Any, job: StoredSovereignAgentJob, reason: str, stage: str) -> StoredSovereignAgentJob:
@@ -354,298 +230,71 @@ def _block_job(conn: Any, job: StoredSovereignAgentJob, reason: str, stage: str)
     return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
 
 
-def _record_task_readback(
-    conn: Any, job: StoredSovereignAgentJob, *, message: str, unavailable: bool = False,
-) -> StoredSovereignAgentJob:
-    """Persist observations without turning polling into execution progress.
-
-    Event writes leave updated_at unchanged: polling must not reset the execution
-    deadline. Throttle from persisted events, not a process-local heartbeat cache.
-    """
-    current = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-    if current.status != "running" or current.external_ref != job.external_ref:
-        return current
-    stage = "agent_zero_a2a_readback_unavailable" if unavailable else "agent_zero_a2a_task_observed"
-    event = SovereignAgentEvent(stage=stage, level="warning" if unavailable else "info", message=message)
-    for previous in reversed(current.events):
-        if previous.get("stage") not in {"agent_zero_a2a_task_observed", "agent_zero_a2a_readback_unavailable"}:
-            continue
-        if previous.get("stage") == stage and previous.get("message") == event.message:
-            # Identical tasks/get observations are heartbeat noise, not new evidence.
-            # Keep one persisted observation until the external state/message changes.
-            return current
-        break
-    append_agent_event(conn, current.job_id, event)
-    return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or current
-
-
-def _progress_probe_due(job_id: str, observed_epoch_ms: int) -> bool:
-    """Throttle expensive Git readbacks without making the cache authoritative."""
-
-    with _PROGRESS_PROBE_LOCK:
-        previous = _PROGRESS_PROBE_LAST_MS.get(job_id)
-        if previous is not None and observed_epoch_ms - previous < _A2A_READBACK_INTERVAL_MS:
-            return False
-        _PROGRESS_PROBE_LAST_MS[job_id] = observed_epoch_ms
-        return True
-
-
-def _epoch_ms(value: datetime | None) -> int:
-    if not isinstance(value, datetime):
-        return 0
-    observed = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
-    return int(observed.astimezone(timezone.utc).timestamp() * 1000)
-
-
-def _observe_causal_progress(
-    conn: Any,
+def _ensure_local_single_agent_run(
+    get_connection: ConnectionFactory,
     *,
     job: StoredSovereignAgentJob,
-    task_id: str,
-    workspace_root: Path | None,
-    max_no_progress_seconds: int,
-) -> CausalProgressLeaseV1:
-    """Reconcile material Git progress without treating A2A liveness as progress."""
-
-    now_ms = int(time.time() * 1000)
-    current_job = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id)
-    if (
-        current_job is None
-        or current_job.status != "running"
-        or current_job.external_ref != job.external_ref
-    ):
-        return CausalProgressLeaseV1.evaluate(
-            job_id=job.job_id,
-            a2a_task_id=task_id,
-            source_revision="",
-            last_progress_receipt_sha256="",
-            last_material_progress_epoch_ms=0,
-            max_no_progress_seconds=max_no_progress_seconds,
-            absolute_deadline_epoch_ms=max(1, now_ms + 1),
-            observed_epoch_ms=now_ms,
-            evidence_available=False,
-            contradicted=True,
+) -> tuple[str, str, str]:
+    """Create or reuse exactly one persisted Agents-SDK run for this repository job."""
+    run_id = f"repo-{job.job_id}"
+    session_key = f"repo-session-{job.job_id}"
+    trace_id = f"repo-trace-{job.job_id}"
+    conn = get_connection()
+    try:
+        run = read_agent_run(conn, user_id=job.user_id, run_id=run_id)
+        if run is None:
+            created = create_agent_run(
+                conn,
+                user_id=job.user_id,
+                run_id=run_id,
+                session_key=session_key,
+                mission=job.mission,
+                supplied_evidence="",
+                trace_id=trace_id,
+                max_active_specialists=1,
+                max_iterations=2,
+                job_id=job.job_id,
+            )
+            evidence_id = created["evidenceId"]
+            trace_id = created["traceId"]
+        else:
+            evidence_id = run.evidence_id
+            trace_id = run.trace_id
+        task_ids = read_agent_task_ids(conn, run_id=run_id)
+        task_id = task_ids.get("free_single_agent")
+        if not task_id:
+            task_id = create_repository_single_agent_task(
+                conn,
+                run_id=run_id,
+                evidence_id=evidence_id,
+                write_confirmed=True,
+            )
+        transition_agent_run(
+            conn,
+            user_id=job.user_id,
+            run_id=run_id,
+            status="RUNNING",
+            source="agents-sdk",
+            trace_id=trace_id,
+            reason="Sovereign-local-runner admitted the repository mission to the foreground single agent.",
+            next_action="WAIT_FOR_FREE_SINGLE_AGENT",
+            evidence_kind="repository_execution_started",
+            evidence_summary="A persisted Free single-agent run owns the isolated repository workspace.",
+            evidence_payload={
+                "jobId": job.job_id,
+                "workspaceId": str(job.workspace_id or job.job_id),
+                "executor": "sovereign-local-runner",
+                "externalExecutor": False,
+                "backgroundAgents": 0,
+            },
+            agent_id="free_single_agent",
+            task_id=task_id,
         )
-    job = current_job
-    created_ms = _epoch_ms(job.created_at)
-    absolute_deadline_ms = created_ms + int(_repository_absolute_deadline_seconds() * 1000)
-
-    probe_due = _progress_probe_due(job.job_id, now_ms)
-    if probe_due:
-        chain = list_agent_progress_receipts(conn, job_id=job.job_id)
-        latest_raw = chain[-1] if chain else None
-    else:
-        latest_raw = read_latest_agent_progress_receipt(conn, job_id=job.job_id)
-    latest = (
-        CausalProgressReceiptV1.from_dict(latest_raw)
-        if latest_raw is not None
-        else None
-    )
-    if created_ms <= 0:
-        return CausalProgressLeaseV1.evaluate(
-            job_id=job.job_id,
-            a2a_task_id=task_id,
-            source_revision=(latest.repository_revision if latest is not None else ""),
-            last_progress_receipt_sha256=(latest.receipt_sha256 if latest is not None else ""),
-            last_material_progress_epoch_ms=(latest.observed_epoch_ms if latest is not None else 0),
-            max_no_progress_seconds=max_no_progress_seconds,
-            absolute_deadline_epoch_ms=max(1, now_ms + 1),
-            observed_epoch_ms=now_ms,
-            evidence_available=False,
-            contradicted=True,
-        )
-    workspace_id = str(job.workspace_id or job.job_id)
-    if latest is not None and (
-        latest.job_id != job.job_id
-        or latest.workspace_id != workspace_id
-        or latest.repository != job.repo_url
-    ):
-        return CausalProgressLeaseV1.evaluate(
-            job_id=job.job_id,
-            a2a_task_id=task_id,
-            source_revision=latest.repository_revision,
-            last_progress_receipt_sha256=latest.receipt_sha256,
-            last_material_progress_epoch_ms=latest.observed_epoch_ms,
-            max_no_progress_seconds=max_no_progress_seconds,
-            absolute_deadline_epoch_ms=absolute_deadline_ms,
-            observed_epoch_ms=now_ms,
-            evidence_available=True,
-            contradicted=True,
-        )
-    last_progress_ms = latest.observed_epoch_ms if latest is not None else created_ms
-    latest_receipt_sha = latest.receipt_sha256 if latest is not None else ""
-
-    repository_path = repo_dir_for_workspace(workspace_id, workspace_root)
-    evidence_available = latest is not None
-
-    if probe_due:
-        evidence_available = repository_path.is_dir() and (repository_path / ".git").exists()
-        if evidence_available:
-            try:
-                identity = read_git_workspace_identity(repository_path, repository=job.repo_url)
-            except (OSError, RuntimeError, ValueError):
-                evidence_available = False
-            else:
-                current_sha = identity.authoritative_readback_sha256
-                fingerprint_seen = has_agent_progress_fingerprint(
-                    conn,
-                    job_id=job.job_id,
-                    workspace_readback_sha256=current_sha,
-                )
-                if not fingerprint_seen:
-                    current_job = read_agent_job(
-                        conn,
-                        user_id=job.user_id,
-                        job_id=job.job_id,
-                    )
-                    if (
-                        current_job is None
-                        or current_job.status != "running"
-                        or current_job.external_ref != job.external_ref
-                    ):
-                        return CausalProgressLeaseV1.evaluate(
-                            job_id=job.job_id,
-                            a2a_task_id=task_id,
-                            source_revision=identity.base_commit_sha,
-                            last_progress_receipt_sha256=latest_receipt_sha,
-                            last_material_progress_epoch_ms=last_progress_ms,
-                            max_no_progress_seconds=max_no_progress_seconds,
-                            absolute_deadline_epoch_ms=absolute_deadline_ms,
-                            observed_epoch_ms=now_ms,
-                            evidence_available=True,
-                            contradicted=True,
-                        )
-                    job = current_job
-                    receipt = CausalProgressReceiptV1.build(
-                        job_id=job.job_id,
-                        workspace_id=workspace_id,
-                        a2a_task_id=task_id,
-                        repository=job.repo_url,
-                        repository_revision=identity.base_commit_sha,
-                        progress_kind=(
-                            "REPOSITORY_MATERIALIZED"
-                            if latest is None
-                            else "WORKSPACE_DELTA"
-                        ),
-                        previous_workspace_readback_sha256=(
-                            latest.current_workspace_readback_sha256 if latest is not None else ""
-                        ),
-                        current_workspace_readback_sha256=current_sha,
-                        previous_receipt_sha256=latest_receipt_sha,
-                        observed_epoch_ms=now_ms,
-                    )
-                    try:
-                        append_agent_progress_receipt(
-                            conn,
-                            job_id=job.job_id,
-                            receipt=receipt.to_dict(),
-                        )
-                    except CausalProgressContractError:
-                        # Another reconciler may have advanced the append-only receipt
-                        # head after our read but before the row lock was acquired. That
-                        # race is not a contradiction if the persisted head really
-                        # advanced for the same bound execution.
-                        concurrent_chain = list_agent_progress_receipts(
-                            conn,
-                            job_id=job.job_id,
-                        )
-                        if not concurrent_chain:
-                            raise
-                        concurrent = CausalProgressReceiptV1.from_dict(
-                            concurrent_chain[-1]
-                        )
-                        if (
-                            concurrent.receipt_sha256 == latest_receipt_sha
-                            or concurrent.job_id != job.job_id
-                            or concurrent.workspace_id != workspace_id
-                            or concurrent.repository != job.repo_url
-                        ):
-                            raise
-                        latest = concurrent
-                        latest_receipt_sha = concurrent.receipt_sha256
-                        last_progress_ms = concurrent.observed_epoch_ms
-                    else:
-                        observed_changes = tuple(identity.changed_paths)
-                        if observed_changes and tuple(job.changed_files or ()) != observed_changes:
-                            update_agent_job_state(
-                                conn,
-                                job_id=job.job_id,
-                                status="running",
-                                changed_files=observed_changes,
-                            )
-                            append_agent_event(conn, job.job_id, SovereignAgentEvent(
-                                stage="agent_zero_workspace_progress_observed",
-                                level="info",
-                                message=(
-                                    f"Observed {len(observed_changes)} changed workspace file(s) from "
-                                    "the authoritative Git workspace readback. This is material "
-                                    "activity, not completion or quality evidence."
-                                ),
-                            ))
-                        latest = receipt
-                        latest_receipt_sha = receipt.receipt_sha256
-                        last_progress_ms = receipt.observed_epoch_ms
-
-    return CausalProgressLeaseV1.evaluate(
-        job_id=job.job_id,
-        a2a_task_id=task_id,
-        source_revision=(
-            latest.repository_revision if latest is not None else ""
-        ),
-        last_progress_receipt_sha256=latest_receipt_sha,
-        last_material_progress_epoch_ms=last_progress_ms,
-        max_no_progress_seconds=max_no_progress_seconds,
-        absolute_deadline_epoch_ms=absolute_deadline_ms,
-        observed_epoch_ms=now_ms,
-        evidence_available=evidence_available,
-    )
-
-
-def _repository_permission_binding(conn: Any, job_id: str) -> tuple[Any, int] | None:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT binding.permission_id, binding.approved_receipt_hash
-            FROM repository_job_permission_bindings AS binding
-            WHERE binding.job_id = %s
-            LIMIT 1
-            """,
-            (job_id,),
-        )
-        row = cur.fetchone()
-    if not row:
-        return None
-    permission_id = (
-        str(row.get("permission_id") or "")
-        if isinstance(row, dict)
-        else str(row[0] or "")
-    )
-    approved_hash = (
-        str(row.get("approved_receipt_hash") or "")
-        if isinstance(row, dict)
-        else str(row[1] or "")
-    )
-    latest = read_latest_permission_receipt(conn, permission_id=permission_id)
-    if latest is None:
-        raise RevocationClosureError("repository job permission authority is unreadable")
-    receipt, sequence = latest
-    if receipt.receipt_hash != approved_hash and receipt.decision.value == "APPROVED":
-        raise RevocationClosureError("repository job permission binding does not match authority history")
-    return receipt, sequence
-
-
-def _require_repository_effect_authority(
-    conn: Any,
-    *,
-    job: StoredSovereignAgentJob,
-) -> bool:
-    binding = _repository_permission_binding(conn, job.job_id)
-    if binding is None:
-        return False
-    receipt, _sequence = binding
-    head = read_permission_authority_head(conn, permission_id=receipt.permission_id)
-    require_live_permission(receipt, head)
-    return True
+        return run_id, trace_id, task_id
+    finally:
+        close = getattr(conn, "close", None)
+        if callable(close):
+            close()
 
 
 def _submit_after_claim(
@@ -654,7 +303,8 @@ def _submit_after_claim(
     job: StoredSovereignAgentJob,
     claim_ref: str,
     retry: bool,
-    a2a_client_factory: A2AClientFactory,
+    workspace_root: Path | None = None,
+    get_connection: ConnectionFactory | None = None,
 ) -> StoredSovereignAgentJob:
     try:
         if not _require_repository_effect_authority(conn, job=job):
@@ -668,33 +318,149 @@ def _submit_after_claim(
         return _block_job(
             conn,
             job,
-            f"REVOKED_BEFORE_EXTERNAL_EFFECT: {exc}",
+            f"REVOKED_BEFORE_SOVEREIGN_EFFECT: {exc}",
             "repository_revocation_blocked",
         )
 
-    try:
-        task = a2a_client_factory().submit_repository_task(
-            workspace_id=str(job.workspace_id or job.job_id),
-            repository_url=job.repo_url,
-            branch=job.branch,
-            mission=job.mission,
-        )
-    except AgentZeroA2ASubmitOutcomeUnknown as exc:
+    workspace_id = str(job.workspace_id or job.job_id)
+    resolved_connection_factory = get_connection or (lambda: conn)
+    repo_path = repo_dir_for_workspace(workspace_id, workspace_root)
+    if not repo_path.is_dir() or not (repo_path / ".git").is_dir():
         return _block_job(
             conn,
             job,
-            f"{exc.family}: task acceptance is unknown; automatic resubmit is forbidden.",
-            "agent_zero_a2a_submit_outcome_unknown",
-        )
-    except AgentZeroA2AError as exc:
-        return _block_job(
-            conn,
-            job,
-            f"{exc.family}: {exc.next_action}",
-            "agent_zero_a2a_submit_failed",
+            "Sovereign executor workspace repository is unavailable; no external executor fallback is allowed.",
+            "sovereign_executor_workspace_missing",
         )
 
-    target_ref = _retry_ref(task.task_id) if retry else _normal_ref(task.task_id)
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="sovereign_executor_started",
+        level="success",
+        message="Sovereign-local-runner owns repository execution; no external executor is used.",
+    ))
+    update_agent_job_state(
+        conn,
+        job_id=job.job_id,
+        status="running",
+        workspace_id=workspace_id,
+        clear_blocker=True,
+    )
+
+    try:
+        run_id, trace_id, task_id = _ensure_local_single_agent_run(
+            resolved_connection_factory,
+            job=job,
+        )
+        resolution = load_execution_resolution(
+            resolved_connection_factory,
+            user_id=job.user_id,
+            requested_mode="free",
+        )
+        if resolution is None or resolution.profile_id != FREE_SINGLE_AGENT_PROFILE:
+            raise RepositoryExecutionError("NO_VERIFIED_FREE_SINGLE_AGENT_ROUTE")
+        if not resolution.repository_execution_allowed:
+            raise RepositoryExecutionError("REPOSITORY_EXECUTION_NOT_ALLOWED_FOR_FREE_SINGLE_AGENT")
+        model = route_provider_model(resolution.primary_route)
+        if not model:
+            raise RepositoryExecutionError("RESOLVED_FREE_AGENT_MODEL_MISSING")
+        repository_toolset = BoundRepositoryToolset(
+            get_connection=resolved_connection_factory,
+            user_id=job.user_id,
+            run_id=run_id,
+            job_id=job.job_id,
+            task_ids_by_agent={"free_single_agent": task_id},
+            workspace_root=repo_path.parent.parent,
+            write_confirmed=True,
+        )
+
+        def stage_observer(stage: dict[str, object]) -> dict[str, str]:
+            stage_conn = resolved_connection_factory()
+            try:
+                return record_agent_stage_event(
+                    stage_conn,
+                    user_id=job.user_id,
+                    run_id=run_id,
+                    trace_id=trace_id,
+                    agent_id=str(stage.get("agentId") or "free_single_agent"),
+                    event_type=str(stage.get("eventType") or "agent_stage"),
+                    status=str(stage.get("status") or "RUNNING"),
+                    summary=str(stage.get("summary") or "Sovereign agent stage changed."),
+                    next_action=str(stage.get("nextAction") or "WAIT_FOR_FREE_SINGLE_AGENT"),
+                    evidence_payload={
+                        "jobId": job.job_id,
+                        "executor": "sovereign-local-runner",
+                        "loop": stage.get("loop"),
+                        "repositoryExecution": True,
+                        "rawModelOutputPersisted": False,
+                    },
+                    task_id=task_id,
+                )
+            finally:
+                close = getattr(stage_conn, "close", None)
+                if callable(close):
+                    close()
+
+        mission_intent = MissionIntent(
+            mode="repository_execution",
+            normalized_goal=job.mission[:2000],
+            requires_online_tools=True,
+            requires_repository_workspace=True,
+            learning_scope=[],
+            confidence=1.0,
+        )
+        agent_result = asyncio.run(run_free_single_agent(
+            job.mission,
+            evidence="",
+            model=model,
+            intent=mission_intent,
+            route=resolution.primary_route,
+            stage_observer=stage_observer,
+            repository_tool_factory=repository_toolset.tools_for_role,
+            capability_tool_factory=None,
+        ))
+        if str(agent_result.get("status") or "BLOCKED") != "COMPLETED":
+            return _block_job(
+                conn,
+                job,
+                str(agent_result.get("reason") or agent_result.get("blocker") or "Sovereign single-agent execution was blocked.")[:2000],
+                "sovereign_executor_execution_blocked",
+            )
+        transition_conn = resolved_connection_factory()
+        try:
+            transition_agent_run(
+                transition_conn,
+                user_id=job.user_id,
+                run_id=run_id,
+                status="VERIFYING",
+                source="agents-sdk",
+                trace_id=trace_id,
+                reason="Sovereign-local-runner completed the foreground model pass; repository evidence is being closed out.",
+                next_action="VERIFY_SINGLE_AGENT_WORKSPACE_EVIDENCE",
+                evidence_kind="repository_execution_completed",
+                evidence_summary="Foreground single-agent model execution returned; Git, diff and regression closeout remains authoritative.",
+                evidence_payload={
+                    "jobId": job.job_id,
+                    "executor": "sovereign-local-runner",
+                    "repositoryExecutionPerformed": bool(agent_result.get("repositoryExecutionPerformed")),
+                    "backgroundAgentsStarted": 0,
+                    "rawModelOutputPersisted": False,
+                },
+                agent_id="free_single_agent",
+                task_id=task_id,
+            )
+        finally:
+            close = getattr(transition_conn, "close", None)
+            if callable(close):
+                close()
+    except Exception as exc:
+        return _block_job(
+            conn,
+            job,
+            sanitize_agent_text(str(exc), 2000) or "Sovereign-local-runner execution failed closed.",
+            "sovereign_executor_execution_failed",
+        )
+
+    target_ref = f"sovereign-local-runner:{'retry:' if retry else ''}{job.job_id}"
     if not compare_and_swap_agent_job_external_ref(
         conn,
         job_id=job.job_id,
@@ -704,16 +470,17 @@ def _submit_after_claim(
         return _block_job(
             conn,
             job,
-            "Agent Zero task was submitted but its persisted binding could not be finalized; refusing any resubmit.",
-            "agent_zero_a2a_binding_finalize_failed",
+            "Sovereign executor binding could not be finalized; refusing duplicate execution.",
+            "sovereign_executor_binding_finalize_failed",
         )
+
     append_agent_event(conn, job.job_id, SovereignAgentEvent(
-        stage="agent_zero_a2a_retry_submitted" if retry else "agent_zero_a2a_submitted",
+        stage="sovereign_executor_bound",
         level="success",
         message=(
-            "Exactly one restart-recovery Agent Zero A2A task was submitted nonblocking."
+            "Sovereign-local-runner bound for restart recovery after verified model execution."
             if retry
-            else "Exactly one Agent Zero A2A task was submitted nonblocking."
+            else "Sovereign-local-runner bound as the sole repository executor after verified foreground execution."
         ),
     ))
     return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
@@ -738,16 +505,16 @@ def _bind_repository_execution_permission(
 
     from .durable_workflow import WorkflowState
     step = WorkflowStep(
-        step_id="repository-a2a-submit",
+        step_id="repository-sovereign-execute",
         kind=StepKind.TOOL_MUTATION,
         allowed_from=(WorkflowState.READY,),
         allowed_to=(WorkflowState.RUNNING,),
         permission_required=True,
-        capability="repository.external-submit",
+        capability="repository.sovereign-execute",
         timeout_seconds=3600,
         max_attempts=2,
         idempotency_key=f"repository-submit:{job.job_id}",
-        required_readback_kinds=("agent_zero_a2a_task",),
+        required_readback_kinds=("sovereign_local_execution",),
     )
     definition = WorkflowDefinition.create(
         workflow_id=f"repository-execution-{job.job_id}",
@@ -768,7 +535,7 @@ def _bind_repository_execution_permission(
         binding=binding,
         definition=definition,
         step_id=step.step_id,
-        tool_name="agent-zero-a2a-submit",
+        tool_name="sovereign-local-runner",
         parameters={
             "job_id": job.job_id,
             "repository": job.repo_url,
@@ -801,16 +568,8 @@ def start_repository_execution(
     user_id: str,
     body: dict[str, Any],
     workspace_root: Path | None = None,
-    a2a_client_factory: A2AClientFactory = AgentZeroA2AClient.from_env,
 ) -> StoredSovereignAgentJob:
-    """Persist one Agent-Zero-only repository job and queue its A2A submit.
-
-    Sovereign provisions only the shared filesystem slot. It never resolves a
-    GitHub OAuth credential and never clones the implementation repository on
-    the execution path. The server-owned reconciler submits exactly one A2A task;
-    Agent Zero owns repository access and checkout through its own configured
-    repository/GitHub capability.
-    """
+    """Persist one Sovereign-local repository job and queue its local execution."""
 
     if "githubAccessToken" in body:
         raise RepositoryExecutionError("GITHUB_CREDENTIAL_FORBIDDEN_ON_EXECUTION")
@@ -827,7 +586,7 @@ def start_repository_execution(
         payload=payload,
         workspace_root=workspace_root,
         provision_workspace=True,
-        clone_repo=False,
+        clone_repo=True,
     )
     job = read_agent_job(conn, user_id=user_id, job_id=lifecycle.job_id)
     if job is None:
@@ -841,12 +600,9 @@ def start_repository_execution(
             clear_blocker=True,
         )
         append_agent_event(conn, job.job_id, SovereignAgentEvent(
-            stage="agent_zero_repository_access_delegated",
+            stage="sovereign_repository_checked_out",
             level="success",
-            message=(
-                "Sovereign provisioned only the shared workspace; repository checkout "
-                "is delegated exclusively to Agent Zero without Sovereign GitHub OAuth."
-            ),
+            message="Sovereign-local-runner owns repository checkout and execution inside the isolated workspace.",
         ))
         job = read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
     if job.status != "running":
@@ -856,9 +612,8 @@ def start_repository_execution(
         stage="repository_execution_contract_bound",
         level="success",
         message=(
-            "Repository execution contract bound: Sovereign persists the job and evidence; exactly one "
-            "Agent Zero A2A task owns implementation; the current repository path is free and may not "
-            "create a paid usage settlement."
+            "Repository execution contract bound: Sovereign persists the job, repository state and evidence; "
+            "sovereign-local-runner is the sole executor and no external execution worker is allowed."
         ),
     ))
     job = read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
@@ -876,12 +631,11 @@ def start_repository_execution(
         expected_ref=None,
         new_ref=pending_ref,
     ):
-        # Another caller already owns or queued the external-effect boundary.
         return read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
     append_agent_event(conn, job.job_id, SovereignAgentEvent(
-        stage="agent_zero_a2a_submit_queued",
+        stage="sovereign_local_execution_queued",
         level="info",
-        message="Agent Zero A2A submission was durably queued for the server-owned reconciler.",
+        message="Sovereign-local-runner execution was durably queued for the server-owned reconciler.",
     ))
     return read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
 
@@ -890,12 +644,13 @@ def _submit_pending_repository_job(
     conn: Any,
     *,
     job: StoredSovereignAgentJob,
-    a2a_client_factory: A2AClientFactory = AgentZeroA2AClient.from_env,
+    workspace_root: Path | None = None,
+    get_connection: ConnectionFactory | None = None,
 ) -> StoredSovereignAgentJob:
-    """Claim and execute one durable initial submit outside the HTTP request."""
+    """Claim and execute one durable local repository run outside the HTTP request."""
 
     pending_ref = str(job.external_ref or "")
-    if job.status != "running" or not pending_ref.startswith(_A2A_PENDING_PREFIX):
+    if job.status != "running" or not pending_ref.startswith(_EXECUTOR_PENDING_PREFIX):
         return job
     claim_ref = _claim("submit", job.job_id)
     if not compare_and_swap_agent_job_external_ref(
@@ -911,7 +666,8 @@ def _submit_pending_repository_job(
         job=claimed,
         claim_ref=claim_ref,
         retry=False,
-        a2a_client_factory=a2a_client_factory,
+        workspace_root=workspace_root,
+        get_connection=get_connection,
     )
 
 
@@ -998,7 +754,7 @@ def _closeout_repository_job(
         return _block_job(
             conn,
             job,
-            status_result.blocker or status_result.error or "Agent Zero completed without workspace changes.",
+            status_result.blocker or status_result.error or "Sovereign-local-runner completed without workspace changes.",
             "repository_closeout_git_status_blocked",
         )
 
@@ -1183,7 +939,7 @@ def _closeout_repository_job(
         return _block_job(
             conn,
             prepared,
-            "Draft-PR preparation succeeded but the Agent Zero closeout binding could not be restored.",
+            "Draft-PR preparation succeeded but the Sovereign-local-runner closeout binding could not be restored.",
             "repository_closeout_binding_restore_failed",
         )
     append_agent_event(conn, evidenced.job_id, SovereignAgentEvent(
@@ -1194,259 +950,25 @@ def _closeout_repository_job(
     return read_agent_job(conn, user_id=evidenced.user_id, job_id=evidenced.job_id) or evidenced
 
 
-def _recover_lost_original_task(
-    conn: Any,
-    *,
-    job: StoredSovereignAgentJob,
-    bound_ref: str,
-    task_id: str,
-    workspace_root: Path | None,
-    a2a_client_factory: A2AClientFactory,
-) -> StoredSovereignAgentJob:
-    # A2A task storage is not the repository truth boundary. A missing task may
-    # follow an Agent Zero restart or an in-memory task-store loss after the
-    # shared workspace was already mutated. Inspect the owned workspace first;
-    # never duplicate repository work merely because tasks/get returned 404.
-    status_result = run_agent_job_tool(job, "git-status", {}, workspace_root)
-    if status_result.status != "done":
-        return _block_job(
-            conn,
-            job,
-            (
-                "AGENT_ZERO_A2A_TASK_LOST: the original task is no longer readable and "
-                "workspace mutation state could not be verified; recovery submit is quarantined."
-            ),
-            "agent_zero_a2a_lost_workspace_unverified",
-        )
-
-    if status_result.changed_files:
-        claim_ref = _claim("closeout-lost", task_id)
-        if not compare_and_swap_agent_job_external_ref(
-            conn,
-            job_id=job.job_id,
-            expected_ref=bound_ref,
-            new_ref=claim_ref,
-        ):
-            return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-        claimed = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-        append_agent_event(conn, job.job_id, SovereignAgentEvent(
-            stage="agent_zero_a2a_lost_workspace_changes_detected",
-            level="warning",
-            message=(
-                "The original Agent Zero task is no longer readable, but the owned shared workspace "
-                "contains real changes; Sovereign will close out those changes without resubmitting."
-            ),
-        ))
-        return _closeout_repository_job(
-            conn,
-            job=claimed,
-            claim_ref=claim_ref,
-            bound_ref=bound_ref,
-            workspace_root=workspace_root,
-        )
-
-    claim_ref = _claim("retry", task_id)
-    if not compare_and_swap_agent_job_external_ref(
-        conn,
-        job_id=job.job_id,
-        expected_ref=bound_ref,
-        new_ref=claim_ref,
-    ):
-        return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-    claimed = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-    append_agent_event(conn, job.job_id, SovereignAgentEvent(
-        stage="agent_zero_a2a_original_task_lost",
-        level="warning",
-        message=(
-            "The persisted original Agent Zero task is gone and the owned workspace has no changes; "
-            "one atomic recovery submit is allowed."
-        ),
-    ))
-    return _submit_after_claim(
-        conn,
-        job=claimed,
-        claim_ref=claim_ref,
-        retry=True,
-        a2a_client_factory=a2a_client_factory,
-    )
-
-
 def reconcile_repository_execution(
     conn: Any,
     *,
     user_id: str,
     job_id: str,
     workspace_root: Path | None = None,
-    a2a_client_factory: A2AClientFactory = AgentZeroA2AClient.from_env,
 ) -> StoredSovereignAgentJob | None:
-    """Read/reconcile one persisted repository job without spawning duplicates."""
+    """Reconcile one Sovereign-local repository job without external polling."""
 
     job = read_agent_job(conn, user_id=user_id, job_id=job_id)
-    if job is None or job.status != "running" or not is_repository_a2a_job(job):
+    if job is None or job.status != "running":
         return job
     external_ref = str(job.external_ref or "")
-    if external_ref.startswith(_A2A_PENDING_PREFIX):
-        # Pending submission is server-worker-owned. User/client polling must be
-        # read-only and must never perform the outbound Agent Zero side effect.
+    if not external_ref.startswith(_EXECUTOR_PREFIX):
         return job
-    if external_ref.startswith(_A2A_CLAIM_PREFIX):
-        # Another request owns the side-effect boundary. A stale claim requires
-        # operator evidence rather than an automatic duplicate submit.
+    if external_ref.startswith(_EXECUTOR_PENDING_PREFIX) or external_ref.startswith(_EXECUTOR_CLAIM_PREFIX):
         return job
-    binding = _bound_task(external_ref)
-    if binding is None:
-        return _block_job(
-            conn,
-            job,
-            "Persisted Agent Zero A2A binding is invalid.",
-            "agent_zero_a2a_binding_invalid",
-        )
-    task_id, is_retry = binding
-    try:
-        task = a2a_client_factory().get_task(task_id)
-    except AgentZeroA2ATaskLost:
-        if is_retry:
-            return _block_job(
-                conn,
-                job,
-                "The one restart-recovery Agent Zero task is also lost; no further resubmit is allowed.",
-                "agent_zero_a2a_retry_task_lost",
-            )
-        return _recover_lost_original_task(
-            conn,
-            job=job,
-            bound_ref=external_ref,
-            task_id=task_id,
-            workspace_root=workspace_root,
-            a2a_client_factory=a2a_client_factory,
-        )
-    except AgentZeroA2AError as exc:
-        _record_task_readback(
-            conn, job,
-            message=f"{exc.family}: Agent Zero task readback is unavailable; no task was resubmitted.",
-            unavailable=True,
-        )
-        raise RepositoryExecutionTransientError(
-            f"{exc.family}: task readback is unavailable; no resubmit was performed"
-        ) from exc
 
-    if task.active:
-        max_no_progress_seconds = int(
-            _repository_submitted_stall_seconds()
-            if task.state == "submitted"
-            else _repository_stall_seconds()
-        )
-        try:
-            lease = _observe_causal_progress(
-                conn,
-                job=job,
-                task_id=task.task_id,
-                workspace_root=workspace_root,
-                max_no_progress_seconds=max_no_progress_seconds,
-            )
-        except CausalProgressContractError as exc:
-            return _cancel_stalled_repository_task(
-                conn,
-                job=job,
-                task_id=task.task_id,
-                reason=f"AGENT_ZERO_PROGRESS_LEASE_CONTRADICTED: {exc}.",
-                stage="agent_zero_progress_lease_contradicted",
-                a2a_client_factory=a2a_client_factory,
-            )
-        current_job = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id)
-        if (
-            current_job is None
-            or current_job.status != "running"
-            or current_job.external_ref != job.external_ref
-        ):
-            return current_job or job
-        job = current_job
-        if lease.verdict == "CONTRADICTED":
-            return _cancel_stalled_repository_task(
-                conn,
-                job=job,
-                task_id=task.task_id,
-                reason=f"AGENT_ZERO_PROGRESS_LEASE_CONTRADICTED: {lease.reason}.",
-                stage="agent_zero_progress_lease_contradicted",
-                a2a_client_factory=a2a_client_factory,
-            )
-        if lease.verdict == "UNVERIFIED":
-            lease_expires_ms = (
-                lease.last_material_progress_epoch_ms
-                + lease.max_no_progress_seconds * 1000
-            )
-            if int(time.time() * 1000) >= lease_expires_ms:
-                return _cancel_stalled_repository_task(
-                    conn,
-                    job=job,
-                    task_id=task.task_id,
-                    reason=(
-                        "AGENT_ZERO_PROGRESS_LEASE_UNVERIFIED: material progress "
-                        "evidence remained unavailable through the current lease boundary."
-                    ),
-                    stage="agent_zero_progress_lease_unverified",
-                    a2a_client_factory=a2a_client_factory,
-                )
-            _record_task_readback(
-                conn,
-                job,
-                message=(
-                    "Agent Zero remains live, but the material Git progress readback "
-                    "is unavailable; the existing verified lease is not renewed."
-                ),
-                unavailable=True,
-            )
-            raise RepositoryExecutionTransientError(
-                "material progress evidence is unavailable; no resubmit was performed"
-            )
-        if lease.verdict == "STALLED":
-            submitted_stall = task.state == "submitted"
-            return _cancel_stalled_repository_task(
-                conn,
-                job=job,
-                task_id=task.task_id,
-                reason=(
-                    f"AGENT_ZERO_A2A_SUBMITTED_STALLED: {lease.reason}."
-                    if submitted_stall
-                    else f"AGENT_ZERO_A2A_STALLED: {lease.reason}."
-                ),
-                stage=(
-                    "agent_zero_a2a_submitted_stalled"
-                    if submitted_stall
-                    else "agent_zero_a2a_task_stalled"
-                ),
-                a2a_client_factory=a2a_client_factory,
-            )
-        return _record_task_readback(
-            conn, job,
-            message=(
-                f"Agent Zero tasks/get observed task {task.task_id} in state {task.state}. "
-                "This confirms a task readback, not new file changes or completed work."
-            ),
-        )
-    if task.interrupted:
-        return _block_job(
-            conn,
-            job,
-            f"Agent Zero A2A task requires unsupported external input/state: {task.state}.",
-            "agent_zero_a2a_task_interrupted",
-        )
-    if task.failed:
-        return _block_job(
-            conn,
-            job,
-            f"Agent Zero A2A task terminated without successful completion: {task.state}.",
-            "agent_zero_a2a_task_failed",
-        )
-    if not task.completed:
-        return _block_job(
-            conn,
-            job,
-            f"Agent Zero A2A task returned unsupported state: {task.state}.",
-            "agent_zero_a2a_task_state_invalid",
-        )
-
-    claim_ref = _claim("closeout", task_id)
+    claim_ref = _claim("closeout", job.job_id)
     if not compare_and_swap_agent_job_external_ref(
         conn,
         job_id=job.job_id,
@@ -1469,53 +991,29 @@ def recover_stalled_repository_job_from_verified_readback(
     user_id: str,
     job_id: str,
     workspace_root: Path | None = None,
-    a2a_client_factory: A2AClientFactory = AgentZeroA2AClient.from_env,
 ) -> tuple[StoredSovereignAgentJob | None, bool]:
-    """Recover only a proven completed stalled task; never resubmit external work.
-
-    This is the bounded self-healing action for HANDOFF_TIMEOUT_WITH_READBACK.
-    The task identity must already be persisted, tasks/get must prove completion,
-    and the canonical closeout path still owns all workspace/test/evidence gates.
-    """
+    """Recover a blocked local job only when its workspace still contains real evidence."""
     job = read_agent_job(conn, user_id=user_id, job_id=job_id)
     if job is None:
         return None, False
-    if job.status != "blocked" or "AGENT_ZERO_A2A_STALLED" not in str(job.blocker or ""):
+    if job.status != "blocked" or not is_repository_executor_job(job):
         return job, False
-    binding = _bound_task(str(job.external_ref or ""))
-    if binding is None:
+    status_result = run_agent_job_tool(job, "git-status", {}, workspace_root)
+    if status_result.status != "done" or not status_result.changed_files:
         return job, False
-    task_id, _is_retry = binding
-    try:
-        task = a2a_client_factory().get_task(task_id)
-    except (AgentZeroA2AError, AgentZeroA2ATaskLost):
-        return job, False
-    if not task.completed:
-        return job, False
-
-    update_agent_job_state(
-        conn,
-        job_id=job.job_id,
-        status="running",
-        clear_blocker=True,
-    )
+    update_agent_job_state(conn, job_id=job.job_id, status="running", clear_blocker=True)
     append_agent_event(conn, job.job_id, SovereignAgentEvent(
-        stage="self_healing_handoff_readback_recovered",
+        stage="self_healing_workspace_readback_recovered",
         level="success",
-        message=(
-            "Self-healing readback proved the already-bound Agent Zero task completed; "
-            "the job was resumed for canonical closeout without any resubmit."
-        ),
+        message="Workspace readback proved real changes exist; Sovereign resumed canonical closeout without external execution.",
     ))
     recovered = reconcile_repository_execution(
         conn,
         user_id=user_id,
         job_id=job_id,
         workspace_root=workspace_root,
-        a2a_client_factory=a2a_client_factory,
     )
     return recovered, True
-
 
 def _close_reconciler_connection(conn: Any) -> None:
     close = getattr(conn, "close", None)
@@ -1529,13 +1027,7 @@ def reconcile_repository_jobs_once(
     workspace_root: Path | None = None,
     limit: int = 50,
 ) -> dict[str, int]:
-    """Reconcile persisted A2A repository jobs without any client polling.
-
-    Pending initial submits are claimed and executed here, never in a user HTTP
-    request. Bound tasks retain the existing CAS ownership for retry and closeout,
-    so multiple backend processes cannot duplicate the external task or Draft-PR
-    preparation.
-    """
+    """Reconcile persisted Sovereign-local repository jobs without client-side execution."""
 
     listing_conn = get_connection()
     try:
@@ -1549,8 +1041,13 @@ def reconcile_repository_jobs_once(
     for candidate in candidates:
         conn = get_connection()
         try:
-            if str(candidate.external_ref or "").startswith(_A2A_PENDING_PREFIX):
-                _submit_pending_repository_job(conn, job=candidate)
+            if str(candidate.external_ref or "").startswith(_EXECUTOR_PENDING_PREFIX):
+                _submit_pending_repository_job(
+                    conn,
+                    job=candidate,
+                    workspace_root=workspace_root,
+                    get_connection=get_connection,
+                )
             else:
                 reconcile_repository_execution(
                     conn,
@@ -1564,7 +1061,7 @@ def reconcile_repository_jobs_once(
         except Exception as exc:  # keep the daemon alive; no secret-shaped payload is logged
             unexpected_failures += 1
             _LOGGER.warning(
-                "repository A2A reconcile failed job=%s type=%s",
+                "repository local-runner reconcile failed job=%s type=%s",
                 candidate.job_id,
                 type(exc).__name__,
             )
@@ -1583,13 +1080,7 @@ def start_repository_reconciler(
     get_connection: ConnectionFactory,
     workspace_root: Path | None = None,
 ) -> bool:
-    """Start one process-local daemon that owns A2A lifecycle reconciliation.
-
-    Multiple backend processes remain safe: active-task reads are side-effect free
-    and every retry/closeout effect is still protected by the existing persisted
-    ``external_ref`` compare-and-swap boundary. On process restart the fresh daemon
-    scans the database again, so client presence is never required for completion.
-    """
+    """Start one process-local daemon that owns Sovereign repository lifecycle reconciliation."""
 
     global _RECONCILER_THREAD
     with _RECONCILER_THREAD_LOCK:
@@ -1605,14 +1096,14 @@ def start_repository_reconciler(
                     )
                 except Exception as exc:
                     _LOGGER.warning(
-                        "repository A2A reconcile cycle failed type=%s",
+                        "repository local-runner reconcile cycle failed type=%s",
                         type(exc).__name__,
                     )
                 time.sleep(_repository_reconciler_poll_seconds())
 
         _RECONCILER_THREAD = threading.Thread(
             target=loop,
-            name="sovereign-repository-a2a-reconciler",
+            name="sovereign-repository-local-reconciler",
             daemon=True,
         )
         _RECONCILER_THREAD.start()
