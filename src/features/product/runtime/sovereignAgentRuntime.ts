@@ -170,7 +170,6 @@ export function resolveSovereignAgentConfig(input: SovereignAgentConfigInput = {
       ? input.agentApiUrl
       : readWindowOverride('__SOVEREIGN_AGENT_API_URL__')
         || readBuildEnv('VITE_SOVEREIGN_AGENT_API_URL')
-        || readSameOriginBackendUrl()
         || '',
   );
   const enabled = typeof input.enabled === 'boolean' ? input.enabled : Boolean(agentApiUrl);

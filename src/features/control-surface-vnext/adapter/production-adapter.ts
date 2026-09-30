@@ -197,6 +197,18 @@ function newestEvidenceRevision(anchors: readonly SovereignWorkspaceEvidenceAnch
   return sorted[0]?.repositoryRevision ?? '';
 }
 
+function strongestEvidenceVerdict(anchors: readonly SovereignWorkspaceEvidenceAnchor[]): SovereignEvidenceVerdict {
+  const rank: Record<SovereignEvidenceVerdict, number> = {
+    VERIFIED: 6,
+    OBSERVED: 5,
+    UNVERIFIED: 4,
+    STALE: 3,
+    BLOCKED: 2,
+    CONTRADICTED: 1,
+  };
+  return [...anchors].sort((a, b) => rank[b.verdict] - rank[a.verdict])[0]?.verdict ?? 'UNVERIFIED';
+}
+
 function mapPersistedDraftPr(pr: SovereignDraftPrPublicationReadback): DraftPR {
   return {
     url: pr.prUrl,
@@ -396,6 +408,8 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
         modifiedFiles: snapshot.changedFiles,
         currentRevision: newestEvidenceRevision(anchors),
         readbackState: readbackError ? 'unavailable' : 'live',
+        evidenceVerdict: strongestEvidenceVerdict(anchors),
+        repositoryRevision: snapshot.repositoryRevision || newestEvidenceRevision(anchors) || undefined,
         ...(readbackError ? { readbackError } : {}),
         diffStats: { additions: 0, deletions: 0, filesChanged: snapshot.changedFiles.length },
       },
@@ -469,7 +483,10 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       logs: eventLogs(snapshot, run),
       workspaceState: {
         modifiedFiles: snapshot?.changedFiles ?? [],
-        currentRevision,
+        currentRevision: currentRevision || snapshot?.repositoryRevision || '',
+        readbackState: snapshot ? 'live' : 'unavailable',
+        evidenceVerdict: strongestEvidenceVerdict(anchors),
+        ...(snapshot && snapshot.repositoryRevision ? { repositoryRevision: snapshot.repositoryRevision } : {}),
         diffStats: snapshot ? { additions: 0, deletions: 0, filesChanged: snapshot.changedFiles.length } : undefined,
       },
       pendingInteraction,

@@ -14,10 +14,12 @@ export function useSovereignJob(jobId: string | null) {
     },
     enabled: Boolean(jobId),
     refetchInterval: (query) => {
-      if (query.state.error) return false;
       const phase = query.state.data?.phase;
-      return phase && TERMINAL.has(phase) ? false : 1500;
+      if (phase && TERMINAL.has(phase)) return false;
+      return query.state.error ? 3000 : 1500;
     },
+    refetchOnReconnect: true,
+    refetchOnMount: 'always',
   });
   const abortMutation = useMutation({
     mutationKey: ['sovereign-vnext-abort', jobId],

@@ -14,10 +14,15 @@ describe('sovereignAgentRuntime', () => {
   it('uses only the internal backend mode', () => {
     expect(resolveSovereignAgentConfig({ enabled: true, agentApiUrl: 'https://agent.example.test' })).toMatchObject({ ready: true, deploymentMode: 'sovereign-agent-backend' });
   });
-  it('does not implicitly enable an agent runtime from the browser origin', () => {
+  it('resolves the production backend from the same browser origin when no override exists', () => {
+    vi.stubGlobal('window', { location: { origin: 'https://knd.arelorian.de' } });
     const config = resolveSovereignAgentConfig();
-    expect(config.agentApiUrl).toBe('');
-    expect(config).toMatchObject({ enabled: false, ready: false, deploymentMode: 'disabled' });
+    expect(config).toMatchObject({
+      enabled: true,
+      ready: true,
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://knd.arelorian.de',
+    });
   });
   it('allows an explicit same-origin backend mode without inventing an external agent host', () => {
     expect(resolveSovereignAgentConfig({
