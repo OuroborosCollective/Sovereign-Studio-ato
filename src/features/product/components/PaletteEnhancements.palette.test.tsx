@@ -434,7 +434,7 @@ describe('Palette Accessibility Enhancements', () => {
     it('An Agent Senden button has correct state-dependent title and no redundant aria-label', () => {
       const options = [{ id: 'opt1', label: 'Option 1' }, { id: 'opt2', label: 'Option 2' }];
       const handleAnswer = vi.fn();
-      const { rerender } = render(
+      const { container, rerender } = render(
         <AgentQuestionCard
           question="Test Question"
           options={options}
@@ -442,12 +442,18 @@ describe('Palette Accessibility Enhancements', () => {
         />
       );
 
+      const icon = container.querySelector('[aria-hidden="true"]');
+      expect(icon).toBeInTheDocument();
+      expect(icon).toHaveTextContent('?');
+
       const sendButton = screen.getByRole('button', { name: /An Agent senden/i });
       expect(sendButton).toHaveAttribute('title', 'Bitte wählen Sie zuerst eine Option aus');
       expect(sendButton).not.toHaveAttribute('aria-label');
+      expect(sendButton).toHaveClass('focus-visible:ring-2');
 
       const opt1 = screen.getByRole('radio', { name: 'Option 1' });
       expect(opt1).toHaveAttribute('title', 'Option 1');
+      expect(opt1).toHaveClass('focus-visible:ring-2');
       fireEvent.click(opt1);
 
       expect(sendButton).toHaveAttribute('title', 'Ausgewählte Antwort an den Agenten senden');
