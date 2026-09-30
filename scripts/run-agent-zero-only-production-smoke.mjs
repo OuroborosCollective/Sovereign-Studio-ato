@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { createHash, randomBytes } from 'node:crypto';
 import { chromium, request as playwrightRequest } from '@playwright/test';
 
 const APP_URL = (process.env.SOVEREIGN_E2E_APP_URL || 'https://sovereign-backend.arelorian.de/app/').replace(/\/+$/, '');
