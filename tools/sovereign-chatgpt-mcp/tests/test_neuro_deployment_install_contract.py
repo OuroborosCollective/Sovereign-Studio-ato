@@ -127,7 +127,12 @@ def test_compose_reuses_the_existing_service_port_network_and_bounded_state_volu
     assert set(compose["services"]) == {"sovereign-chatgpt-mcp"}
     service = compose["services"]["sovereign-chatgpt-mcp"]
     assert service["ports"] == ["127.0.0.1:8090:8090"]
-    assert service["networks"] == ["supabase_default"]
+    assert service["networks"] == ["supabase_default", "sovereign_mcp_auth_internal"]
+    assert compose["networks"]["supabase_default"] == {"external": True}
+    assert compose["networks"]["sovereign_mcp_auth_internal"] == {
+        "external": True,
+        "name": "sovereign-mcp-auth-internal",
+    }
     assert "/opt/sovereign-chatgpt-tools/tool-routing-state:/var/lib/sovereign-tool-routing" in service["volumes"]
     assert service["environment"]["SOVEREIGN_NEURO_RUNTIME_STATE_ROOT"] == "/var/lib/sovereign-tool-routing/neuro-runtime"
     assert str(service["environment"]["SOVEREIGN_NEURO_RUNTIME_TRACKING_ENABLED"]) == "1"
@@ -1190,6 +1195,69 @@ def test_exact_ci_launcher_import_runs_with_the_default_registry(tmp_path: Path)
     )
     assert completed.returncode == 0, completed.stderr[-4000:]
     assert "self-update contracts passed." in completed.stdout
+
+
+def test_installer_counts_the_declared_admin_lane_without_learning_from_live_registry(tmp_path: Path) -> None:
+    script = INSTALLER.read_text("utf-8")
+    section = script.split('INSTALL_STAGE="resolve_expected_mcp_tool_surface"', 1)[1]
+    embedded = section.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+    assert "list_tools" not in embedded
+    assert "registry_tool_count" not in embedded
+    environment = {
+        "PATH": os.environ.get("PATH", ""),
+        "PYTHONPATH": str(ROOT),
+        "SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP": "1",
+        "AURION_ADMIN_MCP_WOLFRAM_ENABLED": "0",
+    }
+    for scopes, wolfram, expected in (
+        ("aurion.admin.read", "0", 288),
+        ("aurion.admin.read", "1", 293),
+        ("aurion.admin.read aurion.admin.assets.write aurion.admin.authoring.write", "0", 306),
+        ("aurion.admin.read aurion.admin.assets.write aurion.admin.authoring.write", "1", 311),
+    ):
+        result = subprocess.run(
+            [sys.executable, "-", "258"], input=embedded, cwd=ROOT,
+            env={**environment, "AURION_ADMIN_MCP_SCOPES": scopes, "AURION_ADMIN_MCP_WOLFRAM_ENABLED": wolfram},
+            text=True, capture_output=True, timeout=30, check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert int(result.stdout.strip()) == expected
+    denied = subprocess.run(
+        [sys.executable, "-", "258"], input=embedded, cwd=ROOT,
+        env={**environment, "AURION_ADMIN_MCP_SCOPES": "invalid.scope"},
+        text=True, capture_output=True, timeout=30, check=False,
+    )
+    assert denied.returncode != 0
+    assert "AURION_ADMIN_MCP_SCOPES_INVALID" in denied.stderr
+
+
+def test_private_owner_admin_registry_matches_the_installer_scope_contract(tmp_path: Path) -> None:
+    script = INSTALLER.read_text("utf-8")
+    section = script.split('INSTALL_STAGE="resolve_expected_mcp_tool_surface"', 1)[1]
+    calculator = section.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+    environment = {
+        "PATH": os.environ.get("PATH", ""), "PYTHONPATH": str(ROOT),
+        "SOVEREIGN_MCP_PRIVATE_OWNER_MODE": "1",
+        "SOVEREIGN_MCP_ENABLE_AURION_OPERATOR": "1",
+        "SOVEREIGN_MCP_ENABLE_AURION_WRITE": "1",
+        "SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP": "1",
+        "AURION_ADMIN_MCP_SCOPES": "aurion.admin.read",
+        "AURION_ADMIN_MCP_WOLFRAM_ENABLED": "0",
+        "SOVEREIGN_MCP_GITHUB_APP_ID": "", "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE": "",
+        "SOVEREIGN_MCP_WORKSPACE_ROOT": str(tmp_path / "workspaces"),
+        "SOVEREIGN_TOOL_RANKING_STATE_ROOT": str(tmp_path / "ranking"),
+        "SOVEREIGN_NEURO_RUNTIME_STATE_ROOT": str(tmp_path / "neuro"),
+        "SOVEREIGN_NEURO_RUNTIME_TRACKING_ENABLED": "0",
+    }
+    expected = subprocess.run([sys.executable, "-", "258"], input=calculator,
+        cwd=ROOT, env=environment, text=True, capture_output=True, timeout=30, check=False)
+    actual = subprocess.run([sys.executable, "-c", "import launcher; print(len({tool.name for tool in launcher.mcp._tool_manager.list_tools()}))"],
+        cwd=ROOT, env=environment, text=True, capture_output=True, timeout=30, check=False)
+    assert expected.returncode == 0, expected.stderr
+    assert actual.returncode == 0, actual.stderr
+    assert int(expected.stdout.strip()) == 288
+    assert int(actual.stdout.strip().splitlines()[-1]) == int(expected.stdout.strip())
 
 
 def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Path) -> None:
