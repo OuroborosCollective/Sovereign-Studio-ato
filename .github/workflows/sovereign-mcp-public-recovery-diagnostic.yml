@@ -19,7 +19,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
-          import json, urllib.error, urllib.parse, urllib.request
+          import json, re, urllib.error, urllib.parse, urllib.request
           from pathlib import Path
           class NoRedirect(urllib.request.HTTPRedirectHandler):
               def redirect_request(self, *args, **kwargs): return None
@@ -45,6 +45,8 @@ jobs:
                       row['httpStatus'] = response.code
                       row['contentType'] = response.headers.get('Content-Type', '')
                       row['bearerChallengePresent'] = 'bearer' in response.headers.get('WWW-Authenticate', '').lower()
+                      match = re.search(r'resource_metadata="([^"]+)"', response.headers.get('WWW-Authenticate', ''))
+                      if match: row['resourceMetadataUrl'] = safe_url(match.group(1))
                       row['redirect'] = safe_url(response.headers.get('Location'))
                       data = response.read(1000001)
                       if len(data) > 1000000: return {**row, 'bodyTooLarge': True}
@@ -168,8 +170,43 @@ jobs:
               try: d=json.loads(cmd(["/usr/bin/docker","network","inspect",name]) or "[]")[0]
               except Exception: continue
               networks.append({"name":name,"internal":d.get("Internal"),"driver":d.get("Driver")})
-          print(json.dumps({"schemaVersion":"sovereign.proxy-routing-readback.v1","mutationPerformed":False,"secretValuesReturned":False,
-                            "containers":containers,"networks":networks,"composeVersion":cmd(["/usr/bin/docker","compose","version","--short"])},sort_keys=True))
+          def docker_json(name, interpreter, source):
+              try:
+                  r=subprocess.run(["/usr/bin/docker","exec","-i",name,interpreter,"-"],input=source,capture_output=True,text=True,timeout=50,check=False)
+                  if r.returncode: return {"ok":False,"exitCode":r.returncode,"errorOutputSha256":__import__("hashlib").sha256(r.stderr.encode()).hexdigest()}
+                  for line in reversed(r.stdout.splitlines()):
+                      try: return json.loads(line)
+                      except ValueError: pass
+                  return {"ok":False,"jsonMissing":True}
+              except Exception as e: return {"ok":False,"errorClass":type(e).__name__}
+          proxyName="sovereign-mcp-auth-proxy-sovereign-mcp-auth-proxy-1"
+          nodeSource=r"""const paths=['/health','/mcp','/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp','/.well-known/oauth-authorization-server','/.well-known/openid-configuration'];
+          function clean(v){try{let u=new URL(v);return {scheme:u.protocol,host:u.hostname,port:u.port,path:u.pathname}}catch{return null}}
+          (async()=>{let rows=[];for(const path of paths){try{const r=await fetch('http://127.0.0.1:8080'+path,{redirect:'manual',signal:AbortSignal.timeout(6000)});const text=await r.text();let b={};try{b=JSON.parse(text)}catch{};let row={path,httpStatus:r.status,contentType:r.headers.get('content-type')};const m=(r.headers.get('www-authenticate')||'').match(/resource_metadata="([^"]+)"/);if(m)row.resourceMetadata=clean(m[1]);for(const k of ['resource','issuer','authorization_endpoint','token_endpoint','registration_endpoint','jwks_uri'])if(b[k])row[k]=clean(b[k]);if(Array.isArray(b.authorization_servers))row.authorizationServers=b.authorization_servers.map(clean);rows.push(row)}catch(e){rows.push({path,errorClass:e.name})}}console.log(JSON.stringify({responses:rows,cwd:process.cwd()}))})()"""
+          proxyProbe=docker_json(proxyName,"node",nodeSource)
+          sourceRoot=pathlib.Path("/opt/sovereign-chatgpt-tools/mcp-auth-proxy")
+          sourceRoutes=[]
+          if sourceRoot.is_dir():
+              for p in sourceRoot.rglob("*"):
+                  if not p.is_file() or p.suffix not in (".ts",".js",".mjs") or any(x in p.parts for x in ("node_modules",".git")): continue
+                  if len(p.relative_to(sourceRoot).parts)>4 or p.stat().st_size>300000: continue
+                  t=p.read_text(errors="replace")
+                  routes=sorted(set(re.findall(r"""['"]((?:/\.well-known|/oauth|/mcp|/health|/authorize|/token|/register|/callback)[A-Za-z0-9_./-]*)['"]""",t)))
+                  if routes: sourceRoutes.append({"file":str(p.relative_to(sourceRoot)),"sha256":__import__("hashlib").sha256(t.encode()).hexdigest(),"routeLiterals":routes})
+          mcpSource=r"""import asyncio,json
+          import launcher,server
+          tools=asyncio.run(launcher.mcp.list_tools());names={t.name for t in tools}
+          required={"agent_zero_backend_diagnostics","agent_zero_a2a_canary","backend_architecture_assess","deterministic_architecture_inventory","mcp_tool_contract_registry","neuro_event_commit","neuro_event_route_preview","neuro_runtime_contract_status","operational_assurance_skill_inventory","patchmon_tool_inventory","repository_architecture_drift_report","repository_architecture_snapshot","aurion_account_role_readback","aurion_account_role_plan","aurion_account_role_apply","teaching_lesson_simulate","teaching_package_assess","wolfram_source_intelligence"}
+          registry=server._live_mcp_registry_evidence()
+          resources=asyncio.run(launcher.mcp.list_resources())
+          widget=next((r for r in resources if str(r.uri)=="ui://sovereign/dev_dashboard.v2.html"),None)
+          meta=widget.model_dump(by_alias=True).get("_meta",{}) if widget else {}
+          print(json.dumps({"toolCount":len(names),"missingInstallerRequiredTools":sorted(required-names),"registryVerified":registry.get("registry_runtime_verified"),"registryToolCount":registry.get("registry_tool_count"),"widgetPresent":widget is not None,"widgetDomain":(meta.get("ui") or {}).get("domain"),"openaiWidgetDomain":meta.get("openai/widgetDomain")},sort_keys=True))
+          """
+          mcpContract=docker_json("sovereign-chatgpt-mcp","python",mcpSource)
+          print(json.dumps({"schemaVersion":"sovereign.proxy-routing-readback.v2","mutationPerformed":False,"secretValuesReturned":False,
+                            "containers":containers,"networks":networks,"composeVersion":cmd(["/usr/bin/docker","compose","version","--short"]),
+                            "proxyProbe":proxyProbe,"sourceRoutes":sourceRoutes,"mcpContract":mcpContract},sort_keys=True))
           PY
           python3 -m json.tool vps-proxy-readback.json
       - name: Save bounded routing evidence
