@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 import json
 import tempfile
+import os
 
 import yaml
 
@@ -121,11 +122,19 @@ class AuthProxyRecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "docker-compose.yml"
             path.write_bytes(SOURCE.encode())
+            actual_stat = Path.stat
+            def root_backup_directory_stat(target, *args, **kwargs):
+                stat = actual_stat(target, *args, **kwargs)
+                if target.name == "routing-recovery-backups":
+                    fields = list(stat)
+                    fields[4] = 0
+                    return os.stat_result(fields)
+                return stat
             previous = {"Image": IMAGE, "Config": {"Labels": {
                 "com.docker.compose.project": MODULE.PROJECT,
                 "com.docker.compose.project.config_files": str(path),
             }}, "NetworkSettings": {"Networks": {"areloria_arelorian-network": {}, "sovereign-mcp-auth-internal": {}}}}
-            with patch.object(MODULE, "COMPOSE", path), patch.object(MODULE.os, "geteuid", return_value=0), patch.object(MODULE, "inspect", return_value=previous), patch.object(MODULE, "compose_config", side_effect=[before, after]), patch.object(MODULE, "public_metadata", return_value={"resource": "https://arelogic.space/admin-mcp"}), patch.object(MODULE, "run", side_effect=external_command):
+            with patch.object(MODULE, "COMPOSE", path), patch.object(MODULE.os, "geteuid", return_value=0), patch.object(Path, "stat", root_backup_directory_stat), patch.object(MODULE, "inspect", return_value=previous), patch.object(MODULE, "compose_config", side_effect=[before, after]), patch.object(MODULE, "public_metadata", return_value={"resource": "https://arelogic.space/admin-mcp"}), patch.object(MODULE, "run", side_effect=external_command):
                 with self.assertRaises(RuntimeError):
                     MODULE.main()
             self.assertEqual(path.read_bytes(), SOURCE.encode())
