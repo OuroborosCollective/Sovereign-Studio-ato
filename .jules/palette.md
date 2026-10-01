@@ -65,3 +65,6 @@
 ## 2024-10-24 - Descriptive Titles for Dense Indicator Buttons
 **Learning:** Summary indicator buttons using dense visual typography are hard to read for users and lack clarity. Dynamically updating native title attributes improves discoverability without cluttering the UI.
 **Action:** Always add state-dependent native title tooltips to dense visual metric indicators, and ensure consistent localization in aria-labels across the app.
+## 2026-10-01 - Loading States and Tooltips for Interactive Chat Elements
+**Learning:** Adding explicit loading states (e.g. `Loader2` spinner) to interactive buttons (Submit, Abort) combined with state-aware tooltips dramatically improves clarity during asynchronous operations. Without these, users lack immediate feedback on whether their action was registered or is processing.
+**Action:** Always include a visual loading indicator (like a spinner) and a contextual `title` attribute for critical action buttons that trigger async operations.

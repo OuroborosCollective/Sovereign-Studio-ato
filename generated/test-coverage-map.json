@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-09-29T18:19:51.605Z",
+  "generatedAt": "2026-10-01T18:16:07.912Z",
   "productArchitecture": "unified-app",
   "discovery": {
     "scope": "tracked repository test conventions",
@@ -32,7 +32,7 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 799,
+  "totalTestFiles": 800,
   "testRoots": {
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
@@ -49,7 +49,7 @@
     "tests": 2,
     "tests/e2e": 5,
     "tools": 3,
-    "tools/sovereign-chatgpt-mcp/tests": 109,
+    "tools/sovereign-chatgpt-mcp/tests": 110,
     "tools/sovereign-github-patch-mcp/tests": 4,
     "tools/sovereign-toolchain/tests": 8
   },
@@ -10059,6 +10059,14 @@
     },
     {
       "file": "tools/sovereign-chatgpt-mcp/tests/test_aurion_operator.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-chatgpt-mcp/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-chatgpt-mcp/tests/test_auth_proxy_routing_recovery.py",
       "language": "python",
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
       "gates": [],
