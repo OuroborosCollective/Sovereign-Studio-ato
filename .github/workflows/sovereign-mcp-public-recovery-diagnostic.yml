@@ -147,7 +147,7 @@ jobs:
                   result["configScopeVerified"] = False
                   result["reason"] = str(error)
                   result["afterNetworkValueTypes"] = {k:type(v).__name__ for k,v in after["services"][scope["SERVICE"]]["networks"].items()}
-                      expected = json.loads(json.dumps(before))
+                  expected = json.loads(json.dumps(before))
                   service = expected["services"][scope["SERVICE"]]
                   service["image"] = image_id
                   service["labels"][scope["ROUTER"] + "rule"] = scope["RULE"]
@@ -168,7 +168,7 @@ jobs:
                           differences.append({"path":path,"valueChanged":True})
                   compare(expected,after)
                   result["configDifferencePaths"] = differences[:30]
-          print(json.dumps(result,sort_keys=True))
+              print(json.dumps(result,sort_keys=True))
           finally:
               temporary.unlink(missing_ok=True)
           PY
