@@ -86,3 +86,95 @@ jobs:
           name: sovereign-public-mcp-recovery-readback
           path: public-mcp-readback.json
           retention-days: 3
+
+  vps-proxy-readback:
+    name: Read bounded VPS proxy routing
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    environment:
+      name: production
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST || secrets.SSH_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER || secrets.SSH_USER }}
+      VPS_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
+      SSHPASS: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.SSH_PW || secrets.SSH_PASSWORD }}
+    steps:
+      - name: Validate authorized target and existing SSH secret
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$VPS_HOST" = "46.202.154.25"
+          test "$VPS_USER" = "root"
+          test -n "$SSHPASS" || { echo "EXISTING_VPS_PASSWORD_SECRET_UNAVAILABLE"; exit 1; }
+          [[ "$VPS_PORT" =~ ^[0-9]+$ ]]
+      - name: Install distribution SSH password client
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -qq --no-install-recommends sshpass
+      - name: Read routing with pinned host key and no remote writes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          printf '%s\n' '46.202.154.25 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIVZLyqUD5nlHXfk1sRA0v829TiZyxa5Bs4AS/G8eWLv' > "$RUNNER_TEMP/sovereign-recovery-known-hosts"
+          sshpass -e ssh -T -p "$VPS_PORT" -o ConnectTimeout=25 -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519 -o UserKnownHostsFile="$RUNNER_TEMP/sovereign-recovery-known-hosts" -o PreferredAuthentications=password -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o ClearAllForwardings=yes "$VPS_USER@$VPS_HOST" '/usr/bin/python3 -' > vps-proxy-readback.json <<'PY'
+          import json, os, pathlib, re, subprocess, urllib.parse
+          def cmd(args):
+              r = subprocess.run(args, capture_output=True, text=True, timeout=30, check=False)
+              if r.returncode: return None
+              return r.stdout
+          def safe_url(v):
+              try:
+                  u=urllib.parse.urlsplit(v)
+                  if u.scheme not in ("http","https") or not u.hostname or "sk-" in u.hostname: return None
+                  return {"scheme":u.scheme,"host":u.hostname,"port":u.port,"path":u.path}
+              except Exception: return None
+          ids=(cmd(["/usr/bin/docker","ps","-q"]) or "").split()
+          containers=[]
+          for ident in ids[:50]:
+              try: d=json.loads(cmd(["/usr/bin/docker","inspect",ident]) or "[]")[0]
+              except Exception: continue
+              name=d.get("Name","").lstrip("/")
+              if not any(x in name.lower() for x in ("sovereign","traefik","aurion","areloria")): continue
+              cfg=d.get("Config") or {}; labels=cfg.get("Labels") or {}
+              row={"name":name,"status":(d.get("State") or {}).get("Status"),
+                   "health":((d.get("State") or {}).get("Health") or {}).get("Status"),
+                   "networks":sorted((d.get("NetworkSettings") or {}).get("Networks") or {}),
+                   "revision":labels.get("org.opencontainers.image.revision"),"image":cfg.get("Image")}
+              keep={}
+              for k,v in labels.items():
+                  if k in ("traefik.enable","traefik.docker.network") or re.fullmatch(r"traefik\.http\.routers\.[A-Za-z0-9_-]+\.(rule|priority|entrypoints|service|middlewares|tls|tls.certresolver)",k) or re.fullmatch(r"traefik\.http\.services\.[A-Za-z0-9_-]+\.loadbalancer\.server\.port",k):
+                      keep[k]=v
+              row["routingLabels"]=keep
+              if "auth-proxy" in name:
+                  urls={}
+                  for item in cfg.get("Env") or []:
+                      k,sep,v=item.partition("=")
+                      if sep and any(x in k for x in ("MCP","OIDC","FUSIONAUTH")) and not any(x in k.upper() for x in ("SECRET","TOKEN","PASSWORD","PRIVATE","API_KEY","CLIENT_ID")):
+                          u=safe_url(v)
+                          if u: urls[k]=u
+                  row["publicConfigurationUrls"]=urls
+                  root=pathlib.Path(labels.get("com.docker.compose.project.working_dir") or "/opt/sovereign-chatgpt-tools/mcp-auth-proxy")
+                  row["composeFiles"]=labels.get("com.docker.compose.project.config_files")
+                  if str(root)=="/opt/sovereign-chatgpt-tools/mcp-auth-proxy" and root.is_dir():
+                      row["sourceFiles"]=[p.name for p in root.iterdir() if p.is_file() and p.suffix in (".py",".yml",".yaml",".js",".json") and "env" not in p.name.lower()]
+                      row["sourceGitRevision"]=cmd(["/usr/bin/git","-C",str(root),"rev-parse","HEAD"])
+              containers.append(row)
+          networkNames=sorted({n for c in containers for n in c["networks"]})
+          networks=[]
+          for name in networkNames:
+              try: d=json.loads(cmd(["/usr/bin/docker","network","inspect",name]) or "[]")[0]
+              except Exception: continue
+              networks.append({"name":name,"internal":d.get("Internal"),"driver":d.get("Driver")})
+          print(json.dumps({"schemaVersion":"sovereign.proxy-routing-readback.v1","mutationPerformed":False,"secretValuesReturned":False,
+                            "containers":containers,"networks":networks,"composeVersion":cmd(["/usr/bin/docker","compose","version","--short"])},sort_keys=True))
+          PY
+          python3 -m json.tool vps-proxy-readback.json
+      - name: Save bounded routing evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sovereign-vps-proxy-routing-readback
+          path: vps-proxy-readback.json
+          retention-days: 3
