@@ -2113,13 +2113,36 @@ if ! docker exec sovereign-chatgpt-mcp python -c 'import neuro_architecture_cont
   printf 'Neuro import-only preflight was non-terminal; authoritative isolated Neuro canary follows.\n' >&2
 fi
 
+INSTALL_STAGE="resolve_expected_mcp_tool_surface"
+# The base registry excludes the separately scoped Aurion Admin MCP lane.
+# Derive its additional names from the declared scope contract, never from the
+# observed registry count, so a missing registration still fails the canary.
+EXPECTED_MCP_TOOL_COUNT="$(docker exec -i sovereign-chatgpt-mcp python - "$EXPECTED_MCP_TOOL_COUNT" <<'PY'
+import os
+import sys
+
+from aurion_admin_mcp_lane import AurionAdminMcpRuntime, exposed_tool_names
+
+additional_tools = ()
+if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP", "0").strip() == "1":
+    additional_tools = exposed_tool_names(
+        AurionAdminMcpRuntime()._local_allowed_scopes(),
+        wolfram_enabled=os.getenv("AURION_ADMIN_MCP_WOLFRAM_ENABLED", "0").strip() == "1",
+    )
+print(int(sys.argv[1]) + len(additional_tools))
+PY
+)"
+[[ "$EXPECTED_MCP_TOOL_COUNT" =~ ^[0-9]+$ ]] || fail "declared MCP tool count is invalid"
+
 INSTALL_STAGE="verify_live_tool_surface_and_widget_domain"
 docker exec -i sovereign-chatgpt-mcp python - "${EXPECTED_MCP_TOOL_COUNT}" <<'PY'
 import asyncio
+import os
 import sys
 
 import launcher
 import server
+from aurion_admin_mcp_lane import AurionAdminMcpRuntime, exposed_tool_names
 
 expected_tool_count = int(sys.argv[1])
 required_tools = {
@@ -2142,6 +2165,11 @@ required_tools = {
     "teaching_package_assess",
     "wolfram_source_intelligence",
 }
+if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP", "0").strip() == "1":
+    required_tools.update(exposed_tool_names(
+        AurionAdminMcpRuntime()._local_allowed_scopes(),
+        wolfram_enabled=os.getenv("AURION_ADMIN_MCP_WOLFRAM_ENABLED", "0").strip() == "1",
+    ))
 tools = asyncio.run(launcher.mcp.list_tools())
 tool_names = {tool.name for tool in tools}
 neuro_tools = {
@@ -3743,6 +3771,8 @@ else
   [[ "$PREVIOUS_MCP_TOOL_SURFACE_CAPTURED" == "0" ]] \
     || fail "first-install state conflicts with predecessor registry evidence"
 fi
+INSTALL_STAGE="verify_auth_proxy_public_routing"
+python3 "$SOURCE_DIR/deploy/repair-auth-proxy-routing.py"
 TOOLCHAIN_ROLLBACK_ARMED=0
 INSTALL_STAGE="completed"
 INSTALL_COMPLETED=1
