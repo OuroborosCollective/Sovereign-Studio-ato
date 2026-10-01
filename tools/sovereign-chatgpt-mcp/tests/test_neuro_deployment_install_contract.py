@@ -127,7 +127,12 @@ def test_compose_reuses_the_existing_service_port_network_and_bounded_state_volu
     assert set(compose["services"]) == {"sovereign-chatgpt-mcp"}
     service = compose["services"]["sovereign-chatgpt-mcp"]
     assert service["ports"] == ["127.0.0.1:8090:8090"]
-    assert service["networks"] == ["supabase_default"]
+    assert service["networks"] == ["supabase_default", "sovereign_mcp_auth_internal"]
+    assert compose["networks"]["supabase_default"] == {"external": True}
+    assert compose["networks"]["sovereign_mcp_auth_internal"] == {
+        "external": True,
+        "name": "sovereign-mcp-auth-internal",
+    }
     assert "/opt/sovereign-chatgpt-tools/tool-routing-state:/var/lib/sovereign-tool-routing" in service["volumes"]
     assert service["environment"]["SOVEREIGN_NEURO_RUNTIME_STATE_ROOT"] == "/var/lib/sovereign-tool-routing/neuro-runtime"
     assert str(service["environment"]["SOVEREIGN_NEURO_RUNTIME_TRACKING_ENABLED"]) == "1"

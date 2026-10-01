@@ -985,3 +985,10 @@ Evidence: Immutable MCP image for e92120ee... is published as sha256:83266846fcf
 Learned: The release blocker was a stale private-owner count expectation. The current source and live rollback registry both use 258, while the installer still promoted 288 during Private Owner Mode, causing the new MCP image deployment to fail closed and roll back.
 Open: The corrected installer is not yet merged or deployed, and the independent runtime receipt remains red.
 Next safe step: Publish the repair as a Draft PR, consume terminal GitHub checks, then rerun the exact immutable MCP deployment and independent runtime receipt against the repaired head.
+
+### 2026-10-01 — Sovereign MCP auth-proxy network recovery
+Status: PARTIAL — persistent topology repair and focused regressions verified; full CI/runtime pending.
+Change: Preserve loopback-only MCP publishing and Supabase while joining the existing sovereign-mcp-auth-internal network. Align the structured Compose regression with both required networks. Remove one duplicate crypto import that blocked the repository-wide CI parser, with a Node --check regression that never executes the production smoke.
+Learning: Plugin registration, Docker upstream reachability and immutable MCP rollout are separate boundaries. The coordinated release workflow already runs on main pushes and successfully reached the VPS; its legacy manual bootstrap is a different path.
+Evidence: PR #2162 head 663144b407ba13274bd433bc4781993150b378de completed with 1,080 MCP tests passed, one stale network assertion failed and 12 skipped. All three focused regressions passed after repair. Private workspace plugin Plugin_6d4d1ed827f48191a999eaeccc0067f7 was independently confirmed in workspace 7970213e-99dc-4611-a6fe-07adb3cc58b9. Run 36795623217 returned MCP_UPDATE_FAILED_BACKEND_PRESERVED at verify_live_tool_surface_and_widget_domain; the rolled-back MCP still had only supabase_default.
+Open: New exact-head terminal CI, merged-revision image/runtime receipt, authenticated public initialize/tools-list and a successful ChatGPT tool invocation are required before claiming recovery.
