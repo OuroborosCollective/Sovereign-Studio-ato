@@ -204,9 +204,20 @@ jobs:
           print(json.dumps({"toolCount":len(names),"missingInstallerRequiredTools":sorted(required-names),"registryVerified":registry.get("registry_runtime_verified"),"registryToolCount":registry.get("registry_tool_count"),"widgetPresent":widget is not None,"widgetDomain":(meta.get("ui") or {}).get("domain"),"openaiWidgetDomain":meta.get("openai/widgetDomain")},sort_keys=True))
           """
           mcpContract=docker_json("sovereign-chatgpt-mcp","python",mcpSource)
+          candidateArgs=["/usr/bin/docker","run","--rm","-i","--pull=never","--network=none","--read-only","--cap-drop=ALL","--security-opt=no-new-privileges","--pids-limit=128","--memory=768m","--cpus=0.5","--tmpfs","/tmp:rw,noexec,nosuid,size=32m","--env","SOVEREIGN_MCP_PRIVATE_OWNER_MODE=1","--env","SOVEREIGN_MCP_ENABLE_AURION_OPERATOR=1","--env","SOVEREIGN_MCP_ENABLE_AURION_WRITE=1","--env","SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP=1","--env","AURION_ADMIN_MCP_SCOPES=aurion.admin.read","--env","AURION_ADMIN_MCP_WOLFRAM_ENABLED=0","--env","SOVEREIGN_MCP_GITHUB_APP_ID=","--env","SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID=","--env","SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE=","--env","SOVEREIGN_MCP_WORKSPACE_ROOT=/tmp/workspaces","--env","SOVEREIGN_TOOL_RANKING_STATE_ROOT=/tmp/tool-ranking","--env","SOVEREIGN_NEURO_RUNTIME_STATE_ROOT=/tmp/neuro-runtime","--env","SOVEREIGN_NEURO_RUNTIME_TRACKING_ENABLED=0","--entrypoint","/opt/venv/bin/python","ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp@sha256:748fc7eeb3db83e5998265a9c0616c0848d5a1c07425e05f47d3eefc356d1a4c","-"]
+          wrapped="try:\n"+"\n".join("    "+line for line in mcpSource.splitlines())+"\nexcept BaseException as e:\n    import traceback,json\n    print(json.dumps({'ok':False,'errorClass':type(e).__name__,'locations':[{'file':f.filename.rsplit('/',1)[-1],'line':f.lineno,'function':f.name} for f in traceback.extract_tb(e.__traceback__)[-8:]]}))\n"
+          candidateContract={"ok":False}
+          try:
+              inspected=subprocess.run(candidateArgs,input=wrapped,capture_output=True,text=True,timeout=100,check=False)
+              candidateContract={"exitCode":inspected.returncode,"productionEnvFilesUsed":False,"volumesMounted":False,"networkEnabled":False}
+              for line in reversed(inspected.stdout.splitlines()):
+                  try: candidateContract.update(json.loads(line)); break
+                  except ValueError: pass
+              if not candidateContract.get("toolCount") and "errorClass" not in candidateContract: candidateContract["outputSha256"]=__import__("hashlib").sha256((inspected.stdout+inspected.stderr).encode()).hexdigest()
+          except Exception as e: candidateContract={"ok":False,"errorClass":type(e).__name__}
           print(json.dumps({"schemaVersion":"sovereign.proxy-routing-readback.v2","mutationPerformed":False,"secretValuesReturned":False,
                             "containers":containers,"networks":networks,"composeVersion":cmd(["/usr/bin/docker","compose","version","--short"]),
-                            "proxyProbe":proxyProbe,"sourceRoutes":sourceRoutes,"mcpContract":mcpContract},sort_keys=True))
+                            "proxyProbe":proxyProbe,"sourceRoutes":sourceRoutes,"mcpContract":mcpContract,"candidateContract":candidateContract,"inspectionContainerCreated":True},sort_keys=True))
           PY
           python3 -m json.tool vps-proxy-readback.json
       - name: Save bounded routing evidence
