@@ -1,0 +1,88 @@
+name: Sovereign MCP public recovery diagnostic
+
+on:
+  push:
+    branches: [fix/persistent-mcp-auth-proxy-network-2026-10-01]
+    paths: [.github/workflows/sovereign-mcp-public-recovery-diagnostic.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  public-readback:
+    name: Read public MCP and OAuth discovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe fixed public endpoints without credentials
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, urllib.error, urllib.parse, urllib.request
+          from pathlib import Path
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs): return None
+          opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+          def safe_url(value):
+              if not isinstance(value, str): return None
+              try:
+                  parts = urllib.parse.urlsplit(value)
+                  if parts.scheme != 'https' or parts.username or parts.password: return None
+                  return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, '', ''))
+              except ValueError: return None
+          def probe(path, payload=None):
+              url = 'https://arelogic.space' + path
+              request = urllib.request.Request(url, method='POST' if payload else 'GET',
+                  data=json.dumps(payload).encode() if payload else None,
+                  headers={'Accept': 'application/json, text/event-stream',
+                           'Content-Type': 'application/json', 'MCP-Protocol-Version': '2025-06-18'})
+              row = {'path': path, 'method': request.method}
+              try:
+                  try: response = opener.open(request, timeout=15)
+                  except urllib.error.HTTPError as error: response = error
+                  with response:
+                      row['httpStatus'] = response.code
+                      row['contentType'] = response.headers.get('Content-Type', '')
+                      row['bearerChallengePresent'] = 'bearer' in response.headers.get('WWW-Authenticate', '').lower()
+                      row['redirect'] = safe_url(response.headers.get('Location'))
+                      data = response.read(1000001)
+                      if len(data) > 1000000: return {**row, 'bodyTooLarge': True}
+                      text = data.decode('utf-8', errors='replace')
+                      if 'text/event-stream' in row['contentType']:
+                          events = [line[5:].strip() for line in text.splitlines() if line.startswith('data:')]
+                          text = events[-1] if events else ''
+                      try: body = json.loads(text)
+                      except ValueError: body = {}
+                      if isinstance(body, dict):
+                          for field in ('resource', 'issuer', 'authorization_endpoint', 'token_endpoint', 'registration_endpoint', 'jwks_uri'):
+                              if field in body: row[field] = safe_url(body[field])
+                          if isinstance(body.get('authorization_servers'), list):
+                              row['authorizationServers'] = [safe_url(value) for value in body['authorization_servers'][:5]]
+                          row['jsonRpcResponse'] = body.get('jsonrpc') == '2.0'
+                          result = body.get('result')
+                          if isinstance(result, dict):
+                              server = result.get('serverInfo') or {}
+                              row['operatorServerIdentified'] = server.get('name') == 'Sovereign ChatGPT Operator'
+                              row['toolsCapabilityPresent'] = isinstance(result.get('capabilities'), dict) and 'tools' in result['capabilities']
+                      row['aurionPageMarker'] = 'aurion' in text.lower()[:20000]
+              except Exception as error:
+                  row['transportErrorClass'] = type(error).__name__
+              return row
+          paths = ['/mcp','/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp',
+                   '/.well-known/oauth-authorization-server','/.well-known/openid-configuration']
+          results = [probe(path) for path in paths]
+          results.append(probe('/mcp', {'jsonrpc':'2.0','id':1,'method':'initialize','params':{
+              'protocolVersion':'2025-06-18','capabilities':{},
+              'clientInfo':{'name':'sovereign-recovery-readback','version':'1.0'}}}))
+          evidence = {'schemaVersion':'sovereign.public-mcp-recovery-diagnostic.v1',
+                      'authenticated':False,'mutationPerformed':False,'secretValuesReturned':False,'responses':results}
+          Path('public-mcp-readback.json').write_text(json.dumps(evidence, sort_keys=True, indent=2) + '\n')
+          print(json.dumps(evidence, sort_keys=True))
+          PY
+      - name: Save observed public response evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sovereign-public-mcp-recovery-readback
+          path: public-mcp-readback.json
+          retention-days: 3
