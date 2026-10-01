@@ -25,6 +25,16 @@ def test_changed_recovery_shell_assets_parse() -> None:
         assert result.returncode == 0, f"{relative}: {result.stderr}"
 
 
+
+def test_mcp_compose_joins_auth_proxy_internal_network_without_public_bind() -> None:
+    compose = (MCP_ROOT / "docker-compose.yml").read_text("utf-8")
+
+    assert '      - "127.0.0.1:8090:8090"' in compose
+    assert "      - supabase_default" in compose
+    assert "      - sovereign_mcp_auth_internal" in compose
+    assert "  sovereign_mcp_auth_internal:\n    external: true\n    name: sovereign-mcp-auth-internal" in compose
+    assert '"0.0.0.0:8090:8090"' not in compose
+
 def test_backend_deploy_emits_bounded_preflight_marker_before_any_host_effect() -> None:
     deploy = MCP_ROOT / "deploy" / "deploy-sovereign-backend"
     result = subprocess.run(
