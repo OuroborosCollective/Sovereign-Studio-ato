@@ -144,6 +144,8 @@ jobs:
                   row[key] = value
               row["networks"] = sorted(read(["docker","inspect","--format","{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}",name]).split())
               return row
+          auxiliary_result = subprocess.run(["docker","inspect","--format",'{"containerId":"{{.Id}}","createdAt":"{{.Created}}","startedAt":"{{.State.StartedAt}}"}',"agent-zero-xrev-agent-zero-1"],capture_output=True,text=True,timeout=15,check=False)
+          auxiliary_existing = json.loads(auxiliary_result.stdout) if auxiliary_result.returncode == 0 else {"present":False}
           mcp=identity("sovereign-chatgpt-mcp")
           backend=identity("sovereign-backend")
           proxy_row=identity(proxy)
@@ -155,7 +157,7 @@ jobs:
               try: value=json.loads(line)
               except ValueError: continue
               if isinstance(value,dict) and value.get("status") in ("PRIVATE_MCP_PROXY_READBACK_VERIFIED","PRIVATE_MCP_PROXY_READBACK_FAILED"): reports.append(value)
-          print(json.dumps({"schemaVersion":"sovereign.independent-proxy-runtime-readback.v1","expectedRevision":expected_revision,"runtimeMutationPerformed":False,"secretValuesReturned":False,"mcp":mcp,"backend":backend,"proxy":proxy_row,"sharedPrivateNetworkVerified":"sovereign-mcp-auth-internal" in set(mcp["networks"]) & set(proxy_row["networks"]),"mcpExpectedRevisionVerified":mcp["revision"]==expected_revision and mcp["status"]=="running" and mcp["health"]=="healthy","backendExpectedRevisionVerified":backend["revision"]==expected_revision and backend["status"]=="running","upstreamToolCallExitCode":result.returncode,"upstreamReports":reports[-1:]},sort_keys=True))
+          print(json.dumps({"schemaVersion":"sovereign.independent-proxy-runtime-readback.v1","expectedRevision":expected_revision,"existingAuxiliaryContainer":auxiliary_existing,"runtimeMutationPerformed":False,"secretValuesReturned":False,"mcp":mcp,"backend":backend,"proxy":proxy_row,"sharedPrivateNetworkVerified":"sovereign-mcp-auth-internal" in set(mcp["networks"]) & set(proxy_row["networks"]),"mcpExpectedRevisionVerified":mcp["revision"]==expected_revision and mcp["status"]=="running" and mcp["health"]=="healthy","backendExpectedRevisionVerified":backend["revision"]==expected_revision and backend["status"]=="running","upstreamToolCallExitCode":result.returncode,"upstreamReports":reports[-1:]},sort_keys=True))
           PY
           python3 -m json.tool vps-proxy-readback.json
       - name: Save bounded routing evidence
