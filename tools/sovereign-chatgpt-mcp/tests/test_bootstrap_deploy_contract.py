@@ -35,6 +35,16 @@ def test_mcp_compose_joins_auth_proxy_internal_network_without_public_bind() -> 
     assert "  sovereign_mcp_auth_internal:\n    external: true\n    name: sovereign-mcp-auth-internal" in compose
     assert '"0.0.0.0:8090:8090"' not in compose
 
+
+def test_production_smoke_script_parses_without_execution() -> None:
+    """Parse the real smoke entrypoint without importing Playwright or mutating production."""
+    script = REPO_ROOT / "scripts" / "run-agent-zero-only-production-smoke.mjs"
+    result = subprocess.run(
+        ["node", "--check", str(script)], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_backend_deploy_emits_bounded_preflight_marker_before_any_host_effect() -> None:
     deploy = MCP_ROOT / "deploy" / "deploy-sovereign-backend"
     result = subprocess.run(

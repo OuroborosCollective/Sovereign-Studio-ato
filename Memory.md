@@ -987,11 +987,8 @@ Open: The corrected installer is not yet merged or deployed, and the independent
 Next safe step: Publish the repair as a Draft PR, consume terminal GitHub checks, then rerun the exact immutable MCP deployment and independent runtime receipt against the repaired head.
 
 ### 2026-10-01 — Sovereign MCP auth-proxy network recovery
-Status: PARTIAL — repository repair committed; CI/runtime rollout pending
-Task: Restore the persistent container path between the Sovereign MCP and its auth proxy after Business-workspace recovery.
-Decisions: Attach sovereign-chatgpt-mcp to the existing external sovereign-mcp-auth-internal network while preserving loopback-only host port 127.0.0.1:8090; add a regression contract and do not mutate the live VPS before CI.
-Touched surfaces: tools/sovereign-chatgpt-mcp/docker-compose.yml; tools/sovereign-chatgpt-mcp/tests/test_bootstrap_deploy_contract.py; Memory.md.
-Evidence: Recovery evidence showed sovereign-chatgpt-mcp healthy on supabase_default while the proxy used sovereign-mcp-auth-internal with upstream sovereign-chatgpt-mcp:8090; branch recovery/sovereign-mcp-proxy-network adds the missing shared external network and a guard against public 0.0.0.0:8090 binding. ChatGPT workspace plugin Sovereign Operator Recovery was recreated as private workspace plugin Plugin_6d4d1ed827f48191a999eaeccc0067f7.
-Learned: The outage boundary was persistent Compose topology, not loss of the MCP runtime; ChatGPT-side registration and server-side reachability are separate recovery surfaces.
-Open: Exact-head CI and live VPS deployment/readback are still required before claiming the toolchain restored.
-Next safe step: Open Draft PR, consume terminal CI, then deploy the exact merged revision and verify public MCP initialize/tools plus runtime identity.
+Status: PARTIAL — persistent topology repair and focused regressions verified; full CI/runtime pending.
+Change: Preserve loopback-only MCP publishing and Supabase while joining the existing sovereign-mcp-auth-internal network. Align the structured Compose regression with both required networks. Remove one duplicate crypto import that blocked the repository-wide CI parser, with a Node --check regression that never executes the production smoke.
+Learning: Plugin registration, Docker upstream reachability and immutable MCP rollout are separate boundaries. The coordinated release workflow already runs on main pushes and successfully reached the VPS; its legacy manual bootstrap is a different path.
+Evidence: PR #2162 head 663144b407ba13274bd433bc4781993150b378de completed with 1,080 MCP tests passed, one stale network assertion failed and 12 skipped. All three focused regressions passed after repair. Private workspace plugin Plugin_6d4d1ed827f48191a999eaeccc0067f7 was independently confirmed in workspace 7970213e-99dc-4611-a6fe-07adb3cc58b9. Run 36795623217 returned MCP_UPDATE_FAILED_BACKEND_PRESERVED at verify_live_tool_surface_and_widget_domain; the rolled-back MCP still had only supabase_default.
+Open: New exact-head terminal CI, merged-revision image/runtime receipt, authenticated public initialize/tools-list and a successful ChatGPT tool invocation are required before claiming recovery.
