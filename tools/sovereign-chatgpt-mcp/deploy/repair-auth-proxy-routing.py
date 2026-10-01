@@ -94,6 +94,10 @@ def verify_config(before: dict, after: dict, image_id: str, extra_networks: dict
     for alias, name in extra_networks.items():
         service["networks"][alias] = None
         expected["networks"][alias] = {"name": name, "external": True}
+        # Docker Compose 5 adds an empty default IPAM map even for external
+        # networks. Accept only that empty normalization on the added alias.
+        if after.get("networks", {}).get(alias, {}).get("ipam") == {}:
+            expected["networks"][alias]["ipam"] = {}
     if expected != after:
         raise ValueError("PROXY_UNRELATED_COMPOSE_CHANGE")
 

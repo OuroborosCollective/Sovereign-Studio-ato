@@ -102,6 +102,18 @@ class AuthProxyRecoveryTests(unittest.TestCase):
                     MODULE.main()
                 effect.assert_not_called()
 
+    def test_external_alias_allows_only_empty_default_ipam_normalization(self):
+        before = {"services": {MODULE.SERVICE: {"image": "sovereign-mcp-auth-proxy:candidate",
+            "labels": {MODULE.ROUTER + "rule": MODULE.HOST_RULE}, "networks": {}}}, "networks": {}}
+        alias = "mcp_routing_traefik_public"
+        after = {"services": {MODULE.SERVICE: {"image": IMAGE,
+            "labels": {MODULE.ROUTER + "rule": MODULE.RULE, MODULE.ROUTER + "priority": "2000"},
+            "networks": {alias: None}}}, "networks": {alias: {"name": "traefik-public", "external": True, "ipam": {}}}}
+        MODULE.verify_config(before, after, IMAGE, {alias: "traefik-public"})
+        after["networks"][alias]["ipam"] = {"driver": "unapproved-driver"}
+        with self.assertRaises(ValueError):
+            MODULE.verify_config(before, after, IMAGE, {alias: "traefik-public"})
+
     def test_failed_recreation_restores_the_exact_compose_bytes(self):
         before = {"services": {MODULE.SERVICE: {
             "image": "sovereign-mcp-auth-proxy:candidate", "labels": {MODULE.ROUTER + "rule": MODULE.HOST_RULE},
