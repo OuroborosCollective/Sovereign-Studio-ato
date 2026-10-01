@@ -147,7 +147,28 @@ jobs:
                   result["configScopeVerified"] = False
                   result["reason"] = str(error)
                   result["afterNetworkValueTypes"] = {k:type(v).__name__ for k,v in after["services"][scope["SERVICE"]]["networks"].items()}
-              print(json.dumps(result,sort_keys=True))
+                      expected = json.loads(json.dumps(before))
+                  service = expected["services"][scope["SERVICE"]]
+                  service["image"] = image_id
+                  service["labels"][scope["ROUTER"] + "rule"] = scope["RULE"]
+                  service["labels"][scope["ROUTER"] + "priority"] = "2000"
+                  for alias, name in extras.items():
+                      service["networks"][alias] = None
+                      expected["networks"][alias] = {"name":name,"external":True}
+                  differences = []
+                  def compare(left, right, path=""):
+                      if type(left) is not type(right):
+                          differences.append({"path":path,"beforeType":type(left).__name__,"afterType":type(right).__name__})
+                      elif isinstance(left, dict):
+                          for key in set(left) | set(right):
+                              if key not in left or key not in right:
+                                  differences.append({"path":path+"/"+key,"keyPresenceChanged":True})
+                              else: compare(left[key],right[key],path+"/"+key)
+                      elif left != right:
+                          differences.append({"path":path,"valueChanged":True})
+                  compare(expected,after)
+                  result["configDifferencePaths"] = differences[:30]
+          print(json.dumps(result,sort_keys=True))
           finally:
               temporary.unlink(missing_ok=True)
           PY
