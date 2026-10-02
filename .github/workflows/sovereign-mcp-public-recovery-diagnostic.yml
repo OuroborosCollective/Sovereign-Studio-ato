@@ -1,0 +1,168 @@
+name: Sovereign MCP public recovery diagnostic
+
+on:
+  push:
+    branches: [fix/persistent-mcp-auth-proxy-network-2026-10-01]
+    paths: [.github/workflows/sovereign-mcp-public-recovery-diagnostic.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  public-readback:
+    name: Read public MCP and OAuth discovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe fixed public endpoints without credentials
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, re, urllib.error, urllib.parse, urllib.request
+          from pathlib import Path
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs): return None
+          opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+          def safe_url(value):
+              if not isinstance(value, str): return None
+              try:
+                  parts = urllib.parse.urlsplit(value)
+                  if parts.scheme != 'https' or parts.username or parts.password: return None
+                  return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, '', ''))
+              except ValueError: return None
+          def probe(path, payload=None):
+              url = 'https://arelogic.space' + path
+              request = urllib.request.Request(url, method='POST' if payload else 'GET',
+                  data=json.dumps(payload).encode() if payload else None,
+                  headers={'Accept': 'application/json, text/event-stream',
+                           'Content-Type': 'application/json', 'MCP-Protocol-Version': '2025-06-18'})
+              row = {'path': path, 'method': request.method}
+              try:
+                  try: response = opener.open(request, timeout=15)
+                  except urllib.error.HTTPError as error: response = error
+                  with response:
+                      row['httpStatus'] = response.code
+                      row['contentType'] = response.headers.get('Content-Type', '')
+                      row['bearerChallengePresent'] = 'bearer' in response.headers.get('WWW-Authenticate', '').lower()
+                      match = re.search(r'resource_metadata="([^"]+)"', response.headers.get('WWW-Authenticate', ''))
+                      if match: row['resourceMetadataUrl'] = safe_url(match.group(1))
+                      row['redirect'] = safe_url(response.headers.get('Location'))
+                      data = response.read(1000001)
+                      if len(data) > 1000000: return {**row, 'bodyTooLarge': True}
+                      text = data.decode('utf-8', errors='replace')
+                      if 'text/event-stream' in row['contentType']:
+                          events = [line[5:].strip() for line in text.splitlines() if line.startswith('data:')]
+                          text = events[-1] if events else ''
+                      try: body = json.loads(text)
+                      except ValueError: body = {}
+                      if isinstance(body, dict):
+                          for field in ('resource', 'issuer', 'authorization_endpoint', 'token_endpoint', 'registration_endpoint', 'jwks_uri'):
+                              if field in body: row[field] = safe_url(body[field])
+                          if isinstance(body.get('authorization_servers'), list):
+                              row['authorizationServers'] = [safe_url(value) for value in body['authorization_servers'][:5]]
+                          row['jsonRpcResponse'] = body.get('jsonrpc') == '2.0'
+                          result = body.get('result')
+                          if isinstance(result, dict):
+                              server = result.get('serverInfo') or {}
+                              row['operatorServerIdentified'] = server.get('name') == 'Sovereign ChatGPT Operator'
+                              row['toolsCapabilityPresent'] = isinstance(result.get('capabilities'), dict) and 'tools' in result['capabilities']
+                      row['aurionPageMarker'] = 'aurion' in text.lower()[:20000]
+              except Exception as error:
+                  row['transportErrorClass'] = type(error).__name__
+              return row
+          paths = ['/mcp','/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp',
+                   '/.well-known/oauth-authorization-server','/.well-known/openid-configuration']
+          results = [probe(path) for path in paths]
+          results.append(probe('/mcp', {'jsonrpc':'2.0','id':1,'method':'initialize','params':{
+              'protocolVersion':'2025-06-18','capabilities':{},
+              'clientInfo':{'name':'sovereign-recovery-readback','version':'1.0'}}}))
+          evidence = {'schemaVersion':'sovereign.public-mcp-recovery-diagnostic.v1',
+                      'authenticated':False,'mutationPerformed':False,'secretValuesReturned':False,'responses':results}
+          Path('public-mcp-readback.json').write_text(json.dumps(evidence, sort_keys=True, indent=2) + '\n')
+          print(json.dumps(evidence, sort_keys=True))
+          PY
+      - name: Save observed public response evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sovereign-public-mcp-recovery-readback
+          path: public-mcp-readback.json
+          retention-days: 3
+
+  vps-proxy-readback:
+    name: Read independent VPS proxy and MCP runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    environment:
+      name: production
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST || secrets.SSH_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER || secrets.SSH_USER }}
+      VPS_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
+      SSHPASS: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.SSH_PW || secrets.SSH_PASSWORD }}
+    steps:
+      - name: Validate authorized target and existing SSH secret
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$VPS_HOST" = "46.202.154.25"
+          test "$VPS_USER" = "root"
+          test -n "$SSHPASS" || { echo "EXISTING_VPS_PASSWORD_SECRET_UNAVAILABLE"; exit 1; }
+          test "$VPS_PORT" = "22"
+      - name: Install distribution SSH password client
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -qq --no-install-recommends sshpass
+      - name: Read actual proxy routing and call the registered read-only profile tool
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          printf '%s\n' '46.202.154.25 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIVZLyqUD5nlHXfk1sRA0v829TiZyxa5Bs4AS/G8eWLv' > "$RUNNER_TEMP/sovereign-recovery-known-hosts"
+          sshpass -e ssh -T -p "$VPS_PORT" -o ConnectTimeout=25 -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519 -o UserKnownHostsFile="$RUNNER_TEMP/sovereign-recovery-known-hosts" -o PreferredAuthentications=password -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o ClearAllForwardings=yes "$VPS_USER@$VPS_HOST" '/usr/bin/python3 -' > vps-proxy-readback.json <<'PY'
+          import json, subprocess, re
+          expected_revision = "819413c3b165662e5f9225f0268784655b320dfa"
+          proxy = "sovereign-mcp-auth-proxy-sovereign-mcp-auth-proxy-1"
+          def read(argv):
+              result = subprocess.run(argv,capture_output=True,text=True,timeout=25,check=False)
+              if result.returncode: raise RuntimeError("BOUNDED_DOCKER_READ_FAILED")
+              return result.stdout.strip()
+          def identity(name):
+              row = {}
+              for key,template in [
+                  ("status","{{.State.Status}}"),
+                  ("health","{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}"),
+                  ("imageId","{{.Image}}"),
+                  ("declaredImage","{{.Config.Image}}"),
+                  ("revision",'{{index .Config.Labels "org.opencontainers.image.revision"}}'),
+              ]:
+                  value = read(["docker","inspect","--format",template,name])
+                  if key in ("imageId",) and not re.fullmatch(r"sha256:[0-9a-f]{64}",value): raise RuntimeError("IMAGE_ID_INVALID")
+                  if key == "revision" and not re.fullmatch(r"[0-9a-f]{40}",value): value = None
+                  row[key] = value
+              row["networks"] = sorted(read(["docker","inspect","--format","{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}",name]).split())
+              return row
+          auxiliary_result = subprocess.run(["docker","inspect","--format",'{"containerId":"{{.Id}}","createdAt":"{{.Created}}","startedAt":"{{.State.StartedAt}}"}',"agent-zero-xrev-agent-zero-1"],capture_output=True,text=True,timeout=15,check=False)
+          auxiliary_existing = json.loads(auxiliary_result.stdout) if auxiliary_result.returncode == 0 else {"present":False}
+          mcp=identity("sovereign-chatgpt-mcp")
+          backend=identity("sovereign-backend")
+          proxy_row=identity(proxy)
+          proxy_row["routerRule"] = read(["docker","inspect","--format",'{{index .Config.Labels "traefik.http.routers.sovereign-mcp.rule"}}',proxy])
+          proxy_row["routerPriority"] = read(["docker","inspect","--format",'{{index .Config.Labels "traefik.http.routers.sovereign-mcp.priority"}}',proxy])
+          result = subprocess.run(["docker","exec","-i",proxy,"node","-"],input="(async()=>{\nconst url='http://sovereign-chatgpt-mcp:8090/mcp';\nlet sessionId;\nasync function rpc(message, notification=false){\n const headers={'Accept':'application/json, text/event-stream','Content-Type':'application/json','MCP-Protocol-Version':'2025-06-18'};\n if(sessionId)headers['Mcp-Session-Id']=sessionId;\n const response=await fetch(url,{method:'POST',headers,body:JSON.stringify(message),signal:AbortSignal.timeout(12000)});\n const next=response.headers.get('Mcp-Session-Id');if(next)sessionId=next;\n if(notification){if(![200,202,204].includes(response.status))throw Error('NotificationRejected');return {};}\n if(response.status!==200)throw Error('RpcHttpFailure');\n let text=await response.text();if(text.length>2000000)throw Error('ResponseTooLarge');\n if(response.headers.get('Content-Type')?.includes('text/event-stream')){\n  const events=text.split('\\n').filter(x=>x.startsWith('data:')).map(x=>x.slice(5).trim());text=events[events.length-1]||'';\n }\n const body=JSON.parse(text);if(body.error||body.jsonrpc!=='2.0')throw Error('RpcRejected');return body.result;\n}\nconst init=await rpc({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'sovereign-independent-proxy-readback',version:'1'}}});\nif(init.serverInfo?.name!=='Sovereign ChatGPT Operator'||!init.capabilities?.tools)throw Error('OperatorIdentityMismatch');\nawait rpc({jsonrpc:'2.0',method:'notifications/initialized'},true);\nconst listed=await rpc({jsonrpc:'2.0',id:2,method:'tools/list',params:{}});\nif(!Array.isArray(listed.tools)||listed.nextCursor)throw Error('IncompleteRegistry');\nconst selected=listed.tools.find(x=>x.name==='sovereign_operating_profile_status');\nif(!selected||selected.annotations?.readOnlyHint!==true||(selected.inputSchema?.required||[]).length)throw Error('ReadOnlyContractUnavailable');\nconst called=await rpc({jsonrpc:'2.0',id:3,method:'tools/call',params:{name:selected.name,arguments:{}}});\nif(called.isError)throw Error('ProfileToolFailed');\nlet profile=called.structuredContent;\nif(!profile){const text=called.content?.find(x=>x.type==='text')?.text;profile=JSON.parse(text||'{}');}\nif(profile.ok!==true||profile.status!=='OPERATING_PROFILE_ENFORCED'||profile.mutationPerformed!==false||profile.secretValuesReturned!==false||profile.mutableToolCount!==profile.enforcedToolCount||profile.toolCount!==listed.tools.length)throw Error('ProfileVerificationFailed');\nconsole.log(JSON.stringify({status:'PRIVATE_MCP_PROXY_READBACK_VERIFIED',protocolReady:true,toolCount:listed.tools.length,readOnlyToolCalled:selected.name,profileStatus:profile.status,mutableToolCount:profile.mutableToolCount,enforcedToolCount:profile.enforcedToolCount,mutationPerformed:false,secretValuesReturned:false}));\n})().catch(()=>{console.log(JSON.stringify({status:'PRIVATE_MCP_PROXY_READBACK_FAILED',mutationPerformed:false,secretValuesReturned:false}));process.exitCode=1});",capture_output=True,text=True,timeout=60,check=False)
+          reports=[]
+          for line in result.stdout.splitlines():
+              try: value=json.loads(line)
+              except ValueError: continue
+              if isinstance(value,dict) and value.get("status") in ("PRIVATE_MCP_PROXY_READBACK_VERIFIED","PRIVATE_MCP_PROXY_READBACK_FAILED"): reports.append(value)
+          print(json.dumps({"schemaVersion":"sovereign.independent-proxy-runtime-readback.v1","expectedRevision":expected_revision,"existingAuxiliaryContainer":auxiliary_existing,"runtimeMutationPerformed":False,"secretValuesReturned":False,"mcp":mcp,"backend":backend,"proxy":proxy_row,"sharedPrivateNetworkVerified":"sovereign-mcp-auth-internal" in set(mcp["networks"]) & set(proxy_row["networks"]),"mcpExpectedRevisionVerified":mcp["revision"]==expected_revision and mcp["status"]=="running" and mcp["health"]=="healthy","backendExpectedRevisionVerified":backend["revision"]==expected_revision and backend["status"]=="running","upstreamToolCallExitCode":result.returncode,"upstreamReports":reports[-1:]},sort_keys=True))
+          PY
+          python3 -m json.tool vps-proxy-readback.json
+      - name: Save bounded routing evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sovereign-vps-proxy-routing-readback
+          path: vps-proxy-readback.json
+          retention-days: 3
