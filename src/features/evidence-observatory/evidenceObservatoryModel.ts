@@ -127,7 +127,8 @@ export function evidenceDensity(cases: EvidenceCase[]): DensityBucket[] {
       buckets.set(at, current);
     }
   }
-  return [...buckets.values()].sort((a, b) => a.at.localeCompare(b.at));
+  // ⚡ Bolt: Fast native lexicographical string comparison replacing slow localeCompare during timeline density bucket sorting
+  return [...buckets.values()].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 }
 
 export function independentOriginCount(item: EvidenceCase): number {
