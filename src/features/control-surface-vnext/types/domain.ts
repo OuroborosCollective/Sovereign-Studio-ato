@@ -140,5 +140,5 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   evidenceBadge?: string;
-  metadata?: { jobId?: string; phase?: JobPhase; executionTimeMs?: number };
+  metadata?: { jobId?: string; phase?: JobPhase; executionTimeMs?: number; fallback?: string };
 }

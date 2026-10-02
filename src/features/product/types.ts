@@ -33,6 +33,7 @@ export interface ChatMessage {
   metadata?: {
     modelId?: string;
     latencyMs?: number;
+    fallback?: string;
     [key: string]: unknown;
   };
 }
