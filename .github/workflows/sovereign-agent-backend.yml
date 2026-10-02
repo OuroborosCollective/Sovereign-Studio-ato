@@ -140,21 +140,28 @@ jobs:
             agent_runtime/retrieval/bitcoin_index_manifest.py
       - name: Run Bitcoin retrieval contract tests
         run: |
-          PYTHONPATH=backend:scripts/sovereign-backend python -m pytest backend/tests/test_bitcoin_graph_scann_wolfram.py -v
-      - name: Probe authorized Bitcoin Core tip ingest
+          PYTHONPATH=backend:scripts/sovereign-backend python -m pytest \
+            backend/tests/test_bitcoin_graph_scann_wolfram.py \
+            backend/tests/test_bitcoin_rpc_quicknode.py -v
+      - name: Probe authorized Bitcoin mainnet RPC (read-only)
         env:
           BITCOIN_RPC_URL: ${{ secrets.BITCOIN_RPC_URL }}
           BITCOIN_RPC_USER: ${{ secrets.BITCOIN_RPC_USER }}
           BITCOIN_RPC_PASSWORD: ${{ secrets.BITCOIN_RPC_PASSWORD }}
-          BITCOIN_CANONICAL_STORE: data/bitcoin/ci-tip.sqlite
+          BITCOIN_RPC_AUTH_MODE: ${{ vars.BITCOIN_RPC_AUTH_MODE || 'basic' }}
         run: |
           set -euo pipefail
-          if [[ -z "${BITCOIN_RPC_URL}" || -z "${BITCOIN_RPC_USER}" || -z "${BITCOIN_RPC_PASSWORD}" ]]; then
-            echo "BITCOIN_CORE_LIVE=NOT_CONFIGURED"
-            echo "No authorized Bitcoin Core endpoint is configured in repository secrets."
+          if [[ -z "${BITCOIN_RPC_URL}" ]]; then
+            echo "BITCOIN_RPC_LIVE=NOT_CONFIGURED"
+            echo "No authorized Bitcoin RPC endpoint is configured in repository secrets."
             exit 0
           fi
-          PYTHONPATH=scripts/sovereign-backend python scripts/sovereign-backend/bitcoin_full_chain_ingest.py --depth 3
+          if [[ "${BITCOIN_RPC_AUTH_MODE}" == basic && ( -z "${BITCOIN_RPC_USER}" || -z "${BITCOIN_RPC_PASSWORD}" ) ]]; then
+            echo "BITCOIN_RPC_LIVE=NOT_CONFIGURED"
+            echo "Bitcoin Core Basic Auth credentials are not configured."
+            exit 0
+          fi
+          PYTHONPATH=scripts/sovereign-backend python scripts/sovereign-backend/bitcoin_full_chain_ingest.py --check-rpc
 
       - name: Build and read a live ScaNN index
         run: |

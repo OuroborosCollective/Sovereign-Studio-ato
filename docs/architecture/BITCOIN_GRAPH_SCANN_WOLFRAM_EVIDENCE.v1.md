@@ -22,7 +22,20 @@ Bitcoin Core
   → bounded Wolfram CAG counter-checks
   → evidence receipt / Notion Claims & Evidence Ledger
 
-Bitcoin Core is the live source boundary. Wolfram also exposes Bitcoin blockchain/block/transaction/address analysis capabilities, but the production design keeps the full-node-derived canonical dataset separate from supplemental calculations.
+Bitcoin Core JSON-RPC is the live source boundary. The adapter can use an authorized owner-run Core node or an explicitly configured QuickNode Bitcoin endpoint. A hosted provider response is an external observation, not proof of independent consensus validation. Wolfram also exposes Bitcoin blockchain/block/transaction/address analysis capabilities, but the production design keeps the full-node-derived canonical dataset separate from supplemental calculations.
+
+## RPC configuration and preflight
+
+- `BITCOIN_RPC_AUTH_MODE=basic` (default): `BITCOIN_RPC_URL`, `BITCOIN_RPC_USER` and `BITCOIN_RPC_PASSWORD` bind the existing Core Basic Auth path.
+- `BITCOIN_RPC_AUTH_MODE=quicknode`: `BITCOIN_RPC_URL` is the protected HTTPS Bitcoin endpoint URL from the owner's QuickNode account. No Basic Auth header is sent. The URL is a secret and must only be installed through an authorized secret channel; never commit it or include it in research receipts.
+- The QuickNode app's account-management API key is separate from the protected RPC endpoint URL. Connecting the app does not configure GitHub Actions or the indexer automatically.
+- Both modes allow only ingestion reads and reject redirects. Configuration repr and RPC/transport error messages do not expose endpoint credentials.
+- `bitcoin_full_chain_ingest.py --check-rpc` checks mainnet identity, tip, mainnet genesis and full transaction objects from `getblock(..., 2)` without creating or writing a store. Every actual ingest repeats this check before store mutation.
+- In the manual workflow, choose `rpc_auth_mode=quicknode` and configure the existing `BITCOIN_RPC_URL` repository secret through an authorized channel. The workflow still needs the persistent self-hosted `bitcoin-indexer` runner from issue #2089.
+- The default store is `/var/lib/sovereign-bitcoin/canonical.sqlite`; select an owner-provisioned persistent absolute path outside the runner checkout. Existing databases are not moved automatically. The workflow rejects relative paths and paths under the checkout, which `actions/checkout` may clean.
+- Before any full-chain request, verify endpoint permissions, historical block availability, quota and authorized request volume. A small preflight does not demonstrate full-chain completion, restart/resume, ScaNN, Wolfram transport or ledger writeback.
+
+Provider contract: [QuickNode Bitcoin QuickStart](https://www.quicknode.com/docs/bitcoin/quickstart). Runtime verification remains blocked until an authenticated account/endpoint and persistent runner can be read back independently.
 
 ## Truth boundaries
 
@@ -120,6 +133,7 @@ Shipping mirrors:
 Regression:
 
 - backend/tests/test_bitcoin_graph_scann_wolfram.py
+- backend/tests/test_bitcoin_rpc_quicknode.py (run by the existing Bitcoin retrieval CI job)
 
 The existing ScaNN manifest/exact-rescore modules remain the general retrieval infrastructure; this Bitcoin lane specializes them instead of replacing them.
 

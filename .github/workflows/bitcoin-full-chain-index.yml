@@ -13,10 +13,18 @@ on:
         required: false
         default: ""
         type: string
+      rpc_auth_mode:
+        description: "RPC authentication: Bitcoin Core Basic Auth or protected QuickNode URL"
+        required: true
+        default: "basic"
+        type: choice
+        options:
+          - basic
+          - quicknode
       store_path:
-        description: "Canonical SQLite store path"
+        description: "Absolute persistent SQLite path outside the runner checkout"
         required: false
-        default: "data/bitcoin/canonical.sqlite"
+        default: "/var/lib/sovereign-bitcoin/canonical.sqlite"
         type: string
 
 permissions:
@@ -41,40 +49,71 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Require authorized Bitcoin Core credentials
+      - name: Require authorized RPC credentials and persistent store
         env:
           BITCOIN_RPC_URL: ${{ secrets.BITCOIN_RPC_URL }}
           BITCOIN_RPC_USER: ${{ secrets.BITCOIN_RPC_USER }}
           BITCOIN_RPC_PASSWORD: ${{ secrets.BITCOIN_RPC_PASSWORD }}
+          BITCOIN_RPC_AUTH_MODE: ${{ inputs.rpc_auth_mode }}
+          BITCOIN_CANONICAL_STORE: ${{ inputs.store_path }}
         run: |
           set -euo pipefail
           [[ -n "${BITCOIN_RPC_URL}" ]] || { echo "::error::BITCOIN_RPC_URL is not configured"; exit 1; }
-          [[ -n "${BITCOIN_RPC_USER}" ]] || { echo "::error::BITCOIN_RPC_USER is not configured"; exit 1; }
-          [[ -n "${BITCOIN_RPC_PASSWORD}" ]] || { echo "::error::BITCOIN_RPC_PASSWORD is not configured"; exit 1; }
-          echo "BITCOIN_CORE_CREDENTIAL_BOUND=YES"
+          case "${BITCOIN_RPC_AUTH_MODE}" in
+            basic)
+              [[ -n "${BITCOIN_RPC_USER}" ]] || { echo "::error::BITCOIN_RPC_USER is not configured"; exit 1; }
+              [[ -n "${BITCOIN_RPC_PASSWORD}" ]] || { echo "::error::BITCOIN_RPC_PASSWORD is not configured"; exit 1; }
+              ;;
+            quicknode) ;;
+            *) echo "::error::Unsupported RPC authentication mode"; exit 1 ;;
+          esac
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          store = Path(os.environ["BITCOIN_CANONICAL_STORE"])
+          checkout = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          if not store.is_absolute() or store.resolve().is_relative_to(checkout):
+              raise SystemExit("Canonical store must be absolute and outside the runner checkout")
+          PY
+          echo "BITCOIN_RPC_CONFIGURATION_PRESENT=YES"
+
+      - name: Verify Bitcoin mainnet RPC before store mutation
+        env:
+          BITCOIN_RPC_URL: ${{ secrets.BITCOIN_RPC_URL }}
+          BITCOIN_RPC_USER: ${{ secrets.BITCOIN_RPC_USER }}
+          BITCOIN_RPC_PASSWORD: ${{ secrets.BITCOIN_RPC_PASSWORD }}
+          BITCOIN_RPC_AUTH_MODE: ${{ inputs.rpc_auth_mode }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts/sovereign-backend python scripts/sovereign-backend/bitcoin_full_chain_ingest.py --check-rpc
 
       - name: Run canonical full-chain ingest
         env:
           BITCOIN_RPC_URL: ${{ secrets.BITCOIN_RPC_URL }}
           BITCOIN_RPC_USER: ${{ secrets.BITCOIN_RPC_USER }}
           BITCOIN_RPC_PASSWORD: ${{ secrets.BITCOIN_RPC_PASSWORD }}
+          BITCOIN_RPC_AUTH_MODE: ${{ inputs.rpc_auth_mode }}
           BITCOIN_CANONICAL_STORE: ${{ inputs.store_path }}
+          START_HEIGHT: ${{ inputs.start_height }}
+          END_HEIGHT: ${{ inputs.end_height }}
         run: |
           set -euo pipefail
           args=()
-          if [[ -n "${{ inputs.start_height }}" ]]; then
-            args+=(--start-height "${{ inputs.start_height }}")
+          if [[ -n "${START_HEIGHT}" ]]; then
+            args+=(--start-height "${START_HEIGHT}")
           fi
-          if [[ -n "${{ inputs.end_height }}" ]]; then
-            args+=(--end-height "${{ inputs.end_height }}")
+          if [[ -n "${END_HEIGHT}" ]]; then
+            args+=(--end-height "${END_HEIGHT}")
           fi
           PYTHONPATH=scripts/sovereign-backend python scripts/sovereign-backend/bitcoin_full_chain_ingest.py "${args[@]}"
 
       - name: Record full-chain ingest completion
         if: always()
+        env:
+          BITCOIN_CANONICAL_STORE: ${{ inputs.store_path }}
         run: |
           set -euo pipefail
-          if [[ -f "${{ inputs.store_path }}" ]]; then
-            stat -c 'BITCOIN_CANONICAL_STORE_BYTES=%s' "${{ inputs.store_path }}"
+          if [[ -f "${BITCOIN_CANONICAL_STORE}" ]]; then
+            stat -c 'BITCOIN_CANONICAL_STORE_BYTES=%s' "${BITCOIN_CANONICAL_STORE}"
           fi
           echo "BITCOIN_FULL_CHAIN_WORKFLOW_DONE=1"
