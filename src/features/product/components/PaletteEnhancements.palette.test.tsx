@@ -28,6 +28,7 @@ import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
+import { RepoReadinessPanel } from './RepoReadinessPanel';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1465,6 +1466,42 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(localModeBtn);
       expect(onUseLocalMode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('RepoReadinessPanel Accessibility and Micro-UX Enhancements', () => {
+    it('renders section linked to title, score title tooltip, semantic lists, and focus-visible details summary', () => {
+      render(
+        <RepoReadinessPanel
+          repoUrl="https://github.com/owner/repo"
+          files={[{ path: 'README.md', type: 'blob' }]}
+          status="Loaded snapshot"
+        />
+      );
+
+      const section = screen.getByRole('region', { name: 'Repo Launch Readiness' });
+      expect(section).toBeInTheDocument();
+
+      const heading = screen.getByRole('heading', { name: 'Repo Launch Readiness', level: 2 });
+      expect(section).toHaveAttribute('aria-labelledby', heading.id);
+
+      const scoreElement = screen.getByText(/\/100/);
+      expect(scoreElement).toHaveAttribute('title');
+      expect(scoreElement.getAttribute('title')).toMatch(/^Readiness score:/);
+
+      const pipelineList = screen.getByRole('list', { name: 'Tool progress stages' });
+      expect(pipelineList).toBeInTheDocument();
+
+      const checklistList = screen.getByRole('list', { name: 'Owner Checklist' });
+      expect(checklistList).toBeInTheDocument();
+
+      const detailsSummary = screen.getByText('Launch package markdown');
+      expect(detailsSummary).toHaveAttribute('title', 'Toggle launch package markdown');
+      expect(detailsSummary).toHaveClass('focus-visible:ring-2');
+
+      const preBlock = screen.getByLabelText('Launch package markdown content');
+      expect(preBlock).toHaveAttribute('tabIndex', '0');
+      expect(preBlock).toHaveClass('focus-visible:ring-2');
     });
   });
 });
