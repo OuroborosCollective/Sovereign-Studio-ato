@@ -29,7 +29,7 @@ from .productivity_insights import (
     validate_mission,
 )
 from .contracts import SovereignAgentEvent, normalize_agent_job_result, sanitize_agent_text
-from .cognitive_run_store import read_agent_run_receipts
+from .cognitive_run_store import read_agent_run_receipts, read_job_runtime_evidence
 from .cognitive_swarm_routes import start_cognitive_swarm_run
 from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal, verify_draft_pr_for_job
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
@@ -144,7 +144,32 @@ def _job_to_api(job) -> dict[str, Any]:
         "testSummary": job.test_summary,
         "blocker": job.blocker,
         "events": list(job.events),
+        "createdAt": _api_timestamp(getattr(job, "created_at", None)),
+        "updatedAt": _api_timestamp(getattr(job, "updated_at", None)),
     }
+
+
+def _api_timestamp(value: Any) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+def _job_runtime_readback(conn: Any, job: Any) -> dict[str, Any]:
+    body = _job_to_api(job)
+    try:
+        events = read_job_runtime_evidence(conn, user_id=job.user_id, job_id=job.job_id, external_ref=job.external_ref)
+        body["runtimeEvidence"] = {"jobId": job.job_id, "readbackState": "live", "events": list(events)}
+    except Exception as exc:
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+        body["runtimeEvidence"] = {
+            "jobId": job.job_id, "readbackState": "unavailable", "events": [],
+            "error": f"Runtime evidence readback failed ({type(exc).__name__}).",
+        }
+    body["serverObservedAt"] = datetime.now(timezone.utc).isoformat()
+    return body
 
 
 def _result_to_api(result) -> dict[str, Any]:
@@ -1762,7 +1787,7 @@ def register_sovereign_agent_routes(
                     "blocker": "AGENT_ZERO_A2A_READBACK_UNAVAILABLE",
                     "error": sanitize_agent_text(str(exc), 400),
                 }), 503
-            return jsonify({"runtime": "sovereign-agent", "job": _job_to_api(job)})
+            return jsonify({"runtime": "sovereign-agent", "job": _job_runtime_readback(conn, job)})
         finally:
             _close(conn)
 

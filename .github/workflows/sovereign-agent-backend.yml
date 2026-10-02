@@ -28,6 +28,20 @@ jobs:
   agent-tests:
     name: Agent Runtime Tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sovereign_runtime_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      SOVEREIGN_RUNTIME_TEST_DSN: postgresql://postgres:postgres@localhost:5432/sovereign_runtime_test
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -46,6 +60,7 @@ jobs:
           pytest scripts/sovereign-backend/tests \
             backend/tests/test_agent_runtime_routes.py \
             backend/tests/test_repository_execution.py \
+            backend/tests/test_repository_runtime_evidence_postgres.py \
             backend/tests/test_desktop_worker.py \
             backend/tests/test_execution_transparency_statement.py \
             backend/tests/test_configuration_provenance.py \

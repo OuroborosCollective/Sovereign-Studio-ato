@@ -1944,6 +1944,128 @@ def read_active_agent_run_for_job(
     return stored_run_from_row(rows[0])
 
 
+def append_repository_executor_heartbeat(
+    conn: Any, *, user_id: str, job_id: str, run_id: str, claim_ref: str,
+) -> bool:
+    """Observe a live invocation only while its exact owner/job claim is current.
+
+    Heartbeats append evidence but never update job/run state or progress clocks.
+    The executor invokes this only for the lifetime of its foreground SDK call.
+    """
+    if not claim_ref.startswith("sovereign-local-runner:claim:submit:") or run_id != f"repo-{job_id}":
+        raise ValueError("heartbeat requires the exact local repository submit claim and run")
+    payload = {"jobId": job_id, "claimSha256": _digest_text(claim_ref),
+               "executor": "sovereign-local-runner", "progressImplied": False}
+    payload_json = _json(payload)
+    evidence_id, event_id = _new_id("evidence"), _new_id("event")
+    summary = "Executor invocation is active; no model or repository progress is implied."
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT run.trace_id FROM agent_runs AS run
+                JOIN sovereign_agent_jobs AS job ON job.job_id = run.job_id
+                WHERE run.user_id = %s::uuid AND job.user_id = %s::uuid
+                  AND run.run_id = %s AND job.job_id = %s
+                  AND job.status = 'running' AND job.external_ref = %s
+                FOR SHARE OF job
+                """,
+                (str(user_id), str(user_id), _validated_id(run_id, "run_id"),
+                 _validated_id(job_id, "job_id"), claim_ref),
+            )
+            row = cur.fetchone()
+            if not row:
+                conn.rollback()
+                return False
+            cur.execute(
+                """
+                INSERT INTO agent_evidence (evidence_id, run_id, agent_id, source, kind, summary, sha256, payload)
+                VALUES (%s, %s, 'free_single_agent', 'agents-sdk', 'executor_heartbeat', %s, %s, %s::jsonb)
+                """,
+                (evidence_id, run_id, summary, _digest_text(payload_json), payload_json),
+            )
+            cur.execute(
+                """
+                INSERT INTO agent_events (event_id, run_id, agent_id, type, status, source,
+                                          summary, evidence_id, trace_id, next_action)
+                VALUES (%s, %s, 'free_single_agent', 'sovereign_executor_heartbeat', 'RUNNING', 'agents-sdk',
+                        %s, %s, %s, 'WAIT_FOR_FREE_SINGLE_AGENT')
+                """,
+                (event_id, run_id, summary, evidence_id, row["trace_id"]),
+            )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def read_job_runtime_evidence(
+    conn: Any, *, user_id: str, job_id: str, external_ref: str | None = None, limit: int = 100,
+) -> tuple[dict[str, object], ...]:
+    """Project owner/job-bound persisted runtime events with verified evidence hashes.
+
+    This is a read of the existing SDK event/evidence store, not another telemetry
+    store. Raw payloads, tool arguments and model output never enter the response.
+    """
+    normalized_job_id = _validated_id(job_id, "job_id")
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT event.event_id, event.run_id, event.agent_id, event.type,
+                   event.status, event.source, event.summary, event.next_action,
+                   event.created_at, event.evidence_id, evidence.sha256,
+                   evidence.payload, run.user_id, run.job_id,
+                   evidence.run_id AS evidence_run_id,
+                   evidence.agent_id AS evidence_agent_id
+            FROM agent_events AS event
+            JOIN agent_evidence AS evidence
+              ON evidence.evidence_id = event.evidence_id
+             AND evidence.run_id = event.run_id
+             AND evidence.agent_id = event.agent_id
+            JOIN agent_runs AS run ON run.run_id = event.run_id
+            WHERE run.user_id = %s::uuid AND run.job_id = %s
+              AND event.source = 'agents-sdk' AND evidence.source = 'agents-sdk'
+            ORDER BY event.created_at DESC, event.event_id DESC
+            LIMIT %s
+            """,
+            (str(user_id), normalized_job_id, max(1, min(int(limit), 500))),
+        )
+        rows = cur.fetchall()
+    records: list[dict[str, object]] = []
+    for row in rows:
+        payload = row.get("payload")
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        if (
+            str(row.get("user_id")) != str(user_id)
+            or row.get("job_id") != normalized_job_id
+            or row.get("run_id") != row.get("evidence_run_id")
+            or row.get("agent_id") != row.get("evidence_agent_id")
+            or not isinstance(payload, Mapping)
+            or _digest_text(_json(payload)) != row.get("sha256")
+        ):
+            raise ValueError("runtime event evidence binding or hash is contradicted")
+        at = _timestamp_text(row.get("created_at"))
+        if not at or not row.get("event_id") or not row.get("evidence_id"):
+            raise ValueError("runtime event lacks persisted identity or timestamp")
+        record = {
+            "eventId": str(row["event_id"]), "runId": str(row["run_id"]),
+            "evidenceId": str(row["evidence_id"]), "evidenceSha256": str(row["sha256"]),
+            "agentId": str(row["agent_id"]), "source": str(row["source"]),
+            "stage": _bounded(row.get("type"), 120), "status": _bounded(row.get("status"), 100),
+            "summary": _bounded(row.get("summary"), 2000),
+            "nextAction": _bounded(row.get("next_action"), 1000), "at": at,
+        }
+        if row.get("type") == "sovereign_executor_heartbeat":
+            if payload.get("jobId") != normalized_job_id or payload.get("progressImplied") is not False:
+                raise ValueError("executor heartbeat payload is not bound to this job")
+            record["heartbeatCurrent"] = bool(external_ref and payload.get("claimSha256") == _digest_text(external_ref))
+        records.append(record)
+    records.reverse()
+    return tuple(records)
+
+
 def read_live_workspace_stage_evidence(
     conn: Any,
     *,

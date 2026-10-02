@@ -1,3 +1,5 @@
+import type { SovereignAgentRuntimeEvidence } from '../../product/runtime/sovereignAgentRuntime';
+
 export type AgentMode = 'single' | 'swarm';
 
 export type JobPhase =
@@ -98,6 +100,12 @@ export interface SovereignJob {
   nextAction?: string;
   assistantMessage?: string;
   error?: { message: string; code?: string };
+  serverObservedAt?: string;
+  lastEventAt?: string;
+  lastHeartbeatAt?: string;
+  persistedEventCount?: number;
+  externalRef?: string;
+  runtimeEvidence?: SovereignAgentRuntimeEvidence;
 }
 
 export interface Toolchain {

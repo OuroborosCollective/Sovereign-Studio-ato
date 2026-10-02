@@ -20,6 +20,7 @@ import uuid
 from .contracts import SovereignAgentEvent, sanitize_agent_text
 from .cognitive_repository_tools import BoundRepositoryToolset, create_repository_single_agent_task
 from .cognitive_run_store import (
+    append_repository_executor_heartbeat,
     create_agent_run,
     read_agent_run,
     read_agent_task_ids,
@@ -44,6 +45,7 @@ from .durable_workflow_store import (
     persist_workflow_run,
     read_latest_permission_receipt,
     read_permission_authority_head,
+    read_repository_job_permission_binding,
 )
 from .revocation_closure import RevocationClosureError, require_live_permission
 from .rescue import resolve_github_head
@@ -119,6 +121,47 @@ def _bounded_env_seconds(name: str, default: float, minimum: float, maximum: flo
 
 def _repository_reconciler_poll_seconds() -> float:
     return _bounded_env_seconds("SOVEREIGN_REPOSITORY_RECONCILER_POLL_SECONDS", 2.0, 0.5, 30.0)
+
+
+def _executor_heartbeat_seconds() -> float:
+    return _bounded_env_seconds("SOVEREIGN_REPOSITORY_HEARTBEAT_SECONDS", 15.0, 5.0, 60.0)
+
+
+async def _run_with_executor_heartbeat(
+    invocation: Callable[[], Any], *, get_connection: ConnectionFactory,
+    job: StoredSovereignAgentJob, run_id: str, claim_ref: str,
+) -> Any:
+    def observe() -> bool:
+        heartbeat_conn = get_connection()
+        try:
+            return append_repository_executor_heartbeat(
+                heartbeat_conn, user_id=job.user_id, job_id=job.job_id,
+                run_id=run_id, claim_ref=claim_ref,
+            )
+        finally:
+            _close_reconciler_connection(heartbeat_conn)
+
+    if not observe():
+        raise RepositoryExecutionError("EXECUTOR_HEARTBEAT_CLAIM_NOT_CURRENT")
+
+    async def heartbeat() -> None:
+        while True:
+            await asyncio.sleep(_executor_heartbeat_seconds())
+            try:
+                if not observe():
+                    return
+            except Exception as exc:
+                _LOGGER.warning("repository heartbeat unavailable job=%s type=%s", job.job_id, type(exc).__name__)
+
+    observer = asyncio.create_task(heartbeat())
+    try:
+        return await invocation()
+    finally:
+        observer.cancel()
+        try:
+            await observer
+        except asyncio.CancelledError:
+            pass
 
 
 def _configured_repository_url() -> str:
@@ -228,6 +271,42 @@ def _block_job(conn: Any, job: StoredSovereignAgentJob, reason: str, stage: str)
         message=blocker,
     ))
     return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+
+
+def _require_repository_effect_authority(conn: Any, *, job: StoredSovereignAgentJob) -> bool:
+    """Resolve this job's canonical, current permission before executor effects."""
+    binding = read_repository_job_permission_binding(conn, job_id=job.job_id)
+    if binding is None:
+        return False
+    latest = read_latest_permission_receipt(conn, permission_id=str(binding.get("permission_id") or ""))
+    if latest is None:
+        raise RevocationClosureError("repository job permission authority is unreadable")
+    receipt, _sequence = latest
+    expected_parameters = {
+        "job_id": job.job_id, "repository": job.repo_url, "branch": job.branch,
+        "mission_sha256": canonical_sha256({"mission": job.mission}),
+    }
+    if (
+        binding.get("job_id") != job.job_id
+        or binding.get("workflow_run_id") != f"repo-run-{job.job_id}"
+        or receipt.binding.workflow_run_id != binding.get("workflow_run_id")
+        or receipt.permission_id != binding.get("permission_id")
+        or receipt.receipt_hash != binding.get("approved_receipt_hash")
+        or receipt.binding.owner_identity != str(job.user_id)
+        or receipt.binding.tenant_or_org_identity != str(job.user_id)
+        or receipt.binding.repository_identity != job.repo_url
+        or receipt.binding.workspace_id != str(job.workspace_id or job.job_id)
+        or receipt.tool_name != "sovereign-local-runner"
+        or receipt.capability != "repository.sovereign-execute"
+        or receipt.step_id != "repository-sovereign-execute"
+        or receipt.normalized_parameters != expected_parameters
+        or receipt.parameters_hash != canonical_sha256(expected_parameters)
+        or receipt.valid_until_epoch <= int(time.time())
+    ):
+        raise RevocationClosureError("repository job permission is stale or bound to another scope")
+    head = read_permission_authority_head(conn, permission_id=receipt.permission_id)
+    require_live_permission(receipt, head)
+    return True
 
 
 def _ensure_local_single_agent_run(
@@ -408,15 +487,13 @@ def _submit_after_claim(
             learning_scope=[],
             confidence=1.0,
         )
-        agent_result = asyncio.run(run_free_single_agent(
-            job.mission,
-            evidence="",
-            model=model,
-            intent=mission_intent,
-            route=resolution.primary_route,
-            stage_observer=stage_observer,
-            repository_tool_factory=repository_toolset.tools_for_role,
-            capability_tool_factory=None,
+        agent_result = asyncio.run(_run_with_executor_heartbeat(
+            lambda: run_free_single_agent(
+                job.mission, evidence="", model=model, intent=mission_intent,
+                route=resolution.primary_route, stage_observer=stage_observer,
+                repository_tool_factory=repository_toolset.tools_for_role, capability_tool_factory=None,
+            ),
+            get_connection=resolved_connection_factory, job=job, run_id=run_id, claim_ref=claim_ref,
         ))
         if str(agent_result.get("status") or "BLOCKED") != "COMPLETED":
             return _block_job(
@@ -661,14 +738,26 @@ def _submit_pending_repository_job(
     ):
         return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
     claimed = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-    return _submit_after_claim(
-        conn,
-        job=claimed,
-        claim_ref=claim_ref,
-        retry=False,
-        workspace_root=workspace_root,
-        get_connection=get_connection,
-    )
+    try:
+        return _submit_after_claim(
+            conn,
+            job=claimed,
+            claim_ref=claim_ref,
+            retry=False,
+            workspace_root=workspace_root,
+            get_connection=get_connection,
+        )
+    except Exception as exc:
+        # Never turn a claimed submit into an invisible perpetual RUNNING job.
+        # Retain the claim to prevent duplicate effects; expose only the error type.
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+        return _block_job(
+            conn, claimed,
+            f"Sovereign-local-runner submit failed closed ({type(exc).__name__}); no automatic replay is allowed.",
+            "sovereign_executor_submit_failed",
+        )
 
 
 def _safe_regression_commands(recommended: object) -> tuple[str, ...]:

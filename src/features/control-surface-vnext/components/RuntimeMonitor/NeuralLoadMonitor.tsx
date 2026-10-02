@@ -7,7 +7,7 @@ interface Props { job?: SovereignJob | null; phase?: JobPhase; }
 export function NeuralLoadMonitor({ job, phase = 'IDLE' }: Props) {
   const currentPhase = job?.phase || phase;
   const active = ['DISPATCHING', 'PROVISIONING', 'EXECUTING', 'FINALIZING'].includes(currentPhase);
-  const evidenceCount = job?.logs.length ?? 0;
+  const evidenceCount = job?.persistedEventCount ?? 0;
   const files = job?.workspaceState.modifiedFiles.length ?? 0;
   return (
     <div className="bg-[var(--carbon-deep)] border-b border-[rgba(255,30,56,0.22)] p-2.5 font-mono select-none" data-testid="vnext-phase-activity">

@@ -1,9 +1,243 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import replace
+import asyncio
+import sys
+from types import SimpleNamespace
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts/sovereign-backend"))
+sys.path.insert(0, str(ROOT))
+
+from backend.agent_runtime import repository_execution as execution
+from backend.agent_runtime import cognitive_run_store as runtime_store
+from backend.agent_runtime.job_store import StoredSovereignAgentJob
+from backend.agent_runtime.revocation_closure import create_revocation_transition, PermissionAuthorityHead
+
+
+@pytest.fixture
+def pending_execution(monkeypatch, tmp_path):
+    """Exercise the real claim, permission gate and submit path; replace I/O only."""
+    job = StoredSovereignAgentJob(
+        job_id="agent-regression", user_id="owner-regression", executor="sovereign-local-runner",
+        repo_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato", branch="main",
+        mission="Create Testgb with 1987a26 and prepare a Draft PR.", status="running",
+        workspace_id="agent-regression", external_ref=execution._pending_submit_ref("agent-regression"),
+    )
+    state = SimpleNamespace(job=job, receipts=[], binding=None, model_calls=0)
+    conn = SimpleNamespace(close=lambda: None)
+    monkeypatch.setattr(execution, "persist_workflow_run", lambda *_: None)
+    monkeypatch.setattr(execution, "append_permission_receipt", lambda _, **kw: state.receipts.append(kw["receipt"]))
+    def bind(_, **kw):
+        receipt = kw["approved_receipt"]
+        state.binding = {"job_id": kw["job_id"], "workflow_run_id": receipt.binding.workflow_run_id,
+                         "permission_id": receipt.permission_id, "approved_receipt_hash": receipt.receipt_hash}
+    monkeypatch.setattr(execution, "bind_repository_job_permission", bind)
+    monkeypatch.setattr(execution, "read_repository_job_permission_binding", lambda _, **kw: state.binding, raising=False)
+    monkeypatch.setattr(execution, "read_latest_permission_receipt", lambda _, **kw: (state.receipts[-1], len(state.receipts)-1))
+    def head(_, **kw):
+        receipt = state.receipts[-1]
+        material = {"permission_id": receipt.permission_id, "workflow_run_id": receipt.binding.workflow_run_id,
+                    "receipt_hash": receipt.receipt_hash, "receipt_sequence": len(state.receipts)-1,
+                    "decision": receipt.decision.value}
+        return PermissionAuthorityHead(**(material | {"decision": receipt.decision}),
+                                       readback_hash=execution.canonical_sha256(material))
+    monkeypatch.setattr(execution, "read_permission_authority_head", head)
+    monkeypatch.setattr(execution, "read_agent_job", lambda _, **kw: state.job)
+    def update(_, **kw):
+        fields = {key: value for key, value in kw.items() if key in {"status", "workspace_id", "blocker"}}
+        if kw.get("clear_blocker"): fields["blocker"] = None
+        state.job = replace(state.job, **fields)
+    monkeypatch.setattr(execution, "update_agent_job_state", update)
+    def event(_, job_id, value):
+        state.job = replace(state.job, events=(*state.job.events, {"stage": value.stage, "level": value.level,
+                                                                 "message": value.message, "at": value.at}))
+    monkeypatch.setattr(execution, "append_agent_event", event)
+    def cas(_, **kw):
+        if state.job.external_ref != kw["expected_ref"]: return False
+        state.job = replace(state.job, external_ref=kw["new_ref"])
+        return True
+    monkeypatch.setattr(execution, "compare_and_swap_agent_job_external_ref", cas)
+    monkeypatch.setattr(execution, "read_agent_run", lambda _, **kw: SimpleNamespace(evidence_id="evidence-regression", trace_id="trace-regression"))
+    monkeypatch.setattr(execution, "read_agent_task_ids", lambda _, **kw: {"free_single_agent": "task-regression"})
+    monkeypatch.setattr(execution, "transition_agent_run", lambda *args, **kw: None)
+    monkeypatch.setattr(execution, "append_repository_executor_heartbeat", lambda *args, **kw: True)
+    resolution = SimpleNamespace(profile_id=execution.FREE_SINGLE_AGENT_PROFILE, repository_execution_allowed=True,
+                                 primary_route=SimpleNamespace())
+    monkeypatch.setattr(execution, "load_execution_resolution", lambda *args, **kw: resolution)
+    monkeypatch.setattr(execution, "route_provider_model", lambda _: "test-provider-boundary")
+    async def model(*args, **kw):
+        state.model_calls += 1
+        return {"status": "BLOCKED", "reason": "Provider boundary stopped by regression test."}
+    monkeypatch.setattr(execution, "run_free_single_agent", model)
+    (tmp_path / job.workspace_id / "repo" / ".git").mkdir(parents=True)
+    execution._bind_repository_execution_permission(conn, job=job, expected_head_sha="1"*40)
+    state.submit = lambda: execution._submit_pending_repository_job(conn, job=state.job,
+                              workspace_root=tmp_path, get_connection=lambda: conn)
+    return state
+
+
+def test_pending_submit_reaches_model_once_with_real_live_permission(pending_execution):
+    result = pending_execution.submit()
+    assert pending_execution.model_calls == 1, result.blocker
+    assert any(event["stage"] == "sovereign_executor_started" for event in result.events)
+    pending_execution.submit()
+    assert pending_execution.model_calls == 1
+
+
+def test_missing_permission_is_persisted_as_blocked(pending_execution):
+    pending_execution.binding = None
+    result = pending_execution.submit()
+    assert result.status == "blocked"
+    assert result.events[-1]["stage"] == "repository_permission_unbound"
+    assert pending_execution.model_calls == 0
+
+
+def test_revoked_permission_never_starts_executor(pending_execution):
+    revoked, _ = create_revocation_transition(pending_execution.receipts[-1], revocation_sequence=2,
+        revocation_epoch_ms=2000, reason_code="OWNER_REVOKED", revoker_identity="owner-regression")
+    pending_execution.receipts.append(revoked)
+    result = pending_execution.submit()
+    assert result.status == "blocked"
+    assert result.events[-1]["stage"] == "repository_revocation_blocked"
+    assert pending_execution.model_calls == 0
+
+
+@pytest.mark.parametrize("field,value", [("job_id", "agent-other"), ("repo_url", "https://github.com/other/repo"),
+                                         ("user_id", "other-owner"), ("workspace_id", "other-workspace"),
+                                         ("mission", "A different instruction")])
+def test_permission_for_another_scope_never_starts_executor(pending_execution, field, value):
+    pending_execution.job = replace(pending_execution.job, **{field: value})
+    result = pending_execution.submit()
+    assert result.status == "blocked"
+    assert pending_execution.model_calls == 0
+
+
+def test_unexpected_preflight_error_is_visible_and_does_not_leave_running_claim(pending_execution, monkeypatch):
+    def unreadable(*args, **kw):
+        raise RuntimeError("private-provider-password must not enter evidence")
+    monkeypatch.setattr(execution, "read_latest_permission_receipt", unreadable)
+    result = pending_execution.submit()
+    assert result.status == "blocked"
+    assert result.events[-1]["stage"] == "sovereign_executor_submit_failed"
+    assert "RuntimeError" in result.blocker
+    assert "private-provider-password" not in result.blocker
+    assert pending_execution.model_calls == 0
+
+
+@pytest.fixture
+def runtime_readback():
+    payload = {"jobId": "agent-regression", "loop": 1, "rawModelOutputPersisted": False}
+    row = {"event_id": "event-real", "run_id": "repo-agent-regression", "agent_id": "free_single_agent",
+           "type": "single_agent_started", "status": "RUNNING", "source": "agents-sdk",
+           "summary": "Persisted agent phase.", "next_action": "WAIT_FOR_AGENT",
+           "created_at": "2026-10-02T21:10:26Z", "evidence_id": "evidence-real",
+           "sha256": runtime_store._digest_text(runtime_store._json(payload)), "payload": payload,
+           "user_id": "owner-regression", "job_id": "agent-regression",
+           "evidence_run_id": "repo-agent-regression", "evidence_agent_id": "free_single_agent"}
+    state = SimpleNamespace(rows=[row], queries=[])
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def execute(self, sql, params): state.queries.append((sql, params))
+        def fetchall(self): return state.rows
+    conn = SimpleNamespace(cursor=lambda: Cursor())
+    state.read = lambda: runtime_store.read_job_runtime_evidence(conn, user_id="owner-regression", job_id="agent-regression")
+    return state
+
+
+def test_runtime_readback_exposes_real_evidence_identity_without_raw_payload(runtime_readback):
+    events = runtime_readback.read()
+    assert events[0]["eventId"] == "event-real"
+    assert events[0]["evidenceId"] == "evidence-real"
+    assert events[0]["evidenceSha256"] == runtime_readback.rows[0]["sha256"]
+    assert events[0]["at"] == "2026-10-02T21:10:26Z"
+    assert "payload" not in events[0]
+    sql, params = runtime_readback.queries[0]
+    assert "run.user_id = %s::uuid AND run.job_id = %s" in sql
+    assert params == ("owner-regression", "agent-regression", 100)
+
+
+@pytest.mark.parametrize("field,value", [("user_id", "other-owner"), ("job_id", "agent-other"),
+    ("evidence_run_id", "repo-other"), ("evidence_agent_id", "other-agent"), ("sha256", "0"*64),
+    ("created_at", None)])
+def test_runtime_evidence_contradictions_fail_closed(runtime_readback, field, value):
+    runtime_readback.rows[0][field] = value
+    with pytest.raises(ValueError): runtime_readback.read()
+
+
+def test_empty_runtime_evidence_does_not_manufacture_status_messages(runtime_readback):
+    runtime_readback.rows = []
+    assert runtime_readback.read() == ()
+
+
+def test_real_executor_heartbeat_lifetime_and_claim_binding(pending_execution, monkeypatch):
+    observed = []
+    monkeypatch.setattr(execution, "_executor_heartbeat_seconds", lambda: 0.01)
+    async def scenario():
+        second = asyncio.Event()
+        def persist(conn, **kw):
+            observed.append(kw)
+            if len(observed) == 2: second.set()
+            return True
+        monkeypatch.setattr(execution, "append_repository_executor_heartbeat", persist)
+        async def model():
+            await asyncio.wait_for(second.wait(), timeout=1)
+            return "real-coroutine-return"
+        result = await execution._run_with_executor_heartbeat(model, get_connection=lambda: SimpleNamespace(close=lambda: None),
+            job=pending_execution.job, run_id="repo-agent-regression", claim_ref="claim-exact")
+        assert result == "real-coroutine-return"
+        assert len(observed) == 2
+        await asyncio.sleep(0.03)
+        assert len(observed) == 2  # observer is cancelled before closeout
+    asyncio.run(scenario())
+    assert all(row["job_id"] == "agent-regression" and row["claim_ref"] == "claim-exact" for row in observed)
+
+
+def test_lost_heartbeat_claim_blocks_model_invocation(pending_execution, monkeypatch):
+    monkeypatch.setattr(execution, "append_repository_executor_heartbeat", lambda *args, **kw: False)
+    result = pending_execution.submit()
+    assert result.status == "blocked"
+    assert pending_execution.model_calls == 0
+    assert "EXECUTOR_HEARTBEAT_CLAIM_NOT_CURRENT" in result.blocker
+
+
+@pytest.mark.parametrize("current", [True, False])
+def test_heartbeat_persistence_is_owner_claim_bound_and_never_updates_progress(current):
+    queries, commits, rollbacks = [], [], []
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def execute(self, sql, params): queries.append((sql, params))
+        def fetchone(self): return {"trace_id": "trace-real"} if current else None
+    conn = SimpleNamespace(cursor=lambda: Cursor(), commit=lambda: commits.append(True), rollback=lambda: rollbacks.append(True))
+    claim = "sovereign-local-runner:claim:submit:exact-test"
+    result = runtime_store.append_repository_executor_heartbeat(conn, user_id="owner-regression", job_id="agent-regression",
+        run_id="repo-agent-regression", claim_ref=claim)
+    assert result is current
+    sql, params = queries[0]
+    assert "job.status = 'running' AND job.external_ref = %s" in sql
+    assert "run.user_id = %s::uuid AND job.user_id = %s::uuid" in sql
+    assert params == ("owner-regression", "owner-regression", "repo-agent-regression", "agent-regression", claim)
+    assert not any("UPDATE " in sql.upper() for sql, _ in queries)
+    assert len(queries) == (3 if current else 1)
+    assert len(commits) == int(current)
+    assert len(rollbacks) == int(not current)
+
+
+def test_heartbeat_payload_hash_is_verified_and_old_claim_cannot_look_current(runtime_readback):
+    row = runtime_readback.rows[0]
+    row["type"] = "sovereign_executor_heartbeat"
+    row["payload"] = {"jobId": "agent-regression", "progressImplied": False, "claimSha256": "0"*64}
+    row["sha256"] = runtime_store._digest_text(runtime_store._json(row["payload"]))
+    assert runtime_readback.read()[0]["heartbeatCurrent"] is False
+    row["payload"]["progressImplied"] = True
+    row["sha256"] = runtime_store._digest_text(runtime_store._json(row["payload"]))
+    with pytest.raises(ValueError): runtime_readback.read()
 
 
 def source(relative: str) -> str:

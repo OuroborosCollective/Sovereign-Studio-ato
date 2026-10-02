@@ -7,22 +7,59 @@ interface Props { job: SovereignJob | null | undefined; isPolling?: boolean; rea
 export function RuntimeMonitor({ job, isPolling = false, readbackError }: Props) {
   const [copied, setCopied] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [job?.logs?.length]);
+  useEffect(() => { logsEndRef.current?.scrollIntoView?.({ behavior: 'smooth' }); }, [job?.logs?.length, job?.runtimeEvidence?.events.length]);
   const copyLogs = () => {
     if (!job?.logs) return;
-    void navigator.clipboard.writeText(job.logs.join('\n'));
+    const telemetry = (job.runtimeEvidence?.events ?? []).map((event) =>
+      `${event.at} [${event.status}] ${event.stage}: ${event.summary}\n${event.source} run=${event.runId} event=${event.eventId} evidence=${event.evidenceId} sha256=${event.evidenceSha256}`);
+    void navigator.clipboard.writeText([...job.logs, ...telemetry].join('\n'));
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
   };
   const logs = job?.logs || [];
+  const telemetry = job?.runtimeEvidence;
+  const runtimeEvents = telemetry?.events.filter((event) => event.stage !== 'sovereign_executor_heartbeat') ?? [];
+  const age = job?.serverObservedAt && job.lastEventAt
+    ? Math.max(0, Math.floor((Date.parse(job.serverObservedAt) - Date.parse(job.lastEventAt)) / 1000)) : undefined;
+  const evidenceError = readbackError || (telemetry?.readbackState === 'unavailable' ? telemetry.error : undefined);
+  const heartbeatAge = job?.serverObservedAt && job.lastHeartbeatAt
+    ? Math.max(0, Math.floor((Date.parse(job.serverObservedAt) - Date.parse(job.lastHeartbeatAt)) / 1000)) : undefined;
+  const latestHeartbeat = [...(telemetry?.events ?? [])].reverse().find((event) => event.stage === 'sovereign_executor_heartbeat' && event.heartbeatCurrent === true);
+  const executorState = job?.externalRef?.startsWith('sovereign-local-runner:claim:submit:') ? 'SUBMIT CLAIMED'
+    : job?.externalRef?.startsWith('sovereign-local-runner:claim:closeout:') ? 'CLOSEOUT CLAIMED'
+    : job?.externalRef?.startsWith('sovereign-local-runner:pending:submit:') ? 'QUEUED FOR SUBMIT'
+    : job?.externalRef?.startsWith('sovereign-local-runner:') ? 'EXECUTOR BOUND' : 'NO EXECUTOR BINDING OBSERVED';
   return (
     <div className="flex flex-col h-full bg-[var(--carbon-deep)] p-3 border-b border-white/5 overflow-hidden" data-testid="vnext-runtime-monitor">
       <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-2">
         <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-white uppercase tracking-wider"><Activity size={13} className="text-[var(--red-laser)]" /><span>RUNTIME MONITOR</span></div>
-        <div className="flex items-center gap-2">{isPolling && <div className="flex items-center gap-1 font-mono text-[9px] text-[var(--red-laser)] animate-pulse"><Radio size={10} /><span>LIVE READBACK</span></div>}<button onClick={copyLogs} disabled={logs.length === 0} className="text-[var(--text-dim)] hover:text-white disabled:opacity-30 transition-colors p-1" title="Copy runtime readback">{copied ? <Check size={12} className="text-[var(--emerald-seal)]" /> : <Copy size={12} />}</button></div>
+        <div className="flex items-center gap-2">{isPolling && <div className="flex items-center gap-1 font-mono text-[9px] text-[var(--text-muted)]"><Radio size={10} /><span>FETCHING READBACK</span></div>}<button onClick={copyLogs} disabled={logs.length === 0 && !telemetry?.events.length} className="text-[var(--text-dim)] hover:text-white disabled:opacity-30 transition-colors p-1" title="Copy runtime readback">{copied ? <Check size={12} className="text-[var(--emerald-seal)]" /> : <Copy size={12} />}</button></div>
       </div>
-      {readbackError && <div role="alert" className="mb-2 text-[11px] text-[var(--red-alert)] break-words">Live readback unavailable. Showing the last received state: {readbackError}</div>}
+      {evidenceError && <div role="alert" className="mb-2 text-[11px] text-[var(--red-alert)] break-words">Live readback unavailable. Showing the last received state: {evidenceError}</div>}
+      {job && <div className="mb-2 font-mono text-[10px] text-[var(--text-muted)] break-words space-y-1">
+        <div>JOB {job.backendJobId || job.id} · {job.sourceStatus || 'STATE UNAVAILABLE'} · {executorState}</div>
+        <div>Last server read: {job.serverObservedAt || 'UNAVAILABLE'}</div>
+        <div>Last persisted event: {job.lastEventAt || 'UNAVAILABLE'}{age !== undefined && ` · ${age}s without a persisted event`}</div>
+        <div>Worker heartbeat: {job.lastHeartbeatAt || 'UNOBSERVED'}{heartbeatAge !== undefined && ` · ${heartbeatAge}s old`} · not work progress</div>
+        {heartbeatAge !== undefined && heartbeatAge > 120 && job.phase === 'EXECUTING'
+          && <div role="status" className="text-[var(--red-alert)]">Worker heartbeat is stale; executor liveness is unconfirmed.</div>}
+        {latestHeartbeat && <details><summary>Heartbeat evidence {latestHeartbeat.evidenceId}</summary>
+          <div>event {latestHeartbeat.eventId} · run {latestHeartbeat.runId}</div>
+          <div className="break-all">Payload SHA-256 {latestHeartbeat.evidenceSha256}</div>
+        </details>}
+        {age !== undefined && age >= 60 && ['EXECUTING', 'DISPATCHING', 'PROVISIONING', 'FINALIZING'].includes(job.phase)
+          && <div role="status" className="text-[var(--red-alert)]">No recent persisted runtime activity. A successful poll does not confirm executor progress or a worker heartbeat.</div>}
+        <div>SDK evidence: {telemetry?.readbackState === 'live' && !readbackError ? `${telemetry.events.length} persisted events in this readback` : 'UNAVAILABLE'}</div>
+      </div>}
       <div className="flex-1 overflow-y-auto font-mono text-[10.5px] leading-relaxed space-y-1 pr-1 select-text">
+        {runtimeEvents.map((event) => <div key={event.eventId} className={`break-words py-1 px-1 border-l-2 ${/FAILED|BLOCKED/.test(event.status) ? 'border-[var(--red-alert)] text-[var(--red-alert)]' : 'border-white/20 text-[var(--text-muted)]'}`}>
+          <div>{event.at} [{event.status}] {event.stage}: {event.summary}</div>
+          <details className="text-[9px]"><summary>{event.source} · {event.agentId} · event {event.eventId}</summary>
+            <div>run {event.runId} · evidence {event.evidenceId}</div>
+            <div className="break-all">Payload SHA-256 {event.evidenceSha256}</div>
+            {event.nextAction && <div>NEXT: {event.nextAction}</div>}
+          </details>
+        </div>)}
         {logs.map((log, idx) => {
           const isError = /ERR|ERROR|FAILED|BLOCKED/i.test(log);
           const isSuccess = /GITHUB READBACK|VERIFIED|SUCCESS/i.test(log);

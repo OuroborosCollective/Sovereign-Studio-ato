@@ -197,6 +197,26 @@ function newestEvidenceRevision(anchors: readonly SovereignWorkspaceEvidenceAnch
   return sorted[0]?.repositoryRevision ?? '';
 }
 
+function runtimeReadback(snapshot: SovereignAgentJobSnapshot | undefined): Pick<SovereignJob,
+  'runtimeEvidence' | 'serverObservedAt' | 'externalRef' | 'lastEventAt' | 'lastHeartbeatAt' | 'persistedEventCount'> {
+  const runtimeEvents = snapshot?.runtimeEvidence?.events ?? [];
+  const heartbeatTimes = runtimeEvents.filter((event) => event.stage === 'sovereign_executor_heartbeat' && event.heartbeatCurrent === true)
+    .map((event) => Date.parse(event.at));
+  const progress = runtimeEvents.filter((event) => event.stage !== 'sovereign_executor_heartbeat');
+  const times = [
+    ...(snapshot?.events ?? []).map((event) => event.at),
+    ...progress.map((event) => Date.parse(event.at)),
+  ].filter(Number.isFinite);
+  return {
+    runtimeEvidence: snapshot?.runtimeEvidence,
+    serverObservedAt: snapshot?.serverObservedAt,
+    externalRef: snapshot?.externalRef,
+    lastEventAt: times.length ? new Date(Math.max(...times)).toISOString() : undefined,
+    lastHeartbeatAt: heartbeatTimes.length ? new Date(Math.max(...heartbeatTimes)).toISOString() : undefined,
+    persistedEventCount: (snapshot?.events.length ?? 0) + progress.length,
+  };
+}
+
 function mapPersistedDraftPr(pr: SovereignDraftPrPublicationReadback): DraftPR {
   return {
     url: pr.prUrl,
@@ -381,14 +401,14 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
         publication = undefined;
       }
     }
-    const now = new Date().toISOString();
     return {
       id: jobId,
       runId: jobId,
       backendJobId: jobId,
       phase: publication ? 'COMPLETED' : phase,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: snapshot.createdAt ?? '',
+      updatedAt: snapshot.updatedAt ?? '',
+      ...runtimeReadback(snapshot),
       sourceStatus: snapshot.status,
       nextAction: run.nextAction,
       logs: eventLogs(snapshot, run),
@@ -397,7 +417,6 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
         currentRevision: newestEvidenceRevision(anchors),
         readbackState: readbackError ? 'unavailable' : 'live',
         ...(readbackError ? { readbackError } : {}),
-        diffStats: { additions: 0, deletions: 0, filesChanged: snapshot.changedFiles.length },
       },
       draftPR: publication,
       publication: publication ? { draftPR: publication } : undefined,
@@ -461,8 +480,9 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       runId: run.runId,
       backendJobId: run.jobId,
       phase: projectRunAndJobPhase(runPhase, publication ? 'COMPLETED' : phase),
-      createdAt: now,
-      updatedAt: now,
+      createdAt: snapshot?.createdAt ?? '',
+      updatedAt: snapshot?.updatedAt ?? '',
+      ...runtimeReadback(snapshot),
       sourceStatus: run.status,
       nextAction: run.nextAction,
       assistantMessage: run.assistantMessage,
@@ -470,7 +490,6 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       workspaceState: {
         modifiedFiles: snapshot?.changedFiles ?? [],
         currentRevision,
-        diffStats: snapshot ? { additions: 0, deletions: 0, filesChanged: snapshot.changedFiles.length } : undefined,
       },
       pendingInteraction,
       draftPR: publication,
