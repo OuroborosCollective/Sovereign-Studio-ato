@@ -729,13 +729,13 @@ async def _run_single_agent(
     if not normalized_mission:
         raise ValueError("mission is required")
     if not isinstance(intent, MissionIntent):
-        raise ValueError("A validated mission intent is required for the free profile.")
+        raise ValueError("A validated mission intent is required for the single-agent profile.")
     if route is None:
         raise SwarmExecutionError(
-            stage="free-single-agent",
+            stage=stage,
             family="AGENTS_DIRECT_ROUTE_REQUIRED",
             error_type="RuntimeConfigurationError",
-            next_action="RESOLVE_DATABASE_FREELLM_ROUTE",
+            next_action="RESOLVE_DATABASE_OPENROUTER_ROUTE" if execution_mode == "paid" else "RESOLVE_DATABASE_FREELLM_ROUTE",
             retryable=False,
         )
     try:
@@ -745,7 +745,7 @@ async def _run_single_agent(
         )
     except RouteRuntimeError as exc:
         raise SwarmExecutionError(
-            stage="free-single-agent",
+            stage=stage,
             family=exc.family,
             error_type=type(exc).__name__,
             next_action=exc.next_action,
@@ -808,11 +808,11 @@ async def _run_single_agent(
         output_token_limit=_AGENT_OUTPUT_TOKEN_LIMIT,
     )
     if not isinstance(raw_output, str) or not raw_output.strip():
-        budget_failure = _output_budget_failure(result, stage="free-single-agent-output")
+        budget_failure = _output_budget_failure(result, stage=f"{stage}-output")
         if budget_failure is not None:
             raise budget_failure
         raise SwarmExecutionError(
-            stage="free-single-agent-output",
+            stage=f"{stage}-output",
             family="AGENTS_TEXT_OUTPUT_INVALID",
             error_type=type(raw_output).__name__,
             next_action="RETRY_WITH_PLAIN_TEXT_OUTPUT",

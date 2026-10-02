@@ -157,6 +157,21 @@ def test_paid_sdk_stage_reserves_before_io_and_settles_before_completion(monkeyp
             assert sequence[-1] == "reconcile"
 
 
+@pytest.mark.parametrize("mode", ["free", "paid"])
+def test_single_agent_configuration_failure_keeps_the_actual_execution_mode(mode):
+    intent = agents.MissionIntent(mode="repository_execution", normalized_goal="Create Testgb",
+        requires_online_tools=True, requires_repository_workspace=True, learning_scope=[], confidence=1)
+    if mode == "paid":
+        invocation = agents.run_paid_single_agent("Create Testgb", model="model-real", route=None,
+            intent=intent, stage_billing=object())
+    else:
+        invocation = agents.run_free_single_agent("Create Testgb", model="model-real", route=None, intent=intent)
+    with pytest.raises(agents.SwarmExecutionError) as error:
+        asyncio.run(invocation)
+    assert error.value.stage == f"{mode}-single-agent"
+    assert error.value.next_action == f"RESOLVE_DATABASE_{'OPENROUTER' if mode == 'paid' else 'FREELLM'}_ROUTE"
+
+
 @pytest.mark.parametrize("capacity", ["funded", "premium", "insufficient", "contradicted", "changed-route"])
 def test_real_billing_owner_reserves_and_settles_actual_provider_usage(capacity):
     from backend.tests.test_cognitive_usage_billing_openrouter import _route
