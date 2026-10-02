@@ -619,7 +619,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
 
   async getControlSurface(jobId?: string): Promise<ControlSurfaceReadback> {
     const requested = jobId?.trim() || undefined;
-    const route = `/api/user/agent/control-surface${requested ? `?jobId=${encodeURIComponent(requested)}` : ''}`;
+    const route = '/api/user/agent/control-surface' + (requested ? `?jobId=${encodeURIComponent(requested)}` : '');
     const result = await this.requestObject(route, { method: 'GET' });
     if (!result.ok) throw new Error(`Control surface readback HTTP ${result.status}.`);
     return parseControlSurfaceReadback(result.body, requested);
