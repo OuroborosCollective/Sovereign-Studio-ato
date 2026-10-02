@@ -10,6 +10,7 @@ import uuid
 
 from llm_cost_policy import (
     STANDARD_CATEGORY,
+    PREMIUM_CATEGORY,
     BillingPolicyError,
     billed_credits_for_provider_cost,
     provider_cost_micros_from_usage,
@@ -24,7 +25,7 @@ from llm_transport import (
     route_transport,
 )
 from paid_execution_entitlement import resolve_paid_execution_entitlement
-from .cognitive_output_budget import AGENT_OUTPUT_TOKEN_LIMIT as _AGENT_OUTPUT_TOKEN_LIMIT
+from .cognitive_output_budget import AGENT_OUTPUT_TOKEN_LIMIT as _AGENT_OUTPUT_TOKEN_LIMIT, SINGLE_AGENT_REQUEST_LIMIT
 
 
 ConnectionFactory = Callable[[], Any]
@@ -159,6 +160,7 @@ def extract_agents_sdk_usage(result: Any) -> dict[str, Any]:
 def _load_agent_route_policy(
     get_connection: ConnectionFactory,
     expected_route: dict[str, Any],
+    *, allow_premium: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Reload and verify the exact active OpenRouter route before reserving."""
 
@@ -189,10 +191,9 @@ def _load_agent_route_policy(
             policy = route_billing_policy(route)
         except BillingPolicyError as exc:
             raise AgentBillingError("AGENTS_ROUTE_PRICING_UNVERIFIED", status_code=409) from exc
-        if (
-            policy["billingCategory"] != STANDARD_CATEGORY
-            or int(policy["markupMultiplier"]) < 4
-        ):
+        category = policy["billingCategory"]
+        if not ((category == STANDARD_CATEGORY and int(policy["markupMultiplier"]) >= 4)
+                or (allow_premium and category == PREMIUM_CATEGORY and int(policy["markupMultiplier"]) >= 8)):
             raise AgentBillingError("AGENTS_STANDARD_ROUTE_REQUIRED", status_code=409)
         if route_transport(route) != OPENROUTER_TRANSPORT:
             raise AgentBillingError("AGENTS_OPENROUTER_ROUTE_REQUIRED", status_code=409)
@@ -215,6 +216,7 @@ class AgentStageBilling:
         main_route: dict[str, Any] | None = None,
         agent_route: dict[str, Any] | None = None,
         requested_mode: str,
+        allow_premium: bool = False,
     ) -> None:
         self._get_connection = get_connection
         self.user_id = str(user_id)
@@ -228,13 +230,13 @@ class AgentStageBilling:
             raise AgentBillingError("AGENTS_MAIN_ROUTE_MISSING", status_code=409)
         expected_agents = agent_route or expected_main
         self.main_route, self.main_policy = _load_agent_route_policy(
-            get_connection, expected_main
+            get_connection, expected_main, allow_premium=allow_premium
         )
         if str(expected_agents.get("id") or "") == str(self.main_route.get("id") or ""):
             self.agent_route, self.agent_policy = self.main_route, self.main_policy
         else:
             self.agent_route, self.agent_policy = _load_agent_route_policy(
-                get_connection, expected_agents
+                get_connection, expected_agents, allow_premium=allow_premium
             )
 
         # Backward-compatible attributes describe the paid main model.
@@ -270,6 +272,8 @@ class AgentStageBilling:
     @staticmethod
     def request_upper_bound(stage: str) -> int:
         normalized = str(stage or "").casefold()
+        if normalized == "paid-single-agent":
+            return SINGLE_AGENT_REQUEST_LIMIT
         return (
             _AGENT_WORKER_REQUEST_LIMIT
             if ":worker:" in normalized

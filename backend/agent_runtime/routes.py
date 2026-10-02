@@ -355,6 +355,64 @@ def register_sovereign_agent_routes(
     def _connection():
         return get_connection()
 
+    @app.route("/api/user/agent/control-surface", methods=["GET"])
+    @require_session
+    def user_get_control_surface_readback():
+        from .control_surface_readback import (
+            read_control_surface_agents, read_control_surface_credits,
+            read_control_surface_integrations, read_control_surface_routing,
+        )
+        user_id = _current_session_user_id()
+        job_id = str(request.args.get("jobId") or "").strip()
+        if len(job_id) > 200:
+            return jsonify({"error": "job_id_invalid"}), 400
+        conn = _connection()
+        try:
+            job = read_agent_job(conn, user_id=user_id, job_id=job_id) if job_id else None
+            if job_id and job is None:
+                return jsonify({"error": "owned_job_not_found"}), 404
+            body = {"schemaVersion": "sovereign.control-surface-readback.v1", "jobId": job_id or None,
+                    "observedAt": datetime.now(timezone.utc).isoformat()}
+            if job is not None:
+                from .repository_execution import read_repository_execution_mode
+                try:
+                    body["jobExecutionMode"] = read_repository_execution_mode(conn, job=job)
+                except Exception:
+                    conn.rollback()
+                    body["jobExecutionMode"] = None
+            for key, reader in (
+                ("agents", lambda: read_control_surface_agents(conn, user_id=user_id, job=job)),
+                ("credits", lambda: read_control_surface_credits(conn, user_id=user_id)),
+            ):
+                try:
+                    body[key] = reader()
+                    if key == "agents":
+                        body["agentReadbackState"] = "live"
+                except Exception as exc:
+                    rollback = getattr(conn, "rollback", None)
+                    if callable(rollback):
+                        rollback()
+                    if key == "agents":
+                        body.update({"agents": [], "agentReadbackState": "unavailable", "agentBlocker": "agent_readback_unavailable"})
+                    else:
+                        body[key] = {"readbackState": "unavailable", "creditStateVerified": False,
+                                     "blocker": "credit_state_verification_failed" if isinstance(exc, ValueError) else "credit_readback_unavailable"}
+            service = app.extensions.get("sovereign_enterprise_platform")
+            try:
+                if service is None:
+                    raise LookupError("integration_projection_unavailable")
+                body["integrations"] = read_control_surface_integrations(service.integrations)
+                body["integrationReadbackState"] = "live"
+            except Exception:
+                body.update({"integrations": [], "integrationReadbackState": "unavailable",
+                             "integrationBlocker": "integration_readback_unavailable"})
+            body["routing"] = read_control_surface_routing(get_connection, user_id=user_id, credits=body["credits"])
+            response = jsonify(body)
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            return response
+        finally:
+            _close(conn)
+
     def _resolve_live_workspace_context(conn: Any, job: Any) -> Any | None:
         if get_live_workspace_context is None:
             return None

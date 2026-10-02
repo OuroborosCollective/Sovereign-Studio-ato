@@ -2,7 +2,7 @@ import {
   resolveSovereignAgentConfig,
   type SovereignAgentConfig,
 } from '../../product/runtime/sovereignAgentRuntime';
-import type { AgentMode, Skill } from '../types/domain';
+import type { AgentMode, ExecutionMode, Skill } from '../types/domain';
 import type { RestoredRepositoryRun } from './interface';
 import {
   extractGitHubRepositoryUrl,
@@ -40,16 +40,18 @@ function isResumableRepositoryRun(candidate: JsonRecord): boolean {
 export function buildRepositoryBoundRunRequest(
   mission: string,
   agentMode: AgentMode = 'single',
+  executionMode: ExecutionMode = 'free',
 ): JsonRecord {
   const normalizedMission = mission.trim();
   if (!normalizedMission) throw new Error('Mission text is required.');
   if (agentMode !== 'single') {
-    throw new Error('The vNext Draft-PR path currently requires one Free single agent.');
+    throw new Error('The vNext Draft-PR path requires exactly one single agent.');
   }
+  if (executionMode !== 'free' && executionMode !== 'paid') throw new Error('An explicit Free or Paid execution mode is required.');
   const explicitRepositoryUrl = extractGitHubRepositoryUrl(normalizedMission);
   return {
     mission: normalizedMission,
-    mode: 'free',
+    mode: executionMode,
     agentMode: 'single',
     intentMode: 'repository_execution',
     repositoryBranch: 'main',
@@ -102,9 +104,9 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
   }
 
   override async getSkills(): Promise<Skill[]> {
-    // Repository execution has no Swarm worker graph. An empty projection is
-    // preferable to inventing worker capabilities from a Swarm manifest.
-    return [];
+    const readback = await this.getControlSurface();
+    if (readback.agentReadbackState !== 'live') throw new Error(readback.agentBlocker || 'Agent readback unavailable.');
+    return readback.agents.map(agent => ({ id: agent.id, name: agent.name, description: agent.description, source: 'core' }));
   }
 
   async restoreLatestRepositoryRun(): Promise<RestoredRepositoryRun | null> {
@@ -145,9 +147,10 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
     prompt: string,
     _toolchains: string[] = [],
     _activeSkillIds: string[] = [],
+    executionMode: ExecutionMode = 'free',
   ): Promise<{ jobId: string }> {
     if (!this.repositoryConfig.ready) throw new Error(this.repositoryConfig.reason);
-    const payload = buildRepositoryBoundRunRequest(prompt, 'single');
+    const payload = buildRepositoryBoundRunRequest(prompt, 'single', executionMode);
     const response = await this.repositoryFetcher(
       endpoint(this.repositoryConfig.agentApiUrl, '/api/user/agent/repository/run'),
       {

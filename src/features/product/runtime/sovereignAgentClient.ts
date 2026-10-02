@@ -621,7 +621,7 @@ function jobPath(jobId?: string, suffix = ''): string {
   return `${base}${suffix}`;
 }
 function headers(): HeadersInit { return { 'Content-Type': 'application/json', Accept: 'application/json' }; }
-async function readHttpResponse(args: { url: string; init: RequestInit; fetcher: typeof fetch }): Promise<{ response: Response; body: unknown }> {
+export async function readHttpResponse(args: { url: string; init: RequestInit; fetcher: typeof fetch }): Promise<{ response: Response; body: unknown }> {
   if ((args.init.method ?? 'GET').toUpperCase() !== 'GET') {
     const response = await args.fetcher(args.url, args.init);
     return { response, body: await readJson(response) };

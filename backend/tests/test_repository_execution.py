@@ -281,7 +281,7 @@ def test_single_agent_run_is_persisted_before_model_execution() -> None:
     assert "read_agent_run(" in submit
     assert "read_agent_task_ids(" in submit
     assert "create_repository_single_agent_task(" in submit
-    assert 'agent_id="free_single_agent"' in submit
+    assert '"free_single_agent"' in submit and '"paid_single_agent"' in submit
     assert 'status="RUNNING"' in submit
     assert 'source="agents-sdk"' in submit
 
@@ -294,7 +294,9 @@ def test_local_executor_binds_real_repository_toolset_and_free_route() -> None:
     assert "run_free_single_agent(" in submit
     assert "repository_tool_factory=repository_toolset.tools_for_role" in submit
     assert "capability_tool_factory=None" in submit
-    assert 'requested_mode="free"' in submit
+    assert 'requested_mode=execution_mode' in submit
+    assert 'read_repository_execution_mode(conn, job=job)' in submit
+    assert 'requested_mode="paid"' in submit
     assert "FREE_SINGLE_AGENT_PROFILE" in submit
     assert "route_provider_model" in submit
 
@@ -355,7 +357,8 @@ def test_frontend_repository_surface_matches_local_executor_contract() -> None:
     adapter = source("src/features/control-surface-vnext/adapter/repository-bound-adapter.ts")
     client = source("src/features/product/runtime/sovereignAgentClient.ts")
     assert "Sovereign · Free" in chat
-    assert "No external executor is used." in chat
+    assert "Paid · direct OpenRouter" in chat
+    assert "Free · direct FreeLLM. No credit deduction" in chat
     assert "Agent Zero" not in chat
     assert "executor === 'sovereign-local-runner'" in adapter
     assert "agent-zero-a2a:" not in adapter

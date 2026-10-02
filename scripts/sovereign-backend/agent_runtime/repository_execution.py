@@ -27,7 +27,8 @@ from .cognitive_run_store import (
     record_agent_stage_event,
     transition_agent_run,
 )
-from .cognitive_swarm_agents import MissionIntent, run_free_single_agent
+from .cognitive_swarm_agents import MissionIntent, run_free_single_agent, run_paid_single_agent
+from .cognitive_usage_billing import AgentBillingError, AgentStageBilling
 from .draft_pr_gate import draft_pr_input_from_job, prepare_draft_pr
 from .durable_workflow import (
     PermissionDecision,
@@ -63,7 +64,7 @@ from .job_store import (
 )
 from .tool_runner import run_agent_job_tool
 from .workspace_policy import repo_dir_for_workspace, validate_workspace_relative_path
-from llm_execution_resolver import FREE_SINGLE_AGENT_PROFILE, load_execution_resolution
+from llm_execution_resolver import FREE_SINGLE_AGENT_PROFILE, FREE_SWARM_PROFILE, PAID_SWARM_PROFILE, load_execution_resolution
 from llm_transport import route_provider_model
 
 
@@ -101,6 +102,16 @@ _SHELL_CONTROL_TOKENS: Final[frozenset[str]] = frozenset({"||", ";", "|", ">", "
 _RECONCILER_THREAD_LOCK = threading.Lock()
 _RECONCILER_THREAD: threading.Thread | None = None
 _LOGGER = logging.getLogger(__name__)
+REPOSITORY_EXECUTION_MODE: Final[str] = "free"
+
+
+def repository_execution_manifest() -> dict[str, Any]:
+    """Declare the same bounded policy enforced at submit, never worker liveness."""
+    return {
+        "executor": "sovereign-local-runner", "agentMode": "single",
+        "executionModes": [REPOSITORY_EXECUTION_MODE, "paid"], "draftPrOnly": True,
+        "freeToPaidFallbackAllowed": False, "paidBilling": "agents-sdk-stage-reservation-and-settlement",
+    }
 
 
 class RepositoryExecutionError(RuntimeError):
@@ -195,8 +206,8 @@ def _normalized_repository_payload(body: dict[str, Any]) -> dict[str, Any]:
     mode = str(body.get("mode") or "free").strip().lower()
     agent_mode = str(body.get("agentMode") or "single").strip().lower()
     intent_mode = str(body.get("intentMode") or "repository_execution").strip().lower()
-    if mode != "free":
-        raise RepositoryExecutionError("repository execution requires mode=free; paid fallback is forbidden")
+    if mode not in repository_execution_manifest()["executionModes"]:
+        raise RepositoryExecutionError("repository execution requires explicit mode=free or mode=paid; paid fallback is forbidden")
     if agent_mode != "single":
         raise RepositoryExecutionError("repository execution requires exactly one agent")
     if intent_mode != "repository_execution":
@@ -216,6 +227,8 @@ def _normalized_repository_payload(body: dict[str, Any]) -> dict[str, Any]:
         "draftPrOnly": True,
         "allowAutoMerge": False,
     }
+    if mode == "paid":
+        payload["executionMode"] = "paid"
     expected_head = str(body.get("expectedHeadSha") or "").strip().lower()
     if expected_head:
         payload["expectedHeadSha"] = expected_head
@@ -286,6 +299,11 @@ def _require_repository_effect_authority(conn: Any, *, job: StoredSovereignAgent
         "job_id": job.job_id, "repository": job.repo_url, "branch": job.branch,
         "mission_sha256": canonical_sha256({"mission": job.mission}),
     }
+    if "execution_mode" in receipt.normalized_parameters:
+        mode = receipt.normalized_parameters["execution_mode"]
+        if mode not in {"free", "paid"}:
+            raise RevocationClosureError("repository permission execution mode is invalid")
+        expected_parameters["execution_mode"] = mode
     if (
         binding.get("job_id") != job.job_id
         or binding.get("workflow_run_id") != f"repo-run-{job.job_id}"
@@ -309,10 +327,29 @@ def _require_repository_effect_authority(conn: Any, *, job: StoredSovereignAgent
     return True
 
 
+def read_repository_execution_mode(conn: Any, *, job: StoredSovereignAgentJob) -> str:
+    """The immutable permission parameters bind Paid; legacy jobs remain Free."""
+    binding = read_repository_job_permission_binding(conn, job_id=job.job_id)
+    if binding is None:
+        return "free"
+    latest = read_latest_permission_receipt(conn, permission_id=str(binding.get("permission_id") or ""))
+    if latest is None:
+        raise RepositoryExecutionError("repository_execution_mode_unreadable")
+    receipt, _ = latest
+    if (receipt.binding.owner_identity != str(job.user_id)
+            or receipt.normalized_parameters.get("job_id") != job.job_id):
+        raise RepositoryExecutionError("repository_execution_mode_scope_mismatch")
+    mode = receipt.normalized_parameters.get("execution_mode", "free")
+    if mode not in {"free", "paid"}:
+        raise RepositoryExecutionError("repository_execution_mode_invalid")
+    return mode
+
+
 def _ensure_local_single_agent_run(
     get_connection: ConnectionFactory,
     *,
     job: StoredSovereignAgentJob,
+    execution_mode: str = "free",
 ) -> tuple[str, str, str]:
     """Create or reuse exactly one persisted Agents-SDK run for this repository job."""
     run_id = f"repo-{job.job_id}"
@@ -340,13 +377,15 @@ def _ensure_local_single_agent_run(
             evidence_id = run.evidence_id
             trace_id = run.trace_id
         task_ids = read_agent_task_ids(conn, run_id=run_id)
-        task_id = task_ids.get("free_single_agent")
+        agent_id = "paid_single_agent" if execution_mode == "paid" else "free_single_agent"
+        task_id = task_ids.get(agent_id)
         if not task_id:
             task_id = create_repository_single_agent_task(
                 conn,
                 run_id=run_id,
                 evidence_id=evidence_id,
                 write_confirmed=True,
+                execution_mode=execution_mode,
             )
         transition_agent_run(
             conn,
@@ -356,17 +395,18 @@ def _ensure_local_single_agent_run(
             source="agents-sdk",
             trace_id=trace_id,
             reason="Sovereign-local-runner admitted the repository mission to the foreground single agent.",
-            next_action="WAIT_FOR_FREE_SINGLE_AGENT",
+            next_action=f"WAIT_FOR_{execution_mode.upper()}_SINGLE_AGENT",
             evidence_kind="repository_execution_started",
-            evidence_summary="A persisted Free single-agent run owns the isolated repository workspace.",
+            evidence_summary=f"A persisted {execution_mode} single-agent run owns the isolated repository workspace.",
             evidence_payload={
                 "jobId": job.job_id,
                 "workspaceId": str(job.workspace_id or job.job_id),
                 "executor": "sovereign-local-runner",
                 "externalExecutor": False,
                 "backgroundAgents": 0,
+                "executionMode": execution_mode,
             },
-            agent_id="free_single_agent",
+            agent_id=agent_id,
             task_id=task_id,
         )
         return run_id, trace_id, task_id
@@ -426,17 +466,21 @@ def _submit_after_claim(
     )
 
     try:
+        execution_mode = read_repository_execution_mode(conn, job=job)
+        agent_id = "paid_single_agent" if execution_mode == "paid" else "free_single_agent"
         run_id, trace_id, task_id = _ensure_local_single_agent_run(
             resolved_connection_factory,
             job=job,
+            execution_mode=execution_mode,
         )
         resolution = load_execution_resolution(
             resolved_connection_factory,
             user_id=job.user_id,
-            requested_mode="free",
+            requested_mode=execution_mode,
         )
-        if resolution is None or resolution.profile_id != FREE_SINGLE_AGENT_PROFILE:
-            raise RepositoryExecutionError("NO_VERIFIED_FREE_SINGLE_AGENT_ROUTE")
+        expected_profiles = {PAID_SWARM_PROFILE} if execution_mode == "paid" else {FREE_SINGLE_AGENT_PROFILE, FREE_SWARM_PROFILE}
+        if resolution is None or resolution.profile_id not in expected_profiles:
+            raise RepositoryExecutionError(f"NO_VERIFIED_{execution_mode.upper()}_SINGLE_AGENT_ROUTE")
         if not resolution.repository_execution_allowed:
             raise RepositoryExecutionError("REPOSITORY_EXECUTION_NOT_ALLOWED_FOR_FREE_SINGLE_AGENT")
         model = route_provider_model(resolution.primary_route)
@@ -447,7 +491,7 @@ def _submit_after_claim(
             user_id=job.user_id,
             run_id=run_id,
             job_id=job.job_id,
-            task_ids_by_agent={"free_single_agent": task_id},
+            task_ids_by_agent={agent_id: task_id},
             workspace_root=repo_path.parent.parent,
             write_confirmed=True,
         )
@@ -460,7 +504,7 @@ def _submit_after_claim(
                     user_id=job.user_id,
                     run_id=run_id,
                     trace_id=trace_id,
-                    agent_id=str(stage.get("agentId") or "free_single_agent"),
+                    agent_id=str(stage.get("agentId") or agent_id),
                     event_type=str(stage.get("eventType") or "agent_stage"),
                     status=str(stage.get("status") or "RUNNING"),
                     summary=str(stage.get("summary") or "Sovereign agent stage changed."),
@@ -470,6 +514,7 @@ def _submit_after_claim(
                         "executor": "sovereign-local-runner",
                         "loop": stage.get("loop"),
                         "repositoryExecution": True,
+                        "executionMode": execution_mode,
                         "rawModelOutputPersisted": False,
                     },
                     task_id=task_id,
@@ -487,12 +532,18 @@ def _submit_after_claim(
             learning_scope=[],
             confidence=1.0,
         )
+        invocation_kwargs = dict(evidence="", model=model, intent=mission_intent,
+            route=resolution.primary_route, stage_observer=stage_observer,
+            repository_tool_factory=repository_toolset.tools_for_role, capability_tool_factory=None)
+        if execution_mode == "paid":
+            # Only an explicit, persisted Paid permission can reach this billing owner.
+            billing = AgentStageBilling(get_connection=resolved_connection_factory, user_id=job.user_id,
+                run_id=run_id, trace_id=trace_id, route=resolution.primary_route, requested_mode="paid", allow_premium=True)
+            invocation = lambda: run_paid_single_agent(job.mission, stage_billing=billing, **invocation_kwargs)
+        else:
+            invocation = lambda: run_free_single_agent(job.mission, **invocation_kwargs)
         agent_result = asyncio.run(_run_with_executor_heartbeat(
-            lambda: run_free_single_agent(
-                job.mission, evidence="", model=model, intent=mission_intent,
-                route=resolution.primary_route, stage_observer=stage_observer,
-                repository_tool_factory=repository_toolset.tools_for_role, capability_tool_factory=None,
-            ),
+            invocation,
             get_connection=resolved_connection_factory, job=job, run_id=run_id, claim_ref=claim_ref,
         ))
         if str(agent_result.get("status") or "BLOCKED") != "COMPLETED":
@@ -521,14 +572,19 @@ def _submit_after_claim(
                     "repositoryExecutionPerformed": bool(agent_result.get("repositoryExecutionPerformed")),
                     "backgroundAgentsStarted": 0,
                     "rawModelOutputPersisted": False,
+                    "executionMode": execution_mode,
                 },
-                agent_id="free_single_agent",
+                agent_id=agent_id,
                 task_id=task_id,
             )
         finally:
             close = getattr(transition_conn, "close", None)
             if callable(close):
                 close()
+    except AgentBillingError as exc:
+        return _block_job(conn, job,
+            f"{exc.family}; requiredCredits={exc.required_credits}; availableProviderFundedCredits={exc.available_credits}",
+            "sovereign_executor_billing_blocked")
     except Exception as exc:
         return _block_job(
             conn,
@@ -568,7 +624,10 @@ def _bind_repository_execution_permission(
     *,
     job: StoredSovereignAgentJob,
     expected_head_sha: str,
+    execution_mode: str = "free",
 ) -> None:
+    if execution_mode not in {"free", "paid"}:
+        raise RepositoryExecutionError("repository_permission_execution_mode_invalid")
     if not expected_head_sha:
         append_agent_event(conn, job.job_id, SovereignAgentEvent(
             stage="repository_revocation_uncovered",
@@ -618,6 +677,7 @@ def _bind_repository_execution_permission(
             "repository": job.repo_url,
             "branch": job.branch,
             "mission_sha256": canonical_sha256({"mission": job.mission}),
+            **({"execution_mode": "paid"} if execution_mode == "paid" else {}),
         },
         expected_changed_paths=(),
         valid_until_epoch=int(time.time()) + 21600,
@@ -699,6 +759,7 @@ def start_repository_execution(
         conn,
         job=job,
         expected_head_sha=str(payload.get("expectedHeadSha") or "").strip().lower(),
+        execution_mode=str(payload.get("executionMode") or "free"),
     )
 
     pending_ref = _pending_submit_ref(job.job_id)

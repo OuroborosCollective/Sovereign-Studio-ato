@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { useSovereignAdapter } from '../adapter/context';
-import type { AgentMode } from '../types/domain';
-export interface SingleAgentRunParams { prompt?: string; objective?: string; toolchains?: string[]; toolchainId?: string; activeSkillIds?: string[]; agentMode?: AgentMode; }
+import type { AgentMode, ExecutionMode } from '../types/domain';
+export interface SingleAgentRunParams { prompt?: string; objective?: string; toolchains?: string[]; toolchainId?: string; activeSkillIds?: string[]; agentMode?: AgentMode; executionMode?: ExecutionMode; }
 export function useSingleAgentRun() {
   const adapter = useSovereignAdapter();
   return useMutation({
@@ -11,7 +11,7 @@ export function useSingleAgentRun() {
       if ((params.agentMode ?? 'single') !== 'single') {
         throw new Error('vNext command surface is single-agent only.');
       }
-      return adapter.runSingleAgent(prompt, toolchains, params.activeSkillIds ?? []);
+      return adapter.runSingleAgent(prompt, toolchains, params.activeSkillIds ?? [], params.executionMode ?? 'free');
     },
   });
 }

@@ -42,7 +42,8 @@ describe('Sovereign Control Surface vNext truth contract', () => {
       'restoreLatestRepositoryRun',
       "method: 'GET'",
       "credentials: 'include'",
-      "mode: 'free'",
+      "executionMode: ExecutionMode = 'free'",
+      'mode: executionMode',
       "agentMode: 'single'",
       "intentMode: 'repository_execution'",
     ]) expect(repositoryAdapter).toContain(token);

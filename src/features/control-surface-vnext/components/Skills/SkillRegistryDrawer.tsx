@@ -1,26 +1,35 @@
 import React from 'react';
-import { BrainCircuit, Check, Sparkles, Zap } from 'lucide-react';
+import { BrainCircuit, Cpu } from 'lucide-react';
 import { Modal } from '../Modal';
-import type { Skill } from '../../types/domain';
-import { cx } from '../../utils/cx';
+import { RegistryReadbackStatus } from '../RegistryReadbackStatus';
+import type { RuntimeAgentNode, SovereignJob } from '../../types/domain';
 
-interface Props { isOpen: boolean; onClose: () => void; skills: Skill[]; activeSkillIds?: string[]; }
+interface Props {
+  isOpen: boolean; onClose: () => void; agents: RuntimeAgentNode[];
+  observedAt?: string; receivedMonotonicMs?: number; isLoading?: boolean;
+  readbackError?: string; onRefresh?: () => void; job?: SovereignJob | null;
+}
 
-export function SkillRegistryDrawer({ isOpen, onClose, skills, activeSkillIds = [] }: Props) {
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="AGENT REGISTRY // RUNTIME PROJECTION">
-      <div className="space-y-3 font-mono">
-        <div className="text-[11px] text-[var(--text-muted)] mb-2">Read-only execution projection. The vNext repository path intentionally projects no Swarm worker graph; this panel never invents agent nodes or locally enables execution capabilities.</div>
-        {skills.map((skill) => {
-          const learned = skill.source === 'learned';
-          const active = activeSkillIds.includes(skill.id);
-          return <div key={skill.id} className={cx('p-3 border rounded-lg transition-all flex items-start gap-3 relative theme-diamond-cut', active ? learned ? 'border-emerald-500 bg-[rgba(16,185,129,0.08)]' : 'border-[var(--red-laser)] bg-[rgba(255,30,56,0.08)]' : 'border-white/5 bg-[var(--carbon-deep)] opacity-75')}>
-            <div className={cx('w-8 h-8 rounded flex items-center justify-center shrink-0 mt-0.5', learned ? 'bg-[rgba(16,185,129,0.15)] text-[var(--emerald-seal)] border border-emerald-500/30' : 'bg-[rgba(255,30,56,0.15)] text-[var(--red-laser)] border border-[rgba(255,30,56,0.3)]')}>{learned ? <BrainCircuit size={16} /> : <Zap size={16} />}</div>
-            <div className="flex-1 min-w-0"><div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2 min-w-0"><div className="text-sm font-bold text-white truncate">{skill.name}</div><span className={cx('text-[9px] uppercase px-1.5 py-0.2 rounded font-bold flex items-center gap-1', learned ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-[var(--carbon-surface)] text-[var(--text-muted)] border border-white/5')}>{learned && <Sparkles size={8} />}{learned ? 'LEARNED' : 'CORE'}</span></div>{active && <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-[var(--carbon-surface)] text-white border border-white/10"><Check size={10} className="text-[var(--red-laser)]" /> REGISTERED</span>}</div><div className="text-[11.5px] text-[var(--text-muted)] font-sans mt-1 leading-normal">{skill.description}</div>{skill.tier && <div className="mt-2 text-[9px] text-[var(--text-dim)]">TIER: {skill.tier}</div>}</div>
-          </div>;
-        })}
-        {skills.length === 0 && <div className="text-[var(--text-dim)] text-xs text-center py-6">No worker graph is projected for this execution path.</div>}
-      </div>
-    </Modal>
-  );
+export function SkillRegistryDrawer({ isOpen, onClose, agents, observedAt, receivedMonotonicMs, isLoading, readbackError, onRefresh, job }: Props) {
+  return <Modal isOpen={isOpen} onClose={onClose} title="AGENT REGISTRY // RUNTIME PROJECTION">
+    <div className="space-y-3 font-mono">
+      <RegistryReadbackStatus observedAt={observedAt} receivedMonotonicMs={receivedMonotonicMs} isLoading={isLoading} readbackError={readbackError} onRefresh={onRefresh} />
+      <p className="text-[11px] text-[var(--text-muted)]">Server-registered executor and actual persisted agent tasks. Task state, executor heartbeat and measured progress are separate observations.</p>
+      {job && <div className="text-[10px] text-[var(--text-dim)] break-all">Job: {job.id}<br />Last persisted executor heartbeat: {job.lastHeartbeatAt || 'UNOBSERVED'}<br />Last progress event: {job.lastEventAt || 'UNOBSERVED'}</div>}
+      {agents.map(agent => <div key={`${agent.kind}-${agent.id}`} className="p-3 border border-white/10 rounded-lg bg-[var(--carbon-deep)] flex gap-3">
+        {agent.kind === 'executor' ? <Cpu size={18} className="text-[var(--red-laser)] shrink-0" /> : <BrainCircuit size={18} className="text-[var(--red-laser)] shrink-0" />}
+        <div className="min-w-0 flex-1 break-words">
+          <div className="text-sm font-bold text-white">{agent.name}</div>
+          <div className="text-[10px] text-[var(--text-main)]">{agent.kind.toUpperCase()} · {agent.status}</div>
+          <p className="mt-1 text-[11px] text-[var(--text-muted)]">{agent.description}</p>
+          {agent.persistedStatus && agent.persistedStatus !== agent.status && <p className="mt-1 text-[10px] text-[var(--text-muted)]">Persisted task state: {agent.persistedStatus}; current job state takes precedence.</p>}
+          <details className="mt-2 text-[10px] text-[var(--text-dim)]" open>
+            <summary className="cursor-pointer text-[var(--text-main)]">READBACK PROVENANCE</summary>
+            <div className="mt-1 break-all">Source: {agent.source}<br />{agent.jobId && <>Job: {agent.jobId}<br /></>}{agent.runId && <>Run: {agent.runId}<br /></>}{agent.taskId && <>Task: {agent.taskId}<br /></>}{agent.updatedAt && <>Persisted task timestamp: {agent.updatedAt}</>}</div>
+          </details>
+        </div>
+      </div>)}
+      {!agents.length && <p className="text-[11px] text-[var(--text-dim)]">{isLoading ? 'Reading the authenticated agent registry…' : readbackError ? 'Agent readback unavailable.' : 'No persisted agent tasks were returned for the selected scope.'}</p>}
+    </div>
+  </Modal>;
 }

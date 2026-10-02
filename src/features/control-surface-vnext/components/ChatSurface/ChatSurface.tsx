@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { Blocks, Bot, BrainCircuit, Cpu, Loader2, Send, Square, Terminal, User, Wrench } from 'lucide-react';
-import type { AgentMode, ChatMessage, JobPhase, SovereignJob } from '../../types/domain';
+import type { AgentMode, ChatMessage, ControlSurfaceReadback, ExecutionMode, JobPhase, SovereignJob } from '../../types/domain';
+import { RegistryReadbackStatus } from '../RegistryReadbackStatus';
 import { ChatMarkdown } from '../../../product/components/ChatMarkdown';
 import { playDispatchBlast, playKeystrokeChirp } from '../../utils/audio';
 
@@ -11,9 +12,9 @@ interface Props {
   onSendMessage?: (text: string) => void;
   jobPhase?: JobPhase;
   activeJob?: SovereignJob | null;
-  onOpenToolchain: () => void;
-  onOpenSkills: () => void;
-  onOpenIntegrations: () => void;
+  onOpenToolchain?: () => void;
+  onOpenSkills?: () => void;
+  onOpenIntegrations?: () => void;
   onAbortJob?: () => void;
   isAborting?: boolean;
   abortError?: string;
@@ -23,6 +24,12 @@ interface Props {
   activeIntegrationsCount?: number;
   agentMode?: AgentMode;
   onAgentModeChange?: (mode: AgentMode) => void;
+  executionMode?: ExecutionMode;
+  onExecutionModeChange?: (mode: ExecutionMode) => void;
+  controlReadback?: ControlSurfaceReadback;
+  controlReadbackError?: string;
+  isReadingControl?: boolean;
+  onRefreshControl?: () => void;
 }
 
 const ACTIVE_PHASES: JobPhase[] = ['DISPATCHING', 'PROVISIONING', 'EXECUTING', 'FINALIZING'];
@@ -42,17 +49,28 @@ function MessageCard({ message }: { message: ChatMessage }) {
   );
 }
 
-export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase = 'IDLE', activeJob, onOpenToolchain, onOpenSkills, onOpenIntegrations, onAbortJob, isAborting = false, abortError, onTypingStateChange, activeToolchainName, activeSkillsCount = 0, activeIntegrationsCount = 0, onAgentModeChange }: Props) {
+export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase = 'IDLE', activeJob, onOpenToolchain, onOpenSkills, onOpenIntegrations, onAbortJob, isAborting = false, abortError, onTypingStateChange, activeToolchainName, activeSkillsCount = 0, activeIntegrationsCount = 0, executionMode = 'free', onExecutionModeChange, controlReadback, controlReadbackError, isReadingControl, onRefreshControl }: Props) {
   const [text, setText] = useState('');
   const readbackUnavailable = activeJob?.workspaceState.readbackState === 'unavailable';
   const executing = ACTIVE_PHASES.includes(jobPhase) && !readbackUnavailable;
-  const canSend = text.trim().length > 0 && !executing;
+  const selectedMode = executing ? controlReadback?.jobExecutionMode ?? executionMode : executionMode;
+  const free = controlReadback?.routing.modes.find(route => route.mode === 'free');
+  const paid = controlReadback?.routing.modes.find(route => route.mode === 'paid');
+  const selectedRoute = selectedMode === 'paid' ? paid : free;
+  const credit = controlReadback?.credits;
+  const [, refreshAge] = useState(0);
+  React.useEffect(() => {
+    const timer = setInterval(() => refreshAge(value => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const fresh = Boolean(controlReadback && !controlReadbackError && performance.now() - controlReadback.receivedMonotonicMs < 30_000);
+  const canSend = text.trim().length > 0 && !executing && fresh && selectedRoute?.available === true;
   const phaseTone = jobPhase === 'FAILED' || jobPhase === 'BLOCKED' ? 'text-[var(--red-alert)]' : jobPhase === 'COMPLETED' ? 'text-[var(--emerald-seal)]' : 'text-white';
   const latestRun = useMemo(() => activeJob?.runId || activeJob?.id, [activeJob?.runId, activeJob?.id]);
 
   const submit = () => {
     const mission = text.trim();
-    if (!mission || executing) return;
+    if (!mission || !canSend) return;
     playDispatchBlast();
     (onSendMessage ?? onSubmitOrder)?.(mission);
     setText('');
@@ -71,20 +89,27 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
 
       <div className="shrink-0 px-3 sm:px-4 pb-3 sm:pb-4 pt-2 bg-gradient-to-t from-[var(--carbon-base)] via-[var(--carbon-base)] to-transparent">
         <div className="mb-2 grid grid-cols-3 gap-1.5">
-          <button type="button" onClick={() => { playKeystrokeChirp(); onOpenToolchain(); }} title={`Active Toolchain: ${activeToolchainName || 'UNVERIFIED'}`} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] text-left px-2 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><Wrench size={10} /> TOOLCHAIN</span><span className="block truncate text-[9px] text-white mt-0.5">{activeToolchainName || 'UNVERIFIED'}</span></button>
-          <button type="button" onClick={() => { playKeystrokeChirp(); onOpenSkills(); }} title={`Active Agents: ${activeSkillsCount} manifest nodes`} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] text-left px-2 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><BrainCircuit size={10} /> AGENTS</span><span className="block text-[9px] text-white mt-0.5">{activeSkillsCount} MANIFEST NODES</span></button>
-          <button type="button" onClick={() => { playKeystrokeChirp(); onOpenIntegrations(); }} title={`Active Attachments: ${activeIntegrationsCount} observed`} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] text-left px-2 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><Blocks size={10} /> ATTACHMENTS</span><span className="block text-[9px] text-white mt-0.5">{activeIntegrationsCount} OBSERVED</span></button>
+          <button type="button" onClick={() => { playKeystrokeChirp(); onOpenToolchain?.(); }} title={`Active Toolchain: ${activeToolchainName || 'UNVERIFIED'}`} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] text-left px-2 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><Wrench size={10} /> TOOLCHAIN</span><span className="block truncate text-[9px] text-white mt-0.5">{activeToolchainName || 'UNVERIFIED'}</span></button>
+          <button type="button" onClick={() => { playKeystrokeChirp(); onOpenSkills?.(); }} title={`Agents: ${activeSkillsCount} persisted tasks`} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] text-left px-2 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><BrainCircuit size={10} /> AGENTS</span><span className="block text-[9px] text-white mt-0.5">{activeSkillsCount} PERSISTED TASKS</span></button>
+          <button type="button" onClick={() => { playKeystrokeChirp(); onOpenIntegrations?.(); }} title={`Backend integrations: ${activeIntegrationsCount} observed`} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] text-left px-2 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><Blocks size={10} /> ATTACHMENTS</span><span className="block text-[9px] text-white mt-0.5">{activeIntegrationsCount} OBSERVED</span></button>
         </div>
 
         <div data-testid="agent-mode-selector" className="mb-2 rounded-lg border border-white/5 bg-[var(--carbon-deep)] p-1.5 font-mono">
           <div className="flex items-center gap-2">
-            <span data-testid="agent-mode-single" className="shrink-0 rounded border border-[rgba(16,185,129,0.3)] px-1.5 py-1 text-[7px] font-bold text-[var(--emerald-seal)]">1 AGENT · FREELLM</span>
+            <span data-testid="agent-mode-single" className="shrink-0 rounded border border-[rgba(16,185,129,0.3)] px-1.5 py-1 text-[7px] font-bold text-[var(--emerald-seal)]">1 AGENT · {selectedMode === 'paid' ? 'OPENROUTER' : 'FREELLM'}</span>
             <label htmlFor="mission-route" className="text-[8px] text-[var(--text-dim)]">ROUTE</label>
-            <select id="mission-route" aria-describedby="mission-route-availability" value="low" disabled={executing} onChange={() => onAgentModeChange?.('single')} className="min-h-11 min-w-0 flex-1 rounded border border-white/10 bg-[var(--carbon-surface)] px-2 text-[10px] text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20">
-              <option value="low">Sovereign · Free</option>
+            <select id="mission-route" aria-describedby="mission-route-availability" value={selectedMode} disabled={executing || !fresh} onChange={event => onExecutionModeChange?.(event.target.value as ExecutionMode)} className="min-h-11 min-w-0 flex-1 rounded border border-white/10 bg-[var(--carbon-surface)] px-2 text-[10px] text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20">
+              <option value="free" disabled={!fresh || free?.available !== true}>Sovereign · Free{free?.model ? ` · ${free.model}` : ''}</option>
+              <option value="paid" disabled={!fresh || paid?.available !== true}>Sovereign · Paid{paid?.model ? ` · ${paid.model}` : ''}</option>
             </select>
           </div>
-          <p id="mission-route-availability" className="mt-1 text-[8px] text-[var(--text-dim)]">Repository execution is owned by Sovereign-local-runner. No external executor is used.</p>
+          <p id="mission-route-availability" className="mt-1 text-[8px] text-[var(--text-dim)]">{selectedMode === 'paid' ? 'Paid · direct OpenRouter. Dispatch authorizes a credit reservation; actual provider usage is settled and unused reserved credits are refunded.' : 'Free · direct FreeLLM. No credit deduction and no automatic switch to Paid.'}</p>
+          {!selectedRoute?.available && <p className="mt-1 text-[9px] text-[var(--red-alert)]">Selected route unavailable: {selectedRoute?.blocker || 'route_readback_unavailable'}</p>}
+          {paid?.blocker && <p className="mt-1 text-[9px] text-[var(--text-muted)]">Paid availability: {paid.blocker}</p>}
+          <div className="mt-2 text-[9px] text-[var(--text-main)]" data-testid="vnext-account-credits">
+            {credit?.readbackState === 'live' && credit.creditStateVerified ? <>{credit.credits?.toLocaleString('en-US')} ACCOUNT CREDITS · {credit.providerFundedCredits?.toLocaleString('en-US')} PROVIDER-FUNDED</> : <>CREDITS UNAVAILABLE: {credit?.blocker || 'Awaiting authenticated ledger readback'}</>}
+          </div>
+          <RegistryReadbackStatus observedAt={controlReadback?.observedAt} receivedMonotonicMs={controlReadback?.receivedMonotonicMs} isLoading={isReadingControl} readbackError={controlReadbackError} onRefresh={onRefreshControl} />
         </div>
 
         <div className="theme-diamond-cut rounded-xl border border-[rgba(255,30,56,0.28)] bg-[var(--carbon-deep)] p-2 shadow-[0_0_24px_rgba(255,30,56,0.08)]">

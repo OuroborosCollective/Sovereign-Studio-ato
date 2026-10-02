@@ -16,6 +16,9 @@ sys.path.insert(0, str(ROOT))
 from backend.agent_runtime.cognitive_run_store import (
     append_repository_executor_heartbeat, read_job_runtime_evidence, record_agent_stage_event,
 )
+from backend.agent_runtime.cognitive_repository_tools import create_repository_single_agent_task
+from backend.agent_runtime.control_surface_readback import read_control_surface_agents, read_control_surface_credits
+from backend.agent_runtime.job_store import read_agent_job
 
 OWNER = "11111111-1111-4111-8111-111111111111"
 OTHER = "22222222-2222-4222-8222-222222222222"
@@ -114,3 +117,38 @@ def test_actual_stage_event_is_visible_and_tampered_payload_fails_validation(dat
     database.commit()
     with pytest.raises(ValueError, match="binding or hash"):
         read_job_runtime_evidence(database, user_id=OWNER, job_id=JOB, external_ref=CLAIM)
+
+
+def test_actual_agent_projection_reads_persisted_paid_task_and_denies_foreign_run(database):
+    task_id = create_repository_single_agent_task(database, run_id=RUN, evidence_id="evidence-initial",
+        write_confirmed=True, execution_mode="paid")
+    job = read_agent_job(database, user_id=OWNER, job_id=JOB)
+    nodes = read_control_surface_agents(database, user_id=OWNER, job=job)
+    assert nodes[1]["id"] == "paid_single_agent"
+    assert nodes[1]["taskId"] == task_id and nodes[1]["status"] == "QUEUED"
+    assert len(read_control_surface_agents(database, user_id=OTHER, job=job)) == 1
+
+
+def test_actual_credit_projection_uses_shipping_ledger_and_receipt_contracts(database):
+    with database.cursor() as cur:
+        cur.execute("""ALTER TABLE admin_users ADD COLUMN email TEXT NOT NULL DEFAULT 'user@example.test',
+            ADD COLUMN role TEXT NOT NULL DEFAULT 'user', ADD COLUMN credits INTEGER NOT NULL DEFAULT 0,
+            ADD COLUMN provider_funded_credits INTEGER NOT NULL DEFAULT 0""")
+    database.commit()
+    for migration in ("001_admin_api_keys_and_credit_ledger.sql", "011_credit_state_verification.sql"):
+        with database.cursor() as cur:
+            cur.execute((ROOT / "scripts/sovereign-backend/migrations" / migration).read_text())
+    with database.cursor() as cur:
+        cur.execute("""CREATE TABLE transactions (user_id UUID, provider TEXT, provider_tx_id TEXT,
+            type TEXT, status TEXT)""")
+        cur.execute("UPDATE admin_users SET credits=1250,provider_funded_credits=1100 WHERE id=%s", (OWNER,))
+        cur.execute("INSERT INTO credit_ledger (user_id,type,amount) VALUES (%s,'credit_purchase',1250)", (OWNER,))
+    database.commit()
+    state = read_control_surface_credits(database, user_id=OWNER)
+    assert state["credits"] == 1250 and state["providerFundedCredits"] == 1100
+    assert read_control_surface_credits(database, user_id=OTHER)["credits"] == 0
+    with database.cursor() as cur:
+        cur.execute("UPDATE admin_users SET credits=1200 WHERE id=%s", (OWNER,))
+    database.commit()
+    with pytest.raises(ValueError, match="verification_failed"):
+        read_control_surface_credits(database, user_id=OWNER)
