@@ -119,4 +119,22 @@ describe('Runtime Monitor canonical runtime evidence', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/incomplete identity, hash or timestamp/);
     expect(screen.queryByText(/Actual persisted runtime phase/)).toBeNull();
   });
+
+  it('ages heartbeat freshness even when no further readback arrives', async () => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(200000);
+    try {
+      const body = response();
+      body.job.runtimeEvidence.events.push({ ...body.job.runtimeEvidence.events[0],
+        eventId: 'event-heartbeat', stage: 'sovereign_executor_heartbeat', at: '2026-10-02T21:29:59Z', heartbeatCurrent: true } as never);
+      const job = await read(body);
+      const view = render(<RuntimeMonitor job={job} />);
+      expect(screen.getByText(/Worker heartbeat:.*1s old/)).toBeVisible();
+      clock.mockReturnValue(330000);
+      view.rerender(<RuntimeMonitor job={job} readbackError="HTTP 503" />);
+      expect(screen.getByText(/Worker heartbeat:.*131s old/)).toBeVisible();
+      expect(screen.getByText(/Worker heartbeat is stale/)).toBeVisible();
+      expect(job.serverObservedAt).toBe(observedAt);
+      expect(job.updatedAt).toBe(eventAt);
+    } finally { clock.mockRestore(); }
+  });
 });

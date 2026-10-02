@@ -6,6 +6,12 @@ interface Props { job: SovereignJob | null | undefined; isPolling?: boolean; rea
 
 export function RuntimeMonitor({ job, isPolling = false, readbackError }: Props) {
   const [copied, setCopied] = useState(false);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!job?.serverObservedAt) return;
+    const timer = window.setInterval(() => tick(value => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [job?.id, job?.serverObservedAt]);
   const logsEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => { logsEndRef.current?.scrollIntoView?.({ behavior: 'smooth' }); }, [job?.logs?.length, job?.runtimeEvidence?.events.length]);
   const copyLogs = () => {
@@ -19,11 +25,13 @@ export function RuntimeMonitor({ job, isPolling = false, readbackError }: Props)
   const logs = job?.logs || [];
   const telemetry = job?.runtimeEvidence;
   const runtimeEvents = telemetry?.events.filter((event) => event.stage !== 'sovereign_executor_heartbeat') ?? [];
+  const elapsed = job?.readbackReceivedMonotonicMs !== undefined
+    ? Math.max(0, (performance.now() - job.readbackReceivedMonotonicMs) / 1000) : 0;
   const age = job?.serverObservedAt && job.lastEventAt
-    ? Math.max(0, Math.floor((Date.parse(job.serverObservedAt) - Date.parse(job.lastEventAt)) / 1000)) : undefined;
+    ? Math.max(0, Math.floor((Date.parse(job.serverObservedAt) - Date.parse(job.lastEventAt)) / 1000 + elapsed)) : undefined;
   const evidenceError = readbackError || (telemetry?.readbackState === 'unavailable' ? telemetry.error : undefined);
   const heartbeatAge = job?.serverObservedAt && job.lastHeartbeatAt
-    ? Math.max(0, Math.floor((Date.parse(job.serverObservedAt) - Date.parse(job.lastHeartbeatAt)) / 1000)) : undefined;
+    ? Math.max(0, Math.floor((Date.parse(job.serverObservedAt) - Date.parse(job.lastHeartbeatAt)) / 1000 + elapsed)) : undefined;
   const latestHeartbeat = [...(telemetry?.events ?? [])].reverse().find((event) => event.stage === 'sovereign_executor_heartbeat' && event.heartbeatCurrent === true);
   const executorState = job?.externalRef?.startsWith('sovereign-local-runner:claim:submit:') ? 'SUBMIT CLAIMED'
     : job?.externalRef?.startsWith('sovereign-local-runner:claim:closeout:') ? 'CLOSEOUT CLAIMED'

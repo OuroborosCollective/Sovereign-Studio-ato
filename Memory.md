@@ -1036,5 +1036,5 @@ Open/next: Publish the Draft PR, consume terminal exact-head CI, obtain the requ
 
 ### 2026-10-02 — Repository executor and Runtime Monitor evidence
 Decision: Restore the missing live permission gate, persist unexpected submit failures, and project owner/job-bound SDK evidence into the Runtime Monitor. Preserve server timestamps; distinguish claim-bound executor heartbeats from progress and polling.
-Evidence: The reported production job has a submit claim, a reconciler NameError and no executor-start/file evidence. Nine submit regressions and six UI regressions reproduced the baseline defects; permission, evidence, heartbeat and UI regressions pass locally. Disposable PostgreSQL and exact-head CI checks are required; no new production execution or recovery is claimed.
-Next: Review the exact Draft PR head, complete CI and read-only database validation, then obtain specific merge/release authorization and independently verify deployed execution.
+Evidence: Nine submit, six UI and three real HTTP body regressions reproduced the defects. Initial exact-head CI passed 1,322 backend tests including five PostgreSQL checks; production read-only validation confirmed the evidence query and owner isolation. The reported job has no SDK/heartbeat/file evidence and now has a persisted cancellation. GET deadlines cover response bodies; heartbeat age continues during failed polling.
+Next: Consume final exact-head CI, obtain specific merge/release authorization, then independently verify deployed execution. No production recovery is claimed.

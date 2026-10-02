@@ -101,6 +101,7 @@ export interface SovereignJob {
   assistantMessage?: string;
   error?: { message: string; code?: string };
   serverObservedAt?: string;
+  readbackReceivedMonotonicMs?: number;
   lastEventAt?: string;
   lastHeartbeatAt?: string;
   persistedEventCount?: number;

@@ -606,6 +606,7 @@ function sanitizeSnapshot(rawInput: RawSovereignAgentJobResponse, _now: () => nu
     createdAt: timestampValue(raw.createdAt),
     updatedAt: timestampValue(raw.updatedAt),
     serverObservedAt: timestampValue(raw.serverObservedAt),
+    readbackReceivedMonotonicMs: performance.now(),
     runtimeEvidence: runtimeEvidence(raw.runtimeEvidence, stringValue(raw.jobId) || stringValue(raw.id) || ''),
   };
 }
@@ -620,9 +621,32 @@ function jobPath(jobId?: string, suffix = ''): string {
   return `${base}${suffix}`;
 }
 function headers(): HeadersInit { return { 'Content-Type': 'application/json', Accept: 'application/json' }; }
+async function readHttpResponse(args: { url: string; init: RequestInit; fetcher: typeof fetch }): Promise<{ response: Response; body: unknown }> {
+  if ((args.init.method ?? 'GET').toUpperCase() !== 'GET') {
+    const response = await args.fetcher(args.url, args.init);
+    return { response, body: await readJson(response) };
+  }
+  const controller = new AbortController();
+  const caller = args.init.signal;
+  const abort = () => controller.abort(caller?.reason);
+  if (caller?.aborted) abort();
+  else caller?.addEventListener('abort', abort, { once: true });
+  let timedOut = false;
+  const deadline = setTimeout(() => { timedOut = true; controller.abort(); }, 15_000);
+  try {
+    const response = await args.fetcher(args.url, { ...args.init, signal: controller.signal, cache: 'no-store' });
+    // The deadline covers body consumption as well as the initial headers.
+    return { response, body: await readJson(response) };
+  } catch (error) {
+    if (timedOut) throw new Error('Sovereign runtime readback timed out after 15 seconds.');
+    throw error;
+  } finally {
+    clearTimeout(deadline);
+    caller?.removeEventListener('abort', abort);
+  }
+}
 async function requestSnapshot(args: { url: string; init: RequestInit; fetcher: typeof fetch; now: () => number }): Promise<SovereignAgentJobSnapshot> {
-  const response = await args.fetcher(args.url, args.init);
-  const body = await readJson(response);
+  const { response, body } = await readHttpResponse(args);
   if (!response.ok) {
     throw buildSovereignAgentHttpError({ status: response.status, body, fallback: 'Sovereign Agent backend' });
   }
@@ -631,8 +655,7 @@ async function requestSnapshot(args: { url: string; init: RequestInit; fetcher: 
 }
 
 async function requestObject(args: { url: string; init: RequestInit; fetcher: typeof fetch; fallback: string }): Promise<Record<string, unknown>> {
-  const response = await args.fetcher(args.url, args.init);
-  const body = await readJson(response);
+  const { response, body } = await readHttpResponse(args);
   if (!response.ok) {
     throw buildSovereignAgentHttpError({ status: response.status, body, fallback: args.fallback });
   }

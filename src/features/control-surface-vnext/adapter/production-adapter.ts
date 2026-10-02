@@ -198,7 +198,7 @@ function newestEvidenceRevision(anchors: readonly SovereignWorkspaceEvidenceAnch
 }
 
 function runtimeReadback(snapshot: SovereignAgentJobSnapshot | undefined): Pick<SovereignJob,
-  'runtimeEvidence' | 'serverObservedAt' | 'externalRef' | 'lastEventAt' | 'lastHeartbeatAt' | 'persistedEventCount'> {
+  'runtimeEvidence' | 'serverObservedAt' | 'readbackReceivedMonotonicMs' | 'externalRef' | 'lastEventAt' | 'lastHeartbeatAt' | 'persistedEventCount'> {
   const runtimeEvents = snapshot?.runtimeEvidence?.events ?? [];
   const heartbeatTimes = runtimeEvents.filter((event) => event.stage === 'sovereign_executor_heartbeat' && event.heartbeatCurrent === true)
     .map((event) => Date.parse(event.at));
@@ -210,6 +210,7 @@ function runtimeReadback(snapshot: SovereignAgentJobSnapshot | undefined): Pick<
   return {
     runtimeEvidence: snapshot?.runtimeEvidence,
     serverObservedAt: snapshot?.serverObservedAt,
+    readbackReceivedMonotonicMs: snapshot?.readbackReceivedMonotonicMs,
     externalRef: snapshot?.externalRef,
     lastEventAt: times.length ? new Date(Math.max(...times)).toISOString() : undefined,
     lastHeartbeatAt: heartbeatTimes.length ? new Date(Math.max(...heartbeatTimes)).toISOString() : undefined,

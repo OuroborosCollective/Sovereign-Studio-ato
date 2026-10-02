@@ -142,6 +142,8 @@ export interface SovereignAgentJobSnapshot {
   createdAt?: string;
   updatedAt?: string;
   serverObservedAt?: string;
+  /** Browser receive clock for aging a readback; never a runtime progress clock. */
+  readbackReceivedMonotonicMs?: number;
   runtimeEvidence?: SovereignAgentRuntimeEvidence;
 }
 
