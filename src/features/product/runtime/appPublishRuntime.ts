@@ -20,7 +20,14 @@ export interface PublishGateResult {
 const MAX_RECOMMENDATIONS = 3;
 
 function compactRecommendations(items: string[]): string[] {
-  return items.map((item) => item.trim()).filter(Boolean).slice(0, MAX_RECOMMENDATIONS);
+  // ⚡ Bolt: Consolidate chained map, filter, and slice operations into a single bounded loop
+  const recommendations: string[] = [];
+  for (const item of items) {
+    if (recommendations.length >= MAX_RECOMMENDATIONS) break;
+    const trimmed = item.trim();
+    if (trimmed) recommendations.push(trimmed);
+  }
+  return recommendations;
 }
 
 function canUseWindow(): boolean {

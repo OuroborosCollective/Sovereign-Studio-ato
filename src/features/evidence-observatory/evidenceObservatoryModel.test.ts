@@ -36,3 +36,18 @@ describe('Evidence Observatory model', () => {
     expect(visibleCasesAt([baseCase, future], '2026-08-17T00:00:00Z').map((item) => item.caseId)).toEqual(['case-1']);
   });
 });
+
+
+it('orders density days across month/year boundaries and aggregates repeated dates', () => {
+  const item = { ...baseCase, contradictions: [], sources: [
+    { id: 'a', observedAt: '2026-10-02T00:00:00Z' },
+    { id: 'b', observedAt: '2025-12-31T00:00:00Z' },
+    { id: 'c', observedAt: '2026-01-01T00:00:00Z' },
+    { id: 'd', observedAt: '2026-10-02T12:00:00Z' },
+  ] };
+  expect(evidenceDensity([item])).toEqual([
+    { at: '2025-12-31', sourceCount: 1, contradictionCount: 0 },
+    { at: '2026-01-01', sourceCount: 1, contradictionCount: 0 },
+    { at: '2026-10-02', sourceCount: 2, contradictionCount: 0 },
+  ]);
+});

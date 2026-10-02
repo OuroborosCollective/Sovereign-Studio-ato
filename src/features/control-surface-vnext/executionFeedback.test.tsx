@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import { SovereignAdapterProvider } from './adapter/context';
@@ -15,6 +15,29 @@ function Feedback() {
 }
 
 describe('execution feedback', () => {
+  it('keeps the backend phase authoritative after an accepted abort request', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    let reads = 0;
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method !== 'POST') reads += 1;
+      return new Response(JSON.stringify({ job: {
+        jobId: 'agent-feedback', status: 'running', events: [], changedFiles: [],
+        workspaceId: 'agent-feedback', executor: 'sovereign-local-runner',
+      } }));
+    });
+    const adapter = new SovereignProductionAdapter(fetcher as typeof fetch, {
+      enabled: true, deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://agent.example.test', ready: true, reason: 'ready',
+    });
+    render(<QueryClientProvider client={queryClient}><SovereignAdapterProvider adapter={adapter}><Feedback /></SovereignAdapterProvider></QueryClientProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'ABORT' }));
+    await waitFor(() => expect(reads).toBeGreaterThan(1));
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true);
+    expect(screen.getByText('EXECUTING')).toBeVisible();
+    expect(screen.queryByText('CANCELLED')).not.toBeInTheDocument();
+    queryClient.clear();
+  });
+
   it('shows a rejected Abort instead of silently leaving the action unanswered', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {

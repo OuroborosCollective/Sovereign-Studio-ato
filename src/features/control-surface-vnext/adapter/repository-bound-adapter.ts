@@ -107,7 +107,7 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
     return [];
   }
 
-  override async restoreLatestRepositoryRun(): Promise<RestoredRepositoryRun | null> {
+  async restoreLatestRepositoryRun(): Promise<RestoredRepositoryRun | null> {
     if (!this.repositoryConfig.ready) return null;
     const response = await this.repositoryFetcher(
       endpoint(this.repositoryConfig.agentApiUrl, '/api/user/agent/jobs?limit=20'),

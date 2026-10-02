@@ -265,12 +265,11 @@ function Dashboard() {
     if (!activeRunId) return;
     try {
       await abort();
-      dispatchFsm({ type: 'CANCEL' });
       setMessages((current) => [...current, {
         id: `aborted-${Date.now()}`,
         role: 'system',
         sender: 'SYSTEM',
-        content: `EXECUTION CANCELLED :: ${activeRunId}`,
+        content: `ABORT REQUEST ACCEPTED :: ${activeRunId}. Waiting for backend state readback.`,
         timestamp: new Date().toISOString(),
       }]);
     } catch (error) {
@@ -332,9 +331,9 @@ function Dashboard() {
 
         <CyborgOcularMatrix isTyping={isTyping} jobPhase={currentPhase} />
         <div className="flex items-center justify-self-end gap-1 sm:gap-3">
-          <button type="button" data-testid="operator-auth-btn" onClick={() => setAuthOpen(true)} className={cx('min-h-9 px-2 rounded border font-mono text-[9px] sm:text-[10px] font-bold flex items-center gap-1.5', user && !user.isGuest ? 'bg-[var(--carbon-surface)] border-[rgba(16,185,129,0.35)] text-white' : 'bg-[rgba(255,30,56,0.12)] border-[var(--red-laser)] text-white')}><Lock size={11} className={user && !user.isGuest ? 'text-[var(--emerald-seal)]' : 'text-[var(--red-laser)]'} /><span className="hidden sm:inline max-w-24 truncate">{user && !user.isGuest ? user.displayName : sessionReady ? 'AUTH' : 'SESSION…'}</span></button>
-          <button type="button" data-testid="open-architecture-btn" onClick={() => setArchitectureOpen(true)} className="min-h-9 px-2 rounded border border-white/10 bg-[var(--carbon-surface)] text-[var(--text-muted)] hover:text-white hover:border-[var(--red-laser)] font-mono text-[9px] flex items-center gap-1"><Server size={12} className="text-[var(--red-laser)]" /><span className="hidden md:inline">SPEC</span></button>
-          <button type="button" onClick={() => setAudioMuted(toggleAudioMute())} className="min-h-9 px-2 rounded border border-white/10 bg-[var(--carbon-surface)] text-[var(--text-muted)] hover:text-white">{audioMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}</button>
+          <button type="button" data-testid="operator-auth-btn" aria-label={user && !user.isGuest ? 'Manage account session' : 'Authenticate session'} title={user && !user.isGuest ? 'Manage account session' : 'Authenticate session'} onClick={() => setAuthOpen(true)} className={cx('min-h-9 px-2 rounded border font-mono text-[9px] sm:text-[10px] font-bold flex items-center gap-1.5', user && !user.isGuest ? 'bg-[var(--carbon-surface)] border-[rgba(16,185,129,0.35)] text-white' : 'bg-[rgba(255,30,56,0.12)] border-[var(--red-laser)] text-white')}><Lock size={11} className={user && !user.isGuest ? 'text-[var(--emerald-seal)]' : 'text-[var(--red-laser)]'} /><span className="hidden sm:inline max-w-24 truncate">{user && !user.isGuest ? user.displayName : sessionReady ? 'AUTH' : 'SESSION…'}</span></button>
+          <button type="button" data-testid="open-architecture-btn" aria-label="View technical specification" title="View technical specification" onClick={() => setArchitectureOpen(true)} className="min-h-9 px-2 rounded border border-white/10 bg-[var(--carbon-surface)] text-[var(--text-muted)] hover:text-white hover:border-[var(--red-laser)] font-mono text-[9px] flex items-center gap-1"><Server size={12} className="text-[var(--red-laser)]" /><span className="hidden md:inline">SPEC</span></button>
+          <button type="button" aria-label={audioMuted ? 'Unmute audio' : 'Mute audio'} title={audioMuted ? 'Unmute audio' : 'Mute audio'} onClick={() => setAudioMuted(toggleAudioMute())} className="min-h-9 px-2 rounded border border-white/10 bg-[var(--carbon-surface)] text-[var(--text-muted)] hover:text-white">{audioMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}</button>
         </div>
       </header>
 
