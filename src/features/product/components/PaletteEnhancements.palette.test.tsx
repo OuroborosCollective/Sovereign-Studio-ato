@@ -27,6 +27,7 @@ import { TestRunnerResultCard } from './TestRunnerResultCard';
 import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
+import { PatternKnowledgeCard } from './PatternKnowledgeCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1390,6 +1391,69 @@ describe('Palette Accessibility Enhancements', () => {
       fireEvent.click(viewDiffBtn);
       expect(onOpenPr).toHaveBeenCalledTimes(1);
       expect(onViewDiff).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('PatternKnowledgeCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders section linked to heading, semantic metric list, scope tags list, and focus-visible action buttons', () => {
+      const counters = {
+        totalStored: 12,
+        verifiedCount: 8,
+        localExecutableCount: 5,
+        frequentlyUsedCount: 3,
+        lastSuccessfulReuseAt: 1700000000000,
+        localUserCount: 4,
+        remoteUserCount: 2,
+        sharedDerivedCount: 1,
+      };
+
+      const onShowDetails = vi.fn();
+      const onUseLocalMode = vi.fn();
+
+      render(
+        <PatternKnowledgeCard
+          counters={counters}
+          onShowDetails={onShowDetails}
+          onUseLocalMode={onUseLocalMode}
+        />
+      );
+
+      const section = screen.getByRole('region', { name: 'Dein Sovereign-Wissensstand' });
+      expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', 'pattern-knowledge-heading');
+
+      const heading = screen.getByRole('heading', { name: 'Dein Sovereign-Wissensstand', level: 2 });
+      expect(heading).toHaveAttribute('id', 'pattern-knowledge-heading');
+
+      const metricsList = screen.getByRole('list', { name: 'Wissensstand-Metriken' });
+      expect(metricsList).toBeInTheDocument();
+
+      const metricItems = screen.getAllByRole('listitem');
+      expect(metricItems.length).toBeGreaterThanOrEqual(5);
+
+      const sourcesGroup = screen.getByRole('group', { name: 'Musterquellen' });
+      expect(sourcesGroup).toBeInTheDocument();
+
+      const sourcesList = screen.getByRole('list', { name: 'Aktive Musterquellen' });
+      expect(sourcesList).toBeInTheDocument();
+
+      expect(screen.getByTitle('Lokale Ausführung auf diesem Gerät')).toBeInTheDocument();
+      expect(screen.getByTitle('Remote-Ausführung in der Cloud')).toBeInTheDocument();
+      expect(screen.getByTitle('Aus geteilten Sovereign-Mustern abgeleitet')).toBeInTheDocument();
+
+      const detailsBtn = screen.getByRole('button', { name: 'Wissensstand-Details ansehen' });
+      expect(detailsBtn).toHaveAttribute('title', 'Detaillierte Übersicht der gespeicherten Muster anzeigen');
+      expect(detailsBtn).toHaveClass('focus-visible:ring-2');
+
+      const localModeBtn = screen.getByRole('button', { name: 'Lokalen Modus nutzen' });
+      expect(localModeBtn).toHaveAttribute('title', 'Lokalen Modus für gespeicherte Abläufe aktivieren');
+      expect(localModeBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(detailsBtn);
+      expect(onShowDetails).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(localModeBtn);
+      expect(onUseLocalMode).toHaveBeenCalledTimes(1);
     });
   });
 });
