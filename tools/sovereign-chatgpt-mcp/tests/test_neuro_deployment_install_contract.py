@@ -10,6 +10,7 @@ import sys
 import textwrap
 
 from jsonschema import Draft202012Validator
+import pytest
 import yaml
 
 
@@ -1006,7 +1007,7 @@ def test_installer_runs_a_clean_real_registry_neuro_canary_without_selected_tool
     assert 'call_registered("neuro_runtime_contract_status", {})' in canary
     assert '"foundation_event_kind": "unknown_canary_kind"' in canary
     assert '"foundation_event_kind": "work_request"' in canary
-    assert '"mission_summary": "Read MCP runtime status."' in canary
+    assert '"mission_summary": "Read the last private MCP state."' in canary
     assert '"required_capabilities": ["runtime"]' in canary
     assert '"allowed_effects": ["read"]' in canary
     assert '[contract["name"] for contract in selected_contracts] == ["mcp_self_update_status"]' in canary
@@ -1056,7 +1057,19 @@ def test_installer_runs_a_clean_real_registry_neuro_canary_without_selected_tool
     assert '"canary_persisted_outcome_tools":["neuro_event_commit"]' in script
 
 
-def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("admin_scopes", "wolfram_enabled", "expected_tool_count"),
+    (
+        ("", "0", 258),
+        ("aurion.admin.read", "0", 288),
+        ("aurion.admin.read", "1", 293),
+        ("aurion.admin.read aurion.admin.assets.write aurion.admin.authoring.write", "0", 306),
+        ("aurion.admin.read aurion.admin.assets.write aurion.admin.authoring.write", "1", 311),
+    ),
+)
+def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(
+    tmp_path: Path, admin_scopes: str, wolfram_enabled: str, expected_tool_count: int,
+) -> None:
     script = INSTALLER.read_text("utf-8")
     section = script.split('INSTALL_STAGE="verify_isolated_neuro_runtime_canary"', 1)[1].split(
         'INSTALL_STAGE="verify_operating_profile_canaries"', 1
@@ -1083,7 +1096,7 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
         "SOVEREIGN_CANARY_TEST_PARENT": str(canary_parent),
         "SOVEREIGN_EXPECTED_CANARY_REVISION": revision,
         "SOVEREIGN_SOURCE_REVISION": revision,
-        "SOVEREIGN_EXPECTED_MCP_TOOL_COUNT": "258",
+        "SOVEREIGN_EXPECTED_MCP_TOOL_COUNT": str(expected_tool_count),
         "SOVEREIGN_NEURO_POLICY_SHA256": policy_sha256,
         "SOVEREIGN_NEURO_RUNTIME_TRACKING_ENABLED": "0",
         "SOVEREIGN_MCP_WORKSPACE_ROOT": str(tmp_path / "workspaces"),
@@ -1093,6 +1106,10 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
         "SOVEREIGN_MCP_REPOSITORY": "OuroborosCollective/Sovereign-Studio-ato",
         "SOVEREIGN_ANDROID_NATIVE_BUILD_MODE": "github_actions",
         "SOVEREIGN_KAPPA_POS": "1000000",
+        "SOVEREIGN_MCP_PRIVATE_OWNER_MODE": "1",
+        "SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP": "1" if admin_scopes else "0",
+        "AURION_ADMIN_MCP_SCOPES": admin_scopes or "aurion.admin.read",
+        "AURION_ADMIN_MCP_WOLFRAM_ENABLED": wolfram_enabled,
         "SOVEREIGN_MCP_ENABLE_AURION_OPERATOR": "1",
         "SOVEREIGN_MCP_ENABLE_AURION_WRITE": "1",
     }
@@ -1111,14 +1128,14 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
     assert receipt == {
         "canonicalReadbackVerified": True,
         "commitReplayVerified": True,
-        "guardedPredecessorToolCount": 253,
+        "guardedPredecessorToolCount": expected_tool_count - 5,
         "isolatedStateCleaned": True,
         "previewProposalOnly": True,
         "persistedOutcomeTools": ["neuro_event_commit"],
         "quarantineNoMutation": True,
         "readOnlyCallsPersisted": False,
         "registeredToolSurfaceVerified": True,
-        "registryToolCount": 258,
+        "registryToolCount": expected_tool_count,
         "selectedToolsExecuted": False,
         "status": "NEURO_DEPLOYMENT_CANARY_VERIFIED",
         "tamperDetected": True,

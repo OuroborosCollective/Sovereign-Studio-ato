@@ -3011,7 +3011,7 @@ with tempfile.TemporaryDirectory(
     )
     assert not isolated_state.exists(), "read-only status initialized isolated state"
     # Continuity is advisory provenance and intentionally not required for this
-    # deployment canary. Guard every one of the 253 non-neuro tools
+    # deployment canary. Guard every non-neuro tool in the configured registry
     # for the remainder of the canary while leaving only the five additive
     # Neuro/Teacher wrapper chains callable.
     guarded_tool_calls: list[str] = []
@@ -3058,7 +3058,7 @@ with tempfile.TemporaryDirectory(
         "change_event": event.to_dict(),
         "request_id": "request.neuro-deployment-canary",
         "session_id": "session.neuro-deployment-canary",
-        "mission_summary": "Read MCP runtime status.",
+        "mission_summary": "Read the last private MCP state.",
         "required_capabilities": ["runtime"],
         "allowed_effects": ["read"],
         "relevance_threshold": 1,
@@ -3384,8 +3384,8 @@ print(
     json.dumps(
         {
             "status": "NEURO_DEPLOYMENT_CANARY_VERIFIED",
-            "registryToolCount": 258,
-            "guardedPredecessorToolCount": 253,
+            "registryToolCount": expected_tool_count,
+            "guardedPredecessorToolCount": len(set(guarded_tool_names)),
             "quarantineNoMutation": True,
             "previewProposalOnly": True,
             "selectedToolsExecuted": False,
