@@ -65,3 +65,7 @@
 ## 2024-10-24 - Descriptive Titles for Dense Indicator Buttons
 **Learning:** Summary indicator buttons using dense visual typography are hard to read for users and lack clarity. Dynamically updating native title attributes improves discoverability without cluttering the UI.
 **Action:** Always add state-dependent native title tooltips to dense visual metric indicators, and ensure consistent localization in aria-labels across the app.
+
+## 2025-05-16 - [State-Dependent Tooltips on Decision Action Buttons]
+**Learning:** In owner interaction or decision modals, primary action buttons (Approve/Reject) often enter a disabled state while waiting for network responses or input validation. Adding state-dependent `title` attributes improves keyboard and screen-reader hover feedback without violating Label in Name guidelines.
+**Action:** Always add dynamic `title` tooltips to stateful decision buttons that explain why the action is blocked (e.g., "Submitting..." or "Input required") or what it will do ("Approve pending action").

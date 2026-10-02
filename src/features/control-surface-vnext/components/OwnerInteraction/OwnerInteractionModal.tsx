@@ -94,6 +94,7 @@ export function OwnerInteractionModal({ interaction, onSubmit, isSubmitting = fa
                 onClick={() => dispatchResponse(safeDecision)}
                 disabled={isSubmitting}
                 className="sovereign-decision-reject"
+                title={isSubmitting ? "Action locked while submitting..." : "Reject the pending action"}
               >
                 <X size={14} aria-hidden="true" />
                 {safeDecision.toUpperCase()}
@@ -103,6 +104,7 @@ export function OwnerInteractionModal({ interaction, onSubmit, isSubmitting = fa
                 onClick={() => dispatchResponse(affirmativeDecision)}
                 disabled={isSubmitting}
                 className="sovereign-decision-approve"
+                title={isSubmitting ? "Submitting your decision..." : "Approve the pending action"}
               >
                 {isSubmitting ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Check size={14} aria-hidden="true" />}
                 {isSubmitting ? 'SUBMITTING…' : affirmativeDecision.toUpperCase()}
@@ -128,10 +130,10 @@ export function OwnerInteractionModal({ interaction, onSubmit, isSubmitting = fa
               rows={4}
             />
             <div className="grid grid-cols-2 gap-2">
-              <button ref={hasDecisionButtons ? undefined : dismissRef} type="button" onClick={() => setDismissedId(interaction.id)} className="sovereign-decision-reject min-h-10">
+              <button ref={hasDecisionButtons ? undefined : dismissRef} type="button" onClick={() => setDismissedId(interaction.id)} className="sovereign-decision-reject min-h-10" title="Dismiss pending action temporarily">
                 NOT NOW
               </button>
-              <button type="button" onClick={() => dispatchResponse(text)} disabled={isSubmitting || !text.trim()} className="sovereign-decision-approve min-h-10">
+              <button type="button" onClick={() => dispatchResponse(text)} disabled={isSubmitting || !text.trim()} className="sovereign-decision-approve min-h-10" title={isSubmitting ? "Submitting owner directive..." : text.trim() ? "Send the owner directive" : "Enter an owner directive to send"}>
                 {isSubmitting ? <><Loader2 size={14} className="animate-spin" aria-hidden="true" /> RESUMING…</> : <>SEND DIRECTIVE <ShieldCheck size={14} aria-hidden="true" /></>}
               </button>
             </div>

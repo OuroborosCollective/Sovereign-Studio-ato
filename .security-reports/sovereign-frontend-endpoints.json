@@ -850,7 +850,7 @@
     },
     {
       "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1508,
+      "line": 1488,
       "methods": [
         "DELETE"
       ],
@@ -859,7 +859,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1508,
+      "line": 1488,
       "methods": [
         "DELETE"
       ],
@@ -868,7 +868,7 @@
     },
     {
       "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1439,
+      "line": 1419,
       "methods": [
         "GET"
       ],
@@ -877,7 +877,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1439,
+      "line": 1419,
       "methods": [
         "GET"
       ],
@@ -886,7 +886,7 @@
     },
     {
       "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1464,
+      "line": 1444,
       "methods": [
         "PUT"
       ],
@@ -895,7 +895,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1464,
+      "line": 1444,
       "methods": [
         "PUT"
       ],
@@ -904,7 +904,7 @@
     },
     {
       "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1565,
+      "line": 1545,
       "methods": [
         "GET"
       ],
@@ -913,7 +913,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1565,
+      "line": 1545,
       "methods": [
         "GET"
       ],
@@ -922,7 +922,7 @@
     },
     {
       "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1531,
+      "line": 1511,
       "methods": [
         "POST"
       ],
@@ -931,7 +931,7 @@
     },
     {
       "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-      "line": 1531,
+      "line": 1511,
       "methods": [
         "POST"
       ],
@@ -4831,7 +4831,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1508,
+          "line": 1488,
           "methods": [
             "DELETE"
           ],
@@ -4840,7 +4840,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1508,
+          "line": 1488,
           "methods": [
             "DELETE"
           ],
@@ -4849,7 +4849,7 @@
         },
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1439,
+          "line": 1419,
           "methods": [
             "GET"
           ],
@@ -4858,7 +4858,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1439,
+          "line": 1419,
           "methods": [
             "GET"
           ],
@@ -4867,7 +4867,7 @@
         },
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1464,
+          "line": 1444,
           "methods": [
             "PUT"
           ],
@@ -4876,7 +4876,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1464,
+          "line": 1444,
           "methods": [
             "PUT"
           ],
@@ -4907,7 +4907,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1508,
+          "line": 1488,
           "methods": [
             "DELETE"
           ],
@@ -4916,7 +4916,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1508,
+          "line": 1488,
           "methods": [
             "DELETE"
           ],
@@ -4925,7 +4925,7 @@
         },
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1439,
+          "line": 1419,
           "methods": [
             "GET"
           ],
@@ -4934,7 +4934,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1439,
+          "line": 1419,
           "methods": [
             "GET"
           ],
@@ -4943,7 +4943,7 @@
         },
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1464,
+          "line": 1444,
           "methods": [
             "PUT"
           ],
@@ -4952,7 +4952,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1464,
+          "line": 1444,
           "methods": [
             "PUT"
           ],
@@ -4983,7 +4983,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1508,
+          "line": 1488,
           "methods": [
             "DELETE"
           ],
@@ -4992,7 +4992,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1508,
+          "line": 1488,
           "methods": [
             "DELETE"
           ],
@@ -5001,7 +5001,7 @@
         },
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1439,
+          "line": 1419,
           "methods": [
             "GET"
           ],
@@ -5010,7 +5010,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1439,
+          "line": 1419,
           "methods": [
             "GET"
           ],
@@ -5019,7 +5019,7 @@
         },
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1464,
+          "line": 1444,
           "methods": [
             "PUT"
           ],
@@ -5028,7 +5028,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1464,
+          "line": 1444,
           "methods": [
             "PUT"
           ],
@@ -5059,7 +5059,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1565,
+          "line": 1545,
           "methods": [
             "GET"
           ],
@@ -5068,7 +5068,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1565,
+          "line": 1545,
           "methods": [
             "GET"
           ],
@@ -5099,7 +5099,7 @@
       "backendRoutes": [
         {
           "file": "backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1531,
+          "line": 1511,
           "methods": [
             "POST"
           ],
@@ -5108,7 +5108,7 @@
         },
         {
           "file": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
-          "line": 1531,
+          "line": 1511,
           "methods": [
             "POST"
           ],
@@ -8801,7 +8801,7 @@
         "active_surface": true,
         "call_name": "buildGatewayEndpoint",
         "file": "src/features/product/runtime/externalMemorySync.ts",
-        "line": 551,
+        "line": 562,
         "method": "UNKNOWN",
         "path": "/api/sovereign-memory/delete-user-data",
         "source_kind": "route-call",
@@ -8843,7 +8843,7 @@
         "active_surface": true,
         "call_name": "URL",
         "file": "src/features/product/runtime/externalMemorySync.ts",
-        "line": 521,
+        "line": 532,
         "method": "UNKNOWN",
         "path": "/api/sovereign-memory/pull-updates",
         "source_kind": "route-call",
@@ -8864,7 +8864,7 @@
         "active_surface": true,
         "call_name": "buildGatewayEndpoint",
         "file": "src/features/product/runtime/externalMemorySync.ts",
-        "line": 504,
+        "line": 515,
         "method": "UNKNOWN",
         "path": "/api/sovereign-memory/search",
         "source_kind": "route-call",
@@ -8887,7 +8887,7 @@
         "active_surface": true,
         "call_name": "buildGatewayEndpoint",
         "file": "src/features/product/runtime/externalMemorySync.ts",
-        "line": 473,
+        "line": 484,
         "method": "UNKNOWN",
         "path": "/api/sovereign-memory/sync",
         "source_kind": "route-call",
@@ -13435,8 +13435,9 @@
       "status": "BOUND",
       "testReferences": {
         "backend": [
-          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_agent_zero_only_production_smoke_contract.py",
+          "backend/tests/test_cag_self_healing.py",
+          "backend/tests/test_cag_self_healing_runtime.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -13490,8 +13491,9 @@
       "status": "PATH_BOUND_METHOD_UNKNOWN",
       "testReferences": {
         "backend": [
-          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_agent_zero_only_production_smoke_contract.py",
+          "backend/tests/test_cag_self_healing.py",
+          "backend/tests/test_cag_self_healing_runtime.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -13545,8 +13547,9 @@
       "status": "PATH_BOUND_METHOD_UNKNOWN",
       "testReferences": {
         "backend": [
-          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_agent_zero_only_production_smoke_contract.py",
+          "backend/tests/test_cag_self_healing.py",
+          "backend/tests/test_cag_self_healing_runtime.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -13600,8 +13603,9 @@
       "status": "LITERAL_BOUND",
       "testReferences": {
         "backend": [
-          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_agent_zero_only_production_smoke_contract.py",
+          "backend/tests/test_cag_self_healing.py",
+          "backend/tests/test_cag_self_healing_runtime.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -13655,8 +13659,9 @@
       "status": "PATH_BOUND_METHOD_UNKNOWN",
       "testReferences": {
         "backend": [
-          "backend/tests/test_agent_zero_only_execution_contract.py",
           "backend/tests/test_agent_zero_only_production_smoke_contract.py",
+          "backend/tests/test_cag_self_healing.py",
+          "backend/tests/test_cag_self_healing_runtime.py",
           "backend/tests/test_repository_single_a2a_contract.py"
         ],
         "e2e": [
@@ -16413,10 +16418,18 @@
     },
     {
       "dynamic": false,
-      "line": 5,
+      "line": 6,
       "source": "src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx",
       "source_status": "active",
       "target": "src/features/control-surface-vnext/utils/audio.ts",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 5,
+      "source": "src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx",
+      "source_status": "active",
+      "target": "src/features/product/components/ChatMarkdown.tsx",
       "target_status": "active"
     },
     {
@@ -21428,10 +21441,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "bb9c43ddcb4266ae248eaa5a163844c38422c81eaee23a9bd09efcb4ff896a65",
-  "revision": "98e6c09b41454b7533bd78b68ee6776c97faadee",
+  "reportSha256": "48e26dee042620886ff7b7d6eea6a00414d4fbe2ea4c9dafe57d0f55363e1746",
+  "revision": "15cd8adb941cb981cc87894f974577c0e68bab3e",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "5d3ab130fb180b57aa434a976b2b4c6b618c9a1b5683de870847a551f5a06f80",
+  "sourceTreeSha256": "d5adca64ffcc459ff4a4062574678a27ee8c291e5b80ccd566d8babd772b329a",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -21446,11 +21459,11 @@
     "externalRequestCount": 30,
     "frontendCallCount": 287,
     "frontendModuleCount": 562,
-    "importEdgeCount": 761,
+    "importEdgeCount": 762,
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
-    "testFileCount": 815,
+    "testFileCount": 818,
     "unmatchedActiveRequestCount": 0
   },
   "truthBoundary": {

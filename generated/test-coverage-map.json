@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-09-29T18:19:51.605Z",
+  "generatedAt": "2026-10-02T18:39:13.281Z",
   "productArchitecture": "unified-app",
   "discovery": {
     "scope": "tracked repository test conventions",
@@ -32,12 +32,12 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 799,
+  "totalTestFiles": 802,
   "testRoots": {
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
     "backend": 1,
-    "backend/tests": 182,
+    "backend/tests": 183,
     "backend/tests/e2e": 1,
     "integrations/openhands/sovereign-mcp-toolset-plugin/tests": 1,
     "research": 1,
@@ -45,11 +45,11 @@
     "scripts/sovereign-backend/tests": 82,
     "scripts/tests": 3,
     "sovereign-studio-rn/e2e": 7,
-    "src": 376,
+    "src": 377,
     "tests": 2,
     "tests/e2e": 5,
     "tools": 3,
-    "tools/sovereign-chatgpt-mcp/tests": 109,
+    "tools/sovereign-chatgpt-mcp/tests": 110,
     "tools/sovereign-github-patch-mcp/tests": 4,
     "tools/sovereign-toolchain/tests": 8
   },
@@ -400,6 +400,16 @@
     },
     {
       "file": "backend/tests/test_bitcoin_graph_scann_wolfram.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_bitcoin_rpc_quicknode.py",
       "language": "python",
       "testRoot": "backend/tests",
       "gates": [],
@@ -3272,6 +3282,25 @@
     },
     {
       "file": "src/features/control-surface-vnext/adapter/repository-bound-adapter.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/components/ChatSurface/ChatSurface.test.tsx",
       "language": "javascript-typescript",
       "testRoot": "src",
       "gates": [
@@ -10059,6 +10088,14 @@
     },
     {
       "file": "tools/sovereign-chatgpt-mcp/tests/test_aurion_operator.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-chatgpt-mcp/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-chatgpt-mcp/tests/test_auth_proxy_routing_recovery.py",
       "language": "python",
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
       "gates": [],
