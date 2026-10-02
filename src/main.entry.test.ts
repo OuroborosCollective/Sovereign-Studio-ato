@@ -45,7 +45,9 @@ describe('main app entry', () => {
     expect(surface).toContain('useSovereignJob');
     expect(repositoryAdapter).toContain("'/api/user/agent/repository/run'");
     expect(repositoryAdapter).not.toContain("'/api/user/agent/swarm/run'");
-    expect(repositoryAdapter).toContain("mode: 'free'");
+    expect(repositoryAdapter).toContain('mode: executionMode');
+    expect(repositoryAdapter).toContain("executionMode: ExecutionMode = 'free'");
+    expect(repositoryAdapter).toContain("executionMode !== 'free' && executionMode !== 'paid'");
     expect(repositoryAdapter).toContain("agentMode: 'single'");
     expect(repositoryAdapter).toContain("intentMode: 'repository_execution'");
     expect(adapterBase).toContain("'/api/user/agent/toolchain/manifest'");

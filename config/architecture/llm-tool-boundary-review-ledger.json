@@ -1,9 +1,9 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "9814d922aa774b7fede47d5186c5de0c3a595d7d",
-  "rawCandidateCount": 102,
-  "canonicalCandidateCount": 80,
+  "sourceRevision": "6378f00f3a42ffed37910d11465341ccfadbfb5a",
+  "rawCandidateCount": 104,
+  "canonicalCandidateCount": 81,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
@@ -40,13 +40,28 @@
       "mirrorPaths": [
         "backend/agent_runtime/cognitive_repository_tools.py"
       ],
-      "symbol": "_path_in_role_scope",
-      "line": 166,
+      "symbol": "<module>",
+      "line": 64,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "aeb7a085f73d023f6c8226df1d63e4d75605555705a36ebc618028a1e97feeac",
+      "fileSha256": "249109bb8402cb3463cec869a1f889fd88920236f9911035fc95e1764f1e8bf9",
+      "anchorSha256": "79c93b11cdf8de71574cc6c47f822879cd5c636ee26ff063b96d8fe94d3c2353",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:f6971df593c796e569ceb94c",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "The owner-authorized Free/Paid single-agent extension adds a static ROLE_WORK_PACKAGES instruction keyed by a server-owned role. It does not interpret free user language, choose a provider from prose, or grant effect authority; the explicit execution mode, permission receipt, path guards and canonical Paid billing decide execution."
+    },
+    {
+      "canonicalPath": "scripts/sovereign-backend/agent_runtime/cognitive_repository_tools.py",
+      "mirrorPaths": [
+        "backend/agent_runtime/cognitive_repository_tools.py"
+      ],
+      "symbol": "_path_in_role_scope",
+      "line": 168,
+      "patternFamily": "python_keyword_intent",
+      "fileSha256": "249109bb8402cb3463cec869a1f889fd88920236f9911035fc95e1764f1e8bf9",
       "anchorSha256": "a4e304e4c2d637d4606048e157d73a60212a3589ded714d6d3539e5f9d0c1d83",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:bed0cf62d9083ca42e547ff9",
+      "candidateId": "llm-boundary:877ac97f3597c2f07ac75a88",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_path_in_role_scope evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -1090,5 +1105,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "00d5c502027240b44c074eb8b340f4e0d51481290d3df54feb7e794f76095f28"
+  "ledgerSha256": "22cb9893a8805b4393b73d8350e1f27ae4e8245e65eb94c254a0479355930f35"
 }
