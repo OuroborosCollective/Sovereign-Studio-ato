@@ -3037,7 +3037,7 @@ export function BuilderContainer({
     });
   }, [appendChatLine]);
 
-  const appendGuardedWorkerText = useCallback((text: string) => {
+  const appendGuardedWorkerText = useCallback((text: string, metadata?: Record<string, unknown>) => {
     const claimCheck = checkChatClaim(text, agentWorkSnapshot);
     const guardedText = claimCheck.allowed || !claimCheck.honestFallback
       ? text
@@ -3048,6 +3048,7 @@ export function BuilderContainer({
     appendChatLine({
       role: 'assistant',
       text: guardedText,
+      metadata,
       monitorProjection: {
         schemaVersion: 'sovereign.monitor-communication-projection.v1',
         sourceKind: 'LLM_RESPONSE',
@@ -5014,11 +5015,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       appendActionEvent(buildWorkerResponseEvent());
       let textToAppend = fullText;
       
-      if (streamFallbackMetadata?.fallbackUsed) {
-        appendRuntimeNotice(`Hinweis: ${streamFallbackMetadata.preferredModel} war nicht erreichbar, Antwort kam von ${streamFallbackMetadata.actualModel}.`);
-      }
 
-      appendGuardedWorkerText(textToAppend);
+
+      appendGuardedWorkerText(textToAppend, streamFallbackMetadata?.fallbackUsed ? { fallback: `Hinweis: ${streamFallbackMetadata.preferredModel} war nicht erreichbar, Antwort kam von ${streamFallbackMetadata.actualModel}.` } : undefined);
       await quarantineOnlineAnswer(fullText, streamFallbackMetadata?.actualModel ?? requestedChatModel);
       return;
     }
@@ -5035,11 +5034,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       appendActionEvent(buildWorkerResponseEvent());
       let textToAppend = fallback.content;
 
-      if (fallback.fallbackUsed) {
-        appendRuntimeNotice(`Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}.`);
-      }
 
-      appendGuardedWorkerText(textToAppend);
+
+      appendGuardedWorkerText(fallback.content, fallback.fallbackUsed ? { fallback: `Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}.` } : undefined);
       await quarantineOnlineAnswer(fallback.content, fallback.actualModel ?? requestedChatModel);
       return;
     }
