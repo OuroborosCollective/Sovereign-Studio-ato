@@ -59,15 +59,30 @@ export const RepoReadinessPanel = memo(({ repoUrl, files, status, healthReport }
   );
 
   return (
-    <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
+    <section
+      className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200"
+      aria-labelledby="repo-readiness-title"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-bold">Repo Launch Readiness</h2>
+          <h2 id="repo-readiness-title" className="font-bold">Repo Launch Readiness</h2>
           <p className="text-xs text-slate-400">{report.summary}</p>
         </div>
         <div className="text-right">
-          <div className="text-2xl font-black">{report.score}/100</div>
-          <div className={`text-xs font-bold ${gradeClass(report.grade)}`}>{report.grade}</div>
+          <div
+            className="text-2xl font-black"
+            aria-label={`Readiness score: ${report.score} of 100`}
+            title={`Readiness score: ${report.score} of 100`}
+          >
+            {report.score}/100
+          </div>
+          <div
+            className={`text-xs font-bold ${gradeClass(report.grade)}`}
+            aria-label={`Grade: ${report.grade}`}
+            title={`Grade: ${report.grade}`}
+          >
+            {report.grade}
+          </div>
         </div>
       </div>
 
@@ -75,37 +90,40 @@ export const RepoReadinessPanel = memo(({ repoUrl, files, status, healthReport }
         <div className="mt-4 rounded border border-slate-800 bg-slate-900/70 p-3 text-xs" data-testid="telemetry-health-gate">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-bold uppercase tracking-wide text-slate-200">Telemetry Health Gate</h3>
-            <span className={`font-bold uppercase ${healthClass(healthGate.status)}`}>
+            <span
+              className={`font-bold uppercase ${healthClass(healthGate.status)}`}
+              title={`Status: ${healthGate.allowed ? 'Allowed' : 'Blocked'} (${healthGate.status})`}
+            >
               {healthGate.allowed ? 'allowed' : 'blocked'} · {healthGate.status}
             </span>
           </div>
           <p className="mt-2 text-slate-400">{healthGate.reason}</p>
           {healthGate.warnings.length > 0 ? (
-            <ul className="mt-2 list-disc pl-5 text-slate-500">
+            <ul role="list" aria-label="Telemetry warnings" className="mt-2 list-disc pl-5 text-slate-500 space-y-0.5">
               {healthGate.warnings.slice(0, 3).map((warning) => <li key={warning}>{warning}</li>)}
             </ul>
           ) : null}
         </div>
       ) : null}
 
-      <div className="mt-4 grid gap-2 md:grid-cols-3">
+      <ul role="list" aria-label="Tool progress stages" className="mt-4 grid gap-2 md:grid-cols-3">
         {DEFAULT_TOOL_PROGRESS_RAIL.map((stage) => (
-          <div key={stage.id} className="rounded border border-slate-800 bg-slate-900/70 p-2">
+          <li key={stage.id} className="rounded border border-slate-800 bg-slate-900/70 p-2" title={`${stage.label}: ${stage.description}`}>
             <div className="text-[11px] font-bold uppercase tracking-wide text-violet-300">{stage.label}</div>
             <div className="mt-1 text-[11px] text-slate-400">{stage.description}</div>
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <div>
-          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Risk Register</div>
+          <h3 id="risk-register-heading" className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Risk Register</h3>
           {report.risks.length === 0 ? (
             <p className="text-xs text-emerald-300">No blocking readiness risks detected.</p>
           ) : (
-            <ul className="space-y-2">
+            <ul role="list" aria-labelledby="risk-register-heading" className="space-y-2">
               {report.risks.map((risk) => (
-                <li key={risk.id} className="rounded bg-slate-900 p-2 text-xs">
+                <li key={risk.id} className="rounded bg-slate-900 p-2 text-xs" title={`Risk ${risk.severity}: ${risk.title}`}>
                   <span className="font-bold uppercase text-amber-300">{risk.severity}</span> {risk.title}
                   <div className="mt-1 text-slate-400">{risk.mitigation}</div>
                 </li>
@@ -115,11 +133,11 @@ export const RepoReadinessPanel = memo(({ repoUrl, files, status, healthReport }
         </div>
 
         <div>
-          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Owner Checklist</div>
-          <ul className="space-y-2">
+          <h3 id="owner-checklist-heading" className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Owner Checklist</h3>
+          <ul role="list" aria-labelledby="owner-checklist-heading" className="space-y-2">
             {report.checklist.map((item) => (
-              <li key={item.id} className="rounded bg-slate-900 p-2 text-xs">
-                <span className={item.done ? 'text-emerald-300' : 'text-slate-500'}>{item.done ? '✓' : '□'}</span>{' '}
+              <li key={item.id} className="rounded bg-slate-900 p-2 text-xs" title={`${item.owner}: ${item.text} (${item.done ? 'Done' : 'Pending'})`}>
+                <span className={item.done ? 'text-emerald-300' : 'text-slate-500'} aria-label={item.done ? 'Done' : 'Pending'}>{item.done ? '✓' : '□'}</span>{' '}
                 <span className="font-bold">{item.owner}</span>: {item.text}
               </li>
             ))}
@@ -127,9 +145,20 @@ export const RepoReadinessPanel = memo(({ repoUrl, files, status, healthReport }
         </div>
       </div>
 
-      <details className="mt-4">
-        <summary className="cursor-pointer text-xs font-bold uppercase tracking-wide text-slate-400">Launch package markdown</summary>
-        <pre className="mt-2 max-h-72 overflow-auto rounded bg-black/40 p-3 text-[11px] text-slate-300">{launchMarkdown}</pre>
+      <details className="mt-4 group">
+        <summary
+          className="cursor-pointer text-xs font-bold uppercase tracking-wide text-slate-400 rounded px-1 py-0.5 inline-block focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none transition-colors hover:text-slate-200"
+          title="Toggle launch package markdown"
+        >
+          Launch package markdown
+        </summary>
+        <pre
+          tabIndex={0}
+          aria-label="Launch package markdown content"
+          className="mt-2 max-h-72 overflow-auto rounded bg-black/40 p-3 text-[11px] text-slate-300 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+        >
+          {launchMarkdown}
+        </pre>
       </details>
     </section>
   );
