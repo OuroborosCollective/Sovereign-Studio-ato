@@ -725,9 +725,8 @@ async function req<T>(
 
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
-  let res: Response;
   try {
-    res = await fetch(`${ADMIN_API_BASE}${path}`, {
+    const res = await fetch(`${ADMIN_API_BASE}${path}`, {
       ...options,
       signal: controller.signal,
       credentials: 'omit',
@@ -738,36 +737,41 @@ async function req<T>(
         ...(options.headers ?? {}),
       },
     });
+
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) clearAdminKey();
+      const body = await res.json().catch(error => {
+        if (controller.signal.aborted) throw error;
+        return {};
+      }) as {
+        error?: string | { message?: string; code?: string };
+        message?: string;
+        blocker?: unknown;
+      };
+      const message = typeof body.error === 'string'
+        ? body.error
+        : body.error?.message ?? body.message;
+      const blocker = typeof body.blocker === 'string'
+        && /^[a-z][a-z0-9_:-]{0,159}$/i.test(body.blocker)
+        ? body.blocker
+        : null;
+      // Preserve the backend's bounded cause instead of reducing provider
+      // failures to an uncorrelated "Unknown error".
+      throw new Error(blocker
+        ? `${blocker} · HTTP ${res.status}${message ? ` · ${message}` : ''}`
+        : message ?? `HTTP ${res.status}`);
+    }
+    // fetch resolves at the headers. Keep the same deadline through body
+    // consumption so every admin hook can leave its loading state.
+    return await res.json() as T;
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (controller.signal.aborted) {
       throw new Error(`Backend-Zeitüberschreitung nach ${Math.ceil(timeoutMs / 1000)} Sekunden.`);
     }
     throw error;
   } finally {
     window.clearTimeout(timeout);
   }
-
-  if (!res.ok) {
-    if (res.status === 401 || res.status === 403) clearAdminKey();
-    const body = await res.json().catch(() => ({})) as {
-      error?: string | { message?: string; code?: string };
-      message?: string;
-      blocker?: unknown;
-    };
-    const message = typeof body.error === 'string'
-      ? body.error
-      : body.error?.message ?? body.message;
-    const blocker = typeof body.blocker === 'string'
-      && /^[a-z][a-z0-9_:-]{0,159}$/i.test(body.blocker)
-      ? body.blocker
-      : null;
-    // Preserve the backend's bounded cause instead of reducing provider
-    // failures to an uncorrelated "Unknown error".
-    throw new Error(blocker
-      ? `${blocker} · HTTP ${res.status}${message ? ` · ${message}` : ''}`
-      : message ?? `HTTP ${res.status}`);
-  }
-  return res.json() as Promise<T>;
 }
 
 async function resolveProtectedOwnerInput(
