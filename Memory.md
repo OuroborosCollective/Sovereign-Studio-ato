@@ -1015,3 +1015,11 @@ Change: Add explicit protected-HTTPS QuickNode mode alongside default Core Basic
 Learning: The QuickNode management API key, private RPC endpoint URL, GitHub secrets and persistent indexer are separate boundaries. A connector connection or passing adapter fixture cannot prove hosted RPC or full-chain readiness.
 Evidence: Source main@819413c3b165662e5f9225f0268784655b320dfa lacks QuickNode auth mode; 61 focused local tests pass, including actual local HTTP-to-SQLite ingest/resume over an explicit fixture, workflow execution gates and mirror parity. Both QuickNode list-chains/list-endpoints calls returned HTTP 403 AuthenticationError for the configured x-api-key. No endpoint, secret, production store or service was changed; no external Bitcoin RPC success is claimed.
 Open/next: Read exact-head CI, repair QuickNode account authentication through a secure connection channel, verify endpoint permissions/quota and historical blocks, provision/read back issue #2089's persistent runner/store, then execute a bounded real ingest before an authorized full-chain run. Merge and release remain separately evidence-gated.
+
+
+### 2026-10-02 — Unified PR backlog review
+Status: TESTED_AT_REVISION — local checks passed; exact-head CI and merge readback pending.
+Change: Review all 16 open PRs from main bc51ae5f1d24de3b185cef2456a4f4b9643b05ba; combine useful source changes from twelve, reject empty #2166 and unsafe/disconnected #2161, #2156, #2148. Preserve canonical frontend/backend ownership, repair stale PyJWT installer expectation and three existing TypeScript/runtime projection contracts.
+Learning: An accepted abort is not a cancelled backend job; wait for independent phase readback. Do not optimize duplicate matching or cache mutable public inputs without preserving behavior.
+Evidence: 169 focused frontend tests, 25 runtime/adapter tests, 16 MCP/auth tests; final release gate 25 endpoint tests, 3,830 smoke passes (two skipped), 90 integration passes; production build and artifact smoke passed. Static architecture scans are advisory. Local Chromium download failed; browser E2E remains delegated to CI. Details: docs/reviews/PR_BACKLOG_REVIEW_2026-10-02.md.
+Open: Exact-head terminal CI, merge/main readback and closing superseded originals; no production runtime claim.

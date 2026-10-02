@@ -27,6 +27,7 @@ import { TestRunnerResultCard } from './TestRunnerResultCard';
 import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
+import { PatternKnowledgeCard } from './PatternKnowledgeCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -434,7 +435,7 @@ describe('Palette Accessibility Enhancements', () => {
     it('An Agent Senden button has correct state-dependent title and no redundant aria-label', () => {
       const options = [{ id: 'opt1', label: 'Option 1' }, { id: 'opt2', label: 'Option 2' }];
       const handleAnswer = vi.fn();
-      const { rerender } = render(
+      const { container, rerender } = render(
         <AgentQuestionCard
           question="Test Question"
           options={options}
@@ -442,12 +443,18 @@ describe('Palette Accessibility Enhancements', () => {
         />
       );
 
+      const icon = container.querySelector('[aria-hidden="true"]');
+      expect(icon).toBeInTheDocument();
+      expect(icon).toHaveTextContent('?');
+
       const sendButton = screen.getByRole('button', { name: /An Agent senden/i });
       expect(sendButton).toHaveAttribute('title', 'Bitte wählen Sie zuerst eine Option aus');
       expect(sendButton).not.toHaveAttribute('aria-label');
+      expect(sendButton).toHaveClass('focus-visible:ring-2');
 
       const opt1 = screen.getByRole('radio', { name: 'Option 1' });
       expect(opt1).toHaveAttribute('title', 'Option 1');
+      expect(opt1).toHaveClass('focus-visible:ring-2');
       fireEvent.click(opt1);
 
       expect(sendButton).toHaveAttribute('title', 'Ausgewählte Antwort an den Agenten senden');
@@ -1080,7 +1087,7 @@ describe('Palette Accessibility Enhancements', () => {
   });
 
   describe('AgentResultCard Accessibility and Micro-UX Enhancements', () => {
-    it('renders with title tooltips on metadata and styled action buttons with descriptive tooltips', () => {
+    it('renders with title tooltips on metadata, semantic list, and styled action buttons with descriptive tooltips', () => {
       const mockSnapshot = {
         id: 'work-123',
         state: 'draft_pr_ready' as const,
@@ -1109,6 +1116,9 @@ describe('Palette Accessibility Enhancements', () => {
       const region = screen.getByRole('region', { name: 'Agent Ergebnis' });
       expect(region).toBeInTheDocument();
 
+      const detailsList = screen.getByRole('list', { name: 'Ergebnis-Details' });
+      expect(detailsList).toBeInTheDocument();
+
       expect(screen.getByTitle('Pull Request #42')).toBeInTheDocument();
       expect(screen.getByTitle('owner/repo')).toBeInTheDocument();
       expect(screen.getByTitle('feature/amazing-ux')).toBeInTheDocument();
@@ -1118,14 +1128,17 @@ describe('Palette Accessibility Enhancements', () => {
       const openBtn = screen.getByRole('button', { name: 'Öffnen' });
       expect(openBtn).toHaveAttribute('title', 'Draft PR auf GitHub öffnen');
       expect(openBtn).toHaveClass('focus-visible:ring-2');
+      expect(openBtn).toHaveClass('transition-opacity');
 
       const diffBtn = screen.getByRole('button', { name: 'Diff ansehen' });
       expect(diffBtn).toHaveAttribute('title', 'Diff-Vorschau der Änderungen anzeigen');
       expect(diffBtn).toHaveClass('focus-visible:ring-2');
+      expect(diffBtn).toHaveClass('transition-opacity');
 
       const watchBtn = screen.getByRole('button', { name: 'Checks beobachten' });
       expect(watchBtn).toHaveAttribute('title', 'GitHub Commit Checks live beobachten');
       expect(watchBtn).toHaveClass('focus-visible:ring-2');
+      expect(watchBtn).toHaveClass('transition-opacity');
 
       fireEvent.click(openBtn);
       expect(onOpen).toHaveBeenCalledTimes(1);
@@ -1390,6 +1403,68 @@ describe('Palette Accessibility Enhancements', () => {
       fireEvent.click(viewDiffBtn);
       expect(onOpenPr).toHaveBeenCalledTimes(1);
       expect(onViewDiff).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('PatternKnowledgeCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders section linked to heading, semantic metric list, scope tags list, and focus-visible action buttons', () => {
+      const counters = {
+        totalStored: 12,
+        verifiedCount: 8,
+        localExecutableCount: 5,
+        frequentlyUsedCount: 3,
+        lastSuccessfulReuseAt: 1700000000000,
+        localUserCount: 4,
+        remoteUserCount: 2,
+        sharedDerivedCount: 1,
+      };
+
+      const onShowDetails = vi.fn();
+      const onUseLocalMode = vi.fn();
+
+      render(
+        <PatternKnowledgeCard
+          counters={counters}
+          onShowDetails={onShowDetails}
+          onUseLocalMode={onUseLocalMode}
+        />
+      );
+
+      const section = screen.getByRole('region', { name: 'Dein Sovereign-Wissensstand' });
+      expect(section).toBeInTheDocument();
+
+      const heading = screen.getByRole('heading', { name: 'Dein Sovereign-Wissensstand', level: 2 });
+      expect(section).toHaveAttribute('aria-labelledby', heading.id);
+
+      const metricsList = screen.getByRole('list', { name: 'Wissensstand-Metriken' });
+      expect(metricsList).toBeInTheDocument();
+
+      const metricItems = screen.getAllByRole('listitem');
+      expect(metricItems.length).toBeGreaterThanOrEqual(5);
+
+      const sourcesGroup = screen.getByRole('group', { name: 'Musterquellen' });
+      expect(sourcesGroup).toBeInTheDocument();
+
+      const sourcesList = screen.getByRole('list', { name: 'Aktive Musterquellen' });
+      expect(sourcesList).toBeInTheDocument();
+
+      expect(screen.getByTitle('Aus dem lokalen Musterbestand')).toBeInTheDocument();
+      expect(screen.getByTitle('Aus dem entfernten Musterbestand')).toBeInTheDocument();
+      expect(screen.getByTitle('Aus geteilten Sovereign-Mustern abgeleitet')).toBeInTheDocument();
+
+      const detailsBtn = screen.getByRole('button', { name: 'Wissensstand-Details ansehen' });
+      expect(detailsBtn).toHaveAttribute('title', 'Detaillierte Übersicht der gespeicherten Muster anzeigen');
+      expect(detailsBtn).toHaveClass('focus-visible:ring-2');
+
+      const localModeBtn = screen.getByRole('button', { name: 'Lokalen Modus nutzen' });
+      expect(localModeBtn).toHaveAttribute('title', 'Lokalen Modus für gespeicherte Abläufe aktivieren');
+      expect(localModeBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(detailsBtn);
+      expect(onShowDetails).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(localModeBtn);
+      expect(onUseLocalMode).toHaveBeenCalledTimes(1);
     });
   });
 });
