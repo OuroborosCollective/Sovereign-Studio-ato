@@ -133,6 +133,12 @@ describe('maskSecrets', () => {
     expect(maskSecrets('org_secret=org_sec_val_606')).toBe('org_secret=****');
     expect(maskSecrets('private_key_passphrase: my_secret_passphrase')).toBe('private_key_passphrase: ****');
     expect(maskSecrets('key_passphrase=my_key_passphrase_123')).toBe('key_passphrase=****');
+    expect(maskSecrets('sendgrid_key: sg_secret_val_101')).toBe('sendgrid_key: ****');
+    expect(maskSecrets('resend_key=resend_secret_val_202')).toBe('resend_key=****');
+    expect(maskSecrets('mailgun_key: mailgun_secret_val_303')).toBe('mailgun_key: ****');
+    expect(maskSecrets('postmark_key=postmark_secret_val_404')).toBe('postmark_key=****');
+    expect(maskSecrets('twilio_key: twilio_key_val_505')).toBe('twilio_key: ****');
+    expect(maskSecrets('twilio_secret=twilio_secret_val_606')).toBe('twilio_secret=****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
