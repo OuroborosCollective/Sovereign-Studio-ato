@@ -1043,3 +1043,18 @@ Next: Consume final exact-head CI, obtain specific merge/release authorization, 
 Decision: Replace empty Agents/Attachments projections with authenticated persisted agent tasks and existing integration readbacks. Display ledger-verified account/provider credits. Bind explicit Paid selection to the existing permission chain and OpenRouter reservation/actual-cost owner; Free never bills or escalates to Paid.
 Evidence: Six registry/balance regressions and ten UI regressions failed before implementation. Local validation passes 149 UI tests and 135 focused backend tests; two workspace ownership checks remain required in CI because local mapped-filesystem chown is unavailable. Seven shipping-schema PostgreSQL checks require the disposable CI service. Paid stages reserve before provider I/O and settle before completion; the request ceiling matches the SDK turn ceiling.
 Next: Verify the expanded exact head in CI and the deployed authenticated UI/runtime. The original cancelled job is not replayed. No new production Paid call or recovered repository execution is claimed.
+
+
+### 2026-10-03 — PR #2180 communication-provider secret masking refresh
+Status: VERIFIED review; merge gated by refreshed exact-head CI
+Task: Rebase PR #2180 onto current main and re-check communication-provider secret masking for false positives and obvious label gaps.
+Decisions:
+- Preserve the narrow provider-label additions; do not add speculative bare-token patterns.
+- Add regression coverage for common provider env labels and for plain provider-name text without assignment syntax.
+Touched surfaces: `src/shared/utils/crypto.ts`, `src/shared/utils/crypto.test.ts`, `Memory.md`.
+Evidence:
+- Original PR head `c3249578559095a61f907ac38fee30528d4529dd` had five exact-head workflows green: Sovereign ChatGPT MCP, Release Verification, Integration Plan Lane Gate, Sovereign Continuity Evidence, Sovereign Agent Backend.
+- Main was confirmed at `b2b9d131f00bfe5a551cf5b65dfbacdff8fcf93a`; its intervening changes did not touch either crypto file.
+Learned: Existing generic suffix labels already cover standard provider env names such as `*_API_KEY`, `*_AUTH_TOKEN` and `*_API_SECRET`; the provider-specific additions safely cover shorter aliases without masking ordinary prose.
+Open: Refreshed exact-head workflows must be green on the resulting PR revision before merge.
+Next safe step: Verify all five exact-head workflows on the refreshed head, then mark ready and merge only if mergeable.
