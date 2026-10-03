@@ -87,3 +87,7 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+
+## 2026-10-15 - [Fast String Scanning and Loop Counting for Prompt Route Selection]
+**Learning:** In prompt adaptive LLM routing functions (`palRoute`), evaluating code block delimiters with `message.match(/```/g)` compiles/runs a regex and allocates a new match array on every invocation. Replacing `message.match(/```/g)` with `indexOf("```")` character index scanning drops array allocations to zero. Furthermore, replacing `prior.filter(...)` with an indexed `for` loop prevents temporary array allocations during high-frequency chat message routing.
+**Action:** Use index-based substring scanning (`indexOf`) rather than global regular expressions when counting static delimiter sequences in strings, and use indexed `for` loops instead of `.filter()` to calculate item counts without array allocations.

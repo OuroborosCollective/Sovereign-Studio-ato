@@ -41,11 +41,27 @@ export function palRoute(
   if (len >= 300) score += 15;
   else if (len >= 150) score += 10;
   else if (len >= 60) score += 5;
-  score += Math.min(((message.match(/```/g) ?? []).length / 2) * 5, 15);
+
+  // ⚡ Bolt: Fast string index scanning for ``` code block delimiters instead of allocating match arrays via regex.
+  let backtickTripleCount = 0;
+  let tripleIdx = message.indexOf("```");
+  while (tripleIdx !== -1) {
+    backtickTripleCount++;
+    tripleIdx = message.indexOf("```", tripleIdx + 3);
+  }
+  score += Math.min((backtickTripleCount / 2) * 5, 15);
+
   if (fileCount > 0) score += 10;
   if (histDepth > 10) score += 5;
   score = Math.max(0, Math.min(100, score));
-  const powerCount = prior.filter((d) => d.tier === "power").length;
+
+  // ⚡ Bolt: Single-pass indexed loop avoids allocating a temporary filtered array on every routing check.
+  let powerCount = 0;
+  for (let i = 0; i < prior.length; i++) {
+    if (prior[i].tier === "power") {
+      powerCount++;
+    }
+  }
   const tier: "fast" | "smart" | "power" =
     score <= 33
       ? "fast"
