@@ -28,6 +28,7 @@ import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
+import { ScanFindingRegistryPanel } from './ScanFindingRegistryPanel';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1465,6 +1466,65 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(localModeBtn);
       expect(onUseLocalMode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('ScanFindingRegistryPanel Accessibility and Micro-UX Enhancements', () => {
+    it('renders section landmark linked to heading ID, status badge tooltips, semantic lists, and interactive summary focus styles', () => {
+      const mockRegistry = {
+        findings: [
+          {
+            id: 'find-1',
+            category: 'hardcoded-secret' as const,
+            severity: 'critical' as const,
+            title: 'Hardcoded Secret Key',
+            description: 'Unmasked API key in file',
+            fixTips: 'Move key to environment variable',
+            filePath: 'src/config.ts',
+            confidence: 0.95,
+            hits: 1,
+            status: 'active' as const,
+          },
+          {
+            id: 'find-2',
+            category: 'hardcoded-secret' as const,
+            severity: 'medium' as const,
+            title: 'Insecure Protocol Usage',
+            description: 'Used http instead of https',
+            fixTips: 'Change scheme to https',
+            filePath: 'src/api.ts',
+            confidence: 0.8,
+            hits: 1,
+            status: 'resolved' as const,
+          },
+        ],
+        runs: [],
+      };
+
+      render(<ScanFindingRegistryPanel registry={mockRegistry} />);
+
+      const section = screen.getByRole('region', { name: 'Scan Findings Registry' });
+      expect(section).toBeInTheDocument();
+
+      const heading = screen.getByRole('heading', { name: 'Scan Findings Registry', level: 2 });
+      expect(section).toHaveAttribute('aria-labelledby', heading.id);
+
+      const statusBadge = screen.getByLabelText('Publish gate status: needs attention');
+      expect(statusBadge).toHaveAttribute('title', 'Publish gate: Requires attention (needs attention)');
+
+      const categoryList = screen.getByRole('list', { name: 'Findings in category hardcoded-secret' });
+      expect(categoryList).toBeInTheDocument();
+      expect(categoryList.children).toHaveLength(1);
+
+      const summaryToggle = screen.getByTitle('Finding details: Hardcoded Secret Key');
+      expect(summaryToggle).toHaveClass('focus-visible:ring-2');
+
+      const resolvedToggle = screen.getByTitle('Toggle resolved findings history');
+      expect(resolvedToggle).toHaveClass('focus-visible:ring-2');
+
+      const resolvedList = screen.getByRole('list', { name: 'Resolved findings history' });
+      expect(resolvedList).toBeInTheDocument();
+      expect(resolvedList.children).toHaveLength(1);
     });
   });
 });
