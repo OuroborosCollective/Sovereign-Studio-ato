@@ -905,6 +905,8 @@ describe('Palette Accessibility Enhancements', () => {
   describe('ErrorCategoriesPanel Accessibility and Hover Discoverability Enhancements', () => {
     it('renders with section aria-label and native hover tooltips on badges, cards, and buttons', () => {
       const mockRegistry = {
+        version: 1 as const,
+        updatedAt: 1000,
         findings: [
           {
             id: 'find-1',
@@ -914,8 +916,11 @@ describe('Palette Accessibility Enhancements', () => {
             description: 'Type mismatch in component props',
             fixTips: 'Fix type definition',
             filePath: 'src/components/MyComponent.tsx',
-            confidence: 0.9,
+            confidence: 'content-scanned' as const,
+            source: 'test-scan',
             hits: 1,
+            firstSeenAt: 1000,
+            lastSeenAt: 1000,
             status: 'active' as const,
           },
           {
@@ -926,8 +931,11 @@ describe('Palette Accessibility Enhancements', () => {
             description: 'Found API key string',
             fixTips: 'Move to env var',
             filePath: 'src/config.ts',
-            confidence: 0.95,
+            confidence: 'content-scanned' as const,
+            source: 'test-scan',
             hits: 1,
+            firstSeenAt: 1000,
+            lastSeenAt: 1000,
             status: 'resolved' as const,
           },
         ],
@@ -1475,26 +1483,32 @@ describe('Palette Accessibility Enhancements', () => {
         findings: [
           {
             id: 'find-1',
-            category: 'hardcoded-secret' as const,
+            category: 'security-leak' as const,
             severity: 'critical' as const,
             title: 'Hardcoded Secret Key',
             description: 'Unmasked API key in file',
             fixTips: 'Move key to environment variable',
             filePath: 'src/config.ts',
-            confidence: 0.95,
+            confidence: 'content-scanned' as const,
+            source: 'test-scan',
             hits: 1,
+            firstSeenAt: 1000,
+            lastSeenAt: 1000,
             status: 'active' as const,
           },
           {
             id: 'find-2',
-            category: 'hardcoded-secret' as const,
+            category: 'security-leak' as const,
             severity: 'medium' as const,
             title: 'Insecure Protocol Usage',
             description: 'Used http instead of https',
             fixTips: 'Change scheme to https',
             filePath: 'src/api.ts',
-            confidence: 0.8,
+            confidence: 'content-scanned' as const,
+            source: 'test-scan',
             hits: 1,
+            firstSeenAt: 1000,
+            lastSeenAt: 1000,
             status: 'resolved' as const,
           },
         ],
@@ -1512,7 +1526,7 @@ describe('Palette Accessibility Enhancements', () => {
       const statusBadge = screen.getByLabelText('Publish gate status: needs attention');
       expect(statusBadge).toHaveAttribute('title', 'Publish gate: Requires attention (needs attention)');
 
-      const categoryList = screen.getByRole('list', { name: 'Findings in category hardcoded-secret' });
+      const categoryList = screen.getByRole('list', { name: 'Findings in category security-leak' });
       expect(categoryList).toBeInTheDocument();
       expect(categoryList.children).toHaveLength(1);
 

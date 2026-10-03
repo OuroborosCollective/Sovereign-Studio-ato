@@ -3,7 +3,7 @@
   "causalTests": [],
   "exitCode": 254,
   "failed": 0,
-  "label": "frontend-endpoint-clients",
+  "label": "test-run",
   "passed": 0,
   "rawReportPersisted": false,
   "schemaVersion": "sovereign.vitest-causal-runner.v1",
