@@ -15,7 +15,7 @@ export function useSovereignJob(jobId: string | null) {
     enabled: Boolean(jobId),
     refetchInterval: (query) => {
       const phase = query.state.data?.phase;
-      if (phase && TERMINAL.has(phase)) return false;
+      if (phase && TERMINAL.has(phase)) return 15000;
       return query.state.error ? 3000 : 1500;
     },
     refetchOnReconnect: true,

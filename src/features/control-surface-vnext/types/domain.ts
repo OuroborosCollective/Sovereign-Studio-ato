@@ -1,4 +1,7 @@
+import type { SovereignAgentRuntimeEvidence } from '../../product/runtime/sovereignAgentRuntime';
+
 export type AgentMode = 'single' | 'swarm';
+export type ExecutionMode = 'free' | 'paid';
 
 export type JobPhase =
   | 'IDLE'
@@ -98,6 +101,13 @@ export interface SovereignJob {
   nextAction?: string;
   assistantMessage?: string;
   error?: { message: string; code?: string };
+  serverObservedAt?: string;
+  readbackReceivedMonotonicMs?: number;
+  lastEventAt?: string;
+  lastHeartbeatAt?: string;
+  persistedEventCount?: number;
+  externalRef?: string;
+  runtimeEvidence?: SovereignAgentRuntimeEvidence;
 }
 
 export interface Toolchain {
@@ -124,14 +134,61 @@ export type SkillNode = Skill;
 
 export interface IntegrationAttachment {
   id: string;
-  type: 'webhook' | 'artifact_store' | 'audit_ledger' | 'event_stream';
+  type?: 'webhook' | 'artifact_store' | 'audit_ledger' | 'event_stream';
   name: string;
-  status: 'connected' | 'disconnected';
+  status: 'connected' | 'disconnected' | 'verified' | 'blocked' | 'degraded' | 'isolated' | 'defined_not_run';
+  source?: string;
+  observedAt?: string;
+  boundary?: string;
+  blocker?: string;
+  readbackSha256?: string;
   enabled?: boolean;
   endpoint?: string;
   eventsProcessed?: number;
 }
 export type IntegrationArchitectureAttachment = IntegrationAttachment;
+
+export interface RuntimeAgentNode {
+  id: string;
+  name: string;
+  kind: 'executor' | 'agent';
+  status: string;
+  persistedStatus?: string;
+  source: string;
+  description: string;
+  jobId?: string;
+  runId?: string;
+  taskId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ControlSurfaceReadback {
+  schemaVersion: 'sovereign.control-surface-readback.v1';
+  jobId: string | null;
+  jobExecutionMode?: ExecutionMode;
+  observedAt: string;
+  receivedMonotonicMs: number;
+  agents: RuntimeAgentNode[];
+  agentReadbackState: 'live' | 'unavailable';
+  agentBlocker?: string;
+  integrations: IntegrationAttachment[];
+  integrationReadbackState: 'live' | 'unavailable';
+  integrationBlocker?: string;
+  credits: {
+    readbackState: 'live' | 'unavailable';
+    creditStateVerified: boolean;
+    credits?: number;
+    providerFundedCredits?: number;
+    paidEntitlementVerified?: boolean;
+    paidEntitlementSource?: string;
+    blocker?: string;
+  };
+  routing: { repositoryMode: 'free'; agentMode: 'single'; modes: Array<{
+    mode: 'free' | 'paid'; available: boolean; providerAvailable: boolean;
+    model?: string; routeId?: string; profileId?: string; blocker?: string; executionBlocker?: string;
+  }> };
+}
 
 export interface ChatMessage {
   id: string;

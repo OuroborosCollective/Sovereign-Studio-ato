@@ -23,7 +23,8 @@ def test_free_agent_repository_execution_uses_the_local_single_agent_boundary() 
 
     assert "def create_repository_single_agent_task(" in tools
     assert "run_repository_test" in tools
-    assert 'agent_id="free_single_agent"' in tools
+    assert 'agent_id = f"{execution_mode}_single_agent"' in tools
+    assert 'execution_mode: str = "free"' in tools
     assert "repository_tool_factory" in agents
     assert "capability_tool_factory" in agents
     assert "tools=[*repository_tools, *capability_tools]" in agents

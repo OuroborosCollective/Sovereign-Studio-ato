@@ -29,7 +29,7 @@ from .productivity_insights import (
     validate_mission,
 )
 from .contracts import SovereignAgentEvent, normalize_agent_job_result, sanitize_agent_text
-from .cognitive_run_store import read_agent_run_receipts
+from .cognitive_run_store import read_agent_run_receipts, read_job_runtime_evidence
 from .cognitive_swarm_routes import start_cognitive_swarm_run
 from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal, verify_draft_pr_for_job
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
@@ -144,7 +144,32 @@ def _job_to_api(job) -> dict[str, Any]:
         "testSummary": job.test_summary,
         "blocker": job.blocker,
         "events": list(job.events),
+        "createdAt": _api_timestamp(getattr(job, "created_at", None)),
+        "updatedAt": _api_timestamp(getattr(job, "updated_at", None)),
     }
+
+
+def _api_timestamp(value: Any) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+def _job_runtime_readback(conn: Any, job: Any) -> dict[str, Any]:
+    body = _job_to_api(job)
+    try:
+        events = read_job_runtime_evidence(conn, user_id=job.user_id, job_id=job.job_id, external_ref=job.external_ref)
+        body["runtimeEvidence"] = {"jobId": job.job_id, "readbackState": "live", "events": list(events)}
+    except Exception as exc:
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+        body["runtimeEvidence"] = {
+            "jobId": job.job_id, "readbackState": "unavailable", "events": [],
+            "error": f"Runtime evidence readback failed ({type(exc).__name__}).",
+        }
+    body["serverObservedAt"] = datetime.now(timezone.utc).isoformat()
+    return body
 
 
 def _result_to_api(result) -> dict[str, Any]:
@@ -329,6 +354,64 @@ def register_sovereign_agent_routes(
 
     def _connection():
         return get_connection()
+
+    @app.route("/api/user/agent/control-surface", methods=["GET"])
+    @require_session
+    def user_get_control_surface_readback():
+        from .control_surface_readback import (
+            read_control_surface_agents, read_control_surface_credits,
+            read_control_surface_integrations, read_control_surface_routing,
+        )
+        user_id = _current_session_user_id()
+        job_id = str(request.args.get("jobId") or "").strip()
+        if len(job_id) > 200:
+            return jsonify({"error": "job_id_invalid"}), 400
+        conn = _connection()
+        try:
+            job = read_agent_job(conn, user_id=user_id, job_id=job_id) if job_id else None
+            if job_id and job is None:
+                return jsonify({"error": "owned_job_not_found"}), 404
+            body = {"schemaVersion": "sovereign.control-surface-readback.v1", "jobId": job_id or None,
+                    "observedAt": datetime.now(timezone.utc).isoformat()}
+            if job is not None:
+                from .repository_execution import read_repository_execution_mode
+                try:
+                    body["jobExecutionMode"] = read_repository_execution_mode(conn, job=job)
+                except Exception:
+                    conn.rollback()
+                    body["jobExecutionMode"] = None
+            for key, reader in (
+                ("agents", lambda: read_control_surface_agents(conn, user_id=user_id, job=job)),
+                ("credits", lambda: read_control_surface_credits(conn, user_id=user_id)),
+            ):
+                try:
+                    body[key] = reader()
+                    if key == "agents":
+                        body["agentReadbackState"] = "live"
+                except Exception as exc:
+                    rollback = getattr(conn, "rollback", None)
+                    if callable(rollback):
+                        rollback()
+                    if key == "agents":
+                        body.update({"agents": [], "agentReadbackState": "unavailable", "agentBlocker": "agent_readback_unavailable"})
+                    else:
+                        body[key] = {"readbackState": "unavailable", "creditStateVerified": False,
+                                     "blocker": "credit_state_verification_failed" if isinstance(exc, ValueError) else "credit_readback_unavailable"}
+            service = app.extensions.get("sovereign_enterprise_platform")
+            try:
+                if service is None:
+                    raise LookupError("integration_projection_unavailable")
+                body["integrations"] = read_control_surface_integrations(service.integrations)
+                body["integrationReadbackState"] = "live"
+            except Exception:
+                body.update({"integrations": [], "integrationReadbackState": "unavailable",
+                             "integrationBlocker": "integration_readback_unavailable"})
+            body["routing"] = read_control_surface_routing(get_connection, user_id=user_id, credits=body["credits"])
+            response = jsonify(body)
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            return response
+        finally:
+            _close(conn)
 
     def _resolve_live_workspace_context(conn: Any, job: Any) -> Any | None:
         if get_live_workspace_context is None:
@@ -1762,7 +1845,7 @@ def register_sovereign_agent_routes(
                     "blocker": "AGENT_ZERO_A2A_READBACK_UNAVAILABLE",
                     "error": sanitize_agent_text(str(exc), 400),
                 }), 503
-            return jsonify({"runtime": "sovereign-agent", "job": _job_to_api(job)})
+            return jsonify({"runtime": "sovereign-agent", "job": _job_runtime_readback(conn, job)})
         finally:
             _close(conn)
 

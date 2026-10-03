@@ -121,7 +121,9 @@ describe('current Sovereign app shell contract', () => {
     ]);
     expectContainsAll(repositoryAdapter, [
       "'/api/user/agent/repository/run'",
-      "mode: 'free'",
+      'mode: executionMode',
+      "executionMode: ExecutionMode = 'free'",
+      "executionMode !== 'free' && executionMode !== 'paid'",
       "agentMode: 'single'",
       "intentMode: 'repository_execution'",
     ]);

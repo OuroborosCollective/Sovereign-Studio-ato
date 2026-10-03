@@ -62,6 +62,7 @@ ConnectionFactory = Callable[[], Any]
 
 ROLE_WORK_PACKAGES: Final[dict[str, str]] = {
     "free_single_agent": "Implement one bounded coding mission in the isolated Code-Server workspace; read before writing and preserve diff plus test evidence.",
+    "paid_single_agent": "Implement one explicitly paid coding mission in the isolated workspace; preserve diff, tests and actual-cost settlement.",
     "data_storage": "Inspect SQL, Agent Job persistence, pattern candidates and pgvector learning; accept learning only after tool and test evidence.",
     "business_core": "Inspect intent, ARE inference and evidence-gate semantics; model output must never create runtime success.",
     "endpoint_bridge": "Inspect route, job, workspace and executor handoff; prove every state transition from real tool evidence.",
@@ -71,6 +72,7 @@ ROLE_WORK_PACKAGES: Final[dict[str, str]] = {
 }
 
 ROLE_PATH_PREFIXES: Final[dict[str, tuple[str, ...]]] = {
+    "paid_single_agent": ("__workspace_all__",),
     "free_single_agent": ("__workspace_all__",),
     "data_storage": (
         "scripts/sovereign-backend/migrations/",
@@ -553,9 +555,13 @@ def create_repository_single_agent_task(
     run_id: str,
     evidence_id: str,
     write_confirmed: bool,
+    execution_mode: str = "free",
 ) -> str:
-    """Persist exactly one coding task for the free single-agent profile."""
-    task_id = f"free-agent-work-{uuid.uuid4().hex}"
+    """Persist exactly one coding task, keeping Free and Paid identities separate."""
+    if execution_mode not in {"free", "paid"}:
+        raise ValueError("execution mode is invalid")
+    agent_id = f"{execution_mode}_single_agent"
+    task_id = f"{execution_mode}-agent-work-{uuid.uuid4().hex}"
     allowed_tools = (
         *READ_REPOSITORY_TOOL_NAMES,
         *(WRITE_REPOSITORY_TOOL_NAMES if write_confirmed else ()),
@@ -564,9 +570,9 @@ def create_repository_single_agent_task(
         conn,
         run_id=run_id,
         task_id=task_id,
-        agent_id="free_single_agent",
-        specialist_role="free_single_agent",
-        work_package=ROLE_WORK_PACKAGES["free_single_agent"],
+        agent_id=agent_id,
+        specialist_role=agent_id,
+        work_package=ROLE_WORK_PACKAGES[agent_id],
         evidence_id=evidence_id,
         status="QUEUED",
         next_action="EXECUTE_SINGLE_AGENT_WORKSPACE_MISSION",
@@ -1058,7 +1064,7 @@ class BoundRepositoryToolset:
         return assignment
 
     def allowed_paths(self, role: str) -> tuple[str, ...]:
-        if role == "free_single_agent":
+        if role in {"free_single_agent", "paid_single_agent"}:
             return (".",)
         return ROLE_PATH_PREFIXES.get(role, ())
 

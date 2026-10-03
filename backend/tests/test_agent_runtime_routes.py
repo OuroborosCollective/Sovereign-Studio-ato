@@ -654,6 +654,42 @@ def test_list_jobs_is_user_scoped():
     assert payload["jobs"][0]["jobId"] == "agent-1"
 
 
+def test_job_readback_exposes_owned_runtime_evidence_and_server_observation(monkeypatch):
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-runtime-readback")
+    conn.jobs["agent-runtime-readback"]["created_at"] = "2026-10-02T21:10:23Z"
+    conn.jobs["agent-runtime-readback"]["updated_at"] = "2026-10-02T21:10:26Z"
+    calls = []
+    def read(connection, **kwargs):
+        calls.append(kwargs)
+        return ({"eventId": "event-persisted", "evidenceId": "evidence-persisted"},)
+    monkeypatch.setattr(routes_module, "read_job_runtime_evidence", read)
+    response = create_test_app(conn).test_client().get("/api/user/agent/jobs/agent-runtime-readback", headers={"X-Test-User": "user-1"})
+    assert response.status_code == 200
+    job = response.get_json()["job"]
+    assert job["createdAt"] == "2026-10-02T21:10:23Z"
+    assert job["updatedAt"] == "2026-10-02T21:10:26Z"
+    assert job["serverObservedAt"]
+    assert job["runtimeEvidence"] == {"jobId": "agent-runtime-readback", "readbackState": "live",
+                                      "events": [{"eventId": "event-persisted", "evidenceId": "evidence-persisted"}]}
+    assert calls == [{"user_id": "user-1", "job_id": "agent-runtime-readback", "external_ref": None}]
+
+
+def test_runtime_evidence_failure_is_visible_without_leaking_exception_details(monkeypatch):
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-runtime-readback")
+    def unreadable(*args, **kwargs):
+        raise RuntimeError("private-password must not appear")
+    monkeypatch.setattr(routes_module, "read_job_runtime_evidence", unreadable)
+    response = create_test_app(conn).test_client().get("/api/user/agent/jobs/agent-runtime-readback", headers={"X-Test-User": "user-1"})
+    assert response.status_code == 200
+    evidence = response.get_json()["job"]["runtimeEvidence"]
+    assert evidence["readbackState"] == "unavailable"
+    assert evidence["events"] == []
+    assert "RuntimeError" in evidence["error"]
+    assert "private-password" not in response.get_data(as_text=True)
+
+
 def test_create_job_runs_lifecycle_and_returns_runtime_state(tmp_path, monkeypatch):
     conn = FakeConnection()
     monkeypatch.setenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", str(tmp_path))

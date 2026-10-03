@@ -1,5 +1,7 @@
 import type {
   AgentMode,
+  ControlSurfaceReadback,
+  ExecutionMode,
   DraftPR,
   DraftPrPreparation,
   IntegrationAttachment,
@@ -25,7 +27,7 @@ export interface RestoredRepositoryRun {
 }
 
 export interface SovereignBackendAdapter {
-  runSingleAgent(prompt: string, toolchains?: string[], activeSkillIds?: string[]): Promise<{ jobId: string }>;
+  runSingleAgent(prompt: string, toolchains?: string[], activeSkillIds?: string[], executionMode?: ExecutionMode): Promise<{ jobId: string }>;
   getJob(runId: string): Promise<SovereignJob>;
   resumeJob(runId: string, interactionId: string, response: string): Promise<void>;
   abortJob(runId: string): Promise<void>;
@@ -34,6 +36,7 @@ export interface SovereignBackendAdapter {
   getToolchains(): Promise<Toolchain[]>;
   getSkills(): Promise<Skill[]>;
   getIntegrations(): Promise<IntegrationAttachment[]>;
+  getControlSurface?(jobId?: string): Promise<ControlSurfaceReadback>;
   restoreLatestRepositoryRun?(): Promise<RestoredRepositoryRun | null>;
   getStatus?(): AdapterStatus;
   checkHealth?(): Promise<{ status: string; latencyMs: number }>;

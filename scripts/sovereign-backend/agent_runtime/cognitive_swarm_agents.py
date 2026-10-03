@@ -34,6 +34,7 @@ from .cognitive_output_budget import (
     assess_output_budget_evidence,
 )
 from .cognitive_usage_billing import AgentStageBilling
+from .cognitive_output_budget import SINGLE_AGENT_REQUEST_LIMIT
 from .fleet_supervisor import FleetContractError, FleetPlan
 from .llm_contract import (
     LlmOutputContract,
@@ -47,7 +48,7 @@ DEFAULT_MODEL: Final[str] = ""
 ALLOWED_LITELLM_MODEL_ALIASES: Final[frozenset[str]] = frozenset()
 _DIRECT_ROUTE_REQUIRED_TRANSPORT: Final[str] = "unresolved"
 _AGENT_WORKER_MAX_TURNS: Final[int] = 4
-_AGENT_FREE_WORKSPACE_MAX_TURNS: Final[int] = 12
+_AGENT_FREE_WORKSPACE_MAX_TURNS: Final[int] = SINGLE_AGENT_REQUEST_LIMIT
 _AGENT_SINGLE_STAGE_MAX_TURNS: Final[int] = 1
 SKILL_PATH: Final[Path] = Path(__file__).parent / "skills" / "sovereign-cognitive-architecture" / "SKILL.md"
 RELEASE_HUNT_SKILL_PATH: Final[Path] = (
@@ -273,7 +274,7 @@ def classify_swarm_exception(
 
 def _stage_max_turns(stage: str) -> int:
     normalized = str(stage or "").casefold()
-    if "free-single-agent" in normalized:
+    if "free-single-agent" in normalized or "paid-single-agent" in normalized:
         return _AGENT_FREE_WORKSPACE_MAX_TURNS
     if ":worker:" in normalized:
         return _AGENT_WORKER_MAX_TURNS
@@ -691,19 +692,50 @@ async def run_free_single_agent(
     repository_tool_factory: RepositoryToolFactory | None = None,
     capability_tool_factory: CapabilityToolFactory | None = None,
 ) -> dict[str, Any]:
-    """Run exactly one foreground agent on one DB-resolved direct FreeLLM route."""
+    """A Free invocation never receives a billing owner or a Paid fallback."""
+    return await _run_single_agent(mission, evidence=evidence, model=model, intent=intent, route=route,
+        stage_observer=stage_observer, repository_tool_factory=repository_tool_factory,
+        capability_tool_factory=capability_tool_factory, execution_mode="free", stage_billing=None)
+
+
+async def run_paid_single_agent(
+    mission: str, *, evidence: str = "", model: str, intent: MissionIntent,
+    route: dict[str, Any], stage_billing: AgentStageBilling,
+    stage_observer: StageObserver | None = None,
+    repository_tool_factory: RepositoryToolFactory | None = None,
+    capability_tool_factory: CapabilityToolFactory | None = None,
+) -> dict[str, Any]:
+    """Explicit Paid execution uses the existing reservation/actual-cost owner."""
+    if stage_billing is None:
+        raise ValueError("Paid execution requires the canonical billing owner.")
+    return await _run_single_agent(mission, evidence=evidence, model=model, intent=intent, route=route,
+        stage_observer=stage_observer, repository_tool_factory=repository_tool_factory,
+        capability_tool_factory=capability_tool_factory, execution_mode="paid", stage_billing=stage_billing)
+
+
+async def _run_single_agent(
+    mission: str, *, evidence: str, model: str, intent: MissionIntent,
+    route: dict[str, Any] | None, stage_observer: StageObserver | None,
+    repository_tool_factory: RepositoryToolFactory | None, capability_tool_factory: CapabilityToolFactory | None,
+    execution_mode: str, stage_billing: AgentStageBilling | None,
+) -> dict[str, Any]:
+    """Shared foreground implementation; transport and charging remain explicit."""
+    if execution_mode not in {"free", "paid"} or ((execution_mode == "paid") != (stage_billing is not None)):
+        raise ValueError("Single-agent transport/billing mode mismatch.")
+    agent_id = f"{execution_mode}_single_agent"
+    stage = f"{execution_mode}-single-agent"
     normalized_mission = str(mission or "").strip()
     selected_model = str(model or "").strip()
     if not normalized_mission:
         raise ValueError("mission is required")
     if not isinstance(intent, MissionIntent):
-        raise ValueError("A validated mission intent is required for the free profile.")
+        raise ValueError("A validated mission intent is required for the single-agent profile.")
     if route is None:
         raise SwarmExecutionError(
-            stage="free-single-agent",
+            stage=stage,
             family="AGENTS_DIRECT_ROUTE_REQUIRED",
             error_type="RuntimeConfigurationError",
-            next_action="RESOLVE_DATABASE_FREELLM_ROUTE",
+            next_action="RESOLVE_DATABASE_OPENROUTER_ROUTE" if execution_mode == "paid" else "RESOLVE_DATABASE_FREELLM_ROUTE",
             retryable=False,
         )
     try:
@@ -713,31 +745,33 @@ async def run_free_single_agent(
         )
     except RouteRuntimeError as exc:
         raise SwarmExecutionError(
-            stage="free-single-agent",
+            stage=stage,
             family=exc.family,
             error_type=type(exc).__name__,
             next_action=exc.next_action,
             retryable=False,
         ) from exc
-    if route_runtime.transport != "freellm":
+    if execution_mode == "free" and route_runtime.transport != "freellm":
         raise ValueError("The free profile requires a direct FreeLLM route.")
+    if execution_mode == "paid" and route_runtime.transport != "openrouter":
+        raise ValueError("The paid profile requires a direct OpenRouter route.")
     selected_model = route_runtime.model
     agent_class, runner_class = _require_agents_sdk()
     repository_tools = (
-        list(repository_tool_factory("free_single_agent"))
+        list(repository_tool_factory(agent_id))
         if repository_tool_factory is not None
         else []
     )
     capability_tools = (
-        list(capability_tool_factory("free_single_agent"))
+        list(capability_tool_factory(agent_id))
         if capability_tool_factory is not None
         else []
     )
     single_agent = agent_class(
-        name="Sovereign Free Single Agent",
+        name=f"Sovereign {execution_mode.title()} Single Agent",
         model=selected_model,
         instructions=(
-            "You are the single-agent free execution profile. Understand the user's language and complete one bounded task without spawning or delegating to another agent. "
+            f"You are the single-agent {execution_mode} execution profile. Understand the user's language and complete one bounded task without spawning or delegating to another agent. "
             "When repository tools are present, you may read, create, replace and exactly patch code only inside the isolated Code-Server Agent Job workspace. Read before writing; after every mutation inspect Git status and diff and run at least one relevant allowlisted test. "
             "You must never merge, auto-merge, deploy to production, mutate the host, read secrets, or claim success without tool evidence. "
             "When repository execution is requested but no repository tools are present, explain that the workspace tools are unavailable. "
@@ -748,11 +782,11 @@ async def run_free_single_agent(
     )
     _emit_stage(
         stage_observer,
-        agent_id="free_single_agent",
+        agent_id=agent_id,
         event_type="agent_started",
         status="RUNNING",
-        summary="The database-resolved free single agent started.",
-        next_action="WAIT_FOR_FREE_SINGLE_AGENT",
+        summary=f"The database-resolved {execution_mode} single agent started.",
+        next_action=f"WAIT_FOR_{execution_mode.upper()}_SINGLE_AGENT",
     )
     result = await _run_stage(
         runner_class,
@@ -763,8 +797,8 @@ async def run_free_single_agent(
             f"User mission:\n{normalized_mission}\n\n"
             f"Supplied read-only evidence:\n{evidence or '[no evidence supplied]'}"
         ),
-        stage="free-single-agent",
-        stage_billing=None,
+        stage=stage,
+        stage_billing=stage_billing,
         run_config=route_runtime.run_config,
         transport=route_runtime.transport,
     )
@@ -774,11 +808,11 @@ async def run_free_single_agent(
         output_token_limit=_AGENT_OUTPUT_TOKEN_LIMIT,
     )
     if not isinstance(raw_output, str) or not raw_output.strip():
-        budget_failure = _output_budget_failure(result, stage="free-single-agent-output")
+        budget_failure = _output_budget_failure(result, stage=f"{stage}-output")
         if budget_failure is not None:
             raise budget_failure
         raise SwarmExecutionError(
-            stage="free-single-agent-output",
+            stage=f"{stage}-output",
             family="AGENTS_TEXT_OUTPUT_INVALID",
             error_type=type(raw_output).__name__,
             next_action="RETRY_WITH_PLAIN_TEXT_OUTPUT",
@@ -807,13 +841,13 @@ async def run_free_single_agent(
     blocked = repository_requested and not workspace_tools_available
     _emit_stage(
         stage_observer,
-        agent_id="free_single_agent",
+        agent_id=agent_id,
         event_type="agent_completed",
         status="BLOCKED" if blocked else "COMPLETED",
         summary=(
-            "The free single agent could not access an isolated workspace."
+            f"The {execution_mode} single agent could not access an isolated workspace."
             if blocked
-            else "The free single agent completed its bounded foreground execution."
+            else f"The {execution_mode} single agent completed its bounded foreground execution."
         ),
         next_action=(
             "PROVISION_ISOLATED_CODE_SERVER_WORKSPACE"
@@ -826,7 +860,7 @@ async def run_free_single_agent(
     return {
         "ok": not blocked,
         "status": "BLOCKED" if blocked else "COMPLETED",
-        "executionProfile": "free_single_agent",
+        "executionProfile": agent_id,
         "maxForegroundAgents": 1,
         "maxBackgroundAgents": 0,
         "repositoryExecutionAllowed": True,

@@ -159,7 +159,10 @@ function run() {
   requireText(runtimeMonitor, /Nothing is synthesized to fill this panel\./, 'monitor:no-synthesis', 'Runtime monitor explicitly refuses synthesized evidence.');
   requireText(workspaceProjection, /REVISION UNVERIFIED/, 'workspace:revision-unverified', 'Workspace shows unverified revision until evidence supplies it.');
   requireText(workspaceProjection, /This does not claim the repository is globally clean\./, 'workspace:no-global-clean-claim', 'Empty changed-file projection does not claim global clean state.');
-  requireText(integrationProjection, /read-only[\s\S]*does not invent attachment state/, 'integration:read-only', 'Integration projection remains read-only until a real server contract exists.');
+  requireText(integrationProjection, /A configured or isolated service is not a verified attachment or permission to execute tools\./, 'integration:read-only', 'Integration observations do not grant attachment state or execution permission.');
+  requireText(adapter, /\/api\/user\/agent\/control-surface[\s\S]*parseControlSurfaceReadback/, 'integration:server-contract', 'Integrations come from the authenticated, validated backend control-surface readback.');
+  requireText(integrationProjection, /RegistryReadbackStatus[\s\S]*integrations\.map[\s\S]*item\.status/, 'integration:server-projection', 'Integration status is projected from actual server rows with explicit freshness.');
+  requireText(integrationProjection, /item\.source[\s\S]*item\.observedAt[\s\S]*item\.readbackSha256/, 'integration:provenance', 'Every integration exposes its source, observation time and readback hash.');
 
   requireText(forms, /SOVEREIGN_FORM_REPO_URL/, 'form:repo-url', 'Repo URL contract remains defined.');
   requireText(forms, /SOVEREIGN_FORM_PRIVATE_ACCESS/, 'form:private-access', 'Private-access contract remains defined.');

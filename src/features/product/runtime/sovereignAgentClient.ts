@@ -217,6 +217,10 @@ interface RawSovereignAgentJobResponse {
   message?: unknown;
   details?: unknown;
   blocker?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  serverObservedAt?: unknown;
+  runtimeEvidence?: unknown;
 }
 
 function endpoint(baseUrl: string, route: string): string {
@@ -512,17 +516,51 @@ function evidenceAnchorArray(
   return results;
 }
 
-function eventArray(value: unknown, now: () => number): SovereignAgentRuntimeEvent[] {
+function timestampValue(value: unknown): string | undefined {
+  const text = stringValue(value);
+  return text && Number.isFinite(Date.parse(text)) ? text : undefined;
+}
+
+function runtimeEvidence(value: unknown, jobId: string): NonNullable<SovereignAgentJobSnapshot['runtimeEvidence']> {
+  const unavailable = (error: string): NonNullable<SovereignAgentJobSnapshot['runtimeEvidence']> =>
+    ({ jobId, readbackState: 'unavailable', error, events: [] });
+  if (!isObject(value) || value.jobId !== jobId) return unavailable('Runtime evidence has no exact job identity binding.');
+  if (value.readbackState !== 'live') return unavailable(stringValue(value.error) || 'Runtime evidence is unavailable.');
+  if (!Array.isArray(value.events)) return unavailable('Runtime evidence returned an invalid events payload.');
+  const events: NonNullable<SovereignAgentJobSnapshot['runtimeEvidence']>['events'] = [];
+  for (const item of value.events) {
+    if (!isObject(item)) return unavailable('Runtime evidence contains an invalid event.');
+    const eventId = stringValue(item.eventId), runId = stringValue(item.runId), evidenceId = stringValue(item.evidenceId);
+    const evidenceSha256 = stringValue(item.evidenceSha256), agentId = stringValue(item.agentId);
+    const stage = stringValue(item.stage), status = stringValue(item.status), summary = stringValue(item.summary), at = timestampValue(item.at);
+    if (!eventId || !runId || !evidenceId || !evidenceSha256 || !/^[0-9a-f]{64}$/.test(evidenceSha256)
+      || !agentId || !stage || !status || !summary || !at || item.source !== 'agents-sdk') {
+      return unavailable('Runtime evidence contains an incomplete identity, hash or timestamp.');
+    }
+    if (stage === 'sovereign_executor_heartbeat' && typeof item.heartbeatCurrent !== 'boolean') {
+      return unavailable('Executor heartbeat has no current claim validation.');
+    }
+    events.push({ eventId, runId, evidenceId, evidenceSha256, agentId, stage, status, summary, at,
+      source: 'agents-sdk', nextAction: stringValue(item.nextAction),
+      heartbeatCurrent: typeof item.heartbeatCurrent === 'boolean' ? item.heartbeatCurrent : undefined });
+  }
+  return { jobId, readbackState: 'live', events };
+}
+
+function eventArray(value: unknown): SovereignAgentRuntimeEvent[] {
   if (!Array.isArray(value)) return [];
   // ⚡ Bolt: Single-pass loop avoids intermediate array allocations
   const results: SovereignAgentRuntimeEvent[] = [];
   for (const item of value) {
     if (!isObject(item)) continue;
+    const at = typeof item.at === 'number' ? item.at : Date.parse(String(item.at ?? ''));
+    const stage = stringValue(item.stage), message = stringValue(item.message);
+    if (!Number.isFinite(at) || !stage || !message) continue;
     results.push({
-    at: typeof item.at === 'number' && Number.isFinite(item.at) ? item.at : now(),
+    at,
     level: item.level === 'warning' || item.level === 'error' || item.level === 'success' ? item.level : 'info',
-    stage: stringValue(item.stage) || 'sovereign-agent',
-    message: stringValue(item.message) || 'Sovereign Agent runtime event.',
+    stage,
+    message,
     });
   }
   return results;
@@ -548,7 +586,7 @@ function backendErrorMessage(raw: RawSovereignAgentJobResponse): string | undefi
 function unwrapJobPayload(raw: Record<string, unknown>): RawSovereignAgentJobResponse {
   return isObject(raw.job) ? raw.job as RawSovereignAgentJobResponse : raw as RawSovereignAgentJobResponse;
 }
-function sanitizeSnapshot(rawInput: RawSovereignAgentJobResponse, now: () => number): SovereignAgentJobSnapshot {
+function sanitizeSnapshot(rawInput: RawSovereignAgentJobResponse, _now: () => number): SovereignAgentJobSnapshot {
   const raw = unwrapJobPayload(rawInput as Record<string, unknown>);
   const workspaceId = stringValue(raw.workspaceId);
   return {
@@ -563,8 +601,13 @@ function sanitizeSnapshot(rawInput: RawSovereignAgentJobResponse, now: () => num
     prState: stringValue(raw.prState),
     draftPrUrl: stringValue(raw.draftPrUrl),
     changedFiles: stringArray(raw.changedFiles),
-    events: eventArray(raw.events, now),
+    events: eventArray(raw.events),
     lastError: stringValue(raw.lastError) || backendErrorMessage(raw),
+    createdAt: timestampValue(raw.createdAt),
+    updatedAt: timestampValue(raw.updatedAt),
+    serverObservedAt: timestampValue(raw.serverObservedAt),
+    readbackReceivedMonotonicMs: performance.now(),
+    runtimeEvidence: runtimeEvidence(raw.runtimeEvidence, stringValue(raw.jobId) || stringValue(raw.id) || ''),
   };
 }
 async function readJson(response: Response): Promise<unknown> {
@@ -578,9 +621,32 @@ function jobPath(jobId?: string, suffix = ''): string {
   return `${base}${suffix}`;
 }
 function headers(): HeadersInit { return { 'Content-Type': 'application/json', Accept: 'application/json' }; }
+export async function readHttpResponse(args: { url: string; init: RequestInit; fetcher: typeof fetch }): Promise<{ response: Response; body: unknown }> {
+  if ((args.init.method ?? 'GET').toUpperCase() !== 'GET') {
+    const response = await args.fetcher(args.url, args.init);
+    return { response, body: await readJson(response) };
+  }
+  const controller = new AbortController();
+  const caller = args.init.signal;
+  const abort = () => controller.abort(caller?.reason);
+  if (caller?.aborted) abort();
+  else caller?.addEventListener('abort', abort, { once: true });
+  let timedOut = false;
+  const deadline = setTimeout(() => { timedOut = true; controller.abort(); }, 15_000);
+  try {
+    const response = await args.fetcher(args.url, { ...args.init, signal: controller.signal, cache: 'no-store' });
+    // The deadline covers body consumption as well as the initial headers.
+    return { response, body: await readJson(response) };
+  } catch (error) {
+    if (timedOut) throw new Error('Sovereign runtime readback timed out after 15 seconds.');
+    throw error;
+  } finally {
+    clearTimeout(deadline);
+    caller?.removeEventListener('abort', abort);
+  }
+}
 async function requestSnapshot(args: { url: string; init: RequestInit; fetcher: typeof fetch; now: () => number }): Promise<SovereignAgentJobSnapshot> {
-  const response = await args.fetcher(args.url, args.init);
-  const body = await readJson(response);
+  const { response, body } = await readHttpResponse(args);
   if (!response.ok) {
     throw buildSovereignAgentHttpError({ status: response.status, body, fallback: 'Sovereign Agent backend' });
   }
@@ -589,8 +655,7 @@ async function requestSnapshot(args: { url: string; init: RequestInit; fetcher: 
 }
 
 async function requestObject(args: { url: string; init: RequestInit; fetcher: typeof fetch; fallback: string }): Promise<Record<string, unknown>> {
-  const response = await args.fetcher(args.url, args.init);
-  const body = await readJson(response);
+  const { response, body } = await readHttpResponse(args);
   if (!response.ok) {
     throw buildSovereignAgentHttpError({ status: response.status, body, fallback: args.fallback });
   }
@@ -847,7 +912,9 @@ export class SovereignAgentClient {
   async getJob(jobId: string): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
-    return requestSnapshot({ url: endpoint(this.config.agentApiUrl, jobPath(jobId)), init: { method: 'GET', headers: headers(), credentials: 'include' }, fetcher: this.fetcher, now: this.now });
+    const snapshot = await requestSnapshot({ url: endpoint(this.config.agentApiUrl, jobPath(jobId)), init: { method: 'GET', headers: headers(), credentials: 'include', cache: 'no-store' }, fetcher: this.fetcher, now: this.now });
+    if (snapshot.jobId !== jobId.trim()) throw new Error('Sovereign job readback identity mismatch.');
+    return snapshot;
   }
   async getProjections(jobId: string): Promise<SovereignLiveProjection[]> {
     assertReady(this.config);

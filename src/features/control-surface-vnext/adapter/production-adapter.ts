@@ -1,5 +1,6 @@
 import {
   createSovereignAgentClient,
+  readHttpResponse,
   type SovereignDraftPrCreateResponse,
   type SovereignDraftPrPublicationReadback,
 } from '../../product/runtime/sovereignAgentClient';
@@ -11,6 +12,7 @@ import {
 } from '../../product/runtime/sovereignAgentRuntime';
 import type {
   AgentMode,
+  ControlSurfaceReadback,
   DraftPR,
   DraftPrPreparation,
   IntegrationAttachment,
@@ -21,6 +23,7 @@ import type {
 } from '../types/domain';
 import type { AdapterStatus, SovereignBackendAdapter } from './interface';
 import { projectRunAndJobPhase } from '../fsm/runtimePhaseProjection';
+import { parseControlSurfaceReadback } from './control-surface-readback';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -197,6 +200,27 @@ function newestEvidenceRevision(anchors: readonly SovereignWorkspaceEvidenceAnch
   return sorted[0]?.repositoryRevision ?? '';
 }
 
+function runtimeReadback(snapshot: SovereignAgentJobSnapshot | undefined): Pick<SovereignJob,
+  'runtimeEvidence' | 'serverObservedAt' | 'readbackReceivedMonotonicMs' | 'externalRef' | 'lastEventAt' | 'lastHeartbeatAt' | 'persistedEventCount'> {
+  const runtimeEvents = snapshot?.runtimeEvidence?.events ?? [];
+  const heartbeatTimes = runtimeEvents.filter((event) => event.stage === 'sovereign_executor_heartbeat' && event.heartbeatCurrent === true)
+    .map((event) => Date.parse(event.at));
+  const progress = runtimeEvents.filter((event) => event.stage !== 'sovereign_executor_heartbeat');
+  const times = [
+    ...(snapshot?.events ?? []).map((event) => event.at),
+    ...progress.map((event) => Date.parse(event.at)),
+  ].filter(Number.isFinite);
+  return {
+    runtimeEvidence: snapshot?.runtimeEvidence,
+    serverObservedAt: snapshot?.serverObservedAt,
+    readbackReceivedMonotonicMs: snapshot?.readbackReceivedMonotonicMs,
+    externalRef: snapshot?.externalRef,
+    lastEventAt: times.length ? new Date(Math.max(...times)).toISOString() : undefined,
+    lastHeartbeatAt: heartbeatTimes.length ? new Date(Math.max(...heartbeatTimes)).toISOString() : undefined,
+    persistedEventCount: (snapshot?.events.length ?? 0) + progress.length,
+  };
+}
+
 function mapPersistedDraftPr(pr: SovereignDraftPrPublicationReadback): DraftPR {
   return {
     url: pr.prUrl,
@@ -274,9 +298,9 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
     if (!this.config.ready) throw new Error(this.config.reason);
   }
 
-  private async requestObject(route: string, init: RequestInit = {}): Promise<{ body: JsonRecord; status: number; ok: boolean }> {
+  protected async requestObject(route: string, init: RequestInit = {}): Promise<{ body: JsonRecord; status: number; ok: boolean }> {
     this.assertReady();
-    const response = await this.fetcher(endpoint(this.config.agentApiUrl, route), {
+    const { response, body: payload } = await readHttpResponse({ url: endpoint(this.config.agentApiUrl, route), fetcher: this.fetcher, init: {
       ...init,
       credentials: 'include',
       headers: {
@@ -285,13 +309,7 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
         ...(init.headers ?? {}),
       },
       cache: init.method === 'GET' || !init.method ? 'no-store' : init.cache,
-    });
-    const text = await response.text();
-    let payload: unknown = {};
-    if (text.trim()) {
-      try { payload = JSON.parse(text); }
-      catch { throw new Error(`Sovereign backend returned non-JSON HTTP ${response.status}.`); }
-    }
+    } });
     if (!isRecord(payload)) throw new Error(`Sovereign backend returned a non-object HTTP ${response.status}.`);
     return { body: payload, status: response.status, ok: response.ok };
   }
@@ -381,14 +399,14 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
         publication = undefined;
       }
     }
-    const now = new Date().toISOString();
     return {
       id: jobId,
       runId: jobId,
       backendJobId: jobId,
       phase: publication ? 'COMPLETED' : phase,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: snapshot.createdAt ?? '',
+      updatedAt: snapshot.updatedAt ?? '',
+      ...runtimeReadback(snapshot),
       sourceStatus: snapshot.status,
       nextAction: run.nextAction,
       logs: eventLogs(snapshot, run),
@@ -397,7 +415,6 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
         currentRevision: newestEvidenceRevision(anchors),
         readbackState: readbackError ? 'unavailable' : 'live',
         ...(readbackError ? { readbackError } : {}),
-        diffStats: { additions: 0, deletions: 0, filesChanged: snapshot.changedFiles.length },
       },
       draftPR: publication,
       publication: publication ? { draftPR: publication } : undefined,
@@ -461,8 +478,9 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       runId: run.runId,
       backendJobId: run.jobId,
       phase: projectRunAndJobPhase(runPhase, publication ? 'COMPLETED' : phase),
-      createdAt: now,
-      updatedAt: now,
+      createdAt: snapshot?.createdAt ?? '',
+      updatedAt: snapshot?.updatedAt ?? '',
+      ...runtimeReadback(snapshot),
       sourceStatus: run.status,
       nextAction: run.nextAction,
       assistantMessage: run.assistantMessage,
@@ -470,7 +488,6 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
       workspaceState: {
         modifiedFiles: snapshot?.changedFiles ?? [],
         currentRevision,
-        diffStats: snapshot ? { additions: 0, deletions: 0, filesChanged: snapshot.changedFiles.length } : undefined,
       },
       pendingInteraction,
       draftPR: publication,
@@ -597,8 +614,14 @@ export class SovereignProductionAdapter implements SovereignBackendAdapter {
   }
 
   async getIntegrations(): Promise<IntegrationAttachment[]> {
-    // No guessed integration-list contract. The control surface shows an empty,
-    // read-only attachment registry until a real server projection is introduced.
-    return [];
+    return (await this.getControlSurface()).integrations;
+  }
+
+  async getControlSurface(jobId?: string): Promise<ControlSurfaceReadback> {
+    const requested = jobId?.trim() || undefined;
+    const route = '/api/user/agent/control-surface' + (requested ? `?jobId=${encodeURIComponent(requested)}` : '');
+    const result = await this.requestObject(route, { method: 'GET' });
+    if (!result.ok) throw new Error(`Control surface readback HTTP ${result.status}.`);
+    return parseControlSurfaceReadback(result.body, requested);
   }
 }

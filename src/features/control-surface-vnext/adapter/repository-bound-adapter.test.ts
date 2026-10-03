@@ -3,6 +3,16 @@ import { buildRepositoryBoundRunRequest, SovereignProductionAdapter } from './re
 import type { SovereignAgentConfig } from '../../product/runtime/sovereignAgentRuntime';
 
 describe('vNext repository-bound Draft-PR mission contract', () => {
+  it('dispatches an explicit Paid selection to the same guarded repository endpoint without changing the Free default', async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ jobId: 'agent-paid-real' }), { status: 202 }));
+    const adapter = new SovereignProductionAdapter(fetcher, { enabled: true, deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://agent.example.test', ready: true, reason: 'ready' });
+    await adapter.runSingleAgent('Create Testgb.', [], [], 'paid');
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({ mode: 'paid', agentMode: 'single', intentMode: 'repository_execution' });
+    expect(buildRepositoryBoundRunRequest('Create Testgb.').mode).toBe('free');
+    expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/repository/run');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
   it('sends Abort to the bound backend job and preserves a truthful cancellation rejection', async () => {
     const reason = 'Cancellation is not supported by the connected Agent Zero task contract. The job remains active; no stop was confirmed.';
     const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
@@ -242,6 +252,7 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     expect(health.status).toBe('ready');
     expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/jobs?limit=1');
     expect(String(fetcher.mock.calls[0][0])).not.toContain('/swarm/');
-    await expect(adapter.getSkills()).resolves.toEqual([]);
+    await expect(adapter.getSkills()).rejects.toThrow('Control surface readback schema or job binding is invalid.');
+    expect(fetcher.mock.calls[1][0]).toBe('https://agent.example.test/api/user/agent/control-surface');
   });
 });

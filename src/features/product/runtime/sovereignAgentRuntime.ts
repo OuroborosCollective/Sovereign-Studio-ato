@@ -101,6 +101,28 @@ export interface SovereignWorkspaceEvidenceAnchor {
   authoritative: false;
 }
 
+export interface SovereignAgentRuntimeEvidenceEvent {
+  eventId: string;
+  runId: string;
+  evidenceId: string;
+  evidenceSha256: string;
+  agentId: string;
+  source: 'agents-sdk';
+  stage: string;
+  status: string;
+  summary: string;
+  at: string;
+  nextAction?: string;
+  heartbeatCurrent?: boolean;
+}
+
+export interface SovereignAgentRuntimeEvidence {
+  jobId: string;
+  readbackState: 'live' | 'unavailable';
+  error?: string;
+  events: SovereignAgentRuntimeEvidenceEvent[];
+}
+
 export interface SovereignAgentJobSnapshot {
   jobId?: string;
   runtimeId?: string;
@@ -117,6 +139,12 @@ export interface SovereignAgentJobSnapshot {
   changedFiles: string[];
   events: SovereignAgentRuntimeEvent[];
   lastError?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  serverObservedAt?: string;
+  /** Browser receive clock for aging a readback; never a runtime progress clock. */
+  readbackReceivedMonotonicMs?: number;
+  runtimeEvidence?: SovereignAgentRuntimeEvidence;
 }
 
 type ImportMetaWithEnv = ImportMeta & { env?: Record<string, string | undefined> };

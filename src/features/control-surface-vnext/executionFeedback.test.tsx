@@ -71,10 +71,11 @@ describe('execution feedback', () => {
     expect(abort).not.toHaveBeenCalled();
   });
 
-  it('offers only the connected Sovereign route without pretending unavailable paid execution is connected', () => {
+  it('keeps Free and Paid unavailable until live route and account readback arrives', () => {
     render(<ChatSurface messages={[]} onOpenToolchain={() => {}} onOpenSkills={() => {}} onOpenIntegrations={() => {}} />);
-    expect(screen.getByRole('combobox', { name: 'ROUTE' })).toHaveValue('low');
-    expect(screen.getByRole('option', { name: 'Sovereign · Free' })).not.toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'ROUTE' })).toHaveValue('free');
+    expect(screen.getByRole('option', { name: 'Sovereign · Free' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'Sovereign · Paid' })).toBeDisabled();
     expect(screen.queryByRole('option', { name: /Medium · Paid/ })).toBeNull();
     expect(screen.queryByRole('option', { name: /High · Paid/ })).toBeNull();
     expect(screen.queryByText('SWARM · OPT-IN')).toBeNull();

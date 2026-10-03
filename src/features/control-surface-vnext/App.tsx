@@ -22,7 +22,7 @@ import { useOwnerInteraction } from './hooks/useOwnerInteraction';
 import { useSovereignJob } from './hooks/useSovereignJob';
 import { useSingleAgentRun } from './hooks/useSwarmRun';
 import './theme/biomodular.css';
-import type { AgentMode, ChatMessage, OwnerInteractionResponse } from './types/domain';
+import type { AgentMode, ChatMessage, ExecutionMode, OwnerInteractionResponse } from './types/domain';
 import { getAudioMuted, playKeystrokeChirp, toggleAudioMute } from './utils/audio';
 import { cx } from './utils/cx';
 
@@ -74,6 +74,7 @@ function Dashboard() {
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<MobileTab>('chat');
   const agentMode: AgentMode = 'single';
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>('free');
   const [fsmState, dispatchFsm] = useReducer(jobStateReducer, INITIAL_FSM_STATE);
   const isDesktopLayout = useDesktopLayout();
 
@@ -85,9 +86,19 @@ function Dashboard() {
 
   const manifestsEnabled = sessionReady && Boolean(user);
   const toolchains = useQuery({ queryKey: ['vnext-toolchains'], queryFn: () => adapter.getToolchains(), enabled: manifestsEnabled, retry: false });
-  const skills = useQuery({ queryKey: ['vnext-skills'], queryFn: () => adapter.getSkills(), enabled: manifestsEnabled, retry: false });
-  const integrations = useQuery({ queryKey: ['vnext-integrations'], queryFn: () => adapter.getIntegrations(), enabled: manifestsEnabled, retry: false });
-  const activeSkillIds = useMemo(() => (skills.data ?? []).map((item) => item.id), [skills.data]);
+  const control = useQuery({
+    queryKey: ['vnext-control-readback', user?.id, activeRunId],
+    queryFn: () => {
+      if (!adapter.getControlSurface) throw new Error('Control surface readback contract is unavailable.');
+      return adapter.getControlSurface(activeRunId ?? undefined);
+    },
+    enabled: manifestsEnabled, retry: false, staleTime: 0,
+    refetchInterval: query => query.state.error ? 3000 : activeRunId ? 5000 : 15000,
+    refetchOnWindowFocus: true,
+  });
+  const activeSkillIds = useMemo(() => (control.data?.agents ?? []).filter(item => item.kind === 'agent').map(item => item.id), [control.data]);
+  const controlReadbackError = control.error instanceof Error ? control.error.message : undefined;
+  const refreshControl = () => { void control.refetch(); };
   const selectedToolchain = toolchains.data?.find((item) => item.status === 'active') ?? toolchains.data?.[0];
 
   const {
@@ -235,7 +246,7 @@ function Dashboard() {
     dispatchFsm({ type: 'SUBMIT_ORDER', payload: { objective: mission } });
     setMessages((current) => [...current, { id: `owner-${Date.now()}`, role: 'human', sender: 'HUMAN', content: mission, timestamp: new Date().toISOString() }]);
     try {
-      const accepted = await singleAgentRun.mutateAsync({ prompt: mission, toolchains: selectedToolchain ? [selectedToolchain.id] : [], activeSkillIds, agentMode });
+      const accepted = await singleAgentRun.mutateAsync({ prompt: mission, toolchains: selectedToolchain ? [selectedToolchain.id] : [], activeSkillIds, agentMode, executionMode });
       setActiveRunId(accepted.jobId);
       dispatchFsm({ type: 'BACKEND_ACCEPTED', payload: { jobId: accepted.jobId } });
       setMessages((current) => [...current.filter((message) => !message.id.startsWith('accepted-')), {
@@ -299,8 +310,14 @@ function Dashboard() {
       onOpenIntegrations={() => setIntegrationsOpen(true)}
       activeToolchainName={selectedToolchain?.name ?? 'MANIFEST NOT YET VERIFIED'}
       activeSkillsCount={activeSkillIds.length}
-      activeIntegrationsCount={(integrations.data ?? []).length}
+      activeIntegrationsCount={(control.data?.integrations ?? []).length}
       agentMode={agentMode}
+      executionMode={executionMode}
+      onExecutionModeChange={setExecutionMode}
+      controlReadback={control.data}
+      controlReadbackError={controlReadbackError}
+      isReadingControl={control.isFetching}
+      onRefreshControl={refreshControl}
     />
   );
   const pollingError = readbackError instanceof Error ? readbackError.message : undefined;
@@ -365,8 +382,8 @@ function Dashboard() {
       </main>
 
       <ToolchainDock isOpen={toolchainOpen} onClose={() => setToolchainOpen(false)} toolchains={toolchains.data ?? []} selectedToolchainId={selectedToolchain?.id} />
-      <SkillRegistryDrawer isOpen={skillsOpen} onClose={() => setSkillsOpen(false)} skills={skills.data ?? []} activeSkillIds={activeSkillIds} />
-      <IntegrationModal isOpen={integrationsOpen} onClose={() => setIntegrationsOpen(false)} integrations={integrations.data ?? []} />
+      <SkillRegistryDrawer isOpen={skillsOpen} onClose={() => setSkillsOpen(false)} agents={control.data?.agents ?? []} job={job} observedAt={control.data?.observedAt} receivedMonotonicMs={control.data?.receivedMonotonicMs} isLoading={control.isFetching} readbackError={controlReadbackError || control.data?.agentBlocker} onRefresh={refreshControl} />
+      <IntegrationModal isOpen={integrationsOpen} onClose={() => setIntegrationsOpen(false)} integrations={control.data?.integrations ?? []} observedAt={control.data?.observedAt} receivedMonotonicMs={control.data?.receivedMonotonicMs} isLoading={control.isFetching} readbackError={controlReadbackError || control.data?.integrationBlocker} onRefresh={refreshControl} />
       <OperatorAuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} />
       <ArchitectureModal isOpen={architectureOpen} onClose={() => setArchitectureOpen(false)} />
       <OwnerInteractionModal interaction={job?.pendingInteraction} onSubmit={respondToOwner} isSubmitting={isInteracting} />
