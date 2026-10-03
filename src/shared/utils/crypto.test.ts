@@ -139,6 +139,16 @@ describe('maskSecrets', () => {
     expect(maskSecrets('postmark_key=postmark_secret_val_404')).toBe('postmark_key=****');
     expect(maskSecrets('twilio_key: twilio_key_val_505')).toBe('twilio_key: ****');
     expect(maskSecrets('twilio_secret=twilio_secret_val_606')).toBe('twilio_secret=****');
+    expect(maskSecrets('deepseek_key: deepseek_key_val_707')).toBe('deepseek_key: ****');
+    expect(maskSecrets('deepseek_secret=deepseek_secret_val_808')).toBe('deepseek_secret=****');
+    expect(maskSecrets('deepseek_token: deepseek_token_val_909')).toBe('deepseek_token: ****');
+    expect(maskSecrets('perplexity_key=perplexity_key_val_111')).toBe('perplexity_key=****');
+    expect(maskSecrets('perplexity_secret: perplexity_secret_val_222')).toBe('perplexity_secret: ****');
+    expect(maskSecrets('replicate_key=replicate_key_val_333')).toBe('replicate_key=****');
+    expect(maskSecrets('replicate_secret: replicate_secret_val_444')).toBe('replicate_secret: ****');
+    expect(maskSecrets('cloudflare_token=cloudflare_token_val_555')).toBe('cloudflare_token=****');
+    expect(maskSecrets('cloudflare_key: cloudflare_key_val_666')).toBe('cloudflare_key: ****');
+    expect(maskSecrets('cloudflare_secret=cloudflare_secret_val_777')).toBe('cloudflare_secret=****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
