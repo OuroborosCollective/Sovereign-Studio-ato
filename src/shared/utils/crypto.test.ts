@@ -133,12 +133,30 @@ describe('maskSecrets', () => {
     expect(maskSecrets('org_secret=org_sec_val_606')).toBe('org_secret=****');
     expect(maskSecrets('private_key_passphrase: my_secret_passphrase')).toBe('private_key_passphrase: ****');
     expect(maskSecrets('key_passphrase=my_key_passphrase_123')).toBe('key_passphrase=****');
+    expect(maskSecrets('sendgrid_key: sg_secret_val_101')).toBe('sendgrid_key: ****');
+    expect(maskSecrets('resend_key=resend_secret_val_202')).toBe('resend_key=****');
+    expect(maskSecrets('mailgun_key: mailgun_secret_val_303')).toBe('mailgun_key: ****');
+    expect(maskSecrets('postmark_key=postmark_secret_val_404')).toBe('postmark_key=****');
+    expect(maskSecrets('twilio_key: twilio_key_val_505')).toBe('twilio_key: ****');
+    expect(maskSecrets('twilio_secret=twilio_secret_val_606')).toBe('twilio_secret=****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
     expect(maskSecrets('"password": "my-secret-password"')).toBe('"password": ****');
     expect(maskSecrets("'api_key': 'abc123+/~='")).toBe("'api_key': ****");
     expect(maskSecrets('token: value_with_@#$%^&*')).toBe('token: ****');
+  });
+
+  it('masks common communication-provider env labels without masking plain provider text', () => {
+    expect(maskSecrets('SENDGRID_API_KEY=sg_env_value_101')).toBe('SENDGRID_API_KEY=****');
+    expect(maskSecrets('RESEND_API_KEY=resend_env_value_202')).toBe('RESEND_API_KEY=****');
+    expect(maskSecrets('MAILGUN_API_KEY=mailgun_env_value_303')).toBe('MAILGUN_API_KEY=****');
+    expect(maskSecrets('POSTMARK_SERVER_TOKEN=postmark_env_value_404')).toBe('POSTMARK_SERVER_TOKEN=****');
+    expect(maskSecrets('TWILIO_AUTH_TOKEN=twilio_env_value_505')).toBe('TWILIO_AUTH_TOKEN=****');
+    expect(maskSecrets('TWILIO_API_SECRET=twilio_env_value_606')).toBe('TWILIO_API_SECRET=****');
+
+    const plain = 'sendgrid_key rotation docs mention resend_key and twilio_secret without assignments';
+    expect(maskSecrets(plain)).toBe(plain);
   });
 
   it('masks multiple secrets in one string', () => {
