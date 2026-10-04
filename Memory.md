@@ -1069,3 +1069,14 @@ Evidence: PR #2186 pre-memory head `088b764b47fff52e6febdb479618665e365b76b1`; S
 Learned: Bolt's ZIP import is a remote snapshot, not a durable local workspace; add-on availability must be observed and revision provenance must survive the ZIP boundary.
 Open: No live Bolt transport/API handshake or external add-on probe is claimed in this repository-only integration.
 Next safe step: Wire the real HTTPS/transport adapter only when Bolt exposes a stable authenticated API/contract, preserving this exact-revision/evidence boundary.
+
+
+### 2026-10-04 — Bolt.diy live UI transport boundary
+Status: VERIFIED repository integration; live UI observed, authenticated Bolt execution API not claimed
+Task: Continue Bolt integration from the snapshot executor into the real self-hosted browser import surface without inventing a local workspace or backend API.
+Decisions: Treat observed `/git?url=` handoff as exploratory/non-revision-bound; provide exact GitHub revision archive as pinned input; always project `ephemeral-browser-workspace` and `executionEvidenceAuthoritative=false` until authenticated upload/execution/readback evidence exists.
+Touched surfaces: `src/features/product/runtime/sovereignBoltUiTransport.ts`; its test; `docs/BOLT_DIY_SNAPSHOT_EXECUTOR.md`; `docs/evidence/BOLT_DIY_LIVE_TRANSPORT_2026-10-04.md`.
+Evidence: live instance returned HTTP 200 and `/git?url=` links; upstream bolt.diy PR #421 uses WebContainer + isomorphic-git with `depth: 1` / `singleBranch: true` and documents reload loss; PR #2188 pre-memory head `a8bda8e7f4c0a9c997067e95bf25540edf26d0f9` passed Release Verification 37183107069, Sovereign Agent Backend 37183107050, Sovereign ChatGPT MCP 37183107065, Integration Plan Lane Gate 37183107048, Boundary Ledger Drift 37183107102 and Sovereign Continuity Evidence 37183107035.
+Learned: The live Bolt surface is a browser snapshot transport, not a durable executor API. Exact input provenance can be constructed independently from execution proof.
+Open: No authenticated archive upload/result readback or real Python/Blender execution receipt has been observed yet.
+Next safe step: Verify final exact-head CI after this append; only then mark #2188 ready. Accept Bolt output as authoritative only after a receipt-producing authenticated transport exists.
