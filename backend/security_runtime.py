@@ -392,7 +392,7 @@ def register_security_routes(
     @app.route("/api/security/policy", methods=["PATCH"])
     @require_session
     def security_policy_update():
-        body = request.get_json(force=True)
+        body = request.get_json(force=True, silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "Malformed payload; dictionary required"}), 400
         allowed = {
@@ -485,7 +485,7 @@ def register_security_routes(
     @app.route("/api/security/passkeys/register/verify", methods=["POST"])
     @require_session
     def passkey_register_verify():
-        body = request.get_json(force=True)
+        body = request.get_json(force=True, silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "Malformed payload; dictionary required"}), 400
         api = _webauthn()
@@ -603,7 +603,7 @@ def register_security_routes(
 
     @app.route("/api/auth/passkey/verify", methods=["POST"])
     def passkey_login_verify():
-        body = request.get_json(force=True)
+        body = request.get_json(force=True, silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "Malformed payload; dictionary required"}), 400
         credential = body.get("credential")
@@ -668,7 +668,7 @@ def register_security_routes(
     @app.route("/api/security/account-keys", methods=["POST"])
     @require_session
     def account_key_create():
-        body = request.get_json(force=True)
+        body = request.get_json(force=True, silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "Malformed payload; dictionary required"}), 400
         label = str(body.get("label") or "Sovereign Account Key").strip()[:80]
@@ -721,7 +721,7 @@ def register_security_routes(
         )
         if not allowed:
             return jsonify({"error": "Too many account-key attempts"}), 429
-        body = request.get_json(force=True)
+        body = request.get_json(force=True, silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "Malformed payload; dictionary required"}), 400
         raw_key = str(body.get("key") or "").strip()
@@ -756,7 +756,7 @@ def register_security_routes(
     @app.route("/api/security/step-up/options", methods=["POST"])
     @require_session
     def step_up_options():
-        body = request.get_json(force=True)
+        body = request.get_json(force=True, silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "Malformed payload; dictionary required"}), 400
         action = str(body.get("action") or "").strip()[:80]
@@ -795,7 +795,7 @@ def register_security_routes(
     @app.route("/api/security/step-up/verify", methods=["POST"])
     @require_session
     def step_up_verify():
-        body = request.get_json(force=True)
+        body = request.get_json(force=True, silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "Malformed payload; dictionary required"}), 400
         credential = body.get("credential")
@@ -870,7 +870,7 @@ def register_security_routes(
         )
         if not allowed:
             return jsonify({"error": "Too many account-key attempts"}), 429
-        body = request.get_json(force=True)
+        body = request.get_json(force=True, silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "Malformed payload; dictionary required"}), 400
         raw_key = str(body.get("key") or "").strip()
