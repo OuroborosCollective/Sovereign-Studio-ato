@@ -164,19 +164,18 @@ export class ErrorComputer {
       return newError;
     }
 
-    // Get recent errors
-    const recentErrors = history.slice(-this.smoothingWindow);
+    // Single reverse loop pass over recent window in O(1) memory space without array slicing or Math.pow calls
+    const startIdx = Math.max(0, history.length - this.smoothingWindow);
     const alpha = 0.3; // Smoothing factor
+    let smoothedError = 0;
+    let weightSum = 0;
+    let weight = 1;
 
-    // Calculate weighted average
-    const smoothedError = recentErrors.reduce((sum, e, i) => {
-      const weight = Math.pow(alpha, recentErrors.length - 1 - i);
-      return sum + e.error * weight;
-    }, 0);
-
-    const weightSum = recentErrors.reduce((sum, _, i) => {
-      return sum + Math.pow(alpha, recentErrors.length - 1 - i);
-    }, 0);
+    for (let i = history.length - 1; i >= startIdx; i--) {
+      smoothedError += history[i].error * weight;
+      weightSum += weight;
+      weight *= alpha;
+    }
 
     const ema = smoothedError / weightSum;
 
@@ -199,15 +198,17 @@ export class ErrorComputer {
    * Store error in history.
    */
   private addToHistory(node: string, error: PredictionError): void {
-    const history = this.errorHistory.get(node) ?? [];
+    let history = this.errorHistory.get(node);
+    if (!history) {
+      history = [];
+      this.errorHistory.set(node, history);
+    }
     history.push(error);
 
     // Keep last 100 errors per node
     if (history.length > 100) {
       history.shift();
     }
-
-    this.errorHistory.set(node, history);
   }
 
   /**
@@ -343,7 +344,10 @@ export function createErrorComputer(
  */
 export function calculateAccuracy(errors: PredictionError[], threshold: number): number {
   if (errors.length === 0) return 0;
-  const accurate = errors.filter((e) => e.absoluteError <= threshold).length;
+  let accurate = 0;
+  for (let i = 0; i < errors.length; i++) {
+    if (errors[i].absoluteError <= threshold) accurate++;
+  }
   return accurate / errors.length;
 }
 
@@ -352,7 +356,11 @@ export function calculateAccuracy(errors: PredictionError[], threshold: number):
  */
 export function calculateMSE(errors: PredictionError[]): number {
   if (errors.length === 0) return 0;
-  const sumSquared = errors.reduce((sum, e) => sum + e.error * e.error, 0);
+  let sumSquared = 0;
+  for (let i = 0; i < errors.length; i++) {
+    const err = errors[i].error;
+    sumSquared += err * err;
+  }
   return sumSquared / errors.length;
 }
 
