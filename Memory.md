@@ -1069,3 +1069,14 @@ Evidence: PR #2186 pre-memory head `088b764b47fff52e6febdb479618665e365b76b1`; S
 Learned: Bolt's ZIP import is a remote snapshot, not a durable local workspace; add-on availability must be observed and revision provenance must survive the ZIP boundary.
 Open: No live Bolt transport/API handshake or external add-on probe is claimed in this repository-only integration.
 Next safe step: Wire the real HTTPS/transport adapter only when Bolt exposes a stable authenticated API/contract, preserving this exact-revision/evidence boundary.
+
+
+### 2026-10-04 — Open-PR backlog consolidation
+Status: VERIFIED repository integration; no production runtime claim
+Task: Review every open Sovereign PR, preserve only evidence-backed changes on current main, and close duplicate/unsafe branches.
+Decisions: Salvage #2185, #2184, #2182 and #2179 into consolidated Draft PR #2187; reject #2183, #2181, #2178 and #2175 for failing routing regressions, unbenchmarked cache complexity, a non-canonical fallback-metadata path, or unreliable disabled-button tooltips. Keep merge authority separate.
+Touched surfaces: bounded GitHub PR evidence parsing; provider secret masking; Scan Finding and Repo Readiness accessibility; docs/reviews/OPEN_PR_BACKLOG_REVIEW_2026-10-04.md; original PR conversations/states.
+Evidence: pre-memory head 78f321914467b500bf0ac3fdadbd7bbc4410b495 passed Release Verification 37182605244, Sovereign Agent Backend 37182605241, Sovereign ChatGPT MCP 37182605233, Integration Plan Lane Gate 37182605283, Boundary Ledger Drift 37182605224 and Sovereign Continuity Evidence 37182605243. Original red heads #2184/#2179 failed hidden-details accessibility assertions; #2183 failed two PAL routing regressions. All eight original PRs were reviewed and closed with rationale.
+Learned: Old green checks do not make stale branches safe; re-deriving useful deltas on current main exposed interaction-test defects and prevented disconnected metadata/speculative performance changes from entering the canonical path.
+Open: This Memory append changes the PR head, so final exact-head CI remains required. Draft PR #2187 stays unmerged until a merge is explicitly authorized.
+Next safe step: Verify the final #2187 head across the six required workflows; only then mark the consolidation ready for an explicitly authorized merge.
