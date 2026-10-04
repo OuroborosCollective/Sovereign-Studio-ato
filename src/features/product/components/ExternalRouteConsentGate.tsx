@@ -31,6 +31,9 @@ export interface ExternalRouteConsentGateProps {
 export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: ExternalRouteConsentGateProps) {
   return (
     <div
+      role="region"
+      aria-labelledby="consent-gate-title"
+      aria-describedby="consent-gate-desc"
       style={{
         background: C.surface,
         border: `1px solid ${C.orange}`,
@@ -49,6 +52,7 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
         }}
       >
         <div
+          aria-hidden="true"
           style={{
             width: 36,
             height: 36,
@@ -65,6 +69,7 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
         </div>
         <div style={{ flex: 1 }}>
           <div
+            id="consent-gate-title"
             style={{
               fontSize: 14,
               fontWeight: 600,
@@ -75,6 +80,7 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
             Limits erreicht – Notfall Free-Routen aktivieren?
           </div>
           <div
+            id="consent-gate-desc"
             style={{
               fontSize: 12,
               color: C.textSub,
@@ -107,6 +113,7 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
           deinen Auftrag und Repo-Kontext außerhalb der lokalen Runtime verarbeiten.
         </div>
         <ul
+          role="list"
           style={{
             margin: '8px 0 0 0',
             padding: '0 0 0 20px',
@@ -132,6 +139,8 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
         <button
           type="button"
           onClick={onDeny}
+          title="Aktion abbrechen und lokal weiterarbeiten"
+          className="focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:outline-none transition-opacity hover:opacity-90"
           style={{
             padding: '8px 16px',
             borderRadius: 8,
@@ -147,6 +156,8 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
         <button
           type="button"
           onClick={onApprove}
+          title="Einmalige Freigabe für externe Notfall-Routen erteilen"
+          className="focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:outline-none transition-opacity hover:opacity-90"
           style={{
             padding: '8px 16px',
             borderRadius: 8,

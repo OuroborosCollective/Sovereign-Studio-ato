@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-09-29T18:19:51.605Z",
+  "generatedAt": "2026-10-04T22:18:05.434Z",
   "productArchitecture": "unified-app",
   "discovery": {
     "scope": "tracked repository test conventions",
@@ -32,12 +32,12 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 799,
+  "totalTestFiles": 810,
   "testRoots": {
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
     "backend": 1,
-    "backend/tests": 182,
+    "backend/tests": 186,
     "backend/tests/e2e": 1,
     "integrations/openhands/sovereign-mcp-toolset-plugin/tests": 1,
     "research": 1,
@@ -45,11 +45,11 @@
     "scripts/sovereign-backend/tests": 82,
     "scripts/tests": 3,
     "sovereign-studio-rn/e2e": 7,
-    "src": 376,
+    "src": 382,
     "tests": 2,
     "tests/e2e": 5,
     "tools": 3,
-    "tools/sovereign-chatgpt-mcp/tests": 109,
+    "tools/sovereign-chatgpt-mcp/tests": 110,
     "tools/sovereign-github-patch-mcp/tests": 4,
     "tools/sovereign-toolchain/tests": 8
   },
@@ -409,6 +409,16 @@
       "category": "python-suite"
     },
     {
+      "file": "backend/tests/test_bitcoin_rpc_quicknode.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
       "file": "backend/tests/test_bug_evidence_lane.py",
       "language": "python",
       "testRoot": "backend/tests",
@@ -586,6 +596,16 @@
       "testRoot": "backend/tests",
       "gates": [],
       "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_control_surface_readback.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
       "category": "python-suite"
     },
     {
@@ -1186,6 +1206,16 @@
       "category": "python-suite"
     },
     {
+      "file": "backend/tests/test_paid_repository_execution.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
       "file": "backend/tests/test_passkey_origin_security.py",
       "language": "python",
       "testRoot": "backend/tests",
@@ -1339,6 +1369,16 @@
     },
     {
       "file": "backend/tests/test_repository_execution.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_repository_runtime_evidence_postgres.py",
       "language": "python",
       "testRoot": "backend/tests",
       "gates": [],
@@ -2929,6 +2969,25 @@
       "category": "release-gate"
     },
     {
+      "file": "src/features/admin/api/adminApiClient.loading.test.tsx",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
       "file": "src/features/admin/api/adminApiClient.ownerInput.test.ts",
       "language": "javascript-typescript",
       "testRoot": "src",
@@ -3290,7 +3349,45 @@
       "category": "release-gate"
     },
     {
+      "file": "src/features/control-surface-vnext/components/ChatSurface/ChatSurface.test.tsx",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
       "file": "src/features/control-surface-vnext/components/OwnerInteraction/OwnerInteractionModal.test.tsx",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/controlSurfaceReadback.test.tsx",
       "language": "javascript-typescript",
       "testRoot": "src",
       "gates": [
@@ -3462,6 +3559,25 @@
     },
     {
       "file": "src/features/control-surface-vnext/liveWorkspaceObservation.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/runtimeEvidence.test.tsx",
       "language": "javascript-typescript",
       "testRoot": "src",
       "gates": [
@@ -7188,6 +7304,25 @@
       "category": "release-gate"
     },
     {
+      "file": "src/features/product/runtime/sovereignAgentClient.readback.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
       "file": "src/features/product/runtime/sovereignAgentClient.test.ts",
       "language": "javascript-typescript",
       "testRoot": "src",
@@ -7322,6 +7457,25 @@
     },
     {
       "file": "src/features/product/runtime/sovereignBlockerRegistry.test.ts",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignBoltSnapshotExecutor.test.ts",
       "language": "javascript-typescript",
       "testRoot": "src",
       "gates": [
@@ -10059,6 +10213,14 @@
     },
     {
       "file": "tools/sovereign-chatgpt-mcp/tests/test_aurion_operator.py",
+      "language": "python",
+      "testRoot": "tools/sovereign-chatgpt-mcp/tests",
+      "gates": [],
+      "ciWorkflows": [],
+      "category": "python-suite"
+    },
+    {
+      "file": "tools/sovereign-chatgpt-mcp/tests/test_auth_proxy_routing_recovery.py",
       "language": "python",
       "testRoot": "tools/sovereign-chatgpt-mcp/tests",
       "gates": [],

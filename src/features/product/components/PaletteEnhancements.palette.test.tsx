@@ -28,6 +28,7 @@ import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
+import { ExternalRouteConsentGate } from './ExternalRouteConsentGate';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1465,6 +1466,50 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(localModeBtn);
       expect(onUseLocalMode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('ExternalRouteConsentGate Accessibility and Micro-UX Enhancements', () => {
+    it('renders with region landmark, aria-hidden warning icon, structured list, and focus-visible buttons with native title tooltips', () => {
+      const onApprove = vi.fn();
+      const onDeny = vi.fn();
+
+      const { container } = render(
+        <ExternalRouteConsentGate
+          onApprove={onApprove}
+          onDeny={onDeny}
+          attempts={2}
+        />
+      );
+
+      const region = screen.getByRole('region');
+      expect(region).toBeInTheDocument();
+      expect(region).toHaveAttribute('aria-labelledby', 'consent-gate-title');
+      expect(region).toHaveAttribute('aria-describedby', 'consent-gate-desc');
+
+      const warningIcon = container.querySelector('[aria-hidden="true"]');
+      expect(warningIcon).toBeInTheDocument();
+      expect(warningIcon).toHaveTextContent('⚠️');
+
+      expect(screen.getByText('Limits erreicht – Notfall Free-Routen aktivieren?')).toHaveAttribute('id', 'consent-gate-title');
+      expect(screen.getByText(/Alle verfügbaren LLM-Anbieter/)).toHaveAttribute('id', 'consent-gate-desc');
+
+      const detailsList = screen.getByRole('list');
+      expect(detailsList).toBeInTheDocument();
+
+      const denyBtn = screen.getByRole('button', { name: 'NEIN, lokal weiter' });
+      expect(denyBtn).toHaveAttribute('title', 'Aktion abbrechen und lokal weiterarbeiten');
+      expect(denyBtn).toHaveClass('focus-visible:ring-2');
+
+      const approveBtn = screen.getByRole('button', { name: 'JA, einmalig aktivieren' });
+      expect(approveBtn).toHaveAttribute('title', 'Einmalige Freigabe für externe Notfall-Routen erteilen');
+      expect(approveBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(denyBtn);
+      expect(onDeny).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(approveBtn);
+      expect(onApprove).toHaveBeenCalledTimes(1);
     });
   });
 });
