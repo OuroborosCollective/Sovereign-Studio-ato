@@ -110,3 +110,17 @@ Sovereign <- evidence contract <- returned bundle
 ```
 
 This keeps upstream Bolt updates independent and preserves Sovereign's agent-neutral executor architecture.
+
+
+## Live UI transport
+
+The self-hosted Bolt instance currently exposes a browser import surface rather than a verified executor API. Sovereign models that surface through `sovereignBoltUiTransport.ts`.
+
+Two handoff modes are explicit:
+
+- `git-import`: builds the observed `/git?url=...` launch route for exploratory work. It is shallow/single-branch and **not revision-bound**, so it cannot satisfy snapshot provenance.
+- `revision-archive`: builds the exact GitHub `archive/<40-char-sha>.zip` input. The input is revision-pinned, but it still does not prove Bolt imported or executed those bytes.
+
+Both modes project `ephemeral-browser-workspace`, never a persistent local workspace, and both keep `executionEvidenceAuthoritative=false` until an authenticated upload/execution/readback receipt exists.
+
+Live and upstream evidence is recorded in `docs/evidence/BOLT_DIY_LIVE_TRANSPORT_2026-10-04.md`.
