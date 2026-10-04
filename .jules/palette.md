@@ -65,3 +65,7 @@
 ## 2024-10-24 - Descriptive Titles for Dense Indicator Buttons
 **Learning:** Summary indicator buttons using dense visual typography are hard to read for users and lack clarity. Dynamically updating native title attributes improves discoverability without cluttering the UI.
 **Action:** Always add state-dependent native title tooltips to dense visual metric indicators, and ensure consistent localization in aria-labels across the app.
+
+## 2025-05-17 - [Dynamic Tooltips with Icons for State Actions]
+**Learning:** Text-only utility buttons like "REFRESH READBACK" lack visual affordance for their background tasks (such as network requests). Adding state-dependent tooltips (via `title`) and swapping icons (`Loader2` during loading vs `RefreshCw` when idle) significantly improves user feedback without violating WCAG Label in Name by altering the visible button text.
+**Action:** Always enrich basic utility buttons with state-dependent native `title` tooltips and appropriate icon indicators while preserving their static visible text to maintain accessibility and visual feedback.
