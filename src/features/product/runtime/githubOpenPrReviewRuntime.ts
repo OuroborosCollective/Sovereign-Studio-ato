@@ -49,10 +49,14 @@ export interface OpenPrReviewResult {
   readonly status?: number;
 }
 
-function asStringList(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string').slice(0, 100)
-    : [];
+function asStringList(value: unknown, limit = 100): string[] {
+  if (!Array.isArray(value)) return [];
+  const result: string[] = [];
+  for (const item of value) {
+    if (result.length >= limit) break;
+    if (typeof item === 'string') result.push(item);
+  }
+  return result;
 }
 
 function parseEvidence(payload: unknown): OpenPrReviewEvidence | null {
@@ -85,15 +89,15 @@ function parseEvidence(payload: unknown): OpenPrReviewEvidence | null {
       additions: Math.max(0, Number(pr.additions) || 0),
       deletions: Math.max(0, Number(pr.deletions) || 0),
       filePaths: asStringList(pr.filePaths),
-      generatedArtifactCandidates: asStringList(pr.generatedArtifactCandidates).slice(0, 20),
+      generatedArtifactCandidates: asStringList(pr.generatedArtifactCandidates, 20),
       checkSummary: {
         successful: Math.max(0, Number(rawSummary.successful) || 0),
         pending: Math.max(0, Number(rawSummary.pending) || 0),
         failed: Math.max(0, Number(rawSummary.failed) || 0),
-        failedNames: asStringList(rawSummary.failedNames).slice(0, 20),
-        pendingNames: asStringList(rawSummary.pendingNames).slice(0, 20),
+        failedNames: asStringList(rawSummary.failedNames, 20),
+        pendingNames: asStringList(rawSummary.pendingNames, 20),
       },
-      blockers: asStringList(pr.blockers).slice(0, 20),
+      blockers: asStringList(pr.blockers, 20),
     }];
   });
   return {
