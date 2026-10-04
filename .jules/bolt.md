@@ -87,3 +87,7 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+
+## 2026-10-15 - [Single-Pass String Filtering in PR Evidence]
+**Learning:** Using chained `.filter()` and `.slice()` to extract string items from arrays (e.g. `pr.filePaths`) forces the JS engine to traverse all items and allocate an intermediate array before slicing. In data-heavy operations like parsing PR evidence, this produces unnecessary GC overhead.
+**Action:** Consolidate string validation and bounding limits into a single `for...of` loop with an early `break` to eliminate intermediate arrays and avoid $O(N)$ processing when limits are reached early.
