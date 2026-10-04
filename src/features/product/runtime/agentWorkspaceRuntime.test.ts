@@ -31,6 +31,30 @@ describe('agentWorkspaceRuntime', () => {
     expect(validateAgentWorkspaceRequest(request).allowed).toBe(true);
   });
 
+  it('accepts Bolt only on the remote-snapshot host and never aliases it to a local workspace', () => {
+    const request = buildAgentWorkspaceRequest({
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      branch: 'main',
+      task: 'Run the revision-pinned snapshot executor.',
+      executor: 'bolt-diy-snapshot',
+      workspaceHost: 'remote-snapshot',
+    });
+
+    expect(request.executor).toBe('bolt-diy-snapshot');
+    expect(request.workspaceHost).toBe('remote-snapshot');
+    expect(validateAgentWorkspaceRequest(request).allowed).toBe(true);
+
+    expect(validateAgentWorkspaceRequest({
+      ...request,
+      workspaceHost: 'managed-ephemeral',
+    }).blockers).toContain('Bolt snapshot executor requires the remote-snapshot workspace host.');
+
+    expect(validateAgentWorkspaceRequest({
+      ...validRequest(),
+      workspaceHost: 'remote-snapshot',
+    }).blockers).toContain('Remote snapshot workspace host requires the bolt-diy-snapshot executor.');
+  });
+
   it('blocks invalid repo urls, empty tasks and non-draft execution', () => {
     const result = validateAgentWorkspaceRequest({
       ...validRequest(),
