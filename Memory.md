@@ -1058,3 +1058,14 @@ Evidence:
 Learned: Existing generic suffix labels already cover standard provider env names such as `*_API_KEY`, `*_AUTH_TOKEN` and `*_API_SECRET`; the provider-specific additions safely cover shorter aliases without masking ordinary prose.
 Open: Refreshed exact-head workflows must be green on the resulting PR revision before merge.
 Next safe step: Verify all five exact-head workflows on the refreshed head, then mark ready and merge only if mergeable.
+
+
+### 2026-10-04 — Revision-pinned Bolt.diy snapshot executor
+Status: VERIFIED repository integration; external Bolt runtime transport not claimed
+Task: Add Bolt.diy as a Sovereign external development executor for ZIP-based repository snapshots with optional Python/Blender/game-dev add-ons.
+Decisions: Model Bolt as `bolt-diy-snapshot` on `remote-snapshot`; pin every job/result to an exact Git SHA; probe add-ons instead of assuming them; keep production/VPS/DB/gameplay/direct-merge authority false.
+Touched surfaces: `src/features/product/runtime/sovereignBoltSnapshotExecutor.ts`; its test; `agentWorkspaceRuntime.ts` + test; `docs/BOLT_DIY_SNAPSHOT_EXECUTOR.md`.
+Evidence: PR #2186 pre-memory head `088b764b47fff52e6febdb479618665e365b76b1`; Sovereign Agent Backend, Boundary Ledger Drift, Sovereign ChatGPT MCP, Sovereign Continuity Evidence, Integration Plan Lane Gate and Release Verification all completed success on that exact revision.
+Learned: Bolt's ZIP import is a remote snapshot, not a durable local workspace; add-on availability must be observed and revision provenance must survive the ZIP boundary.
+Open: No live Bolt transport/API handshake or external add-on probe is claimed in this repository-only integration.
+Next safe step: Wire the real HTTPS/transport adapter only when Bolt exposes a stable authenticated API/contract, preserving this exact-revision/evidence boundary.
