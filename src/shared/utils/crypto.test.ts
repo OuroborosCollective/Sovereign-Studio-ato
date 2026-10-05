@@ -159,7 +159,14 @@ describe('maskSecrets', () => {
     expect(maskSecrets(plain)).toBe(plain);
   });
 
-  it('masks AI and cloud provider credential labels without masking unassigned label mentions', () => {
+  it('masks AI, vector DB and cloud provider credential labels without masking unassigned label mentions', () => {
+    expect(maskSecrets('cohere_key: cohere_key_val_101')).toBe('cohere_key: ****');
+    expect(maskSecrets('cohere_secret=cohere_secret_val_202')).toBe('cohere_secret=****');
+    expect(maskSecrets('cohere_token: cohere_token_val_303')).toBe('cohere_token: ****');
+    expect(maskSecrets('pinecone_key=pinecone_key_val_404')).toBe('pinecone_key=****');
+    expect(maskSecrets('pinecone_secret: pinecone_secret_val_505')).toBe('pinecone_secret: ****');
+    expect(maskSecrets('qdrant_key=qdrant_key_val_606')).toBe('qdrant_key=****');
+    expect(maskSecrets('qdrant_secret: qdrant_secret_val_707')).toBe('qdrant_secret: ****');
     expect(maskSecrets('deepseek_key: deepseek_key_val_707')).toBe('deepseek_key: ****');
     expect(maskSecrets('deepseek_secret=deepseek_secret_val_808')).toBe('deepseek_secret=****');
     expect(maskSecrets('deepseek_token: deepseek_token_val_909')).toBe('deepseek_token: ****');
@@ -172,7 +179,7 @@ describe('maskSecrets', () => {
     expect(maskSecrets('cloudflare_secret=cloudflare_secret_val_777')).toBe('cloudflare_secret=****');
     expect(maskSecrets('"deepseek_key": "quoted_value_123"')).toBe('"deepseek_key": ****');
 
-    const plain = 'deepseek_key docs mention perplexity_secret, replicate_key and cloudflare_token without assignments';
+    const plain = 'cohere_key docs mention pinecone_secret, qdrant_key, deepseek_key, perplexity_secret, replicate_key and cloudflare_token without assignments';
     expect(maskSecrets(plain)).toBe(plain);
   });
 
