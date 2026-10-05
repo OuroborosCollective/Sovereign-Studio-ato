@@ -268,8 +268,8 @@ export function classifySovereignAgentHttpFailure(
   if (status === 402 || text.includes('paid_credits_required')) {
     return {
       kind: 'paid_credits_required',
-      title: 'Paid-Route ohne ausreichendes Guthaben',
-      guidance: 'Nächste Aktion: Guthaben aufladen oder die kostenlose Route wählen; es erfolgt kein stiller Wechsel auf eine kostenpflichtige Route.',
+      title: 'Paid-Route ohne provider-finanziertes Guthaben',
+      guidance: 'Nächste Aktion: Provider-finanziertes Guthaben bereitstellen oder die kostenlose Route wählen. Sichtbare Account-Credits sind ein separater Saldo und werden nicht automatisch zu OpenRouter-Ausgabebudget; es erfolgt kein stiller Wechsel auf eine kostenpflichtige Route.',
     };
   }
 

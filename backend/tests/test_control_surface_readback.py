@@ -135,3 +135,24 @@ def test_provider_ready_paid_route_is_available_with_verified_funded_credits(mon
     assert "blocker" not in paid
     assert body["agents"][0]["source"] == "repository-execution-manifest"
     assert body["agents"][0]["status"] == "DECLARED"
+
+def test_account_credits_are_not_misreported_as_missing_paid_provider_budget(monkeypatch):
+    db = Database(credits=1545, ledger=1545, funded=0)
+    client = app_for(monkeypatch, db)
+    import backend.agent_runtime.control_surface_readback as projection
+    monkeypatch.setattr(projection, "load_execution_resolution", lambda *_args, **kwargs: SimpleNamespace(
+        profile_id=projection.PAID_SWARM_PROFILE if kwargs["requested_mode"] == "paid" else projection.FREE_SINGLE_AGENT_PROFILE,
+        primary_route={"id": f"route-{kwargs['requested_mode']}", "model_id": f"model-{kwargs['requested_mode']}"},
+        repository_execution_allowed=True,
+    ))
+
+    body = client.get("/api/user/agent/control-surface", headers={"X-Test-User": OWNER}).json
+    paid = body["routing"]["modes"][1]
+
+    assert body["credits"]["credits"] == 1545
+    assert body["credits"]["providerFundedCredits"] == 0
+    assert body["credits"]["paidEntitlementVerified"] is True
+    assert paid["providerAvailable"] is True
+    assert paid["available"] is False
+    assert paid["blocker"] == "paid_credits_required"
+    assert paid["executionBlocker"] == "provider_funded_credits_required"

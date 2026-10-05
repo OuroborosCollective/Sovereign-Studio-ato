@@ -1080,3 +1080,13 @@ Evidence: pre-memory head 78f321914467b500bf0ac3fdadbd7bbc4410b495 passed Releas
 Learned: Old green checks do not make stale branches safe; re-deriving useful deltas on current main exposed interaction-test defects and prevented disconnected metadata/speculative performance changes from entering the canonical path.
 Open: This Memory append changes the PR head, so final exact-head CI remains required. Draft PR #2187 stays unmerged until a merge is explicitly authorized.
 Next safe step: Verify the final #2187 head across the six required workflows; only then mark the consolidation ready for an explicitly authorized merge.
+
+### 2026-10-05 — Repository FreeLLM 400 failover and credit truth
+Status: SOURCE_REGRESSION_VERIFIED — six exact-head PR workflows passed on pre-Memory head; live rollout/readback still pending
+Task: Repair repository-local jobs that terminally blocked on the first `FREELLM_REQUEST_REJECTED` despite remaining verified FreeLLM candidates, and stop the control surface from conflating account credits with Paid provider-funded balance.
+Decisions: FreeLLM HTTP 400 advances only to the next verified Free quota scope and only before any repository mutation; after effects, replay remains fail-closed; no Free-to-Paid fallback. Preserve the provider-funded Paid safety boundary while exposing `provider_funded_credits_required` separately from the verified account balance.
+Touched surfaces: cognitive failure classification; repository executor/revolver cooldown; canonical/shipping control readback; vNext ChatSurface/client; focused backend/UI regressions, including 46 verified FreeLLMAPI canaries with 1545 account credits and zero provider-funded Paid budget.
+Evidence: Pre-Memory head `39d7c3c73c015af4af9e45827ae2822ef73d1d44` passed Release Verification 37369677297, Boundary Ledger Drift 37369677274, Sovereign ChatGPT MCP 37369677234, Sovereign Agent Backend 37369677329, Sovereign Continuity Evidence 37369677361 and Integration Plan Lane Gate 37369677369; the 46-canary resolver regression retains all 46 verified candidates while keeping provider-funded Paid budget separate.
+Learned: Repository execution had lost the Free revolver's existing pre-effect failover semantics; general account credits and provider-funded OpenRouter budget are intentionally separate truth boundaries.
+Open: This Memory correction changes the PR head, so final exact-head CI must be read again. Immutable deployment plus one fresh real Free repository mission must still prove runtime rotation/success; Paid availability still requires its separate provider-funded readback.
+Next safe step: Require terminal checks on this Memory-corrected head, then deploy the exact revision and obtain fresh runtime readback before any merge claim.

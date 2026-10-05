@@ -381,3 +381,125 @@ def test_canonical_and_shipping_repository_execution_mirrors_are_equal() -> None
     canonical = ROOT / "backend/agent_runtime/repository_execution.py"
     shipping = ROOT / "scripts/sovereign-backend/agent_runtime/repository_execution.py"
     assert shipping.read_bytes() == canonical.read_bytes()
+
+def test_free_request_rejection_rotates_to_next_verified_route_before_mutation(
+    pending_execution, monkeypatch
+):
+    route_a = {"id": "free-a", "model_id": "model-a"}
+    route_b = {"id": "free-b", "model_id": "model-b"}
+    resolution_a = SimpleNamespace(
+        profile_id=execution.FREE_SINGLE_AGENT_PROFILE,
+        repository_execution_allowed=True,
+        primary_route=route_a,
+        candidate_routes=(route_a, route_b),
+        agent_route=route_a,
+    )
+    resolution_b = SimpleNamespace(
+        profile_id=execution.FREE_SINGLE_AGENT_PROFILE,
+        repository_execution_allowed=True,
+        primary_route=route_b,
+        candidate_routes=(route_b,),
+        agent_route=route_b,
+    )
+
+    class Toolset:
+        def tools_for_role(self, _role):
+            return []
+
+        def summary(self):
+            return {"rolesWithMutations": []}
+
+    monkeypatch.setattr(execution, "BoundRepositoryToolset", lambda **_kwargs: Toolset())
+    monkeypatch.setattr(execution, "load_execution_resolution", lambda *args, **kwargs: resolution_a)
+    monkeypatch.setattr(execution, "route_provider_model", lambda route: route["model_id"])
+
+    attempted_routes = []
+
+    async def model(*args, route, **kwargs):
+        attempted_routes.append(route["id"])
+        if route["id"] == "free-a":
+            raise execution.SwarmExecutionError(
+                stage="free-single-agent",
+                family="FREELLM_REQUEST_REJECTED",
+                error_type="BadRequestError",
+                next_action="ADVANCE_FREE_REVOLVER_ROUTE",
+                retryable=True,
+                http_status=400,
+            )
+        return {"status": "BLOCKED", "reason": "second verified route reached"}
+
+    monkeypatch.setattr(execution, "run_free_single_agent", model)
+    monkeypatch.setattr(
+        execution,
+        "advance_free_revolver_resolution",
+        lambda resolution, *, failed_route_id, reason: (
+            resolution_b if failed_route_id == "free-a" else None
+        ),
+    )
+    cooled = []
+    monkeypatch.setattr(
+        execution,
+        "_record_repository_free_route_cooldown",
+        lambda _get_connection, *, resolution, failure: cooled.append(
+            resolution.primary_route["id"]
+        ),
+    )
+
+    result = pending_execution.submit()
+
+    assert attempted_routes == ["free-a", "free-b"]
+    assert cooled == ["free-a"]
+    assert result.status == "blocked"
+    assert any(event["stage"] == "sovereign_free_route_rotated" for event in result.events)
+
+
+def test_free_request_rejection_does_not_replay_after_repository_mutation(
+    pending_execution, monkeypatch
+):
+    route_a = {"id": "free-a", "model_id": "model-a"}
+    resolution_a = SimpleNamespace(
+        profile_id=execution.FREE_SINGLE_AGENT_PROFILE,
+        repository_execution_allowed=True,
+        primary_route=route_a,
+        candidate_routes=(route_a,),
+        agent_route=route_a,
+    )
+
+    class MutatedToolset:
+        def tools_for_role(self, _role):
+            return []
+
+        def summary(self):
+            return {"rolesWithMutations": ["free_single_agent"]}
+
+    monkeypatch.setattr(execution, "BoundRepositoryToolset", lambda **_kwargs: MutatedToolset())
+    monkeypatch.setattr(execution, "load_execution_resolution", lambda *args, **kwargs: resolution_a)
+    monkeypatch.setattr(execution, "route_provider_model", lambda route: route["model_id"])
+
+    attempts = []
+
+    async def model(*args, **kwargs):
+        attempts.append("free-a")
+        raise execution.SwarmExecutionError(
+            stage="free-single-agent",
+            family="FREELLM_REQUEST_REJECTED",
+            error_type="BadRequestError",
+            next_action="ADVANCE_FREE_REVOLVER_ROUTE",
+            retryable=True,
+            http_status=400,
+        )
+
+    monkeypatch.setattr(execution, "run_free_single_agent", model)
+    advanced = []
+    monkeypatch.setattr(
+        execution,
+        "advance_free_revolver_resolution",
+        lambda *args, **kwargs: advanced.append(True),
+    )
+
+    result = pending_execution.submit()
+
+    assert attempts == ["free-a"]
+    assert advanced == []
+    assert result.status == "blocked"
+    assert result.events[-1]["stage"] == "sovereign_executor_execution_failed"

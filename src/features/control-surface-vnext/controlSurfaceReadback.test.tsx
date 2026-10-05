@@ -96,3 +96,20 @@ describe('live control surface readbacks', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/HTTP 503/);
   });
 });
+
+it('keeps account credits visible while explaining a zero provider-funded paid balance', async () => {
+  const body = payload();
+  body.credits.credits = 1545;
+  body.credits.providerFundedCredits = 0;
+  body.routing.modes[1].available = false;
+  body.routing.modes[1].blocker = 'paid_credits_required';
+  body.routing.modes[1].executionBlocker = 'provider_funded_credits_required';
+
+  const result = await adapter(body).adapter.getControlSurface('agent-real');
+  render(<ChatSurface messages={[]} controlReadback={result} />);
+
+  expect(screen.getByText(/1,545 ACCOUNT CREDITS/)).toBeVisible();
+  expect(screen.getByText(/0 PROVIDER-FUNDED/)).toBeVisible();
+  expect(screen.getByText(/Provider-funded balance required/)).toBeVisible();
+  expect(screen.getByRole('option', { name: /Paid/ })).toBeDisabled();
+});
