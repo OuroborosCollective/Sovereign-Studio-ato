@@ -1071,12 +1071,12 @@ Open: No live Bolt transport/API handshake or external add-on probe is claimed i
 Next safe step: Wire the real HTTPS/transport adapter only when Bolt exposes a stable authenticated API/contract, preserving this exact-revision/evidence boundary.
 
 
-### 2026-10-04 — Bolt.diy live UI transport boundary
-Status: VERIFIED repository integration; live UI observed, authenticated Bolt execution API not claimed
-Task: Continue Bolt integration from the snapshot executor into the real self-hosted browser import surface without inventing a local workspace or backend API.
-Decisions: Treat observed `/git?url=` handoff as exploratory/non-revision-bound; provide exact GitHub revision archive as pinned input; always project `ephemeral-browser-workspace` and `executionEvidenceAuthoritative=false` until authenticated upload/execution/readback evidence exists.
-Touched surfaces: `src/features/product/runtime/sovereignBoltUiTransport.ts`; its test; `docs/BOLT_DIY_SNAPSHOT_EXECUTOR.md`; `docs/evidence/BOLT_DIY_LIVE_TRANSPORT_2026-10-04.md`.
-Evidence: live instance returned HTTP 200 and `/git?url=` links; upstream bolt.diy PR #421 uses WebContainer + isomorphic-git with `depth: 1` / `singleBranch: true` and documents reload loss; PR #2188 pre-memory head `a8bda8e7f4c0a9c997067e95bf25540edf26d0f9` passed Release Verification 37183107069, Sovereign Agent Backend 37183107050, Sovereign ChatGPT MCP 37183107065, Integration Plan Lane Gate 37183107048, Boundary Ledger Drift 37183107102 and Sovereign Continuity Evidence 37183107035.
-Learned: The live Bolt surface is a browser snapshot transport, not a durable executor API. Exact input provenance can be constructed independently from execution proof.
-Open: No authenticated archive upload/result readback or real Python/Blender execution receipt has been observed yet.
-Next safe step: Verify final exact-head CI after this append; only then mark #2188 ready. Accept Bolt output as authoritative only after a receipt-producing authenticated transport exists.
+### 2026-10-04 — Open-PR backlog consolidation
+Status: VERIFIED repository integration; no production runtime claim
+Task: Review every open Sovereign PR, preserve only evidence-backed changes on current main, and close duplicate/unsafe branches.
+Decisions: Salvage #2185, #2184, #2182 and #2179 into consolidated Draft PR #2187; reject #2183, #2181, #2178 and #2175 for failing routing regressions, unbenchmarked cache complexity, a non-canonical fallback-metadata path, or unreliable disabled-button tooltips. Keep merge authority separate.
+Touched surfaces: bounded GitHub PR evidence parsing; provider secret masking; Scan Finding and Repo Readiness accessibility; docs/reviews/OPEN_PR_BACKLOG_REVIEW_2026-10-04.md; original PR conversations/states.
+Evidence: pre-memory head 78f321914467b500bf0ac3fdadbd7bbc4410b495 passed Release Verification 37182605244, Sovereign Agent Backend 37182605241, Sovereign ChatGPT MCP 37182605233, Integration Plan Lane Gate 37182605283, Boundary Ledger Drift 37182605224 and Sovereign Continuity Evidence 37182605243. Original red heads #2184/#2179 failed hidden-details accessibility assertions; #2183 failed two PAL routing regressions. All eight original PRs were reviewed and closed with rationale.
+Learned: Old green checks do not make stale branches safe; re-deriving useful deltas on current main exposed interaction-test defects and prevented disconnected metadata/speculative performance changes from entering the canonical path.
+Open: This Memory append changes the PR head, so final exact-head CI remains required. Draft PR #2187 stays unmerged until a merge is explicitly authorized.
+Next safe step: Verify the final #2187 head across the six required workflows; only then mark the consolidation ready for an explicitly authorized merge.
