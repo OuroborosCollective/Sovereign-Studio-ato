@@ -27,7 +27,7 @@ from .cognitive_run_store import (
     record_agent_stage_event,
     transition_agent_run,
 )
-from .cognitive_swarm_agents import MissionIntent, run_free_single_agent, run_paid_single_agent
+from .cognitive_swarm_agents import MissionIntent, SwarmExecutionError, run_free_single_agent, run_paid_single_agent
 from .cognitive_usage_billing import AgentBillingError, AgentStageBilling
 from .draft_pr_gate import draft_pr_input_from_job, prepare_draft_pr
 from .durable_workflow import (
@@ -64,7 +64,14 @@ from .job_store import (
 )
 from .tool_runner import run_agent_job_tool
 from .workspace_policy import repo_dir_for_workspace, validate_workspace_relative_path
-from llm_execution_resolver import FREE_SINGLE_AGENT_PROFILE, FREE_SWARM_PROFILE, PAID_SWARM_PROFILE, load_execution_resolution
+from llm_execution_resolver import (
+    FREE_SINGLE_AGENT_PROFILE,
+    FREE_SWARM_PROFILE,
+    PAID_SWARM_PROFILE,
+    advance_free_revolver_resolution,
+    load_execution_resolution,
+)
+from llm_revolver import route_quota_scope
 from llm_transport import route_provider_model
 
 
@@ -136,6 +143,62 @@ def _repository_reconciler_poll_seconds() -> float:
 
 def _executor_heartbeat_seconds() -> float:
     return _bounded_env_seconds("SOVEREIGN_REPOSITORY_HEARTBEAT_SECONDS", 15.0, 5.0, 60.0)
+
+
+def _record_repository_free_route_cooldown(
+    get_connection: ConnectionFactory,
+    *,
+    resolution: Any,
+    failure: SwarmExecutionError,
+) -> None:
+    """Cool down one rejected FreeLLM quota scope before advancing the revolver."""
+    try:
+        route = dict(resolution.primary_route)
+        scope = route_quota_scope(route)
+    except (AttributeError, TypeError, ValueError):
+        return
+    cooldown_seconds = 60 if failure.http_status == 429 else 300
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """INSERT INTO llm_route_revolver_state
+                       (quota_scope, status, consecutive_failures, cooldown_until,
+                        quota_remaining, quota_reset_at, last_route_id,
+                        last_http_status, last_blocker, last_attempt_at, updated_at)
+                   VALUES (%s, 'cooldown', 1,
+                           NOW() + (%s * INTERVAL '1 second'),
+                           0, NOW() + (%s * INTERVAL '1 second'),
+                           %s, %s, %s, NOW(), NOW())
+                   ON CONFLICT (quota_scope) DO UPDATE SET
+                       status='cooldown',
+                       consecutive_failures=llm_route_revolver_state.consecutive_failures + 1,
+                       cooldown_until=EXCLUDED.cooldown_until,
+                       quota_remaining=0,
+                       quota_reset_at=EXCLUDED.quota_reset_at,
+                       last_route_id=EXCLUDED.last_route_id,
+                       last_http_status=EXCLUDED.last_http_status,
+                       last_blocker=EXCLUDED.last_blocker,
+                       last_attempt_at=NOW(),
+                       updated_at=NOW()""",
+                (
+                    scope,
+                    cooldown_seconds,
+                    cooldown_seconds,
+                    str(route.get("id") or "")[:240],
+                    failure.http_status,
+                    failure.family[:240],
+                ),
+            )
+        connection.commit()
+    except Exception:
+        rollback = getattr(connection, "rollback", None)
+        if callable(rollback):
+            rollback()
+    finally:
+        close = getattr(connection, "close", None)
+        if callable(close):
+            close()
 
 
 async def _run_with_executor_heartbeat(
@@ -483,9 +546,6 @@ def _submit_after_claim(
             raise RepositoryExecutionError(f"NO_VERIFIED_{execution_mode.upper()}_SINGLE_AGENT_ROUTE")
         if not resolution.repository_execution_allowed:
             raise RepositoryExecutionError("REPOSITORY_EXECUTION_NOT_ALLOWED_FOR_FREE_SINGLE_AGENT")
-        model = route_provider_model(resolution.primary_route)
-        if not model:
-            raise RepositoryExecutionError("RESOLVED_FREE_AGENT_MODEL_MISSING")
         repository_toolset = BoundRepositoryToolset(
             get_connection=resolved_connection_factory,
             user_id=job.user_id,
@@ -495,6 +555,7 @@ def _submit_after_claim(
             workspace_root=repo_path.parent.parent,
             write_confirmed=True,
         )
+        free_route_failover_count = 0
 
         def stage_observer(stage: dict[str, object]) -> dict[str, str]:
             stage_conn = resolved_connection_factory()
@@ -532,20 +593,57 @@ def _submit_after_claim(
             learning_scope=[],
             confidence=1.0,
         )
-        invocation_kwargs = dict(evidence="", model=model, intent=mission_intent,
-            route=resolution.primary_route, stage_observer=stage_observer,
-            repository_tool_factory=repository_toolset.tools_for_role, capability_tool_factory=None)
-        if execution_mode == "paid":
-            # Only an explicit, persisted Paid permission can reach this billing owner.
-            billing = AgentStageBilling(get_connection=resolved_connection_factory, user_id=job.user_id,
-                run_id=run_id, trace_id=trace_id, route=resolution.primary_route, requested_mode="paid", allow_premium=True)
-            invocation = lambda: run_paid_single_agent(job.mission, stage_billing=billing, **invocation_kwargs)
-        else:
-            invocation = lambda: run_free_single_agent(job.mission, **invocation_kwargs)
-        agent_result = asyncio.run(_run_with_executor_heartbeat(
-            invocation,
-            get_connection=resolved_connection_factory, job=job, run_id=run_id, claim_ref=claim_ref,
-        ))
+        while True:
+            model = route_provider_model(resolution.primary_route)
+            if not model:
+                raise RepositoryExecutionError("RESOLVED_FREE_AGENT_MODEL_MISSING")
+            invocation_kwargs = dict(evidence="", model=model, intent=mission_intent,
+                route=resolution.primary_route, stage_observer=stage_observer,
+                repository_tool_factory=repository_toolset.tools_for_role, capability_tool_factory=None)
+            try:
+                if execution_mode == "paid":
+                    # Only an explicit, persisted Paid permission can reach this billing owner.
+                    billing = AgentStageBilling(get_connection=resolved_connection_factory, user_id=job.user_id,
+                        run_id=run_id, trace_id=trace_id, route=resolution.primary_route, requested_mode="paid", allow_premium=True)
+                    invocation = lambda: run_paid_single_agent(job.mission, stage_billing=billing, **invocation_kwargs)
+                else:
+                    invocation = lambda: run_free_single_agent(job.mission, **invocation_kwargs)
+                agent_result = asyncio.run(_run_with_executor_heartbeat(
+                    invocation,
+                    get_connection=resolved_connection_factory, job=job, run_id=run_id, claim_ref=claim_ref,
+                ))
+                break
+            except SwarmExecutionError as exc:
+                if execution_mode != "free" or not exc.retryable:
+                    raise
+                repository_summary = repository_toolset.summary()
+                if list(repository_summary.get("rolesWithMutations") or []):
+                    # Never replay a model turn after a repository mutation may
+                    # already have happened; exactly-once effects outrank failover.
+                    raise
+                failed_route_id = str(resolution.primary_route.get("id") or "")
+                next_resolution = advance_free_revolver_resolution(
+                    resolution,
+                    failed_route_id=failed_route_id,
+                    reason="repository_free_route_failed_advanced_to_next_quota_scope",
+                )
+                if next_resolution is None:
+                    raise
+                _record_repository_free_route_cooldown(
+                    resolved_connection_factory,
+                    resolution=resolution,
+                    failure=exc,
+                )
+                free_route_failover_count += 1
+                append_agent_event(conn, job.job_id, SovereignAgentEvent(
+                    stage="sovereign_free_route_rotated",
+                    level="warning",
+                    message=(
+                        "A FreeLLM candidate failed before repository mutation; "
+                        "Sovereign advanced to the next verified quota scope."
+                    ),
+                ))
+                resolution = next_resolution
         if str(agent_result.get("status") or "BLOCKED") != "COMPLETED":
             return _block_job(
                 conn,
@@ -573,6 +671,7 @@ def _submit_after_claim(
                     "backgroundAgentsStarted": 0,
                     "rawModelOutputPersisted": False,
                     "executionMode": execution_mode,
+                    "freeRouteFailoverCount": free_route_failover_count,
                 },
                 agent_id=agent_id,
                 task_id=task_id,
