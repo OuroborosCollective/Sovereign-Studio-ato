@@ -58,6 +58,9 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
   const paid = controlReadback?.routing.modes.find(route => route.mode === 'paid');
   const selectedRoute = selectedMode === 'paid' ? paid : free;
   const credit = controlReadback?.credits;
+  const paidAvailability = paid?.executionBlocker === 'provider_funded_credits_required'
+    ? 'Provider-funded balance required; account credits remain a separate verified balance.'
+    : paid?.executionBlocker || paid?.blocker;
   const [, refreshAge] = useState(0);
   React.useEffect(() => {
     const timer = setInterval(() => refreshAge(value => value + 1), 1000);
@@ -104,8 +107,8 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
             </select>
           </div>
           <p id="mission-route-availability" className="mt-1 text-[8px] text-[var(--text-dim)]">{selectedMode === 'paid' ? 'Paid · direct OpenRouter. Dispatch authorizes a credit reservation; actual provider usage is settled and unused reserved credits are refunded.' : 'Free · direct FreeLLM. No credit deduction and no automatic switch to Paid.'}</p>
-          {!selectedRoute?.available && <p className="mt-1 text-[9px] text-[var(--red-alert)]">Selected route unavailable: {selectedRoute?.blocker || 'route_readback_unavailable'}</p>}
-          {paid?.blocker && <p className="mt-1 text-[9px] text-[var(--text-muted)]">Paid availability: {paid.blocker}</p>}
+          {!selectedRoute?.available && <p className="mt-1 text-[9px] text-[var(--red-alert)]">Selected route unavailable: {selectedRoute?.executionBlocker || selectedRoute?.blocker || 'route_readback_unavailable'}</p>}
+          {paidAvailability && <p className="mt-1 text-[9px] text-[var(--text-muted)]">Paid availability: {paidAvailability}</p>}
           <div className="mt-2 text-[9px] text-[var(--text-main)]" data-testid="vnext-account-credits">
             {credit?.readbackState === 'live' && credit.creditStateVerified ? <>{credit.credits?.toLocaleString('en-US')} ACCOUNT CREDITS · {credit.providerFundedCredits?.toLocaleString('en-US')} PROVIDER-FUNDED</> : <>CREDITS UNAVAILABLE: {credit?.blocker || 'Awaiting authenticated ledger readback'}</>}
           </div>
