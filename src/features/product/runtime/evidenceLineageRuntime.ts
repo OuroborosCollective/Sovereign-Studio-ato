@@ -23,29 +23,49 @@ export interface EvidenceLineageChain {
 
 export function buildEvidenceLineage(entries: readonly EvidenceLineageInput[]): EvidenceLineageChain[] {
   const groups = new Map<string, EvidenceLineageInput[]>();
-  for (const entry of entries) {
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
     const scope = entry.scope.trim() || 'runtime';
-    const current = groups.get(scope) ?? [];
+    let current = groups.get(scope);
+    if (!current) {
+      current = [];
+      groups.set(scope, current);
+    }
     current.push(entry);
-    groups.set(scope, current);
   }
 
+  // ⚡ Bolt: Fast native lexicographical string comparison replacing slow localeCompare during scope key sorting
   return [...groups.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
     .map(([scope, scopedEntries]) => {
-      const ordered = [...scopedEntries].sort((left, right) => left.at - right.at || left.id.localeCompare(right.id));
-      const nodes = ordered.map((entry, index): EvidenceLineageNode => ({
-        id: entry.id,
-        label: entry.message,
-        source: entry.source,
-        scope,
-        at: entry.at,
-        parentId: index > 0 ? ordered[index - 1].id : null,
-      }));
+      // ⚡ Bolt: Fast native lexicographical string comparison replacing slow localeCompare for tie-breakers
+      const ordered = [...scopedEntries].sort(
+        (left, right) => left.at - right.at || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
+      );
+      const nodeCount = ordered.length;
+      const nodes: EvidenceLineageNode[] = new Array(nodeCount);
+      let sourcesSummary = '';
+
+      for (let index = 0; index < nodeCount; index++) {
+        const entry = ordered[index];
+        nodes[index] = {
+          id: entry.id,
+          label: entry.message,
+          source: entry.source,
+          scope,
+          at: entry.at,
+          parentId: index > 0 ? ordered[index - 1].id : null,
+        };
+        if (index > 0) {
+          sourcesSummary += ' → ';
+        }
+        sourcesSummary += entry.source;
+      }
+
       return {
         scope,
         nodes,
-        summary: `${nodes.length} evidence node(s) in ${scope}: ${nodes.map((node) => node.source).join(' → ')}`,
+        summary: `${nodeCount} evidence node(s) in ${scope}: ${sourcesSummary}`,
       };
     });
 }
