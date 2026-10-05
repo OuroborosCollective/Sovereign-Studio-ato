@@ -1080,3 +1080,13 @@ Evidence: pre-memory head 78f321914467b500bf0ac3fdadbd7bbc4410b495 passed Releas
 Learned: Old green checks do not make stale branches safe; re-deriving useful deltas on current main exposed interaction-test defects and prevented disconnected metadata/speculative performance changes from entering the canonical path.
 Open: This Memory append changes the PR head, so final exact-head CI remains required. Draft PR #2187 stays unmerged until a merge is explicitly authorized.
 Next safe step: Verify the final #2187 head across the six required workflows; only then mark the consolidation ready for an explicitly authorized merge.
+
+### 2026-10-05 — Repository FreeLLM 400 failover and credit truth
+Status: PARTIAL — source/regression patch complete; exact-head CI and live rollout pending
+Task: Repair repository-local jobs that terminally blocked on the first `FREELLM_REQUEST_REJECTED` despite remaining verified FreeLLM candidates, and stop the control surface from conflating account credits with Paid provider-funded balance.
+Decisions: FreeLLM HTTP 400 advances only to the next verified Free quota scope and only before any repository mutation; after effects, replay remains fail-closed; no Free-to-Paid fallback. Preserve the provider-funded Paid safety boundary while exposing `provider_funded_credits_required` separately from the verified account balance.
+Touched surfaces: cognitive failure classification; repository executor/revolver cooldown; canonical/shipping control readback; vNext ChatSurface/client; focused backend/UI regressions.
+Evidence: Pre-Memory code head `801995990cfb3999c058dcaee2889e0a0e5ec88f`; canonical/shipping blobs are equal for cognitive_swarm_agents `2d0d45ef1e2cfff8885bf121e8b2b44a108898b7`, control_surface_readback `c88d7471dac2883f1b580ea4a804d758b8e7693c`, repository_execution `f60defa98d680c39040d4d26dd63c606bfd06d30`; Draft PR #2196; exact-head runs 37364399952, 37364399879, 37364400055, 37364399884, 37364400005 and 37364400036 were created but remained queued during the GitHub Actions hosted-runner incident, so no green CI/runtime claim is made.
+Learned: Repository execution had lost the Free revolver's existing pre-effect failover semantics; general account credits and provider-funded OpenRouter budget are intentionally separate truth boundaries.
+Open: Exact-head CI, immutable deployment and one fresh real Free repository mission must prove rotation/success in runtime; Paid availability still requires its separate provider-funded readback.
+Next safe step: Consume terminal PR CI when GitHub-hosted runners recover, then deploy the exact revision and require fresh runtime readback before any merge claim.
