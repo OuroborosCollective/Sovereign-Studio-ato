@@ -18,7 +18,7 @@ export function RuntimeEvidenceLogSheet({ entries, onClose }: { readonly entries
 
   return (
     <div role="presentation" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 84, background: 'rgba(14,17,22,0.84)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="runtime-evidence-logs-title" onClick={(event) => event.stopPropagation()} style={{ width: '100%', maxWidth: 680, maxHeight: '78vh', overflowY: 'auto', margin: '0 auto', borderRadius: '20px 20px 0 0', border: `1px solid ${C.border}`, background: C.surface, padding: '16px 16px calc(22px + env(safe-area-inset-bottom, 0px))` }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="runtime-evidence-logs-title" onClick={(event) => event.stopPropagation()} style={{ width: '100%', maxWidth: 680, maxHeight: '78vh', overflowY: 'auto', margin: '0 auto', borderRadius: '20px 20px 0 0', border: `1px solid ${C.border}`, background: C.surface, padding: '16px 16px calc(22px + env(safe-area-inset-bottom, 0px))' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
           <div>
             <h3 id="runtime-evidence-logs-title" style={{ color: C.text, margin: 0, fontSize: 14, fontWeight: 700 }}>Runtime Evidence Logs</h3>
