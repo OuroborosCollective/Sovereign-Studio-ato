@@ -87,3 +87,7 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+
+## 2026-10-31 - [Consolidating Multi-Pass Log Filtering in React Render Loops]
+**Learning:** Bounding array evaluations (e.g. `slice(0, 24)`) after a `.filter()` in a React render loop allocates unnecessary intermediate arrays for all filtered elements, creating excessive garbage collection overhead for high-frequency logs.
+**Action:** When extracting a bounded slice of filtered logs in high-frequency React renders, convert chained `.filter().slice()` into a single bounded `for...of` loop with an explicit early `break` to avoid processing off-screen elements.
