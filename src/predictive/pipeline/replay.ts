@@ -100,10 +100,11 @@ export class SignalRecorder {
 
   /**
    * Finalizes and returns the recorded signal set.
+   * ⚡ Bolt: .slice() replaces array spread iterator for faster array cloning.
    */
   finishRecording(originalFeatureVectors?: FeatureVector[]): RecordedSignalSet {
     const set: RecordedSignalSet = {
-      signals: [...this.signals],
+      signals: this.signals.slice(),
       revision: this.revision,
       recordedAt: this.recordedAt,
       configFingerprint: this.configFingerprint,
@@ -162,20 +163,22 @@ export function replaySignals(
     }
 
     // Extract features from replay windows
-    const replayVectors: FeatureVector[] = [];
-    for (const window of windowResult.windows) {
-      const result = processWindowToFeatures(window, true);
-      replayVectors.push(result.featureVector);
+    // ⚡ Bolt: Preallocated array and indexed loop pass.
+    const windows = windowResult.windows;
+    const replayVectors: FeatureVector[] = new Array(windows.length);
+    for (let i = 0; i < windows.length; i++) {
+      const result = processWindowToFeatures(windows[i], true);
+      replayVectors[i] = result.featureVector;
     }
 
     // Verify parity
-    const parityResults = verifyParity(recordedSet.featureVectors, replayVectors);
+    const parityResult = verifyParity(recordedSet.featureVectors, replayVectors);
 
     return {
       originalVectors: recordedSet.featureVectors,
       replayVectors,
-      parityResults,
-      parityVerified: parityResults.every((r) => r.equal),
+      parityResults: parityResult.results,
+      parityVerified: parityResult.parityVerified,
       windows: generateWindowReceipts(windowResult.windows),
       durationMs: performance.now() - startTime,
       errors,
@@ -188,53 +191,73 @@ export function replaySignals(
 
 /**
  * Verifies parity between original and replay feature vectors.
+ * ⚡ Bolt: Populates result objects directly without object spread allocations
+ * and accumulates `parityVerified` in a single loop pass.
  */
 function verifyParity(
   original: FeatureVector[],
   replay: FeatureVector[],
-): Array<{ index: number; equal: boolean; diff?: string }> {
-  const results: Array<{ index: number; equal: boolean; diff?: string }> = [];
+): {
+  results: Array<{ index: number; equal: boolean; diff?: string }>;
+  parityVerified: boolean;
+} {
+  const origLen = original.length;
+  const repLen = replay.length;
+  let parityVerified = true;
 
-  if (original.length !== replay.length) {
-    // Each vector gets a result entry
-    const maxLen = Math.max(original.length, replay.length);
+  if (origLen !== repLen) {
+    const maxLen = origLen > repLen ? origLen : repLen;
+    const results: Array<{ index: number; equal: boolean; diff?: string }> = new Array(maxLen);
     for (let i = 0; i < maxLen; i++) {
-      if (i < original.length && i < replay.length) {
-        results.push({ index: i, ...verifyFeatureParity(original[i], replay[i]) });
+      if (i < origLen && i < repLen) {
+        const parity = verifyFeatureParity(original[i], replay[i]);
+        if (!parity.equal) parityVerified = false;
+        results[i] = { index: i, equal: parity.equal, diff: parity.diff };
       } else {
-        results.push({
+        parityVerified = false;
+        results[i] = {
           index: i,
           equal: false,
-          diff: `Length mismatch at index ${i}: original has ${original.length}, replay has ${replay.length}`,
-        });
+          diff: `Length mismatch at index ${i}: original has ${origLen}, replay has ${repLen}`,
+        };
       }
     }
-    return results;
+    return { results, parityVerified: false };
   }
 
-  for (let i = 0; i < original.length; i++) {
-    results.push({ index: i, ...verifyFeatureParity(original[i], replay[i]) });
+  const results: Array<{ index: number; equal: boolean; diff?: string }> = new Array(origLen);
+  for (let i = 0; i < origLen; i++) {
+    const parity = verifyFeatureParity(original[i], replay[i]);
+    if (!parity.equal) parityVerified = false;
+    results[i] = { index: i, equal: parity.equal, diff: parity.diff };
   }
 
-  return results;
+  return { results, parityVerified };
 }
 
 /**
  * Creates an empty replay result for error cases.
+ * ⚡ Bolt: Single-pass pre-allocated indexed loop replaces .map() callback allocations.
  */
 function createEmptyReplayResult(
   originalVectors: FeatureVector[],
   startTime: number,
   errors: string[],
 ): ReplayResult {
-  return {
-    originalVectors,
-    replayVectors: [],
-    parityResults: originalVectors.map((_, i) => ({
+  const len = originalVectors.length;
+  const parityResults: Array<{ index: number; equal: boolean; diff?: string }> = new Array(len);
+  for (let i = 0; i < len; i++) {
+    parityResults[i] = {
       index: i,
       equal: false,
       diff: 'Replay failed before vector generation',
-    })),
+    };
+  }
+
+  return {
+    originalVectors,
+    replayVectors: [],
+    parityResults,
     parityVerified: false,
     windows: [],
     durationMs: performance.now() - startTime,
@@ -270,6 +293,8 @@ export interface LiveReplayComparison {
 
 /**
  * Compares live and replay outputs for semantic identity.
+ * ⚡ Bolt: Single Map lookup pass using direct Map queries and deletion tracking
+ * replaces secondary Map allocations (`replayMap`) and separate key iteration loops.
  */
 export function compareLiveReplay(
   liveResult: { vectors: FeatureVector[]; windows: unknown[]; signals: Signal[] },
@@ -291,34 +316,34 @@ export function compareLiveReplay(
     );
   }
 
-  // Compare feature vectors (by tick range and hash)
+  // Populate liveMap with live feature vectors by tick range key
   const liveMap = new Map<string, FeatureVector>();
-  for (const v of liveResult.vectors) {
+  const liveVecs = liveResult.vectors;
+  for (let i = 0; i < liveVecs.length; i++) {
+    const v = liveVecs[i];
     liveMap.set(`${v.tickRange[0]}-${v.tickRange[1]}`, v);
   }
 
-  const replayMap = new Map<string, FeatureVector>();
-  for (const v of replayResult.vectors) {
-    replayMap.set(`${v.tickRange[0]}-${v.tickRange[1]}`, v);
-  }
-
-  for (const [key, liveVec] of liveMap) {
-    const replayVec = replayMap.get(key);
-    if (!replayVec) {
-      differences.push(`Replay missing vector for tick range ${key}`);
-      continue;
-    }
-
-    const parity = verifyFeatureParity(liveVec, replayVec);
-    if (!parity.equal) {
-      differences.push(`Parity mismatch at ${key}: ${parity.diff}`);
-    }
-  }
-
-  for (const [key] of replayMap) {
-    if (!liveMap.has(key)) {
+  // Check replay vectors directly against liveMap without building replayMap
+  const replayVecs = replayResult.vectors;
+  for (let i = 0; i < replayVecs.length; i++) {
+    const replayVec = replayVecs[i];
+    const key = `${replayVec.tickRange[0]}-${replayVec.tickRange[1]}`;
+    const liveVec = liveMap.get(key);
+    if (!liveVec) {
       differences.push(`Live missing vector for tick range ${key}`);
+    } else {
+      const parity = verifyFeatureParity(liveVec, replayVec);
+      if (!parity.equal) {
+        differences.push(`Parity mismatch at ${key}: ${parity.diff}`);
+      }
+      liveMap.delete(key);
     }
+  }
+
+  // Any remaining keys in liveMap were missing from replay
+  for (const [key] of liveMap) {
+    differences.push(`Replay missing vector for tick range ${key}`);
   }
 
   return {
@@ -372,13 +397,15 @@ export class DeterministicSignalPipeline {
     });
 
     // Extract features
-    const receipts: WindowReceipt[] = [];
-    const featureVectors: FeatureVector[] = [];
+    // ⚡ Bolt: Preallocated arrays and indexed loop pass.
+    const windows = windowResult.windows;
+    const receipts: WindowReceipt[] = new Array(windows.length);
+    const featureVectors: FeatureVector[] = new Array(windows.length);
 
-    for (const window of windowResult.windows) {
-      const result = processWindowToFeatures(window, false);
-      receipts.push(result.receipt);
-      featureVectors.push(result.featureVector);
+    for (let i = 0; i < windows.length; i++) {
+      const result = processWindowToFeatures(windows[i], false);
+      receipts[i] = result.receipt;
+      featureVectors[i] = result.featureVector;
     }
 
     return {
