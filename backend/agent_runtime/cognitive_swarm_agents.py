@@ -242,11 +242,22 @@ def classify_swarm_exception(
             True,
         )
     elif status == 400 or "badrequest" in lowered or "bad_request" in lowered:
-        family, next_action, retryable = (
-            f"{provider_name}_REQUEST_REJECTED",
-            "REVIEW_MODEL_AND_STRUCTURED_OUTPUT_CONTRACT",
-            False,
-        )
+        if normalized_transport == "freellm":
+            # A verified FreeLLM candidate can reject one model/tool request shape
+            # before usage while another verified quota scope remains valid. The
+            # repository/revolver owner must advance candidates, never retry the
+            # same route blindly or silently escalate to Paid.
+            family, next_action, retryable = (
+                "FREELLM_REQUEST_REJECTED",
+                "ADVANCE_FREE_REVOLVER_ROUTE",
+                True,
+            )
+        else:
+            family, next_action, retryable = (
+                f"{provider_name}_REQUEST_REJECTED",
+                "REVIEW_MODEL_AND_STRUCTURED_OUTPUT_CONTRACT",
+                False,
+            )
     elif budget_failure is not None:
         return budget_failure
     elif any(marker in lowered for marker in ("modelbehavior", "output", "validation")):

@@ -229,6 +229,40 @@ def test_seven_verified_free_quota_scopes_unlock_free_swarm() -> None:
     ]
 
 
+
+def test_forty_six_verified_free_canaries_remain_repository_available_with_account_credits() -> None:
+    free_routes = [
+        route(
+            f"free-canary-{index:02d}",
+            category="free",
+            scope=f"free:canary-{index:02d}",
+            priority=index,
+            profile=FREE_SINGLE_AGENT_PROFILE,
+        )
+        for index in range(46)
+    ]
+
+    resolution = resolve_execution_profile(
+        routes=free_routes,
+        state_by_scope={},
+        paid_purchase_verified=False,
+        provider_funded_credits=0,
+        credit_balance=1545,
+        requested_mode="free",
+    )
+
+    assert resolution is not None
+    assert resolution.repository_execution_allowed is True
+    assert resolution.profile_id == FREE_SWARM_PROFILE
+    assert resolution.max_background_agents == 6
+    assert len(resolution.candidate_routes) == 46
+    assert [item["id"] for item in resolution.candidate_routes] == [
+        f"free-canary-{index:02d}" for index in range(46)
+    ]
+    assert resolution.provider_funded_credits == 0
+    assert resolution.paid_entitlement_verified is True
+    assert resolution.paid_entitlement_source == "existing_credit_balance"
+
 def test_free_route_diagnostics_explain_revolver_contract_failures() -> None:
     free = route(
         "free-diagnostic",

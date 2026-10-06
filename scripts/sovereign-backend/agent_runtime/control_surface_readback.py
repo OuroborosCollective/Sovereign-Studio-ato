@@ -143,8 +143,13 @@ def read_control_surface_routing(get_connection: Callable, *, user_id: str, cred
                 item["available"] = False
                 item["providerAvailable"] = False
                 item["blocker"] = "credit_state_verification_failed"
-            elif not credits.get("providerFundedCredits") or not credits.get("paidEntitlementVerified"):
+            elif not credits.get("paidEntitlementVerified"):
+                item["available"] = False
+                item["blocker"] = "paid_purchase_required"
+                item["executionBlocker"] = "paid_entitlement_required"
+            elif not credits.get("providerFundedCredits"):
                 item["available"] = False
                 item["blocker"] = "paid_credits_required"
+                item["executionBlocker"] = "provider_funded_credits_required"
         modes.append(item)
     return {"repositoryMode": policy["executionModes"][0], "agentMode": policy["agentMode"], "modes": modes}
