@@ -1,5 +1,8 @@
 name: 🔥 Marketing Ignition Pack
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   repository_dispatch:
     types:

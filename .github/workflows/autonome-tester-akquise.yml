@@ -1,5 +1,8 @@
 name: "Master-Prompt A: Autonome Tester-Akquise (Zero-Cost-Bot)"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   # Tägliche Ausführung um 9:00 Uhr UTC
   schedule:
