@@ -1,5 +1,8 @@
 name: Repair Sovereign MCP env scope
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
     branches: [main]

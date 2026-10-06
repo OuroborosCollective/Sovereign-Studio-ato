@@ -1,8 +1,5 @@
 name: Release Verification
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 on:
   push:
     branches: [main]
@@ -57,6 +54,7 @@ permissions:
 # instead bind build, test and receipt evidence to the immutable source head.
 env:
   SOVEREIGN_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   release-gate:

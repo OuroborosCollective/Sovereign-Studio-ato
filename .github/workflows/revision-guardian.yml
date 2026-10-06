@@ -1,8 +1,5 @@
 name: Sovereign Revision Guardian
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 on:
   pull_request_target:
     branches: [main]
@@ -46,6 +43,9 @@ permissions:
   contents: read
   deployments: read
   pull-requests: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 concurrency:
   group: revision-guardian-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.event.deployment.sha || github.sha }}

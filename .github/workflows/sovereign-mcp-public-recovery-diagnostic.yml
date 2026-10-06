@@ -1,5 +1,8 @@
 name: Sovereign MCP public recovery diagnostic
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
     branches: [fix/persistent-mcp-auth-proxy-network-2026-10-01]
