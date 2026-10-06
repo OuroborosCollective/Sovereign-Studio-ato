@@ -1,9 +1,6 @@
 # Owner-admin recovery lane; direct workflow administration intentionally supported.
 name: Sovereign Owner Ruleset Unlock
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 on:
   push:
     branches: [main]

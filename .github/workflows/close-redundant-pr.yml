@@ -2,9 +2,6 @@ name: Close exact redundant PR
 
 run-name: Close PR #${{ inputs.pr_number }} as ${{ inputs.closure_reason }}
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 on:
   workflow_dispatch:
     inputs:
