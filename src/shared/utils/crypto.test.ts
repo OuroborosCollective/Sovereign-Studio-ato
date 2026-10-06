@@ -176,6 +176,18 @@ describe('maskSecrets', () => {
     expect(maskSecrets(plain)).toBe(plain);
   });
 
+  it('masks Stripe and Sentry credential labels without masking unassigned label mentions', () => {
+    expect(maskSecrets('sentry_dsn: https://abc123456789@o123456.ingest.sentry.io/123456')).toBe('sentry_dsn: ****');
+    expect(maskSecrets('sentry_key=sentry_key_val_101')).toBe('sentry_key=****');
+    expect(maskSecrets('stripe_key: pk_test_1234567890abcdef')).toBe('stripe_key: ****');
+    expect(maskSecrets('stripe_secret=sk_test_1234567890abcdef')).toBe('stripe_secret=****');
+    expect(maskSecrets('stripe_token: tok_1234567890abcdef')).toBe('stripe_token: ****');
+    expect(maskSecrets('"stripe_secret": "quoted_secret_val"')).toBe('"stripe_secret": ****');
+
+    const plain = 'stripe_key docs mention sentry_dsn and stripe_secret without assignments';
+    expect(maskSecrets(plain)).toBe(plain);
+  });
+
   it('masks multiple secrets in one string', () => {
     const text = 'Keys: ghp_1234567890abcdefghijklmnopqrstuvwx and AIzaSyA-1234567890_abcdefghijklmnopqrst';
     expect(maskSecrets(text)).toBe('Keys: ghp_**** and AIza****');
