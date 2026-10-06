@@ -226,14 +226,21 @@ describe('Palette Accessibility Enhancements', () => {
       expect(missionBtn).toHaveClass('focus-visible:ring-2');
     });
 
-    it('WorkflowRepairPanel Use Repair Mission button is stateful', () => {
+    it('WorkflowRepairPanel has region landmark, severity badge tooltip/aria-label, keyboard-navigable pre block, focus ring button, and semantic list', () => {
       const mockPlan = {
         summary: 'Repair summary',
         severity: 'high',
         reason: 'Failed build',
         mission: 'Repair mission content',
         blocked: false,
-        actions: [],
+        actions: [
+          {
+            id: 'act-1',
+            title: 'Fix TypeScript Build',
+            rationale: 'Missing prop type',
+            suggestedFiles: ['src/App.tsx'],
+          },
+        ],
       };
       const onUseMission = vi.fn();
 
@@ -241,14 +248,32 @@ describe('Palette Accessibility Enhancements', () => {
         <WorkflowRepairPanel plan={mockPlan} onUseMission={onUseMission} />
       );
 
+      const section = screen.getByRole('region', { name: 'Workflow Repair Planner' });
+      expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', 'workflow-repair-title');
+
+      const severityBadge = screen.getByTitle('Severity: high');
+      expect(severityBadge).toBeInTheDocument();
+      expect(severityBadge).toHaveAttribute('aria-label', 'Severity: high');
+
+      const preBlock = screen.getByLabelText('Workflow repair planner mission text');
+      expect(preBlock).toHaveAttribute('tabIndex', '0');
+      expect(preBlock).toHaveClass('focus-visible:ring-2');
+
       let repairBtn = screen.getByRole('button', { name: 'Use Repair Mission in Builder' });
-      expect(repairBtn).toHaveAttribute('title', 'Reparaturauftrag in den Builder übernehmen');
+      expect(repairBtn).toHaveAttribute('title', 'Use repair mission in Builder');
+      expect(repairBtn).not.toHaveAttribute('aria-label');
+      expect(repairBtn).toHaveClass('focus-visible:ring-2');
+
+      const actionsList = screen.getByRole('list', { name: 'Recommended repair actions' });
+      expect(actionsList).toBeInTheDocument();
+      expect(screen.getByText('Fix TypeScript Build')).toBeInTheDocument();
 
       const blockedPlan = { ...mockPlan, blocked: true };
       rerender(<WorkflowRepairPanel plan={blockedPlan} onUseMission={onUseMission} />);
 
       repairBtn = screen.getByRole('button', { name: 'Use Repair Mission in Builder' });
-      expect(repairBtn).toHaveAttribute('title', 'Reparaturauftrag blockiert');
+      expect(repairBtn).toHaveAttribute('title', 'Repair mission blocked');
     });
 
     it('WorkbenchSidePanel buttons have matching attributes', () => {

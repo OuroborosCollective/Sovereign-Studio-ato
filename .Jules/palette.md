@@ -1,0 +1,3 @@
+## 2025-05-18 - WCAG Label-in-Name and Language Consistency
+**Learning:** When adding accessibility attributes to UI components with visible text labels, do not add `aria-label` attributes that override or mismatch the visible text (violates WCAG 2.1 SC 2.5.3 Label in Name). Additionally, match the component's existing language (English vs. German) for all `title` tooltips and `aria-label` attributes.
+**Action:** Preserve visible text as the accessible name for buttons. Only use `aria-label` on icon-only controls or when visible text is inadequate, ensuring the visible text is included at the beginning of the label in the same language.
