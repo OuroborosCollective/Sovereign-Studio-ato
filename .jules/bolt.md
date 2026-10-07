@@ -87,3 +87,7 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+
+## 2026-10-07 - [Avoid slice().map() allocation for extracting string suffixes]
+**Learning:** Bounding array evaluations (e.g. `slice().map(...)`) after a string `split()` allocates large, unnecessary intermediate arrays which causes garbage collection pressure, particularly when parsing file contents or unified diffs.
+**Action:** When bounding processed array results, convert chained `.slice()` and `.map()` calls into a single bounded `for` loop (or `for...of` with `break`) to avoid creating intermediate arrays and skip processing elements outside the bounds.
