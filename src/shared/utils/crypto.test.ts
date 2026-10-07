@@ -183,6 +183,64 @@ describe('maskSecrets', () => {
     expect(maskSecrets(plain)).toBe(plain);
   });
 
+  it('masks Stripe and Sentry credential labels without masking unassigned label mentions', () => {
+    expect(maskSecrets('sentry_dsn: https://abc123456789@o123456.ingest.sentry.io/123456')).toBe('sentry_dsn: ****');
+    expect(maskSecrets('sentry_key=sentry_key_val_101')).toBe('sentry_key=****');
+    expect(maskSecrets('stripe_key: pk_test_1234567890abcdef')).toBe('stripe_key: ****');
+    expect(maskSecrets('stripe_secret=sk_test_1234567890abcdef')).toBe('stripe_secret=****');
+    expect(maskSecrets('stripe_token: tok_1234567890abcdef')).toBe('stripe_token: ****');
+    expect(maskSecrets('"stripe_secret": "quoted_secret_val"')).toBe('"stripe_secret": ****');
+
+    const plain = 'stripe_key docs mention sentry_dsn and stripe_secret without assignments';
+    expect(maskSecrets(plain)).toBe(plain);
+  });
+
+
+  it('keeps colons as field boundaries outside Sentry DSNs', () => {
+    for (const label of ['password', 'token', 'cohere_key', 'pinecone_secret', 'qdrant_key', 'stripe_secret', 'sentry_key', 'sendgrid_key']) {
+      expect(maskSecrets(label + '=synthetic:status=ok')).toBe(label + '=****:status=ok');
+    }
+  });
+
+  it('masks complete Sentry DSNs while preserving surrounding fields and delimiters', () => {
+    const dsn = 'https://synthetic:synthetic@example.invalid:8443/42';
+    for (const label of ['sentry_dsn', 'SENTRY_DSN', 'sentry-dsn', 'sentrydsn']) {
+      expect(maskSecrets(label + '=' + dsn + ',status=ok')).toBe(label + '=****,status=ok');
+      expect(maskSecrets(label + ': "' + dsn + '"; status=ok')).toBe(label + ': ****; status=ok');
+      expect(maskSecrets('{"' + label + '":"' + dsn + '","status":"ok"}')).toBe('{"' + label + '":****,"status":"ok"}');
+      expect(maskSecrets(label + '=' + dsn + '\nstatus=ok')).toBe(label + '=****\nstatus=ok');
+    }
+    expect(maskSecrets("sentry_dsn='" + dsn + "' stripe_key=synthetic")).toBe('sentry_dsn=**** stripe_key=****');
+  });
+
+  it('does not consume the next line after an empty credential assignment', () => {
+    for (const label of ['sentry_dsn', 'stripe_key', 'cohere_key', 'password', 'twilio_secret']) {
+      for (const newline of ['\n', '\r\n']) {
+        const text = label + ': \t' + newline + 'status=ok';
+        expect(maskSecrets(text)).toBe(text);
+      }
+    }
+  });
+
+  it('preserves unassigned labels and embedded noncredential words', () => {
+    for (const label of ['cohere_key', 'cohere_secret', 'cohere_token', 'pinecone_key', 'pinecone_secret', 'qdrant_key', 'qdrant_secret', 'stripe_key', 'stripe_secret', 'stripe_token', 'sentry_key', 'sentry_dsn']) {
+      for (const text of [label, label + ' docs', label + ':', label + '=', label + '_description=public']) {
+        expect(maskSecrets(text)).toBe(text);
+      }
+    }
+    expect(maskSecrets('mytoken=public')).toBe('mytoken=public');
+  });
+
+  it('retains case and separator variants and repeat-call behavior', () => {
+    for (const label of ['COHERE_KEY', 'PINECONE-SECRET', 'qdrantsecret', 'STRIPE_TOKEN', 'SENTRY_KEY']) {
+      const text = label + ' = synthetic';
+      expect(maskSecrets(text)).toBe(label + ' = ****');
+      expect(maskSecrets(text)).toBe(label + ' = ****');
+      expect(maskSecrets('ordinary text')).toBe('ordinary text');
+      expect(maskSecrets(text)).toBe(label + ' = ****');
+    }
+  });
+
   it('masks multiple secrets in one string', () => {
     const text = 'Keys: ghp_1234567890abcdefghijklmnopqrstuvwx and AIzaSyA-1234567890_abcdefghijklmnopqrst';
     expect(maskSecrets(text)).toBe('Keys: ghp_**** and AIza****');

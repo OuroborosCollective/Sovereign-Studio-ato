@@ -88,7 +88,17 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
       </div>
       {abortError && <div role="alert" className="shrink-0 px-3 py-2 text-[11px] text-[var(--red-alert)] break-words">Abort was not confirmed: {abortError}</div>}
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-3" data-testid="vnext-message-stream">{messages.map((message) => <MessageCard key={message.id} message={message} />)}</div>
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-3" data-testid="vnext-message-stream" role="log" aria-live="polite">
+        {messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center text-[var(--text-dim)]">
+            <Bot size={24} className="mb-2 opacity-50" />
+            <p className="text-[11px] font-mono">No missions logged.</p>
+            <p className="text-[9px] font-mono mt-1 opacity-75">Dispatch a mission to begin.</p>
+          </div>
+        ) : (
+          messages.map((message) => <MessageCard key={message.id} message={message} />)
+        )}
+      </div>
 
       <div className="shrink-0 px-3 sm:px-4 pb-3 sm:pb-4 pt-2 bg-gradient-to-t from-[var(--carbon-base)] via-[var(--carbon-base)] to-transparent">
         <div className="mb-2 grid grid-cols-3 gap-1.5">

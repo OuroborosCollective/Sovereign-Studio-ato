@@ -131,12 +131,45 @@ describe('Palette Accessibility Enhancements', () => {
       expect(closeButton).toHaveAttribute('title', 'Patch Diff schließen');
     });
 
-    it('Runtime Logs close button keeps matching aria-label and title', () => {
-      render(<RuntimeEvidenceLogSheet entries={[]} onClose={vi.fn()} />);
+    it('Runtime Logs close button keeps matching aria-label and title, links section heading, supports Escape key dismiss, and renders lineage list', () => {
+      const onClose = vi.fn();
+      const mockEntries = [
+        {
+          id: 'log-1',
+          at: Date.now(),
+          source: 'action_stream' as const,
+          scope: 'ui',
+          level: 'info' as const,
+          message: 'Task initialized',
+        },
+      ];
+
+      const { rerender } = render(<RuntimeEvidenceLogSheet entries={mockEntries} onClose={onClose} />);
+
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toHaveAttribute('aria-labelledby', 'runtime-evidence-logs-title');
+
+      const heading = screen.getByRole('heading', { name: 'Runtime Evidence Logs', level: 3 });
+      expect(heading).toHaveAttribute('id', 'runtime-evidence-logs-title');
 
       const closeButton = screen.getByRole('button', { name: 'Runtime Logs schließen' });
       expect(closeButton).toHaveAttribute('aria-label', 'Runtime Logs schließen');
       expect(closeButton).toHaveAttribute('title', 'Runtime Logs schließen');
+      expect(closeButton).toHaveClass('focus-visible:ring-2');
+
+      const logItem = screen.getByTitle('Runtime Event (action_stream / ui): Task initialized');
+      expect(logItem).toBeInTheDocument();
+
+      const lineageList = screen.getByRole('list', { name: 'Evidence Lineage Chains' });
+      expect(lineageList).toBeInTheDocument();
+
+      // Press Escape key
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+
+      // Empty state
+      rerender(<RuntimeEvidenceLogSheet entries={[]} onClose={onClose} />);
+      expect(screen.getByText('Noch keine Runtime-Ereignisse.')).toBeInTheDocument();
     });
 
     it('FileContentPreviewSheet close button has matching aria-label and title, scrollable pre, and send to chat button attributes', () => {
