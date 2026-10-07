@@ -23,29 +23,52 @@ export interface EvidenceLineageChain {
 
 export function buildEvidenceLineage(entries: readonly EvidenceLineageInput[]): EvidenceLineageChain[] {
   const groups = new Map<string, EvidenceLineageInput[]>();
-  for (const entry of entries) {
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
     const scope = entry.scope.trim() || 'runtime';
-    const current = groups.get(scope) ?? [];
+    let current = groups.get(scope);
+    if (!current) {
+      current = [];
+      groups.set(scope, current);
+    }
     current.push(entry);
-    groups.set(scope, current);
   }
 
-  return [...groups.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([scope, scopedEntries]) => {
-      const ordered = [...scopedEntries].sort((left, right) => left.at - right.at || left.id.localeCompare(right.id));
-      const nodes = ordered.map((entry, index): EvidenceLineageNode => ({
+  // ⚡ Bolt: Fast native lexicographical string comparison replacing slow localeCompare,
+  // and single-pass loop mapping to eliminate redundant array allocations and Map entries spreading.
+  const sortedScopes = Array.from(groups.keys()).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const result: EvidenceLineageChain[] = new Array(sortedScopes.length);
+
+  for (let i = 0; i < sortedScopes.length; i++) {
+    const scope = sortedScopes[i];
+    const scopedEntries = groups.get(scope)!;
+    scopedEntries.sort(
+      (left, right) => left.at - right.at || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
+    );
+
+    const count = scopedEntries.length;
+    const nodes: EvidenceLineageNode[] = new Array(count);
+    const sources: string[] = new Array(count);
+
+    for (let j = 0; j < count; j++) {
+      const entry = scopedEntries[j];
+      nodes[j] = {
         id: entry.id,
         label: entry.message,
         source: entry.source,
         scope,
         at: entry.at,
-        parentId: index > 0 ? ordered[index - 1].id : null,
-      }));
-      return {
-        scope,
-        nodes,
-        summary: `${nodes.length} evidence node(s) in ${scope}: ${nodes.map((node) => node.source).join(' → ')}`,
+        parentId: j > 0 ? scopedEntries[j - 1].id : null,
       };
-    });
+      sources[j] = entry.source;
+    }
+
+    result[i] = {
+      scope,
+      nodes,
+      summary: `${count} evidence node(s) in ${scope}: ${sources.join(' → ')}`,
+    };
+  }
+
+  return result;
 }
