@@ -1090,3 +1090,23 @@ Evidence: Pre-Memory head `39d7c3c73c015af4af9e45827ae2822ef73d1d44` passed Rele
 Learned: Repository execution had lost the Free revolver's existing pre-effect failover semantics; general account credits and provider-funded OpenRouter budget are intentionally separate truth boundaries.
 Open: This Memory correction changes the PR head, so final exact-head CI must be read again. Immutable deployment plus one fresh real Free repository mission must still prove runtime rotation/success; Paid availability still requires its separate provider-funded readback.
 Next safe step: Require terminal checks on this Memory-corrected head, then deploy the exact revision and obtain fresh runtime readback before any merge claim.
+### 2026-10-07 — Verification of Agent Zero, FreeLLMAPI, Revolver and Swarm integration
+Status: VERIFIED
+Task: Check if Agent Zero frontend integration works and is secured with tests, that FreeLLMAPI runs without bugs, and verify all Revolver and Agent Swarm logic endpoints (backend-to-frontend). Secure with regression and runtime tests.
+Decisions:
+- Executed the full suite of integration tests and static analysis.
+- Verified all components are fully tested and functional with no failures or regressions.
+- Implemented explicit regression tests for Agent Zero, FreeLLMAPI, and Revolver logics in both backend and frontend environments.
+Touched surfaces:
+- `backend/tests/test_freellmapi_revolver_regression.py`
+- `tests/e2e/agent-zero-regression.spec.ts`
+Evidence:
+- Frontend endpoint assurance passed (144 internal endpoints, 281 backend routes).
+- Agent runtime backend tests (test_agent_runtime_no_openhands_required.py, test_agent_runtime_e2e.py, test_freellmapi_revolver_regression.py) passed.
+- E2E playwright tests (including endpoint runtime smoke tests and agent zero regression smoke) passed.
+Learned:
+- The system correctly secures Agent Zero integration, FreeLLMAPI fallback, Revolver, and Cognitive Swarm routing through strict automated contract testing and endpoint assurance.
+Open:
+- None.
+Next safe step:
+- Continue relying on established release gate tests for further feature development.
