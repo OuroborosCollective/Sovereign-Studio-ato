@@ -935,7 +935,7 @@ describe('Palette Accessibility Enhancements', () => {
   });
 
   describe('ErrorCategoriesPanel Accessibility and Hover Discoverability Enhancements', () => {
-    it('renders with section aria-label and native hover tooltips on badges, cards, and buttons', () => {
+    it('renders with section landmark linked to header, status role on count badge, semantic lists, and tooltips on buttons', () => {
       const mockRegistry = {
         findings: [
           {
@@ -970,11 +970,25 @@ describe('Palette Accessibility Enhancements', () => {
 
       render(<ErrorCategoriesPanel registry={mockRegistry} onFindingClick={onFindingClick} />);
 
-      const section = screen.getByRole('region', { name: 'Fehlerkategorien Übersicht' });
+      const section = screen.getByRole('region', { name: 'Fehlerkategorien' });
       expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', 'error-categories-title');
 
-      const statusBadge = screen.getByText('1 aktiv · 1 gelöst');
+      const heading = screen.getByRole('heading', { name: 'Fehlerkategorien', level: 3 });
+      expect(heading).toHaveAttribute('id', 'error-categories-title');
+
+      const statusBadge = screen.getByRole('status', { name: '1 aktive Findings, 1 gelöst' });
+      expect(statusBadge).toBeInTheDocument();
       expect(statusBadge).toHaveAttribute('title', '1 aktive Findings, 1 gelöst');
+
+      const severityList = screen.getByRole('list', { name: 'Schweregrad-Statistik' });
+      expect(severityList).toBeInTheDocument();
+
+      const activeCategoriesList = screen.getByRole('list', { name: 'Aktive Fehlerkategorien' });
+      expect(activeCategoriesList).toBeInTheDocument();
+
+      const typeErrorFindingsList = screen.getByRole('list', { name: 'TypeScript-Findings' });
+      expect(typeErrorFindingsList).toBeInTheDocument();
 
       const criticalCard = screen.getByTitle('1 kritisch-Findings');
       expect(criticalCard).toBeInTheDocument();
@@ -982,7 +996,8 @@ describe('Palette Accessibility Enhancements', () => {
       const findingCategoryBadge = screen.getByTitle('1 aktive TypeScript-Findings');
       expect(findingCategoryBadge).toBeInTheDocument();
 
-      const findingBtn = screen.getByRole('button', { name: /Unresolved TypeScript Type Error/i });
+      const findingBtn = screen.getByRole('button', { name: 'Finding anzeigen: Unresolved TypeScript Type Error' });
+      expect(findingBtn).toHaveAttribute('aria-label', 'Finding anzeigen: Unresolved TypeScript Type Error');
       expect(findingBtn).toHaveAttribute('title', 'Finding anzeigen: Unresolved TypeScript Type Error');
       expect(findingBtn).toHaveClass('focus-visible:ring-2');
 
