@@ -81,7 +81,7 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
   };
 
   return (
-    <section className="flex flex-col h-full bg-[var(--carbon-base)] border-r border-[rgba(255,30,56,0.18)] relative overflow-hidden" data-testid="vnext-command-surface">
+    <section className="flex flex-col h-full min-h-0 bg-[var(--carbon-base)] border-r border-[rgba(255,30,56,0.18)] relative overflow-hidden" data-testid="vnext-command-surface">
       <div className="px-3 sm:px-4 py-2.5 border-b border-white/5 bg-[var(--carbon-deep)] flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 min-w-0"><Terminal size={14} className="text-[var(--red-laser)] shrink-0" /><span className="font-mono text-[10px] sm:text-[11px] font-black tracking-widest text-white truncate">SOVEREIGN MISSION CONSOLE</span>{latestRun && <span className="hidden lg:inline font-mono text-[8.5px] text-[var(--text-dim)] truncate">RUN // {latestRun}</span>}</div>
         <div className="flex items-center gap-2"><span className={`font-mono text-[9px] font-black ${phaseTone}`}>{readbackUnavailable ? 'READBACK UNAVAILABLE' : jobPhase}</span>{executing && onAbortJob && <button type="button" onClick={onAbortJob} disabled={isAborting} aria-busy={isAborting} title={isAborting ? "Abort request in progress..." : "Abort current mission"} className="min-h-12 min-w-12 px-2 rounded border border-[rgba(255,30,56,0.35)] bg-[rgba(255,30,56,0.08)] text-[var(--red-laser)] hover:bg-[var(--red-laser)] hover:text-white disabled:opacity-50 font-mono text-[9px] font-bold flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--red-laser)]">{isAborting ? <Loader2 size={10} className="animate-spin" /> : <Square size={10} />} {isAborting ? 'REQUESTING…' : 'ABORT'}</button>}</div>
@@ -100,8 +100,12 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
         )}
       </div>
 
-      <div className="shrink-0 px-3 sm:px-4 pb-3 sm:pb-4 pt-2 bg-gradient-to-t from-[var(--carbon-base)] via-[var(--carbon-base)] to-transparent">
-        <div className="mb-2 grid grid-cols-3 gap-1.5">
+      <div data-testid="vnext-mission-dock" className="shrink-0 min-h-0 max-h-[50%] overflow-y-auto overscroll-contain px-3 sm:px-4 pb-3 sm:pb-4 pt-2 bg-[var(--carbon-base)]">
+        <details className="mb-2" data-testid="vnext-mission-controls">
+          <summary className="min-h-11 cursor-pointer rounded-md border border-white/10 px-2 py-3 font-mono text-[10px] text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20">
+            Mission controls · {selectedMode.toUpperCase()} · {!fresh ? 'READBACK UNAVAILABLE' : selectedRoute?.available ? 'ROUTE AVAILABLE' : 'ROUTE BLOCKED'}
+          </summary>
+        <div className="mt-2 mb-2 grid grid-cols-3 gap-1.5">
           <button type="button" onClick={() => { playKeystrokeChirp(); onOpenToolchain?.(); }} title={`Active Toolchain: ${activeToolchainName || 'UNVERIFIED'}`} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] text-left px-2 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><Wrench size={10} /> TOOLCHAIN</span><span className="block truncate text-[9px] text-white mt-0.5">{activeToolchainName || 'UNVERIFIED'}</span></button>
           <button type="button" onClick={() => { playKeystrokeChirp(); onOpenSkills?.(); }} title={`Agents: ${activeSkillsCount} persisted tasks`} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] text-left px-2 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><BrainCircuit size={10} /> AGENTS</span><span className="block text-[9px] text-white mt-0.5">{activeSkillsCount} PERSISTED TASKS</span></button>
           <button type="button" onClick={() => { playKeystrokeChirp(); onOpenIntegrations?.(); }} title={`Backend integrations: ${activeIntegrationsCount} observed`} className="min-h-9 rounded-md bg-[var(--carbon-surface)] border border-white/5 hover:border-[rgba(255,30,56,0.3)] text-left px-2 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"><span className="flex items-center gap-1 text-[8.5px] text-[var(--text-dim)]"><Blocks size={10} /> ATTACHMENTS</span><span className="block text-[9px] text-white mt-0.5">{activeIntegrationsCount} OBSERVED</span></button>
@@ -116,14 +120,16 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
               <option value="paid" disabled={!fresh || paid?.available !== true}>Sovereign · Paid{paid?.model ? ` · ${paid.model}` : ''}</option>
             </select>
           </div>
-          <p id="mission-route-availability" className="mt-1 text-[8px] text-[var(--text-dim)]">{selectedMode === 'paid' ? 'Paid · direct OpenRouter. Dispatch authorizes a credit reservation; actual provider usage is settled and unused reserved credits are refunded.' : 'Free · direct FreeLLM. No credit deduction and no automatic switch to Paid.'}</p>
-          {!selectedRoute?.available && <p className="mt-1 text-[9px] text-[var(--red-alert)]">Selected route unavailable: {selectedRoute?.executionBlocker || selectedRoute?.blocker || 'route_readback_unavailable'}</p>}
           {paidAvailability && <p className="mt-1 text-[9px] text-[var(--text-muted)]">Paid availability: {paidAvailability}</p>}
           <div className="mt-2 text-[9px] text-[var(--text-main)]" data-testid="vnext-account-credits">
             {credit?.readbackState === 'live' && credit.creditStateVerified ? <>{credit.credits?.toLocaleString('en-US')} ACCOUNT CREDITS · {credit.providerFundedCredits?.toLocaleString('en-US')} PROVIDER-FUNDED</> : <>CREDITS UNAVAILABLE: {credit?.blocker || 'Awaiting authenticated ledger readback'}</>}
           </div>
           <RegistryReadbackStatus observedAt={controlReadback?.observedAt} receivedMonotonicMs={controlReadback?.receivedMonotonicMs} isLoading={isReadingControl} readbackError={controlReadbackError} onRefresh={onRefreshControl} />
         </div>
+
+        </details>
+          <p id="mission-route-availability" className="mt-1 text-[8px] text-[var(--text-dim)]">{selectedMode === 'paid' ? 'Paid · direct OpenRouter. Dispatch authorizes a credit reservation; actual provider usage is settled and unused reserved credits are refunded.' : 'Free · direct FreeLLM. No credit deduction and no automatic switch to Paid.'}</p>
+          {!selectedRoute?.available && <p className="mt-1 text-[9px] text-[var(--red-alert)]">Selected route unavailable: {selectedRoute?.executionBlocker || selectedRoute?.blocker || 'route_readback_unavailable'}</p>}
 
         <div className="theme-diamond-cut rounded-xl border border-[rgba(255,30,56,0.28)] bg-[var(--carbon-deep)] p-2 shadow-[0_0_24px_rgba(255,30,56,0.08)]">
           <textarea
@@ -136,7 +142,8 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
             onBlur={() => onTypingStateChange?.(false)}
             disabled={executing}
             placeholder={executing ? 'Mission locked while the persisted run is executing…' : readbackUnavailable ? 'Readback unavailable — retry the persisted run before dispatching again.' : 'Describe the mission. Runtime truth begins only after backend acceptance.'}
-            className="w-full min-h-[72px] max-h-36 resize-none bg-transparent outline-none px-2 py-1.5 font-mono text-[11px] text-white placeholder:text-[var(--text-dim)] disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--red-pulse)] focus-visible:rounded-md"
+            rows={2}
+            className="w-full min-h-[48px] sm:min-h-[72px] max-h-36 resize-none bg-transparent outline-none px-2 py-1.5 font-mono text-[11px] text-white placeholder:text-[var(--text-dim)] disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--red-pulse)] focus-visible:rounded-md"
           />
           <div className="flex items-center justify-between gap-2 px-1 pt-1 border-t border-white/5"><div className="flex items-center gap-1 font-mono text-[8.5px] text-[var(--text-dim)]"><Cpu size={10} className="text-[var(--red-laser)]" /> ENTER dispatches · SHIFT+ENTER newline</div><motion.button whileTap={{ scale: 0.96 }} type="button" data-testid="builder__start-task" onClick={submit} disabled={!canSend} title={executing ? 'Mission locked while executing' : canSend ? 'Dispatch mission' : 'Enter a mission to dispatch'} className="min-h-9 px-3 rounded-md bg-[var(--red-pulse)] text-white font-mono text-[10px] font-black flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed shadow-[0_0_12px_rgba(255,30,56,0.25)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">{executing ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />} DISPATCH</motion.button></div>
         </div>

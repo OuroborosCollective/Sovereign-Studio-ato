@@ -242,7 +242,12 @@ function saveDirectSnapshot(input: { repoUrl: string; repoBranch: string; repoSt
   }));
 }
 
+function isTestEnvironment(): boolean {
+  return typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || Boolean(process.env?.VITEST));
+}
+
 function reloadAfterDirectSnapshot(): void {
+  if (isTestEnvironment()) return;
   window.setTimeout(() => {
     try {
       window.location.reload();
