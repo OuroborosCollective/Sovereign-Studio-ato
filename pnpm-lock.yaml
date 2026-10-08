@@ -105,8 +105,8 @@ importers:
         version: 5.0.14(@types/react@19.2.15)(immer@11.1.8)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
     devDependencies:
       '@capacitor/android':
-        specifier: ^6.2.1
-        version: 6.2.1(@capacitor/core@6.2.1)
+        specifier: ^6.2.2
+        version: 6.2.2(@capacitor/core@6.2.1)
       '@capacitor/cli':
         specifier: 6.2.1
         version: 6.2.1
@@ -255,8 +255,8 @@ packages:
     resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
     engines: {node: '>=6.9.0'}
 
-  '@capacitor/android@6.2.1':
-    resolution: {integrity: sha512-8gd4CIiQO5LAIlPIfd5mCuodBRxMMdZZEdj8qG8m+dQ1sQ2xyemVpzHmRK8qSCHorsBUCg3D62j2cp6bEBAkdw==}
+  '@capacitor/android@6.2.2':
+    resolution: {integrity: sha512-JjIu1ryNE16PQTp51rb4NEygxP7cSCDMmUqx4f5f12xscKdGKTjO9bkEP3TroLnTa/J6p2QopIhRbrd3E/7DrA==}
     peerDependencies:
       '@capacitor/core': ^6.2.0
 
@@ -3149,7 +3149,7 @@ snapshots:
 
   '@babel/runtime@7.29.7': {}
 
-  '@capacitor/android@6.2.1(@capacitor/core@6.2.1)':
+  '@capacitor/android@6.2.2(@capacitor/core@6.2.1)':
     dependencies:
       '@capacitor/core': 6.2.1
 
