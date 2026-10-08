@@ -87,3 +87,7 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+
+## 2026-10-01 - [Applying Slice Before Map for Bounded Array Transformations]
+**Learning:** In bounded array transformations where `.map()` is followed by `.slice()` to extract a subset of elements (e.g. the last 200 items), applying `.map()` to the entire array before slicing wastes CPU cycles and creates unnecessary object allocations for elements that are subsequently discarded. Reversing the order to `.slice().map()` ensures that the transformation function is only executed on the required subset, reducing overhead significantly on large arrays.
+**Action:** Always apply bounds using `.slice()` before applying transformation operations like `.map()` to avoid redundant processing of discarded elements.

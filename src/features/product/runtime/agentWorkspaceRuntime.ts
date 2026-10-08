@@ -271,7 +271,8 @@ export function normalizeAgentWorkspaceResult(value: Partial<AgentWorkspaceResul
   return {
     workspaceId: sanitizeWorkspaceId(value.workspaceId),
     status: normalizeWorkspaceStatus(value.status),
-    events: (value.events ?? []).map(sanitizeWorkspaceEvent).slice(-200),
+    // ⚡ Bolt: Slice before mapping to avoid processing discarded elements
+    events: (value.events ?? []).slice(-200).map(sanitizeWorkspaceEvent),
     changedFiles,
     diffSummary: value.diffSummary ? trimTo(sanitizeWorkspaceText(value.diffSummary.trim()), 2000) : undefined,
     testSummary: value.testSummary ? trimTo(sanitizeWorkspaceText(value.testSummary.trim()), 2000) : undefined,

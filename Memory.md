@@ -1090,3 +1090,11 @@ Evidence: Pre-Memory head `39d7c3c73c015af4af9e45827ae2822ef73d1d44` passed Rele
 Learned: Repository execution had lost the Free revolver's existing pre-effect failover semantics; general account credits and provider-funded OpenRouter budget are intentionally separate truth boundaries.
 Open: This Memory correction changes the PR head, so final exact-head CI must be read again. Immutable deployment plus one fresh real Free repository mission must still prove runtime rotation/success; Paid availability still requires its separate provider-funded readback.
 Next safe step: Require terminal checks on this Memory-corrected head, then deploy the exact revision and obtain fresh runtime readback before any merge claim.
+## 2026-10-01
+**Task:** Identify and implement ONE small performance improvement as Bolt.
+**Decisions:** Found a performance bottleneck in `src/features/product/runtime/agentWorkspaceRuntime.ts` where a full `.map()` operation was applied before a `.slice(-200)`, resulting in unnecessary function executions and array allocations for discarded elements. Refactored it to `.slice(-200).map(...)`.
+**Touched Surfaces:** `src/features/product/runtime/agentWorkspaceRuntime.ts`.
+**Tests/Evidence:** Ran `pnpm lint && pnpm run test:release-gate` locally. All tests pass, confirming the optimization preserves existing functionality.
+**Learnings:** Slicing arrays before mapping reduces wasteful processing for elements outside the required bounds. Logged this in `.jules/bolt.md`.
+**Open Points:** None.
+**Next Safe Step:** Wait for further requests.
