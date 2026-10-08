@@ -185,6 +185,27 @@ def test_custom_pytest_records_real_pass_and_failure(tmp_path: Path):
         assert ("1 passed" if expected_code == 0 else "1 failed") in result.output
 
 
+
+
+def test_bootstrap_failure_preserves_exit_code_and_causal_tail(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"vitest run"}}', encoding="utf-8")
+    (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n", encoding="utf-8")
+    calls = []
+    def failed_install(args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=-9, stdout="progress\n" * 2000, stderr="worker terminated")
+    monkeypatch.setattr("agent_runtime.tools.test_tool.subprocess.run", failed_install)
+    result = TestTool().execute({"command":"pnpm test"}, str(tmp_path))
+    assert result.status == "error"
+    assert result.exit_code == -9
+    assert "exit code -9" in result.output[:1200]
+    assert "worker terminated" in result.output[:1200]
+    assert "worker terminated" in result.error
+    assert len(calls) == 1
+    assert not result.metadata.get("passed")
+
+
 def test_test_tool_shipping_mirror_matches():
     root = Path(__file__).resolve().parents[2]
     assert (root / "backend/agent_runtime/tools/test_tool.py").read_bytes() == (

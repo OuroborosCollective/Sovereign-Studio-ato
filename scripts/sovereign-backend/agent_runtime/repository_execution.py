@@ -51,7 +51,7 @@ from .durable_workflow_store import (
 from .revocation_closure import RevocationClosureError, require_live_permission
 from .rescue import resolve_github_head
 from .evidence_gate import EvidenceGateInput, evaluate_agent_evidence
-from .git_workspace import git_diff_check, git_diff_full
+from .git_workspace import git_diff_check, git_diff_full, run_git_command
 from .job_lifecycle import create_sovereign_agent_job
 from .job_store import (
     StoredSovereignAgentJob,
@@ -1098,6 +1098,45 @@ def _documentation_regression(
         return False, "Documentation regression could not read the changed documentation safely."
 
 
+def _empty_file_addition_regression(
+    job: StoredSovereignAgentJob,
+    changed_files: object,
+    workspace_root: Path | None,
+) -> tuple[bool, str] | None:
+    """Verify only new inert, non-executable empty root files.
+
+    Code, configuration, nested files, tracked changes and mixed effects retain
+    the normal regression path. This is filesystem/Git evidence, not a suite pass.
+    """
+    if not isinstance(changed_files, (tuple, list)) or not changed_files:
+        return None
+    names = tuple(str(value) for value in changed_files)
+    reserved = {"dockerfile", "containerfile", "makefile", "gnumakefile", "procfile", "jenkinsfile", "justfile", "rakefile", "gemfile", "vagrantfile", "brewfile", "build", "workspace"}
+    if any(not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", name) or name.casefold() in reserved for name in names):
+        return None
+    try:
+        repository = repo_dir_for_workspace(str(job.workspace_id or job.job_id), workspace_root)
+        inventory = run_git_command(
+            ("git", "status", "--porcelain=v1", "-z", "--untracked-files=all"), repository, 30,
+        )
+        entries = tuple(value for value in inventory.stdout.split("\0") if value)
+        if inventory.returncode != 0:
+            return False, "Empty-file regression could not read Git status."
+        if set(entries) != {f"?? {name}" for name in names}:
+            return None
+        empty_blob = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+        for name in names:
+            target = repository / name
+            if target.is_symlink() or not target.is_file() or target.stat().st_size or target.stat().st_mode & 0o111:
+                return None
+            blob = run_git_command(("git", "hash-object", "--no-filters", "--", name), repository, 30)
+            if blob.returncode != 0 or blob.stdout.strip() != empty_blob:
+                return False, "Empty-file regression did not verify the empty Git blob."
+        return True, f"empty-file-addition-regression: {', '.join(names)}; new regular non-executable 0-byte file(s); Git blob {empty_blob}"
+    except (OSError, ValueError):
+        return False, "Empty-file regression could not verify workspace files safely."
+
+
 def _closeout_repository_job(
     conn: Any,
     *,
@@ -1194,9 +1233,15 @@ def _closeout_repository_job(
     ))
     job = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
 
+    empty_regression = _empty_file_addition_regression(job, status_result.changed_files, workspace_root)
     documentation_regression = _documentation_regression(job, status_result.changed_files, workspace_root)
     test_outputs: list[str] = []
-    if documentation_regression is not None:
+    if empty_regression is not None:
+        empty_passed, empty_summary = empty_regression
+        if not empty_passed:
+            return _block_job(conn, job, empty_summary, "repository_closeout_empty_file_regression_blocked")
+        test_outputs.append(empty_summary)
+    elif documentation_regression is not None:
         documentation_passed, documentation_summary = documentation_regression
         if not documentation_passed:
             return _block_job(

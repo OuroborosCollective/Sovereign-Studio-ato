@@ -207,7 +207,13 @@ def clone_repo_into_workspace(
 
 def git_status_changed_files(workspace_id: str, root: Path | None = None) -> GitWorkspaceResult:
     try:
-        repo_path = repo_dir_for_workspace(workspace_id, root)
+        return _git_repository_status(repo_dir_for_workspace(workspace_id, root))
+    except Exception as exc:
+        return GitWorkspaceResult(status="blocked", blocker=sanitize_agent_text(str(exc), 1200))
+
+
+def _git_repository_status(repo_path: Path) -> GitWorkspaceResult:
+    try:
         if not repo_path.exists():
             return GitWorkspaceResult(
                 status="blocked",
@@ -318,19 +324,29 @@ def git_diff_full(
     max_files: int = 12,
 ) -> tuple[bytes, GitWorkspaceResult]:
     """Read one bounded HEAD-relative workspace patch without mutating Git state."""
+    try:
+        return git_repository_diff_full(
+            repo_dir_for_workspace(workspace_id, root), max_bytes=max_bytes, max_files=max_files,
+        )
+    except Exception as exc:
+        return b"", GitWorkspaceResult(status="blocked", blocker=sanitize_agent_text(str(exc), 1200))
 
+
+def git_repository_diff_full(
+    repo_path: Path, *, max_bytes: int = 2_000_000, max_files: int = 12,
+) -> tuple[bytes, GitWorkspaceResult]:
+    """Shared read-only patch capture for already-bound repository tool paths."""
     try:
         if max_bytes < 1 or max_files < 1:
             raise WorkspacePolicyError("git diff bounds must be positive")
-        repo_path = repo_dir_for_workspace(workspace_id, root)
-        if not (repo_path / ".git").is_dir():
+        if not (repo_path / ".git").exists():
             return b"", GitWorkspaceResult(
                 status="blocked",
                 events=(_event("git_diff_full_blocked", "warning", "Repo directory does not exist."),),
                 blocker="Repo directory does not exist.",
             )
 
-        status = git_status_changed_files(workspace_id, root)
+        status = _git_repository_status(repo_path)
         if status.status != "done":
             return b"", status
         if len(status.changed_files) > max_files:

@@ -202,10 +202,12 @@ function Dashboard() {
     if (!job?.error?.message || !activeRunId || !terminalPhase || !['BLOCKED', 'FAILED'].includes(terminalPhase)) return;
     setMessages((current) => {
       const id = `terminal-${activeRunId}`;
-      if (current.some((message) => message.id === id)) return current;
+      const content = `RUN ${terminalPhase} :: [${activeRunId}]\n${job.error.message}${job.nextAction ? `\nNEXT: ${job.nextAction}` : ''}`;
+      const existing = current.find((message) => message.id === id);
+      if (existing) return existing.content === content ? current : current.map((message) => message.id === id ? { ...message, content } : message);
       return [...current, {
         id, role: 'system', sender: 'SYSTEM',
-        content: `RUN ${terminalPhase} :: [${activeRunId}]\n${job.error.message}${job.nextAction ? `\nNEXT: ${job.nextAction}` : ''}`,
+        content,
         timestamp: new Date().toISOString(),
       }];
     });
