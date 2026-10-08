@@ -316,6 +316,66 @@ def is_repository_executor_job(job: StoredSovereignAgentJob | None) -> bool:
     return bool(job and str(job.external_ref or "").startswith(_EXECUTOR_PREFIX))
 
 
+def _synchronize_linked_agent_run_blocked(
+    conn: Any,
+    *,
+    job: StoredSovereignAgentJob,
+    blocker: str,
+    stage: str,
+    next_action: str = "REPAIR_REPOSITORY_EXECUTION_BLOCKER",
+) -> None:
+    """Keep persisted Agents-SDK run/task state aligned with a blocked repository job."""
+
+    run_id = f"repo-{job.job_id}"
+    try:
+        run = read_agent_run(conn, user_id=job.user_id, run_id=run_id)
+        if run is None:
+            return
+        if str(getattr(run, "status", "") or "").upper() in {
+            "BLOCKED", "FAILED_FINAL", "COMPLETED", "DRAFT_PR_CREATED",
+        }:
+            return
+        task_ids = read_agent_task_ids(conn, run_id=run_id)
+        task_id = task_ids.get("free_single_agent") or task_ids.get("paid_single_agent")
+        agent_id = (
+            "free_single_agent"
+            if task_ids.get("free_single_agent")
+            else "paid_single_agent"
+            if task_ids.get("paid_single_agent")
+            else "orchestrator"
+        )
+        transition_agent_run(
+            conn,
+            user_id=job.user_id,
+            run_id=run_id,
+            status="BLOCKED",
+            source="agents-sdk",
+            trace_id=str(getattr(run, "trace_id", "") or f"trace-{job.job_id}"),
+            reason=blocker,
+            next_action=next_action,
+            evidence_kind=stage,
+            evidence_summary=(
+                "The linked repository job entered a blocked terminal state; "
+                "the persisted agent run was synchronized to BLOCKED."
+            ),
+            evidence_payload={
+                "jobId": job.job_id,
+                "workspaceId": str(job.workspace_id or job.job_id),
+                "repositoryJobStatus": "blocked",
+                "repositoryBlockerStage": stage,
+                "rawModelOutputPersisted": False,
+            },
+            agent_id=agent_id,
+            task_id=task_id,
+        )
+    except Exception as exc:
+        _LOGGER.warning(
+            "repository agent-run terminal synchronization failed job=%s type=%s",
+            job.job_id,
+            type(exc).__name__,
+        )
+
+
 def cancel_repository_execution(
     conn: Any,
     *,
@@ -324,17 +384,25 @@ def cancel_repository_execution(
     """Stop the persisted Sovereign-local job without contacting another executor."""
     if job.status in {"completed", "failed", "blocked", "cleaned"}:
         return job
-    updated = update_agent_job_state(
+    blocker = "Cancelled by owner; Sovereign-local-runner will perform no further work."
+    update_agent_job_state(
         conn,
         job_id=job.job_id,
         status="blocked",
-        blocker="Cancelled by owner; Sovereign-local-runner will perform no further work.",
+        blocker=blocker,
     )
     append_agent_event(conn, job.job_id, SovereignAgentEvent(
         stage="sovereign_executor_cancelled",
         level="warning",
         message="Owner cancellation recorded locally; no external executor cancellation is required.",
     ))
+    _synchronize_linked_agent_run_blocked(
+        conn,
+        job=job,
+        blocker=blocker,
+        stage="sovereign_executor_cancelled",
+        next_action="RUN_CANCELLED",
+    )
     return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
 
 
@@ -346,6 +414,12 @@ def _block_job(conn: Any, job: StoredSovereignAgentJob, reason: str, stage: str)
         level="warning",
         message=blocker,
     ))
+    _synchronize_linked_agent_run_blocked(
+        conn,
+        job=job,
+        blocker=blocker,
+        stage=stage,
+    )
     return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
 
 
@@ -612,6 +686,40 @@ def _submit_after_claim(
                     invocation,
                     get_connection=resolved_connection_factory, job=job, run_id=run_id, claim_ref=claim_ref,
                 ))
+                repository_summary = repository_toolset.summary()
+                mutations = list(repository_summary.get("rolesWithMutations") or [])
+                if str(agent_result.get("status") or "BLOCKED") == "COMPLETED" and not mutations:
+                    next_resolution = (
+                        advance_free_revolver_resolution(
+                            resolution,
+                            failed_route_id=str(resolution.primary_route.get("id") or ""),
+                            reason="repository_free_route_completed_without_mutation_advanced_to_next_quota_scope",
+                        )
+                        if execution_mode == "free"
+                        else None
+                    )
+                    if next_resolution is not None:
+                        free_route_failover_count += 1
+                        append_agent_event(conn, job.job_id, SovereignAgentEvent(
+                            stage="sovereign_free_route_no_repository_effect_rotated",
+                            level="warning",
+                            message=(
+                                "A FreeLLM candidate returned COMPLETED without a repository mutation; "
+                                "Sovereign advanced to the next verified quota scope before closeout."
+                            ),
+                        ))
+                        resolution = next_resolution
+                        continue
+                    return _block_job(
+                        conn,
+                        job,
+                        (
+                            "No verified FreeLLM candidate produced a repository mutation."
+                            if execution_mode == "free"
+                            else "The paid single-agent model completed without a repository mutation."
+                        ),
+                        "sovereign_executor_no_repository_effect",
+                    )
                 break
             except SwarmExecutionError as exc:
                 if execution_mode != "free" or not exc.retryable:

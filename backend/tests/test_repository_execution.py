@@ -453,6 +453,125 @@ def test_free_request_rejection_rotates_to_next_verified_route_before_mutation(
     assert any(event["stage"] == "sovereign_free_route_rotated" for event in result.events)
 
 
+def test_completed_without_repository_effect_rotates_then_blocks(
+    pending_execution, monkeypatch
+):
+    route_a = {"id": "free-a", "model_id": "model-a"}
+    route_b = {"id": "free-b", "model_id": "model-b"}
+    resolution_a = SimpleNamespace(
+        profile_id=execution.FREE_SINGLE_AGENT_PROFILE,
+        repository_execution_allowed=True,
+        primary_route=route_a,
+        candidate_routes=(route_a, route_b),
+        agent_route=route_a,
+    )
+    resolution_b = SimpleNamespace(
+        profile_id=execution.FREE_SINGLE_AGENT_PROFILE,
+        repository_execution_allowed=True,
+        primary_route=route_b,
+        candidate_routes=(route_b,),
+        agent_route=route_b,
+    )
+
+    class Toolset:
+        def tools_for_role(self, _role):
+            return []
+
+        def summary(self):
+            return {"rolesWithMutations": []}
+
+    monkeypatch.setattr(execution, "BoundRepositoryToolset", lambda **_kwargs: Toolset())
+    monkeypatch.setattr(execution, "load_execution_resolution", lambda *args, **kwargs: resolution_a)
+    monkeypatch.setattr(execution, "route_provider_model", lambda route: route["model_id"])
+
+    attempted_routes = []
+
+    async def model(*args, route, **kwargs):
+        attempted_routes.append(route["id"])
+        return {"status": "COMPLETED", "repositoryExecutionPerformed": False}
+
+    monkeypatch.setattr(execution, "run_free_single_agent", model)
+    monkeypatch.setattr(
+        execution,
+        "advance_free_revolver_resolution",
+        lambda resolution, *, failed_route_id, reason: (
+            resolution_b if failed_route_id == "free-a" else None
+        ),
+    )
+
+    result = pending_execution.submit()
+
+    assert attempted_routes == ["free-a", "free-b"]
+    assert result.status == "blocked"
+    assert "No verified FreeLLM candidate produced a repository mutation." in result.blocker
+    assert any(
+        event["stage"] == "sovereign_free_route_no_repository_effect_rotated"
+        for event in result.events
+    )
+    assert result.events[-1]["stage"] == "sovereign_executor_no_repository_effect"
+
+
+def test_block_job_synchronizes_linked_agent_run_to_blocked(monkeypatch):
+    job = StoredSovereignAgentJob(
+        job_id="agent-sync",
+        user_id="owner-sync",
+        executor="sovereign-local-runner",
+        repo_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+        branch="main",
+        mission="Repair runtime state.",
+        status="running",
+        workspace_id="agent-sync",
+        external_ref="sovereign-local-runner:agent-sync",
+    )
+    state = SimpleNamespace(job=job, transitions=[])
+
+    monkeypatch.setattr(
+        execution,
+        "update_agent_job_state",
+        lambda _conn, **kwargs: setattr(
+            state,
+            "job",
+            replace(
+                state.job,
+                status=kwargs.get("status", state.job.status),
+                blocker=kwargs.get("blocker", state.job.blocker),
+            ),
+        ),
+    )
+    monkeypatch.setattr(execution, "append_agent_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(execution, "read_agent_job", lambda *args, **kwargs: state.job)
+    monkeypatch.setattr(
+        execution,
+        "read_agent_run",
+        lambda *args, **kwargs: SimpleNamespace(status="VERIFYING", trace_id="trace-sync"),
+    )
+    monkeypatch.setattr(
+        execution,
+        "read_agent_task_ids",
+        lambda *args, **kwargs: {"free_single_agent": "task-sync"},
+    )
+    monkeypatch.setattr(
+        execution,
+        "transition_agent_run",
+        lambda *args, **kwargs: state.transitions.append(kwargs),
+    )
+
+    result = execution._block_job(
+        SimpleNamespace(),
+        job,
+        "Repository closeout has no workspace changes.",
+        "repository_closeout_git_status_blocked",
+    )
+
+    assert result.status == "blocked"
+    assert len(state.transitions) == 1
+    transition = state.transitions[0]
+    assert transition["run_id"] == "repo-agent-sync"
+    assert transition["status"] == "BLOCKED"
+    assert transition["task_id"] == "task-sync"
+    assert transition["evidence_payload"]["repositoryJobStatus"] == "blocked"
+
+
 def test_free_request_rejection_does_not_replay_after_repository_mutation(
     pending_execution, monkeypatch
 ):
