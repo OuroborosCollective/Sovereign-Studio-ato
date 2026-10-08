@@ -278,6 +278,7 @@ def test_fleet_repository_tool_receipt_uses_only_its_active_attempt_worktree(mon
         revision=head,
         image_digest="sha256:" + ("a" * 64),
         revision_verified=True,
+        image_digest_verified=True,
     ))
     def fake_start(*_args, **kwargs):
         captured["arguments"] = kwargs["arguments"]

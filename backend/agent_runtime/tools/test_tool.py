@@ -350,10 +350,11 @@ class TestTool(ToolBase):
 
         output = (result.stdout + "\n" + result.stderr if result.stderr else result.stdout).strip()
         if result.returncode != 0:
+            failure = f"Node dependency bootstrap failed with exit code {result.returncode}. Last output: {output[-800:]}"
             return ToolResult(
                 status="error",
-                output=output,
-                error=output or f"Node dependency bootstrap failed with exit code {result.returncode}",
+                output=failure + "\n\n" + output,
+                error=failure,
                 metadata={
                     "dependency_bootstrap": bootstrap_kind,
                     "exit_code": result.returncode,

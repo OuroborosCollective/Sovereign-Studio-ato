@@ -259,14 +259,21 @@ describe('Palette Accessibility Enhancements', () => {
       expect(missionBtn).toHaveClass('focus-visible:ring-2');
     });
 
-    it('WorkflowRepairPanel Use Repair Mission button is stateful', () => {
+    it('WorkflowRepairPanel has region landmark, severity badge tooltip/aria-label, keyboard-navigable pre block, focus ring button, and semantic list', () => {
       const mockPlan = {
         summary: 'Repair summary',
         severity: 'high',
         reason: 'Failed build',
         mission: 'Repair mission content',
         blocked: false,
-        actions: [],
+        actions: [
+          {
+            id: 'act-1',
+            title: 'Fix TypeScript Build',
+            rationale: 'Missing prop type',
+            suggestedFiles: ['src/App.tsx'],
+          },
+        ],
       };
       const onUseMission = vi.fn();
 
@@ -274,14 +281,32 @@ describe('Palette Accessibility Enhancements', () => {
         <WorkflowRepairPanel plan={mockPlan} onUseMission={onUseMission} />
       );
 
+      const section = screen.getByRole('region', { name: 'Workflow Repair Planner' });
+      expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', screen.getByRole('heading', { name: 'Workflow Repair Planner' }).id);
+
+      const severityBadge = screen.getByTitle('Severity: high');
+      expect(severityBadge).toBeInTheDocument();
+      expect(severityBadge).toHaveAttribute('aria-label', 'Severity: high');
+
+      const preBlock = screen.getByLabelText('Workflow repair planner mission text');
+      expect(preBlock).toHaveAttribute('tabIndex', '0');
+      expect(preBlock).toHaveClass('focus-visible:ring-2');
+
       let repairBtn = screen.getByRole('button', { name: 'Use Repair Mission in Builder' });
-      expect(repairBtn).toHaveAttribute('title', 'Reparaturauftrag in den Builder übernehmen');
+      expect(repairBtn).toHaveAttribute('title', 'Use repair mission in Builder');
+      expect(repairBtn).not.toHaveAttribute('aria-label');
+      expect(repairBtn).toHaveClass('focus-visible:ring-2');
+
+      const actionsList = screen.getByRole('list', { name: 'Recommended repair actions' });
+      expect(actionsList).toBeInTheDocument();
+      expect(screen.getByText('Fix TypeScript Build')).toBeInTheDocument();
 
       const blockedPlan = { ...mockPlan, blocked: true };
       rerender(<WorkflowRepairPanel plan={blockedPlan} onUseMission={onUseMission} />);
 
       repairBtn = screen.getByRole('button', { name: 'Use Repair Mission in Builder' });
-      expect(repairBtn).toHaveAttribute('title', 'Reparaturauftrag blockiert');
+      expect(repairBtn).toHaveAttribute('title', 'Repair mission blocked');
     });
 
     it('WorkbenchSidePanel buttons have matching attributes', () => {
@@ -935,7 +960,7 @@ describe('Palette Accessibility Enhancements', () => {
   });
 
   describe('ErrorCategoriesPanel Accessibility and Hover Discoverability Enhancements', () => {
-    it('renders with section aria-label and native hover tooltips on badges, cards, and buttons', () => {
+    it('renders with section landmark linked to header, status role on count badge, semantic lists, and tooltips on buttons', () => {
       const mockRegistry = {
         findings: [
           {
@@ -970,11 +995,25 @@ describe('Palette Accessibility Enhancements', () => {
 
       render(<ErrorCategoriesPanel registry={mockRegistry} onFindingClick={onFindingClick} />);
 
-      const section = screen.getByRole('region', { name: 'Fehlerkategorien Übersicht' });
+      const section = screen.getByRole('region', { name: 'Fehlerkategorien' });
       expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', screen.getByRole('heading', { name: 'Fehlerkategorien', level: 3 }).id);
 
-      const statusBadge = screen.getByText('1 aktiv · 1 gelöst');
+      const heading = screen.getByRole('heading', { name: 'Fehlerkategorien', level: 3 });
+      expect(heading.id).toBeTruthy();
+
+      const statusBadge = screen.getByRole('status', { name: '1 aktive Findings, 1 gelöst' });
+      expect(statusBadge).toBeInTheDocument();
       expect(statusBadge).toHaveAttribute('title', '1 aktive Findings, 1 gelöst');
+
+      const severityList = screen.getByRole('list', { name: 'Schweregrad-Statistik' });
+      expect(severityList).toBeInTheDocument();
+
+      const activeCategoriesList = screen.getByRole('list', { name: 'Aktive Fehlerkategorien' });
+      expect(activeCategoriesList).toBeInTheDocument();
+
+      const typeErrorFindingsList = screen.getByRole('list', { name: 'TypeScript-Findings' });
+      expect(typeErrorFindingsList).toBeInTheDocument();
 
       const criticalCard = screen.getByTitle('1 kritisch-Findings');
       expect(criticalCard).toBeInTheDocument();
@@ -982,7 +1021,8 @@ describe('Palette Accessibility Enhancements', () => {
       const findingCategoryBadge = screen.getByTitle('1 aktive TypeScript-Findings');
       expect(findingCategoryBadge).toBeInTheDocument();
 
-      const findingBtn = screen.getByRole('button', { name: /Unresolved TypeScript Type Error/i });
+      const findingBtn = screen.getByRole('button', { name: 'Finding anzeigen: Unresolved TypeScript Type Error' });
+      expect(findingBtn).toHaveAttribute('aria-label', 'Finding anzeigen: Unresolved TypeScript Type Error');
       expect(findingBtn).toHaveAttribute('title', 'Finding anzeigen: Unresolved TypeScript Type Error');
       expect(findingBtn).toHaveClass('focus-visible:ring-2');
 
