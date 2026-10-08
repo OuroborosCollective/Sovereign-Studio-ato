@@ -1113,6 +1113,14 @@ Learning: Native details requires the same explicit interaction in browser tests
 Evidence: Release Verification 37747356213 at 55caaf7d882de158ef0be6aecd453d75754a88a0 passed typecheck, unit tests, build and all three new phone layout cases; both route-selection cases failed because the select was hidden. Final-head CI remains required before the owner-authorized merge; production recovery is not claimed.
 
 
+### 2026-10-08 — PR #2217 source-map-js security review
+Status: TESTED_AT_REVISION — final-head CI remains required before merge.
+Change: Restore and reopen owner-authorized #2217 at 7b0d6afde9bd36c02043fd394d578124724f7fa8; retain only the RN lockfile version/URL/integrity update to 1.2.2 plus this append-only review entry.
+Learning: RN is excluded from the canonical pnpm workspace and marked legacy-retired in e2e-testing.yml; green product CI is not RN build evidence. The sole RN resolution is @expo/metro-config -> postcss 8.5.22 -> source-map-js 1.2.2, satisfying ^1.2.1.
+Evidence: npm ci --dry-run --ignore-scripts succeeded without lockfile changes. Downloaded 1.2.2 tarball SHA-512 matches the lockfile; all 12 runtime/type files match upstream v1.2.2 commit 0a1d334fd1e55a47df97fcd60a7915d46df3b08a. All 145 upstream tests pass against that exact npm artifact both normally and with Node 24 string-code-generation disabled. Baseline 1.2.1 reproduces invalid/oversized/nested offset failures and 531441 nested source reads versus one in 1.2.2; CSP-equivalent quick-sort checks fail 0/3 on 1.2.1. Full vulnerable-baseline suite was stopped after additional SourceNode amplification failure; no baseline pass claimed. Original-head Release Verification run 37750702232 passed typecheck, runtime tests, build/Android sync, artifact/browser smoke and integration; backend/MCP/continuity/integration-lane workflows passed.
+Open/next: Revalidate the final Memory-bearing head and exact merge/main readback. No installed RN app, browser CSP deployment, or production rollout is claimed.
+
+
 ### 2026-10-08 — Empty-file repository editing handoff
 Status: PARTIAL — canonical source regressions passed; native SDK and frontend exact-head CI pending.
 Change: Add a bounded single-agent finish_repository_editing handoff using the existing SDK stop-at-tool behavior; retain server-owned diff, Janitor, regression and Draft-PR gates. Share the actual HEAD/untracked Git patch capture with the model-facing diff tool. Verify new non-executable empty root marker files through real Git inventory and empty-blob readback; code/configuration/nested/tracked/mixed changes keep their existing regression path. Preserve dependency bootstrap exit codes and causal log tails. Update the terminal chat entry when later server readback supplies the final cause.
