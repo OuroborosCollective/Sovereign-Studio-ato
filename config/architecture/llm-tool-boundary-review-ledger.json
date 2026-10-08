@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "6378f00f3a42ffed37910d11465341ccfadbfb5a",
+  "sourceRevision": "b2e301ed164189ec42011229b559038a202982f6",
   "rawCandidateCount": 104,
   "canonicalCandidateCount": 81,
   "entries": [
@@ -43,7 +43,7 @@
       "symbol": "<module>",
       "line": 64,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "249109bb8402cb3463cec869a1f889fd88920236f9911035fc95e1764f1e8bf9",
+      "fileSha256": "b9f7c21523e795bec2e379f19f4351c787e4abb83d6438942d5df5be864705c7",
       "anchorSha256": "79c93b11cdf8de71574cc6c47f822879cd5c636ee26ff063b96d8fe94d3c2353",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:f6971df593c796e569ceb94c",
@@ -56,12 +56,12 @@
         "backend/agent_runtime/cognitive_repository_tools.py"
       ],
       "symbol": "_path_in_role_scope",
-      "line": 168,
+      "line": 169,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "249109bb8402cb3463cec869a1f889fd88920236f9911035fc95e1764f1e8bf9",
+      "fileSha256": "b9f7c21523e795bec2e379f19f4351c787e4abb83d6438942d5df5be864705c7",
       "anchorSha256": "a4e304e4c2d637d4606048e157d73a60212a3589ded714d6d3539e5f9d0c1d83",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:877ac97f3597c2f07ac75a88",
+      "candidateId": "llm-boundary:ee7b894a8abd59998dc5ca35",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_path_in_role_scope evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -281,12 +281,12 @@
         "backend/agent_runtime/tools/git_tool.py"
       ],
       "symbol": "GitCommitTool",
-      "line": 226,
+      "line": 239,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "50f80457383aef0b42edea77b5e9c0838cb4c8c9997fe28cf1d5320564900a0b",
+      "fileSha256": "152e0826e13e559265cd35047da6f3c8bfa71da20d1f77a00086466b40bd6506",
       "anchorSha256": "58b9096b73d7ff555470434c96ee4bb64dea4ce682bb678c9f8aaada2131c809",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:a239e7f77a4bc49fe2e8f9ee",
+      "candidateId": "llm-boundary:a95bb84b7fd896aa9c5750b0",
       "classification": "STRUCTURED_POLICY",
       "rationale": "GitCommitTool evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -1105,5 +1105,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "22cb9893a8805b4393b73d8350e1f27ae4e8245e65eb94c254a0479355930f35"
+  "ledgerSha256": "47fed3e389be571fa7915d2846feaa707a28a7f2e33b5410548e4bd71abb157b"
 }

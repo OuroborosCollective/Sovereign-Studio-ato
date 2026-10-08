@@ -132,6 +132,7 @@ READ_REPOSITORY_TOOL_NAMES: Final[tuple[str, ...]] = (
     "inspect_repository_diff",
     "run_repository_test",
 )
+REPOSITORY_EDITING_HANDOFF_TOOL: Final[str] = "finish_repository_editing"
 WRITE_REPOSITORY_TOOL_NAMES: Final[tuple[str, ...]] = (
     "apply_exact_repository_patch",
     "write_repository_file",
@@ -565,6 +566,7 @@ def create_repository_single_agent_task(
     allowed_tools = (
         *READ_REPOSITORY_TOOL_NAMES,
         *(WRITE_REPOSITORY_TOOL_NAMES if write_confirmed else ()),
+        *((REPOSITORY_EDITING_HANDOFF_TOOL,) if write_confirmed else ()),
     )
     create_agent_task(
         conn,
@@ -581,7 +583,7 @@ def create_repository_single_agent_task(
         acceptance_criteria=(
             "The single agent uses real workspace tools before making repository claims.",
             "Every write remains inside the isolated Agent Job repository clone.",
-            "Status, diff and at least one relevant test are read after mutation.",
+            "Editing hands off to server-owned status, diff and relevant regression verification before Draft-PR readiness.",
             "No background agent, production deploy, merge or auto-merge is started.",
         ),
         forbidden_actions=(
@@ -1069,11 +1071,14 @@ class BoundRepositoryToolset:
         return ROLE_PATH_PREFIXES.get(role, ())
 
     def allowed_tool_names(self, role: str) -> tuple[str, ...]:
-        return (
+        names = (
             (*READ_REPOSITORY_TOOL_NAMES, *WRITE_REPOSITORY_TOOL_NAMES)
             if self.write_confirmed
             else READ_REPOSITORY_TOOL_NAMES
         )
+        if self.write_confirmed and role in {"free_single_agent", "paid_single_agent"}:
+            return (*names, REPOSITORY_EDITING_HANDOFF_TOOL)
+        return names
 
     def _validate_role_path(self, role: str, path: str) -> str:
         normalized = _safe_path(path)
@@ -1459,6 +1464,19 @@ class BoundRepositoryToolset:
                 function_tool(write_repository_file),
                 function_tool(apply_exact_repository_patch),
             ))
+        if self.write_confirmed and role in {"free_single_agent", "paid_single_agent"}:
+            def finish_repository_editing(summary: str) -> str:
+                """End editing once the requested files are ready; the server independently verifies regression and Draft-PR readiness."""
+                status = json.loads(self._execute(role, "git-status", {}))
+                diff = json.loads(self._execute(role, "diff", {"stat": False, "staged": False}))
+                if status["status"] != "done" or diff["status"] != "done" or not diff["diffSummary"]:
+                    return "Repository editing ended without verified changes; server closeout must fail closed."
+                return (
+                    "Repository editing handed to independent server verification. "
+                    "Tests, Draft-PR readiness and publication are still pending. "
+                    + _redact(summary, 2000)
+                )
+            tools.append(function_tool(finish_repository_editing))
         return tools
 
     def summary(self) -> dict[str, Any]:

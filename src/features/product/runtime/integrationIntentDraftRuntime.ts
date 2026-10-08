@@ -199,14 +199,20 @@ function deriveAffectedFiles(input: string, repoFiles?: RepoFile[], options?: Cr
 
   // If no specific matches, suggest top-level structure
   if (affected.length === 0 && repoFiles.length > 0) {
-    const topDirs = new Set<string>();
-    for (const file of repoFiles.slice(0, 20)) {
-      const parts = file.path.split('/');
-      if (parts.length > 1) {
-        topDirs.add(parts[0]);
+    const result: string[] = [];
+    let checkedCount = 0;
+    for (const file of repoFiles) {
+      if (checkedCount >= 20 || result.length >= 3) break;
+      checkedCount++;
+      const slashIndex = file.path.indexOf('/');
+      if (slashIndex !== -1) {
+        const dirPath = `${file.path.substring(0, slashIndex)}/`;
+        if (!result.includes(dirPath)) {
+          result.push(dirPath);
+        }
       }
     }
-    return Array.from(topDirs).slice(0, 3).map((d) => `${d}/`);
+    return result;
   }
 
   return affected;

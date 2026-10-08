@@ -783,13 +783,20 @@ async def _run_single_agent(
         model=selected_model,
         instructions=(
             f"You are the single-agent {execution_mode} execution profile. Understand the user's language and complete one bounded task without spawning or delegating to another agent. "
-            "When repository tools are present, you may read, create, replace and exactly patch code only inside the isolated Code-Server Agent Job workspace. Read before writing; after every mutation inspect Git status and diff and run at least one relevant allowlisted test. "
+            "When repository tools are present, you may read, create, replace and exactly patch code only inside the isolated Code-Server Agent Job workspace. Read before writing. Once the requested edits are ready, call finish_repository_editing to end this model pass. The server independently captures status/diff, selects and runs the relevant regression, and gates Draft-PR readiness. A pending evidence gate during editing is not a request to repeat tools. Use run_repository_test only when debugging needs it; read test configuration first, use one supported invocation, and never repeat a rejected command. Do not install dependencies or spend model turns preparing/publishing a PR. "
             "You must never merge, auto-merge, deploy to production, mutate the host, read secrets, or claim success without tool evidence. "
             "When repository execution is requested but no repository tools are present, explain that the workspace tools are unavailable. "
             "When Agent Zero capability tools are present, use them only for missing skills/browser/Playwright/memory/sandbox capabilities and treat their results as non-authoritative external evidence. If the mission explicitly requires one of those capabilities and the capability tool is present, invoke it instead of fabricating an equivalent observation. "
             "For conversation or read-only analysis, answer directly. Return one useful plain-text answer; do not emit JSON or a schema wrapper."
         ),
         tools=[*repository_tools, *capability_tools],
+        tool_use_behavior=(
+            {"stop_at_tool_names": ["finish_repository_editing"]}
+            if intent.mode == "repository_execution" and any(
+                getattr(tool, "name", "") == "finish_repository_editing" for tool in repository_tools
+            )
+            else "run_llm_again"
+        ),
     )
     _emit_stage(
         stage_observer,

@@ -177,9 +177,17 @@ describe('maskSecrets', () => {
     expect(maskSecrets('cloudflare_token=cloudflare_token_val_555')).toBe('cloudflare_token=****');
     expect(maskSecrets('cloudflare_key: cloudflare_key_val_666')).toBe('cloudflare_key: ****');
     expect(maskSecrets('cloudflare_secret=cloudflare_secret_val_777')).toBe('cloudflare_secret=****');
+    expect(maskSecrets('elevenlabs_key: elevenlabs_key_val_123')).toBe('elevenlabs_key: ****');
+    expect(maskSecrets('elevenlabs_secret=elevenlabs_sec_val_456')).toBe('elevenlabs_secret=****');
+    expect(maskSecrets('elevenlabs_token: elevenlabs_tok_val_789')).toBe('elevenlabs_token: ****');
+    expect(maskSecrets('eleven_labs_key=eleven_labs_key_val_101')).toBe('eleven_labs_key=****');
+    expect(maskSecrets('stability_key: stability_key_val_202')).toBe('stability_key: ****');
+    expect(maskSecrets('stability_secret=stability_sec_val_303')).toBe('stability_secret=****');
+    expect(maskSecrets('fal_key: fal_key_val_404')).toBe('fal_key: ****');
+    expect(maskSecrets('fal_secret=fal_sec_val_505')).toBe('fal_secret=****');
     expect(maskSecrets('"deepseek_key": "quoted_value_123"')).toBe('"deepseek_key": ****');
 
-    const plain = 'cohere_key docs mention pinecone_secret, qdrant_key, deepseek_key, perplexity_secret, replicate_key and cloudflare_token without assignments';
+    const plain = 'cohere_key pinecone_secret qdrant_key deepseek_key perplexity_secret replicate_key cloudflare_token elevenlabs_key stability_key fal_secret without assignments';
     expect(maskSecrets(plain)).toBe(plain);
   });
 
