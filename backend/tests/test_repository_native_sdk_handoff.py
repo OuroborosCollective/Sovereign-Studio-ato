@@ -19,6 +19,7 @@ def test_native_sdk_handoff_stops_after_one_model_turn(workspace, monkeypatch):
         job_id="agent-empty", workspace_id="agent-empty", user_id="owner-empty",
         repo_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato",
         branch="main", mission="Add empty Tester", status="running",
+        executor="sovereign-local-runner",
     ), calls=[], receipts=[], model_calls=0)
     def update(_conn, **kw):
         fields = {key: value for key, value in kw.items() if key in {
