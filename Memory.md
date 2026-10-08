@@ -1111,3 +1111,10 @@ Open: Verify exact-head CI and deployed mobile/job behavior; original job was ne
 Change: Open the collapsed mission controls before selecting Free/Paid in the existing endpoint browser test and close them before dispatch; preserve every request and blocker assertion.
 Learning: Native details requires the same explicit interaction in browser tests as in the product.
 Evidence: Release Verification 37747356213 at 55caaf7d882de158ef0be6aecd453d75754a88a0 passed typecheck, unit tests, build and all three new phone layout cases; both route-selection cases failed because the select was hidden. Final-head CI remains required before the owner-authorized merge; production recovery is not claimed.
+
+### 2026-10-08 — Thorsu Observatory four-layer evidence integration
+Status: PARTIAL — code/regressions verified, no new live capture, HF publication, or deployment claim.
+Change: Added signed Proof Router v2/Wolfram CAG/alphaXiv four-layer run verifier, existing-Space live runner, staging-only canonical publisher adapter, documentation and tests. Kept personal HF owner Thorsu and existing release boundaries; no new HF Jobs.
+Learning: Signed claim receipts do not sign Space Git SHA; Hub revision needs a separate live readback. Provider transport, formal replay, publisher commit and Notion index remain distinct evidence states.
+Evidence: isolated main 08f8a0f916ec54c6bbff93d64538ed7a4781383c; focused pytest 80 PASS, 1 preexisting SKIP; real original Thorsu Space and Explorer Gradio API checks returned HTTP 503; no HF write.
+Open/next: Exact PR-head CI, immutable runtime/readback, live signed positive+negative cases, protected CAG canary, rights-cleared staging commit/hash readback, DB publication receipt and Notion index write/readback before declaring published.
