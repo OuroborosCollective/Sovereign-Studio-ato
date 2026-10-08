@@ -274,7 +274,10 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     const composer = page.getByLabel('Mission to Sovereign');
     await composer.fill('Prüfe den aktuellen Build und ändere nichts ohne die bestehenden Runtime-Gates.');
     await expect(page.getByLabel('ROUTE').locator(`option[value="${mode}"]`)).toBeEnabled();
+    await page.getByTestId('vnext-mission-controls').locator('summary').click();
+    await expect(page.getByLabel('ROUTE')).toBeVisible();
     await page.getByLabel('ROUTE').selectOption(mode);
+    await page.getByTestId('vnext-mission-controls').locator('summary').click();
     await expect(page.getByTestId('builder__start-task')).toBeEnabled();
     await composer.press('Enter');
 
