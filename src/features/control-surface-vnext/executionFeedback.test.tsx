@@ -73,6 +73,7 @@ describe('execution feedback', () => {
 
   it('keeps Free and Paid unavailable until live route and account readback arrives', () => {
     render(<ChatSurface messages={[]} onOpenToolchain={() => {}} onOpenSkills={() => {}} onOpenIntegrations={() => {}} />);
+    fireEvent.click(screen.getByText(/Mission controls/));
     expect(screen.getByRole('combobox', { name: 'ROUTE' })).toHaveValue('free');
     expect(screen.getByRole('option', { name: 'Sovereign · Free' })).toBeDisabled();
     expect(screen.getByRole('option', { name: 'Sovereign · Paid' })).toBeDisabled();

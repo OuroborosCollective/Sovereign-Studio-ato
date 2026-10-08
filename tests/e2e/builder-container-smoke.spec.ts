@@ -76,6 +76,7 @@ test.describe('Sovereign Control Surface vNext browser smoke', () => {
   });
 
   test('3. Toolchain and agent-registry panels remain read-only projections without an invented Swarm graph', async ({ page }) => {
+    await page.getByTestId('vnext-mission-controls').locator('summary').click();
     await page.getByRole('button').filter({ hasText: 'TOOLCHAIN' }).click();
     const toolchainDialog = page.getByRole('dialog', { name: 'TOOLCHAIN CONFIGURATION // EXECUTION DRIVERS' });
     await expect(toolchainDialog).toBeVisible();
@@ -161,11 +162,43 @@ test.describe('Sovereign Control Surface vNext browser smoke', () => {
     await page.getByLabel('Mission to Sovereign').fill('Readback is required.');
     await expect(page.getByTestId('builder__start-task')).toBeDisabled();
     await page.getByLabel('Mission to Sovereign').press('Enter');
+    await page.getByTestId('vnext-mission-controls').locator('summary').click();
     await expect(page.getByText(/Control surface readback HTTP 503/).first()).toBeVisible();
     await expect(page.getByTestId('vnext-account-credits')).toContainText('CREDITS UNAVAILABLE');
     await expect(page.getByTestId('vnext-account-credits')).not.toContainText('9 ACCOUNT CREDITS');
     expect(dispatches).toEqual([]);
   });
+
+
+  for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }, { width: 360, height: 400 }]) {
+    test(`phone chat retains readable height with controls open and closed at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      const surface = page.getByTestId('vnext-command-surface');
+      const stream = page.getByTestId('vnext-message-stream');
+      const dock = page.getByTestId('vnext-mission-dock');
+      const controls = page.getByTestId('vnext-mission-controls');
+      await expect(controls).not.toHaveAttribute('open');
+      for (const expanded of [false, true, false]) {
+        if ((await controls.getAttribute('open') !== null) !== expanded) {
+          await controls.locator('summary').click();
+        }
+        const bounds = await surface.boundingBox();
+        const messages = await stream.boundingBox();
+        const composer = await dock.boundingBox();
+        expect(bounds).not.toBeNull();
+        expect(messages).not.toBeNull();
+        expect(composer).not.toBeNull();
+        expect(messages!.height).toBeGreaterThan(bounds!.height * 0.3);
+        expect(composer!.height).toBeLessThanOrEqual(bounds!.height * 0.5 + 1);
+        expect(messages!.y + messages!.height).toBeLessThanOrEqual(composer!.y + 1);
+        const navigation = await page.getByTestId('mobile-bottom-nav').boundingBox();
+        expect(navigation).not.toBeNull();
+        expect(composer!.y + composer!.height).toBeLessThanOrEqual(navigation!.y + 1);
+      }
+      await page.getByLabel('Mission to Sovereign').fill('Readable composer');
+      await expect(page.getByLabel('Mission to Sovereign')).toHaveValue('Readable composer');
+    });
+  }
 
   test('7. The evidence observatory route remains independently reachable', async ({ page }) => {
     await page.goto('/observatory');

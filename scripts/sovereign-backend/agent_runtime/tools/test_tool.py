@@ -25,7 +25,7 @@ class TestTool(ToolBase):
         "command": {
             "type": "string",
             "required": False,
-            "description": "Test command to run (auto-detected if not specified)",
+            "description": "One allowlisted test command, without shell chaining. Examples: pnpm run test:unit, pnpm run test:integration, pnpm run test:release-gate, python3 -m pytest -q. Omit to auto-detect.",
         },
         "path": {
             "type": "string",
@@ -176,9 +176,17 @@ class TestTool(ToolBase):
             ("pytest",),
             ("pnpm", "test"),
             ("pnpm", "run", "test"),
+            ("pnpm", "run", "test:unit"),
+            ("pnpm", "run", "test:smoke"),
+            ("pnpm", "run", "test:integration"),
+            ("pnpm", "run", "test:release-gate"),
             ("pnpm", "exec", "vitest", "run"),
             ("npm", "test"),
             ("npm", "run", "test"),
+            ("npm", "run", "test:unit"),
+            ("npm", "run", "test:smoke"),
+            ("npm", "run", "test:integration"),
+            ("npm", "run", "test:release-gate"),
             ("npx", "vitest", "run"),
             ("npx", "jest"),
             ("go", "test"),
@@ -194,6 +202,14 @@ class TestTool(ToolBase):
             return ToolResult(
                 status="blocked",
                 blocker="Custom test command is not allowlisted",
+                output=(
+                    "No command was executed. Use one supported test invocation, for example "
+                    "pnpm run test:unit, pnpm run test:smoke, pnpm run test:integration, "
+                    "pnpm run test:release-gate, or python3 -m pytest -q. "
+                    "Do not chain commands with shell operators. Read the repository test "
+                    "configuration before choosing a command; do not repeat a rejected invocation."
+                ),
+                metadata={"failure_family": "TEST_COMMAND_NOT_ALLOWLISTED", "executed": False},
             )
         bootstrap = self._ensure_node_dependencies(cwd, timeout, args)
         if bootstrap is not None and not bootstrap.is_ok():

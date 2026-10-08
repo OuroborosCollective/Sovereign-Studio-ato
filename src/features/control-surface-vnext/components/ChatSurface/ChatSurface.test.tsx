@@ -4,6 +4,30 @@ import { describe, expect, it, vi } from 'vitest';
 import { ChatSurface } from './ChatSurface';
 
 describe('live command surface integration', () => {
+  it('keeps mission controls collapsed while preserving the response and composer', () => {
+    render(<ChatSurface messages={[{ id: 'blocked-response', role: 'assistant', sender: 'SOVEREIGN_AGENT', content: 'Test command blocked; choose an allowed test.', timestamp: '2026-10-08T07:44:15Z' }]} jobPhase="BLOCKED" />);
+    const controls = screen.getByTestId('vnext-mission-controls');
+    expect(controls).not.toHaveAttribute('open');
+    expect(screen.getByRole('log')).toHaveTextContent('Test command blocked; choose an allowed test.');
+    expect(controls).not.toContainElement(screen.getByRole('log'));
+    expect(controls).not.toContainElement(screen.getByRole('textbox', { name: 'Mission to Sovereign' }));
+    fireEvent.click(screen.getByText(/Mission controls/));
+    expect(controls).toHaveAttribute('open');
+    expect(screen.getByLabelText('ROUTE')).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/Mission controls/));
+    expect(controls).not.toHaveAttribute('open');
+    expect(screen.getByRole('log')).toHaveTextContent('Test command blocked');
+  });
+
+  it('keeps the paid reservation disclosure visible outside collapsed controls', () => {
+    render(<ChatSurface messages={[]} executionMode="paid" />);
+    const disclosure = screen.getByText(/Dispatch authorizes a credit reservation/);
+    expect(screen.getByTestId('vnext-mission-controls')).not.toContainElement(disclosure);
+    expect(disclosure).toBeVisible();
+    expect(screen.getByText(/Selected route unavailable/)).toBeVisible();
+    expect(screen.getByTestId('builder__start-task')).toBeDisabled();
+  });
+
   it('renders code copy controls and rejects script links in incoming messages', () => {
     render(<ChatSurface messages={[{ id: 'response', role: 'assistant', sender: 'SOVEREIGN_AGENT', content: '```ts\nconst value = 1;\n```\n[unsafe](javascript:alert)', timestamp: '2026-10-02T00:00:00Z' }]} onSubmitOrder={vi.fn()} />);
     expect(screen.getByText('const value = 1;')).toBeInTheDocument();

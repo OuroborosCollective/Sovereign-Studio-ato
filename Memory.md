@@ -1098,3 +1098,16 @@ Touched surfaces: src/shared/utils/crypto.ts; src/shared/utils/crypto.test.ts; M
 Evidence: Original main and #2205 source executed under Node 24 reproduced colon overmasking and newline consumption; 101 direct assertions importing the consolidated production source passed. Original PR test assertions retained; focused Vitest and required CI remain pending at publication.
 Learned: Expanding one shared credential character class also expands every generic label; DSN-specific syntax needs a separate bounded rule. Underscore/hyphen env suffix matching is intentionally retained for existing provider contracts.
 Open/next: Read back the published files and exact-head gates before closing the redundant draft. No merge, deployment or production-runtime verification claimed.
+
+
+### 2026-10-08 — Readable mission chat and named test commands
+Status: PARTIAL — source regressions passed; exact-head frontend/browser CI and live rollout pending.
+Change: Bound the existing chat dock to half the panel with collapsible controls; keep route/cost disclosure outside the collapsed panel. Align the mirrored TestTool allowlist with documented unit/smoke/integration/release-gate script names and return actionable rejection guidance without granting arbitrary commands.
+Learning: A non-shrinking control block can consume the message viewport; an empty untracked Tester file is not test evidence, and the supplied job log does not reveal its rejected command.
+Evidence: main 8bb9b8250fc95b94cc402efa298e2725b433abd5; new tests first reproduced two failures, then 10 boundary tests (including real passing/failing pytest subprocesses and mirror parity), 36 repository execution tests, 33 evidence-gate tests and diff check passed. Added UI interaction and three phone-height browser regressions; MCP requires frontend checks in GitHub Actions. Static architecture reports are orientation only.
+Open: Verify exact-head CI and deployed mobile/job behavior; original job was neither replayed nor claimed recovered. No merge or deployment in this work block.
+
+### 2026-10-08 — PR #2213 browser interaction follow-up
+Change: Open the collapsed mission controls before selecting Free/Paid in the existing endpoint browser test and close them before dispatch; preserve every request and blocker assertion.
+Learning: Native details requires the same explicit interaction in browser tests as in the product.
+Evidence: Release Verification 37747356213 at 55caaf7d882de158ef0be6aecd453d75754a88a0 passed typecheck, unit tests, build and all three new phone layout cases; both route-selection cases failed because the select was hidden. Final-head CI remains required before the owner-authorized merge; production recovery is not claimed.
