@@ -1090,3 +1090,11 @@ Evidence: Pre-Memory head `39d7c3c73c015af4af9e45827ae2822ef73d1d44` passed Rele
 Learned: Repository execution had lost the Free revolver's existing pre-effect failover semantics; general account credits and provider-funded OpenRouter budget are intentionally separate truth boundaries.
 Open: This Memory correction changes the PR head, so final exact-head CI must be read again. Immutable deployment plus one fresh real Free repository mission must still prove runtime rotation/success; Paid availability still requires its separate provider-funded readback.
 Next safe step: Require terminal checks on this Memory-corrected head, then deploy the exact revision and obtain fresh runtime readback before any merge claim.
+
+### 2026-10-07 — Consolidate credential masking PRs #2197 and #2205
+Status: PARTIAL — source runtime regressions verified; final-head CI pending.
+Task/decision: Keep #2197; carry all provider additions and original tests from #2205 onto main 7667fccb7696b944c4953128cadb327f2b50a1f7. Preserve communication-provider and generic env suffix coverage. Limit new URL colon support to sentry_dsn; stop empty assignments crossing lines and avoid matching alphanumeric word suffixes.
+Touched surfaces: src/shared/utils/crypto.ts; src/shared/utils/crypto.test.ts; Memory.md.
+Evidence: Original main and #2205 source executed under Node 24 reproduced colon overmasking and newline consumption; 101 direct assertions importing the consolidated production source passed. Original PR test assertions retained; focused Vitest and required CI remain pending at publication.
+Learned: Expanding one shared credential character class also expands every generic label; DSN-specific syntax needs a separate bounded rule. Underscore/hyphen env suffix matching is intentionally retained for existing provider contracts.
+Open/next: Read back the published files and exact-head gates before closing the redundant draft. No merge, deployment or production-runtime verification claimed.
