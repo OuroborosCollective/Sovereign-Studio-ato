@@ -127,3 +127,66 @@ def test_canonical_sovereign_origin_uses_repository_build_policy(monkeypatch, tm
     assert result.status == "done"
     assert calls[0][0] == ["pnpm", "install", "--frozen-lockfile"]
     assert calls[1][0] == ["pnpm", "test"]
+
+
+def test_documented_named_test_scripts_are_allowlisted(monkeypatch, tmp_path: Path):
+    calls = []
+
+    class Completed:
+        returncode = 0
+        stdout = "regression passed"
+        stderr = ""
+
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return Completed()
+
+    monkeypatch.setattr("agent_runtime.tools.test_tool.subprocess.run", run)
+    for manager in ("pnpm", "npm"):
+        for script in ("test:unit", "test:smoke", "test:integration", "test:release-gate"):
+            result = TestTool().execute(
+                {"command": f"{manager} run {script}", "verbose": False}, str(tmp_path)
+            )
+            assert result.is_ok(), (manager, script, result.blocker)
+            assert calls[-1][0] == [manager, "run", script]
+            assert calls[-1][1]["shell"] is False
+            assert result.metadata["passed"] is True
+
+
+def test_unknown_script_and_shell_chain_remain_blocked(monkeypatch, tmp_path: Path):
+    def unexpected_run(*args, **kwargs):
+        raise AssertionError("Rejected commands must not start a process")
+
+    monkeypatch.setattr("agent_runtime.tools.test_tool.subprocess.run", unexpected_run)
+    for command in (
+        "pnpm run test:unknown", "npm run test:unit-evil", "pnpm run deploy",
+        "pnpm run test:unit && touch escaped.txt", "bash -c 'true'",
+    ):
+        result = TestTool().execute({"command": command}, str(tmp_path))
+        assert result.status == "blocked"
+        assert result.blocker == "Custom test command is not allowlisted"
+        assert "pnpm run test:unit" in result.output
+        assert result.metadata["failure_family"] == "TEST_COMMAND_NOT_ALLOWLISTED"
+        assert result.exit_code != 0
+        assert result.metadata["executed"] is False
+        assert not result.metadata.get("passed", False)
+
+
+def test_custom_pytest_records_real_pass_and_failure(tmp_path: Path):
+    test_file = tmp_path / "test_receipt.py"
+    for assertion, expected_code in (("True", 0), ("False", 1)):
+        test_file.write_text(f"def test_receipt():\n    assert {assertion}\n", encoding="utf-8")
+        result = TestTool().execute(
+            {"command": "python3 -m pytest -q -p no:cacheprovider test_receipt.py", "verbose": False},
+            str(tmp_path),
+        )
+        assert result.exit_code == expected_code
+        assert result.metadata["passed"] is (expected_code == 0)
+        assert ("1 passed" if expected_code == 0 else "1 failed") in result.output
+
+
+def test_test_tool_shipping_mirror_matches():
+    root = Path(__file__).resolve().parents[2]
+    assert (root / "backend/agent_runtime/tools/test_tool.py").read_bytes() == (
+        root / "scripts/sovereign-backend/agent_runtime/tools/test_tool.py"
+    ).read_bytes()

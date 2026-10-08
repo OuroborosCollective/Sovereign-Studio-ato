@@ -54,6 +54,7 @@ describe('live control surface readbacks', () => {
     body.routing.modes[1].available = false;
     const result = await adapter(body).adapter.getControlSurface('agent-real');
     render(<ChatSurface messages={[]} controlReadback={result} />);
+    fireEvent.click(screen.getByText(/Mission controls/));
     expect(screen.getByText(/credit_state_verification_failed/)).toBeVisible();
     expect(screen.queryByText(/0 ACCOUNT CREDITS/)).toBeNull();
     expect(screen.getByRole('option', { name: /Paid/ })).toBeDisabled();
@@ -78,6 +79,7 @@ describe('live control surface readbacks', () => {
     const result = await adapter().adapter.getControlSurface('agent-real');
     const selectMode = vi.fn();
     render(<ChatSurface messages={[]} controlReadback={result} onExecutionModeChange={selectMode} />);
+    fireEvent.click(screen.getByText(/Mission controls/));
     expect(screen.getByText(/1,250 ACCOUNT CREDITS/)).toBeVisible();
     expect(screen.getByText(/1,100 PROVIDER-FUNDED/)).toBeVisible();
     expect(screen.getByRole('option', { name: /Paid/ })).not.toBeDisabled();
@@ -108,6 +110,7 @@ it('keeps account credits visible while explaining a zero provider-funded paid b
   const result = await adapter(body).adapter.getControlSurface('agent-real');
   render(<ChatSurface messages={[]} controlReadback={result} />);
 
+  fireEvent.click(screen.getByText(/Mission controls/));
   expect(screen.getByText(/1,545 ACCOUNT CREDITS/)).toBeVisible();
   expect(screen.getByText(/0 PROVIDER-FUNDED/)).toBeVisible();
   expect(screen.getByText(/Provider-funded balance required/)).toBeVisible();
