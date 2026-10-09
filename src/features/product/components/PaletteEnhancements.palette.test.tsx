@@ -28,6 +28,7 @@ import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
+import { OutcomeHints } from './OutcomeHints';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1538,6 +1539,40 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(localModeBtn);
       expect(onUseLocalMode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('OutcomeHints Accessibility and Micro-UX Enhancements', () => {
+    it('renders region landmark, semantic list, hidden decorative bullet, and accessible external links', () => {
+      const hints = [
+        { kind: 'info' as const, text: 'Check the logs' },
+        { kind: 'link' as const, text: 'View documentation', href: 'https://example.com/docs' },
+      ];
+
+      const { container } = render(<OutcomeHints hints={hints} />);
+
+      const region = screen.getByRole('region', { name: 'Outcome Hints' });
+      expect(region).toBeInTheDocument();
+
+      const list = screen.getByRole('list', { name: 'Outcome hints list' });
+      expect(list).toBeInTheDocument();
+
+      const listItems = screen.getAllByRole('listitem');
+      expect(listItems).toHaveLength(2);
+
+      const bullets = container.querySelectorAll('[aria-hidden="true"]');
+      expect(bullets.length).toBeGreaterThanOrEqual(2);
+
+      const link = screen.getByRole('link', { name: 'View documentation (opens in new tab)' });
+      expect(link).toHaveAttribute('href', 'https://example.com/docs');
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('title', 'View documentation (opens in new tab)');
+      expect(link).toHaveClass('focus-visible:ring-2');
+    });
+
+    it('returns null when hints array is empty', () => {
+      const { container } = render(<OutcomeHints hints={[]} />);
+      expect(container.firstChild).toBeNull();
     });
   });
 });
