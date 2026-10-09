@@ -1,9 +1,9 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "b2e301ed164189ec42011229b559038a202982f6",
-  "rawCandidateCount": 104,
-  "canonicalCandidateCount": 81,
+  "sourceRevision": "fc7d4b2c83dede58006bd0c91ffab0667fd149b9",
+  "rawCandidateCount": 101,
+  "canonicalCandidateCount": 78,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cag_self_healing_runtime.py",
@@ -419,53 +419,14 @@
       "canonicalPath": "src/features/product/runtime/workerIntentDetector.ts",
       "mirrorPaths": [],
       "symbol": "CODE_CONTEXT_TOKENS",
-      "line": 79,
+      "line": 89,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "30e6f6fda1bb9cde727ac3976194c2abafaabedecce4e1d7ed9cd04d9f0c7393",
+      "fileSha256": "a48de2041faaf11e676b0263032b159bcae683d5d62a52486fa545f7784084a7",
       "anchorSha256": "1baf56a1a20a8a241838779454661b1cb19c8f485ff478adf37834b675a60b6c",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:08beaa7992060c8451a6bf25",
+      "candidateId": "llm-boundary:146fdcde1be2686e4d63d6fd",
       "classification": "OFFLINE_FALLBACK",
       "rationale": "CODE_CONTEXT_TOKENS is explicitly constrained to an offline, fail-closed keyword fallback that emits only a bounded enum or diagnostic signal."
-    },
-    {
-      "canonicalPath": "src/features/product/runtime/workerIntentDetector.ts",
-      "mirrorPaths": [],
-      "symbol": "allText",
-      "line": 139,
-      "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "30e6f6fda1bb9cde727ac3976194c2abafaabedecce4e1d7ed9cd04d9f0c7393",
-      "anchorSha256": "e3e040e5d956c8366f6ce8e153584e96d7b8fbd716cee8d6c4b322c68530ad86",
-      "reopenOnChange": true,
-      "candidateId": "llm-boundary:9a22193a6bf5a8f58597223a",
-      "classification": "OFFLINE_FALLBACK",
-      "rationale": "allText is explicitly constrained to an offline, fail-closed keyword fallback that emits only a bounded enum or diagnostic signal."
-    },
-    {
-      "canonicalPath": "src/features/product/runtime/workerIntentDetector.ts",
-      "mirrorPaths": [],
-      "symbol": "allText",
-      "line": 146,
-      "patternFamily": "python_keyword_intent",
-      "fileSha256": "30e6f6fda1bb9cde727ac3976194c2abafaabedecce4e1d7ed9cd04d9f0c7393",
-      "anchorSha256": "dba4ea79d9bccb413d4c177b92cc055453f39bfb865322bfb9f5a3e5fc9ad7ae",
-      "reopenOnChange": true,
-      "candidateId": "llm-boundary:73bc4b72a617ed065d99d24d",
-      "classification": "OFFLINE_FALLBACK",
-      "rationale": "allText is explicitly constrained to an offline, fail-closed keyword fallback that emits only a bounded enum or diagnostic signal."
-    },
-    {
-      "canonicalPath": "src/features/product/runtime/workerIntentDetector.ts",
-      "mirrorPaths": [],
-      "symbol": "allText",
-      "line": 152,
-      "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "30e6f6fda1bb9cde727ac3976194c2abafaabedecce4e1d7ed9cd04d9f0c7393",
-      "anchorSha256": "af3c55cc5679eef00e6796e4f8de3af377f9cfcdc21ce5a301a485a111bf2d56",
-      "reopenOnChange": true,
-      "candidateId": "llm-boundary:e0f99202e0fb0f6c5725c8d8",
-      "classification": "OFFLINE_FALLBACK",
-      "rationale": "allText is explicitly constrained to an offline, fail-closed keyword fallback that emits only a bounded enum or diagnostic signal."
     },
     {
       "canonicalPath": "src/features/product/runtime/workspaceErrorPolicy.ts",
@@ -1105,5 +1066,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "47fed3e389be571fa7915d2846feaa707a28a7f2e33b5410548e4bd71abb157b"
+  "ledgerSha256": "75ba2732bdf00d1056322976b72fc5cec4d725e87630cbfd521b51d2907c834e"
 }
