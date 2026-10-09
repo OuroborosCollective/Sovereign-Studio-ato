@@ -3037,7 +3037,7 @@ export function BuilderContainer({
     });
   }, [appendChatLine]);
 
-  const appendGuardedWorkerText = useCallback((text: string) => {
+  const appendGuardedWorkerText = useCallback((text: string, fallbackMetadata?: { fallbackUsed?: boolean; preferredModel?: string; actualModel?: string; fallbackReason?: string } | null) => {
     const claimCheck = checkChatClaim(text, agentWorkSnapshot);
     const guardedText = claimCheck.allowed || !claimCheck.honestFallback
       ? text
@@ -3048,6 +3048,7 @@ export function BuilderContainer({
     appendChatLine({
       role: 'assistant',
       text: guardedText,
+      metadata: fallbackMetadata?.fallbackUsed ? { fallback: `Hinweis: ${fallbackMetadata.preferredModel} war nicht erreichbar, Antwort kam von ${fallbackMetadata.actualModel}.` } : undefined,
       monitorProjection: {
         schemaVersion: 'sovereign.monitor-communication-projection.v1',
         sourceKind: 'LLM_RESPONSE',
@@ -3225,6 +3226,7 @@ export function BuilderContainer({
             id: `restored-monitor-${line.id || index}`,
             kind: line.role === 'user' ? 'user' : line.role === 'system' ? 'runtime' : 'communicate',
             text: line.text,
+            metadata: line.metadata,
             createdAt: line.createdAt,
           }));
         setMonitorCommunication((previous) => {
@@ -5014,11 +5016,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       appendActionEvent(buildWorkerResponseEvent());
       let textToAppend = fullText;
       
-      if (streamFallbackMetadata?.fallbackUsed) {
-        appendRuntimeNotice(`Hinweis: ${streamFallbackMetadata.preferredModel} war nicht erreichbar, Antwort kam von ${streamFallbackMetadata.actualModel}.`);
-      }
-
-      appendGuardedWorkerText(textToAppend);
+      appendGuardedWorkerText(textToAppend, streamFallbackMetadata);
       await quarantineOnlineAnswer(fullText, streamFallbackMetadata?.actualModel ?? requestedChatModel);
       return;
     }
@@ -5035,11 +5033,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       appendActionEvent(buildWorkerResponseEvent());
       let textToAppend = fallback.content;
 
-      if (fallback.fallbackUsed) {
-        appendRuntimeNotice(`Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}.`);
-      }
-
-      appendGuardedWorkerText(textToAppend);
+      appendGuardedWorkerText(textToAppend, fallback);
       await quarantineOnlineAnswer(fallback.content, fallback.actualModel ?? requestedChatModel);
       return;
     }

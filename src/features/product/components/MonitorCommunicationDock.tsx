@@ -11,6 +11,7 @@ export interface MonitorCommunicationEntry {
   readonly kind: MonitorCommunicationKind;
   readonly text: string;
   readonly createdAt: number;
+  readonly metadata?: { fallback?: string; };
 }
 
 export interface MonitorCommunicationDockProps {
@@ -276,6 +277,11 @@ export function MonitorCommunicationDock({
                 <span style={{ display: 'block', marginTop: 4, color: C.textSub, fontSize: 11, lineHeight: 1.45, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
                   {text}
                 </span>
+                {entry.metadata?.fallback && (
+                  <span style={{ display: 'block', marginTop: 8, color: C.textMuted, fontSize: 10, fontStyle: 'italic' }}>
+                    {entry.metadata.fallback}
+                  </span>
+                )}
               </li>
             );
           })}
