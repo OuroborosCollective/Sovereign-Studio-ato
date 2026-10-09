@@ -1133,3 +1133,10 @@ Change: Add `public-site/` HTML/CSS, imprint/privacy drafts, static site validat
 Evidence: Base `5b0d686a03989f4228d9bfcd3c48400af70590ff`; focused real-site pytest 7/7 passed and local git diff --check returned 0 (untracked paths not yet staged); publication mode intentionally blocked by missing legal and noindex markers.
 Learned: A repository documentation page is not a runtime claim or a legally cleared public launch; publishing requires specific approval, release gate and independent HTTPS readback.
 Open/next: Review exact PR head and GitHub Actions; complete imprint/privacy/contact and Pages Settings, obtain owner approval before merge and manual publication.
+
+### 2026-10-09 — Frontend Routes and Agent Runtime Verification
+Status: VERIFIED — no code changes required.
+Change: Executed an extensive suite of regression and runtime tests to verify that all frontend free routes and tool/skill logic remain functional and fully protected.
+Evidence: Executed `pnpm run test:release-gate` (passed 3897 smoke tests and LLM/Runtime boundary gate), `pnpm run release:agent-check` (passed exact-head CI agent runtime tests across both Python backend and vitest frontend), and `pnpm run test:e2e:frontend-endpoints` (Playwright E2E endpoints smoke passed 4/4). Cleared transient build and playwright-report artifacts via `git clean -fd`.
+Learned: The control surface vNext and its free repository job dispatch pipelines are appropriately isolated and validated by exact-head e2e checks.
+Open/next: Maintain existing runtime guard policies; no structural interventions needed.
