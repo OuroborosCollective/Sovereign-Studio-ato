@@ -13,11 +13,21 @@ const SOVEREIGN_AGENT_EXECUTION_TOKENS = [
   'push', 'commit', 'repo schreiben', 'github schreiben', 'branch erstellen',
 ];
 
-const EXACT_CODE_COMMANDS = ['/code', '/fix', '/implement'] as const;
-const EXACT_AGENT_COMMANDS = ['/agent', '/draft-pr'] as const;
-const EXACT_RETRY_COMMANDS = ['retry', '/retry'] as const;
-const EXACT_DIAGNOSTIC_COMMANDS = ['diagnose', '/diagnose'] as const;
-const EXACT_STATUS_COMMANDS = ['/status'] as const;
+const EXACT_CODE_COMMANDS_SET = new Set(['/code', '/fix', '/implement']);
+const EXACT_AGENT_COMMANDS_SET = new Set(['/agent', '/draft-pr']);
+const EXACT_RETRY_COMMANDS_SET = new Set(['retry', '/retry']);
+const EXACT_DIAGNOSTIC_COMMANDS_SET = new Set(['diagnose', '/diagnose']);
+const EXACT_STATUS_COMMANDS_SET = new Set(['/status']);
+
+/**
+ * Fast helper to extract the first whitespace-delimited token of a text.
+ * Avoids regex allocation overhead from split(/\s+/, 1).
+ */
+function extractFirstCommand(text: string): string {
+  const trimmed = text.trim().toLowerCase();
+  const spaceIdx = trimmed.search(/\s/);
+  return spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);
+}
 
 // Delegation tokens: explicit handover to executor. Includes the confirmation
 // vocabulary emitted by the Integration-Draft UX: user confirms by saying
@@ -87,8 +97,8 @@ export function isLikelyIntegrationImplementationIntent(_text: string): boolean 
  * Generic implementation text stays code-route until a confirmed executor handoff.
  */
 export function isSovereignAgentExecutionIntent(text: string): boolean {
-  const command = text.trim().toLowerCase().split(/\s+/, 1)[0];
-  return EXACT_AGENT_COMMANDS.some((candidate) => candidate === command);
+  const command = extractFirstCommand(text);
+  return EXACT_AGENT_COMMANDS_SET.has(command);
 }
 
 /**
@@ -96,8 +106,8 @@ export function isSovereignAgentExecutionIntent(text: string): boolean {
  * before any external executor is considered.
  */
 export function isCodeGenerationIntent(text: string): boolean {
-  const command = text.trim().toLowerCase().split(/\s+/, 1)[0];
-  return EXACT_CODE_COMMANDS.some((candidate) => candidate === command);
+  const command = extractFirstCommand(text);
+  return EXACT_CODE_COMMANDS_SET.has(command);
 }
 
 /**
@@ -106,7 +116,7 @@ export function isCodeGenerationIntent(text: string): boolean {
  */
 export function isWorkerRetryIntent(text: string): boolean {
   const clean = text.trim().toLowerCase();
-  return EXACT_RETRY_COMMANDS.some((candidate) => candidate === clean);
+  return EXACT_RETRY_COMMANDS_SET.has(clean);
 }
 
 /**
@@ -115,7 +125,7 @@ export function isWorkerRetryIntent(text: string): boolean {
  */
 export function isWorkerDiagnosticQuestion(text: string): boolean {
   const clean = text.trim().toLowerCase();
-  return EXACT_DIAGNOSTIC_COMMANDS.some((candidate) => candidate === clean);
+  return EXACT_DIAGNOSTIC_COMMANDS_SET.has(clean);
 }
 
 /**
@@ -132,29 +142,52 @@ export function isDelegationIntent(text: string): boolean {
  * Used to determine if a delegation intent should trigger executor.
  */
 export function hasCodeContextInHistory(recentMessages: readonly { role: string; text: string }[]): boolean {
-  const relevant = recentMessages
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .slice(-6); // last 6 messages
-
-  const allText = relevant.map((m) => m.text.toLowerCase()).join(' ');
-
-  return CODE_CONTEXT_TOKENS.some((token) => allText.includes(token));
+  let count = 0;
+  for (let i = recentMessages.length - 1; i >= 0 && count < 6; i--) {
+    const m = recentMessages[i];
+    if (m.role === 'user' || m.role === 'assistant') {
+      count++;
+      const lowerText = m.text.toLowerCase();
+      for (let j = 0; j < CODE_CONTEXT_TOKENS.length; j++) {
+        if (lowerText.includes(CODE_CONTEXT_TOKENS[j])) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 /**
  * Combined check: delegation intent + code context = executor candidate.
  * Use this in BuilderContainer routing instead of just isDelegationIntent.
+ *
+ * Optimized single-pass reverse loop scanning up to 6 relevant user/assistant messages,
+ * avoiding intermediate array allocations (.filter, .slice, .map) and string joins.
  */
 export function hasExecutorContextInHistory(recentMessages: readonly { role: string; text: string }[]): boolean {
-  const relevant = recentMessages
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .slice(-6);
-  const allText = relevant.map((m) => m.text.toLowerCase()).join(' ');
-  return SOVEREIGN_AGENT_EXECUTION_TOKENS.some((token) => allText.includes(token)) ||
-    allText.includes('integrationsauftrag') ||
-    allText.includes('integration') ||
-    allText.includes('einbauen') ||
-    allText.includes('umsetzung');
+  let count = 0;
+  for (let i = recentMessages.length - 1; i >= 0 && count < 6; i--) {
+    const m = recentMessages[i];
+    if (m.role === 'user' || m.role === 'assistant') {
+      count++;
+      const lowerText = m.text.toLowerCase();
+      for (let j = 0; j < SOVEREIGN_AGENT_EXECUTION_TOKENS.length; j++) {
+        if (lowerText.includes(SOVEREIGN_AGENT_EXECUTION_TOKENS[j])) {
+          return true;
+        }
+      }
+      if (
+        lowerText.includes('integrationsauftrag') ||
+        lowerText.includes('integration') ||
+        lowerText.includes('einbauen') ||
+        lowerText.includes('umsetzung')
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 export function isDelegatedSovereignAgentExecutionIntent(
@@ -186,7 +219,7 @@ export function isAlternativeWriteRouteIntent(text: string): boolean {
  */
 export function isExecutorStatusQuestion(text: string): boolean {
   const clean = text.trim().toLowerCase();
-  return EXACT_STATUS_COMMANDS.some((candidate) => candidate === clean);
+  return EXACT_STATUS_COMMANDS_SET.has(clean);
 }
 
 export type ExecutorStatusArgs = {
