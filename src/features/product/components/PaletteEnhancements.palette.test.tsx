@@ -28,6 +28,7 @@ import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
+import { GeneratedFileReviewPanel } from './GeneratedFileReviewPanel';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1538,6 +1539,47 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(localModeBtn);
       expect(onUseLocalMode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('GeneratedFileReviewPanel Accessibility and Micro-UX Enhancements', () => {
+    it('renders with section landmark linked to header, role="status" badge, semantic list, focus ring summary, and accessible preview block', () => {
+      const mockPkg = {
+        version: '1.0.0',
+        summary: 'Mock package summary',
+        files: [
+          {
+            path: 'src/components/MyComponent.tsx',
+            content: 'export const MyComponent = () => <div>Hello</div>;',
+            risk: 'low' as const,
+          },
+        ],
+      };
+
+      const { rerender } = render(<GeneratedFileReviewPanel pkg={null} />);
+
+      const emptyHeading = screen.getByRole('heading', { name: 'Generated Files Review', level: 2 });
+      expect(emptyHeading).toHaveAttribute('id', 'generated-file-review-heading');
+
+      rerender(<GeneratedFileReviewPanel pkg={mockPkg as any} />);
+
+      const heading = screen.getByRole('heading', { name: 'Generated Files Review', level: 2 });
+      expect(heading).toHaveAttribute('id', 'generated-file-review-heading');
+
+      const statusBadge = screen.getByRole('status', { name: 'Pre-publish review status: active' });
+      expect(statusBadge).toBeInTheDocument();
+      expect(statusBadge).toHaveAttribute('title', 'Pre-publish review status: active');
+
+      const reviewsList = screen.getByRole('list', { name: 'Generated file reviews' });
+      expect(reviewsList).toBeInTheDocument();
+
+      const summaryToggle = screen.getByTitle('Toggle review details for src/components/MyComponent.tsx');
+      expect(summaryToggle).toBeInTheDocument();
+      expect(summaryToggle).toHaveClass('focus-visible:ring-2');
+
+      const previewBlock = screen.getByLabelText('Preview of src/components/MyComponent.tsx');
+      expect(previewBlock).toHaveAttribute('tabIndex', '0');
+      expect(previewBlock).toHaveClass('focus-visible:ring-2');
     });
   });
 });
