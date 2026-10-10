@@ -1133,3 +1133,14 @@ Change: Add `public-site/` HTML/CSS, imprint/privacy drafts, static site validat
 Evidence: Base `5b0d686a03989f4228d9bfcd3c48400af70590ff`; focused real-site pytest 7/7 passed and local git diff --check returned 0 (untracked paths not yet staged); publication mode intentionally blocked by missing legal and noindex markers.
 Learned: A repository documentation page is not a runtime claim or a legally cleared public launch; publishing requires specific approval, release gate and independent HTTPS readback.
 Open/next: Review exact PR head and GitHub Actions; complete imprint/privacy/contact and Pages Settings, obtain owner approval before merge and manual publication.
+
+### 2026-10-10 — Frontend "chat only" and Agent Zero draft-PR stabilization verification
+Status: VERIFIED_NO_CHANGES_REQUIRED
+Change: Verified the Agent Zero connection and Draft-PR cycle via the `sovereign-control-surface-vnext` surface. The architecture and tests correctly map:
+- `useSingleAgentRun()` -> `SovereignProductionAdapter.runSingleAgent` -> `POST /api/user/agent/repository/run` (which handles Free and Paid modes).
+- `start_repository_execution` queues a `sovereign-local-runner` job and claims it for `sovereign-local-runner:pending`.
+- `_submit_pending_repository_job` triggers the foreground Swarm LLM model pass.
+- The `start_repository_reconciler` processes the closeout cycle (generating diffs, testing via _safe_regression_commands, and invoking `mark_draft_pr_prepared`), which successfully sets status to `validating` and `pr_state` to `ready`.
+No codebase changes were required. Fixed 4 trailing ESLint warnings (no-unused-vars) in scripts to ensure pristine release gate operations.
+Evidence: `pnpm run test:release-gate`, `pnpm run test:agent-release-gate`, `PYTHONPATH=backend pnpm run test:agent-runtime`, `pnpm run test:agent-runtime:frontend` and `pnpm test:e2e:frontend-endpoints` passed locally.
+Open/next: Conclude verification and proceed.
