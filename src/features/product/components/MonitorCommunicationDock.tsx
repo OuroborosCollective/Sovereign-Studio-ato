@@ -104,14 +104,29 @@ export function MonitorCommunicationDock({
   const [routePickerOpen, setRoutePickerOpen] = useState(false);
   const [routeQuery, setRouteQuery] = useState('');
   const chatMode = mode === 'chat';
-  const visibleEntryIds = new Set(entries.slice(-4).map((entry) => entry.id));
-  entries
-    .filter((entry) => entry.kind === 'user')
-    .slice(-2)
-    .forEach((entry) => visibleEntryIds.add(entry.id));
-  const visibleEntries = chatMode
-    ? entries
-    : entries.filter((entry) => visibleEntryIds.has(entry.id)).slice(-6);
+  // ⚡ Bolt: Replace multiple array allocations and O(N) traversals with single-pass bounded reverse loops
+  const visibleEntryIds = new Set<string>();
+  for (let i = entries.length - 1, count = 0; i >= 0 && count < 4; i--, count++) {
+    visibleEntryIds.add(entries[i].id);
+  }
+  for (let i = entries.length - 1, count = 0; i >= 0 && count < 2; i--) {
+    if (entries[i].kind === 'user') {
+      visibleEntryIds.add(entries[i].id);
+      count++;
+    }
+  }
+
+  let visibleEntries: readonly MonitorCommunicationEntry[] = entries;
+  if (!chatMode) {
+    const filtered: MonitorCommunicationEntry[] = [];
+    for (let i = entries.length - 1; i >= 0; i--) {
+      if (visibleEntryIds.has(entries[i].id)) {
+        filtered.unshift(entries[i]);
+        if (filtered.length >= 6) break;
+      }
+    }
+    visibleEntries = filtered;
+  }
   const status = safeText(runtimeStatus, 240) || 'Runtimestatus nicht verfügbar';
   const visibleRouteHint = safeText(routeHint ?? '', 240);
   const selectedRoute = routeOptions.find((route) => route.id === selectedRouteId);
