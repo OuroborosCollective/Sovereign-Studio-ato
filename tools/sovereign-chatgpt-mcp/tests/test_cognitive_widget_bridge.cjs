@@ -106,3 +106,12 @@ test('rejects cross-scope PR and workspace receipts',async()=>{
   h.reply(h.messages.at(-1),{structuredContent:{ok:true,workspaceId:'job-other'}});await done;
   assert.match(h.el('message').textContent,/anderen Scope/);
 });
+
+test('PR check sends bounded chat request through native bridge without merge tool',async()=>{
+  const h=harness();await h.init();
+  h.receive({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:status({draftPr:{ready:true,number:12,headSha:'a'.repeat(40)}})}});
+  const done=h.el('approve').listeners.click();const request=h.messages.at(-1);
+  assert.equal(request.method,'ui/message');assert.equal(request.params.role,'user');
+  assert.match(request.params.content[0].text,/keine Merge-Aktion/);
+  h.reply(request,{});await done;assert.equal(h.el('approve').disabled,false);
+});

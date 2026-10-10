@@ -402,13 +402,14 @@ WIDGET_HTML = r'''<!doctype html>
 
   byId('approve').addEventListener('click', () => action(byId('approve'), async () => {
     const pr = state.draftPr;
-    if (!pr || !window.openai || typeof window.openai.sendFollowUpMessage !== 'function') {
-      throw new Error('Belegter PR und ChatGPT-Nachrichtenpfad erforderlich.');
-    }
-    await window.openai.sendFollowUpMessage({
-      prompt: 'Prüfe Draft PR #' + pr.number + ' mit erwartetem Head-SHA ' + pr.headSha +
-        '. Prüfe zuerst repository_pr_status. Führe keine Merge-Aktion ohne eine weitere ausdrückliche Bestätigung aus.'
-    });
+    if (!pr) throw new Error('Belegter PR erforderlich.');
+    const prompt = 'Prüfe Draft PR #' + pr.number + ' mit erwartetem Head-SHA ' + pr.headSha +
+      '. Prüfe zuerst repository_pr_status. Führe keine Merge-Aktion ohne eine weitere ausdrückliche Bestätigung aus.';
+    if (bridgeReady) {
+      await rpc('ui/message', { role: 'user', content: [{ type: 'text', text: prompt }] });
+    } else if (window.openai && typeof window.openai.sendFollowUpMessage === 'function') {
+      await window.openai.sendFollowUpMessage({ prompt });
+    } else throw new Error('ChatGPT-Nachrichtenpfad nicht verfügbar.');
   }));
 })();
 </script>
