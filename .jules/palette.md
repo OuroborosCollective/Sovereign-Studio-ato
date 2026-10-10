@@ -72,3 +72,6 @@
 ## 2026-10-10 - Add disabled titles to inputs and selects
 **Learning:** Screen readers do not reliably announce placeholders as state indicators when an input like <textarea> or <select> is disabled due to application logic (e.g. executing a run).
 **Action:** Always provide state-dependent title attributes and disabled:cursor-not-allowed visual styles to all interactive inputs and selects to communicate their disabled state correctly.
+## 2026-10-10 - Add disabled titles to inputs and selects
+**Learning:** Screen readers do not reliably announce placeholders as state indicators when an input like <textarea> or <select> is disabled due to application logic (e.g. executing a run).
+**Action:** Always provide state-dependent title attributes and disabled:cursor-not-allowed visual styles to all interactive inputs and selects to communicate their disabled state correctly.

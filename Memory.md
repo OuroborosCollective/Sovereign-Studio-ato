@@ -1143,3 +1143,23 @@ Open/next: Review exact PR head and GitHub Actions; complete imprint/privacy/con
 **Learnings:** When using string replacement via Node.js or `sed` to patch React component files (e.g., `.tsx`), ensure the target replacement logic is uniquely scoped to avoid introducing duplicate attributes (such as `title={...}`) or duplicating elements, which will trigger ESLint or build failures.
 **Open Points:** None.
 **Next Safe Step:** Submit the Pull Request.
+
+## 2026-10-10 - Fix required workflow gate contract
+
+**Task:** CI check "Release Gate" failed because `sovereign-public-site-check.yml` was added but the `required-gate-priority.contract.test.cjs` contract was not updated to reflect this new direct PR workflow.
+**Decisions:** Appended `'sovereign-public-site-check.yml'` to the expected workflow list in `scripts/required-gate-priority.contract.test.cjs`.
+**Surfaces Touched:** `scripts/required-gate-priority.contract.test.cjs`
+**Tests/Evidence:** Ran `node --test scripts/required-gate-priority.contract.test.cjs` locally and it passed. Ran `pnpm run test:release-gate` which succeeded.
+**Learnings:** When adding new required workflow files directly triggered by pull requests, the `required-gate-priority.contract.test.cjs` test must be updated since it enforces an explicit list of permitted files.
+**Open Points:** None.
+**Next Safe Step:** Submit the Pull Request.
+
+## 2026-10-10 - Fix required workflow gate contract
+
+**Task:** CI check "Release Gate" failed because `sovereign-public-site-check.yml` was added but the `required-gate-priority.contract.test.cjs` contract was not updated to reflect this new direct PR workflow.
+**Decisions:** Appended `'sovereign-public-site-check.yml'` to the expected workflow list in `scripts/required-gate-priority.contract.test.cjs`.
+**Surfaces Touched:** `scripts/required-gate-priority.contract.test.cjs`
+**Tests/Evidence:** Ran `node --test scripts/required-gate-priority.contract.test.cjs` locally and it passed. Ran `pnpm run test:release-gate` which succeeded.
+**Learnings:** When adding new required workflow files directly triggered by pull requests, the `required-gate-priority.contract.test.cjs` test must be updated since it enforces an explicit list of permitted files.
+**Open Points:** None.
+**Next Safe Step:** Submit the Pull Request.
