@@ -1133,3 +1133,13 @@ Change: Add `public-site/` HTML/CSS, imprint/privacy drafts, static site validat
 Evidence: Base `5b0d686a03989f4228d9bfcd3c48400af70590ff`; focused real-site pytest 7/7 passed and local git diff --check returned 0 (untracked paths not yet staged); publication mode intentionally blocked by missing legal and noindex markers.
 Learned: A repository documentation page is not a runtime claim or a legally cleared public launch; publishing requires specific approval, release gate and independent HTTPS readback.
 Open/next: Review exact PR head and GitHub Actions; complete imprint/privacy/contact and Pages Settings, obtain owner approval before merge and manual publication.
+
+## 2026-10-10 - Add disabled titles to inputs and selects
+
+**Task:** Acted as 'Palette' (UX persona) to implement a small UI/accessibility improvement by adding missing `title` hover tooltips and clear disabled cursors on disabled interactive elements in `ChatSurface.tsx`.
+**Decisions:** Targeted the `<textarea>`, routing `<select>`, and Abort `<button>` which were disabled conditionally (e.g. while `executing`). Used `title` rather than overwriting `aria-label` per standard WAI-ARIA best practice, and added `disabled:cursor-not-allowed`. Encountered replacement logic flaws that duplicated React props and journal entries, forcing a rollback and explicit unique-replacement cleanup to pass linting.
+**Surfaces Touched:** `src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx`, `.jules/palette.md`.
+**Tests/Evidence:** Ran `pnpm lint`, `pnpm run test:smoke`, and `pnpm run test:release-gate` which all passed. Generated a Playwright verification video and screenshot verifying visual behavior on the live UI.
+**Learnings:** When using string replacement via Node.js or `sed` to patch React component files (e.g., `.tsx`), ensure the target replacement logic is uniquely scoped to avoid introducing duplicate attributes (such as `title={...}`) or duplicating elements, which will trigger ESLint or build failures.
+**Open Points:** None.
+**Next Safe Step:** Submit the Pull Request.

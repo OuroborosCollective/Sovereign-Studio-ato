@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sovereign.test-coverage-map.v2",
-  "generatedAt": "2026-10-05T18:21:39.177Z",
+  "generatedAt": "2026-10-10T18:38:06.146Z",
   "productArchitecture": "unified-app",
   "discovery": {
     "scope": "tracked repository test conventions",
@@ -32,21 +32,21 @@
       "tests/e2e"
     ]
   },
-  "totalTestFiles": 812,
+  "totalTestFiles": 818,
   "testRoots": {
     "android/app/src/androidTest": 1,
     "android/app/src/test": 1,
     "backend": 1,
-    "backend/tests": 186,
+    "backend/tests": 188,
     "backend/tests/e2e": 1,
     "integrations/openhands/sovereign-mcp-toolset-plugin/tests": 1,
     "research": 1,
     "scripts": 12,
-    "scripts/sovereign-backend/tests": 82,
+    "scripts/sovereign-backend/tests": 84,
     "scripts/tests": 3,
     "sovereign-studio-rn/e2e": 7,
-    "src": 384,
-    "tests": 2,
+    "src": 385,
+    "tests": 3,
     "tests/e2e": 5,
     "tools": 3,
     "tools/sovereign-chatgpt-mcp/tests": 110,
@@ -171,7 +171,9 @@
       "language": "python",
       "testRoot": "backend/tests",
       "gates": [],
-      "ciWorkflows": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
       "category": "python-suite"
     },
     {
@@ -1368,7 +1370,27 @@
       "category": "python-suite"
     },
     {
+      "file": "backend/tests/test_repository_empty_file_closeout.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
       "file": "backend/tests/test_repository_execution.py",
+      "language": "python",
+      "testRoot": "backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
+      "file": "backend/tests/test_repository_native_sdk_handoff.py",
       "language": "python",
       "testRoot": "backend/tests",
       "gates": [],
@@ -1936,6 +1958,26 @@
     },
     {
       "file": "scripts/sovereign-backend/tests/test_evidence_observatory.py",
+      "language": "python",
+      "testRoot": "scripts/sovereign-backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
+      "file": "scripts/sovereign-backend/tests/test_evidence_observatory_four_layer.py",
+      "language": "python",
+      "testRoot": "scripts/sovereign-backend/tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-agent-backend.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
+      "file": "scripts/sovereign-backend/tests/test_evidence_observatory_live_runner.py",
       "language": "python",
       "testRoot": "scripts/sovereign-backend/tests",
       "gates": [],
@@ -3578,6 +3620,25 @@
     },
     {
       "file": "src/features/control-surface-vnext/runtimeEvidence.test.tsx",
+      "language": "javascript-typescript",
+      "testRoot": "src",
+      "gates": [
+        "test:smoke",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "android-release.yml",
+        "android.yml",
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/control-surface-vnext/terminalReadback.test.tsx",
       "language": "javascript-typescript",
       "testRoot": "src",
       "gates": [
@@ -10142,7 +10203,21 @@
       "language": "python",
       "testRoot": "tests",
       "gates": [],
-      "ciWorkflows": [],
+      "ciWorkflows": [
+        "sovereign-pages-publish.yml",
+        "sovereign-public-site-check.yml"
+      ],
+      "category": "python-suite"
+    },
+    {
+      "file": "tests/test_public_site_contract.py",
+      "language": "python",
+      "testRoot": "tests",
+      "gates": [],
+      "ciWorkflows": [
+        "sovereign-pages-publish.yml",
+        "sovereign-public-site-check.yml"
+      ],
       "category": "python-suite"
     },
     {
