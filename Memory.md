@@ -1144,3 +1144,8 @@ Change: Verified the Agent Zero connection and Draft-PR cycle via the `sovereign
 No codebase changes were required. Fixed 4 trailing ESLint warnings (no-unused-vars) in scripts to ensure pristine release gate operations.
 Evidence: `pnpm run test:release-gate`, `pnpm run test:agent-release-gate`, `PYTHONPATH=backend pnpm run test:agent-runtime`, `pnpm run test:agent-runtime:frontend` and `pnpm test:e2e:frontend-endpoints` passed locally.
 Open/next: Conclude verification and proceed.
+
+### 2026-10-10 — Add sovereign-public-site-check.yml to expected required workflows
+Status: VERIFIED_AND_FIXED
+Change: The CI failed because `sovereign-public-site-check.yml` was not in the expected array of workflow names in `scripts/required-gate-priority.contract.test.cjs`. Added it to the array.
+Evidence: `node --test scripts/required-gate-priority.contract.test.cjs` passes. `pnpm run test:release-gate` passed.
