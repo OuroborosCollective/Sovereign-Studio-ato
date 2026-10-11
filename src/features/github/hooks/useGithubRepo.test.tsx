@@ -88,4 +88,49 @@ describe('useGithubRepo', () => {
     expect(result.current.repoFiles).toHaveLength(1);
     expect(result.current.repoStatus).toContain('durable restored');
   });
+
+  it('restores repo snapshot via restoreRepoSnapshot with single pass loop optimization and filters safe files up to 500 limit', () => {
+    const { result } = renderHook(() => useGithubRepo());
+
+    const manyFiles = [];
+    for (let i = 0; i < 600; i++) {
+      if (i % 3 === 0) {
+         manyFiles.push({ path: `file${i}.md`, type: 'blob', size: 10 });
+      } else if (i % 3 === 1) {
+         manyFiles.push({ path: `dir${i}`, type: 'tree' });
+      } else {
+         manyFiles.push({ path: `invalid${i}`, type: 'invalid' });
+      }
+    }
+
+    act(() => {
+      result.current.restoreRepoSnapshot({
+        repoUrl: 'https://github.com/owner/many',
+        repoBranch: 'dev',
+        repoStatus: 'Many files loaded',
+        repoFiles: manyFiles
+      });
+    });
+
+    expect(result.current.repoUrl).toBe('https://github.com/owner/many');
+    expect(result.current.repoBranch).toBe('dev');
+    expect(result.current.repoStatus).toBe('Many files loaded [session restored]');
+    expect(result.current.repoFiles).toHaveLength(400); // 600 * 2/3 = 400 safe files
+
+    const tooManySafeFiles = [];
+    for (let i = 0; i < 1000; i++) {
+       tooManySafeFiles.push({ path: `safe${i}.md`, type: 'blob', size: 10 });
+    }
+
+    act(() => {
+      result.current.restoreRepoSnapshot({
+        repoUrl: 'https://github.com/owner/too-many',
+        repoBranch: 'dev',
+        repoStatus: 'Too many files loaded',
+        repoFiles: tooManySafeFiles
+      });
+    });
+
+    expect(result.current.repoFiles).toHaveLength(500); // truncated
+  });
 });
