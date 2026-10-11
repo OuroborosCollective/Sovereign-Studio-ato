@@ -1145,3 +1145,10 @@ Status: IMPLEMENTED_IN_REPOSITORY; live VPS and immutable deployment evidence pe
 Change: Extend the existing protected owner HTTPS surface, MCP host broker and host command queue with SSH password/key login, verified ed25519 host keys, one shared OpenSSH transport, a fixed inspection menu and session-bound expiring/revocable assistant grants; preserve byte-identical backend mirrors.
 Evidence: Main baseline a9e735d9bb4dfe296411a80057a8fee8144bac9d. Canonical SSH tests 23/23, host queue regressions 9/9 and installer contracts 21/21 passed; actual page scripts parse with Node. HTTP owner-route tests are delegated to the existing required Agent Runtime Tests because Flask is unavailable in the isolated check environment. Adapter tests are not live SSH proof.
 Learned/open: Control-socket checks alone do not prove closure; closure now requires readback and removes credentials only after confirmation. Secrets never enter MCP arguments or queued jobs. Final exact-head CI, immutable image, deployment/registry/container/PatchMon readback, protected owner credential entry and real target connection remain required. Free shell commands, key passphrases and MFA are outside this first menu scope.
+
+### 2026-10-11 — Palette: Session age emphasis
+Status: IMPLEMENTED_IN_REPOSITORY; frontend code tests and snapshot updated.
+Change: Modified `BuilderContainer.tsx` to wrap the restored session age string format template in bold markdown (`**...**`). This applies both to the success banner and the 3-day stale banner.
+Learning: Bold markdown formatting can be used within standard notification strings that parse markdown, enhancing key inline data without structural UI changes.
+Evidence: Modified file `src/features/product/containers/BuilderContainer.tsx` successfully passed `pnpm lint`, `pnpm run test:smoke`, `pnpm run test:agent-runtime`, and `pnpm run test:agent-runtime:frontend`.
+Open: Merge draft PR and close issue #557.
