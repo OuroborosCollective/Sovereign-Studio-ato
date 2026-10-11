@@ -1,5 +1,11 @@
 # Sovereign ChatGPT Operator MCP
 
+## Owner SSH console
+
+The native `vps_ssh_session_status` view opens `/owner-ssh` on the authenticated Sovereign HTTPS owner surface. An SSH password or dedicated unencrypted SSH key and independently verified ed25519 host public key are entered there; passwords, private keys and protected values are never accepted as MCP arguments or carried in the host command queue. This first version supports public literal VPS IPs and a bounded inspection menu (system, disks, memory, containers and running services), rather than arbitrary terminal commands. Passwords use the fixed root-private OpenSSH askpass adapter; key passphrases and MFA are not supported.
+
+The existing host broker/worker owns one OpenSSH ControlMaster connection per active owner session. Owner actions use one-use, expiring protected records; assistant inspection additionally requires a session-specific, operation-scoped grant of at most 15 minutes. Revocation is rechecked at execution, expiry closes the connection without needing the browser, and credentials are removed after confirmed closure. Inspection disables reconnection if the shared transport disappears. The owner console displays both owner and assistant command/output activity. Canonical `owner_ssh_console.py`, `command_queue.py` and `command_contract.py` under this directory have byte-identical backend mirrors required by tests. Repository tests do not prove a live VPS connection or deployment; owner credential entry and target-system readback remain required.
+
 Privater Operator für `OuroborosCollective/Sovereign-Studio-ato`. Er macht die vorhandene Sovereign-Code- und Runtime-Arbeit für ChatGPT als klar begrenzte MCP-Tools zugänglich.
 
 ## Native Sovott Evidence-Oberfläche

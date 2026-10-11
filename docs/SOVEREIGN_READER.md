@@ -1,5 +1,7 @@
 # Sovereign Reader — Current Contributor Map
 
+Owner SSH inspection is implemented under the existing MCP host broker and protected `/owner-ssh` surface. See [the MCP README](../tools/sovereign-chatgpt-mcp/README.md#owner-ssh-console) for the menu scope, credential boundary, delegation expiry and deployment/readback requirements. A native view or passing unit test is not evidence of a connected VPS.
+
 **Reconciled:** 2026-08-25
 **Revision authority:** exact current Git or PR head; never infer it from this document
 

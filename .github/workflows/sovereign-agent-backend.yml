@@ -64,6 +64,7 @@ jobs:
             backend/tests/test_repository_native_sdk_handoff.py \
             backend/tests/test_agent_execution_boundary_security.py \
             backend/tests/test_control_surface_readback.py \
+            backend/tests/test_owner_ssh_routes.py \
             backend/tests/test_paid_repository_execution.py \
             backend/tests/test_repository_runtime_evidence_postgres.py \
             backend/tests/test_desktop_worker.py \

@@ -1138,3 +1138,10 @@ Open/next: Review exact PR head and GitHub Actions; complete imprint/privacy/con
 ### 2026-10-10 — Native Sovott MCP Evidence-Oberfläche
 
 Status: IMPLEMENTED_IN_REPOSITORY; gezielte Widget-Regression bestanden (5 Pytest-Prüfungen einschließlich 10 JavaScript-Host-/DOM-Randfällen), git diff --check bestanden. Bestehende Ressource/Registry um globale und Thread-Einstiege, MCP-App-Handshake, fehlerfeste Readbacks sowie Workspace-/PR-/CI-/Deployment-Ansicht erweitert; Scope- und CI-Head-Abweichungen fail-closed. Keine Merge-/Deploy-Aktion ausgeführt. CI am finalen PR-Head, immutable Release, installierte Registry und visueller ChatGPT-Host-Test bleiben separat erforderlich. Simulierter Host-Rand ist kein Runtime-/Deployment-Beweis.
+
+
+### 2026-10-11 — Owner SSH console and scoped assistance
+Status: IMPLEMENTED_IN_REPOSITORY; live VPS and immutable deployment evidence pending.
+Change: Extend the existing protected owner HTTPS surface, MCP host broker and host command queue with SSH password/key login, verified ed25519 host keys, one shared OpenSSH transport, a fixed inspection menu and session-bound expiring/revocable assistant grants; preserve byte-identical backend mirrors.
+Evidence: Main baseline a9e735d9bb4dfe296411a80057a8fee8144bac9d. Canonical SSH tests 23/23, host queue regressions 9/9 and installer contracts 21/21 passed; actual page scripts parse with Node. HTTP owner-route tests are delegated to the existing required Agent Runtime Tests because Flask is unavailable in the isolated check environment. Adapter tests are not live SSH proof.
+Learned/open: Control-socket checks alone do not prove closure; closure now requires readback and removes credentials only after confirmation. Secrets never enter MCP arguments or queued jobs. Final exact-head CI, immutable image, deployment/registry/container/PatchMon readback, protected owner credential entry and real target connection remain required. Free shell commands, key passphrases and MFA are outside this first menu scope.
