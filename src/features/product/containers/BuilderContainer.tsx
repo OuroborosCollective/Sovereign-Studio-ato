@@ -3243,9 +3243,9 @@ export function BuilderContainer({
         if (session.messageCount > 0) {
           const age = formatPersistedSessionAge(session);
           if (age.isStale) {
-            appendRuntimeNotice(`Warnung: Die wiederhergestellte Session ist älter als 3 Tage (Alter: ${age.text}) und möglicherweise nicht mehr mit dem aktuellen Codebase-Stand synchron.`);
+            appendRuntimeNotice(`Warnung: Die wiederhergestellte Session ist älter als 3 Tage (Alter: **${age.text}**) und möglicherweise nicht mehr mit dem aktuellen Codebase-Stand synchron.`);
           } else {
-            appendRuntimeNotice(`Session erfolgreich wiederhergestellt (Alter: ${age.text}).`);
+            appendRuntimeNotice(`Session erfolgreich wiederhergestellt (Alter: **${age.text}**).`);
           }
         }
       } catch {
