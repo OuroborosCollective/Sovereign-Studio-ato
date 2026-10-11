@@ -2,6 +2,16 @@
 
 Privater Operator für `OuroborosCollective/Sovereign-Studio-ato`. Er macht die vorhandene Sovereign-Code- und Runtime-Arbeit für ChatGPT als klar begrenzte MCP-Tools zugänglich.
 
+## Native Sovott Evidence-Oberfläche
+
+Das vorhandene read-only Tool sovereign_cognitive_architecture_status registriert dieselbe MCP-App-Ressource zusätzlich als globalen Sidebar- und Thread-Panel-Einstieg. Server, Registry und Runtime-Provider bleiben kanonisch.
+
+Die Oberfläche zeigt persistierte Agentenläufe und liest auf ausdrücklichen Klick bestehende Workspace-Revisionen sowie PR-/CI-Evidence. CI-Zeilen werden nur bei identischen vollständigen PR- und Check-Head-SHAs angezeigt. Deployment-Revision und Digest-Verifikation stehen separat; Repository- oder CI-Erfolg beweist keine Live-Schaltung. Abweichende Workspace-/PR-Receipts werden verworfen.
+
+Die MCP-App-Bridge initialisiert Protokoll 2026-01-26, akzeptiert ausschließlich JSON-RPC-Nachrichten vom Parent und ruft nur drei feste read-only Tools auf. Timeouts und Fehler machen fehlende Aktualisierung sichtbar und erlauben erneuten Versuch. Die UI lädt keine externen Ressourcen und führt weder Merge noch Deploy aus. „PR prüfen“ fordert ausschließlich eine erneute Prüfung im Chat an.
+
+Validierung: python -m pytest -q test_sovereign_cognitive_widget.py und node --test tests/test_cognitive_widget_bridge.cjs. JavaScript-Tests führen das tatsächliche Inline-Script mit einem simulierten Host-/DOM-Rand aus; sie ersetzen keinen visuellen ChatGPT-Host-Test. Nach einem ausdrücklich freigegebenen Release müssen Registry-Metadaten, Resource-Readback, Host-Handshake und UI-Darstellung erneut geprüft werden.
+
 ## Was ChatGPT damit bearbeiten kann
 
 - Backendfehler in Python-Dateien finden und per exaktem Search/Replace reparieren

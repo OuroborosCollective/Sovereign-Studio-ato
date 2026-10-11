@@ -1133,3 +1133,8 @@ Change: Add `public-site/` HTML/CSS, imprint/privacy drafts, static site validat
 Evidence: Base `5b0d686a03989f4228d9bfcd3c48400af70590ff`; focused real-site pytest 7/7 passed and local git diff --check returned 0 (untracked paths not yet staged); publication mode intentionally blocked by missing legal and noindex markers.
 Learned: A repository documentation page is not a runtime claim or a legally cleared public launch; publishing requires specific approval, release gate and independent HTTPS readback.
 Open/next: Review exact PR head and GitHub Actions; complete imprint/privacy/contact and Pages Settings, obtain owner approval before merge and manual publication.
+
+
+### 2026-10-10 — Native Sovott MCP Evidence-Oberfläche
+
+Status: IMPLEMENTED_IN_REPOSITORY; gezielte Widget-Regression bestanden (5 Pytest-Prüfungen einschließlich 10 JavaScript-Host-/DOM-Randfällen), git diff --check bestanden. Bestehende Ressource/Registry um globale und Thread-Einstiege, MCP-App-Handshake, fehlerfeste Readbacks sowie Workspace-/PR-/CI-/Deployment-Ansicht erweitert; Scope- und CI-Head-Abweichungen fail-closed. Keine Merge-/Deploy-Aktion ausgeführt. CI am finalen PR-Head, immutable Release, installierte Registry und visueller ChatGPT-Host-Test bleiben separat erforderlich. Simulierter Host-Rand ist kein Runtime-/Deployment-Beweis.

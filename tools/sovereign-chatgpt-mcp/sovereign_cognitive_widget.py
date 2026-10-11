@@ -71,6 +71,7 @@ TOOL_META = {
         "resourceUri": WIDGET_URI,
         "visibility": ["model", "app"],
     },
+    "openai/ui": {"entrypoints": [{"type": "global"}, {"type": "thread"}]},
     "openai/outputTemplate": WIDGET_URI,
     "openai/toolInvocation/invoking": "Sovereign Nervensystem prüft reale Runtime-Evidence…",
     "openai/toolInvocation/invoked": "Sovereign Runtime-Evidence wurde geladen.",
@@ -124,6 +125,8 @@ WIDGET_HTML = r'''<!doctype html>
     .run-list { display: grid; gap: 8px; }
     .run-list li { overflow-wrap: anywhere; }
     button { min-height: 48px; border-radius: 10px; border: 1px solid currentColor; padding: 0 16px; font: inherit; font-weight: 700; }
+    input { min-height: 44px; max-width: 100%; box-sizing: border-box; font: inherit; margin: 8px; }
+    button:focus-visible, input:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
     button:disabled { opacity: .48; cursor: not-allowed; }
     #message { min-height: 1.3em; }
   </style>
@@ -164,7 +167,21 @@ WIDGET_HTML = r'''<!doctype html>
   <section aria-labelledby="evidence-title">
     <h2 id="evidence-title">Evidence und Draft PR</h2>
     <div id="draft-pr">Kein belegter Draft PR.</div>
-    <button id="approve" type="button" disabled aria-label="Belegten Draft PR zur Freigabe an ChatGPT übergeben">Approve PR</button>
+    <button id="approve" type="button" disabled aria-label="Belegten Draft PR zur Prüfung an ChatGPT übergeben">PR prüfen</button>
+  </section>
+  <section aria-labelledby="repository-title">
+    <h2 id="repository-title">Repository und Release-Evidence</h2>
+    <label for="workspace-id">Bestehende Workspace-ID</label>
+    <input id="workspace-id" type="text" maxlength="84" placeholder="job-…" autocomplete="off">
+    <button id="load-repository" type="button">Revisionen lesen</button>
+    <ul id="repository-evidence"><li>Keine Repository-Evidence geladen.</li></ul>
+    <h3>Deployment-Nachweise</h3>
+    <ul id="deployment-evidence"><li>Keine Deployment-Evidence geladen.</li></ul>
+    <label for="pr-number">PR-Nummer</label>
+    <input id="pr-number" type="text" inputmode="numeric" maxlength="9" autocomplete="off">
+    <button id="load-pr" type="button">PR und CI lesen</button>
+    <ul id="pr-evidence"><li>Keine PR-Evidence geladen.</li></ul>
+    <p class="muted">Repository, CI und Deployment benötigen jeweils eigene Nachweise.</p>
   </section>
 </main>
 <script>
@@ -179,6 +196,13 @@ WIDGET_HTML = r'''<!doctype html>
 
   function render(payload) {
     const data = payload && typeof payload === 'object' ? payload : {};
+    if (data.ok !== true) {
+      state.draftPr = null;
+      byId('approve').disabled = true;
+      byId('message').textContent = 'Status blockiert oder unvollständig. Evidence ist nicht aktualisiert.';
+      byId('control-plane').textContent = text(data.status, 'nicht belegt');
+      return;
+    }
     const manifest = data.manifest && typeof data.manifest === 'object' ? data.manifest : {};
     const control = data.controlPlane && typeof data.controlPlane === 'object' ? data.controlPlane : {};
     byId('control-plane').textContent = text(control.status || data.status);
@@ -238,40 +262,155 @@ WIDGET_HTML = r'''<!doctype html>
     }
 
     const draftPr = data.draftPr && typeof data.draftPr === 'object' ? data.draftPr : null;
-    const verified = draftPr && draftPr.ready === true && Number.isInteger(draftPr.number) && typeof draftPr.headSha === 'string' && draftPr.headSha.length === 40;
+    const verified = draftPr && draftPr.ready === true && Number.isInteger(draftPr.number) && typeof draftPr.headSha === 'string' && /^[0-9a-f]{40}$/.test(draftPr.headSha) && draftPr.number > 0;
     state.draftPr = verified ? draftPr : null;
     byId('draft-pr').textContent = verified
       ? `Draft PR #${draftPr.number}, Head ${draftPr.headSha}`
       : 'Kein belegter Draft PR.';
     byId('approve').disabled = !verified;
-    byId('message').textContent = text(data.summary, 'Runtime-Evidence geladen.');
+    byId('message').textContent = text(data.summary, 'Status empfangen; Runtime-Verifikation ist separat erforderlich.');
   }
 
+  const pending = new Map();
+  let sequence = 0;
+  let bridgeReady = false;
+  function rpc(method, params) {
+    return new Promise((resolve, reject) => {
+      const id = 'sovott-ui-' + (++sequence);
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error('Host-Antwort fehlt.'));
+      }, 90000);
+      pending.set(id, { resolve, reject, timer });
+      window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
+    });
+  }
+  function resultData(result) {
+    if (!result || result.isError === true || !result.structuredContent ||
+        typeof result.structuredContent !== 'object' || Array.isArray(result.structuredContent)) {
+      throw new Error('Kein gültiges strukturiertes Tool-Ergebnis.');
+    }
+    return result.structuredContent;
+  }
+  const allowedTools = new Set(['sovereign_cognitive_architecture_status', 'repository_revision_resolve', 'repository_pr_status']);
+  async function callTool(name, args) {
+    if (!bridgeReady || !allowedTools.has(name)) throw new Error('Host-Verbindung noch nicht bereit.');
+    return resultData(await rpc('tools/call', { name, arguments: args }));
+  }
   function acceptToolResult(event) {
     const message = event && event.data;
-    if (!message || message.method !== 'ui/notifications/tool-result') return;
-    const result = message.params && message.params.result;
-    render(result && result.structuredContent ? result.structuredContent : result);
+    if (!event || event.source !== window.parent || !message || message.jsonrpc !== '2.0') return;
+    if (Object.prototype.hasOwnProperty.call(message, 'id') && pending.has(message.id)) {
+      const request = pending.get(message.id);
+      pending.delete(message.id);
+      clearTimeout(request.timer);
+      if (message.error) request.reject(new Error('Host-Aufruf abgelehnt.'));
+      else if (Object.prototype.hasOwnProperty.call(message, 'result')) request.resolve(message.result);
+      else request.reject(new Error('Ungültige Host-Antwort.'));
+      return;
+    }
+    if (message.method === 'ui/notifications/tool-result') {
+      try {
+        const data = resultData(message.params);
+        if (data.ok === false || (data.manifest && data.controlPlane)) render(data);
+      } catch (_) {
+        state.draftPr = null;
+        byId('approve').disabled = true;
+        byId('message').textContent = 'Tool-Ergebnis fehlerhaft. Evidence ist nicht aktualisiert.';
+      }
+    }
   }
 
   window.addEventListener('message', acceptToolResult);
   if (window.openai && window.openai.toolOutput) render(window.openai.toolOutput);
-
-  byId('refresh-runs').addEventListener('click', async () => {
-    if (!window.openai || typeof window.openai.sendFollowUpMessage !== 'function') return;
-    byId('refresh-runs').disabled = true;
-    await window.openai.sendFollowUpMessage({
-      prompt: 'Rufe sovereign_cognitive_architecture_status erneut auf und zeige die aktuelle persistierte Agents-SDK-Run- und Agenten-Evidence im bestehenden Sovereign Widget.'
+  if (window.parent !== window) {
+    rpc('ui/initialize', {
+      protocolVersion: '2026-01-26',
+      appInfo: { name: 'Sovott Evidence Dashboard', version: '2.1.0' },
+      appCapabilities: {}
+    }).then((host) => {
+      if (!host || host.protocolVersion !== '2026-01-26') throw new Error('MCP-App-Protokoll nicht unterstützt.');
+      bridgeReady = true;
+      window.parent.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/initialized', params: {} }, '*');
+    }).catch(() => {
+      byId('message').textContent = 'Host-Verbindung nicht verfügbar. Evidence ist nicht aktualisiert.';
     });
-  });
-
-  byId('approve').addEventListener('click', async () => {
-    if (!state.draftPr || !window.openai || typeof window.openai.sendFollowUpMessage !== 'function') return;
-    byId('approve').disabled = true;
-    await window.openai.sendFollowUpMessage({
-      prompt: `Ich genehmige die Prüfung von Draft PR #${state.draftPr.number} mit erwartetem Head-SHA ${state.draftPr.headSha}. Prüfe zuerst repository_pr_status. Führe keine Merge-Aktion ohne eine weitere ausdrückliche Bestätigung aus.`
+  }
+  async function action(button, work) {
+    button.disabled = true;
+    try { await work(); }
+    catch (error) {
+      state.draftPr = null;
+      byId('approve').disabled = true;
+      byId('message').textContent = error.message + ' Evidence ist nicht aktualisiert.';
+    } finally { button.disabled = button.id === 'approve' && !state.draftPr; }
+  }
+  byId('refresh-runs').addEventListener('click', () => action(byId('refresh-runs'), async () => {
+    if (bridgeReady) render(await callTool('sovereign_cognitive_architecture_status', {}));
+    else if (window.openai && typeof window.openai.sendFollowUpMessage === 'function') {
+      await window.openai.sendFollowUpMessage({
+        prompt: 'Rufe sovereign_cognitive_architecture_status erneut auf und zeige die aktuelle persistierte Agents-SDK-Run- und Agenten-Evidence im bestehenden Sovereign Widget.'
+      });
+      byId('message').textContent = 'Aktualisierung angefragt; Evidence steht noch aus.';
+    } else throw new Error('Keine Host-Verbindung verfügbar.');
+  }));
+  function showEvidence(id, data, fields) {
+    const list = byId(id);
+    list.replaceChildren();
+    for (const key of fields) {
+      const value = data[key];
+      const item = document.createElement('li');
+      item.textContent = key + ': ' + (typeof value === 'string' ? value.slice(0, 240) :
+        typeof value === 'boolean' ? String(value) : 'nicht belegt');
+      list.appendChild(item);
+    }
+  }
+  byId('load-repository').addEventListener('click', () => action(byId('load-repository'), async () => {
+    const workspace = byId('workspace-id').value.trim();
+    byId('repository-evidence').replaceChildren();
+    byId('deployment-evidence').replaceChildren();
+    if (!/^job-[a-z0-9-]{1,80}$/.test(workspace)) throw new Error('Gültige Workspace-ID erforderlich.');
+    const data = await callTool('repository_revision_resolve', {
+      workspace_id: workspace, include_ci: true, include_deployed_mcp: true
     });
-  });
+    if (data.ok === true && data.workspaceId !== workspace) throw new Error('Workspace-Evidence gehört zu einem anderen Scope.');
+    showEvidence('repository-evidence', data, ['status', 'workspaceHeadSha', 'currentBaseHeadSha', 'prHeadSha', 'worktreeClean']);
+    showEvidence('deployment-evidence', data.deployedMcpEvidence || {}, ['status', 'revision', 'revisionVerified', 'digestVerified']);
+    byId('message').textContent = data.ok === true ? 'Repository-Evidence gelesen. Deployment-Nachweise separat prüfen.' : 'Repository-Evidence unvollständig oder blockiert.';
+  }));
+  byId('load-pr').addEventListener('click', () => action(byId('load-pr'), async () => {
+    const raw = byId('pr-number').value.trim();
+    byId('pr-evidence').replaceChildren();
+    if (!/^[1-9][0-9]{0,8}$/.test(raw)) throw new Error('Positive PR-Nummer erforderlich.');
+    const data = await callTool('repository_pr_status', { pr_number: Number(raw) });
+    if (data.ok === true && data.pr_number !== Number(raw)) throw new Error('PR-Evidence gehört zu einem anderen Scope.');
+    showEvidence('pr-evidence', data, ['status', 'head_sha', 'state', 'draft', 'mergeable']);
+    const checks = data.checks && typeof data.checks === 'object' ? data.checks : {};
+    const bound = /^[0-9a-f]{40}$/.test(data.head_sha || '') && checks.head_sha === data.head_sha;
+    const rows = bound && Array.isArray(checks.checks) ? checks.checks.slice(0, 60) : [];
+    const list = byId('pr-evidence');
+    const summary = document.createElement('li');
+    summary.textContent = bound ? 'CI an PR-Head gebunden; Einzelprüfungen:' : 'CI-Head fehlt oder weicht ab. CI nicht verifiziert.';
+    list.appendChild(summary);
+    for (const check of rows) {
+      const item = document.createElement('li');
+      item.textContent = text(check.name) + ': ' + text(check.status) + ' / ' + text(check.conclusion, 'kein Ergebnis');
+      list.appendChild(item);
+    }
+    byId('message').textContent = data.ok === true ? 'PR-Readback gelesen; keine Merge-Freigabe erteilt.' : 'PR-Readback blockiert oder unvollständig.';
+  }));
+
+  byId('approve').addEventListener('click', () => action(byId('approve'), async () => {
+    const pr = state.draftPr;
+    if (!pr) throw new Error('Belegter PR erforderlich.');
+    const prompt = 'Prüfe Draft PR #' + pr.number + ' mit erwartetem Head-SHA ' + pr.headSha +
+      '. Prüfe zuerst repository_pr_status. Führe keine Merge-Aktion ohne eine weitere ausdrückliche Bestätigung aus.';
+    if (bridgeReady) {
+      await rpc('ui/message', { role: 'user', content: [{ type: 'text', text: prompt }] });
+    } else if (window.openai && typeof window.openai.sendFollowUpMessage === 'function') {
+      await window.openai.sendFollowUpMessage({ prompt });
+    } else throw new Error('ChatGPT-Nachrichtenpfad nicht verfügbar.');
+  }));
 })();
 </script>
 </body>
