@@ -88,8 +88,10 @@ def test_scoped_delegation_same_transport_and_revocation(console):
         instance.assistant_inspect(session_id, "system")
     result = instance.assistant_inspect(session_id, "disk")
     assert result["operation"] == "disk"
-    assert "ProxyCommand=false" in calls[-1]
-    assert "ControlMaster=no" in calls[-1]
+    inspections = [argv for argv in calls if "df -h" in argv]
+    assert len(inspections) == 1
+    assert "ProxyCommand=false" in inspections[0]
+    assert "ControlMaster=no" in inspections[0]
     assert instance._state()["lastActivity"]["actor"] == "assistant"
     instance.owner_action(owner_action(instance, "revoke", sessionId=session_id))
     with pytest.raises(ValueError, match="delegation"):
@@ -205,6 +207,30 @@ def test_native_resource_and_tool_argument_boundaries(monkeypatch):
     with pytest.raises(Exception):
         asyncio.run(server.mcp.call_tool("vps_ssh_inspect", {"session_id": "a" * 32, "operation": "shell"}))
     assert calls == []
+
+def test_pending_owner_revocation_blocks_queued_inspection(console):
+    instance, session_id, calls = connected(console)
+    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["disk"], ttl=30))
+    owner_action(instance, "revoke", sessionId=session_id)
+    with pytest.raises(ValueError, match="pending"):
+        instance.assistant_inspect(session_id, "disk")
+    assert not any("df -h" in argv for argv in calls)
+
+
+def test_revocation_during_inspection_withholds_result(console):
+    instance, session_id, calls = connected(console)
+    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["disk"], ttl=30))
+    original = instance.runner
+    def runner(argv, **kwargs):
+        result = original(argv, **kwargs)
+        if "df -h" in argv:
+            owner_action(instance, "revoke", sessionId=session_id)
+        return result
+    instance.runner = runner
+    with pytest.raises(ValueError, match="pending"):
+        instance.assistant_inspect(session_id, "disk")
+    assert instance._state().get("lastActivity") is None
+
 
 def test_unconfirmed_close_never_reports_closed(console):
     instance, session_id, calls = connected(console)

@@ -140,6 +140,7 @@ button:disabled{opacity:.45;cursor:wait}label{display:block}.muted{color:#8b949e
 <p class="muted">Schlüssel oder Passwort ausschließlich hier eingeben. Verschlüsselte Schlüssel und zusätzliche MFA-Abfragen sind in dieser Version noch nicht unterstützt.</p>
 <label>Sitzungsdauer<select id="duration"><option value="900">15 Minuten</option><option value="1800">30 Minuten</option><option value="3600">60 Minuten</option></select></label>
 <button id="connect">SSH verbinden</button></section>
+<section id="uncertain" hidden><h2>Verbindungsende unbestätigt</h2><p>Die Assistenzfreigabe ist widerrufen. Das Ende der SSH-Verbindung konnte noch nicht bestätigt werden.</p><button id="retryClose">Schließen erneut prüfen</button></section>
 <section id="console" hidden><h2>Aktive Verbindung</h2><p id="identity"></p><p id="grantState"></p>
 <div id="operations"></div>
 <h3>Meine Hilfe freigeben</h3><p>Nur die ausgewählten Menüaktionen werden freigegeben. Die Freigabe gilt für diese Verbindung und endet automatisch.</p>
@@ -155,14 +156,15 @@ const names={system:'System',disk:'Festplatten',memory:'Arbeitsspeicher',contain
 async function api(path,body){
  const response=await fetch(path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+admin,...(body?{'Content-Type':'application/json','X-Sovereign-Owner-Action':'ssh-console'}:{})},body:body?JSON.stringify(body):undefined,credentials:'same-origin',mode:'same-origin',cache:'no-store',redirect:'error'});
  const data=await response.json();
- if(!response.ok)throw new Error(data.error||data.blocker||'Aktion nicht bestätigt.');
+ if(!response.ok){if(response.status===401||response.status===403){admin='';$('login').hidden=false;$('setup').hidden=true;$('console').hidden=true;}throw new Error(data.error||data.blocker||'Aktion nicht bestätigt.');}
  return data;
 }
 function message(value){$('message').textContent=value;}
 function render(state){
  const previous=session;session=state.sessionId||'';
  const active=state.status==='connected';
- $('login').hidden=Boolean(admin);$('setup').hidden=!admin||active;$('console').hidden=!active;
+ const uncertain=state.status==='close_unverified';
+ $('login').hidden=Boolean(admin);$('setup').hidden=!admin||active||uncertain;$('console').hidden=!active;$('uncertain').hidden=!uncertain;
  $('identity').textContent=active?state.username+'@'+state.host+' · '+state.hostFingerprint+' · bis '+new Date(state.expiresAt*1000).toLocaleTimeString():'';
  if(state.lastActivity){const a=state.lastActivity;$('output').textContent='['+a.actor+'] $ '+a.command+'\n'+a.output+'\nExit: '+a.exitCode;}
  $('grantState').textContent=state.assistantGrantActive?'Hilfe freigegeben: '+state.allowedOperations.map(op=>names[op]||op).join(', '):'Keine aktive Freigabe für die Assistenz.';
@@ -173,7 +175,7 @@ function render(state){
   if(resetScope){const label=document.createElement('label');label.className='check';const box=document.createElement('input');box.type='checkbox';box.value=op;box.checked=true;label.append(box,document.createTextNode(names[op]||op));$('scope').append(label);}
  }
 }
-async function refresh(){if(admin&&!busy&&!pending)render(await api('/api/admin/owner-ssh/status'));}
+async function refresh(){if(admin&&!busy&&!pending){try{render(await api('/api/admin/owner-ssh/status'));}catch(error){$('console').hidden=true;$('uncertain').hidden=true;message('Sitzungsstatus unbestätigt: '+error.message);throw error;}}}
 async function action(body){
  if(busy||pending)return;busy=true;document.querySelectorAll('button').forEach(b=>b.disabled=true);message('Aktion läuft…');
  try{
@@ -187,6 +189,7 @@ async function action(body){
 $('loginButton').onclick=async()=>{admin=$('admin').value.trim();$('admin').value='';try{await refresh();message('Owner angemeldet.');}catch(error){admin='';message(error.message);}};
 $('authMode').onchange=()=>{const password=$('authMode').value==='password';$('keySection').hidden=password;$('passwordSection').hidden=!password;$('privateKey').value='';$('password').value='';};
 $('connect').onclick=async()=>{const profile={host:$('host').value.trim(),port:Number($('port').value),username:$('username').value.trim(),knownHostKey:$('hostKey').value.trim(),expiresInSeconds:Number($('duration').value)};if($('authMode').value==='password')profile.password=$('password').value;else profile.privateKey=$('privateKey').value;$('privateKey').value='';$('password').value='';await action({action:'connect',profile});profile.privateKey='';profile.password='';};
+$('retryClose').onclick=()=>action({action:'close'});
 $('close').onclick=()=>action({action:'close'});$('revoke').onclick=()=>action({action:'revoke'});
 $('grant').onclick=()=>action({action:'grant',operations:Array.from($('scope').querySelectorAll('input:checked')).map(b=>b.value),ttl:Number($('grantDuration').value)});
 setInterval(async()=>{try{

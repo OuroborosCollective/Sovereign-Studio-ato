@@ -38,6 +38,7 @@ class OwnerSSHConsole:
     def __init__(self, root=None, runner=None):
         self.root = Path(root or os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", "/opt/sovereign-owner-managed"))
         self.runner = runner or subprocess.run
+        self._next_cleanup = 0.0
 
     def _read(self, name, limit=65536):
         path = self.root / name
@@ -254,6 +255,17 @@ class OwnerSSHConsole:
         return {"ok": True, "status": "SSH_CONNECTED", "sessionId": identifier,
                 "hostFingerprint": fingerprint, "protectedValuesReturned": False}
 
+    def _delegation_ready(self, state, operation):
+        if time.time() >= state.get("grantUntil", 0) or operation not in state.get("allowedOperations", []):
+            raise ValueError("Owner SSH delegation missing, revoked or expired")
+        try:
+            pending = self._json("ssh_console_action.json")
+        except FileNotFoundError:
+            pending = {}
+        if (pending.get("sessionId") == state["sessionId"] and pending.get("action") in {"revoke", "close"}
+                and time.time() < pending.get("expiresAt", 0)):
+            raise ValueError("Owner SSH revocation or closure is pending")
+
     def _inspect(self, state, operation, actor="owner"):
         if operation not in OPERATIONS:
             raise ValueError("SSH operation is not allowlisted")
@@ -262,7 +274,12 @@ class OwnerSSHConsole:
         # if the existing transport vanishes between check and execution.
         argv = self._base(state)[:-1] + ["-o", "ControlMaster=no", "-o", "ProxyCommand=false",
                                        state["host"], OPERATIONS[operation]]
+        if actor == "assistant":
+            self._delegation_ready(state, operation)
         result = self._run(argv, 20)
+        self._ready(state)
+        if actor == "assistant":
+            self._delegation_ready(state, operation)
         # Fixed inspection commands intentionally exclude files, env and logs.
         text = (result.stdout or "")[-24000:]
         profile = self._json("ssh_console_profile.json")
@@ -282,6 +299,9 @@ class OwnerSSHConsole:
                 "output": text, "exitCode": result.returncode, "protectedValuesReturned": False}
 
     def cleanup_expired(self):
+        if time.monotonic() < self._next_cleanup:
+            return
+        self._next_cleanup = time.monotonic() + 5
         if not self.root.is_dir():
             return
         with self._lock():
@@ -289,7 +309,7 @@ class OwnerSSHConsole:
                 state = self._state()
             except FileNotFoundError:
                 return
-            if state["status"] == "connected" and time.time() >= state["expiresAt"]:
+            if state["status"] in {"connected", "close_unverified"} and time.time() >= state["expiresAt"]:
                 self._close(state)
 
     def assistant_inspect(self, session_id, operation):
@@ -298,8 +318,7 @@ class OwnerSSHConsole:
             if session_id != state["sessionId"]:
                 raise ValueError("SSH session identity mismatch")
             self._ready(state)
-            if time.time() >= state.get("grantUntil", 0) or operation not in state.get("allowedOperations", []):
-                raise ValueError("Owner SSH delegation missing, revoked or expired")
+            self._delegation_ready(state, operation)
             return self._inspect(state, operation, actor="assistant")
 
     def owner_action(self, operation_id):
