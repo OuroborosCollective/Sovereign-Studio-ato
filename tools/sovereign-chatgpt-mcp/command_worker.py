@@ -5,6 +5,7 @@ import json
 import os
 import re
 import time
+import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
@@ -135,6 +136,12 @@ class HostCommandWorker:
         with os.fdopen(descriptor, "a+", encoding="utf-8") as lock_handle:
             fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             while True:
+                ssh = getattr(self.runtime, "owner_ssh", None)
+                if ssh is not None:
+                    try:
+                        ssh.cleanup_expired()
+                    except (OSError, ValueError, subprocess.TimeoutExpired):
+                        pass  # Never advance an invalid SSH session; do not log protected material.
                 if not self.process_once():
                     time.sleep(0.2)
 

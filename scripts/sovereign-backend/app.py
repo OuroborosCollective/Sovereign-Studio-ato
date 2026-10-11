@@ -95,6 +95,7 @@ from are_inference import register_are_inference_routes
 from knowledge_library import register_admin_knowledge_routes, register_knowledge_routes
 from security_runtime import consume_step_up_approval, register_security_routes
 from owner_input_runtime import register_owner_input_routes
+from owner_ssh_routes import register_owner_ssh_routes
 from proven_learning_runtime import register_proven_learning_routes
 from wolfram_cag_runtime import register_wolfram_cag_runtime
 from agent_runtime.cag_self_healing_runtime import register_cag_self_healing_admin_routes
@@ -6703,6 +6704,11 @@ register_owner_input_routes(
     app,
     require_admin=require_admin,
     get_connection=get_agent_runtime_connection,
+    get_current_admin=get_current_admin,
+)
+register_owner_ssh_routes(
+    app,
+    require_admin=require_admin,
     get_current_admin=get_current_admin,
 )
 register_proven_learning_routes(
