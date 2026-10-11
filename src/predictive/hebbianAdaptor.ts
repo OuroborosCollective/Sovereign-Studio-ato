@@ -157,6 +157,10 @@ function classifyWeightEvent(delta: number): WeightUpdateResult['eventType'] {
 export class HebbianAdaptor {
   private config: HebbianRuntimeConfig;
   private synapses: Map<string, Synapse> = new Map();
+  // ⚡ Bolt: O(1) secondary index maps replacing linear O(N) array scans for synapse lookups
+  private pairIndex: Map<string, string> = new Map();
+  private incomingIndex: Map<string, Set<string>> = new Map();
+  private outgoingIndex: Map<string, Set<string>> = new Map();
   private nodes: Map<string, NeuralNode> = new Map();
   private updateCount = 0;
   private pruneCounter = 0;
@@ -166,6 +170,42 @@ export class HebbianAdaptor {
   constructor(config: Partial<HebbianRuntimeConfig> = {}) {
     this.config = { ...DEFAULT_HEBBIAN_CONFIG, ...config };
     this.stats = this.createEmptyStats();
+  }
+
+  private indexSynapse(synapse: Synapse): void {
+    const pairKey = `${synapse.sourceNode}:${synapse.targetNode}`;
+    this.pairIndex.set(pairKey, synapse.id);
+
+    let incoming = this.incomingIndex.get(synapse.targetNode);
+    if (!incoming) {
+      incoming = new Set();
+      this.incomingIndex.set(synapse.targetNode, incoming);
+    }
+    incoming.add(synapse.id);
+
+    let outgoing = this.outgoingIndex.get(synapse.sourceNode);
+    if (!outgoing) {
+      outgoing = new Set();
+      this.outgoingIndex.set(synapse.sourceNode, outgoing);
+    }
+    outgoing.add(synapse.id);
+  }
+
+  private deindexSynapse(synapse: Synapse): void {
+    const pairKey = `${synapse.sourceNode}:${synapse.targetNode}`;
+    this.pairIndex.delete(pairKey);
+
+    const incoming = this.incomingIndex.get(synapse.targetNode);
+    if (incoming) {
+      incoming.delete(synapse.id);
+      if (incoming.size === 0) this.incomingIndex.delete(synapse.targetNode);
+    }
+
+    const outgoing = this.outgoingIndex.get(synapse.sourceNode);
+    if (outgoing) {
+      outgoing.delete(synapse.id);
+      if (outgoing.size === 0) this.outgoingIndex.delete(synapse.sourceNode);
+    }
   }
 
   private createEmptyStats(): HebbianAdaptorStats {
@@ -182,7 +222,11 @@ export class HebbianAdaptor {
   }
 
   registerSynapse(synapse: Synapse): void {
-    this.synapses.set(synapse.id, { ...synapse });
+    const existing = this.synapses.get(synapse.id);
+    if (existing) this.deindexSynapse(existing);
+    const cloned = { ...synapse };
+    this.synapses.set(synapse.id, cloned);
+    this.indexSynapse(cloned);
     this.updateStats(false);
   }
 
@@ -244,6 +288,7 @@ export class HebbianAdaptor {
       if (!this.canCreateSynapse(targetNodeId)) return null;
       synapse = this.createSynapse(sourceNodeId, targetNodeId, coActivationStrength);
       this.synapses.set(synapse.id, synapse);
+      this.indexSynapse(synapse);
     }
 
     const previousWeight = synapse.weight;
@@ -278,17 +323,12 @@ export class HebbianAdaptor {
   }
 
   private findSynapse(sourceNodeId: string, targetNodeId: string): Synapse | undefined {
-    for (const synapse of this.synapses.values()) {
-      if (synapse.sourceNode === sourceNodeId && synapse.targetNode === targetNodeId) return synapse;
-    }
-    return undefined;
+    const id = this.pairIndex.get(`${sourceNodeId}:${targetNodeId}`);
+    return id ? this.synapses.get(id) : undefined;
   }
 
   private canCreateSynapse(targetNodeId: string): boolean {
-    let incomingCount = 0;
-    for (const synapse of this.synapses.values()) {
-      if (synapse.targetNode === targetNodeId) incomingCount += 1;
-    }
+    const incomingCount = this.incomingIndex.get(targetNodeId)?.size ?? 0;
     return incomingCount < (this.config.maxConnections ?? DEFAULT_MAX_CONNECTIONS_PER_NODE);
   }
 
@@ -305,13 +345,14 @@ export class HebbianAdaptor {
   }
 
   pruneWeights(minWeight: number = DEFAULT_PRUNE_THRESHOLD): number {
-    const toPrune: string[] = [];
-    for (const [id, synapse] of this.synapses) {
-      if (synapse.weight < minWeight) toPrune.push(id);
+    const toPrune: Synapse[] = [];
+    for (const synapse of this.synapses.values()) {
+      if (synapse.weight < minWeight) toPrune.push(synapse);
     }
 
-    for (const id of toPrune) {
-      this.synapses.delete(id);
+    for (const synapse of toPrune) {
+      this.synapses.delete(synapse.id);
+      this.deindexSynapse(synapse);
       this.stats.prunedSynapses += 1;
     }
 
@@ -358,11 +399,25 @@ export class HebbianAdaptor {
   }
 
   getIncomingSynapses(nodeId: string): Synapse[] {
-    return Array.from(this.synapses.values()).filter((synapse) => synapse.targetNode === nodeId);
+    const ids = this.incomingIndex.get(nodeId);
+    if (!ids) return [];
+    const result: Synapse[] = [];
+    for (const id of ids) {
+      const s = this.synapses.get(id);
+      if (s) result.push(s);
+    }
+    return result;
   }
 
   getOutgoingSynapses(nodeId: string): Synapse[] {
-    return Array.from(this.synapses.values()).filter((synapse) => synapse.sourceNode === nodeId);
+    const ids = this.outgoingIndex.get(nodeId);
+    if (!ids) return [];
+    const result: Synapse[] = [];
+    for (const id of ids) {
+      const s = this.synapses.get(id);
+      if (s) result.push(s);
+    }
+    return result;
   }
 
   getSynapse(synapseId: string): Synapse | undefined {
@@ -371,6 +426,9 @@ export class HebbianAdaptor {
 
   clear(): void {
     this.synapses.clear();
+    this.pairIndex.clear();
+    this.incomingIndex.clear();
+    this.outgoingIndex.clear();
     this.nodes.clear();
     this.updateCount = 0;
     this.pruneCounter = 0;
@@ -393,10 +451,9 @@ export class HebbianAdaptor {
   importSynapses(synapses: Synapse[]): number {
     let imported = 0;
     for (const synapse of synapses) {
-      this.synapses.set(synapse.id, { ...synapse });
+      this.registerSynapse(synapse);
       imported += 1;
     }
-    this.updateStats(false);
     return imported;
   }
 }
