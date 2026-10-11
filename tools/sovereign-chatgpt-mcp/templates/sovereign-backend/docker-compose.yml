@@ -29,6 +29,8 @@ services:
     volumes:
       - /opt/secure:/opt/secure:ro
       - /opt/sovereign-owner-managed:/opt/sovereign-owner-managed:rw
+      # Reuse the canonical host command queue; protected SSH values never enter it.
+      - /opt/sovereign-chatgpt-tools/command-queue:/opt/sovereign-chatgpt-tools/command-queue:rw
       - /opt/sovereign-agent-workspaces:/var/lib/sovereign-agent/workspaces:rw
       - /run/sovereign-chatgpt-broker:/run/sovereign-chatgpt-broker:ro
     ports:

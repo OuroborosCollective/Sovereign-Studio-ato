@@ -34,6 +34,7 @@ from operations import OperationsRuntime
 from patchmon_fleet import PatchmonFleetRuntime
 from patchmon_operator import PatchmonOperatorRuntime
 from policy import validate_container
+from owner_ssh_console import OwnerSSHConsole
 from self_update import SelfUpdateRuntime
 
 MAX_REQUEST_BYTES = 1_200_000
@@ -57,6 +58,7 @@ class BrokerRuntime:
             "ghcr.io/ouroboroscollective/sovereign-backend",
         ).strip()
         self.operations = OperationsRuntime()
+        self.owner_ssh = OwnerSSHConsole()
         self.agent_zero_diagnostics = AgentZeroDiagnosticsRuntime()
         self.browserless = BrowserlessReplayReader()
         self.document_pipeline = DocumentPipelineRuntime()
@@ -486,7 +488,12 @@ class BrokerRuntime:
                 "blocker": "Mutierende Befehle dürfen nicht direkt von außen über den Broker-Socket ausgeführt werden",
                 "next_action": "submit_validated_intent_to_host_command_queue",
             }
+        if action.startswith("ssh_console_") and not self.private_owner_mode:
+            return {"ok": False, "status": "BLOCKED", "blocker": "SSH console requires private owner mode"}
         handlers = {
+            "ssh_console_status": lambda values: self.owner_ssh.status(str(values.get("session_id") or "")),
+            "ssh_console_owner_action": lambda values: self.owner_ssh.owner_action(str(values.get("operation_id") or "")),
+            "ssh_console_assistant_inspect": lambda values: self.owner_ssh.assistant_inspect(str(values.get("session_id") or ""), str(values.get("operation") or "")),
             "broker_health": self.health,
             "host_worker_canary": lambda _values: {
                 "ok": True,

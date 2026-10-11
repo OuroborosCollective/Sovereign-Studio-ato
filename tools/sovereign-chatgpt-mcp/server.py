@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 import re
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from mcp import types
 from mcp.server.fastmcp import FastMCP
@@ -34,6 +34,7 @@ from github_issue_contracts import (
 from output_contracts import normalize_tool_output
 from owner_input_client import ControllerRuntimeClient, OwnerInputClient, ProviderRuntimeClient
 from owner_input_widget import TOOL_META as OWNER_INPUT_TOOL_META, register_owner_input_widget
+from owner_ssh_widget import TOOL_META as SSH_TOOL_META, register_owner_ssh_widget
 from runtime import OperatorRuntime
 from repository_skill_tools import classify_changed_paths
 from self_heal import REPAIR_ENGINE
@@ -1419,6 +1420,21 @@ def agent_zero_a2a_canary(
     }, timeout=150)
 
 
+@mcp.tool(annotations=READ_ONLY, meta=SSH_TOOL_META)
+def vps_ssh_session_status(session_id: Annotated[str, Field(pattern=r"^(?:[0-9a-f]{32})?$", max_length=32)] = "") -> dict[str, Any]:
+    """Read owner SSH session metadata. Credentials are entered only at /owner-ssh."""
+    return broker.call("ssh_console_status", {"session_id": session_id})
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def vps_ssh_inspect(
+    session_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")],
+    operation: Literal["system", "disk", "memory", "containers", "services"],
+) -> dict[str, Any]:
+    """Run one fixed inspection on the existing SSH connection only while the owner delegation permits it. No secrets or shell commands are accepted."""
+    return broker.call("ssh_console_assistant_inspect", {"session_id": session_id, "operation": operation}, timeout=35)
+
+
 @mcp.tool(annotations=READ_ONLY)
 def vps_container_status(container: str = "sovereign-backend") -> dict[str, Any]:
     """Inspect the real state of one allowlisted Docker container through the local broker."""
@@ -2359,6 +2375,7 @@ def _register_aurion_admin_mcp_tool_lane() -> None:
 
 _register_aurion_admin_mcp_tool_lane()
 register_owner_input_widget(mcp)
+register_owner_ssh_widget(mcp)
 register_sovereign_rescue_widget(mcp, read_only_annotations=READ_ONLY)
 register_sovereign_cognitive_widget(
     mcp,

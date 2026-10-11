@@ -100,6 +100,8 @@ tools/sovereign-chatgpt-mcp/
 
 Repository implementation does not prove deployed registry parity. Verify the running MCP revision and registry after an immutable deployment.
 
+The owner SSH console extends the same host broker and command queue. Canonical `owner_ssh_console.py`, `command_queue.py` and `command_contract.py` under `tools/sovereign-chatgpt-mcp/` have byte-identical mirrors under `scripts/sovereign-backend/`. The backend mirror validates protected owner input and submits metadata-only intents; it does not execute SSH locally. Keep all three mirrors synchronized and exercise parity tests. SSH assistance requires a live session-specific grant; a tool argument cannot create that grant.
+
 The revision-bound Integration Plan Lane lives under:
 
 ```text

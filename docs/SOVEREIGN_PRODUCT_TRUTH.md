@@ -67,6 +67,10 @@ user input
 
 The model may understand language and propose structured actions. It cannot create permission, capability availability, repository state, passing tests, a PR, a deployment or runtime health.
 
+## Owner SSH session truth
+
+The SSH console is an inspection surface inside the existing owner input, host broker and command queue boundaries. Protected authentication material never crosses MCP arguments or queued jobs. A verified host key, one-use owner action and bounded session identity precede connection. Assistant inspections require a current operation-scoped owner grant, rechecked when the worker executes. Revocation and expiry block further assistance; a vanished connection must never silently reconnect. The first version exposes fixed inspection menus, not generic shell or deployment authority. Repository tests and adapter mocks do not prove a live VPS connection.
+
 ## Capability truth
 
 Sovereign is one assistant at the product surface but many bounded capabilities internally.
