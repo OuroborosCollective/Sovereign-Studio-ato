@@ -186,7 +186,7 @@ async function action(body){
   message(result.status);busy=false;await refresh();
  }catch(error){message(error.message);}finally{busy=false;document.querySelectorAll('button').forEach(b=>b.disabled=Boolean(pending));}
 }
-$('loginButton').onclick=async()=>{admin=$('admin').value.trim();$('admin').value='';try{await refresh();message('Owner angemeldet.');}catch(error){admin='';message(error.message);}};
+$('loginButton').onclick=async()=>{admin=$('admin').value.trim();$('admin').value='';if(!admin){message('Owner-Admin-Zugang erforderlich.');return;}try{await refresh();message('Owner angemeldet.');}catch(error){admin='';message(error.message);}};
 $('authMode').onchange=()=>{const password=$('authMode').value==='password';$('keySection').hidden=password;$('passwordSection').hidden=!password;$('privateKey').value='';$('password').value='';};
 $('connect').onclick=async()=>{const profile={host:$('host').value.trim(),port:Number($('port').value),username:$('username').value.trim(),knownHostKey:$('hostKey').value.trim(),expiresInSeconds:Number($('duration').value)};if($('authMode').value==='password')profile.password=$('password').value;else profile.privateKey=$('privateKey').value;$('privateKey').value='';$('password').value='';await action({action:'connect',profile});profile.privateKey='';profile.password='';};
 $('retryClose').onclick=()=>action({action:'close'});

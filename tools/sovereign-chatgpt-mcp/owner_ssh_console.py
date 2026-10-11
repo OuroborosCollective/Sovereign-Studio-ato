@@ -225,7 +225,8 @@ class OwnerSSHConsole:
         identifier = uuid.uuid4().hex
         directory = self.root / ("ssh-" + identifier)
         directory.mkdir(mode=0o700)
-        files = [("known_hosts", "[" + host + "]:" + str(port) + " " + known + "\n")]
+        host_token = host if port == 22 else "[" + host + "]:" + str(port)
+        files = [("known_hosts", host_token + " " + known + "\n")]
         files.append(("password", password) if password else ("identity", private + "\n"))
         if password:
             files.append(("askpass", ASKPASS_SCRIPT))

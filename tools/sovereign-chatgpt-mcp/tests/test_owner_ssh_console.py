@@ -74,6 +74,21 @@ def test_owner_connection_checks_host_and_keeps_material_out_of_arguments(consol
     assert "privateKey" not in json.dumps(instance.status(session_id))
     assert (instance.root / ("ssh-" + session_id) / "identity").stat().st_mode & 0o777 == 0o600
 
+@pytest.mark.parametrize("port", [22, 2222])
+def test_known_host_entry_matches_actual_openssh_lookup(console, port):
+    if not shutil.which("ssh-keygen"):
+        pytest.skip("OpenSSH key lookup unavailable in this isolated environment")
+    instance, profile, calls = console
+    profile["port"] = port
+    instance._write("ssh_console_profile.json", profile)
+    result = instance.owner_action(owner_action(instance, "connect"))
+    lookup = profile["host"] if port == 22 else "[" + profile["host"] + "]:" + str(port)
+    known = instance.root / ("ssh-" + result["sessionId"]) / "known_hosts"
+    observed = subprocess.run(["ssh-keygen", "-F", lookup, "-f", str(known)], capture_output=True, text=True)
+    assert observed.returncode == 0, observed.stderr
+    assert profile["knownHostKey"] in observed.stdout
+
+
 def test_default_delegation_denied_and_cross_session_denied(console):
     instance, session_id, calls = connected(console)
     with pytest.raises(ValueError, match="delegation"):
