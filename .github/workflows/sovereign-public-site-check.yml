@@ -1,13 +1,7 @@
 name: Sovereign Public Site - Review
 
 on:
-  pull_request:
-    paths:
-      - "public-site/**"
-      - "scripts/verify-public-site.py"
-      - "tests/test_public_site_contract.py"
-      - ".github/workflows/sovereign-public-site-check.yml"
-      - ".github/workflows/sovereign-pages-publish.yml"
+  # PR validation runs in the required Release Gate to preserve runner priority.
   workflow_dispatch:
 
 permissions:
