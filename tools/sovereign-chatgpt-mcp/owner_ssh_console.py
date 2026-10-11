@@ -11,6 +11,7 @@ import ipaddress
 import json
 import os
 import re
+import selectors
 import shutil
 import stat
 import subprocess
@@ -34,10 +35,46 @@ OPERATIONS = {
 }
 ID = re.compile(r"^[0-9a-f]{32}$")
 
+MAX_CAPTURE_BYTES = 65536
+
+def _bounded_run(argv, *, capture_output, text, timeout, check, stdin, env):
+    if not capture_output:
+        return subprocess.run(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                              timeout=timeout, check=check, stdin=stdin, env=env, text=text)
+    output = {1: bytearray(), 2: bytearray()}
+    size = 0
+    exceeded = False
+    deadline = time.monotonic() + timeout
+    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=stdin, env=env) as process:
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout, selectors.EVENT_READ, 1)
+            selector.register(process.stderr, selectors.EVENT_READ, 2)
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    process.kill()
+                    process.wait()
+                    raise subprocess.TimeoutExpired(argv, timeout)
+                for key, _ in selector.select(min(remaining, 0.25)):
+                    chunk = os.read(key.fileobj.fileno(), 8192)
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        key.fileobj.close()
+                        continue
+                    allowed = max(0, MAX_CAPTURE_BYTES - size)
+                    output[key.data].extend(chunk[:allowed])
+                    size += min(allowed, len(chunk))
+                    if len(chunk) > allowed and not exceeded:
+                        exceeded = True
+                        process.kill()
+            code = process.wait(timeout=max(0.1, deadline - time.monotonic()))
+    return subprocess.CompletedProcess(argv, code if not exceeded else 255,
+            bytes(output[1]).decode("utf-8", errors="replace"), bytes(output[2]).decode("utf-8", errors="replace"))
+
 class OwnerSSHConsole:
     def __init__(self, root=None, runner=None):
         self.root = Path(root or os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", "/opt/sovereign-owner-managed"))
-        self.runner = runner or subprocess.run
+        self.runner = runner or _bounded_run
         self._next_cleanup = 0.0
 
     def _read(self, name, limit=65536):
@@ -124,11 +161,11 @@ class OwnerSSHConsole:
             raise ValueError("Invalid SSH session lifetime")
         return host, port, user, key, private, ttl, password
 
-    def _run(self, argv, timeout=15, askpass=None):
+    def _run(self, argv, timeout=15, askpass=None, capture=True):
         env = {"PATH": "/usr/bin:/bin", "LANG": "C", "HOME": "/nonexistent"}
         if askpass:
             env.update(SSH_ASKPASS=str(askpass), SSH_ASKPASS_REQUIRE="force")
-        return self.runner(argv, capture_output=True, text=True, timeout=timeout, check=False,
+        return self.runner(argv, capture_output=capture, text=True, timeout=timeout, check=False,
                            stdin=subprocess.DEVNULL, env=env)
 
     def _base(self, state):
@@ -244,7 +281,7 @@ class OwnerSSHConsole:
         try:
             result = self._run(self._base(state)[:-1] +
                                ["-o", "ControlMaster=yes", "-o", "ControlPersist=" + str(ttl), "-fN", host], 20,
-                               askpass=directory / "askpass" if password else None)
+                               askpass=directory / "askpass" if password else None, capture=False)
             if result.returncode:
                 raise ValueError("SSH authentication or trusted-host verification failed")
             state["status"] = "connected"

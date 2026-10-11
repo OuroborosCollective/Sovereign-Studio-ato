@@ -223,6 +223,15 @@ def test_native_resource_and_tool_argument_boundaries(monkeypatch):
         asyncio.run(server.mcp.call_tool("vps_ssh_inspect", {"session_id": "a" * 32, "operation": "shell"}))
     assert calls == []
 
+def test_actual_process_capture_is_bounded_and_times_out(tmp_path):
+    instance = OwnerSSHConsole(root=tmp_path)
+    result = instance._run(["python3", "-c", "import sys;sys.stdout.write(chr(120)*1000000)"], timeout=2)
+    assert result.returncode != 0
+    assert len(result.stdout.encode()) <= 65536
+    with pytest.raises(subprocess.TimeoutExpired):
+        instance._run(["python3", "-c", "import time;time.sleep(5)"], timeout=0.1)
+
+
 def test_pending_owner_revocation_blocks_queued_inspection(console):
     instance, session_id, calls = connected(console)
     instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["disk"], ttl=30))
