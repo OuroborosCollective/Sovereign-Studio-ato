@@ -87,3 +87,7 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+
+## 2026-10-12 - [Single-Pass Unique Field Extraction]
+**Learning:** Using `[...new Set(array.map(item => item.field))]` creates an intermediate array allocation through `.map()`. This can cause significant garbage collection overhead on high-frequency predictive paths with thousands of signals.
+**Action:** Replace intermediate chained `.map()` mapping into sets with a single-pass `for` loop over the source array when doing property extractions into a Set, then use `.sort((a, b) => a - b)` for number sorting.
