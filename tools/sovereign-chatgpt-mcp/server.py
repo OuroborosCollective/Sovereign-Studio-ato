@@ -21,6 +21,7 @@ from aurion_admin_mcp_lane import (
     required_scope_for_tool,
     tool_mode,
 )
+from aurion_operator import AURION_OPEN_ID_PATTERN
 from android_hardening import AndroidHardeningRuntime
 from broker_client import HostBrokerClient
 import ci_repair_tools
@@ -2205,14 +2206,14 @@ if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_OPERATOR", "0").strip() == "1":
     def aurion_account_role_readback(
         open_id: Annotated[
             str,
-            Field(pattern=r"^local:[A-Za-z0-9_.-]{1,32}$", description="Exact local Aurion openId; never a credential."),
+            Field(pattern=AURION_OPEN_ID_PATTERN, description="Exact canonical Aurion openId: local handle or OIDC SHA-256; never a credential."),
         ],
         expected_revision: Annotated[
             str,
             Field(pattern=r"^[0-9a-f]{40}$", description="Exact running Echoes of Aurion source revision."),
         ],
     ) -> dict[str, Any]:
-        """Read only id/openId/role for one local Aurion account from the exact healthy runtime."""
+        """Read only id/openId/role for one canonical local/OIDC Aurion account from the exact healthy runtime."""
         return broker.call(
             "aurion_account_role_readback",
             {"open_id": open_id, "expected_revision": expected_revision},
@@ -2222,11 +2223,11 @@ if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_OPERATOR", "0").strip() == "1":
 
     @mcp.tool(annotations=NETWORK_READ)
     def aurion_account_role_plan(
-        open_id: Annotated[str, Field(pattern=r"^local:[A-Za-z0-9_.-]{1,32}$")],
+        open_id: Annotated[str, Field(pattern=AURION_OPEN_ID_PATTERN)],
         role: Annotated[str, Field(pattern=r"^(?:user|admin)$")],
         expected_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
     ) -> dict[str, Any]:
-        """Bind one local Aurion role change to the exact users row and runtime without mutating data."""
+        """Bind one canonical local/OIDC Aurion role change to the exact users row and runtime without mutating data."""
         return broker.call(
             "aurion_account_role_plan",
             {"open_id": open_id, "role": role, "expected_revision": expected_revision},
@@ -2236,13 +2237,13 @@ if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_OPERATOR", "0").strip() == "1":
 
     @mcp.tool(annotations=EXTERNAL_WRITE)
     def aurion_account_role_apply(
-        open_id: Annotated[str, Field(pattern=r"^local:[A-Za-z0-9_.-]{1,32}$")],
+        open_id: Annotated[str, Field(pattern=AURION_OPEN_ID_PATTERN)],
         role: Annotated[str, Field(pattern=r"^(?:user|admin)$")],
         expected_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
         confirmation_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
         owner_approved: bool = False,
     ) -> dict[str, Any]:
-        """Queue one hash-bound local Aurion users.role update and require DB plus runtime readback."""
+        """Queue one hash-bound canonical local/OIDC Aurion users.role update and require DB plus runtime readback."""
         return broker.call(
             "aurion_account_role_apply",
             {
