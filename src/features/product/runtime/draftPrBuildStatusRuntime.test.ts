@@ -57,4 +57,20 @@ describe('resolveDraftPrBuildStatus', () => {
       detail: 'Kein Draft-PR-Link vorhanden; Buildstatus wird nicht abgefragt.',
     });
   });
+
+  it('filters out non-HTTPS and unsafe run URLs', () => {
+    const unsafeUrls = [
+      'javascript:alert(1)',
+      'http://example.test/actions/runs/1',
+      'data:text/html,test',
+    ];
+
+    for (const url of unsafeUrls) {
+      const result = resolveDraftPrBuildStatus({
+        draftPrUrl,
+        runs: [{ status: 'completed', conclusion: 'success', html_url: url }],
+      });
+      expect(result.runUrl).toBeUndefined();
+    }
+  });
 });

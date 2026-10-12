@@ -1,3 +1,5 @@
+import { safeHttpsUrl } from './builderContainerHelpers';
+
 export type DraftPrBuildState = 'success' | 'failure' | 'running' | 'pending' | 'unknown';
 
 export interface DraftPrWorkflowRunLike {
@@ -58,7 +60,7 @@ export function resolveDraftPrBuildStatus(input: DraftPrBuildStatusInput): Draft
 
   const status = cleanText(run.status)?.toLowerCase();
   const conclusion = cleanText(run.conclusion)?.toLowerCase();
-  const runUrl = cleanText(run.html_url);
+  const runUrl = safeHttpsUrl(cleanText(run.html_url));
 
   if (status === 'queued' || status === 'requested' || status === 'waiting') {
     return {
