@@ -14,7 +14,8 @@ AURION_COMPOSE_SERVICE = "aurion"
 AURION_IMAGE_RE = re.compile(r"^(?:[A-Za-z0-9._/-]+/)?echoes-of-aurion:([0-9a-f]{40})$")
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-LOCAL_OPEN_ID_RE = re.compile(r"^local:[A-Za-z0-9_.-]{1,32}$")
+AURION_OPEN_ID_PATTERN = r"^(?:local:[A-Za-z0-9_.-]{1,32}|[0-9a-f]{64})$"
+AURION_OPEN_ID_RE = re.compile(AURION_OPEN_ID_PATTERN)
 ALLOWED_ROLES = frozenset({"user", "admin"})
 MAX_OUTPUT_BYTES = 256_000
 
@@ -156,8 +157,8 @@ class AurionOperatorRuntime:
     @staticmethod
     def _validate_open_id(value: str) -> str:
         open_id = str(value or "").strip()
-        if not LOCAL_OPEN_ID_RE.fullmatch(open_id):
-            raise ValueError("open_id must be one bounded local:<handle> Aurion identity")
+        if not AURION_OPEN_ID_RE.fullmatch(open_id):
+            raise ValueError("open_id must be one bounded local:<handle> or lowercase SHA-256 Aurion identity")
         return open_id
 
     @staticmethod
