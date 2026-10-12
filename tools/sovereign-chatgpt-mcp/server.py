@@ -8,8 +8,9 @@ from typing import Annotated, Any, Literal
 
 from mcp import types
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.utilities.func_metadata import ArgModelBase
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from a2a_runtime_client import A2ARuntimeClient
 from aurion_admin_mcp_lane import (
@@ -2337,6 +2338,19 @@ def rollback_backend_release(target_image_digest: str, confirmation_digest: str)
     )
 
 
+class _AurionProxyArguments(ArgModelBase):
+    """Preserve flat JSON arguments; Aurion validates the published contract."""
+
+    model_config = ConfigDict(extra="allow")
+
+    def model_dump_one_level(self) -> dict[str, Any]:
+        # FastMCP's base dump ignores extras. This transport model has no fields,
+        # so **kwargs cannot become a synthetic required field and omitted
+        # optionals stay omitted. JSON-looking strings are not coerced either.
+        # Aurion remains the final JSON/Zod validator and permission authority.
+        return dict(self.model_extra or {})
+
+
 def _register_aurion_admin_mcp_tool_lane() -> None:
     """Expose the existing Aurion Admin MCP tools through the private Sovereign broker."""
     if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP", "0").strip() != "1":
@@ -2371,6 +2385,10 @@ def _register_aurion_admin_mcp_tool_lane() -> None:
             annotations=annotation,
             structured_output=False,
         )
+        # Publishing the Aurion schema alone leaves FastMCP's generated
+        # **kwargs validator active. Bind its call path to the lossless flat
+        # transport model as well; Aurion still owns final input validation.
+        tool.fn_metadata.arg_model = _AurionProxyArguments
         tool.parameters = CONTRACTS[tool_name]
 
 
