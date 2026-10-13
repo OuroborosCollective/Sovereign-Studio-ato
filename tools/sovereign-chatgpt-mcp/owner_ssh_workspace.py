@@ -361,6 +361,8 @@ def target_action(request, helper_source, root=ROOT):
         if request["action"] in {"read", "write"}:
             result = file_action(worktree, request)
         elif request["action"] == "run":
+            if not os.path.isfile("/usr/bin/bwrap") or not os.access("/usr/bin/bwrap", os.X_OK):
+                raise WorkspaceFailure("WORKSPACE_BWRAP_UNAVAILABLE")
             unit = "sovereign-ssh-" + request["grantId"] + ".service"
             command = unit_argv(worktree, request, unit, helper_source)
             # Cleanup and independent readback also run when admission/wait raises.

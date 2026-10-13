@@ -209,6 +209,9 @@ def target_workspace(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "fstat", lambda fd: HostStat(original_fstat(fd)))
     monkeypatch.setattr(Path, "lstat", lambda path: HostStat(original_lstat(path)))
     monkeypatch.setattr(os, "chown", lambda *_: None)
+    original_isfile, original_access = os.path.isfile, os.access
+    monkeypatch.setattr(os.path, "isfile", lambda path: True if path == "/usr/bin/bwrap" else original_isfile(path))
+    monkeypatch.setattr(os, "access", lambda path, mode: True if path == "/usr/bin/bwrap" else original_access(path, mode))
     root = tmp_path / "capsules"
     request = {"sessionId": "a"*32, "grantId": "b"*32,
                "sourceRevision": "c"*40, "deadline": time.time()+60,
@@ -288,3 +291,12 @@ def test_validated_receipt_preserves_real_command_failure(target_workspace, monk
     monkeypatch.setattr(helper.subprocess, "run", run)
     result = helper.target_action(request, "reviewed-source", root=root)
     assert result["ok"] is False and result["exitCode"] == 7 and result["unitStopped"] is True
+
+
+def test_missing_bwrap_blocks_before_unit_admission(target_workspace, monkeypatch):
+    helper, root, request = target_workspace
+    monkeypatch.setattr(os, "access", lambda *_: False)
+    monkeypatch.setattr(helper.subprocess, "run", lambda *_a, **_k: pytest.fail("Missing sandbox reached unit admission"))
+    with pytest.raises(helper.WorkspaceFailure) as caught:
+        helper.target_action(request, "reviewed-source", root=root)
+    assert caught.value.family == "WORKSPACE_BWRAP_UNAVAILABLE"
