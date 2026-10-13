@@ -91,3 +91,34 @@ def test_owner_page_is_protected_from_embedding_and_storage(client):
     assert response.headers["Referrer-Policy"] == "no-referrer"
     assert "no-store" in response.headers["Cache-Control"]
     assert "localStorage" not in response.get_data(as_text=True)
+
+def test_probe_is_owner_guarded_and_contains_no_credential(client):
+    api, current, writes, jobs = client
+    response = api.post("/api/admin/owner-ssh/action",
+        json={"action": "probe", "host": "8.8.8.8", "port": 22}, headers=headers())
+    assert response.status_code == 200
+    assert jobs[0][0] == "ssh_console_owner_action"
+    assert set(jobs[0][1]) == {"operation_id"}
+    target, record = writes[0]
+    assert record["action"] == "probe"
+    assert record["host"] == "8.8.8.8" and record["port"] == 22
+    assert "password" not in record and "privateKey" not in record
+    assert "sessionId" not in record and "profileSha256" not in record
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "169.254.169.254"])
+def test_probe_rejects_non_public_host_before_queue(client, host):
+    api, current, writes, jobs = client
+    response = api.post("/api/admin/owner-ssh/action",
+        json={"action": "probe", "host": host, "port": 22}, headers=headers())
+    assert response.status_code == 400
+    assert writes == [] and jobs == []
+
+
+def test_password_first_page_has_host_identity_confirmation(client):
+    api, *_ = client
+    page = api.get("/owner-ssh").get_data(as_text=True)
+    assert '<option value="password" selected>' in page
+    assert 'id="probeHost"' in page and 'id="hostConfirmed"' in page
+    assert "ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub" in page
+    assert "knownHostKey:$('hostKey')" not in page
