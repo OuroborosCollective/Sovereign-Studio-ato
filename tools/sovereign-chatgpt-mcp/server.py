@@ -1443,6 +1443,27 @@ def vps_container_status(container: str = "sovereign-backend") -> dict[str, Any]
     return broker.call("container_status", {"container": container})
 
 
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def vps_ssh_workspace(
+    session_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")],
+    source_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    action: Literal["init", "write", "read", "run"],
+    path: Annotated[str, Field(max_length=512)] = "",
+    content: Annotated[str, Field(max_length=32768)] = "",
+    expected_sha256: Annotated[str, Field(pattern=r"^(?:[0-9a-f]{64}|absent)?$")] = "",
+    argv: list[Annotated[str, Field(max_length=8192)]] | None = None,
+    timeout_seconds: Annotated[int, Field(strict=True, ge=1, le=300)] = 30,
+) -> dict[str, Any]:
+    """Use the existing SSH connection for repeated isolated non-root workspace tasks within its owner-issued 15–60 minute grant. init binds the source revision label; write requires a file hash or absent; read returns an independently checked hash. run accepts an argv array, isolates host files/network and limits CPU/RAM/processes. This tool cannot create a grant, deploy or modify live databases."""
+    from owner_ssh_workspace import validate_request
+    validate_request(action, path, content, expected_sha256, argv, timeout_seconds)
+    return broker.call("ssh_console_assistant_workspace", {
+        "session_id": session_id, "source_revision": source_revision, "action": action,
+        "path": path, "content": content, "expected_sha256": expected_sha256,
+        "argv": argv, "timeout_seconds": timeout_seconds,
+    }, timeout=timeout_seconds + 30)
+
+
 @mcp.tool(annotations=READ_ONLY)
 def vps_container_logs(container: str = "sovereign-backend", tail: int = 200) -> dict[str, Any]:
     """Read bounded logs from one allowlisted Docker container through the local broker."""

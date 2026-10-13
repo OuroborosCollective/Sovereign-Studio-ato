@@ -69,7 +69,7 @@ The model may understand language and propose structured actions. It cannot crea
 
 ## Owner SSH session truth
 
-The SSH console is an inspection surface inside the existing owner input, host broker and command queue boundaries. Protected authentication material never crosses MCP arguments or queued jobs. A verified host key, one-use owner action and bounded session identity precede connection. Assistant inspections require a current operation-scoped owner grant, rechecked when the worker executes. Revocation and expiry block further assistance; a vanished connection must never silently reconnect. The first version exposes fixed inspection menus, not generic shell or deployment authority. Repository tests and adapter mocks do not prove a live VPS connection.
+The SSH console uses the existing owner input, host broker and command queue. Credentials never cross MCP arguments or queued jobs. A verified host key, one-use owner action and bounded session identity precede connection. Fixed inspections need an operation-scoped grant. Optional repeated workspace actions need a separate owner-issued 900–3600 second grant, a server-generated isolated directory and hash/revision readbacks. Test code runs without root, host secrets, production mounts or network in a bounded namespace/cgroup. Expiry, durable revocation and channel-loss leases terminate work; the vanished SSH connection cannot reconnect. Merge, deployment and live database authority remain separate. Repository tests do not establish installed sandbox support or live VPS success.
 
 ## Capability truth
 

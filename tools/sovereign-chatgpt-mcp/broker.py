@@ -501,6 +501,11 @@ class BrokerRuntime:
             "ssh_console_status": lambda values: self.owner_ssh.status(str(values.get("session_id") or "")),
             "ssh_console_owner_action": lambda values: self.owner_ssh.owner_action(str(values.get("operation_id") or "")),
             "ssh_console_assistant_inspect": lambda values: self.owner_ssh.assistant_inspect(str(values.get("session_id") or ""), str(values.get("operation") or "")),
+            "ssh_console_assistant_workspace": lambda values: self.owner_ssh.assistant_workspace(
+                session_id=str(values.get("session_id") or ""), source_revision=str(values.get("source_revision") or ""),
+                action=values.get("action"), path=values.get("path", ""), content=values.get("content", ""),
+                expected_sha256=values.get("expected_sha256", ""), argv=values.get("argv"),
+                timeout_seconds=values.get("timeout_seconds", 30)),
             "broker_health": self.health,
             "host_worker_canary": lambda _values: {
                 "ok": True,

@@ -66,7 +66,7 @@ def register_owner_ssh_routes(app, *, require_admin, get_current_admin):
                 OwnerSSHConsole.validate_profile(profile)
                 _protected_write("ssh_console_profile.json", profile)
             operation_id = uuid.uuid4().hex
-            record = {"operationId": operation_id, "action": action, "expiresAt": time.time() + 35}
+            record = {"operationId": operation_id, "action": action, "createdAt": time.time(), "expiresAt": time.time() + 35}
             if action == "connect":
                 record["profileSha256"] = hashlib.sha256(json.dumps(profile, separators=(",", ":")).encode()).hexdigest()
             if action == "probe":
@@ -83,11 +83,12 @@ def register_owner_ssh_routes(app, *, require_admin, get_current_admin):
                 record["operation"] = body["operation"]
             if action == "grant":
                 ops, ttl = body.get("operations"), body.get("ttl", 300)
-                if not isinstance(ops, list) or not ops or any(op not in OPERATIONS for op in ops):
-                    raise ValueError("Invalid delegation scope")
-                if type(ttl) is not int or not 30 <= ttl <= 900:
-                    raise ValueError("Invalid delegation duration")
+                OwnerSSHConsole.validate_grant(ops, ttl)
                 record.update(operations=ops, ttl=ttl)
+            if action in {"revoke", "close"}:
+                # Cancellation must reach an in-flight worker immediately, before queue dispatch.
+                # This durable marker remains effective if the queued owner action expires.
+                _protected_write("ssh_console_revocation.json", {"sessionId": record["sessionId"], "at": record["createdAt"]})
             _protected_write("ssh_console_action.json", record)
             result = HostCommandQueueClient().submit("ssh_console_owner_action",
                        {"operation_id": operation_id}, timeout=25)
@@ -153,6 +154,9 @@ button:disabled{opacity:.45;cursor:wait}label{display:block}.muted{color:#8b949e
 <div id="operations"></div>
 <h3>Meine Hilfe freigeben</h3><p>Nur die ausgewählten Menüaktionen werden freigegeben. Die Freigabe gilt für diese Verbindung und endet automatisch.</p>
 <div id="scope"></div><label>Freigabedauer<select id="grantDuration"><option value="300">5 Minuten</option><option value="900">15 Minuten</option></select></label>
+<label class="check"><input id="workspaceScope" type="checkbox">Isolierten VPS-Workspace freigeben</label>
+<p>Erlaubt wiederholte Dateiänderungen und Python-/Node-Tests für 15–60 Minuten. Testcode läuft ohne Root-Rechte und ohne Netzwerk oder produktive Dateien. Merge, Deployment und Datenbankänderungen gehören nicht zu dieser Sitzungsberechtigung.</p>
+<label>Workspace-Freigabedauer<select id="workspaceDuration"><option value="900">15 Minuten</option><option value="1800">30 Minuten</option><option value="3600">60 Minuten</option></select></label>
 <button id="grant">Hilfe freigeben</button><button id="revoke">Freigabe widerrufen</button><button id="close">Verbindung beenden</button>
 <h3>Konsole</h3><pre id="output" aria-live="polite">Noch keine Aktion ausgeführt.</pre></section>
 <p id="message" role="status" aria-live="polite"></p>
@@ -177,7 +181,7 @@ function receiveProbe(result){
  $('hostConfirmed').checked=false;$('hostVerification').hidden=false;
  message('Server gefunden. Fingerabdruck vor dem Verbinden in der Hostinger-Konsole vergleichen.');
 }
-const names={system:'System',disk:'Festplatten',memory:'Arbeitsspeicher',containers:'Container',services:'Dienste'};
+const names={system:'System',disk:'Festplatten',memory:'Arbeitsspeicher',containers:'Container',services:'Dienste',workspace:'Isolierter Workspace'};
 async function api(path,body){
  const response=await fetch(path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+admin,...(body?{'Content-Type':'application/json','X-Sovereign-Owner-Action':'ssh-console'}:{})},body:body?JSON.stringify(body):undefined,credentials:'same-origin',mode:'same-origin',cache:'no-store',redirect:'error'});
  const data=await response.json();
@@ -227,7 +231,7 @@ $('connect').onclick=async()=>{
 };
 $('retryClose').onclick=()=>action({action:'close'});
 $('close').onclick=()=>action({action:'close'});$('revoke').onclick=()=>action({action:'revoke'});
-$('grant').onclick=()=>action({action:'grant',operations:Array.from($('scope').querySelectorAll('input:checked')).map(b=>b.value),ttl:Number($('grantDuration').value)});
+$('grant').onclick=()=>{const ops=Array.from($('scope').querySelectorAll('input:checked')).map(b=>b.value);if($('workspaceScope').checked)ops.push('workspace');return action({action:'grant',operations:ops,ttl:Number($($('workspaceScope').checked?'workspaceDuration':'grantDuration').value)});};
 setInterval(async()=>{try{
  if(pending&&!busy){const result=await api('/api/admin/owner-ssh/command/'+encodeURIComponent(pending));if(result.status!=='IN_PROGRESS'&&result.status!=='QUEUED'){
  const completedAction=pendingAction;pending='';pendingAction='';
