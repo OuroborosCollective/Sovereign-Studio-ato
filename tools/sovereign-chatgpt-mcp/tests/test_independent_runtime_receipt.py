@@ -9,6 +9,8 @@ import sys
 import textwrap
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = ROOT.parents[1]
@@ -29,7 +31,7 @@ def _load_readback_module():
     return module
 
 
-def _write_signed_fixture(directory: Path) -> tuple[Path, Path, Path, int]:
+def _write_signed_fixture(directory: Path, *, workspace_change=None) -> tuple[Path, Path, Path, int]:
     revision = "a" * 40
     backend_digest = "sha256:" + "b" * 64
     mcp_digest = "sha256:" + "c" * 64
@@ -64,12 +66,21 @@ def _write_signed_fixture(directory: Path) -> tuple[Path, Path, Path, int]:
         "backendImage": {"digest": backend_digest},
         "mcpImage": {"digest": mcp_digest},
         "runtime": {
-            "backend": {"running": True, "revision": revision, "digest": backend_digest},
+            "backend": {
+                "running": True, "revision": revision, "digest": backend_digest,
+                "workspace": {
+                    "executor": "sovereign-local-runner",
+                    "mountVerified": True,
+                    "configurationVerified": True,
+                },
+            },
             "mcp": {"running": True, "health": "healthy", "revision": revision, "digest": mcp_digest},
             "broker": {"status": "BROKER_READY"},
             "patchmon": {"status": "VERIFIED", "evidenceSha256": "d" * 64},
         },
     }
+    if workspace_change is not None:
+        receipt["runtime"]["backend"]["workspace"] = workspace_change
     receipt["evidenceSha256"] = _sha256(receipt)
     manifest_path = directory / "manifest.json"
     receipt_path = directory / "receipt.json"
@@ -113,6 +124,27 @@ def test_runtime_receipt_validator_accepts_real_signed_matching_evidence(tmp_pat
     )
     assert completed.returncode == 0, completed.stderr
     assert json.loads(report.read_text("utf-8"))["status"] == "VERIFIED"
+
+
+@pytest.mark.parametrize("workspace", [
+    {},
+    {"executor": "agent-zero", "mountVerified": True, "configurationVerified": True},
+    {"executor": "sovereign-local-runner", "mountVerified": False, "configurationVerified": True},
+    {"executor": "sovereign-local-runner", "mountVerified": True, "configurationVerified": False},
+])
+def test_signed_runtime_receipt_rejects_missing_or_invalid_current_workspace(tmp_path, workspace):
+    manifest, envelope, allowed_signers, run_id = _write_signed_fixture(
+        tmp_path, workspace_change=workspace,
+    )
+    report = tmp_path / "report.json"
+    completed = subprocess.run(
+        [sys.executable, str(VALIDATOR), str(manifest), str(envelope), str(allowed_signers), str(report), str(run_id)],
+        capture_output=True, text=True, check=False,
+    )
+    assert completed.returncode == 2
+    result = json.loads(report.read_text("utf-8"))
+    assert result["status"] == "BLOCKED_BY_MISSING_OR_CONTRADICTED_EVIDENCE"
+    assert "backend workspace" in result["failureDetail"]
 
 
 def test_runtime_receipt_validator_blocks_a_real_signed_receipt_with_wrong_gate_scope(tmp_path: Path) -> None:
