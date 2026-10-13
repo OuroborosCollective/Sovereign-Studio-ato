@@ -159,7 +159,24 @@ button:disabled{opacity:.45;cursor:wait}label{display:block}.muted{color:#8b949e
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-let admin='',session='',busy=false,pending='';
+let admin='',session='',busy=false,pending='',pendingAction='',trustedKey='',trustedTarget='';
+const target=()=>$('host').value.trim()+'|'+Number($('port').value);
+function clearProbe(){
+ trustedKey='';trustedTarget='';$('hostVerification').hidden=true;
+ $('hostConfirmed').checked=false;$('hostFingerprint').textContent='';
+}
+function receiveProbe(result){
+ if(!result||result.status!=='SSH_HOST_KEY_DISCOVERED'||result.ok!==true||
+    result.host+'|'+Number(result.port)!==target()||
+    typeof result.knownHostKey!=='string'||!result.knownHostKey.startsWith('ssh-ed25519 ')||
+    typeof result.hostFingerprint!=='string'||!result.hostFingerprint.startsWith('SHA256:')){
+   clearProbe();throw new Error('Serverprüfung fehlgeschlagen. IP und SSH-Port erneut prüfen.');
+ }
+ trustedKey=result.knownHostKey;trustedTarget=target();
+ $('hostFingerprint').textContent=result.hostFingerprint;
+ $('hostConfirmed').checked=false;$('hostVerification').hidden=false;
+ message('Server gefunden. Fingerabdruck vor dem Verbinden in der Hostinger-Konsole vergleichen.');
+}
 const names={system:'System',disk:'Festplatten',memory:'Arbeitsspeicher',containers:'Container',services:'Dienste'};
 async function api(path,body){
  const response=await fetch(path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+admin,...(body?{'Content-Type':'application/json','X-Sovereign-Owner-Action':'ssh-console'}:{})},body:body?JSON.stringify(body):undefined,credentials:'same-origin',mode:'same-origin',cache:'no-store',redirect:'error'});
