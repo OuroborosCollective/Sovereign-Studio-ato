@@ -130,7 +130,11 @@ def test_real_host_abort_kills_parent_and_child_process():
     assert result["stopReason"] == "HOST_ABORTED" and result["exitCode"] == 255
     child = int(result["output"].strip())
     status = Path('/proc') / str(child) / 'stat'
-    assert not status.exists() or status.read_text().split()[2] == 'Z'
+    try:
+        child_state = status.read_text().split()[2]
+    except FileNotFoundError:
+        child_state = 'gone'
+    assert child_state in {'gone', 'Z'}
 
 
 def test_transport_revocation_stops_a_real_inflight_process(tmp_path):
@@ -168,3 +172,23 @@ def test_storage_monitor_rejects_oversized_sparse_file(tmp_path):
         stream.truncate(1073741825)
     with pytest.raises(ValueError, match='storage exceeded'):
         storage_guard(tmp_path)
+
+
+def test_closed_lease_pipe_does_not_hide_a_successful_remote_exit(monkeypatch):
+    original = subprocess.Popen
+    class ClosingPipe:
+        def __init__(self, pipe): self.pipe = pipe
+        def __getattr__(self, name): return getattr(self.pipe, name)
+        def close(self):
+            self.pipe.close()
+            raise BrokenPipeError('remote side already closed')
+    class Process:
+        def __init__(self, actual):
+            self.actual = actual
+            self.stdin = ClosingPipe(actual.stdin)
+        def __getattr__(self, name): return getattr(self.actual, name)
+        def __enter__(self): return self
+        def __exit__(self, *args): return self.actual.__exit__(*args)
+    monkeypatch.setattr(subprocess, 'Popen', lambda *args, **kwargs: Process(original(*args, **kwargs)))
+    result = _workspace_transport([sys.executable, '-c', 'print("done")'], deadline=time.time()+2, guard=lambda:None)
+    assert result.returncode == 0 and result.stdout == 'done\n'

@@ -81,7 +81,10 @@ def _workspace_transport(argv, *, deadline, guard):
             return subprocess.CompletedProcess(argv, code, bytes(output[1]).decode("utf-8"),
                                                bytes(output[2]).decode("utf-8", "replace"))
         finally:
-            process.stdin.close()
+            try:
+                process.stdin.close()
+            except BrokenPipeError:
+                pass
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
