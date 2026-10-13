@@ -53,13 +53,18 @@ class FakeCursor:
             self.conn.jobs[job_id]["events"] = current + new_events
         elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS"):
             job_id = params[-1]
-            self.conn.jobs[job_id]["status"] = params[0]
+            # Match job_store.update_agent_job_state's SQL-bound input record:
+            # [7]=preserve_job_state, [8]=clear_blocker, [9]=blocker, [10]=job_id.
+            # Foreground tool receipts preserve terminal truth; real clone failures do not.
+            if not params[7]:
+                self.conn.jobs[job_id]["status"] = params[0]
             if params[1]:
                 self.conn.jobs[job_id]["workspace_id"] = params[1]
-            if params[7]:
-                self.conn.jobs[job_id]["blocker"] = None
-            elif params[8]:
-                self.conn.jobs[job_id]["blocker"] = params[8]
+            if not params[7]:
+                if params[8]:
+                    self.conn.jobs[job_id]["blocker"] = None
+                elif params[9] is not None:
+                    self.conn.jobs[job_id]["blocker"] = params[9]
         elif normalized.startswith("SELECT * FROM SOVEREIGN_AGENT_JOBS") and "AND JOB_ID" in normalized:
             user_id, job_id = params
             row = self.conn.jobs.get(job_id)

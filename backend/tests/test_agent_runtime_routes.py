@@ -73,7 +73,11 @@ class FakeCursor:
             self.conn.jobs[job_id]["events"] = current + new_events
         elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS"):
             job_id = params[-1]
-            self.conn.jobs[job_id]["status"] = params[0]
+            # The test DB adapter must implement the production SQL preserve flag.
+            # Otherwise a tool receipt can mask cancellation/cleanup contract bugs.
+            preserve_job_state = bool(params[7])
+            if not preserve_job_state:
+                self.conn.jobs[job_id]["status"] = params[0]
             if params[1]:
                 self.conn.jobs[job_id]["workspace_id"] = params[1]
             if params[2]:
@@ -86,10 +90,11 @@ class FakeCursor:
                 self.conn.jobs[job_id]["test_summary"] = params[5]
             if params[6]:
                 self.conn.jobs[job_id]["draft_pr_url"] = params[6]
-            if params[7]:
-                self.conn.jobs[job_id]["blocker"] = None
-            elif params[8]:
-                self.conn.jobs[job_id]["blocker"] = params[8]
+            if not preserve_job_state:
+                if params[8]:
+                    self.conn.jobs[job_id]["blocker"] = None
+                elif params[9]:
+                    self.conn.jobs[job_id]["blocker"] = params[9]
         elif normalized.startswith("SELECT * FROM SOVEREIGN_RESCUE_REPAIRS") and "REPAIR_ID" in normalized:
             repair_id, user_id = params[:2]
             row = self.conn.rescues.get(repair_id)
@@ -1160,6 +1165,20 @@ def test_desktop_frame_is_observational_and_failure_preserves_job_state() -> Non
     assert unavailable.status_code == 409
     assert unavailable.get_json()["reason"] == "DESKTOP_FRAME_UNAVAILABLE"
     assert conn.jobs["agent-live"]["status"] == "running"
+
+
+def test_foreground_receipt_preserves_cancelled_job_status_and_blocker():
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-1", status="blocked")
+    conn.jobs["agent-1"]["blocker"] = "Cancelled by user."
+
+    # Simulates an in-flight foreground tool receipt arriving after cancellation.
+    update_agent_job_state(
+        conn, job_id="agent-1", status="running", preserve_job_state=True,
+        clear_blocker=True, blocker="intermediate failure",
+    )
+    assert conn.jobs["agent-1"]["status"] == "blocked"
+    assert conn.jobs["agent-1"]["blocker"] == "Cancelled by user."
 
 
 def test_cancel_non_terminal_job_sets_blocked():

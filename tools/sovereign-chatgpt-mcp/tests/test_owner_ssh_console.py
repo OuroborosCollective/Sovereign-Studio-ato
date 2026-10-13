@@ -315,7 +315,7 @@ def test_password_first_host_key_probe_is_public_and_needs_no_login_material(con
     commands = []
     def keyscan(argv, **kwargs):
         commands.append(argv)
-        return SimpleNamespace(returncode=0, stdout=profile["host"] + " " + profile["knownHostKey"] + "\\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout=profile["host"] + " " + profile["knownHostKey"] + "\n", stderr="")
     instance.runner = keyscan
     result = instance.owner_action(owner_action(instance, "probe", host=profile["host"], port=22))
     assert result["ok"] is True
@@ -332,7 +332,7 @@ def test_ssh_probe_rejects_untrusted_or_internal_target(console):
     observed_calls = []
     def wrong_server(argv, **kwargs):
         observed_calls.append(argv)
-        return SimpleNamespace(returncode=0, stdout="9.9.9.9 " + profile["knownHostKey"] + "\\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="9.9.9.9 " + profile["knownHostKey"] + "\n", stderr="")
     instance.runner = wrong_server
     with pytest.raises(ValueError, match="unavailable or ambiguous"):
         instance._probe_host_key(profile["host"], 22)
