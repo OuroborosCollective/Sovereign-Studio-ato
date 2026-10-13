@@ -680,12 +680,13 @@ def update_agent_job_state(
     draft_pr_url: str | None = None,
     blocker: str | None = None,
     clear_blocker: bool = False,
+    preserve_job_state: bool = False,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE sovereign_agent_jobs
-            SET status = input.status,
+            SET status = CASE WHEN input.preserve_job_state THEN sovereign_agent_jobs.status ELSE input.status END,
                 workspace_id = COALESCE(input.workspace_id, sovereign_agent_jobs.workspace_id),
                 external_ref = COALESCE(input.external_ref, sovereign_agent_jobs.external_ref),
                 changed_files = CASE
@@ -711,6 +712,7 @@ def update_agent_job_state(
                 END,
                 draft_pr_url = COALESCE(input.draft_pr_url, sovereign_agent_jobs.draft_pr_url),
                 blocker = CASE
+                    WHEN input.preserve_job_state THEN sovereign_agent_jobs.blocker
                     WHEN input.clear_blocker THEN NULL
                     ELSE COALESCE(input.blocker, sovereign_agent_jobs.blocker)
                 END
@@ -722,6 +724,7 @@ def update_agent_job_state(
                        %s::text AS diff_summary,
                        %s::text AS test_summary,
                        %s::text AS draft_pr_url,
+                       %s::boolean AS preserve_job_state,
                        %s::boolean AS clear_blocker,
                        %s::text AS blocker,
                        %s::text AS job_id
@@ -736,6 +739,7 @@ def update_agent_job_state(
                 sanitize_agent_text(diff_summary, 4000) if diff_summary else None,
                 sanitize_agent_text(test_summary, 4000) if test_summary else None,
                 draft_pr_url if draft_pr_url and draft_pr_url.startswith("https://github.com/") else None,
+                bool(preserve_job_state),
                 bool(clear_blocker),
                 sanitize_agent_text(blocker, 1200) if blocker else None,
                 job_id,

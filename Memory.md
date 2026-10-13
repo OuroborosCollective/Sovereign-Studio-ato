@@ -1172,3 +1172,9 @@ Evidence: Existing runtime check vps_ssh_session_status reported SSH_NOT_CONNECT
 Learned: The line prefixed by command= in the user's authorized_keys configuration is a restricted client authorization, NOT a server host key. Requiring manual public key text in the password UI caused unnecessary confusion; server identity verification remains mandatory even with password authentication.
 Open: Run exact-head CI; review and merge only after required gates. Ship the backend/host worker together and verify a real owner-authenticated password session, pinned server fingerprint, menu readback and revocation. No server SSH policy relaxation or production database operation.
 Next safe step: Review the scoped PR and perform independent VPS fingerprint comparison before initial connection.
+
+### 2026-10-13 — Keep foreground repository tool receipts nonterminal
+Status: TESTED_AT_REVISION; exact-head CI and live runtime readback pending.
+Change: Preserve canonical job status and blocker during foreground single-agent tool receipts, including rejected tests and pending evidence; retain normal generic-API status transitions, strict heartbeat claim fencing and byte-equal backend/deployment mirrors.
+Learned: A rejected intermediate tool marked the entire running job blocked, causing its next strict heartbeat to report EXECUTOR_HEARTBEAT_CLAIM_NOT_CURRENT even though the submit claim remained unchanged.
+Evidence: Main baseline fb26b9470a104b59b26ee57c64e32026bfe5f9c8; focused local Pytest 57 passed (new lifecycle 5, repository execution 38, repository tools 14); backend/deployment mirrors equal. Separate runtime-postgres and routes test collection unavailable locally due to Python import/Flask environment; GitHub CI and immutable deployment required. No production mutation or runtime repair claimed.
