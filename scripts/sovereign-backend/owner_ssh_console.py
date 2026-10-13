@@ -21,7 +21,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from owner_ssh_workspace import validate_request, ACTIONS as WORKSPACE_ACTIONS, EXECUTABLES as WORKSPACE_EXECUTABLES
+from owner_ssh_workspace import validate_request, FAILURE_FAMILIES, ACTIONS as WORKSPACE_ACTIONS, EXECUTABLES as WORKSPACE_EXECUTABLES
 
 ASKPASS_SCRIPT = """#!/usr/bin/python3
 from pathlib import Path
@@ -512,7 +512,9 @@ class OwnerSSHConsole:
             self._ready(state)
             result = json.loads(completed.stdout)
             if completed.returncode or not isinstance(result, dict) or result.get("status") != "SSH_WORKSPACE_COMPLETE":
+                family = result.get("failureFamily") if isinstance(result, dict) else None
                 return {"ok": False, "status": "SSH_WORKSPACE_BLOCKED", "sessionId": session_id,
+                        "failureFamily": family if isinstance(family, str) and family in FAILURE_FAMILIES else "WORKSPACE_TARGET_FAILED",
                         "blocker": "Workspace effect or readback not confirmed", "protectedValuesReturned": False}
             if any(result.get(key) != request[key] for key in ("sessionId", "grantId", "sourceRevision", "action")):
                 raise ValueError("Workspace target readback identity mismatch")

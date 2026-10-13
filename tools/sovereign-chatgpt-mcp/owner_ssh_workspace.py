@@ -35,6 +35,35 @@ UID = 65534
 ENV = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": "/tmp", "LANG": "C.UTF-8"}
 
 
+FAILURE_FAMILIES = frozenset((
+    "WORKSPACE_TARGET_FAILED", "WORKSPACE_BWRAP_UNAVAILABLE",
+    "WORKSPACE_CONTROLLER_TIMEOUT", "WORKSPACE_DEPENDENCY_MISSING",
+    "WORKSPACE_PERMISSION_DENIED", "WORKSPACE_CGROUP_STOP_UNVERIFIED",
+    "WORKSPACE_SANDBOX_START_FAILED", "WORKSPACE_SANDBOX_RECEIPT_INVALID",
+))
+
+
+class WorkspaceFailure(ValueError):
+    def __init__(self, family):
+        self.family = family if family in FAILURE_FAMILIES else "WORKSPACE_TARGET_FAILED"
+        super().__init__(self.family)
+
+
+def blocked_result(error):
+    # Never return exception text, command arguments, host paths or environment.
+    family = "WORKSPACE_TARGET_FAILED"
+    if isinstance(error, WorkspaceFailure):
+        family = error.family
+    elif isinstance(error, subprocess.TimeoutExpired):
+        family = "WORKSPACE_CONTROLLER_TIMEOUT"
+    elif isinstance(error, FileNotFoundError):
+        family = "WORKSPACE_DEPENDENCY_MISSING"
+    elif isinstance(error, PermissionError):
+        family = "WORKSPACE_PERMISSION_DENIED"
+    return {"ok": False, "status": "SSH_WORKSPACE_BLOCKED",
+            "blocker": "Workspace effect or readback not confirmed", "failureFamily": family}
+
+
 def validate_request(action, path="", content="", expected_sha256="", argv=None, timeout_seconds=30):
     if action not in ACTIONS:
         raise ValueError("Invalid workspace action")
@@ -334,20 +363,46 @@ def target_action(request, helper_source, root=ROOT):
         elif request["action"] == "run":
             unit = "sovereign-ssh-" + request["grantId"] + ".service"
             command = unit_argv(worktree, request, unit, helper_source)
-            completed = subprocess.run(command, stdin=sys.stdin, capture_output=True, text=True,
-                                       timeout=request["timeout_seconds"] + 10, env=ENV)
-            # The unit wrapper bounds all user output before it crosses this pipe.
+            # Cleanup and independent readback also run when admission/wait raises.
             try:
-                result = json.loads(completed.stdout)
-            except (ValueError, TypeError):
-                result = {"exitCode": 255, "stopReason": "SANDBOX_UNAVAILABLE", "output": "", "stderr": ""}
+                completed = subprocess.run(command, stdin=sys.stdin, capture_output=True, text=True,
+                                           timeout=request["timeout_seconds"] + 10, env=ENV)
+                # The unit wrapper bounds user output before it crosses this pipe.
+                try:
+                    result = json.loads(completed.stdout)
+                    if (not isinstance(result, dict) or type(result.get("exitCode")) is not int
+                            or not isinstance(result.get("output"), str)
+                            or not isinstance(result.get("stderr"), str)):
+                        raise ValueError("Invalid unit receipt")
+                    if completed.returncode != 0:
+                        raise ValueError("Unit wrapper failed")
+                    result = {key: result[key] for key in ("exitCode", "output", "stderr")} | {
+                        "stopReason": result.get("stopReason")}
+                except (ValueError, TypeError):
+                    family = "WORKSPACE_SANDBOX_START_FAILED"
+                    try:
+                        candidate = json.loads(completed.stdout)
+                        if isinstance(candidate, dict) and candidate.get("failureFamily") in FAILURE_FAMILIES:
+                            family = candidate["failureFamily"]
+                    except (ValueError, TypeError):
+                        pass
+                    result = {"exitCode": 255, "stopReason": "SANDBOX_UNAVAILABLE",
+                              "failureFamily": family, "output": "", "stderr": "",
+                              "controllerExitCode": completed.returncode}
             finally:
-                subprocess.run(["/usr/bin/systemctl", "stop", unit], stdin=subprocess.DEVNULL,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, env=ENV)
-            observed = subprocess.run(["/usr/bin/systemctl", "show", unit, "--property=ActiveState", "--value"],
-                                      stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5, env=ENV)
-            if observed.returncode != 0 or observed.stdout.strip() not in {"inactive", "failed"}:
-                raise ValueError("Workspace cgroup termination not confirmed")
+                try:
+                    subprocess.run(["/usr/bin/systemctl", "stop", unit], stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, env=ENV)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass  # The independent state readback below remains mandatory.
+                try:
+                    observed = subprocess.run(
+                        ["/usr/bin/systemctl", "show", unit, "--property=ActiveState", "--value"],
+                        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5, env=ENV)
+                except (OSError, subprocess.TimeoutExpired):
+                    raise WorkspaceFailure("WORKSPACE_CGROUP_STOP_UNVERIFIED") from None
+                if observed.returncode != 0 or observed.stdout.strip() not in {"inactive", "failed"}:
+                    raise WorkspaceFailure("WORKSPACE_CGROUP_STOP_UNVERIFIED")
             result["unitStopped"] = True
         else:
             result = {"initialized": True}
@@ -362,6 +417,8 @@ def main():
     if sys.argv[1] == "unit":
         if os.geteuid() != UID:
             raise ValueError("Workspace test identity must be non-root")
+        if not os.path.isfile("/usr/bin/bwrap") or not os.access("/usr/bin/bwrap", os.X_OK):
+            raise WorkspaceFailure("WORKSPACE_BWRAP_UNAVAILABLE")
         result = supervise(sandbox_argv(payload["worktree"], payload["argv"]), deadline=payload["deadline"], lease_fd=0,
                            guard=lambda: storage_guard(payload["worktree"]))
     else:
@@ -373,6 +430,6 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
-        print(json.dumps({"ok": False, "status": "SSH_WORKSPACE_BLOCKED", "blocker": "Workspace effect or readback not confirmed"}))
+    except Exception as error:
+        print(json.dumps(blocked_result(error)))
         sys.exit(1)
