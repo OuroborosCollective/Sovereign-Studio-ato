@@ -113,8 +113,11 @@ def test_loopback_readback_ignores_proxy_environment(endpoint, monkeypatch):
 
 
 def test_client_does_not_load_a_second_server_or_exceed_128_mib(endpoint):
-    code = "import asyncio,json,resource,sys;from deployment_registry_probe import readback;r=asyncio.run(readback('surface',3,url=sys.argv[1],required_tools={'probe_ping','mcp_control_plane_status','mcp_tool_contract_registry'}));assert 'launcher' not in sys.modules and 'server' not in sys.modules;print(json.dumps({'count':r['toolCount'],'rssKiB':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}))"
-    result = subprocess.run([sys.executable, "-c", code, endpoint], cwd=ROOT, capture_output=True, text=True, timeout=20)
+    code = "import asyncio,json,sys;from pathlib import Path;from deployment_registry_probe import readback;r=asyncio.run(readback('surface',3,url=sys.argv[1],required_tools={'probe_ping','mcp_control_plane_status','mcp_tool_contract_registry'}));assert 'launcher' not in sys.modules and 'server' not in sys.modules;print(json.dumps({'count':r['toolCount'],'rssKiB':int(next(line.split()[1] for line in Path('/proc/self/status').read_text().splitlines() if line.startswith('VmHWM:')))}))"
+    # An exec must not inherit the parent image's high-water RSS. Keep the
+    # same 128 MiB bound on this fresh client's actual mm, even after a large parent.
+    parent = "import os,sys;allocation=bytearray(160*1024*1024);os.execv(sys.executable,[sys.executable,'-c',sys.argv[1],sys.argv[2]])"
+    result = subprocess.run([sys.executable, "-c", parent, code, endpoint], cwd=ROOT, capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr
     observed = json.loads(result.stdout)
     assert observed["count"] == 3 and observed["rssKiB"] < 128 * 1024
