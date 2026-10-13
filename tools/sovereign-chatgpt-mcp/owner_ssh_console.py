@@ -122,32 +122,47 @@ class OwnerSSHConsole:
             os.close(fd)
 
     @staticmethod
-    def validate_profile(profile):
-        if not isinstance(profile, dict):
-            raise ValueError("SSH profile must be an object")
-        if set(profile) - {"host", "port", "username", "knownHostKey", "privateKey", "password", "expiresInSeconds"}:
-            raise ValueError("Unsupported SSH profile field")
-        # Literal public IPs prevent DNS rebinding and access to internal services.
-        host = str(profile.get("host") or "")
-        ip = ipaddress.ip_address(host)
+    def validate_target(host, port):
+        # Literal globally routable addresses prevent DNS rebinding and SSRF
+        # into internal networks. No SSH credentials are sent by a probe.
+        if not isinstance(host, str):
+            raise ValueError("SSH target must be a public IP address")
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError as exc:
+            raise ValueError("SSH target must be a public IP address") from exc
         if not ip.is_global or ip.is_multicast or ip.is_reserved:
             raise ValueError("SSH target must be a public IP address")
-        user = str(profile.get("username") or "")
-        if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", user):
-            raise ValueError("Invalid SSH username")
-        port = profile.get("port", 22)
         if type(port) is not int or not 1 <= port <= 65535:
             raise ValueError("Invalid SSH port")
-        key = str(profile.get("knownHostKey") or "").strip()
-        parts = key.split()
-        if len(parts) != 2 or parts[0] != "ssh-ed25519":
-            raise ValueError("An independently verified ed25519 host public key is required")
+        return str(ip), port
+
+    @staticmethod
+    def normalize_host_key(key):
+        parts = str(key or "").strip().split()
+        # Accept one optional OpenSSH comment; options from authorized_keys
+        # are not valid as host identity.
+        if len(parts) not in (2, 3) or parts[0] != "ssh-ed25519":
+            raise ValueError("An independently verified ed25519 server host public key is required")
         try:
             decoded = base64.b64decode(parts[1], validate=True)
         except Exception as exc:
             raise ValueError("Invalid SSH host public key") from exc
         if len(decoded) != 51 or decoded[:19] != b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20":
             raise ValueError("Invalid SSH host public key")
+        return " ".join(parts[:2])
+
+    @staticmethod
+    def validate_profile(profile):
+        if not isinstance(profile, dict):
+            raise ValueError("SSH profile must be an object")
+        if set(profile) - {"host", "port", "username", "knownHostKey", "privateKey", "password", "expiresInSeconds"}:
+            raise ValueError("Unsupported SSH profile field")
+        host, port = OwnerSSHConsole.validate_target(profile.get("host"), profile.get("port", 22))
+        user = str(profile.get("username") or "")
+        if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", user):
+            raise ValueError("Invalid SSH username")
+        key = OwnerSSHConsole.normalize_host_key(profile.get("knownHostKey"))
         if not isinstance(profile.get("privateKey", ""), str) or not isinstance(profile.get("password", ""), str):
             raise ValueError("SSH authentication material must be text")
         private = str(profile.get("privateKey") or "")
@@ -160,6 +175,36 @@ class OwnerSSHConsole:
         if type(ttl) is not int or not 60 <= ttl <= 3600:
             raise ValueError("Invalid SSH session lifetime")
         return host, port, user, key, private, ttl, password
+
+    def _probe_host_key(self, host, port):
+        # ssh-keyscan never authenticates. This is only a candidate; owner
+        # MUST verify its fingerprint in the independent VPS/provider console
+        # before a password is allowed to be submitted over SSH.
+        host, port = self.validate_target(host, port)
+        lookup = host if port == 22 else "[" + host + "]:" + str(port)
+        scanned = self._run(["ssh-keyscan", "-T", "7", "-p", str(port), "-t", "ed25519", host], timeout=12)
+        if scanned.returncode:
+            raise ValueError("SSH server host key lookup failed")
+        keys = set()
+        for line in (scanned.stdout or "").splitlines():
+            fields = line.strip().split()
+            if len(fields) != 3 or fields[0] != lookup or fields[1] != "ssh-ed25519":
+                continue
+            known = " ".join(fields[1:])
+            try:
+                normalized = self.normalize_host_key(known)
+            except ValueError:
+                continue
+            keys.add(normalized)
+        if len(keys) != 1:
+            raise ValueError("SSH server host identity unavailable or ambiguous")
+        known = next(iter(keys))
+        fingerprint = "SHA256:" + base64.b64encode(
+            hashlib.sha256(base64.b64decode(known.split()[1])).digest()
+        ).decode().rstrip("=")
+        return {"ok": True, "status": "SSH_HOST_KEY_DISCOVERED",
+                "host": host, "port": port, "knownHostKey": known,
+                "hostFingerprint": fingerprint, "protectedValuesReturned": False}
 
     def _run(self, argv, timeout=15, askpass=None, capture=True):
         env = {"PATH": "/usr/bin:/bin", "LANG": "C", "HOME": "/nonexistent"}
@@ -370,6 +415,8 @@ class OwnerSSHConsole:
             (self.root / "ssh_console_action.json").unlink()
             if action.get("action") == "connect":
                 return self._connect(str(action.get("profileSha256") or ""))
+            if action.get("action") == "probe":
+                return self._probe_host_key(action.get("host"), action.get("port"))
             state = self._state()
             if action.get("sessionId") != state["sessionId"]:
                 raise ValueError("SSH session identity mismatch")
