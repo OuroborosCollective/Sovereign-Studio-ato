@@ -205,10 +205,11 @@ async function action(body){
  if(busy||pending)return;busy=true;document.querySelectorAll('button').forEach(b=>b.disabled=true);message('Aktion läuft…');
  try{
   const result=await api('/api/admin/owner-ssh/action',{...body,sessionId:session});
-  if(result.status==='IN_PROGRESS'||result.status==='QUEUED'){pending=result.request_id;message('Auftrag läuft. Nicht erneut senden.');return;}
+  if(result.status==='IN_PROGRESS'||result.status==='QUEUED'){pending=result.request_id;pendingAction=body.action;message('Auftrag läuft. Nicht erneut senden.');return;}
   if(result.output!==undefined)$('output').textContent='$ '+result.command+'\n'+result.output+'\nExit: '+result.exitCode;
   if(!result.ok)throw new Error(result.blocker||'Aktion nicht bestätigt.');
-  message(result.status);busy=false;await refresh();
+  if(body.action==='probe')receiveProbe(result);
+  else message(result.status);busy=false;await refresh();
  }catch(error){message(error.message);}finally{busy=false;document.querySelectorAll('button').forEach(b=>b.disabled=Boolean(pending));}
 }
 $('loginButton').onclick=async()=>{admin=$('admin').value.trim();$('admin').value='';if(!admin){message('Owner-Admin-Zugang erforderlich.');return;}try{await refresh();message('Owner angemeldet.');}catch(error){admin='';message(error.message);}};
