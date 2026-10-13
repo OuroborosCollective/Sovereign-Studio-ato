@@ -214,7 +214,17 @@ async function action(body){
 }
 $('loginButton').onclick=async()=>{admin=$('admin').value.trim();$('admin').value='';if(!admin){message('Owner-Admin-Zugang erforderlich.');return;}try{await refresh();message('Owner angemeldet.');}catch(error){admin='';message(error.message);}};
 $('authMode').onchange=()=>{const password=$('authMode').value==='password';$('keySection').hidden=password;$('passwordSection').hidden=!password;$('privateKey').value='';$('password').value='';};
-$('connect').onclick=async()=>{const profile={host:$('host').value.trim(),port:Number($('port').value),username:$('username').value.trim(),knownHostKey:$('hostKey').value.trim(),expiresInSeconds:Number($('duration').value)};if($('authMode').value==='password')profile.password=$('password').value;else profile.privateKey=$('privateKey').value;$('privateKey').value='';$('password').value='';await action({action:'connect',profile});profile.privateKey='';profile.password='';};
+for(const id of ['host','port'])$(id).addEventListener('input',clearProbe);
+$('probeHost').onclick=()=>{clearProbe();return action({action:'probe',host:$('host').value.trim(),port:Number($('port').value)});};
+$('connect').onclick=async()=>{
+ if(!trustedKey||trustedTarget!==target()||!$('hostConfirmed').checked){
+  message('Zuerst den Server prüfen und dessen Fingerabdruck mit Hostinger vergleichen.');return;
+ }
+ const profile={host:$('host').value.trim(),port:Number($('port').value),username:$('username').value.trim(),knownHostKey:trustedKey,expiresInSeconds:Number($('duration').value)};
+ if($('authMode').value==='password')profile.password=$('password').value;else profile.privateKey=$('privateKey').value;
+ $('privateKey').value='';$('password').value='';
+ await action({action:'connect',profile});profile.privateKey='';profile.password='';
+};
 $('retryClose').onclick=()=>action({action:'close'});
 $('close').onclick=()=>action({action:'close'});$('revoke').onclick=()=>action({action:'revoke'});
 $('grant').onclick=()=>action({action:'grant',operations:Array.from($('scope').querySelectorAll('input:checked')).map(b=>b.value),ttl:Number($('grantDuration').value)});
