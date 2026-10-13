@@ -229,7 +229,12 @@ $('retryClose').onclick=()=>action({action:'close'});
 $('close').onclick=()=>action({action:'close'});$('revoke').onclick=()=>action({action:'revoke'});
 $('grant').onclick=()=>action({action:'grant',operations:Array.from($('scope').querySelectorAll('input:checked')).map(b=>b.value),ttl:Number($('grantDuration').value)});
 setInterval(async()=>{try{
- if(pending&&!busy){const result=await api('/api/admin/owner-ssh/command/'+encodeURIComponent(pending));if(result.status!=='IN_PROGRESS'&&result.status!=='QUEUED'){pending='';message(result.status);if(result.output!==undefined)$('output').textContent='$ '+result.command+'\n'+result.output+'\nExit: '+result.exitCode;document.querySelectorAll('button').forEach(b=>b.disabled=false);}}
+ if(pending&&!busy){const result=await api('/api/admin/owner-ssh/command/'+encodeURIComponent(pending));if(result.status!=='IN_PROGRESS'&&result.status!=='QUEUED'){
+ const completedAction=pendingAction;pending='';pendingAction='';
+ if(completedAction==='probe'&&result.ok)receiveProbe(result);else message(result.status);
+ if(result.output!==undefined)$('output').textContent='$ '+result.command+'\n'+result.output+'\nExit: '+result.exitCode;
+ document.querySelectorAll('button').forEach(b=>b.disabled=false);
+}}
  await refresh();
 }catch(error){message(error.message);}},5000);
 window.addEventListener('pagehide',()=>{admin='';$('privateKey').value='';$('password').value='';});
