@@ -135,8 +135,13 @@ button:disabled{opacity:.45;cursor:wait}label{display:block}.muted{color:#8b949e
 <label>Öffentliche VPS-IP<input id="host" autocomplete="off" placeholder="IPv4 oder IPv6"></label>
 <label>SSH-Port<input id="port" type="number" min="1" max="65535" value="22"></label>
 <label>SSH-Benutzer<input id="username" autocomplete="off"></label>
-<label>Geprüfter Host-Public-Key (ssh-ed25519)<input id="hostKey" autocomplete="off"></label>
-<p class="muted">Den Public-Key unabhängig über deine Provider-Konsole prüfen. Unbekannte oder geänderte Host-Schlüssel werden abgewiesen.</p>
+<button id="probeHost" type="button">1. Server prüfen (ohne Passwort)</button>
+<div id="hostVerification" hidden>
+<p>Gefundener Server-Fingerabdruck: <strong id="hostFingerprint"></strong></p>
+<p class="muted">In der Hostinger-Webkonsole unabhängig vergleichen mit: <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>. Der Eintrag mit <code>command=</code> gehört zur CI-Autorisierung und ist kein Server-Hostschlüssel.</p>
+<label class="check"><input id="hostConfirmed" type="checkbox">Fingerabdruck stimmt mit Hostinger überein</label>
+</div>
+<p class="muted">Danach mit Benutzername und Passwort verbinden. Kein SSH-Schlüsseltext erforderlich. Der Server-Schlüssel wird nur nach Bestätigung der Identität akzeptiert.</p>
 <label>Anmeldung<select id="authMode"><option value="password" selected>SSH-Passwort</option><option value="key">SSH-Schlüssel (optional)</option></select></label>
 <label id="keySection" hidden>Dedizierter SSH-Privatschlüssel ohne Passphrase<textarea id="privateKey" autocomplete="off" spellcheck="false"></textarea></label>
 <label id="passwordSection">SSH-Passwort<input id="password" type="password" autocomplete="off"></label>
