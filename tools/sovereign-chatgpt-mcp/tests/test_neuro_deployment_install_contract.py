@@ -174,9 +174,12 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
 
     assert 'EXPECTED_MCP_TOOL_COUNT="258"' in script
     assert 'EXPECTED_MCP_TOOL_COUNT="261"' in script.split('INSTALL_STAGE="configure_private_owner_mode"', 1)[1]
-    assert 'python - "${EXPECTED_MCP_TOOL_COUNT}" <<\'PY\'' in script
+    assert 'deployment_registry_probe.py surface "${EXPECTED_MCP_TOOL_COUNT}"' in script
+    assert 'deployment_registry_probe.py snapshot "${EXPECTED_MCP_TOOL_COUNT}"' in script
     assert 'SOVEREIGN_EXPECTED_MCP_TOOL_COUNT="$EXPECTED_MCP_TOOL_COUNT"' in script
-    assert 'assert len(tool_names) == expected_tool_count' in script
+    probe_source = (ROOT / "deployment_registry_probe.py").read_text("utf-8")
+    assert 'len(names) != expected_count' in probe_source
+    assert 'registry.get("registry_tool_names_sha256") != digest' in probe_source
     assert 'INSTALL_STAGE="capture_previous_mcp_tool_surface"' in script
     assert 'INSTALL_STAGE="verify_mcp_tool_surface_preservation"' in script
     assert "mcp_tool_contract_registry(include_schemas=True)" in script

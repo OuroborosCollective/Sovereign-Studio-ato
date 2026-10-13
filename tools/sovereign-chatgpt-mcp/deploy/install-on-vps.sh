@@ -2135,115 +2135,11 @@ PY
 [[ "$EXPECTED_MCP_TOOL_COUNT" =~ ^[0-9]+$ ]] || fail "declared MCP tool count is invalid"
 
 INSTALL_STAGE="verify_live_tool_surface_and_widget_domain"
-docker exec -i sovereign-chatgpt-mcp python - "${EXPECTED_MCP_TOOL_COUNT}" <<'PY'
-import asyncio
-import os
-import sys
-
-import launcher
-import server
-from aurion_admin_mcp_lane import AurionAdminMcpRuntime, exposed_tool_names
-
-expected_tool_count = int(sys.argv[1])
-required_tools = {
-    "agent_zero_backend_diagnostics",
-    "agent_zero_a2a_canary",
-    "backend_architecture_assess",
-    "deterministic_architecture_inventory",
-    "mcp_tool_contract_registry",
-    "neuro_event_commit",
-    "neuro_event_route_preview",
-    "neuro_runtime_contract_status",
-    "operational_assurance_skill_inventory",
-    "patchmon_tool_inventory",
-    "repository_architecture_drift_report",
-    "repository_architecture_snapshot",
-    "aurion_account_role_readback",
-    "aurion_account_role_plan",
-    "aurion_account_role_apply",
-    "teaching_lesson_simulate",
-    "teaching_package_assess",
-    "wolfram_source_intelligence",
-}
-if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP", "0").strip() == "1":
-    required_tools.update(exposed_tool_names(
-        AurionAdminMcpRuntime()._local_allowed_scopes(),
-        wolfram_enabled=os.getenv("AURION_ADMIN_MCP_WOLFRAM_ENABLED", "0").strip() == "1",
-    ))
-tools = asyncio.run(launcher.mcp.list_tools())
-tool_names = {tool.name for tool in tools}
-neuro_tools = {
-    "neuro_event_commit",
-    "neuro_event_route_preview",
-    "neuro_runtime_contract_status",
-    "teaching_lesson_simulate",
-    "teaching_package_assess",
-}
-missing_tools = sorted(required_tools - tool_names)
-assert not missing_tools, {"missingRequiredTools": missing_tools, "toolCount": len(tool_names)}
-assert len(tool_names) == expected_tool_count, {"expectedToolCount": expected_tool_count, "actualToolCount": len(tool_names)}
-assert neuro_tools <= tool_names, sorted(neuro_tools - tool_names)
-registry = server._live_mcp_registry_evidence()
-assert registry.get("registry_runtime_verified") is True, registry
-assert registry.get("registry_tool_count") == len(tool_names), (registry, len(tool_names))
-resources = asyncio.run(launcher.mcp.list_resources())
-cognitive_resource = next(
-    resource
-    for resource in resources
-    if str(resource.uri) == "ui://sovereign/dev_dashboard.v2.html"
-)
-serialized = cognitive_resource.model_dump(by_alias=True)
-resource_meta = serialized.get("_meta") or {}
-expected_domain = "https://sovereign-backend.arelorian.de"
-assert (resource_meta.get("ui") or {}).get("domain") == expected_domain, resource_meta
-assert resource_meta.get("openai/widgetDomain") == expected_domain, resource_meta
-print(
-    {
-        "toolCount": len(tool_names),
-        "registrySha256": registry.get("registry_tool_names_sha256"),
-        "widgetDomain": expected_domain,
-        "widgetUri": str(cognitive_resource.uri),
-    }
-)
-PY
+docker exec sovereign-chatgpt-mcp python /app/deployment_registry_probe.py surface "${EXPECTED_MCP_TOOL_COUNT}"
 
 INSTALL_STAGE="verify_mcp_tool_surface_preservation"
 NEW_MCP_REGISTRY_FILE="$ROLLBACK_DIR/new-mcp-registry-contracts.json"
-docker exec -i sovereign-chatgpt-mcp python - <<'PY' > "$NEW_MCP_REGISTRY_FILE"
-from dataclasses import asdict
-import json
-
-import launcher
-import operational_governance_tools
-
-registry = operational_governance_tools.mcp_tool_contract_registry(include_schemas=True)
-payload = asdict(registry)
-tools = sorted(payload.get("tools") or [], key=lambda item: str(item.get("name") or ""))
-names = [item.get("name") for item in tools]
-if (
-    registry.ok is not True
-    or registry.status != "MCP_TOOL_REGISTRY_READY"
-    or registry.runtimeVerified is not True
-    or registry.truncated is True
-    or registry.toolCount != len(tools)
-    or any(not isinstance(name, str) or not name for name in names)
-    or names != sorted(set(names))
-):
-    raise SystemExit("replacement MCP returned an invalid complete contract registry")
-print(
-    json.dumps(
-        {
-            "schemaVersion": "sovereign.mcp-deployment-contract-surface.v1",
-            "registrySnapshotSha256": registry.registrySnapshotSha256,
-            "toolCount": len(tools),
-            "tools": tools,
-        },
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-)
-PY
+docker exec sovereign-chatgpt-mcp python /app/deployment_registry_probe.py snapshot "${EXPECTED_MCP_TOOL_COUNT}" > "$NEW_MCP_REGISTRY_FILE"
 chmod 0600 "$NEW_MCP_REGISTRY_FILE"
 # The replacement registry itself remains a hard runtime invariant. Historical
 # predecessor compatibility is evidence, not deployment authority.

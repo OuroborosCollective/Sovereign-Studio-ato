@@ -134,21 +134,22 @@ def test_ci_runtime_readback_authorization_preserves_protected_authorized_keys_i
 
 def test_installer_rejects_reduced_launcher_surface_and_missing_widget_domain() -> None:
     script = INSTALLER.read_text("utf-8")
-
+    probe = (INSTALLER.parents[1] / "deployment_registry_probe.py").read_text("utf-8")
     assert 'INSTALL_STAGE="verify_live_tool_surface_and_widget_domain"' in script
+    assert 'deployment_registry_probe.py surface "${EXPECTED_MCP_TOOL_COUNT}"' in script
+    assert 'deployment_registry_probe.py snapshot "${EXPECTED_MCP_TOOL_COUNT}"' in script
     for required_tool in (
-        "backend_architecture_assess",
-        "deterministic_architecture_inventory",
-        "mcp_tool_contract_registry",
-        "operational_assurance_skill_inventory",
-        "patchmon_tool_inventory",
-        "repository_architecture_drift_report",
-        "repository_architecture_snapshot",
+        "backend_architecture_assess", "deterministic_architecture_inventory",
+        "mcp_tool_contract_registry", "operational_assurance_skill_inventory",
+        "patchmon_tool_inventory", "repository_architecture_drift_report",
+        "repository_architecture_snapshot", "vps_ssh_workspace",
     ):
-        assert f'"{required_tool}"' in script
-    assert 'server._live_mcp_registry_evidence()' in script
-    assert 'registry.get("registry_tool_count") == len(tool_names)' in script
-    assert 'ui://sovereign/dev_dashboard.v2.html' in script
-    assert 'expected_domain = "https://sovereign-backend.arelorian.de"' in script
-    assert 'resource_meta.get("openai/widgetDomain") == expected_domain' in script
-    assert '(resource_meta.get("ui") or {}).get("domain") == expected_domain' in script
+        assert f'"{required_tool}"' in probe
+    assert 'session.call_tool("mcp_control_plane_status", {})' in probe
+    assert 'registry.get("registry_tool_count") != len(names)' in probe
+    assert 'registry.get("registry_tool_names_sha256") != digest' in probe
+    assert 'ui://sovereign/dev_dashboard.v2.html' in probe
+    assert 'DOMAIN = "https://sovereign-backend.arelorian.de"' in probe
+    assert 'meta.get("openai/widgetDomain") != DOMAIN' in probe
+    assert 'meta.get("ui", {}).get("domain") != DOMAIN' in probe
+    assert "import launcher" not in probe and "import server" not in probe
