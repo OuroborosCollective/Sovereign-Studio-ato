@@ -138,6 +138,21 @@ class OwnerSSHConsole:
         return str(ip), port
 
     @staticmethod
+    def normalize_host_key(key):
+        parts = str(key or "").strip().split()
+        # Accept one optional OpenSSH comment; options from authorized_keys
+        # are not valid as host identity.
+        if len(parts) not in (2, 3) or parts[0] != "ssh-ed25519":
+            raise ValueError("An independently verified ed25519 server host public key is required")
+        try:
+            decoded = base64.b64decode(parts[1], validate=True)
+        except Exception as exc:
+            raise ValueError("Invalid SSH host public key") from exc
+        if len(decoded) != 51 or decoded[:19] != b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20":
+            raise ValueError("Invalid SSH host public key")
+        return " ".join(parts[:2])
+
+    @staticmethod
     def validate_profile(profile):
         if not isinstance(profile, dict):
             raise ValueError("SSH profile must be an object")
@@ -147,20 +162,7 @@ class OwnerSSHConsole:
         user = str(profile.get("username") or "")
         if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", user):
             raise ValueError("Invalid SSH username")
-        key = str(profile.get("knownHostKey") or "").strip()
-        parts = key.split()
-        # A server's *.pub line may include an OpenSSH comment.
-        # This is the SERVER identity, never an authorized_keys CI entry.
-        if len(parts) not in (2, 3) or parts[0] != "ssh-ed25519":
-            raise ValueError("An independently verified ed25519 server host public key is required")
-        try:
-            decoded = base64.b64decode(parts[1], validate=True)
-        except Exception as exc:
-            raise ValueError("Invalid SSH host public key") from exc
-        if len(decoded) != 51 or decoded[:19] != b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20":
-            raise ValueError("Invalid SSH host public key")
-        # Persist type and body only; do not use any comment in known_hosts.
-        key = " ".join(parts[:2])
+        key = OwnerSSHConsole.normalize_host_key(profile.get("knownHostKey"))
         if not isinstance(profile.get("privateKey", ""), str) or not isinstance(profile.get("password", ""), str):
             raise ValueError("SSH authentication material must be text")
         private = str(profile.get("privateKey") or "")
@@ -190,10 +192,7 @@ class OwnerSSHConsole:
                 continue
             known = " ".join(fields[1:])
             try:
-                _, _, _, normalized, _, _, _ = self.validate_profile({
-                    "host": host, "port": port, "username": "probe",
-                    "knownHostKey": known, "password": "non-secret-validation-only",
-                })
+                normalized = self.normalize_host_key(known)
             except ValueError:
                 continue
             keys.add(normalized)
