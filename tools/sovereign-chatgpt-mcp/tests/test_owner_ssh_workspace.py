@@ -192,3 +192,111 @@ def test_closed_lease_pipe_does_not_hide_a_successful_remote_exit(monkeypatch):
     monkeypatch.setattr(subprocess, 'Popen', lambda *args, **kwargs: Process(original(*args, **kwargs)))
     result = _workspace_transport([sys.executable, '-c', 'print("done")'], deadline=time.time()+2, guard=lambda:None)
     assert result.returncode == 0 and result.stdout == 'done\n'
+
+
+@pytest.fixture
+def target_workspace(tmp_path, monkeypatch):
+    import owner_ssh_workspace as helper
+    # Only host identity/provisioning and the external systemd adapter are
+    # substituted. Real control directories, lock and target_action are used.
+    monkeypatch.setattr(helper.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(helper, "UID", 0)
+    original_fstat, original_lstat = os.fstat, Path.lstat
+    class HostStat:
+        st_uid = 0
+        def __init__(self, value): self.value = value
+        def __getattr__(self, name): return getattr(self.value, name)
+    monkeypatch.setattr(os, "fstat", lambda fd: HostStat(original_fstat(fd)))
+    monkeypatch.setattr(Path, "lstat", lambda path: HostStat(original_lstat(path)))
+    monkeypatch.setattr(os, "chown", lambda *_: None)
+    original_isfile, original_access = os.path.isfile, os.access
+    monkeypatch.setattr(os.path, "isfile", lambda path: True if path == "/usr/bin/bwrap" else original_isfile(path))
+    monkeypatch.setattr(os, "access", lambda path, mode: True if path == "/usr/bin/bwrap" else original_access(path, mode))
+    root = tmp_path / "capsules"
+    request = {"sessionId": "a"*32, "grantId": "b"*32,
+               "sourceRevision": "c"*40, "deadline": time.time()+60,
+               "action": "init"}
+    helper.target_action(request, "reviewed-source", root=root)
+    return helper, root, {**request, "action": "run", "argv": ["python3", "-c", "print(1)"],
+                          "timeout_seconds": 1}
+
+
+def test_controller_timeout_still_stops_and_reads_back_unit(target_workspace, monkeypatch):
+    helper, root, request = target_workspace
+    calls = []
+    def run(argv, **kwargs):
+        calls.append(argv[:])
+        if argv[0] == "/usr/bin/systemd-run":
+            raise subprocess.TimeoutExpired(argv, 1)
+        return subprocess.CompletedProcess(argv, 0, "inactive\n" if "show" in argv else "", "")
+    monkeypatch.setattr(helper.subprocess, "run", run)
+    try:
+        helper.target_action(request, "reviewed-source", root=root)
+    except (subprocess.TimeoutExpired, ValueError):
+        pass
+    assert any("stop" in argv for argv in calls)
+    assert any("show" in argv for argv in calls)
+
+
+def test_unavailable_unit_wrapper_never_becomes_success(target_workspace, monkeypatch):
+    helper, root, request = target_workspace
+    def run(argv, **kwargs):
+        if argv[0] == "/usr/bin/systemd-run":
+            return subprocess.CompletedProcess(argv, 1, json.dumps({
+                "ok": False, "status": "SSH_WORKSPACE_BLOCKED",
+                "failureFamily": "WORKSPACE_DEPENDENCY_MISSING"}), "")
+        return subprocess.CompletedProcess(argv, 0, "inactive\n" if "show" in argv else "", "")
+    monkeypatch.setattr(helper.subprocess, "run", run)
+    result = helper.target_action(request, "reviewed-source", root=root)
+    assert result["ok"] is False
+    assert result.get("exitCode") == 255
+    assert result.get("stopReason") == "SANDBOX_UNAVAILABLE"
+    assert result["unitStopped"] is True
+
+
+@pytest.mark.parametrize("failure", [
+    ValueError("synthetic-private-detail"),
+    FileNotFoundError("synthetic-private-path"),
+    PermissionError("synthetic-private-detail"),
+    subprocess.TimeoutExpired(["synthetic-private-command"], 1),
+])
+def test_failure_receipt_never_includes_exception_detail(failure):
+    from owner_ssh_workspace import blocked_result, FAILURE_FAMILIES
+    result = blocked_result(failure)
+    assert result["ok"] is False and result["failureFamily"] in FAILURE_FAMILIES
+    assert "synthetic-private" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("state,code", [("active", 0), ("inactive", 1), ("", 0)])
+def test_unconfirmed_unit_stop_always_blocks(target_workspace, monkeypatch, state, code):
+    helper, root, request = target_workspace
+    def run(argv, **kwargs):
+        if argv[0] == "/usr/bin/systemd-run":
+            return subprocess.CompletedProcess(argv, 0, json.dumps({
+                "exitCode": 0, "stopReason": None, "output": "done", "stderr": ""}), "")
+        return subprocess.CompletedProcess(argv, code, state if "show" in argv else "", "")
+    monkeypatch.setattr(helper.subprocess, "run", run)
+    with pytest.raises(helper.WorkspaceFailure) as caught:
+        helper.target_action(request, "reviewed-source", root=root)
+    assert caught.value.family == "WORKSPACE_CGROUP_STOP_UNVERIFIED"
+
+
+def test_validated_receipt_preserves_real_command_failure(target_workspace, monkeypatch):
+    helper, root, request = target_workspace
+    def run(argv, **kwargs):
+        if argv[0] == "/usr/bin/systemd-run":
+            return subprocess.CompletedProcess(argv, 0, json.dumps({
+                "exitCode": 7, "stopReason": None, "output": "", "stderr": "test failed"}), "")
+        return subprocess.CompletedProcess(argv, 0, "inactive\n" if "show" in argv else "", "")
+    monkeypatch.setattr(helper.subprocess, "run", run)
+    result = helper.target_action(request, "reviewed-source", root=root)
+    assert result["ok"] is False and result["exitCode"] == 7 and result["unitStopped"] is True
+
+
+def test_missing_bwrap_blocks_before_unit_admission(target_workspace, monkeypatch):
+    helper, root, request = target_workspace
+    monkeypatch.setattr(os, "access", lambda *_: False)
+    monkeypatch.setattr(helper.subprocess, "run", lambda *_a, **_k: pytest.fail("Missing sandbox reached unit admission"))
+    with pytest.raises(helper.WorkspaceFailure) as caught:
+        helper.target_action(request, "reviewed-source", root=root)
+    assert caught.value.family == "WORKSPACE_BWRAP_UNAVAILABLE"

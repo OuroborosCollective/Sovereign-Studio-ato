@@ -425,3 +425,18 @@ def test_target_response_cannot_forge_workspace_identity(console):
         'ok':True,'status':'SSH_WORKSPACE_COMPLETE','sessionId':'b'*32,'grantId':'b'*32,'sourceRevision':'a'*40,'action':'init'}))
     with pytest.raises(ValueError, match='identity mismatch'):
         instance.assistant_workspace(session_id, 'a'*40, 'init')
+
+
+@pytest.mark.parametrize("family,expected", [
+    ("WORKSPACE_BWRAP_UNAVAILABLE", "WORKSPACE_BWRAP_UNAVAILABLE"),
+    ("synthetic-private-detail", "WORKSPACE_TARGET_FAILED"),
+    (["synthetic-private-detail"], "WORKSPACE_TARGET_FAILED"),
+])
+def test_workspace_failure_propagates_only_allowlisted_family(console, family, expected):
+    instance, session_id, calls = workspace_granted(console)
+    instance.workspace_runner = lambda *_args, **_kw: SimpleNamespace(returncode=1, stdout=json.dumps({
+        "ok": False, "status": "SSH_WORKSPACE_BLOCKED", "failureFamily": family,
+        "blocker": "synthetic-private-detail"}), stderr="synthetic-private-detail")
+    result = instance.assistant_workspace(session_id, "a"*40, "run", argv=["python3", "-V"])
+    assert result["ok"] is False and result["failureFamily"] == expected
+    assert "synthetic-private" not in json.dumps(result)
