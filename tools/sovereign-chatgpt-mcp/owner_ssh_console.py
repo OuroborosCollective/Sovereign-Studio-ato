@@ -140,14 +140,18 @@ class OwnerSSHConsole:
             raise ValueError("Invalid SSH port")
         key = str(profile.get("knownHostKey") or "").strip()
         parts = key.split()
-        if len(parts) != 2 or parts[0] != "ssh-ed25519":
-            raise ValueError("An independently verified ed25519 host public key is required")
+        # A server's *.pub line may include an OpenSSH comment.
+        # This is the SERVER identity, never an authorized_keys CI entry.
+        if len(parts) not in (2, 3) or parts[0] != "ssh-ed25519":
+            raise ValueError("An independently verified ed25519 server host public key is required")
         try:
             decoded = base64.b64decode(parts[1], validate=True)
         except Exception as exc:
             raise ValueError("Invalid SSH host public key") from exc
         if len(decoded) != 51 or decoded[:19] != b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20":
             raise ValueError("Invalid SSH host public key")
+        # Persist type and body only; do not use any comment in known_hosts.
+        key = " ".join(parts[:2])
         if not isinstance(profile.get("privateKey", ""), str) or not isinstance(profile.get("password", ""), str):
             raise ValueError("SSH authentication material must be text")
         private = str(profile.get("privateKey") or "")
