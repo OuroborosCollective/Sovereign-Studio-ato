@@ -132,7 +132,7 @@ def test_real_host_abort_kills_parent_and_child_process():
     status = Path('/proc') / str(child) / 'stat'
     try:
         child_state = status.read_text().split()[2]
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):
         child_state = 'gone'
     assert child_state in {'gone', 'Z'}
 
