@@ -58,7 +58,7 @@ def register_owner_ssh_routes(app, *, require_admin, get_current_admin):
         if not isinstance(body, dict):
             return _no_store(jsonify({"error": "Invalid owner SSH payload"})), 400
         action = body.get("action")
-        if action not in {"connect", "close", "inspect", "grant", "revoke"}:
+        if action not in {"connect", "probe", "close", "inspect", "grant", "revoke"}:
             return _no_store(jsonify({"error": "Unsupported owner SSH action"})), 400
         try:
             if action == "connect":
@@ -69,7 +69,10 @@ def register_owner_ssh_routes(app, *, require_admin, get_current_admin):
             record = {"operationId": operation_id, "action": action, "expiresAt": time.time() + 35}
             if action == "connect":
                 record["profileSha256"] = hashlib.sha256(json.dumps(profile, separators=(",", ":")).encode()).hexdigest()
-            if action != "connect":
+            if action == "probe":
+                host, port = OwnerSSHConsole.validate_target(body.get("host"), body.get("port", 22))
+                record.update(host=host, port=port)
+            if action not in {"connect", "probe"}:
                 session_id = str(body.get("sessionId") or "")
                 if not len(session_id) == 32 or any(c not in "0123456789abcdef" for c in session_id):
                     raise ValueError("Invalid session identity")
