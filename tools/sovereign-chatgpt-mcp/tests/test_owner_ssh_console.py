@@ -297,3 +297,46 @@ def test_actual_page_scripts_parse_without_external_resources(tmp_path):
         assert result.returncode == 0, result.stderr
     assert "localStorage" not in page and "sessionStorage" not in page
     assert "textContent" in page and "innerHTML" not in page
+
+def test_server_host_key_comment_normalized_without_touching_login_method(console):
+    instance, profile, calls = console
+    original = profile["knownHostKey"]
+    profile["knownHostKey"] += " server.example"
+    observed = instance.validate_profile(profile)
+    assert observed[3] == original
+    assert observed[-1] == ""
+    assert calls == []
+
+
+def test_password_first_host_key_probe_is_public_and_needs_no_login_material(console):
+    instance, profile, calls = console
+    profile.pop("privateKey")
+    profile["password"] = "synthetic-not-a-real-password"
+    commands = []
+    def keyscan(argv, **kwargs):
+        commands.append(argv)
+        return SimpleNamespace(returncode=0, stdout=profile["host"] + " " + profile["knownHostKey"] + "\\n", stderr="")
+    instance.runner = keyscan
+    result = instance.owner_action(owner_action(instance, "probe", host=profile["host"], port=22))
+    assert result["ok"] is True
+    assert result["status"] == "SSH_HOST_KEY_DISCOVERED"
+    assert result["knownHostKey"] == profile["knownHostKey"]
+    assert result["hostFingerprint"].startswith("SHA256:")
+    assert commands[0][:2] == ["ssh-keyscan", "-T"]
+    assert "synthetic-not-a-real-password" not in json.dumps(commands)
+    assert not (instance.root / "ssh_console_state.json").exists()
+
+
+def test_ssh_probe_rejects_untrusted_or_internal_target(console):
+    instance, profile, calls = console
+    observed_calls = []
+    def wrong_server(argv, **kwargs):
+        observed_calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout="9.9.9.9 " + profile["knownHostKey"] + "\\n", stderr="")
+    instance.runner = wrong_server
+    with pytest.raises(ValueError, match="unavailable or ambiguous"):
+        instance._probe_host_key(profile["host"], 22)
+    with pytest.raises(ValueError, match="public IP"):
+        instance._probe_host_key("127.0.0.1", 22)
+    assert len(observed_calls) == 1
+
