@@ -104,11 +104,20 @@ export function MonitorCommunicationDock({
   const [routePickerOpen, setRoutePickerOpen] = useState(false);
   const [routeQuery, setRouteQuery] = useState('');
   const chatMode = mode === 'chat';
-  const visibleEntryIds = new Set(entries.slice(-4).map((entry) => entry.id));
-  entries
-    .filter((entry) => entry.kind === 'user')
-    .slice(-2)
-    .forEach((entry) => visibleEntryIds.add(entry.id));
+  // ⚡ Bolt: Extract visible entries directly via single-pass reverse loop to avoid intermediate array allocations
+  const visibleEntryIds = new Set<string>();
+  let userCount = 0;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (visibleEntryIds.size < 4) {
+      visibleEntryIds.add(entries[i].id);
+    }
+    if (entries[i].kind === 'user' && userCount < 2) {
+      visibleEntryIds.add(entries[i].id);
+      userCount++;
+    }
+    if (visibleEntryIds.size >= 4 && userCount >= 2) break;
+  }
+
   const visibleEntries = chatMode
     ? entries
     : entries.filter((entry) => visibleEntryIds.has(entry.id)).slice(-6);

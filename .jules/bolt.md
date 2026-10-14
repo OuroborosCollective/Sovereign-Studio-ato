@@ -87,3 +87,7 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+
+## 2026-10-14 - [Optimize Set Operations]
+**Learning:** Extracting unique fields into a Set from an array using chained `.map()` calls (e.g., `[...new Set(arr.map(x => x.val))]`) in high-frequency paths creates unnecessary intermediate array allocations and causes garbage collection overhead. Furthermore, when dealing with inline array chains that extract from the end of an array (e.g., `.filter(...).slice(-N).map(...)`), using reverse `for` loops with early `break` is significantly more efficient than chained array methods.
+**Action:** Always replace chained `.map()` calls that feed into a Set with a single-pass `for` loop to avoid intermediate array allocations. When sorting numeric arrays, explicitly use `.sort((a, b) => a - b)`. When extracting a limited number of items from the end of an array, use a reverse `for` loop (`for (let i = array.length - 1; i >= 0; i--)`) with an early break to efficiently build the result while preserving order.

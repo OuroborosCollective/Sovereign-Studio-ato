@@ -170,7 +170,12 @@ function computeTickRanges(
 ): Array<[number, number]> {
   if (signals.length === 0) return [];
 
-  const ticks = [...new Set(signals.map((s) => s.metadata.tick))].sort();
+  // ⚡ Bolt: Extract unique ticks directly into a Set via single-pass loop to avoid intermediate array allocation
+  const uniqueTicks = new Set<number>();
+  for (let i = 0; i < signals.length; i++) {
+    uniqueTicks.add(signals[i].metadata.tick);
+  }
+  const ticks = Array.from(uniqueTicks).sort((a, b) => a - b);
   const ranges: Array<[number, number]> = [];
 
   let i = 0;
@@ -199,7 +204,12 @@ export function* generateOverlappingTickWindows(
   if (signals.length === 0) return;
 
   const fingerprint = createConfigFingerprint(config.windowSize, config.overlap, config.maxItems);
-  const ticks = [...new Set(signals.map((s) => s.metadata.tick))].sort();
+  // ⚡ Bolt: Extract unique ticks directly into a Set via single-pass loop to avoid intermediate array allocation
+  const uniqueTicks = new Set<number>();
+  for (let i = 0; i < signals.length; i++) {
+    uniqueTicks.add(signals[i].metadata.tick);
+  }
+  const ticks = Array.from(uniqueTicks).sort((a, b) => a - b);
 
   let windowIndex = 0;
   let startIdx = 0;
