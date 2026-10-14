@@ -276,17 +276,20 @@ def storage_guard(worktree):
 
 
 def unit_argv(worktree, request, unit, helper_source):
-    timeout = max(1, math.ceil(min(request["timeout_seconds"], request["deadline"] - time.time())))
+    execution_deadline = min(request["deadline"], time.time() + request["timeout_seconds"])
+    timeout = max(1, math.ceil(execution_deadline - time.time()))
+    # Workspace code is killed at execution_deadline. The independent watchdog
+    # leaves three seconds for child reaping and the bounded terminal receipt.
     # All namespace processes share a cgroup. Limits survive loss of the SSH helper.
     command = ["/usr/bin/systemd-run", "--quiet", "--pipe", "--wait", "--collect", "--service-type=exec",
                "--unit=" + unit]
     for setting in ("User=65534", "Group=65534", "NoNewPrivileges=yes", "KillMode=control-group",
                     "TimeoutStopSec=2", "MemoryMax=2G", "MemorySwapMax=0", "CPUQuota=200%", "TasksMax=128",
                     "LimitNOFILE=256", "LimitCORE=0", "LimitFSIZE=1073741824", "UMask=0077",
-                    "RuntimeMaxSec=" + str(timeout)):
+                    "RuntimeMaxSec=" + str(timeout + 3)):
         command.extend(("--property", setting))
     payload = base64.b64encode(json.dumps({"worktree": str(worktree), "argv": request["argv"],
-                                         "deadline": min(request["deadline"], time.time() + timeout)},
+                                         "deadline": execution_deadline},
                                         separators=(",", ":")).encode()).decode()
     return command + ["/usr/bin/python3", "-I", "-c", helper_source, "unit", payload]
 

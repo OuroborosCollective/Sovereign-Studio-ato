@@ -118,6 +118,20 @@ def test_real_output_flood_stops_and_remains_bounded():
     assert len(result["output"].encode()) <= 1024
 
 
+def test_unit_hard_stop_leaves_bounded_time_for_timeout_receipt(tmp_path):
+    import base64
+    before = time.time()
+    command = unit_argv(tmp_path, {"timeout_seconds": 2, "deadline": before + 900,
+                                  "argv": ["python3", "-c", "pass"]},
+                        "sovereign-ssh-" + "a"*32 + ".service", "reviewed-source")
+    payload = json.loads(base64.b64decode(command[-1]))
+    hard_stop = int(next(v.split("=", 1)[1] for v in command if v.startswith("RuntimeMaxSec=")))
+    # The supervisor must kill workspace code at the requested deadline, then
+    # serialize its receipt before the independent systemd watchdog kills it.
+    assert before < payload["deadline"] <= time.time() + 2
+    assert 2 < hard_stop <= 5
+
+
 def test_real_timeout_stops_process():
     start = time.monotonic()
     result = run_with_lease([sys.executable, "-c", "import time;time.sleep(30)"], timeout=0.2, duration=0.4)
