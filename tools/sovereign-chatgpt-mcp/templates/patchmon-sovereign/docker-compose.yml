@@ -147,6 +147,7 @@ volumes:
 
 networks:
   patchmon-internal:
+    name: patchmon-sovereign_patchmon-internal-v2
     driver: bridge
     internal: true
   patchmon-edge:

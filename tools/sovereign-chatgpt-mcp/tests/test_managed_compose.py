@@ -566,6 +566,7 @@ def test_patchmon_deploy_repairs_partial_server_transport_with_targeted_recreate
             "secretValuesReturned": False,
         },
     )
+    monkeypatch.setattr(runtime, "_patchmon_topology_plan", lambda: {"ok": True, "required": False})
 
     class Temporary:
         def cleanup(self) -> None:
