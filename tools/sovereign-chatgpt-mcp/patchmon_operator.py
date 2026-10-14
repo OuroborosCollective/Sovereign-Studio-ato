@@ -4,13 +4,16 @@ import csv
 import hashlib
 import http.client
 import io
+import ipaddress
 import json
 import os
 import re
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 
 PATCHMON_STACK_ID = "patchmon-sovereign"
@@ -459,6 +462,184 @@ class PatchmonOperatorRuntime:
             if connection is not None:
                 connection.close()
 
+
+    def _redis_dependency_evidence(self, fleet: dict[str, Any]) -> dict[str, Any]:
+        """Read configured endpoints and a TCP snapshot, never credentials or Redis data."""
+        evidence: dict[str, Any] = {
+            "status": "REDIS_DEPENDENCY_EVIDENCE_UNAVAILABLE",
+            "configurationStatus": "UNAVAILABLE",
+            "connectionStatus": "UNAVAILABLE",
+            "configuredConsumers": [],
+            "connectedConsumers": [],
+            "unknownConnectionCount": 0,
+            "safeToDetach": False,
+            "truthNotice": (
+                "Recognized environment settings and established TCP connections are bounded "
+                "point-in-time evidence. Missing entries do not prove absence of a dependency; "
+                "mounted configuration, dormant clients and proxies require separate review."
+            ),
+        }
+        rows = fleet.get("containers", [])
+        if not fleet.get("ok") or fleet.get("truncated") or not isinstance(rows, list) or not 1 <= len(rows) <= 64:
+            return evidence
+        ids = [row.get("id", "") for row in rows if isinstance(row, dict)]
+        if len(ids) != len(rows) or any(
+            not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value) for value in ids
+        ) or len(set(ids)) != len(ids):
+            return evidence
+        # IDs come only from the existing Docker inventory, not tool parameters.
+        result = self._run([
+            "docker", "inspect", "--format",
+            '{"id":{{json .Id}},"name":{{json .Name}},"env":{{json .Config.Env}},'
+            '"labels":{{json .Config.Labels}},"networks":{{json .NetworkSettings.Networks}}}',
+            *ids,
+        ], timeout=15)
+        if not result.get("ok") or len(result["stdout"]) >= MAX_RESPONSE_BYTES:
+            return evidence
+        try:
+            inspected = [json.loads(line) for line in result["stdout"].splitlines() if line.strip()]
+            if len(inspected) != len(ids) or {row["id"] for row in inspected} != set(ids):
+                return evidence
+            for row in inspected:
+                if not isinstance(row.get("networks"), dict) or not isinstance(row.get("env"), (list, type(None))):
+                    return evidence
+                if not isinstance(row.get("name"), str) or not re.fullmatch(r"/[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", row["name"]):
+                    return evidence
+                if any(not isinstance(v, dict) for v in row["networks"].values()):
+                    return evidence
+            targets = [row for row in inspected if row["name"] == "/" + PATCHMON_REDIS_CONTAINER]
+            if len(targets) != 1:
+                return evidence
+            target = targets[0]
+            labels = target.get("labels") or {}
+            if labels.get("com.docker.compose.project") != PATCHMON_PROJECT or labels.get("com.docker.compose.service") != "redis":
+                return evidence
+        except (ValueError, KeyError, TypeError, AttributeError):
+            return evidence
+
+        allowed_keys = frozenset({
+            "REDIS_URL", "REDIS_HOST", "REDIS_HOSTNAME", "CACHE_REDIS_URL",
+            "CACHE_REDIS_HOST", "BULL_REDIS_URL", "BULLMQ_REDIS_URL",
+        })
+        consumers = []
+        for row in inspected:
+            if row["id"] == target["id"]:
+                continue
+            for item in row["env"] or []:
+                if not isinstance(item, str) or "=" not in item:
+                    continue
+                key, value = item.split("=", 1)
+                if key not in allowed_keys or not value:
+                    continue
+                host = ""
+                try:
+                    parsed = urlsplit(value) if key.endswith("_URL") else None
+                    if parsed is not None:
+                        if parsed.scheme not in {"redis", "rediss"} or not parsed.hostname:
+                            raise ValueError("unsupported endpoint")
+                        host = parsed.hostname.lower()
+                        # Validate the port, but never return any URL component.
+                        if parsed.port is not None and not 1 <= parsed.port <= 65535:
+                            raise ValueError("invalid port")
+                    elif re.fullmatch(r"[A-Za-z0-9_.:-]{1,253}", value):
+                        host = value.lower()
+                    else:
+                        raise ValueError("invalid host")
+                except ValueError:
+                    consumers.append({"containerId": row["id"], "container": row["name"][1:],
+                                      "setting": key, "match": "UNRESOLVED"})
+                    continue
+                matches: set[str] = set()
+                for candidate in inspected:
+                    for network in set(row["networks"]) & set(candidate["networks"]):
+                        details = candidate["networks"][network]
+                        aliases = details.get("Aliases") or []
+                        addresses = [details.get("IPAddress"), details.get("GlobalIPv6Address")]
+                        names = [candidate["name"][1:], *(aliases if isinstance(aliases, list) else [])]
+                        if host in {v.lower() for v in [*names, *addresses] if isinstance(v, str) and v}:
+                            matches.add(candidate["id"])
+                match = ("PATCHMON_REDIS" if matches == {target["id"]} else
+                         "AMBIGUOUS" if target["id"] in matches else "OTHER_OR_UNRESOLVED")
+                consumers.append({"containerId": row["id"], "container": row["name"][1:],
+                                  "setting": key, "match": match})
+        evidence["configuredConsumers"] = consumers
+        evidence["configurationStatus"] = "RECOGNIZED_SETTINGS_INSPECTED"
+        evidence["redisContainerId"] = target["id"]
+
+        # Fixed read-only proc files: no Redis AUTH, CLIENT names, keys or command payloads.
+        result = self._run([
+            "docker", "exec", target["id"], "cat", "/proc/net/tcp", "/proc/net/tcp6",
+        ], timeout=10)
+        if result.get("ok") and len(result["stdout"]) < MAX_RESPONSE_BYTES:
+            try:
+                peers = self._redis_tcp_peers(result["stdout"])
+                by_ip: dict[str, set[str]] = {}
+                names = {row["id"]: row["name"][1:] for row in inspected}
+                for row in inspected:
+                    for details in row["networks"].values():
+                        for value in (details.get("IPAddress"), details.get("GlobalIPv6Address")):
+                            if value:
+                                by_ip.setdefault(str(ipaddress.ip_address(value)), set()).add(row["id"])
+                counts: dict[str, int] = {}
+                unknown = 0
+                for peer in peers:
+                    matches = by_ip.get(peer, set())
+                    if len(matches) == 1:
+                        container_id = next(iter(matches))
+                        counts[container_id] = counts.get(container_id, 0) + 1
+                    else:
+                        unknown += 1
+                evidence["connectedConsumers"] = [
+                    {"containerId": key, "container": names[key], "connectionCount": count}
+                    for key, count in sorted(counts.items())
+                ]
+                evidence["unknownConnectionCount"] = unknown
+                evidence["connectionStatus"] = "ESTABLISHED_TCP_SNAPSHOT"
+            except (ValueError, TypeError):
+                evidence["connectionStatus"] = "INVALID_TCP_SNAPSHOT"
+        evidence["status"] = (
+            "REDIS_DEPENDENCY_EVIDENCE_OBSERVED"
+            if evidence["connectionStatus"] == "ESTABLISHED_TCP_SNAPSHOT"
+            else "REDIS_DEPENDENCY_EVIDENCE_PARTIAL"
+        )
+        evidence["evidenceSha256"] = _sha256_json(evidence)
+        return evidence
+
+    @staticmethod
+    def _redis_tcp_peers(raw: str) -> list[str]:
+        peers = []
+        headers = 0
+        for line in raw.splitlines():
+            fields = line.split()
+            if not fields:
+                continue
+            if fields[0] == "sl":
+                headers += 1
+                continue
+            if len(fields) < 10 or not re.fullmatch(r"[0-9]+:", fields[0]):
+                raise ValueError("invalid proc row")
+            local, remote = fields[1:3]
+            local_ip, local_port = local.split(":")
+            remote_ip, remote_port = remote.split(":")
+            for address in (local_ip, remote_ip):
+                if len(address) not in {8, 32} or not re.fullmatch(r"[0-9A-Fa-f]+", address):
+                    raise ValueError("invalid proc address")
+            if not all(re.fullmatch(r"[0-9A-Fa-f]{4}", port) for port in (local_port, remote_port)):
+                raise ValueError("invalid proc port")
+            if not re.fullmatch(r"[0-9A-Fa-f]{2}", fields[3]):
+                raise ValueError("invalid proc state")
+            if int(local_port, 16) != 6379 or fields[3] != "01":
+                continue
+            packed = b"".join(int(remote_ip[i:i + 8], 16).to_bytes(4, sys.byteorder)
+                              for i in range(0, len(remote_ip), 8))
+            address = ipaddress.ip_address(packed)
+            if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+                address = address.ipv4_mapped
+            peers.append(str(address))
+        if headers != 2:
+            raise ValueError("incomplete proc snapshot")
+        return peers
+
     def runtime_inventory(
         self,
         *,
@@ -630,6 +811,9 @@ class PatchmonOperatorRuntime:
             "networks": networks,
             "httpHealth": http_health,
             "fleet": fleet,
+            "redisDependencies": self._redis_dependency_evidence(fleet) if include_fleet else {
+                "status": "NOT_REQUESTED", "safeToDetach": False,
+            },
             "boundaryViolations": violations,
             "dockerSocketMountedInMcp": False,
             "brokerTransport": "unix_socket_allowlisted_actions",
