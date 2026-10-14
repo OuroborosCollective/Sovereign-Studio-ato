@@ -151,4 +151,42 @@ describe('DraftPrCard', () => {
     expect(screen.getByText('Build wartet')).toBeTruthy();
     expect(screen.queryByText('%')).toBeNull();
   });
+
+  it('has accessibility attributes including aria-hidden on emoji, status role on build badge, and focus rings on buttons', () => {
+    const { container } = render(
+      <DraftPrCard
+        url="https://github.com/owner/repo/pull/123"
+        changedFiles={['file1.ts']}
+        buildStatus={{
+          state: 'success',
+          label: 'Build erfolgreich',
+          detail: 'GitHub Run meldet success.',
+          runUrl: 'https://github.com/owner/repo/actions/runs/99',
+        }}
+        onOpenBrowser={() => {}}
+        onDiscussInChat={() => {}}
+      />,
+    );
+
+    const emojiSpan = container.querySelector('[aria-hidden="true"]');
+    expect(emojiSpan).toBeInTheDocument();
+    expect(emojiSpan).toHaveTextContent('📝');
+
+    const badge = screen.getByRole('status', { name: 'Buildstatus: Build erfolgreich' });
+    expect(badge).toBeInTheDocument();
+
+    const openBtn = screen.getByRole('button', { name: 'Im Browser öffnen' });
+    expect(openBtn).toHaveAttribute('title', 'Draft PR im Browser öffnen');
+    expect(openBtn).not.toHaveAttribute('aria-label');
+    expect(openBtn).toHaveClass('focus-visible:ring-2');
+
+    const discussBtn = screen.getByRole('button', { name: 'Im Chat besprechen' });
+    expect(discussBtn).toHaveAttribute('title', 'Draft PR im Chat besprechen');
+    expect(discussBtn).not.toHaveAttribute('aria-label');
+    expect(discussBtn).toHaveClass('focus-visible:ring-2');
+
+    const runLink = screen.getByRole('link', { name: 'Run öffnen' });
+    expect(runLink).toHaveAttribute('title', 'GitHub Workflow Run öffnen');
+    expect(runLink).toHaveClass('focus-visible:ring-2');
+  });
 });
