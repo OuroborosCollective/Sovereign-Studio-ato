@@ -297,3 +297,146 @@ def test_actual_page_scripts_parse_without_external_resources(tmp_path):
         assert result.returncode == 0, result.stderr
     assert "localStorage" not in page and "sessionStorage" not in page
     assert "textContent" in page and "innerHTML" not in page
+
+def test_server_host_key_comment_normalized_without_touching_login_method(console):
+    instance, profile, calls = console
+    original = profile["knownHostKey"]
+    profile["knownHostKey"] += " server.example"
+    observed = instance.validate_profile(profile)
+    assert observed[3] == original
+    assert observed[-1] == ""
+    assert calls == []
+
+
+def test_password_first_host_key_probe_is_public_and_needs_no_login_material(console):
+    instance, profile, calls = console
+    profile.pop("privateKey")
+    profile["password"] = "synthetic-not-a-real-password"
+    commands = []
+    def keyscan(argv, **kwargs):
+        commands.append(argv)
+        return SimpleNamespace(returncode=0, stdout=profile["host"] + " " + profile["knownHostKey"] + "\n", stderr="")
+    instance.runner = keyscan
+    result = instance.owner_action(owner_action(instance, "probe", host=profile["host"], port=22))
+    assert result["ok"] is True
+    assert result["status"] == "SSH_HOST_KEY_DISCOVERED"
+    assert result["knownHostKey"] == profile["knownHostKey"]
+    assert result["hostFingerprint"].startswith("SHA256:")
+    assert commands[0][:2] == ["ssh-keyscan", "-T"]
+    assert "synthetic-not-a-real-password" not in json.dumps(commands)
+    assert not (instance.root / "ssh_console_state.json").exists()
+
+
+def test_ssh_probe_rejects_untrusted_or_internal_target(console):
+    instance, profile, calls = console
+    observed_calls = []
+    def wrong_server(argv, **kwargs):
+        observed_calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout="9.9.9.9 " + profile["knownHostKey"] + "\n", stderr="")
+    instance.runner = wrong_server
+    with pytest.raises(ValueError, match="unavailable or ambiguous"):
+        instance._probe_host_key(profile["host"], 22)
+    with pytest.raises(ValueError, match="public IP"):
+        instance._probe_host_key("127.0.0.1", 22)
+    assert len(observed_calls) == 1
+
+
+def workspace_granted(console):
+    instance, session_id, calls = connected(console)
+    state = instance._state()
+    state['expiresAt'] = time.time() + 3600
+    instance._write('ssh_console_state.json', state)
+    instance.owner_action(owner_action(instance, 'grant', sessionId=session_id, operations=['workspace'], ttl=900, createdAt=time.time()))
+    return instance, session_id, calls
+
+
+def test_workspace_requires_its_own_owner_grant(console):
+    instance, session_id, calls = connected(console)
+    instance.owner_action(owner_action(instance, 'grant', sessionId=session_id, operations=['disk'], ttl=30))
+    with pytest.raises(ValueError, match='delegation'):
+        instance.assistant_workspace(session_id, 'a'*40, 'init')
+    with pytest.raises(ValueError):
+        instance.validate_grant(['workspace'], 899)
+    with pytest.raises(ValueError):
+        instance.validate_grant(['workspace'], 3601)
+
+
+def test_workspace_grant_repeated_actions_and_target_hash_readback(console):
+    instance, session_id, calls = workspace_granted(console)
+    received = []
+    def runner(argv, *, guard, deadline):
+        import shlex
+        request = json.loads(base64.b64decode(shlex.split(argv[-1])[-2]))
+        received.append(request)
+        guard()
+        return SimpleNamespace(returncode=0, stdout=json.dumps({
+            'ok': True, 'status': 'SSH_WORKSPACE_COMPLETE', **{k: request[k] for k in ('sessionId','grantId','sourceRevision','action')},
+            'sha256': hashlib.sha256(request['content'].encode()).hexdigest(), 'bytes': len(request['content']),
+        }), stderr='')
+    instance.workspace_runner = runner
+    for value in ("print(1)\n", "print(2)\n"):
+        result = instance.assistant_workspace(session_id, 'a'*40, 'write', 'test.py', value, 'absent')
+        assert result['ok'] is True and result['sha256'] == hashlib.sha256(value.encode()).hexdigest()
+    assert len(received) == 2 and received[0]['grantId'] == received[1]['grantId']
+    assert received[0]['sourceRevision'] == 'a'*40
+
+
+def test_expired_or_revoked_workspace_cannot_execute(console):
+    instance, session_id, calls = workspace_granted(console)
+    instance.workspace_runner = lambda *_args, **_kw: pytest.fail('Expired work reached transport')
+    state = instance._state()
+    state['grantUntil'] = time.time() - 1
+    instance._write('ssh_console_state.json', state)
+    with pytest.raises(ValueError, match='delegation'):
+        instance.assistant_workspace(session_id, 'a'*40, 'init')
+    state['grantUntil'] = time.time() + 900
+    instance._write('ssh_console_state.json', state)
+    instance._write('ssh_console_revocation.json', {'sessionId':session_id, 'at':time.time()-60})
+    with pytest.raises(ValueError, match='pending'):
+        instance.assistant_workspace(session_id, 'a'*40, 'init')
+    assert instance.status(session_id)['assistantGrantActive'] is False
+
+
+def test_workspace_mutation_routes_through_the_host_queue():
+    from command_contract import is_mutating_action
+    assert is_mutating_action('ssh_console_assistant_workspace')
+
+
+def test_workspace_is_a_real_mcp_tool_with_no_kwargs_permission_bypass(monkeypatch):
+    import server
+    calls=[]
+    monkeypatch.setattr(server.broker,'call',lambda action, arguments, **kwargs: calls.append((action,arguments)) or {'ok':True})
+    tools=asyncio.run(server.mcp.list_tools())
+    tool=next(t for t in tools if t.name=='vps_ssh_workspace')
+    assert 'kwargs' not in tool.inputSchema['properties']
+    assert 'owner_approved' not in tool.inputSchema['properties']
+    assert tool.inputSchema['properties']['action']['enum']==['init','write','read','run']
+    assert tool.annotations.readOnlyHint is False
+    with pytest.raises(Exception):
+        asyncio.run(server.mcp.call_tool('vps_ssh_workspace',{'session_id':'a'*32,'source_revision':'a'*40,'action':'run','argv':['sudo','id']}))
+    assert calls==[]
+    asyncio.run(server.mcp.call_tool('vps_ssh_workspace',{'session_id':'a'*32,'source_revision':'a'*40,'action':'run','argv':['python3','test.py']}))
+    assert calls[0][0]=='ssh_console_assistant_workspace'
+
+
+def test_target_response_cannot_forge_workspace_identity(console):
+    instance, session_id, calls = workspace_granted(console)
+    instance.workspace_runner = lambda *_args, **_kw: SimpleNamespace(returncode=0, stdout=json.dumps({
+        'ok':True,'status':'SSH_WORKSPACE_COMPLETE','sessionId':'b'*32,'grantId':'b'*32,'sourceRevision':'a'*40,'action':'init'}))
+    with pytest.raises(ValueError, match='identity mismatch'):
+        instance.assistant_workspace(session_id, 'a'*40, 'init')
+
+
+@pytest.mark.parametrize("family,expected", [
+    ("WORKSPACE_BWRAP_UNAVAILABLE", "WORKSPACE_BWRAP_UNAVAILABLE"),
+    ("synthetic-private-detail", "WORKSPACE_TARGET_FAILED"),
+    (["synthetic-private-detail"], "WORKSPACE_TARGET_FAILED"),
+])
+def test_workspace_failure_propagates_only_allowlisted_family(console, family, expected):
+    instance, session_id, calls = workspace_granted(console)
+    instance.workspace_runner = lambda *_args, **_kw: SimpleNamespace(returncode=1, stdout=json.dumps({
+        "ok": False, "status": "SSH_WORKSPACE_BLOCKED", "failureFamily": family,
+        "blocker": "synthetic-private-detail"}), stderr="synthetic-private-detail")
+    result = instance.assistant_workspace(session_id, "a"*40, "run", argv=["python3", "-V"])
+    assert result["ok"] is False and result["failureFamily"] == expected
+    assert "synthetic-private" not in json.dumps(result)

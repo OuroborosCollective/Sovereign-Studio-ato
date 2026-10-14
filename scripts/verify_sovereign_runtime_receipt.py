@@ -92,6 +92,13 @@ def _validate_runtime(receipt: dict[str, Any], scope: dict[str, Any]) -> None:
     runtime = receipt.get("runtime") if isinstance(receipt.get("runtime"), dict) else {}
     backend_runtime = runtime.get("backend") if isinstance(runtime.get("backend"), dict) else {}
     mcp_runtime = runtime.get("mcp") if isinstance(runtime.get("mcp"), dict) else {}
+    workspace = backend_runtime.get("workspace") if isinstance(backend_runtime.get("workspace"), dict) else {}
+    _require(
+        workspace.get("executor") == "sovereign-local-runner"
+        and workspace.get("mountVerified") is True
+        and workspace.get("configurationVerified") is True,
+        "backend workspace mount or configuration is not verified",
+    )
     broker = runtime.get("broker") if isinstance(runtime.get("broker"), dict) else {}
     patchmon = runtime.get("patchmon") if isinstance(runtime.get("patchmon"), dict) else {}
     _require(backend_image.get("digest") == scope["backendDigest"], f"backend image digest mismatch: expected={scope['backendDigest']}, got={backend_image.get('digest')}")

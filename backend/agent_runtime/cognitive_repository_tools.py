@@ -1167,7 +1167,9 @@ class BoundRepositoryToolset:
             )
             result = run_agent_job_tool(self.job_id, action, parameters, repository_path)
             merged = _merge_job_evidence(job, result)
-            gate = append_tool_result_to_job(conn, self.job_id, merged)
+            # Tool receipts are intermediate: only the executor may close the job.
+            # Preserve a concurrent cancellation/revocation and its blocker atomically.
+            gate = append_tool_result_to_job(conn, self.job_id, merged, preserve_job_state=True)
             if assignment is not None:
                 attempt, attempt_workspace = self._resolve_active_fleet_worktree(
                     role=role,

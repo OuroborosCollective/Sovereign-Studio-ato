@@ -5,6 +5,7 @@ MUTATING_ACTIONS = frozenset(
         "host_worker_canary",
         "ssh_console_owner_action",
         "ssh_console_assistant_inspect",
+        "ssh_console_assistant_workspace",
         "agent_zero_a2a_canary",
         "resolve_backend_image",
         "preview_verified_migration",

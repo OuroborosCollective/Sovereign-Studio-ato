@@ -212,8 +212,10 @@ def _evidence_from_tool_result(tool_result: Any) -> EvidenceGateResult:
     return gate
 
 
-def append_tool_result_to_job(conn: Any, job_id: str, tool_result: Any) -> EvidenceGateResult:
-    """Append tool result as event to a job and return its EvidenceGateResult."""
+def append_tool_result_to_job(
+    conn: Any, job_id: str, tool_result: Any, *, preserve_job_state: bool = False,
+) -> EvidenceGateResult:
+    """Record a tool receipt; foreground agent tools must not finalize the job lifecycle."""
     from .contracts import SovereignAgentEvent
     from .job_store import append_agent_event, update_agent_job_state
 
@@ -253,6 +255,7 @@ def append_tool_result_to_job(conn: Any, job_id: str, tool_result: Any) -> Evide
         conn,
         job_id=job_id,
         status=next_status,
+        preserve_job_state=preserve_job_state,
         changed_files=getattr(tool_result, "changed_files", None) or None,
         diff_summary=getattr(tool_result, "diff_summary", None),
         test_summary=getattr(tool_result, "test_summary", None),

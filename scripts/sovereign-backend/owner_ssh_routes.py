@@ -58,7 +58,7 @@ def register_owner_ssh_routes(app, *, require_admin, get_current_admin):
         if not isinstance(body, dict):
             return _no_store(jsonify({"error": "Invalid owner SSH payload"})), 400
         action = body.get("action")
-        if action not in {"connect", "close", "inspect", "grant", "revoke"}:
+        if action not in {"connect", "probe", "close", "inspect", "grant", "revoke"}:
             return _no_store(jsonify({"error": "Unsupported owner SSH action"})), 400
         try:
             if action == "connect":
@@ -66,10 +66,13 @@ def register_owner_ssh_routes(app, *, require_admin, get_current_admin):
                 OwnerSSHConsole.validate_profile(profile)
                 _protected_write("ssh_console_profile.json", profile)
             operation_id = uuid.uuid4().hex
-            record = {"operationId": operation_id, "action": action, "expiresAt": time.time() + 35}
+            record = {"operationId": operation_id, "action": action, "createdAt": time.time(), "expiresAt": time.time() + 35}
             if action == "connect":
                 record["profileSha256"] = hashlib.sha256(json.dumps(profile, separators=(",", ":")).encode()).hexdigest()
-            if action != "connect":
+            if action == "probe":
+                host, port = OwnerSSHConsole.validate_target(body.get("host"), body.get("port", 22))
+                record.update(host=host, port=port)
+            if action not in {"connect", "probe"}:
                 session_id = str(body.get("sessionId") or "")
                 if not len(session_id) == 32 or any(c not in "0123456789abcdef" for c in session_id):
                     raise ValueError("Invalid session identity")
@@ -80,11 +83,12 @@ def register_owner_ssh_routes(app, *, require_admin, get_current_admin):
                 record["operation"] = body["operation"]
             if action == "grant":
                 ops, ttl = body.get("operations"), body.get("ttl", 300)
-                if not isinstance(ops, list) or not ops or any(op not in OPERATIONS for op in ops):
-                    raise ValueError("Invalid delegation scope")
-                if type(ttl) is not int or not 30 <= ttl <= 900:
-                    raise ValueError("Invalid delegation duration")
+                OwnerSSHConsole.validate_grant(ops, ttl)
                 record.update(operations=ops, ttl=ttl)
+            if action in {"revoke", "close"}:
+                # Cancellation must reach an in-flight worker immediately, before queue dispatch.
+                # This durable marker remains effective if the queued owner action expires.
+                _protected_write("ssh_console_revocation.json", {"sessionId": record["sessionId"], "at": record["createdAt"]})
             _protected_write("ssh_console_action.json", record)
             result = HostCommandQueueClient().submit("ssh_console_owner_action",
                        {"operation_id": operation_id}, timeout=25)
@@ -132,11 +136,16 @@ button:disabled{opacity:.45;cursor:wait}label{display:block}.muted{color:#8b949e
 <label>Öffentliche VPS-IP<input id="host" autocomplete="off" placeholder="IPv4 oder IPv6"></label>
 <label>SSH-Port<input id="port" type="number" min="1" max="65535" value="22"></label>
 <label>SSH-Benutzer<input id="username" autocomplete="off"></label>
-<label>Geprüfter Host-Public-Key (ssh-ed25519)<input id="hostKey" autocomplete="off"></label>
-<p class="muted">Den Public-Key unabhängig über deine Provider-Konsole prüfen. Unbekannte oder geänderte Host-Schlüssel werden abgewiesen.</p>
-<label>Anmeldung<select id="authMode"><option value="key">SSH-Schlüssel</option><option value="password">SSH-Passwort</option></select></label>
-<label id="keySection">Dedizierter SSH-Privatschlüssel ohne Passphrase<textarea id="privateKey" autocomplete="off" spellcheck="false"></textarea></label>
-<label id="passwordSection" hidden>SSH-Passwort<input id="password" type="password" autocomplete="off"></label>
+<button id="probeHost" type="button">1. Server prüfen (ohne Passwort)</button>
+<div id="hostVerification" hidden>
+<p>Gefundener Server-Fingerabdruck: <strong id="hostFingerprint"></strong></p>
+<p class="muted">In der Hostinger-Webkonsole unabhängig vergleichen mit: <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>. Der Eintrag mit <code>command=</code> gehört zur CI-Autorisierung und ist kein Server-Hostschlüssel.</p>
+<label class="check"><input id="hostConfirmed" type="checkbox">Fingerabdruck stimmt mit Hostinger überein</label>
+</div>
+<p class="muted">Danach mit Benutzername und Passwort verbinden. Kein SSH-Schlüsseltext erforderlich. Der Server-Schlüssel wird nur nach Bestätigung der Identität akzeptiert.</p>
+<label>Anmeldung<select id="authMode"><option value="password" selected>SSH-Passwort</option><option value="key">SSH-Schlüssel (optional)</option></select></label>
+<label id="keySection" hidden>Dedizierter SSH-Privatschlüssel ohne Passphrase<textarea id="privateKey" autocomplete="off" spellcheck="false"></textarea></label>
+<label id="passwordSection">SSH-Passwort<input id="password" type="password" autocomplete="off"></label>
 <p class="muted">Schlüssel oder Passwort ausschließlich hier eingeben. Verschlüsselte Schlüssel und zusätzliche MFA-Abfragen sind in dieser Version noch nicht unterstützt.</p>
 <label>Sitzungsdauer<select id="duration"><option value="900">15 Minuten</option><option value="1800">30 Minuten</option><option value="3600">60 Minuten</option></select></label>
 <button id="connect">SSH verbinden</button></section>
@@ -145,14 +154,34 @@ button:disabled{opacity:.45;cursor:wait}label{display:block}.muted{color:#8b949e
 <div id="operations"></div>
 <h3>Meine Hilfe freigeben</h3><p>Nur die ausgewählten Menüaktionen werden freigegeben. Die Freigabe gilt für diese Verbindung und endet automatisch.</p>
 <div id="scope"></div><label>Freigabedauer<select id="grantDuration"><option value="300">5 Minuten</option><option value="900">15 Minuten</option></select></label>
+<label class="check"><input id="workspaceScope" type="checkbox">Isolierten VPS-Workspace freigeben</label>
+<p>Erlaubt wiederholte Dateiänderungen und Python-/Node-Tests für 15–60 Minuten. Testcode läuft ohne Root-Rechte und ohne Netzwerk oder produktive Dateien. Merge, Deployment und Datenbankänderungen gehören nicht zu dieser Sitzungsberechtigung.</p>
+<label>Workspace-Freigabedauer<select id="workspaceDuration"><option value="900">15 Minuten</option><option value="1800">30 Minuten</option><option value="3600">60 Minuten</option></select></label>
 <button id="grant">Hilfe freigeben</button><button id="revoke">Freigabe widerrufen</button><button id="close">Verbindung beenden</button>
 <h3>Konsole</h3><pre id="output" aria-live="polite">Noch keine Aktion ausgeführt.</pre></section>
 <p id="message" role="status" aria-live="polite"></p>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-let admin='',session='',busy=false,pending='';
-const names={system:'System',disk:'Festplatten',memory:'Arbeitsspeicher',containers:'Container',services:'Dienste'};
+let admin='',session='',busy=false,pending='',pendingAction='',trustedKey='',trustedTarget='';
+const target=()=>$('host').value.trim()+'|'+Number($('port').value);
+function clearProbe(){
+ trustedKey='';trustedTarget='';$('hostVerification').hidden=true;
+ $('hostConfirmed').checked=false;$('hostFingerprint').textContent='';
+}
+function receiveProbe(result){
+ if(!result||result.status!=='SSH_HOST_KEY_DISCOVERED'||result.ok!==true||
+    result.host+'|'+Number(result.port)!==target()||
+    typeof result.knownHostKey!=='string'||!result.knownHostKey.startsWith('ssh-ed25519 ')||
+    typeof result.hostFingerprint!=='string'||!result.hostFingerprint.startsWith('SHA256:')){
+   clearProbe();throw new Error('Serverprüfung fehlgeschlagen. IP und SSH-Port erneut prüfen.');
+ }
+ trustedKey=result.knownHostKey;trustedTarget=target();
+ $('hostFingerprint').textContent=result.hostFingerprint;
+ $('hostConfirmed').checked=false;$('hostVerification').hidden=false;
+ message('Server gefunden. Fingerabdruck vor dem Verbinden in der Hostinger-Konsole vergleichen.');
+}
+const names={system:'System',disk:'Festplatten',memory:'Arbeitsspeicher',containers:'Container',services:'Dienste',workspace:'Isolierter Workspace'};
 async function api(path,body){
  const response=await fetch(path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+admin,...(body?{'Content-Type':'application/json','X-Sovereign-Owner-Action':'ssh-console'}:{})},body:body?JSON.stringify(body):undefined,credentials:'same-origin',mode:'same-origin',cache:'no-store',redirect:'error'});
  const data=await response.json();
@@ -180,20 +209,36 @@ async function action(body){
  if(busy||pending)return;busy=true;document.querySelectorAll('button').forEach(b=>b.disabled=true);message('Aktion läuft…');
  try{
   const result=await api('/api/admin/owner-ssh/action',{...body,sessionId:session});
-  if(result.status==='IN_PROGRESS'||result.status==='QUEUED'){pending=result.request_id;message('Auftrag läuft. Nicht erneut senden.');return;}
+  if(result.status==='IN_PROGRESS'||result.status==='QUEUED'){pending=result.request_id;pendingAction=body.action;message('Auftrag läuft. Nicht erneut senden.');return;}
   if(result.output!==undefined)$('output').textContent='$ '+result.command+'\n'+result.output+'\nExit: '+result.exitCode;
   if(!result.ok)throw new Error(result.blocker||'Aktion nicht bestätigt.');
-  message(result.status);busy=false;await refresh();
+  if(body.action==='probe')receiveProbe(result);
+  else message(result.status);busy=false;await refresh();
  }catch(error){message(error.message);}finally{busy=false;document.querySelectorAll('button').forEach(b=>b.disabled=Boolean(pending));}
 }
 $('loginButton').onclick=async()=>{admin=$('admin').value.trim();$('admin').value='';if(!admin){message('Owner-Admin-Zugang erforderlich.');return;}try{await refresh();message('Owner angemeldet.');}catch(error){admin='';message(error.message);}};
 $('authMode').onchange=()=>{const password=$('authMode').value==='password';$('keySection').hidden=password;$('passwordSection').hidden=!password;$('privateKey').value='';$('password').value='';};
-$('connect').onclick=async()=>{const profile={host:$('host').value.trim(),port:Number($('port').value),username:$('username').value.trim(),knownHostKey:$('hostKey').value.trim(),expiresInSeconds:Number($('duration').value)};if($('authMode').value==='password')profile.password=$('password').value;else profile.privateKey=$('privateKey').value;$('privateKey').value='';$('password').value='';await action({action:'connect',profile});profile.privateKey='';profile.password='';};
+for(const id of ['host','port'])$(id).addEventListener('input',clearProbe);
+$('probeHost').onclick=()=>{clearProbe();return action({action:'probe',host:$('host').value.trim(),port:Number($('port').value)});};
+$('connect').onclick=async()=>{
+ if(!trustedKey||trustedTarget!==target()||!$('hostConfirmed').checked){
+  message('Zuerst den Server prüfen und dessen Fingerabdruck mit Hostinger vergleichen.');return;
+ }
+ const profile={host:$('host').value.trim(),port:Number($('port').value),username:$('username').value.trim(),knownHostKey:trustedKey,expiresInSeconds:Number($('duration').value)};
+ if($('authMode').value==='password')profile.password=$('password').value;else profile.privateKey=$('privateKey').value;
+ $('privateKey').value='';$('password').value='';
+ await action({action:'connect',profile});profile.privateKey='';profile.password='';
+};
 $('retryClose').onclick=()=>action({action:'close'});
 $('close').onclick=()=>action({action:'close'});$('revoke').onclick=()=>action({action:'revoke'});
-$('grant').onclick=()=>action({action:'grant',operations:Array.from($('scope').querySelectorAll('input:checked')).map(b=>b.value),ttl:Number($('grantDuration').value)});
+$('grant').onclick=()=>{const ops=Array.from($('scope').querySelectorAll('input:checked')).map(b=>b.value);if($('workspaceScope').checked)ops.push('workspace');return action({action:'grant',operations:ops,ttl:Number($($('workspaceScope').checked?'workspaceDuration':'grantDuration').value)});};
 setInterval(async()=>{try{
- if(pending&&!busy){const result=await api('/api/admin/owner-ssh/command/'+encodeURIComponent(pending));if(result.status!=='IN_PROGRESS'&&result.status!=='QUEUED'){pending='';message(result.status);if(result.output!==undefined)$('output').textContent='$ '+result.command+'\n'+result.output+'\nExit: '+result.exitCode;document.querySelectorAll('button').forEach(b=>b.disabled=false);}}
+ if(pending&&!busy){const result=await api('/api/admin/owner-ssh/command/'+encodeURIComponent(pending));if(result.status!=='IN_PROGRESS'&&result.status!=='QUEUED'){
+ const completedAction=pendingAction;pending='';pendingAction='';
+ if(completedAction==='probe'&&result.ok)receiveProbe(result);else message(result.status);
+ if(result.output!==undefined)$('output').textContent='$ '+result.command+'\n'+result.output+'\nExit: '+result.exitCode;
+ document.querySelectorAll('button').forEach(b=>b.disabled=false);
+}}
  await refresh();
 }catch(error){message(error.message);}},5000);
 window.addEventListener('pagehide',()=>{admin='';$('privateKey').value='';$('password').value='';});

@@ -53,6 +53,9 @@ from .rescue import resolve_github_head
 from .evidence_gate import EvidenceGateInput, evaluate_agent_evidence
 from .git_workspace import git_diff_check, git_diff_full
 from .job_lifecycle import create_sovereign_agent_job
+from .repository_miha_hunt import (
+    MihaCodeHuntError, run_repository_miha_code_hunt, persist_repository_miha_code_hunt,
+)
 from .job_store import (
     StoredSovereignAgentJob,
     append_agent_event,
@@ -961,6 +964,23 @@ def start_repository_execution(
         ),
     ))
     job = read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
+
+    # Mandatory read-only MIHA code-hunt sits between frontend submission and
+    # durable executor admission. A failed evidence readback never queues Git work.
+    try:
+        miha_receipt = run_repository_miha_code_hunt(
+            job, workspace_root=workspace_root,
+            expected_head_sha=str(payload.get("expectedHeadSha") or "").lower(),
+        )
+        miha_digest = persist_repository_miha_code_hunt(conn, job_id=job.job_id, receipt=miha_receipt)
+    except Exception as exc:
+        return _block_job(conn, job,
+            f"MIHA_PREEXECUTION_NOT_VERIFIED: {type(exc).__name__}",
+            "miha_preexecution_blocked")
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="miha_preexecution_verified", level="success",
+        message=f"Read-only code hunt verified against exact repository revision; receipt sha256:{miha_digest}.",
+    ))
 
     _bind_repository_execution_permission(
         conn,

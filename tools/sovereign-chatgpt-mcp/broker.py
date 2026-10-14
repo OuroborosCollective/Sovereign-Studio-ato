@@ -453,21 +453,28 @@ class BrokerRuntime:
             schedule_override=str(values.get("schedule_override") or ""),
         )
 
+    @staticmethod
+    def _n8n_retired_result() -> dict[str, Any]:
+        """Fail closed for the owner's permanently retired n8n integration."""
+        return {
+            "ok": False,
+            "status": "N8N_RETIRED_OWNER_POLICY",
+            "blocker": "n8n is permanently retired; see Sovereign issue #2261",
+            "mutationPerformed": False,
+        }
+
     def managed_compose_plan(self, values: dict[str, Any]) -> dict[str, Any]:
-        """Route the fixed n8n host stage through the existing managed-compose plan surface."""
+        """Reject the retired n8n stage; preserve unrelated managed stacks."""
         stack_id = str(values.get("stack_id") or "").strip()
         if stack_id == "n8n-host-stage1":
-            return self.n8n_host_maintenance.stage1_plan()
+            return self._n8n_retired_result()
         return self.managed_compose.plan(stack_id=stack_id)
 
     def managed_compose_apply(self, values: dict[str, Any]) -> dict[str, Any]:
-        """Route the fixed n8n host stage through the existing managed-compose apply surface."""
+        """Never resurrect n8n, including with an old confirmation digest."""
         stack_id = str(values.get("stack_id") or "").strip()
         if stack_id == "n8n-host-stage1":
-            return self.n8n_host_maintenance.stage1_apply(
-                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
-                owner_approved=self.private_owner_mode,
-            )
+            return self._n8n_retired_result()
         return self.managed_compose.deploy(
             stack_id=stack_id,
             confirmation_sha256=str(values.get("confirmation_sha256") or ""),
@@ -494,6 +501,11 @@ class BrokerRuntime:
             "ssh_console_status": lambda values: self.owner_ssh.status(str(values.get("session_id") or "")),
             "ssh_console_owner_action": lambda values: self.owner_ssh.owner_action(str(values.get("operation_id") or "")),
             "ssh_console_assistant_inspect": lambda values: self.owner_ssh.assistant_inspect(str(values.get("session_id") or ""), str(values.get("operation") or "")),
+            "ssh_console_assistant_workspace": lambda values: self.owner_ssh.assistant_workspace(
+                session_id=str(values.get("session_id") or ""), source_revision=str(values.get("source_revision") or ""),
+                action=values.get("action"), path=values.get("path", ""), content=values.get("content", ""),
+                expected_sha256=values.get("expected_sha256", ""), argv=values.get("argv"),
+                timeout_seconds=values.get("timeout_seconds", 30)),
             "broker_health": self.health,
             "host_worker_canary": lambda _values: {
                 "ok": True,
@@ -704,25 +716,8 @@ class BrokerRuntime:
                 confirmation_digest=str(values.get("confirmation_digest") or ""),
             ),
             "managed_compose_stack_plan": self.managed_compose_plan,
-            "n8n_workflow_plan": lambda values: self.n8n_workflows.plan(
-                lane_id=str(values.get("lane_id") or ""),
-                operation=str(values.get("operation") or ""),
-                workflow_id=str(values.get("workflow_id") or ""),
-                spec=values.get("spec") if isinstance(values.get("spec"), dict) else None,
-            ),
-            "n8n_workflow_apply": lambda values: self.n8n_workflows.apply(
-                lane_id=str(values.get("lane_id") or ""),
-                operation=str(values.get("operation") or ""),
-                workflow_id=str(values.get("workflow_id") or ""),
-                spec=values.get("spec") if isinstance(values.get("spec"), dict) else None,
-                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
-                owner_approved=standing_owner_delegation_approved(
-                    private_owner_mode=self.private_owner_mode,
-                    caller_attestation=bool(
-                        values.get("owner_approved", False)
-                    ),
-                ),
-            ),
+            "n8n_workflow_plan": lambda _values: self._n8n_retired_result(),
+            "n8n_workflow_apply": lambda _values: self._n8n_retired_result(),
             "memory_gateway_collection_canary": lambda _values: self.managed_compose.memory_gateway_collection_canary(),
             "litellm_provider_model_inventory": lambda _values: self.managed_compose.litellm_provider_model_inventory(),
             "openai_project_runtime_evidence": lambda _values: self.managed_compose.openai_project_runtime_evidence(),
