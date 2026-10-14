@@ -28,6 +28,7 @@ import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
+import { DraftPrCard } from './DraftPrCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1538,6 +1539,54 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(localModeBtn);
       expect(onUseLocalMode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('DraftPrCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders with aria-hidden emoji, status role on build badge, and focus-visible action buttons', () => {
+      const onOpenBrowser = vi.fn();
+      const onDiscussInChat = vi.fn();
+
+      const { container } = render(
+        <DraftPrCard
+          url="https://github.com/owner/repo/pull/123"
+          changedFiles={['src/App.tsx']}
+          buildStatus={{
+            state: 'success',
+            label: 'Build erfolgreich',
+            detail: 'GitHub Run pass',
+            runUrl: 'https://github.com/owner/repo/actions/runs/123',
+          }}
+          onOpenBrowser={onOpenBrowser}
+          onDiscussInChat={onDiscussInChat}
+        />
+      );
+
+      const emojiSpan = container.querySelector('[aria-hidden="true"]');
+      expect(emojiSpan).toBeInTheDocument();
+
+      const statusBadge = screen.getByRole('status', { name: 'Buildstatus: Build erfolgreich' });
+      expect(statusBadge).toBeInTheDocument();
+
+      const openBtn = screen.getByRole('button', { name: 'Im Browser öffnen' });
+      expect(openBtn).toHaveAttribute('title', 'Draft PR im Browser öffnen');
+      expect(openBtn).not.toHaveAttribute('aria-label');
+      expect(openBtn).toHaveClass('focus-visible:ring-2');
+
+      const discussBtn = screen.getByRole('button', { name: 'Im Chat besprechen' });
+      expect(discussBtn).toHaveAttribute('title', 'Draft PR im Chat besprechen');
+      expect(discussBtn).not.toHaveAttribute('aria-label');
+      expect(discussBtn).toHaveClass('focus-visible:ring-2');
+
+      const runLink = screen.getByRole('link', { name: 'Run öffnen' });
+      expect(runLink).toHaveAttribute('title', 'GitHub Workflow Run öffnen');
+      expect(runLink).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(openBtn);
+      expect(onOpenBrowser).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(discussBtn);
+      expect(onDiscussInChat).toHaveBeenCalledTimes(1);
     });
   });
 });
