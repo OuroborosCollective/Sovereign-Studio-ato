@@ -83,8 +83,9 @@ export class LatentSpaceNavigator {
   addPattern(pattern: PatternEmbedding): boolean {
     if (pattern.embedding.length !== this.dimension) return false;
 
+    // Bolt Optimization: Evict oldest patterns using head removal without O(N) shift before evictPattern
     while (this.patterns.size >= this.maxPatterns && this.insertionOrder.length > 0) {
-      const oldestId = this.insertionOrder.shift();
+      const oldestId = this.insertionOrder[0];
       if (oldestId) this.evictPattern(oldestId);
     }
 
@@ -101,17 +102,22 @@ export class LatentSpaceNavigator {
 
   evictPattern(patternId: string): void {
     const pattern = this.patterns.get(patternId);
-    if (!pattern) return;
-
-    const nodePatterns = this.nodeIndex.get(pattern.node);
-    if (nodePatterns) {
-      nodePatterns.delete(patternId);
-      if (nodePatterns.size === 0) this.nodeIndex.delete(pattern.node);
+    if (pattern) {
+      const nodePatterns = this.nodeIndex.get(pattern.node);
+      if (nodePatterns) {
+        nodePatterns.delete(patternId);
+        if (nodePatterns.size === 0) this.nodeIndex.delete(pattern.node);
+      }
+      this.patterns.delete(patternId);
     }
 
-    this.patterns.delete(patternId);
-    const orderIndex = this.insertionOrder.indexOf(patternId);
-    if (orderIndex !== -1) this.insertionOrder.splice(orderIndex, 1);
+    // Bolt Optimization: Always purge patternId from insertionOrder (with O(1) head fast-path) even if pattern entry was missing
+    if (this.insertionOrder.length > 0 && this.insertionOrder[0] === patternId) {
+      this.insertionOrder.shift();
+    } else {
+      const orderIndex = this.insertionOrder.indexOf(patternId);
+      if (orderIndex !== -1) this.insertionOrder.splice(orderIndex, 1);
+    }
   }
 
   findSimilar(
@@ -190,12 +196,18 @@ export class LatentSpaceNavigator {
     return this.patterns.get(patternId);
   }
 
+  // Bolt Optimization: Single-pass indexed loop over nodeIndex IDs eliminating Array.from, .map, and .filter allocations
   getPatternsForNode(node: string): PatternEmbedding[] {
     const patternIds = this.nodeIndex.get(node);
     if (!patternIds) return [];
-    return Array.from(patternIds)
-      .map((id) => this.patterns.get(id))
-      .filter((pattern): pattern is PatternEmbedding => pattern !== undefined);
+    const result: PatternEmbedding[] = [];
+    for (const id of patternIds) {
+      const pattern = this.patterns.get(id);
+      if (pattern !== undefined) {
+        result.push(pattern);
+      }
+    }
+    return result;
   }
 
   getAllPatterns(): PatternEmbedding[] {
@@ -218,7 +230,9 @@ export class LatentSpaceNavigator {
 
   computeNorm(vector: number[]): number {
     let sum = 0;
-    for (const value of vector) sum += value * value;
+    for (let index = 0; index < vector.length; index += 1) {
+      sum += vector[index] * vector[index];
+    }
     return Math.sqrt(sum);
   }
 
@@ -244,19 +258,23 @@ export class LatentSpaceNavigator {
     return { embedding, norm };
   }
 
+  // Bolt Optimization: Single-pass candidate accumulation avoiding intermediate array allocations from getAllPatterns(), two .filter() passes, and array spreading
   private getCandidates(node: string, nodeFilter?: string): PatternEmbedding[] {
     if (nodeFilter) return this.getPatternsForNode(nodeFilter);
 
-    const sameNode = this.getPatternsForNode(node);
-    const crossNode = this.getAllPatterns()
-      .filter((pattern) => pattern.node !== node)
-      .filter((pattern) => stableHash(`${node}:${pattern.id}`) % 10 === 0);
+    const candidates = this.getPatternsForNode(node);
+    for (const pattern of this.patterns.values()) {
+      if (pattern.node !== node && stableHash(`${node}:${pattern.id}`) % 10 === 0) {
+        candidates.push(pattern);
+      }
+    }
 
-    return [...sameNode, ...crossNode];
+    return candidates;
   }
 
+  // Bolt Optimization: Direct Map values iteration when node filter is unconstrained, avoiding getAllPatterns() array allocation
   computeCorrelationMatrix(node?: string): Map<string, Map<string, number>> {
-    const patterns = node ? this.getPatternsForNode(node) : this.getAllPatterns();
+    const patterns = node ? this.getPatternsForNode(node) : Array.from(this.patterns.values());
     const correlations = new Map<string, Map<string, number>>();
 
     for (const first of patterns) {

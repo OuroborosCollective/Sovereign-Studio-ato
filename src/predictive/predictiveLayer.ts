@@ -330,8 +330,13 @@ export class PredictiveLayer {
     return embedding;
   }
 
+  // Bolt Optimization: Direct indexed loop replacing vector.reduce closure
   private computeNorm(vector: number[]): number {
-    return Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+    let sum = 0;
+    for (let i = 0; i < vector.length; i += 1) {
+      sum += vector[i] * vector[i];
+    }
+    return Math.sqrt(sum);
   }
 
   private estimateMemoryUsage(): number {
