@@ -185,9 +185,21 @@ describe('maskSecrets', () => {
     expect(maskSecrets('stability_secret=stability_sec_val_303')).toBe('stability_secret=****');
     expect(maskSecrets('fal_key: fal_key_val_404')).toBe('fal_key: ****');
     expect(maskSecrets('fal_secret=fal_sec_val_505')).toBe('fal_secret=****');
+    expect(maskSecrets('together_key: together_key_val_101')).toBe('together_key: ****');
+    expect(maskSecrets('together_secret=together_sec_val_202')).toBe('together_secret=****');
+    expect(maskSecrets('together_token: together_tok_val_303')).toBe('together_token: ****');
+    expect(maskSecrets('hf_key: hf_key_val_404')).toBe('hf_key: ****');
+    expect(maskSecrets('hf_secret=hf_sec_val_505')).toBe('hf_secret=****');
+    expect(maskSecrets('hf_token: hf_tok_val_606')).toBe('hf_token: ****');
+    expect(maskSecrets('huggingface_key=huggingface_key_val_707')).toBe('huggingface_key=****');
+    expect(maskSecrets('huggingface_secret: huggingface_sec_val_808')).toBe('huggingface_secret: ****');
+    expect(maskSecrets('huggingface_token=huggingface_tok_val_909')).toBe('huggingface_token=****');
+    expect(maskSecrets('mistral_key: mistral_key_val_101')).toBe('mistral_key: ****');
+    expect(maskSecrets('mistral_secret=mistral_sec_val_202')).toBe('mistral_secret=****');
+    expect(maskSecrets('mistral_token: mistral_tok_val_303')).toBe('mistral_token: ****');
     expect(maskSecrets('"deepseek_key": "quoted_value_123"')).toBe('"deepseek_key": ****');
 
-    const plain = 'cohere_key pinecone_secret qdrant_key deepseek_key perplexity_secret replicate_key cloudflare_token elevenlabs_key stability_key fal_secret without assignments';
+    const plain = 'cohere_key pinecone_secret qdrant_key deepseek_key perplexity_secret replicate_key cloudflare_token elevenlabs_key stability_key fal_secret together_key hf_token mistral_secret without assignments';
     expect(maskSecrets(plain)).toBe(plain);
   });
 
