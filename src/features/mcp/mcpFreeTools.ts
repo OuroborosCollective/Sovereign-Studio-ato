@@ -107,8 +107,13 @@ export function getAvailableMCPTools(): {
   tools: Array<{ server: string; name: string; description: string }>;
 } {
   const tools = getMCPToolRegistry().getAllTools();
+  // ⚡ Bolt: Extract unique servers via single-pass loop
+  const serversSet = new Set<string>();
+  for (let i = 0; i < tools.length; i++) {
+    serversSet.add(tools[i].server);
+  }
   return {
-    servers: [...new Set(tools.map(tool => tool.server))].sort(),
+    servers: Array.from(serversSet).sort(),
     tools,
   };
 }

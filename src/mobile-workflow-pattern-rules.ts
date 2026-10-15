@@ -577,7 +577,14 @@ function cloneRule(rule: MobileWorkflowPatternRule): MobileWorkflowPatternRule {
 }
 
 function removeSignals(source: string[], removals: string[] = []): string[] {
-  const removalKeys = new Set(removals.map(canonicalSignal).filter(Boolean));
+  // ⚡ Bolt: Extract unique canonical signals into a Set via single-pass loop
+  const removalKeys = new Set<string>();
+  for (let i = 0; i < removals.length; i++) {
+    const key = canonicalSignal(removals[i]);
+    if (key) {
+      removalKeys.add(key);
+    }
+  }
 
   if (removalKeys.size === 0) return [...source];
 
