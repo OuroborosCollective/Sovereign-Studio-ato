@@ -1035,7 +1035,7 @@ describe('Palette Accessibility Enhancements', () => {
   });
 
   describe('PromptLibraryPanel Accessibility and Micro-UX Enhancements', () => {
-    it('renders dialog and controls with descriptive title, aria-label, and aria-pressed attributes', () => {
+    it('renders dialog with heading link, semantic list, form labels, and Escape key dismiss listener', () => {
       const onSelectTemplate = vi.fn();
       const onClose = vi.fn();
 
@@ -1046,8 +1046,16 @@ describe('Palette Accessibility Enhancements', () => {
         />
       );
 
+      const dialog = screen.getByRole('dialog', { name: '📋 Prompt-Bibliothek' });
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveAttribute('aria-labelledby', 'prompt-library-title');
+
+      const list = screen.getByRole('list', { name: 'Prompt-Templates' });
+      expect(list).toBeInTheDocument();
+
       const closeBtn = screen.getByRole('button', { name: 'Prompt-Bibliothek schließen' });
       expect(closeBtn).toHaveAttribute('title', 'Prompt-Bibliothek schließen');
+      expect(closeBtn).toHaveClass('focus-visible:ring-2');
 
       const searchInput = screen.getByLabelText('Prompt-Templates suchen');
       expect(searchInput).toHaveAttribute('title', 'Prompt-Templates suchen');
@@ -1063,12 +1071,18 @@ describe('Palette Accessibility Enhancements', () => {
       fireEvent.click(createCustomBtn);
 
       const labelInput = screen.getByLabelText('Template Bezeichnung');
+      expect(labelInput).toHaveAttribute('id', 'prompt-template-label');
       expect(labelInput).toHaveAttribute('title', 'Template Bezeichnung');
 
+      const labelTag = screen.getByText(/Bezeichnung/);
+      expect(labelTag).toHaveAttribute('for', 'prompt-template-label');
+
       const promptTextarea = screen.getByLabelText('Template Prompt Text');
+      expect(promptTextarea).toHaveAttribute('id', 'prompt-template-text');
       expect(promptTextarea).toHaveAttribute('title', 'Template Prompt Text');
 
       const categorySelect = screen.getByLabelText('Template Kategorie');
+      expect(categorySelect).toHaveAttribute('id', 'prompt-template-category');
       expect(categorySelect).toHaveAttribute('title', 'Template Kategorie');
 
       const saveBtn = screen.getByRole('button', { name: 'Template speichern' });
@@ -1076,6 +1090,10 @@ describe('Palette Accessibility Enhancements', () => {
 
       const cancelBtn = screen.getByRole('button', { name: 'Erstellung abbrechen' });
       expect(cancelBtn).toHaveAttribute('title', 'Erstellung abbrechen');
+
+      // Press Escape key to trigger onClose dismiss
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
 
