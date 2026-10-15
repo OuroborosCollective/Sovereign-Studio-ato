@@ -69,3 +69,6 @@
 ## 2025-10-05 - [Accessible Chat Streams & Empty States]
 **Learning:** Chat interfaces with dynamically added messages lack screen reader notifications if they do not have a live region. Furthermore, an empty stream provides no context. Adding `role="log"` and `aria-live="polite"` to the container, along with a visually centered empty state, improves both discoverability and accessibility.
 **Action:** Always wrap chat or event streams in an element with `role="log"` or `aria-live="polite"`, and provide a helpful empty state when no items are present.
+## 2024-10-09 - Accessible Interactive Elements in ChatSurface
+**Learning:** Placeholders in `<textarea>` and labels around `<select>` elements are often insufficient indicators of disabled states for screen readers and keyboard users when the state varies based on application logic (e.g. execution locks). State-dependent `title` attributes along with visual `disabled:cursor-not-allowed` styles significantly improve intuitive understandability.
+**Action:** Always provide state-dependent `title` attributes and `disabled:cursor-not-allowed` styles to all interactive inputs whose availability is dynamically locked.
