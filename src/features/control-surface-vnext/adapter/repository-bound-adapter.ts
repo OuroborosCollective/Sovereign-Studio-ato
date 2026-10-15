@@ -23,7 +23,13 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
-const RESUMABLE_REPOSITORY_STATUSES = new Set(['running', 'validating']);
+const RESUMABLE_REPOSITORY_STATUSES = new Set([
+  'queued',
+  'provisioning',
+  'running',
+  'waiting-for-user',
+  'validating',
+]);
 
 function isResumableRepositoryRun(candidate: JsonRecord): boolean {
   const status = stringValue(candidate.status)?.toLowerCase();
