@@ -14,6 +14,7 @@ describe('live command surface integration', () => {
     fireEvent.click(screen.getByText(/Mission controls/));
     expect(controls).toHaveAttribute('open');
     expect(screen.getByLabelText('ROUTE')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'ROUTE', exact: true })).toHaveValue('free');
     fireEvent.click(screen.getByText(/Mission controls/));
     expect(controls).not.toHaveAttribute('open');
     expect(screen.getByRole('log')).toHaveTextContent('Test command blocked');
