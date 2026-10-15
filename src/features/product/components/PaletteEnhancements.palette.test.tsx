@@ -28,6 +28,8 @@ import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
+import { SequentialRuntimePanel } from './SequentialRuntimePanel';
+import { createEmptySequentialRuntimeState } from '../runtime/sequentialRuntimeGuard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1538,6 +1540,58 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(localModeBtn);
       expect(onUseLocalMode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('SequentialRuntimePanel Accessibility and Micro-UX Enhancements', () => {
+    it('renders section landmark linked to header, status role, semantic step list, and focusable history summary', () => {
+      const mockState = {
+        ...createEmptySequentialRuntimeState(),
+        activeStep: 'repo_readiness' as const,
+        steps: {
+          ...createEmptySequentialRuntimeState().steps,
+          repo_readiness: {
+            status: 'running' as const,
+            message: 'Checking repo configuration...',
+          },
+        },
+        history: [
+          {
+            sequence: 1,
+            at: Date.now(),
+            step: 'repo_readiness' as const,
+            status: 'running' as const,
+            message: 'Checking repo configuration...',
+          },
+        ],
+      };
+
+      render(<SequentialRuntimePanel state={mockState} />);
+
+      const section = screen.getByRole('region', { name: 'Sequential Runtime Guard' });
+      expect(section).toBeInTheDocument();
+
+      const heading = screen.getByRole('heading', { name: 'Sequential Runtime Guard', level: 2 });
+      expect(heading).toHaveAttribute('id', 'sequential-runtime-guard-title');
+      expect(section).toHaveAttribute('aria-labelledby', 'sequential-runtime-guard-title');
+
+      const statusBadge = screen.getByRole('status');
+      expect(statusBadge).toHaveAttribute('aria-label', 'Sequential Runtime Guard status: locked (repo_readiness)');
+      expect(statusBadge).toHaveAttribute('title', 'Sequential Runtime Guard status: locked (repo_readiness)');
+
+      const stepList = screen.getByRole('list', { name: 'Sequential Runtime Steps' });
+      expect(stepList).toBeInTheDocument();
+
+      const listItems = screen.getAllByRole('listitem');
+      expect(listItems).toHaveLength(3);
+      expect(listItems[0]).toHaveAttribute('title', 'Repo readiness gate: running – Checking repo configuration...');
+
+      const summary = screen.getByText('Runtime transition history');
+      expect(summary).toHaveAttribute('title', 'Toggle runtime transition history');
+      expect(summary).toHaveClass('focus-visible:ring-2');
+
+      const historyStatus = screen.getByTitle('Status: running');
+      expect(historyStatus).toBeInTheDocument();
     });
   });
 });
