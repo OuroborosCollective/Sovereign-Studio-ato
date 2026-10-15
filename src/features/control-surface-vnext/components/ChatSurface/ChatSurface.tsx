@@ -115,7 +115,7 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
           <div className="flex items-center gap-2">
             <span data-testid="agent-mode-single" className="shrink-0 rounded border border-[rgba(16,185,129,0.3)] px-1.5 py-1 text-[7px] font-bold text-[var(--emerald-seal)]">1 AGENT · {selectedMode === 'paid' ? 'OPENROUTER' : 'FREELLM'}</span>
             <label htmlFor="mission-route" className="text-[8px] text-[var(--text-dim)]">ROUTE</label>
-            <select id="mission-route" aria-describedby="mission-route-availability" value={selectedMode} disabled={executing || !fresh} onChange={event => onExecutionModeChange?.(event.target.value as ExecutionMode)} className="min-h-11 min-w-0 flex-1 rounded border border-white/10 bg-[var(--carbon-surface)] px-2 text-[10px] text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20">
+            <select id="mission-route" aria-describedby="mission-route-availability" title={executing ? "Route locked while executing" : !fresh ? "Route locked while readback unavailable" : "Select routing mode"} value={selectedMode} disabled={executing || !fresh} onChange={event => onExecutionModeChange?.(event.target.value as ExecutionMode)} className="min-h-11 min-w-0 flex-1 rounded border border-white/10 bg-[var(--carbon-surface)] px-2 text-[10px] text-white disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20">
               <option value="free" disabled={!fresh || free?.available !== true}>Sovereign · Free{free?.model ? ` · ${free.model}` : ''}</option>
               <option value="paid" disabled={!fresh || paid?.available !== true}>Sovereign · Paid{paid?.model ? ` · ${paid.model}` : ''}</option>
             </select>
@@ -135,6 +135,7 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
           <textarea
             data-testid="mission__textarea"
             aria-label="Mission to Sovereign"
+            title={executing ? "Mission locked while the persisted run is executing…" : readbackUnavailable ? "Readback unavailable — retry the persisted run before dispatching again." : "Describe the mission"}
             value={text}
             onChange={(event) => { setText(event.target.value); onTypingStateChange?.(event.target.value.length > 0); }}
             onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit(); } }}
@@ -143,7 +144,7 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
             disabled={executing}
             placeholder={executing ? 'Mission locked while the persisted run is executing…' : readbackUnavailable ? 'Readback unavailable — retry the persisted run before dispatching again.' : 'Describe the mission. Runtime truth begins only after backend acceptance.'}
             rows={2}
-            className="w-full min-h-[48px] sm:min-h-[72px] max-h-36 resize-none bg-transparent outline-none px-2 py-1.5 font-mono text-[11px] text-white placeholder:text-[var(--text-dim)] disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[var(--red-pulse)] focus-visible:rounded-md"
+            className="w-full min-h-[48px] sm:min-h-[72px] max-h-36 resize-none bg-transparent outline-none px-2 py-1.5 font-mono text-[11px] text-white placeholder:text-[var(--text-dim)] disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-[var(--red-pulse)] focus-visible:rounded-md"
           />
           <div className="flex items-center justify-between gap-2 px-1 pt-1 border-t border-white/5"><div className="flex items-center gap-1 font-mono text-[8.5px] text-[var(--text-dim)]"><Cpu size={10} className="text-[var(--red-laser)]" /> ENTER dispatches · SHIFT+ENTER newline</div><motion.button whileTap={{ scale: 0.96 }} type="button" data-testid="builder__start-task" onClick={submit} disabled={!canSend} title={executing ? 'Mission locked while executing' : canSend ? 'Dispatch mission' : 'Enter a mission to dispatch'} className="min-h-9 px-3 rounded-md bg-[var(--red-pulse)] text-white font-mono text-[10px] font-black flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed shadow-[0_0_12px_rgba(255,30,56,0.25)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">{executing ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />} DISPATCH</motion.button></div>
         </div>

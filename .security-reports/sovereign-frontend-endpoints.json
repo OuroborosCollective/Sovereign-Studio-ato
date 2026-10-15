@@ -15093,7 +15093,7 @@
       "call_name": "fetch",
       "file": "src/mobile-setup-drawer.ts",
       "host": "api.github.com",
-      "line": 267,
+      "line": 272,
       "method": "GET",
       "path": "/repos/<p>/<p>",
       "surface_status": "active",
@@ -15214,7 +15214,7 @@
       "call_name": "fetch",
       "file": "src/mobile-setup-drawer.ts",
       "host": "api.github.com",
-      "line": 271,
+      "line": 276,
       "method": "GET",
       "path": "/repos/<p>/<p>/git/trees/<p>",
       "surface_status": "active",
@@ -21546,10 +21546,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "65e90f7dea19a961ecdaa5aaa69c82313c5a52a2453a98d148485a4287bf310f",
-  "revision": "ab4a40fc55358900cacec7550964c1e846500ce5",
+  "reportSha256": "96bc1d8debbe46fc5a7d90e13ad51200387c480e1cd6c47f5d51b5aa68503181",
+  "revision": "5b0d686a03989f4228d9bfcd3c48400af70590ff",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "0a5712d6336edf2bf64c6917558f15999a1e1d148c8017b2321062b175521e0c",
+  "sourceTreeSha256": "16d2263e5be5bc0b5433f052ecafd33a96879e234f4c3524589660226e7013fa",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -21568,7 +21568,7 @@
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
-    "testFileCount": 829,
+    "testFileCount": 834,
     "unmatchedActiveRequestCount": 0
   },
   "truthBoundary": {
