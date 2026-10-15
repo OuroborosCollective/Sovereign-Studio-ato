@@ -87,3 +87,6 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+## 2024-10-13 - Replace chained map array in tick computation
+**Learning:** When extracting unique numeric values from arrays into Sets inside high-frequency paths (like tickWindow pipeline generator loops), using `[...new Set(arr.map(x => x.val))]` creates intermediate array allocations and incurs garbage collection overhead that slows down operations on large signal sets.
+**Action:** Use a single-pass `for` loop to extract values into a Set, and sort using `.sort((a, b) => a - b)` to avoid intermediate map arrays.
