@@ -25,6 +25,7 @@ import { AgentResultCard } from './AgentResultCard';
 import { AgentWorkTimeline } from './AgentWorkTimeline';
 import { TestRunnerResultCard } from './TestRunnerResultCard';
 import { Ampel } from './Ampel';
+import { ThinkingDots } from './ThinkingDots';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
@@ -1298,6 +1299,19 @@ describe('Palette Accessibility Enhancements', () => {
       const hiddenElements = container.querySelectorAll('[aria-hidden="true"]');
       // 3 status light dots + 1 non-compact status text label = 4 hidden elements
       expect(hiddenElements.length).toBe(4);
+    });
+  });
+
+  describe('ThinkingDots Accessibility and Micro-UX Enhancements', () => {
+    it('renders status role, descriptive aria-label, title tooltip, and aria-hidden decorative child elements', () => {
+      const { container } = render(<ThinkingDots />);
+
+      const statusElem = screen.getByRole('status', { name: 'Sovereign denkt nach' });
+      expect(statusElem).toBeInTheDocument();
+      expect(statusElem).toHaveAttribute('title', 'Sovereign denkt nach');
+
+      const hiddenElements = container.querySelectorAll('[aria-hidden="true"]');
+      expect(hiddenElements.length).toBe(2);
     });
   });
 
