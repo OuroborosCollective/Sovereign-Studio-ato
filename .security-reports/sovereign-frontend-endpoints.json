@@ -15093,7 +15093,7 @@
       "call_name": "fetch",
       "file": "src/mobile-setup-drawer.ts",
       "host": "api.github.com",
-      "line": 267,
+      "line": 272,
       "method": "GET",
       "path": "/repos/<p>/<p>",
       "surface_status": "active",
@@ -15214,7 +15214,7 @@
       "call_name": "fetch",
       "file": "src/mobile-setup-drawer.ts",
       "host": "api.github.com",
-      "line": 271,
+      "line": 276,
       "method": "GET",
       "path": "/repos/<p>/<p>/git/trees/<p>",
       "surface_status": "active",
@@ -17139,7 +17139,15 @@
     },
     {
       "dynamic": false,
-      "line": 8,
+      "line": 7,
+      "source": "src/features/product/components/ChatSidebar.tsx",
+      "source_status": "active",
+      "target": "src/features/product/components/ChatMarkdown.tsx",
+      "target_status": "active"
+    },
+    {
+      "dynamic": false,
+      "line": 9,
       "source": "src/features/product/components/ChatSidebar.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/chatSidebarRuntime.ts",
@@ -17147,7 +17155,7 @@
     },
     {
       "dynamic": false,
-      "line": 7,
+      "line": 8,
       "source": "src/features/product/components/ChatSidebar.tsx",
       "source_status": "active",
       "target": "src/features/product/types.ts",
@@ -21546,10 +21554,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "65e90f7dea19a961ecdaa5aaa69c82313c5a52a2453a98d148485a4287bf310f",
-  "revision": "ab4a40fc55358900cacec7550964c1e846500ce5",
+  "reportSha256": "949dc80f38bb92f77450e74e6f030fbe089d0806b42f6b284f465986d699cb92",
+  "revision": "9da2ab7d5f1b0647104447a9e663915524dba7ed",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "0a5712d6336edf2bf64c6917558f15999a1e1d148c8017b2321062b175521e0c",
+  "sourceTreeSha256": "bd67e61450983d5e24df7ca34be8c8436b2160b14d07bafbd290e014a49f0d40",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
@@ -21564,11 +21572,11 @@
     "externalRequestCount": 30,
     "frontendCallCount": 288,
     "frontendModuleCount": 566,
-    "importEdgeCount": 767,
+    "importEdgeCount": 768,
     "legacyImportViolationCount": 0,
     "methodMismatchCount": 0,
     "methodUnknownCount": 0,
-    "testFileCount": 829,
+    "testFileCount": 835,
     "unmatchedActiveRequestCount": 0
   },
   "truthBoundary": {
