@@ -139,6 +139,10 @@ describe('maskSecrets', () => {
     expect(maskSecrets('postmark_key=postmark_secret_val_404')).toBe('postmark_key=****');
     expect(maskSecrets('twilio_key: twilio_key_val_505')).toBe('twilio_key: ****');
     expect(maskSecrets('twilio_secret=twilio_secret_val_606')).toBe('twilio_secret=****');
+    expect(maskSecrets('linear_key: linear_key_val_707')).toBe('linear_key: ****');
+    expect(maskSecrets('datadog_secret=datadog_secret_val_808')).toBe('datadog_secret=****');
+    expect(maskSecrets('algolia_key: algolia_key_val_909')).toBe('algolia_key: ****');
+    expect(maskSecrets('supabase_secret=supabase_secret_val_101')).toBe('supabase_secret=****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {

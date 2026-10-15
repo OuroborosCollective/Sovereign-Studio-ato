@@ -269,8 +269,16 @@ async function submitMission(page: Page, text: string): Promise<LiveRunProof> {
   const composer = page.getByTestId('mission__textarea');
   await expect(composer).toBeVisible();
   await composer.fill(text);
+  const controls = page.getByTestId('vnext-mission-controls');
+  if (!await controls.evaluate(element => element.hasAttribute('open'))) {
+    await controls.locator('summary').click();
+  }
+  await expect(controls).toHaveAttribute('open', '');
   await expect(page.getByTestId('agent-mode-single')).toHaveText('1 AGENT · FREELLM');
-  await expect(page.getByRole('combobox', { name: 'ROUTE', exact: true })).toHaveValue('low');
+  await expect(page.getByRole('combobox', { name: 'ROUTE', exact: true })).toHaveValue('free');
+  await controls.locator('summary').click();
+  await expect(controls).not.toHaveAttribute('open');
+  await expect(page.getByTestId('builder__start-task')).toBeEnabled();
   const [startResponse] = await Promise.all([
     page.waitForResponse((response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/user/agent/repository/run', { timeout: REPOSITORY_START_TIMEOUT_MS }),
     page.getByTestId('builder__start-task').click(),
