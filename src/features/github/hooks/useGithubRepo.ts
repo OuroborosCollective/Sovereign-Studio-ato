@@ -63,7 +63,14 @@ export const useGithubRepo = () => {
     repoStatus: string;
     repoFiles: RepoFile[];
   }) => {
-    const safeFiles = next.repoFiles.filter((file) => file.type === 'blob' || file.type === 'tree').slice(0, 500);
+    // ⚡ Bolt: Consolidate chained filter and slice operations into a single bounded loop
+    const safeFiles: RepoFile[] = [];
+    for (const file of next.repoFiles) {
+      if (safeFiles.length >= 500) break;
+      if (file.type === 'blob' || file.type === 'tree') {
+        safeFiles.push(file);
+      }
+    }
     const nextStatus = `${next.repoStatus} [session restored]`;
     setRepoUrl(next.repoUrl);
     setRepoBranch(next.repoBranch);
