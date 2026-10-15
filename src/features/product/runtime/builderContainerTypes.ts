@@ -73,6 +73,7 @@ export interface ChatLine {
   readonly createdAt?: number;
   readonly bubble?: SituationalBubbleBinding;
   readonly monitorProjection?: MonitorCommunicationProjection;
+  readonly metadata?: { fallback?: string; };
 }
 
 export interface RuntimeSource {
