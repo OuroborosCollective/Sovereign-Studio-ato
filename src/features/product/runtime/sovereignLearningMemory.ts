@@ -76,6 +76,8 @@ const KNOWN_NODES: LearningMemoryNode[] = [
   'draft-pr-publisher',
 ];
 
+const KNOWN_NODES_SET = new Set<string>(KNOWN_NODES);
+
 const SECRET_PATTERNS = [
   /ghp_[A-Za-z0-9_]{8,}/g,
   /github_pat_[A-Za-z0-9_]+/g,
@@ -118,7 +120,8 @@ function hasSecret(value: string): boolean {
 }
 
 function knownNode(node: string): node is LearningMemoryNode {
-  return KNOWN_NODES.includes(node as LearningMemoryNode);
+  // ⚡ Bolt: Use module-scoped Set for O(1) node lookup instead of array .includes()
+  return KNOWN_NODES_SET.has(node);
 }
 
 export function createLearningMemoryStore(now = Date.now()): LearningMemoryStore {
@@ -216,8 +219,13 @@ export function validateLearningMemoryStore(store: LearningMemoryStore): Learnin
     if (ids.has(pattern.id)) errors.push(`Duplicate learning pattern id: ${pattern.id}`);
     ids.add(pattern.id);
     const report = validateLearningMemoryPattern(pattern);
-    errors.push(...report.errors.map((error) => `${pattern.id}: ${error}`));
-    warnings.push(...report.warnings.map((warning) => `${pattern.id}: ${warning}`));
+    // ⚡ Bolt: Push error and warning messages directly without intermediate array allocations
+    for (let i = 0; i < report.errors.length; i += 1) {
+      errors.push(`${pattern.id}: ${report.errors[i]}`);
+    }
+    for (let i = 0; i < report.warnings.length; i += 1) {
+      warnings.push(`${pattern.id}: ${report.warnings[i]}`);
+    }
   }
 
   return {
@@ -260,20 +268,35 @@ export function queryLearningMemory(store: LearningMemoryStore, query: LearningM
   assertLearningMemoryStoreValid(store);
   const minHits = query.minHits ?? 1;
   const limit = Math.max(1, Math.min(query.limit ?? 20, 100));
+  const normalizedQueryTag = query.tag ? normalizeTag(query.tag) : undefined;
 
-  return store.patterns
-    .filter((pattern) => !query.outputNode || pattern.outputNodes.includes(query.outputNode))
-    .filter((pattern) => !query.kind || pattern.kind === query.kind)
-    .filter((pattern) => !query.tag || pattern.tags.includes(normalizeTag(query.tag)))
-    .filter((pattern) => pattern.hits >= minHits)
+  // ⚡ Bolt: Consolidate query filters into a single pass and hoist tag normalization outside the loop
+  const filtered: LearningMemoryPattern[] = [];
+  for (let i = 0; i < store.patterns.length; i += 1) {
+    const pattern = store.patterns[i];
+    if (query.outputNode && !pattern.outputNodes.includes(query.outputNode)) continue;
+    if (query.kind && pattern.kind !== query.kind) continue;
+    if (normalizedQueryTag && !pattern.tags.includes(normalizedQueryTag)) continue;
+    if (pattern.hits < minHits) continue;
+    filtered.push(pattern);
+  }
+
+  return filtered
     .sort((a, b) => b.updatedAt - a.updatedAt || b.hits - a.hits)
     .slice(0, limit);
 }
 
 export function buildLearningMemoryRuntimeSummary(store: LearningMemoryStore): string {
   const report = validateLearningMemoryStore(store);
-  const observed = store.patterns.filter((pattern) => pattern.confidence === 'observed').length;
-  const inferred = store.patterns.filter((pattern) => pattern.confidence === 'inferred').length;
-  const manual = store.patterns.filter((pattern) => pattern.confidence === 'manual').length;
+  let observed = 0;
+  let inferred = 0;
+  let manual = 0;
+  // ⚡ Bolt: Consolidate confidence counting into a single loop pass
+  for (let i = 0; i < store.patterns.length; i += 1) {
+    const confidence = store.patterns[i].confidence;
+    if (confidence === 'observed') observed += 1;
+    else if (confidence === 'inferred') inferred += 1;
+    else if (confidence === 'manual') manual += 1;
+  }
   return `${report.summary} Confidence: ${observed} observed, ${inferred} inferred, ${manual} manual.`;
 }
