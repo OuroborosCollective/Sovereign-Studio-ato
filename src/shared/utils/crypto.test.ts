@@ -160,6 +160,14 @@ describe('maskSecrets', () => {
   });
 
   it('masks AI, vector DB and cloud provider credential labels without masking unassigned label mentions', () => {
+    expect(maskSecrets('openrouter_key: openrouter_key_val_101')).toBe('openrouter_key: ****');
+    expect(maskSecrets('openrouter_secret=openrouter_sec_val_202')).toBe('openrouter_secret=****');
+    expect(maskSecrets('groq_key: groq_key_val_303')).toBe('groq_key: ****');
+    expect(maskSecrets('groq_secret=groq_sec_val_404')).toBe('groq_secret=****');
+    expect(maskSecrets('gemini_key: gemini_key_val_505')).toBe('gemini_key: ****');
+    expect(maskSecrets('gemini_secret=gemini_sec_val_606')).toBe('gemini_secret=****');
+    expect(maskSecrets('anthropic_key: anthropic_key_val_707')).toBe('anthropic_key: ****');
+    expect(maskSecrets('anthropic_secret=anthropic_sec_val_808')).toBe('anthropic_secret=****');
     expect(maskSecrets('cohere_key: cohere_key_val_101')).toBe('cohere_key: ****');
     expect(maskSecrets('cohere_secret=cohere_secret_val_202')).toBe('cohere_secret=****');
     expect(maskSecrets('cohere_token: cohere_token_val_303')).toBe('cohere_token: ****');
