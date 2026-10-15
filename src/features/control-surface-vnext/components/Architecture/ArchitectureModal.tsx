@@ -4,7 +4,7 @@ import { Modal } from '../Modal';
 import { useSovereignAdapter } from '../../adapter/context';
 
 const ENDPOINTS = [
-  ['POST', '/api/user/agent/repository/run', 'Persist a repository mission as one Sovereign job and exactly one bounded Agent Zero A2A task.'],
+  ['POST', '/api/user/agent/repository/run', 'Persist a repository mission as one Sovereign job; optional agent execution stays outside the core web request path.'],
   ['GET', '/api/user/agent/jobs?limit=1', 'Read neutral vNext backend health without inventing a Swarm worker graph.'],
   ['GET', '/api/user/agent/jobs/:jobId', 'Read the exact persisted repository implementation job.'],
   ['GET', '/api/user/agent/jobs/:jobId/evidence-anchors', 'Read revision-bound workspace evidence.'],
@@ -29,7 +29,7 @@ export function ArchitectureModal({ isOpen, onClose }: { isOpen: boolean; onClos
         </div>
         <div className="p-3 rounded-lg border border-[rgba(255,30,56,0.2)] bg-[var(--carbon-deep)]">
           <div className="flex items-center gap-2 font-black text-white tracking-wider mb-2"><Network size={14} className="text-[var(--red-laser)]" /> SINGLE EFFECT BOUNDARY</div>
-          <pre className="whitespace-pre-wrap text-[10px] leading-relaxed text-[var(--text-muted)]">{`Human Mission\n   ↓\nSovereign Control Surface vNext\n   ↓\nrepository-bound adapter\n   ↓ credentials: include\nAuthenticated Sovereign backend\n   ↓\npersisted repository job + exactly one Agent Zero A2A task\n   ↓\nSovereign workspace / diff / regression / evidence closeout\n   ↓\nDraft PR gate + explicit consent\n   ↓\nGitHub readback → only then verified publication UI`}</pre>
+          <pre className="whitespace-pre-wrap text-[10px] leading-relaxed text-[var(--text-muted)]">{`Human Mission\n   ↓\nSovereign Control Surface vNext\n   ↓\nrepository-bound adapter\n   ↓ credentials: include\nAuthenticated Sovereign backend\n   ↓\nDirect web API / persisted job state\n   ↓\nSovereign workspace / diff / regression / evidence closeout\n   ↓\nDraft PR gate + explicit consent\n   ↓\nGitHub readback → only then verified publication UI`}</pre>
         </div>
         <div>
           <div className="flex items-center gap-2 font-black text-white tracking-wider mb-2"><Server size={14} className="text-[var(--red-laser)]" /> BOUND ENDPOINTS</div>

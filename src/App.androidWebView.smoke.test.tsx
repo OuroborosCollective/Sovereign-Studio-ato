@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./features/control-surface-vnext/App', () => ({
   default: () => (
     <section data-testid="sovereign-control-surface-vnext" aria-label="Sovereign Control Surface vNext">
-      <textarea aria-label="Mission an Sovereign" />
+      <textarea aria-label="Mission to Sovereign" />
       <nav data-testid="mobile-bottom-nav">
         <button type="button">COMMAND</button>
         <button type="button">EVIDENCE</button>
@@ -44,7 +44,7 @@ describe('App Android WebView smoke', () => {
   it('keeps the mission composer and fixed mobile projections reachable without exposing publication before a gate', () => {
     render(<App />);
 
-    expect(screen.getByLabelText('Mission an Sovereign')).toBeDefined();
+    expect(screen.getByLabelText('Mission to Sovereign')).toBeDefined();
     expect(screen.getByTestId('mobile-bottom-nav')).toBeDefined();
     expect(screen.getByRole('button', { name: 'COMMAND' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'PUBLISH' })).toBeDefined();

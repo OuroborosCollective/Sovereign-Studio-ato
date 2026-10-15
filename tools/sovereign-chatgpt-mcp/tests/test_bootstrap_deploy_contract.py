@@ -25,6 +25,26 @@ def test_changed_recovery_shell_assets_parse() -> None:
         assert result.returncode == 0, f"{relative}: {result.stderr}"
 
 
+
+def test_mcp_compose_joins_auth_proxy_internal_network_without_public_bind() -> None:
+    compose = (MCP_ROOT / "docker-compose.yml").read_text("utf-8")
+
+    assert '      - "127.0.0.1:8090:8090"' in compose
+    assert "      - supabase_default" in compose
+    assert "      - sovereign_mcp_auth_internal" in compose
+    assert "  sovereign_mcp_auth_internal:\n    external: true\n    name: sovereign-mcp-auth-internal" in compose
+    assert '"0.0.0.0:8090:8090"' not in compose
+
+
+def test_production_smoke_script_parses_without_execution() -> None:
+    """Parse the real smoke entrypoint without importing Playwright or mutating production."""
+    script = REPO_ROOT / "scripts" / "run-agent-zero-only-production-smoke.mjs"
+    result = subprocess.run(
+        ["node", "--check", str(script)], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_backend_deploy_emits_bounded_preflight_marker_before_any_host_effect() -> None:
     deploy = MCP_ROOT / "deploy" / "deploy-sovereign-backend"
     result = subprocess.run(
@@ -374,6 +394,7 @@ def test_pull_requests_run_mcp_validator_without_publish_or_vps_mutation() -> No
     publish_end = workflow.index("\n  verify-published-mcp-image:", publish_start)
     publish = workflow[publish_start:publish_end]
     assert "github.event_name == 'push' && github.ref == 'refs/heads/main'" in publish
+    assert "inputs.publish_immutable_mcp == true" in publish
 
     deploy_start = workflow.index("  deploy-vps:")
     deploy_end = workflow.index("\n  resolve-pr-992-review-thread:", deploy_start)
@@ -386,7 +407,9 @@ def test_main_push_publishes_and_verifies_the_immutable_mcp_image() -> None:
     workflow = (REPO_ROOT / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
 
     assert 'name: Publish immutable MCP image' in workflow
-    assert "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" in workflow
+    assert "publish_immutable_mcp:" in workflow
+    assert "(github.event_name == 'push' && github.ref == 'refs/heads/main')" in workflow
+    assert "(github.event_name == 'workflow_dispatch' && inputs.publish_immutable_mcp == true && github.ref == 'refs/heads/main')" in workflow
     assert 'digest: ${{ steps.publish.outputs.digest }}' in workflow
     assert 'packages: write' in workflow
     assert 'docker/build-push-action@v6' in workflow
@@ -403,6 +426,25 @@ def test_main_push_publishes_and_verifies_the_immutable_mcp_image() -> None:
     assert 'test "$REVISION_LABEL" = "$GITHUB_SHA"' in workflow
     assert 'test "$KAPPA_LABEL" = "$KAPPA_POS"' in workflow
     assert 'test "$PARITY_LABEL" = "$CROSS_RUNTIME_PARITY"' in workflow
+
+
+def test_manual_mcp_image_publish_recovery_does_not_imply_vps_deploy() -> None:
+    workflow = (REPO_ROOT / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
+
+    assert "publish_immutable_mcp:" in workflow
+    assert "default: false" in workflow
+    publish_start = workflow.index("  publish-mcp-image:")
+    publish_end = workflow.index("\n  verify-published-mcp-image:", publish_start)
+    publish = workflow[publish_start:publish_end]
+    assert "github.event_name == 'workflow_dispatch'" in publish
+    assert "inputs.publish_immutable_mcp == true" in publish
+    assert "github.ref == 'refs/heads/main'" in publish
+
+    deploy_start = workflow.index("  deploy-vps:")
+    deploy_end = workflow.index("\n  resolve-pr-992-review-thread:", deploy_start)
+    deploy = workflow[deploy_start:deploy_end]
+    assert "inputs.deploy_vps_via_public_ssh == true" in deploy
+    assert "inputs.publish_immutable_mcp == true" not in deploy
 
 
 def test_vps_bootstrap_consumes_the_exact_coordinated_release_manifest() -> None:

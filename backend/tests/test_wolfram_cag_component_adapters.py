@@ -388,6 +388,10 @@ def test_live_transport_uses_current_contract_and_authorization_only_at_http_bou
     assert receipts[0].response_uuid == "uuid-hints"
     assert receipts[1].response_uuid == "uuid-compute"
     assert receipts[3].response_uuid == "uuid-context"
+    assert receipts[0].normalized_result == "ok"
+    assert receipts[1].normalized_result == "ok"
+    assert receipts[2].normalized_result == "Query:\n2+2\n\nResult:\n4"
+    assert receipts[3].normalized_result == "ok"
     assert all(SECRET_VALUE not in repr(receipt) for receipt in receipts)
 
 
@@ -458,6 +462,7 @@ def test_execute_succeeds_with_strict_schema_and_binds_request_ids():
     assert receipt.rate_limit_remaining == "100"
     assert receipt.quota_remaining == "unlimited"
     assert len(receipt.response_hash) == 64
+    assert receipt.normalized_result == "ok"
     assert "cannot mutate" in receipt.truth_notice
 
 
@@ -618,6 +623,7 @@ def test_cag_receipt_carries_bounded_evidence_and_no_secret_material():
     assert len(receipt.credential_hash) == 64
     assert len(receipt.request_hash) == 64
     assert len(receipt.response_hash) == 64
+    assert receipt.normalized_result == "ok"
     # No raw secret anywhere in the receipt projection.
     assert SECRET_VALUE not in repr(receipt)
     receipt.validate()

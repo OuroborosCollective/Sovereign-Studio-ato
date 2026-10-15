@@ -122,7 +122,7 @@ describe('buildWorkerBlockerAnswer', () => {
     const answer = buildWorkerBlockerAnswer({
       blocker: {
         diagnostic: {
-          route: 'https://sovereign-backend.arelorian.de/api/llm/chat',
+          route: '/api/llm/chat',
           model: 'revolver-test',
           messageCount: 3,
           status: 502,

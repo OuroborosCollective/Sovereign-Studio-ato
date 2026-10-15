@@ -2365,7 +2365,7 @@ export function BuilderContainer({
       ))
     : [];
   const githubAccessApiBase = useMemo(
-    () => agentConfig?.agentApiUrl || resolveSovereignAgentConfig().agentApiUrl || SOVEREIGN_WORKER_BASE,
+    () => agentConfig?.agentApiUrl || resolveSovereignAgentConfig().agentApiUrl || '',
     [agentConfig],
   );
   const scopedAgentIsRunning = Boolean(
@@ -5015,7 +5015,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       let textToAppend = fullText;
       
       if (streamFallbackMetadata?.fallbackUsed) {
-        textToAppend += `\n\n_Hinweis: ${streamFallbackMetadata.preferredModel} war nicht erreichbar, Antwort kam von ${streamFallbackMetadata.actualModel}._`;
+        appendRuntimeNotice(`Hinweis: ${streamFallbackMetadata.preferredModel} war nicht erreichbar, Antwort kam von ${streamFallbackMetadata.actualModel}.`);
       }
 
       appendGuardedWorkerText(textToAppend);
@@ -5036,7 +5036,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       let textToAppend = fallback.content;
 
       if (fallback.fallbackUsed) {
-        textToAppend += `\n\n_Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}._`;
+        appendRuntimeNotice(`Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}.`);
       }
 
       appendGuardedWorkerText(textToAppend);
@@ -5507,7 +5507,7 @@ Das echte Repo-Setup wurde geöffnet.`);
       ].filter(Boolean).join(" ")}
       data-role={builderContainerContract.dataRole}
       data-testid={builderContainerContract.testId}
-      data-layout={chatPrimary ? "chat-primary-agent-zero-background" : "chat-inspector-modules"}
+      data-layout={chatPrimary ? "chat-primary-backend" : "chat-inspector-modules"}
       aria-label={builderContainerContract.ariaLabel}
       style={{
         width: "100%",

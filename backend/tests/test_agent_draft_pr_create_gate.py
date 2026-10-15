@@ -15,6 +15,7 @@ from agent_runtime.draft_pr_create_gate import (  # noqa: E402
     draft_pr_create_request_from_job,
     draft_pr_create_signal,
     validate_draft_pr_create_request,
+    verify_draft_pr_for_job,
 )
 from agent_runtime.job_store import StoredSovereignAgentJob  # noqa: E402
 
@@ -195,6 +196,42 @@ def test_create_blocks_invalid_creator_url():
     assert result.allowed is False
     assert result.status == "blocked"
     assert result.blocker == "GitHub did not return a valid pull request URL"
+
+
+def test_verify_draft_pr_for_job_rechecks_live_github_state_without_writing(monkeypatch):
+    job = ready_job(
+        pr_state="created",
+        pr_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/321",
+    )
+    head_sha = "d" * 40
+    monkeypatch.setattr(draft_pr_create_gate, "_server_github_token", lambda: "test-token")
+    monkeypatch.setattr(
+        draft_pr_create_gate,
+        "urlopen",
+        _github_readback_urlopen(
+            existing_prs=[],
+            pr_number=321,
+            head_sha=head_sha,
+            head_branch=job.branch_name,
+            base_branch=job.target_branch,
+        ),
+    )
+
+    historical = {
+        "publishedHeadSha": head_sha,
+    }
+    monkeypatch.setattr(
+        draft_pr_create_gate,
+        "read_latest_agent_github_draft_pr_readback",
+        lambda *args, **kwargs: historical,
+    )
+    evidence = verify_draft_pr_for_job(job, object())
+
+    assert evidence.pr_url.endswith("/pull/321")
+    assert evidence.pr_number == 321
+    assert evidence.readback_head_sha == head_sha
+    assert evidence.readback_verified is True
+    assert evidence.checks_readback_verified is True
 
 
 def test_existing_created_pr_is_idempotent():

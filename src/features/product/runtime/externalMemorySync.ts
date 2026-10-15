@@ -161,7 +161,18 @@ function normalizeTag(value: string): string {
 }
 
 function normalizeTags(values: string[]): string[] {
-  return Array.from(new Set(values.map(normalizeTag).filter(Boolean))).slice(0, 16);
+  // ⚡ Bolt: Consolidate chained map, filter, Set creation, and slice operations into a single bounded loop
+  const tagsSet = new Set<string>();
+  const tags: string[] = [];
+  for (const raw of values) {
+    if (tags.length >= 16) break;
+    const tag = normalizeTag(raw);
+    if (tag && !tagsSet.has(tag)) {
+      tagsSet.add(tag);
+      tags.push(tag);
+    }
+  }
+  return tags;
 }
 
 function safeUrl(value: string): URL | null {

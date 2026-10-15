@@ -480,62 +480,38 @@ def test_tagged_image_retention_cleanup_reuses_patchmon_plan_and_apply_surfaces(
     assert observed == {"confirmation_sha256": "e" * 64, "owner_approved": True}
 
 
-def test_n8n_stage1_reuses_managed_compose_plan_and_apply_surfaces(monkeypatch) -> None:
+def test_n8n_retired_host_stage_fails_closed_even_with_owner_approval(monkeypatch) -> None:
     runtime = BrokerRuntime()
-    runtime.private_owner_mode = True
-    observed = {}
 
-    monkeypatch.setattr(
-        runtime.n8n_host_maintenance,
-        "stage1_plan",
-        lambda: {"ok": True, "status": "N8N_STAGE1_PLAN_READY", "confirmationSha256": "b" * 64},
-    )
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Retired n8n must never reach a host deployment")
 
-    def stage1_apply(*, confirmation_sha256, owner_approved):
-        observed.update(confirmation_sha256=confirmation_sha256, owner_approved=owner_approved)
-        return {"ok": True, "status": "N8N_STAGE1_VERIFIED"}
+    monkeypatch.setattr(runtime.n8n_host_maintenance, "stage1_plan", unexpected)
+    monkeypatch.setattr(runtime.n8n_host_maintenance, "stage1_apply", unexpected)
+    monkeypatch.setattr(runtime.managed_compose, "plan", unexpected)
+    monkeypatch.setattr(runtime.managed_compose, "deploy", unexpected)
 
-    monkeypatch.setattr(runtime.n8n_host_maintenance, "stage1_apply", stage1_apply)
-    monkeypatch.setattr(
-        runtime.managed_compose,
-        "plan",
-        lambda **kwargs: (_ for _ in ()).throw(AssertionError("generic compose plan must not execute")),
-    )
-    monkeypatch.setattr(
-        runtime.managed_compose,
-        "deploy",
-        lambda **kwargs: (_ for _ in ()).throw(AssertionError("generic compose deploy must not execute")),
-    )
-
-    plan = runtime.managed_compose_plan({"stack_id": "n8n-host-stage1"})
-    applied = runtime.managed_compose_apply(
-        {"stack_id": "n8n-host-stage1", "confirmation_sha256": "b" * 64}
-    )
-
-    assert plan["status"] == "N8N_STAGE1_PLAN_READY"
-    assert applied["status"] == "N8N_STAGE1_VERIFIED"
-    assert observed == {"confirmation_sha256": "b" * 64, "owner_approved": True}
+    for owner_mode in (False, True):
+        runtime.private_owner_mode = owner_mode
+        plan = runtime.managed_compose_plan({"stack_id": "n8n-host-stage1"})
+        applied = runtime.managed_compose_apply(
+            {"stack_id": "n8n-host-stage1", "confirmation_sha256": "b" * 64}
+        )
+        for result in (plan, applied):
+            assert result["ok"] is False
+            assert result["status"] == "N8N_RETIRED_OWNER_POLICY"
+            assert result["mutationPerformed"] is False
 
 
-def test_n8n_workflow_apply_intersects_caller_attestation_with_private_owner_mode(
-    monkeypatch,
-) -> None:
+def test_n8n_retired_workflow_dispatch_never_reaches_provider(monkeypatch) -> None:
     runtime = BrokerRuntime()
-    forwarded_owner_approvals = []
 
-    def apply(**kwargs):
-        forwarded_owner_approvals.append(kwargs["owner_approved"])
-        return {
-            "ok": kwargs["owner_approved"],
-            "status": (
-                "N8N_WORKFLOW_APPLIED"
-                if kwargs["owner_approved"]
-                else "N8N_WORKFLOW_APPLY_BLOCKED"
-            ),
-        }
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Retired n8n must never reach workflow I/O")
 
-    monkeypatch.setattr(runtime.n8n_workflows, "apply", apply)
-    arguments = {
+    monkeypatch.setattr(runtime.n8n_workflows, "plan", unexpected)
+    monkeypatch.setattr(runtime.n8n_workflows, "apply", unexpected)
+    args = {
         "lane_id": "sovereign",
         "operation": "activate",
         "workflow_id": "workflow-1",
@@ -543,22 +519,13 @@ def test_n8n_workflow_apply_intersects_caller_attestation_with_private_owner_mod
         "owner_approved": True,
     }
 
-    runtime.private_owner_mode = False
-    blocked = runtime.dispatch(
-        "n8n_workflow_apply",
-        arguments,
-        execution_origin="host_worker",
-    )
-    runtime.private_owner_mode = True
-    accepted = runtime.dispatch(
-        "n8n_workflow_apply",
-        arguments,
-        execution_origin="host_worker",
-    )
-
-    assert blocked["status"] == "N8N_WORKFLOW_APPLY_BLOCKED"
-    assert accepted["status"] == "N8N_WORKFLOW_APPLIED"
-    assert forwarded_owner_approvals == [False, True]
+    for owner_mode in (False, True):
+        runtime.private_owner_mode = owner_mode
+        for action in ("n8n_workflow_plan", "n8n_workflow_apply"):
+            result = runtime.dispatch(action, args, execution_origin="host_worker")
+            assert result["ok"] is False
+            assert result["status"] == "N8N_RETIRED_OWNER_POLICY"
+            assert result["mutationPerformed"] is False
 
 
 def test_patchmon_non_bootstrap_action_still_delegates_to_operator(monkeypatch) -> None:

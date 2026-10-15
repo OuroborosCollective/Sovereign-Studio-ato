@@ -9,25 +9,14 @@ import React, { useState } from 'react';
 import type { AgentWorkSnapshot, AgentWorkState, AgentWorkEvent } from '../runtime/agentWorkRuntime';
 import { isTerminalState, isActiveState, labelForState } from '../runtime/agentWorkRuntime';
 
-const C = {
-  bg:       '#0e1116',
-  surface:  '#161c24',
-  border:   '#232d3a',
-  accent:   '#00d9b1',
-  text:     '#cdd9e5',
-  textSub:  '#768390',
-  green:    '#34d399',
-  amber:    '#fbbf24',
-  rose:     '#fb7185',
-  sky:      '#22d3ee',
-} as const;
+type TimelineTone = 'verified' | 'active' | 'warning' | 'error' | 'idle';
 
-function lampForState(state: AgentWorkState): string {
-  if (state === 'draft_pr_ready') return C.green;
-  if (state === 'failed' || state === 'blocked') return C.rose;
-  if (isActiveState(state)) return C.sky;
-  if (state === 'idle') return C.textSub;
-  return C.amber;
+function toneForState(state: AgentWorkState): TimelineTone {
+  if (state === 'draft_pr_ready') return 'verified';
+  if (state === 'failed' || state === 'blocked') return 'error';
+  if (isActiveState(state)) return 'active';
+  if (state === 'idle') return 'idle';
+  return 'warning';
 }
 
 function iconForState(state: AgentWorkState): string {
@@ -45,48 +34,21 @@ interface EventRowProps {
 }
 
 const EventRow: React.FC<EventRowProps> = ({ event, isCurrent }) => {
-  const color = lampForState(event.state);
+  const tone = toneForState(event.state);
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 8,
-        padding: '3px 0',
-        opacity: isCurrent ? 1 : 0.7,
-      }}
-    >
-      <span
-        style={{
-          width: 16,
-          textAlign: 'center',
-          fontSize: 11,
-          color,
-          flexShrink: 0,
-          marginTop: 1,
-        }}
-      >
+    <li className={`sovereign-timeline-event sovereign-timeline-event--${tone}${isCurrent ? ' sovereign-timeline-event--current' : ''}`}>
+      <span className="sovereign-timeline-event__icon" aria-hidden="true">
         {iconForState(event.state)}
       </span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ fontSize: 12, color: isCurrent ? C.text : C.textSub, fontWeight: isCurrent ? 500 : 400 }}>
-          {event.label}
-        </span>
+      <div className="sovereign-timeline-event__body">
+        <span className="sovereign-timeline-event__label">{event.label}</span>
         {event.detail && (
-          <span
-            style={{
-              fontSize: 11,
-              color: C.textSub,
-              marginLeft: 6,
-              fontFamily: 'monospace',
-              wordBreak: 'break-all',
-            }}
-          >
+          <span className="sovereign-timeline-event__detail" title={event.detail}>
             {event.detail}
           </span>
         )}
       </div>
-    </div>
+    </li>
   );
 };
 
@@ -101,13 +63,14 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
   snapshot,
   onOpenPr,
   onViewDiff,
+  className,
 }) => {
   const [expanded, setExpanded] = useState(false);
 
   const { state, events, repoFullName, jobId, branchName, commitSha, draftPrUrl, blockerReason } = snapshot;
   const isTerminal = isTerminalState(state);
   const isActive = isActiveState(state);
-  const lamp = lampForState(state);
+  const tone = toneForState(state);
   const stateLabel = labelForState(state);
 
   const COLLAPSE_THRESHOLD = 4;
@@ -122,100 +85,70 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
   })();
 
   return (
-    <div
+    <section
       role="region"
       aria-label="Agent Work Timeline"
+      aria-busy={isActive}
       data-testid="agent-work-timeline"
-      style={{
-        margin: '8px 0',
-        padding: '12px 14px',
-        borderRadius: 12,
-        background: C.surface,
-        border: `1px solid ${lamp}30`,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        maxWidth: 393,
-      }}
+      className={`sovereign-instrument-panel sovereign-runtime-timeline sovereign-runtime-timeline--${tone}${className ? ` ${className}` : ''}`}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            background: lamp,
-            flexShrink: 0,
-            boxShadow: isActive ? `0 0 6px ${lamp}` : undefined,
-          }}
-        />
-        <span style={{ fontSize: 13, fontWeight: 600, color: C.text, flex: 1 }}>
-          {headerLabel}
-        </span>
+      <div className="sovereign-runtime-timeline__header">
+        <span className={`sovereign-runtime-timeline__status sovereign-runtime-timeline__status--${tone}`} aria-hidden="true" />
+        <span className="sovereign-runtime-timeline__title">{headerLabel}</span>
         {repoFullName && (
-          <span style={{ fontSize: 11, color: C.textSub, fontFamily: 'monospace' }}>
+          <span className="sovereign-runtime-timeline__repo" title={repoFullName}>
             {repoFullName}
           </span>
         )}
       </div>
 
-      <div style={{ fontSize: 11, color: lamp, fontWeight: 500 }}>
-        {stateLabel}
+      <div className={`sovereign-runtime-timeline__state sovereign-runtime-timeline__state--${tone}`} aria-live="polite">
+        <span>{stateLabel}</span>
         {jobId && state !== 'draft_pr_ready' && (
-          <span style={{ color: C.textSub, fontWeight: 400, marginLeft: 8, fontFamily: 'monospace' }}>
+          <span className="sovereign-runtime-timeline__job" title={`Job ID: ${jobId}`}>
             Job: {jobId}
           </span>
         )}
       </div>
 
       {events.length > 0 && (
-        <div
-          style={{
-            borderTop: `1px solid ${C.border}`,
-            paddingTop: 8,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 0,
-          }}
-        >
+        <div className="sovereign-runtime-timeline__events">
           {hiddenCount > 0 && (
             <button
               type="button"
               onClick={() => setExpanded(true)}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: '2px 0 6px 0',
-                cursor: 'pointer',
-                color: C.textSub,
-                fontSize: 11,
-                textAlign: 'left',
-              }}
+              className="sovereign-timeline-toggle focus-visible:ring-2 focus-visible:ring-[var(--sovereign-focus-ring)] focus-visible:outline-none"
+              title={`${hiddenCount} ältere Ereignisse anzeigen`}
               aria-label={`${hiddenCount} ältere Ereignisse anzeigen`}
+              aria-expanded={expanded}
+              aria-controls="agent-work-events"
             >
               ↑ {hiddenCount} ältere Ereignisse
             </button>
           )}
-          {visibleEvents.map((event, idx) => (
-            <EventRow
-              key={event.id}
-              event={event}
-              isCurrent={idx === visibleEvents.length - 1}
-            />
-          ))}
+          <ul
+            id="agent-work-events"
+            role="list"
+            aria-label="Ereignisprotokoll"
+            className="sovereign-runtime-timeline__list"
+          >
+            {visibleEvents.map((event, idx) => (
+              <EventRow
+                key={event.id}
+                event={event}
+                isCurrent={idx === visibleEvents.length - 1}
+              />
+            ))}
+          </ul>
           {expanded && events.length > COLLAPSE_THRESHOLD && (
             <button
               type="button"
               onClick={() => setExpanded(false)}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: '4px 0 0 0',
-                cursor: 'pointer',
-                color: C.textSub,
-                fontSize: 11,
-                textAlign: 'left',
-              }}
+              className="sovereign-timeline-toggle focus-visible:ring-2 focus-visible:ring-[var(--sovereign-focus-ring)] focus-visible:outline-none"
+              title="Weniger Ereignisse anzeigen"
+              aria-label="Weniger Ereignisse anzeigen"
+              aria-expanded={expanded}
+              aria-controls="agent-work-events"
             >
               ↓ Weniger anzeigen
             </button>
@@ -224,47 +157,34 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
       )}
 
       {branchName && (
-        <div style={{ fontSize: 11, color: C.textSub, fontFamily: 'monospace' }}>
-          Branch: <span style={{ color: C.sky }}>{branchName}</span>
+        <div className="sovereign-runtime-timeline__metadata">
+          <span>Branch</span>
+          <span className="sovereign-runtime-timeline__value" title={branchName}>{branchName}</span>
           {commitSha && (
             <>
-              {' · '}Commit: <span style={{ color: C.sky }}>{commitSha.slice(0, 7)}</span>
+              <span aria-hidden="true">·</span>
+              <span>Commit</span>
+              <span className="sovereign-runtime-timeline__value" title={`Commit SHA: ${commitSha}`}>{commitSha.slice(0, 7)}</span>
             </>
           )}
         </div>
       )}
 
       {blockerReason && (
-        <div
-          style={{
-            fontSize: 12,
-            color: C.rose,
-            background: `${C.rose}10`,
-            borderRadius: 6,
-            padding: '6px 10px',
-          }}
-        >
-          {blockerReason}
+        <div className="sovereign-runtime-timeline__blocker" role="alert">
+          <span className="sovereign-runtime-timeline__blocker-label">BLOCKED</span>
+          <span>{blockerReason}</span>
         </div>
       )}
 
       {state === 'draft_pr_ready' && draftPrUrl && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
+        <div className="sovereign-runtime-timeline__actions">
           {onOpenPr && (
             <button
               type="button"
               onClick={onOpenPr}
-              style={{
-                padding: '7px 14px',
-                borderRadius: 8,
-                background: `${C.green}20`,
-                border: `1px solid ${C.green}40`,
-                color: C.green,
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: 'pointer',
-              }}
-              aria-label="PR öffnen"
+              className="sovereign-timeline-action sovereign-timeline-action--verified focus-visible:ring-2 focus-visible:ring-[var(--sovereign-focus-ring)] focus-visible:outline-none"
+              title="Draft PR auf GitHub öffnen"
             >
               PR öffnen
             </button>
@@ -273,17 +193,8 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
             <button
               type="button"
               onClick={onViewDiff}
-              style={{
-                padding: '7px 14px',
-                borderRadius: 8,
-                background: `${C.sky}15`,
-                border: `1px solid ${C.sky}30`,
-                color: C.sky,
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: 'pointer',
-              }}
-              aria-label="Diff ansehen"
+              className="sovereign-timeline-action sovereign-timeline-action--active focus-visible:ring-2 focus-visible:ring-[var(--sovereign-focus-ring)] focus-visible:outline-none"
+              title="Diff-Vorschau der Änderungen anzeigen"
             >
               Diff ansehen
             </button>
@@ -292,11 +203,11 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
       )}
 
       {isTerminal && !draftPrUrl && state !== 'draft_pr_ready' && (
-        <div style={{ fontSize: 11, color: C.textSub, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
+        <div className="sovereign-runtime-timeline__empty">
           Kein PR wurde erstellt.
         </div>
       )}
-    </div>
+    </section>
   );
 };
 

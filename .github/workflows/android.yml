@@ -149,6 +149,10 @@ jobs:
       - name: Run release unit tests
         env:
           CI: true
+          # The web product is a same-origin unified app. Keep the production
+          # external gateway for Android packaging, but do not leak it into
+          # browser unit tests where it overrides the same-origin default.
+          VITE_ADMIN_API_BASE: ''
         shell: bash
         run: |
           set -euo pipefail

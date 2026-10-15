@@ -247,7 +247,8 @@ function isPlaceholderMission(mission: string): boolean {
 }
 
 function extractFileExtension(path: string): string {
-  const name = path.split('/').pop() ?? path;
+  const lastSlash = path.lastIndexOf('/');
+  const name = lastSlash >= 0 ? path.slice(lastSlash + 1) : path;
   const index = name.lastIndexOf('.');
   return index >= 0 ? name.slice(index) : '';
 }
@@ -280,13 +281,24 @@ function isWorkflowPath(lowerPath: string): boolean {
   return WORKFLOW_INDICATOR_PATHS.some((indicator) => lowerPath.includes(indicator));
 }
 
-function isConfigPath(lowerPath: string): boolean {
-  const name = lowerPath.split('/').pop() ?? lowerPath;
-  return CONFIG_NAMES.some((config) => name.includes(config));
+function isConfigPath(lowerPath: string, lowerName: string): boolean {
+  return CONFIG_NAMES.some((config) => lowerName.includes(config));
 }
 
 function getNestingDepth(path: string): number {
-  return path.split('/').filter(Boolean).length;
+  let depth = 0;
+  let inSegment = false;
+  for (let i = 0; i < path.length; i++) {
+    if (path.charCodeAt(i) !== 47) { // '/' = 47
+      if (!inSegment) {
+        inSegment = true;
+        depth++;
+      }
+    } else {
+      inSegment = false;
+    }
+  }
+  return depth;
 }
 
 function extractFolderFromPath(path: string): string {
@@ -318,20 +330,29 @@ function analyzeRepoStructure(files: RepoFile[]): RepoStructureAnalysis {
   let hasComponents = false;
   let hasWorkflows = false;
 
-  for (const file of files) {
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
     const filePath = file.path;
     const path = filePath.toLowerCase();
 
-    // Process the path split, nesting depth, folder name, and extensions in a single pass to reduce redundant string splits & arrays.
-    const parts = filePath.split('/');
-    const partsLen = parts.length;
-
+    // Fast character scan for directory nesting depth without array allocations
     let depth = 0;
-    for (let j = 0; j < partsLen; j++) {
-      if (parts[j]) depth++;
+    let inSegment = false;
+    for (let j = 0; j < filePath.length; j++) {
+      if (filePath.charCodeAt(j) !== 47) {
+        if (!inSegment) {
+          inSegment = true;
+          depth++;
+        }
+      } else {
+        inSegment = false;
+      }
     }
 
-    const name = parts[partsLen - 1] || '';
+    // Fast string slicing for folder and filename
+    const lastSlash = filePath.lastIndexOf('/');
+    const name = lastSlash >= 0 ? filePath.slice(lastSlash + 1) : filePath;
+    const folder = extractFolderFromPath(filePath);
     const dotIndex = name.lastIndexOf('.');
     const ext = dotIndex >= 0 ? name.slice(dotIndex) : '';
 
@@ -340,14 +361,13 @@ function analyzeRepoStructure(files: RepoFile[]): RepoStructureAnalysis {
       byExtension[ext] = (byExtension[ext] ?? 0) + 1;
     }
 
-    // Accumulate name counts for dead code detection on the fly to eliminate O(N) second files mapping pass.
+    // Accumulate name counts for dead code detection on the fly
     if (name) {
       const lowerName = name.toLowerCase();
       nameCounts[lowerName] = (nameCounts[lowerName] ?? 0) + 1;
     }
 
     // Count by folder
-    const folder = partsLen > 1 ? parts.slice(0, -1).join('/') || '/' : '/';
     byFolder[folder] = (byFolder[folder] ?? 0) + 1;
 
     // Check deep nesting (more than 6 levels)
@@ -382,7 +402,7 @@ function analyzeRepoStructure(files: RepoFile[]): RepoStructureAnalysis {
       hasWorkflows = true;
     }
 
-    if (isConfigPath(path)) {
+    if (isConfigPath(path, name.toLowerCase())) {
       configFiles.push(filePath);
     }
 
@@ -397,10 +417,14 @@ function analyzeRepoStructure(files: RepoFile[]): RepoStructureAnalysis {
   const missingTests = !hasTests;
   const missingWorkflows = !hasWorkflows;
 
-  // Retrieve potential dead code (duplicate names in different folders) from nameCounts.
-  const duplicateLogic = Object.entries(nameCounts)
-    .filter(([, count]) => count > 2)
-    .map(([name]) => `* ${name}`);
+  // Single-pass extraction of potential duplicate logic from nameCounts without Object.entries tuple allocations
+  const duplicateLogic: string[] = [];
+  for (const lowerName in nameCounts) {
+    if (nameCounts[lowerName] > 2) {
+      duplicateLogic.push(`* ${lowerName}`);
+      if (duplicateLogic.length >= 10) break;
+    }
+  }
 
   return {
     totalFiles: files.length,
@@ -417,8 +441,8 @@ function analyzeRepoStructure(files: RepoFile[]): RepoStructureAnalysis {
     missingTests,
     missingWorkflows,
     deepNesting: deepNesting.slice(0, 10),
-    deadCode: duplicateLogic.slice(0, 10),
-    duplicateLogic: duplicateLogic.slice(0, 10),
+    deadCode: duplicateLogic,
+    duplicateLogic: duplicateLogic,
     missingGuards: [],
     missingValidations: [],
     missingUserGuidance: [],
@@ -537,19 +561,20 @@ function generatePatternMatches(
   if (byExtension) {
     repoExtensions = Object.keys(byExtension);
   } else {
-    repoExtensions = new Set(
-      repoFiles
-        .map((f) => {
-          const name = f.path.split('/').pop() ?? '';
-          const idx = name.lastIndexOf('.');
-          return idx >= 0 ? name.slice(idx) : '';
-        })
-        .filter(Boolean)
-    );
+    const extSet = new Set<string>();
+    for (let i = 0; i < repoFiles.length; i++) {
+      const ext = extractFileExtension(repoFiles[i].path);
+      if (ext) extSet.add(ext);
+    }
+    repoExtensions = extSet;
   }
 
   // Slice the files first so we only allocate string paths for contextSignals we actually need (at most 50).
-  const contextSignals = repoFiles.slice(0, 50).map((f) => f.path);
+  const maxSignals = Math.min(50, repoFiles.length);
+  const contextSignals = new Array<string>(maxSignals);
+  for (let i = 0; i < maxSignals; i++) {
+    contextSignals[i] = repoFiles[i].path;
+  }
 
   // Match patterns using multiple queries for better coverage
   const allMatches: SolutionPatternMatch[] = [];

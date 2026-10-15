@@ -46,6 +46,26 @@ describe('production UX scanner vNext bindings', () => {
     expect(exits).toEqual([]);
   });
 
+  it('rejects integration rows whose server provenance is disconnected', async () => {
+    const path = 'src/features/control-surface-vnext/components/IntegrationPlus/IntegrationModal.tsx';
+    const source = fs.readFileSync(path, 'utf8');
+    const broken = source.replace('item.readbackSha256', 'item.syntheticHash');
+    expect(broken).not.toBe(source);
+    const { report, exits } = await scan({ [path]: broken });
+    expect(report.errors.map(error => error.id)).toContain('integration:provenance');
+    expect(exits).toEqual([1]);
+  });
+
+  it('rejects integrations disconnected from the real backend contract', async () => {
+    const path = 'src/features/control-surface-vnext/adapter/production-adapter.ts';
+    const source = fs.readFileSync(path, 'utf8');
+    const broken = source.replace('/api/user/agent/control-surface', '/api/unsupported/invented-integrations');
+    expect(broken).not.toBe(source);
+    const { report, exits } = await scan({ [path]: broken });
+    expect(report.errors.map(error => error.id)).toContain('integration:server-contract');
+    expect(exits).toEqual([1]);
+  });
+
   it('rejects a changed visible dispatch handler even when submit still exists elsewhere', async () => {
     const broken = commandSurface.replace(
       'onClick={submit}',

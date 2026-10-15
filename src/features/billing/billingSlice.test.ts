@@ -153,7 +153,7 @@ describe('billingSlice reducer', () => {
 
     expect(result.type).toBe(capturePayPalOrder.fulfilled.type);
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://sovereign-backend.arelorian.de/api/billing/purchase/paypal/capture',
+      '/api/billing/purchase/paypal/capture',
       expect.objectContaining({
         method: 'POST',
         credentials: 'include',

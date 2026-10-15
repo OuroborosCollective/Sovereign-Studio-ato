@@ -1,4 +1,5 @@
 import { test, expect, type Route } from '@playwright/test';
+import { controlSurfaceFixture } from './fixtures/control-surface';
 
 const EXTENDED_TIMEOUT = { timeout: 30_000 };
 const CURRENT_USER = {
@@ -28,6 +29,8 @@ async function fulfillJson(route: Route, body: unknown, status = 200): Promise<v
 }
 
 async function installReadbackManifests(page: import('@playwright/test').Page): Promise<void> {
+  await page.route('**/api/user/agent/control-surface**', route => fulfillJson(route,
+    controlSurfaceFixture(new URL(route.request().url()).searchParams.get('jobId'))));
   await page.route('**/api/user/agent/toolchain/manifest', route => fulfillJson(route, {
     ok: true,
     name: 'Sovereign Universal Toolchain',
@@ -73,6 +76,7 @@ test.describe('Sovereign Control Surface vNext browser smoke', () => {
   });
 
   test('3. Toolchain and agent-registry panels remain read-only projections without an invented Swarm graph', async ({ page }) => {
+    await page.getByTestId('vnext-mission-controls').locator('summary').click();
     await page.getByRole('button').filter({ hasText: 'TOOLCHAIN' }).click();
     const toolchainDialog = page.getByRole('dialog', { name: 'TOOLCHAIN CONFIGURATION // EXECUTION DRIVERS' });
     await expect(toolchainDialog).toBeVisible();
@@ -83,10 +87,19 @@ test.describe('Sovereign Control Surface vNext browser smoke', () => {
     await page.getByRole('button').filter({ hasText: 'AGENTS' }).click();
     const agentDialog = page.getByRole('dialog', { name: 'AGENT REGISTRY // RUNTIME PROJECTION' });
     await expect(agentDialog).toBeVisible();
-    await expect(agentDialog.getByText(/intentionally projects no Swarm worker graph/)).toBeVisible();
-    await expect(agentDialog.getByText('No worker graph is projected for this execution path.', { exact: true })).toBeVisible();
+    await expect(agentDialog.getByText('sovereign-local-runner', { exact: true })).toBeVisible();
+    await expect(agentDialog.getByText('EXECUTOR · DECLARED', { exact: true })).toBeVisible();
+    await expect(agentDialog.getByText(/Source: repository-execution-manifest/)).toBeVisible();
     await expect(agentDialog.getByText('The Dispatcher', { exact: true })).toHaveCount(0);
     await expect(agentDialog.getByText('The Judge', { exact: true })).toHaveCount(0);
+    await agentDialog.getByRole('button', { name: 'Close' }).click();
+    await page.getByRole('button').filter({ hasText: 'ATTACHMENTS' }).click();
+    const integrations = page.getByRole('dialog', { name: 'INTEGRATION ARCHITECTURE // READBACK REGISTRY' });
+    await expect(integrations.getByText('PostgreSQL', { exact: true })).toBeVisible();
+    await expect(integrations.getByText('verified', { exact: true })).toBeVisible();
+    await expect(integrations.getByText(/Source: enterprise-platform-readback/)).toBeVisible();
+    await integrations.getByRole('button', { name: 'REFRESH READBACK' }).click();
+    await expect(integrations.getByText('SERVER READBACK', { exact: true })).toBeVisible();
   });
 
   test('4. Architecture panel documents the exact production adapter truth boundary', async ({ page }) => {
@@ -127,15 +140,65 @@ test.describe('Sovereign Control Surface vNext browser smoke', () => {
     });
 
     await page.reload();
-    const composer = page.getByLabel('Mission an Sovereign');
+    const composer = page.getByLabel('Mission to Sovereign');
     await expect(composer).toBeVisible(EXTENDED_TIMEOUT);
     await composer.fill('Prüfe das Repository.');
-    await page.getByTestId('builder__start-task').click();
-
-    await expect(page.getByText(/Backend session readback is still pending|Repository execution requires an authenticated account/)).toBeVisible();
+    await expect(page.getByTestId('builder__start-task')).toBeDisabled();
+    await composer.press('Enter');
+    await page.getByTestId('operator-auth-btn').click();
     await expect(page.getByRole('dialog', { name: 'Sovereign account session' })).toBeVisible();
     expect(protectedRequests).toEqual([]);
   });
+
+  test('verified session without control readback cannot dispatch or invent credits', async ({ page }) => {
+    const dispatches: string[] = [];
+    await page.unroute('**/api/user/agent/control-surface**');
+    await page.route('**/api/user/agent/control-surface**', route => fulfillJson(route, { error: 'readback-unavailable' }, 503));
+    await page.route('**/api/user/agent/repository/run', route => {
+      dispatches.push(route.request().postData() ?? '');
+      return fulfillJson(route, { error: 'unexpected-dispatch' }, 409);
+    });
+    await page.reload();
+    await page.getByLabel('Mission to Sovereign').fill('Readback is required.');
+    await expect(page.getByTestId('builder__start-task')).toBeDisabled();
+    await page.getByLabel('Mission to Sovereign').press('Enter');
+    await page.getByTestId('vnext-mission-controls').locator('summary').click();
+    await expect(page.getByText(/Control surface readback HTTP 503/).first()).toBeVisible();
+    await expect(page.getByTestId('vnext-account-credits')).toContainText('CREDITS UNAVAILABLE');
+    await expect(page.getByTestId('vnext-account-credits')).not.toContainText('9 ACCOUNT CREDITS');
+    expect(dispatches).toEqual([]);
+  });
+
+
+  for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }, { width: 360, height: 400 }]) {
+    test(`phone chat retains readable height with controls open and closed at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      const surface = page.getByTestId('vnext-command-surface');
+      const stream = page.getByTestId('vnext-message-stream');
+      const dock = page.getByTestId('vnext-mission-dock');
+      const controls = page.getByTestId('vnext-mission-controls');
+      await expect(controls).not.toHaveAttribute('open');
+      for (const expanded of [false, true, false]) {
+        if ((await controls.getAttribute('open') !== null) !== expanded) {
+          await controls.locator('summary').click();
+        }
+        const bounds = await surface.boundingBox();
+        const messages = await stream.boundingBox();
+        const composer = await dock.boundingBox();
+        expect(bounds).not.toBeNull();
+        expect(messages).not.toBeNull();
+        expect(composer).not.toBeNull();
+        expect(messages!.height).toBeGreaterThan(bounds!.height * 0.3);
+        expect(composer!.height).toBeLessThanOrEqual(bounds!.height * 0.5 + 1);
+        expect(messages!.y + messages!.height).toBeLessThanOrEqual(composer!.y + 1);
+        const navigation = await page.getByTestId('mobile-bottom-nav').boundingBox();
+        expect(navigation).not.toBeNull();
+        expect(composer!.y + composer!.height).toBeLessThanOrEqual(navigation!.y + 1);
+      }
+      await page.getByLabel('Mission to Sovereign').fill('Readable composer');
+      await expect(page.getByLabel('Mission to Sovereign')).toHaveValue('Readable composer');
+    });
+  }
 
   test('7. The evidence observatory route remains independently reachable', async ({ page }) => {
     await page.goto('/observatory');

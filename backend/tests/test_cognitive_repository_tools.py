@@ -194,12 +194,13 @@ def test_parallel_job_evidence_update_has_matching_sql_parameters() -> None:
     assert conn.committed is True
     assert conn.cursor_instance.query.count("%s") == len(conn.cursor_instance.params)
     assert "jsonb_agg(item ORDER BY item)" in conn.cursor_instance.query
-    assert len(conn.cursor_instance.params) == 10
+    assert len(conn.cursor_instance.params) == 11
     assert conn.cursor_instance.params[3] == '["a.py","b.py"]'
     assert conn.cursor_instance.params[4] == "diff evidence"
     assert conn.cursor_instance.params[5] == "test evidence"
-    assert conn.cursor_instance.params[7] is True
-    assert conn.cursor_instance.params[9] == "agent-test-runtime"
+    assert conn.cursor_instance.params[7] is False  # normal job-state mutation
+    assert conn.cursor_instance.params[8] is True
+    assert conn.cursor_instance.params[10] == "agent-test-runtime"
 
 
 def test_tool_output_redacts_known_secret_shapes() -> None:
@@ -278,18 +279,20 @@ def test_fleet_repository_tool_receipt_uses_only_its_active_attempt_worktree(mon
         revision=head,
         image_digest="sha256:" + ("a" * 64),
         revision_verified=True,
+        image_digest_verified=True,
     ))
     def fake_start(*_args, **kwargs):
         captured["arguments"] = kwargs["arguments"]
         return "tool-call-worktree"
 
     monkeypatch.setattr(repository_tools, "start_agent_tool_call", fake_start)
-    monkeypatch.setattr(repository_tools, "append_tool_result_to_job", lambda *_args, **_kwargs: SimpleNamespace(
-        passed=True,
-        reason="evidence accepted",
-        can_prepare_draft_pr=False,
-        can_learn_pattern=False,
-    ))
+
+    def capture_tool_receipt(*_args, **kwargs):
+        captured["preserve_job_state"] = kwargs.get("preserve_job_state")
+        return SimpleNamespace(passed=True, reason="evidence accepted",
+                               can_prepare_draft_pr=False, can_learn_pattern=False)
+
+    monkeypatch.setattr(repository_tools, "append_tool_result_to_job", capture_tool_receipt)
 
     def fake_tool(_job_id, action, _parameters, workspace_path):
         captured["action"] = action
@@ -304,6 +307,7 @@ def test_fleet_repository_tool_receipt_uses_only_its_active_attempt_worktree(mon
         payload = json.loads(toolset._execute(role, "git-status", {}))
 
     assert captured["workspace"] == workspaces[role].worktree_path
+    assert captured["preserve_job_state"] is True
     assert captured["workspace"] != repo
     arguments = captured["arguments"]
     assert arguments["fleetAttempt"]["attemptId"] == workspaces[role].attempt_id

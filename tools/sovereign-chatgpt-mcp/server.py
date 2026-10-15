@@ -4,14 +4,25 @@ import hashlib
 import json
 import os
 import re
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from mcp import types
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.utilities.func_metadata import ArgModelBase
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from a2a_runtime_client import A2ARuntimeClient
+from aurion_admin_mcp_lane import (
+    ALL_AURION_ADMIN_TOOLS,
+    CONTRACTS,
+    TOOL_DESCRIPTIONS,
+    AurionAdminMcpRuntime,
+    exposed_tool_names,
+    required_scope_for_tool,
+    tool_mode,
+)
+from aurion_operator import AURION_OPEN_ID_PATTERN
 from android_hardening import AndroidHardeningRuntime
 from broker_client import HostBrokerClient
 import ci_repair_tools
@@ -25,6 +36,7 @@ from github_issue_contracts import (
 from output_contracts import normalize_tool_output
 from owner_input_client import ControllerRuntimeClient, OwnerInputClient, ProviderRuntimeClient
 from owner_input_widget import TOOL_META as OWNER_INPUT_TOOL_META, register_owner_input_widget
+from owner_ssh_widget import TOOL_META as SSH_TOOL_META, register_owner_ssh_widget
 from runtime import OperatorRuntime
 from repository_skill_tools import classify_changed_paths
 from self_heal import REPAIR_ENGINE
@@ -80,6 +92,8 @@ def _private_admin_capabilities() -> list[str]:
         capabilities.extend(("aurion_account_role_readback", "aurion_account_role_plan"))
         if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_WRITE", "0").strip() == "1":
             capabilities.append("aurion_account_role_apply")
+    if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP", "0").strip() == "1":
+        capabilities.append("aurion_admin_mcp_tool_lane")
     return capabilities
 
 
@@ -1408,10 +1422,46 @@ def agent_zero_a2a_canary(
     }, timeout=150)
 
 
+@mcp.tool(annotations=READ_ONLY, meta=SSH_TOOL_META)
+def vps_ssh_session_status(session_id: Annotated[str, Field(pattern=r"^(?:[0-9a-f]{32})?$", max_length=32)] = "") -> dict[str, Any]:
+    """Read owner SSH session metadata. Credentials are entered only at /owner-ssh."""
+    return broker.call("ssh_console_status", {"session_id": session_id})
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def vps_ssh_inspect(
+    session_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")],
+    operation: Literal["system", "disk", "memory", "containers", "services"],
+) -> dict[str, Any]:
+    """Run one fixed inspection on the existing SSH connection only while the owner delegation permits it. No secrets or shell commands are accepted."""
+    return broker.call("ssh_console_assistant_inspect", {"session_id": session_id, "operation": operation}, timeout=35)
+
+
 @mcp.tool(annotations=READ_ONLY)
 def vps_container_status(container: str = "sovereign-backend") -> dict[str, Any]:
     """Inspect the real state of one allowlisted Docker container through the local broker."""
     return broker.call("container_status", {"container": container})
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def vps_ssh_workspace(
+    session_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")],
+    source_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    action: Literal["init", "write", "read", "run"],
+    path: Annotated[str, Field(max_length=512)] = "",
+    content: Annotated[str, Field(max_length=32768)] = "",
+    expected_sha256: Annotated[str, Field(pattern=r"^(?:[0-9a-f]{64}|absent)?$")] = "",
+    argv: list[Annotated[str, Field(max_length=8192)]] | None = None,
+    timeout_seconds: Annotated[int, Field(strict=True, ge=1, le=300)] = 30,
+) -> dict[str, Any]:
+    """Use the existing SSH connection for repeated isolated non-root workspace tasks within its owner-issued 15–60 minute grant. init binds the source revision label; write requires a file hash or absent; read returns an independently checked hash. run accepts an argv array, isolates host files/network and limits CPU/RAM/processes. This tool cannot create a grant, deploy or modify live databases."""
+    from owner_ssh_workspace import validate_request
+    validate_request(action, path, content, expected_sha256, argv, timeout_seconds)
+    return broker.call("ssh_console_assistant_workspace", {
+        "session_id": session_id, "source_revision": source_revision, "action": action,
+        "path": path, "content": content, "expected_sha256": expected_sha256,
+        "argv": argv, "timeout_seconds": timeout_seconds,
+    }, timeout=timeout_seconds + 30)
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -1540,6 +1590,206 @@ def wolfram_cag_status() -> dict[str, Any]:
 def wolfram_cag_canary(components: list[str] | None = None) -> dict[str, Any]:
     """Internal fixed CAG canary helper; public MCP access is via runtime_dependency_health_matrix."""
     return provider_runtime.wolfram_cag_canary(components)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def wolfram_source_intelligence(
+    operation: Annotated[str, Field(pattern=r"^(?:parse|inspect|format_preview)$")],
+    source: Annotated[str, Field(min_length=1, max_length=32768)],
+    source_egress_approved: bool = False,
+) -> dict[str, Any]:
+    """Analyze Wolfram Language source with bounded CodeTools over CAG.
+
+    The supplied source is transmitted to the configured Wolfram CAG provider
+    only when source_egress_approved=true for this call. The source is treated
+    as data and is never evaluated as Wolfram Language code. Supported
+    operations are parse, inspect and format_preview; formatting never mutates a
+    workspace and returns safeToApply only after a parser-structure equivalence
+    check.
+    """
+    return provider_runtime.wolfram_source_intelligence(
+        operation=operation,
+        source=source,
+        source_egress_approved=source_egress_approved,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def wolfram_cag_runtime_evidence_bind(expected_revision: str) -> dict[str, Any]:
+    """Bind fresh 4/4 CAG canaries to exact Docker, PatchMon, image and authorization evidence."""
+    revision = str(expected_revision or "").strip().casefold()
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ValueError("expected_revision must be a full commit SHA")
+
+    def canonical_sha256(value: Any) -> str:
+        canonical = json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    canary = provider_runtime.wolfram_cag_canary()
+    results = canary.get("results") if isinstance(canary.get("results"), list) else []
+    if (
+        canary.get("ok") is not True
+        or canary.get("status") != "WOLFRAM_CAG_CANARIES_SUCCEEDED_UNVERIFIED"
+        or canary.get("sourceRevision") != revision
+        or len(results) != 4
+        or any(item.get("status") != "SUCCEEDED_UNVERIFIED" for item in results if isinstance(item, dict))
+    ):
+        return {
+            "ok": False,
+            "status": "WOLFRAM_CAG_RUNTIME_BINDING_BLOCKED",
+            "blocker": "fresh_four_component_canary_required",
+            "sourceRevision": canary.get("sourceRevision"),
+            "mutationPerformed": bool(canary.get("documentationPersisted")),
+            "secretValuesReturned": False,
+        }
+
+    image = broker.call("resolve_backend_image", {"revision": revision}, timeout=360)
+    digest = str(image.get("image_digest") or "").strip().casefold()
+    if image.get("ok") is not True or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+        return {
+            "ok": False,
+            "status": "WOLFRAM_CAG_RUNTIME_BINDING_BLOCKED",
+            "blocker": "immutable_backend_image_unresolved",
+            "mutationPerformed": True,
+            "secretValuesReturned": False,
+        }
+
+    docker_status = broker.call("container_status", {"container": "sovereign-backend"}, timeout=60)
+    state = docker_status.get("state") if isinstance(docker_status.get("state"), dict) else {}
+    health = state.get("Health") if isinstance(state.get("Health"), dict) else {}
+    health_status = str(health.get("Status") or "")
+    if docker_status.get("ok") is not True or state.get("Running") is not True or str(state.get("Status") or "") != "running" or health_status != "healthy":
+        return {
+            "ok": False,
+            "status": "WOLFRAM_CAG_RUNTIME_BINDING_BLOCKED",
+            "blocker": "backend_container_not_healthy",
+            "mutationPerformed": True,
+            "secretValuesReturned": False,
+        }
+
+    patchmon = broker.call(
+        "patchmon_runtime_inventory",
+        {"include_fleet": True, "max_fleet_containers": 100},
+        timeout=180,
+    )
+    fleet = patchmon.get("fleet") if isinstance(patchmon.get("fleet"), dict) else {}
+    fleet_rows = fleet.get("containers") if isinstance(fleet.get("containers"), list) else []
+    backend_row = next(
+        (item for item in fleet_rows if isinstance(item, dict) and item.get("name") == "sovereign-backend"),
+        None,
+    )
+    immutable_reference = str((backend_row or {}).get("image") or "")
+    if (
+        patchmon.get("ok") is not True
+        or backend_row is None
+        or backend_row.get("state") != "running"
+        or f"@{digest}" not in immutable_reference
+    ):
+        return {
+            "ok": False,
+            "status": "WOLFRAM_CAG_RUNTIME_BINDING_BLOCKED",
+            "blocker": "patchmon_backend_digest_readback_missing",
+            "mutationPerformed": True,
+            "secretValuesReturned": False,
+        }
+
+    container_identity_sha256 = canonical_sha256({
+        "containerId": str(backend_row.get("id") or ""),
+        "name": "sovereign-backend",
+        "image": immutable_reference,
+        "revision": revision,
+        "imageDigest": digest,
+    })
+    docker_readback_sha256 = canonical_sha256({
+        "container": "sovereign-backend",
+        "running": True,
+        "status": "running",
+        "health": health_status,
+        "imageDigest": digest,
+        "revision": revision,
+    })
+    http_health = patchmon.get("httpHealth") if isinstance(patchmon.get("httpHealth"), dict) else {}
+    patchmon_health = http_health.get("health") if isinstance(http_health.get("health"), dict) else {}
+    patchmon_readback_sha256 = canonical_sha256({
+        "status": patchmon.get("status"),
+        "httpHealthOk": http_health.get("ok") is True,
+        "httpHealthBodySha256": str(patchmon_health.get("bodySha256") or ""),
+        "backendContainerId": str(backend_row.get("id") or ""),
+        "backendImage": immutable_reference,
+        "backendState": backend_row.get("state"),
+        "backendStatus": backend_row.get("status"),
+        "revision": revision,
+        "imageDigest": digest,
+    })
+    entitlement_receipt_sha256 = canonical_sha256({
+        "status": canary.get("status"),
+        "sourceRevision": revision,
+        "imageDigest": digest,
+        "components": [
+            {
+                "capabilityId": str(item.get("capabilityId") or ""),
+                "component": str(item.get("component") or ""),
+                "status": str(item.get("status") or ""),
+                "responseStatus": int(item.get("responseStatus") or 0),
+                "responseHash": str(item.get("responseHash") or ""),
+                "analysisId": str((item.get("analysis") or {}).get("analysisId") or "") if isinstance(item.get("analysis"), dict) else "",
+            }
+            for item in results
+            if isinstance(item, dict)
+        ],
+    })
+
+    bindings: list[dict[str, Any]] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        analysis = item.get("analysis") if isinstance(item.get("analysis"), dict) else {}
+        request_identity = str(item.get("requestId") or item.get("requestHash") or "")
+        provider_response_sha256 = str(item.get("responseHash") or analysis.get("providerResponseSha256") or "").strip().casefold()
+        execution_receipt_sha256 = canonical_sha256({
+            "capabilityId": str(item.get("capabilityId") or ""),
+            "component": str(item.get("component") or ""),
+            "status": str(item.get("status") or ""),
+            "responseStatus": int(item.get("responseStatus") or 0),
+            "requestHash": str(item.get("requestHash") or ""),
+            "responseHash": provider_response_sha256,
+            "responseUuid": str(item.get("responseUuid") or ""),
+            "requestIdSha256": hashlib.sha256(request_identity.encode("utf-8")).hexdigest(),
+        })
+        bindings.append({
+            "analysisId": str(analysis.get("analysisId") or ""),
+            "analysisRecordSha256": str(analysis.get("analysisRecordSha256") or ""),
+            "runtimeContainerIdentitySha256": container_identity_sha256,
+            "dockerReadbackSha256": docker_readback_sha256,
+            "patchmonReadbackSha256": patchmon_readback_sha256,
+            "cagExecutionReceiptSha256": execution_receipt_sha256,
+            "providerRequestIdSha256": hashlib.sha256(request_identity.encode("utf-8")).hexdigest(),
+            "providerResponseSha256": provider_response_sha256,
+            "entitlementReceiptSha256": entitlement_receipt_sha256,
+            "runtimeEvidenceReadbackVerified": True,
+            "publicProjectionAllowed": True,
+        })
+
+    bound = provider_runtime.wolfram_cag_bind_runtime_evidence(
+        expected_revision=revision,
+        expected_image_digest=digest,
+        bindings=bindings,
+    )
+    return {
+        **bound,
+        "status": bound.get("status") or "WOLFRAM_CAG_RUNTIME_EVIDENCE_BOUND",
+        "sourceRevision": revision,
+        "imageDigest": digest,
+        "containerIdentitySha256": container_identity_sha256,
+        "dockerReadbackSha256": docker_readback_sha256,
+        "patchmonReadbackSha256": patchmon_readback_sha256,
+        "entitlementReceiptSha256": entitlement_receipt_sha256,
+        "providerCanaryExecuted": True,
+        "componentCount": len(bindings),
+        "mutationPerformed": True,
+        "readbackVerified": bound.get("runtimeEvidenceReadbackVerified") is True,
+        "secretValuesReturned": False,
+    }
 
 
 @mcp.tool(annotations=NETWORK_READ)
@@ -1978,14 +2228,14 @@ if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_OPERATOR", "0").strip() == "1":
     def aurion_account_role_readback(
         open_id: Annotated[
             str,
-            Field(pattern=r"^local:[A-Za-z0-9_.-]{1,32}$", description="Exact local Aurion openId; never a credential."),
+            Field(pattern=AURION_OPEN_ID_PATTERN, description="Exact canonical Aurion openId: local handle or OIDC SHA-256; never a credential."),
         ],
         expected_revision: Annotated[
             str,
             Field(pattern=r"^[0-9a-f]{40}$", description="Exact running Echoes of Aurion source revision."),
         ],
     ) -> dict[str, Any]:
-        """Read only id/openId/role for one local Aurion account from the exact healthy runtime."""
+        """Read only id/openId/role for one canonical local/OIDC Aurion account from the exact healthy runtime."""
         return broker.call(
             "aurion_account_role_readback",
             {"open_id": open_id, "expected_revision": expected_revision},
@@ -1995,11 +2245,11 @@ if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_OPERATOR", "0").strip() == "1":
 
     @mcp.tool(annotations=NETWORK_READ)
     def aurion_account_role_plan(
-        open_id: Annotated[str, Field(pattern=r"^local:[A-Za-z0-9_.-]{1,32}$")],
+        open_id: Annotated[str, Field(pattern=AURION_OPEN_ID_PATTERN)],
         role: Annotated[str, Field(pattern=r"^(?:user|admin)$")],
         expected_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
     ) -> dict[str, Any]:
-        """Bind one local Aurion role change to the exact users row and runtime without mutating data."""
+        """Bind one canonical local/OIDC Aurion role change to the exact users row and runtime without mutating data."""
         return broker.call(
             "aurion_account_role_plan",
             {"open_id": open_id, "role": role, "expected_revision": expected_revision},
@@ -2009,13 +2259,13 @@ if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_OPERATOR", "0").strip() == "1":
 
     @mcp.tool(annotations=EXTERNAL_WRITE)
     def aurion_account_role_apply(
-        open_id: Annotated[str, Field(pattern=r"^local:[A-Za-z0-9_.-]{1,32}$")],
+        open_id: Annotated[str, Field(pattern=AURION_OPEN_ID_PATTERN)],
         role: Annotated[str, Field(pattern=r"^(?:user|admin)$")],
         expected_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
         confirmation_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
         owner_approved: bool = False,
     ) -> dict[str, Any]:
-        """Queue one hash-bound local Aurion users.role update and require DB plus runtime readback."""
+        """Queue one hash-bound canonical local/OIDC Aurion users.role update and require DB plus runtime readback."""
         return broker.call(
             "aurion_account_role_apply",
             {
@@ -2109,7 +2359,63 @@ def rollback_backend_release(target_image_digest: str, confirmation_digest: str)
     )
 
 
+class _AurionProxyArguments(ArgModelBase):
+    """Preserve flat JSON arguments; Aurion validates the published contract."""
+
+    model_config = ConfigDict(extra="allow")
+
+    def model_dump_one_level(self) -> dict[str, Any]:
+        # FastMCP's base dump ignores extras. This transport model has no fields,
+        # so **kwargs cannot become a synthetic required field and omitted
+        # optionals stay omitted. JSON-looking strings are not coerced either.
+        # Aurion remains the final JSON/Zod validator and permission authority.
+        return dict(self.model_extra or {})
+
+
+def _register_aurion_admin_mcp_tool_lane() -> None:
+    """Expose the existing Aurion Admin MCP tools through the private Sovereign broker."""
+    if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP", "0").strip() != "1":
+        return
+    lane = AurionAdminMcpRuntime()
+    scopes = lane._local_allowed_scopes()
+    for tool_name in exposed_tool_names(
+        scopes,
+        wolfram_enabled=os.getenv("AURION_ADMIN_MCP_WOLFRAM_ENABLED", "0").strip() == "1",
+    ):
+        required_scope = required_scope_for_tool(tool_name)
+        action = "aurion_admin_mcp_write" if tool_mode(tool_name) == "write" else "aurion_admin_mcp_read"
+        timeout = 240 if tool_mode(tool_name) == "write" else 120
+
+        def make_handler(selected_name: str, selected_action: str, selected_timeout: int) -> Any:
+            def handler(**kwargs: Any) -> dict[str, Any]:
+                return broker.call(
+                    selected_action,
+                    {"tool_name": selected_name, "arguments": dict(kwargs)},
+                    timeout=selected_timeout,
+                )
+            handler.__name__ = selected_name
+            handler.__doc__ = TOOL_DESCRIPTIONS[selected_name]
+            return handler
+
+        handler = make_handler(tool_name, action, timeout)
+        annotation = EXTERNAL_WRITE if tool_mode(tool_name) == "write" else NETWORK_READ
+        tool = mcp._tool_manager.add_tool(
+            handler,
+            name=tool_name,
+            description=TOOL_DESCRIPTIONS[tool_name],
+            annotations=annotation,
+            structured_output=False,
+        )
+        # Publishing the Aurion schema alone leaves FastMCP's generated
+        # **kwargs validator active. Bind its call path to the lossless flat
+        # transport model as well; Aurion still owns final input validation.
+        tool.fn_metadata.arg_model = _AurionProxyArguments
+        tool.parameters = CONTRACTS[tool_name]
+
+
+_register_aurion_admin_mcp_tool_lane()
 register_owner_input_widget(mcp)
+register_owner_ssh_widget(mcp)
 register_sovereign_rescue_widget(mcp, read_only_annotations=READ_ONLY)
 register_sovereign_cognitive_widget(
     mcp,

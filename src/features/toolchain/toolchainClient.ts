@@ -58,7 +58,7 @@ export class ToolchainRequestError extends Error {
 }
 
 const configuredApiBase = (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined)?.trim();
-const API_BASE = (configuredApiBase || 'https://sovereign-backend.arelorian.de').replace(/\/$/, '');
+const API_BASE = (configuredApiBase || '').replace(/\/$/, '');
 const BASE = `${API_BASE}/api/toolchain/universal`;
 
 export const SOVEREIGN_TOOLCHAIN_ENDPOINTS = {

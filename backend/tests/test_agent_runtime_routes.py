@@ -25,7 +25,7 @@ from agent_runtime.github_access import (  # noqa: E402
     GitHubRepositoryReadBlocked,
     GitHubRepositoryReadUpstreamError,
 )
-from agent_runtime.job_store import create_agent_job_record, update_agent_job_state  # noqa: E402
+from agent_runtime.job_store import create_agent_job_record, read_agent_job, update_agent_job_state  # noqa: E402
 from agent_runtime.live_workspace import WorkspaceEvidenceAnchorV1  # noqa: E402
 from agent_runtime.tools.base import ToolResult  # noqa: E402
 import agent_runtime.routes as routes_module  # noqa: E402
@@ -73,7 +73,11 @@ class FakeCursor:
             self.conn.jobs[job_id]["events"] = current + new_events
         elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS"):
             job_id = params[-1]
-            self.conn.jobs[job_id]["status"] = params[0]
+            # The test DB adapter must implement the production SQL preserve flag.
+            # Otherwise a tool receipt can mask cancellation/cleanup contract bugs.
+            preserve_job_state = bool(params[7])
+            if not preserve_job_state:
+                self.conn.jobs[job_id]["status"] = params[0]
             if params[1]:
                 self.conn.jobs[job_id]["workspace_id"] = params[1]
             if params[2]:
@@ -86,10 +90,11 @@ class FakeCursor:
                 self.conn.jobs[job_id]["test_summary"] = params[5]
             if params[6]:
                 self.conn.jobs[job_id]["draft_pr_url"] = params[6]
-            if params[7]:
-                self.conn.jobs[job_id]["blocker"] = None
-            elif params[8]:
-                self.conn.jobs[job_id]["blocker"] = params[8]
+            if not preserve_job_state:
+                if params[8]:
+                    self.conn.jobs[job_id]["blocker"] = None
+                elif params[9]:
+                    self.conn.jobs[job_id]["blocker"] = params[9]
         elif normalized.startswith("SELECT * FROM SOVEREIGN_RESCUE_REPAIRS") and "REPAIR_ID" in normalized:
             repair_id, user_id = params[:2]
             row = self.conn.rescues.get(repair_id)
@@ -654,6 +659,42 @@ def test_list_jobs_is_user_scoped():
     assert payload["jobs"][0]["jobId"] == "agent-1"
 
 
+def test_job_readback_exposes_owned_runtime_evidence_and_server_observation(monkeypatch):
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-runtime-readback")
+    conn.jobs["agent-runtime-readback"]["created_at"] = "2026-10-02T21:10:23Z"
+    conn.jobs["agent-runtime-readback"]["updated_at"] = "2026-10-02T21:10:26Z"
+    calls = []
+    def read(connection, **kwargs):
+        calls.append(kwargs)
+        return ({"eventId": "event-persisted", "evidenceId": "evidence-persisted"},)
+    monkeypatch.setattr(routes_module, "read_job_runtime_evidence", read)
+    response = create_test_app(conn).test_client().get("/api/user/agent/jobs/agent-runtime-readback", headers={"X-Test-User": "user-1"})
+    assert response.status_code == 200
+    job = response.get_json()["job"]
+    assert job["createdAt"] == "2026-10-02T21:10:23Z"
+    assert job["updatedAt"] == "2026-10-02T21:10:26Z"
+    assert job["serverObservedAt"]
+    assert job["runtimeEvidence"] == {"jobId": "agent-runtime-readback", "readbackState": "live",
+                                      "events": [{"eventId": "event-persisted", "evidenceId": "evidence-persisted"}]}
+    assert calls == [{"user_id": "user-1", "job_id": "agent-runtime-readback", "external_ref": None}]
+
+
+def test_runtime_evidence_failure_is_visible_without_leaking_exception_details(monkeypatch):
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-runtime-readback")
+    def unreadable(*args, **kwargs):
+        raise RuntimeError("private-password must not appear")
+    monkeypatch.setattr(routes_module, "read_job_runtime_evidence", unreadable)
+    response = create_test_app(conn).test_client().get("/api/user/agent/jobs/agent-runtime-readback", headers={"X-Test-User": "user-1"})
+    assert response.status_code == 200
+    evidence = response.get_json()["job"]["runtimeEvidence"]
+    assert evidence["readbackState"] == "unavailable"
+    assert evidence["events"] == []
+    assert "RuntimeError" in evidence["error"]
+    assert "private-password" not in response.get_data(as_text=True)
+
+
 def test_create_job_runs_lifecycle_and_returns_runtime_state(tmp_path, monkeypatch):
     conn = FakeConnection()
     monkeypatch.setenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", str(tmp_path))
@@ -1126,6 +1167,20 @@ def test_desktop_frame_is_observational_and_failure_preserves_job_state() -> Non
     assert conn.jobs["agent-live"]["status"] == "running"
 
 
+def test_foreground_receipt_preserves_cancelled_job_status_and_blocker():
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-1", status="blocked")
+    conn.jobs["agent-1"]["blocker"] = "Cancelled by user."
+
+    # Simulates an in-flight foreground tool receipt arriving after cancellation.
+    update_agent_job_state(
+        conn, job_id="agent-1", status="running", preserve_job_state=True,
+        clear_blocker=True, blocker="intermediate failure",
+    )
+    assert conn.jobs["agent-1"]["status"] == "blocked"
+    assert conn.jobs["agent-1"]["blocker"] == "Cancelled by user."
+
+
 def test_cancel_non_terminal_job_sets_blocked():
     conn = FakeConnection()
     seed_job(conn, "user-1", "agent-1", status="running")
@@ -1149,6 +1204,32 @@ def test_cancel_terminal_job_is_blocked():
 
     assert response.status_code == 400
     assert response.get_json()["error"] == "Job ist bereits terminal"
+
+
+def test_repository_abort_records_sovereign_local_cancel(monkeypatch):
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-local", status="running")
+    conn.jobs["agent-local"]["external_ref"] = "sovereign-local-runner:agent-local"
+    app = create_test_app(conn)
+    denied = app.test_client().post(
+        "/api/user/agent/jobs/agent-local/cancel", headers={"X-Test-User": "other-user"},
+    )
+    assert denied.status_code == 404
+
+    def confirmed_cancel(_conn, *, job):
+        conn.jobs[job.job_id]["status"] = "blocked"
+        conn.jobs[job.job_id]["blocker"] = "Cancelled by owner; Sovereign-local-runner will perform no further work."
+        return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id)
+
+    monkeypatch.setattr("agent_runtime.routes.cancel_repository_execution", confirmed_cancel)
+    response = app.test_client().post(
+        "/api/user/agent/jobs/agent-local/cancel", headers={"X-Test-User": "user-1"},
+    )
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True
+    assert response.get_json()["status"] == "blocked"
+    assert "Sovereign-local-runner will perform no further work." in response.get_json()["blocker"]
+    assert conn.jobs["agent-local"]["status"] == "blocked"
 
 
 def test_cleanup_requires_terminal_state():

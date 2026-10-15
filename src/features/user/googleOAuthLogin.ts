@@ -2,7 +2,7 @@ import { Capacitor } from '@capacitor/core';
 
 const API_BASE = (
   (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined)?.trim()
-  || 'https://sovereign-backend.arelorian.de'
+  || ''
 ).replace(/\/$/, '');
 
 const PUBLIC_GOOGLE_WEB_CLIENT_ID = '511695074775-s08le2ju1k4nl2vv3i150i6tn084b682.apps.googleusercontent.com';

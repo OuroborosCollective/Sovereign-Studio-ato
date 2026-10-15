@@ -36,7 +36,7 @@ export interface SovereignAgentJobRequest {
   source: 'sovereign-studio';
   executor: 'sovereign-local-runner';
   provisionWorkspace: true;
-  cloneRepo: true;
+  cloneRepo: false;
 }
 
 export interface SovereignAgentRuntimeEvent {
@@ -101,10 +101,33 @@ export interface SovereignWorkspaceEvidenceAnchor {
   authoritative: false;
 }
 
+export interface SovereignAgentRuntimeEvidenceEvent {
+  eventId: string;
+  runId: string;
+  evidenceId: string;
+  evidenceSha256: string;
+  agentId: string;
+  source: 'agents-sdk';
+  stage: string;
+  status: string;
+  summary: string;
+  at: string;
+  nextAction?: string;
+  heartbeatCurrent?: boolean;
+}
+
+export interface SovereignAgentRuntimeEvidence {
+  jobId: string;
+  readbackState: 'live' | 'unavailable';
+  error?: string;
+  events: SovereignAgentRuntimeEvidenceEvent[];
+}
+
 export interface SovereignAgentJobSnapshot {
   jobId?: string;
   runtimeId?: string;
   workspaceId?: string;
+  repositoryRevision?: string;
   status: SovereignAgentJobStatus;
   repoUrl?: string;
   branch?: string;
@@ -116,6 +139,12 @@ export interface SovereignAgentJobSnapshot {
   changedFiles: string[];
   events: SovereignAgentRuntimeEvent[];
   lastError?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  serverObservedAt?: string;
+  /** Browser receive clock for aging a readback; never a runtime progress clock. */
+  readbackReceivedMonotonicMs?: number;
+  runtimeEvidence?: SovereignAgentRuntimeEvidence;
 }
 
 type ImportMetaWithEnv = ImportMeta & { env?: Record<string, string | undefined> };
@@ -165,12 +194,12 @@ export function createSovereignAgentHealthReport(config: SovereignAgentConfig): 
 
 export function resolveSovereignAgentConfig(input: SovereignAgentConfigInput = {}): SovereignAgentConfig {
   const agentApiUrl = normalizeUrl(
-    input.agentApiUrl
-      || readWindowOverride('__SOVEREIGN_AGENT_API_URL__')
-      || readBuildEnv('VITE_SOVEREIGN_AGENT_API_URL')
-      || readBuildEnv('VITE_SOVEREIGN_BACKEND_URL')
-      || readSameOriginBackendUrl()
-      || '',
+    input.agentApiUrl !== undefined
+      ? input.agentApiUrl
+      : readWindowOverride('__SOVEREIGN_AGENT_API_URL__')
+        || readBuildEnv('VITE_SOVEREIGN_AGENT_API_URL')
+        || readSameOriginBackendUrl()
+        || '',
   );
   const enabled = typeof input.enabled === 'boolean' ? input.enabled : Boolean(agentApiUrl);
   const deploymentMode: SovereignAgentDeploymentMode = input.deploymentMode
@@ -178,7 +207,6 @@ export function resolveSovereignAgentConfig(input: SovereignAgentConfigInput = {
   const urlSafe = !agentApiUrl || isHttpsUrl(agentApiUrl) || isLocalUrl(agentApiUrl);
   const ready = enabled
     && deploymentMode === 'sovereign-agent-backend'
-    && Boolean(agentApiUrl)
     && urlSafe;
 
   return {
@@ -235,6 +263,10 @@ export function summarizeSovereignAgentJob(snapshot: SovereignAgentJobSnapshot):
 
 export function isSovereignAgentTerminalStatus(status: SovereignAgentJobStatus): boolean {
   return status === 'blocked' || status === 'failed' || status === 'completed' || status === 'cleaned';
+}
+
+export function isSovereignAgentReadbackTerminal(status: SovereignAgentJobStatus, readbackAvailable: boolean): boolean {
+  return readbackAvailable || isSovereignAgentTerminalStatus(status) === true;
 }
 
 export function maskSovereignAgentSensitiveText(value: string): string {

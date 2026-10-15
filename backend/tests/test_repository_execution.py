@@ -1,930 +1,624 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timedelta, timezone
-import os
 from pathlib import Path
+from dataclasses import replace
+import asyncio
 import sys
 from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent_runtime.agent_zero_a2a import (  # noqa: E402
-    AgentZeroA2ASubmitOutcomeUnknown,
-    AgentZeroA2ATask,
-    AgentZeroA2ATaskLost,
-)
-from agent_runtime.job_store import (  # noqa: E402
-    StoredSovereignAgentJob,
-    compare_and_swap_agent_job_external_ref,
-    list_reconcilable_repository_jobs,
-)
-import agent_runtime.repository_execution as repository_execution  # noqa: E402
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts/sovereign-backend"))
+sys.path.insert(0, str(ROOT))
+
+from backend.agent_runtime import repository_execution as execution
+from backend.agent_runtime import cognitive_run_store as runtime_store
+from backend.agent_runtime.job_store import StoredSovereignAgentJob
+from backend.agent_runtime.revocation_closure import create_revocation_transition, PermissionAuthorityHead
 
 
-class _CasCursor:
-    def __init__(self, conn):
-        self.conn = conn
-        self.row = None
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        return False
-
-    def execute(self, sql, params):
-        assert "external_ref IS NOT DISTINCT FROM %s" in sql
-        assert "RETURNING job_id" in sql
-        new_ref, job_id, expected_ref = params
-        if job_id == self.conn.job_id and self.conn.external_ref == expected_ref:
-            self.conn.external_ref = new_ref
-            self.row = {"job_id": job_id}
-        else:
-            self.row = None
-
-    def fetchone(self):
-        return self.row
-
-
-class _CasConnection:
-    def __init__(self, external_ref=None):
-        self.job_id = "agent-cas"
-        self.external_ref = external_ref
-        self.commits = 0
-
-    def cursor(self):
-        return _CasCursor(self)
-
-    def commit(self):
-        self.commits += 1
-
-
-def _job(*, external_ref: str | None = "agent-zero-a2a:task-original", status: str = "running"):
-    return StoredSovereignAgentJob(
-        job_id="agent-test",
-        user_id="owner-test",
-        executor="sovereign-local-runner",
-        repo_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato",
-        branch="main",
-        mission="Implement one bounded repository change.",
-        status=status,
-        workspace_id="agent-test",
-        external_ref=external_ref,
+@pytest.fixture
+def pending_execution(monkeypatch, tmp_path):
+    """Exercise the real claim, permission gate and submit path; replace I/O only."""
+    job = StoredSovereignAgentJob(
+        job_id="agent-regression", user_id="owner-regression", executor="sovereign-local-runner",
+        repo_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato", branch="main",
+        mission="Create Testgb with 1987a26 and prepare a Draft PR.", status="running",
+        workspace_id="agent-regression", external_ref=execution._pending_submit_ref("agent-regression"),
     )
-
-
-def test_initial_submit_claim_wins_once():
-    conn = _CasConnection()
-    first = "agent-zero-a2a:claim:submit:a:first"
-    second = "agent-zero-a2a:claim:submit:b:second"
-
-    assert compare_and_swap_agent_job_external_ref(
-        conn, job_id=conn.job_id, expected_ref=None, new_ref=first,
-    ) is True
-    assert compare_and_swap_agent_job_external_ref(
-        conn, job_id=conn.job_id, expected_ref=None, new_ref=second,
-    ) is False
-    assert conn.external_ref == first
-
-
-def test_closeout_claim_wins_once():
-    original = "agent-zero-a2a:task-1"
-    conn = _CasConnection(original)
-    first = "agent-zero-a2a:claim:closeout:a:first"
-    second = "agent-zero-a2a:claim:closeout:b:second"
-
-    assert compare_and_swap_agent_job_external_ref(
-        conn, job_id=conn.job_id, expected_ref=original, new_ref=first,
-    ) is True
-    assert compare_and_swap_agent_job_external_ref(
-        conn, job_id=conn.job_id, expected_ref=original, new_ref=second,
-    ) is False
-    assert conn.external_ref == first
-
-
-def test_restart_recovery_claim_wins_once():
-    original = "agent-zero-a2a:task-1"
-    conn = _CasConnection(original)
-    first = "agent-zero-a2a:claim:retry:a:first"
-    second = "agent-zero-a2a:claim:retry:b:second"
-
-    assert compare_and_swap_agent_job_external_ref(
-        conn, job_id=conn.job_id, expected_ref=original, new_ref=first,
-    ) is True
-    assert compare_and_swap_agent_job_external_ref(
-        conn, job_id=conn.job_id, expected_ref=original, new_ref=second,
-    ) is False
-    assert conn.external_ref == first
-
-
-def _patch_job_store(monkeypatch, initial: StoredSovereignAgentJob):
-    state = {"job": initial, "events": []}
-
-    def read_agent_job(_conn, *, user_id, job_id):
-        job = state["job"]
-        return job if job.user_id == user_id and job.job_id == job_id else None
-
-    def cas(_conn, *, job_id, expected_ref, new_ref):
-        job = state["job"]
-        if job.job_id != job_id or job.external_ref != expected_ref:
-            return False
-        state["job"] = replace(job, external_ref=new_ref)
+    state = SimpleNamespace(job=job, receipts=[], binding=None, model_calls=0)
+    conn = SimpleNamespace(close=lambda: None)
+    monkeypatch.setattr(execution, "persist_workflow_run", lambda *_: None)
+    monkeypatch.setattr(execution, "append_permission_receipt", lambda _, **kw: state.receipts.append(kw["receipt"]))
+    def bind(_, **kw):
+        receipt = kw["approved_receipt"]
+        state.binding = {"job_id": kw["job_id"], "workflow_run_id": receipt.binding.workflow_run_id,
+                         "permission_id": receipt.permission_id, "approved_receipt_hash": receipt.receipt_hash}
+    monkeypatch.setattr(execution, "bind_repository_job_permission", bind)
+    monkeypatch.setattr(execution, "read_repository_job_permission_binding", lambda _, **kw: state.binding, raising=False)
+    monkeypatch.setattr(execution, "read_latest_permission_receipt", lambda _, **kw: (state.receipts[-1], len(state.receipts)-1))
+    def head(_, **kw):
+        receipt = state.receipts[-1]
+        material = {"permission_id": receipt.permission_id, "workflow_run_id": receipt.binding.workflow_run_id,
+                    "receipt_hash": receipt.receipt_hash, "receipt_sequence": len(state.receipts)-1,
+                    "decision": receipt.decision.value}
+        return PermissionAuthorityHead(**(material | {"decision": receipt.decision}),
+                                       readback_hash=execution.canonical_sha256(material))
+    monkeypatch.setattr(execution, "read_permission_authority_head", head)
+    monkeypatch.setattr(execution, "read_agent_job", lambda _, **kw: state.job)
+    def update(_, **kw):
+        fields = {key: value for key, value in kw.items() if key in {"status", "workspace_id", "blocker"}}
+        if kw.get("clear_blocker"): fields["blocker"] = None
+        state.job = replace(state.job, **fields)
+    monkeypatch.setattr(execution, "update_agent_job_state", update)
+    def event(_, job_id, value):
+        state.job = replace(state.job, events=(*state.job.events, {"stage": value.stage, "level": value.level,
+                                                                 "message": value.message, "at": value.at}))
+    monkeypatch.setattr(execution, "append_agent_event", event)
+    def cas(_, **kw):
+        if state.job.external_ref != kw["expected_ref"]: return False
+        state.job = replace(state.job, external_ref=kw["new_ref"])
         return True
-
-    def update(_conn, *, job_id, status, workspace_id=None, external_ref=None,
-               changed_files=None, diff_summary=None, test_summary=None,
-               draft_pr_url=None, blocker=None, clear_blocker=False):
-        job = state["job"]
-        assert job.job_id == job_id
-        state["job"] = replace(
-            job,
-            status=status,
-            workspace_id=workspace_id or job.workspace_id,
-            external_ref=external_ref or job.external_ref,
-            changed_files=tuple(changed_files) if changed_files is not None else job.changed_files,
-            diff_summary=diff_summary if diff_summary is not None else job.diff_summary,
-            test_summary=test_summary if test_summary is not None else job.test_summary,
-            draft_pr_url=draft_pr_url or job.draft_pr_url,
-            blocker=None if clear_blocker else (blocker or job.blocker),
-        )
-
-    def append(_conn, job_id, event):
-        assert job_id == state["job"].job_id
-        state["events"].append(event)
-
-    monkeypatch.setattr(repository_execution, "read_agent_job", read_agent_job)
-    monkeypatch.setattr(repository_execution, "compare_and_swap_agent_job_external_ref", cas)
-    monkeypatch.setattr(repository_execution, "update_agent_job_state", update)
-    monkeypatch.setattr(repository_execution, "append_agent_event", append)
+    monkeypatch.setattr(execution, "compare_and_swap_agent_job_external_ref", cas)
+    monkeypatch.setattr(execution, "read_agent_run", lambda _, **kw: SimpleNamespace(evidence_id="evidence-regression", trace_id="trace-regression"))
+    monkeypatch.setattr(execution, "read_agent_task_ids", lambda _, **kw: {"free_single_agent": "task-regression"})
+    monkeypatch.setattr(execution, "transition_agent_run", lambda *args, **kw: None)
+    monkeypatch.setattr(execution, "append_repository_executor_heartbeat", lambda *args, **kw: True)
+    resolution = SimpleNamespace(profile_id=execution.FREE_SINGLE_AGENT_PROFILE, repository_execution_allowed=True,
+                                 primary_route=SimpleNamespace())
+    monkeypatch.setattr(execution, "load_execution_resolution", lambda *args, **kw: resolution)
+    monkeypatch.setattr(execution, "route_provider_model", lambda _: "test-provider-boundary")
+    async def model(*args, **kw):
+        state.model_calls += 1
+        return {"status": "BLOCKED", "reason": "Provider boundary stopped by regression test."}
+    monkeypatch.setattr(execution, "run_free_single_agent", model)
+    (tmp_path / job.workspace_id / "repo" / ".git").mkdir(parents=True)
+    execution._bind_repository_execution_permission(conn, job=job, expected_head_sha="1"*40)
+    state.submit = lambda: execution._submit_pending_repository_job(conn, job=state.job,
+                              workspace_root=tmp_path, get_connection=lambda: conn)
     return state
 
 
-def test_start_repository_execution_queues_submit_without_transport(monkeypatch):
-    state = _patch_job_store(monkeypatch, _job(external_ref=None))
-    lifecycle_calls: list[dict] = []
-    def create_job(*_args, **kwargs):
-        lifecycle_calls.append(kwargs)
-        return SimpleNamespace(job_id="agent-test")
-    monkeypatch.setattr(repository_execution, "create_sovereign_agent_job", create_job)
-    transport_calls: list[bool] = []
-
-    def client_factory():
-        transport_calls.append(True)
-        raise AssertionError("user-facing start must never call Agent Zero")
-
-    result = repository_execution.start_repository_execution(
-        object(),
-        user_id="owner-test",
-        body={
-            "mode": "free",
-            "agentMode": "single",
-            "intentMode": "repository_execution",
-            "mission": "Implement one bounded repository change.",
-        },
-        a2a_client_factory=client_factory,
-    )
-
-    assert result.status == "running"
-    assert lifecycle_calls
-    assert "github_access_token" not in lifecycle_calls[0]
-    assert lifecycle_calls[0]["clone_repo"] is False
-    assert lifecycle_calls[0]["provision_workspace"] is True
-    assert (result.external_ref or "").startswith("agent-zero-a2a:pending:submit:")
-    assert transport_calls == []
-    assert [event.stage for event in state["events"]] == ["agent_zero_a2a_submit_queued"]
+def test_pending_submit_reaches_model_once_with_real_live_permission(pending_execution):
+    result = pending_execution.submit()
+    assert pending_execution.model_calls == 1, result.blocker
+    assert any(event["stage"] == "sovereign_executor_started" for event in result.events)
+    pending_execution.submit()
+    assert pending_execution.model_calls == 1
 
 
-def test_user_reconcile_does_not_execute_pending_submit(monkeypatch):
-    pending = repository_execution._pending_submit_ref("agent-test")
-    _patch_job_store(monkeypatch, _job(external_ref=pending))
-    transport_calls: list[bool] = []
-
-    def client_factory():
-        transport_calls.append(True)
-        raise AssertionError("client polling must not submit pending work")
-
-    result = repository_execution.reconcile_repository_execution(
-        object(),
-        user_id="owner-test",
-        job_id="agent-test",
-        a2a_client_factory=client_factory,
-    )
-
-    assert result is not None
-    assert result.external_ref == pending
-    assert transport_calls == []
-
-
-def test_server_worker_claims_pending_submit_and_binds_one_task(monkeypatch):
-    pending = repository_execution._pending_submit_ref("agent-test")
-    state = _patch_job_store(monkeypatch, _job(external_ref=pending))
-
-    class Client:
-        submit_count = 0
-
-        def submit_repository_task(self, *, workspace_id, repository_url, branch, mission):
-            assert workspace_id == "agent-test"
-            assert repository_url == "https://github.com/OuroborosCollective/Sovereign-Studio-ato"
-            assert branch == "main"
-            assert mission == "Implement one bounded repository change."
-            self.submit_count += 1
-            return AgentZeroA2ATask(task_id="task-server-submit", state="submitted")
-
-    client = Client()
-    result = repository_execution._submit_pending_repository_job(
-        object(),
-        job=state["job"],
-        a2a_client_factory=lambda: client,
-    )
-
-    assert result.external_ref == "agent-zero-a2a:task-server-submit"
-    assert client.submit_count == 1
-    assert any(event.stage == "agent_zero_a2a_submitted" for event in state["events"])
-
-    second = repository_execution._submit_pending_repository_job(
-        object(),
-        job=state["job"],
-        a2a_client_factory=lambda: client,
-    )
-    assert second.external_ref == "agent-zero-a2a:task-server-submit"
-    assert client.submit_count == 1
-
-
-def test_original_task_lost_resubmits_exactly_once_then_retry_lost_fails_closed(monkeypatch):
-    state = _patch_job_store(monkeypatch, _job())
-
-    class Client:
-        submit_count = 0
-
-        def get_task(self, task_id):
-            raise AgentZeroA2ATaskLost(
-                "AGENT_ZERO_A2A_TASK_LOST",
-                "USE_SINGLE_ATOMIC_RESTART_RECOVERY",
-                http_status=404,
-            )
-
-        def submit_repository_task(self, *, workspace_id, repository_url, branch, mission):
-            assert workspace_id == "agent-test"
-            assert repository_url == "https://github.com/OuroborosCollective/Sovereign-Studio-ato"
-            assert branch == "main"
-            assert mission == state["job"].mission
-            self.submit_count += 1
-            return AgentZeroA2ATask(task_id="task-retry", state="submitted")
-
-    client = Client()
-    monkeypatch.setattr(
-        repository_execution,
-        "run_agent_job_tool",
-        lambda *_args, **_kwargs: _done_tool(changed_files=()),
-    )
-    recovered = repository_execution.reconcile_repository_execution(
-        object(),
-        user_id="owner-test",
-        job_id="agent-test",
-        a2a_client_factory=lambda: client,
-    )
-
-    assert recovered is not None
-    assert recovered.external_ref == "agent-zero-a2a:retry:task-retry"
-    assert client.submit_count == 1
-
-    terminal = repository_execution.reconcile_repository_execution(
-        object(),
-        user_id="owner-test",
-        job_id="agent-test",
-        a2a_client_factory=lambda: client,
-    )
-
-    assert terminal is not None
-    assert terminal.status == "blocked"
-    assert "no further resubmit" in (terminal.blocker or "")
-    assert client.submit_count == 1
-
-
-def test_original_task_lost_with_workspace_changes_closes_out_without_resubmit(monkeypatch):
-    state = _patch_job_store(monkeypatch, _job())
-    closeout_calls = []
-
-    class Client:
-        submit_count = 0
-
-        def get_task(self, _task_id):
-            raise AgentZeroA2ATaskLost(
-                "AGENT_ZERO_A2A_TASK_LOST",
-                "USE_SINGLE_ATOMIC_RESTART_RECOVERY",
-                http_status=404,
-            )
-
-        def submit_repository_task(self, **_kwargs):
-            self.submit_count += 1
-            raise AssertionError("workspace mutation must be closed out before any recovery submit")
-
-    monkeypatch.setattr(
-        repository_execution,
-        "run_agent_job_tool",
-        lambda *_args, **_kwargs: _done_tool(changed_files=("README.md",)),
-    )
-
-    def closeout(_conn, *, job, claim_ref, bound_ref, workspace_root):
-        closeout_calls.append((claim_ref, bound_ref, workspace_root))
-        state["job"] = replace(job, status="validating", pr_state="ready", external_ref=bound_ref)
-        return state["job"]
-
-    monkeypatch.setattr(repository_execution, "_closeout_repository_job", closeout)
-    client = Client()
-    result = repository_execution.reconcile_repository_execution(
-        object(),
-        user_id="owner-test",
-        job_id="agent-test",
-        workspace_root=Path("/tmp/shared-workspaces"),
-        a2a_client_factory=lambda: client,
-    )
-
-    assert result is not None
-    assert result.status == "validating"
-    assert result.pr_state == "ready"
-    assert result.external_ref == "agent-zero-a2a:task-original"
-    assert client.submit_count == 0
-    assert len(closeout_calls) == 1
-    assert closeout_calls[0][1] == "agent-zero-a2a:task-original"
-
-
-def test_original_task_lost_with_unverifiable_workspace_blocks_without_resubmit(monkeypatch):
-    state = _patch_job_store(monkeypatch, _job())
-
-    class Client:
-        submit_count = 0
-
-        def get_task(self, _task_id):
-            raise AgentZeroA2ATaskLost(
-                "AGENT_ZERO_A2A_TASK_LOST",
-                "USE_SINGLE_ATOMIC_RESTART_RECOVERY",
-                http_status=404,
-            )
-
-        def submit_repository_task(self, **_kwargs):
-            self.submit_count += 1
-            raise AssertionError("unverified workspace must never be resubmitted")
-
-    monkeypatch.setattr(
-        repository_execution,
-        "run_agent_job_tool",
-        lambda *_args, **_kwargs: _failed_tool("git status unavailable"),
-    )
-    client = Client()
-    result = repository_execution.reconcile_repository_execution(
-        object(),
-        user_id="owner-test",
-        job_id="agent-test",
-        a2a_client_factory=lambda: client,
-    )
-
-    assert result is not None
+def test_missing_permission_is_persisted_as_blocked(pending_execution):
+    pending_execution.binding = None
+    result = pending_execution.submit()
     assert result.status == "blocked"
-    assert "workspace mutation state could not be verified" in (result.blocker or "")
-    assert client.submit_count == 0
-    assert state["job"].external_ref == "agent-zero-a2a:task-original"
+    assert result.events[-1]["stage"] == "repository_permission_unbound"
+    assert pending_execution.model_calls == 0
 
 
-def test_ambiguous_submit_outcome_blocks_without_any_automatic_second_submit(monkeypatch):
-    claim = "agent-zero-a2a:claim:submit:a:test"
-    state = _patch_job_store(monkeypatch, _job(external_ref=claim))
-
-    class Client:
-        submit_count = 0
-
-        def submit_repository_task(self, **_kwargs):
-            self.submit_count += 1
-            raise AgentZeroA2ASubmitOutcomeUnknown(
-                "AGENT_ZERO_A2A_SUBMIT_OUTCOME_UNKNOWN",
-                "DO_NOT_RESUBMIT_UNTIL_TASK_ACCEPTANCE_CAN_BE_PROVEN",
-            )
-
-    client = Client()
-    blocked = repository_execution._submit_after_claim(
-        object(),
-        job=state["job"],
-        claim_ref=claim,
-        retry=False,
-        a2a_client_factory=lambda: client,
-    )
-
-    assert blocked.status == "blocked"
-    assert client.submit_count == 1
-    assert state["job"].external_ref == claim
-    assert "automatic resubmit is forbidden" in (blocked.blocker or "")
-
-
-def _done_tool(*, changed_files=(), output="ok", metadata=None):
-    return SimpleNamespace(
-        status="done",
-        changed_files=tuple(changed_files),
-        blocker=None,
-        error=None,
-        output=output,
-        metadata=metadata or {},
-    )
-
-
-def _failed_tool(reason="failed"):
-    return SimpleNamespace(
-        status="error",
-        changed_files=(),
-        blocker=None,
-        error=reason,
-        output="",
-        metadata={},
-    )
-
-
-def _patch_closeout_baseline(monkeypatch, *, janitor_metadata=None, test_result=None, gate=None):
-    state = _patch_job_store(
-        monkeypatch,
-        _job(external_ref="agent-zero-a2a:claim:closeout:a:test"),
-    )
-    changed = ("backend/agent_runtime/example.py",)
-
-    def tool(_job_value, action, _params, _root):
-        if action == "git-status":
-            return _done_tool(changed_files=changed)
-        if action == "diff":
-            return _done_tool(output="diff --git a/example b/example\n+real change")
-        if action == "janitor":
-            return _done_tool(metadata=janitor_metadata or {
-                "severityCounts": {},
-                "recommendedTestCommand": "pytest backend/tests/test_example.py",
-            })
-        if action == "test":
-            return test_result or _done_tool(output="1 passed")
-        raise AssertionError(action)
-
-    monkeypatch.setattr(repository_execution, "run_agent_job_tool", tool)
-    monkeypatch.setattr(
-        repository_execution,
-        "git_diff_full",
-        lambda *_args, **_kwargs: (
-            b"diff --git a/example b/example\n+real implementation\n",
-            SimpleNamespace(status="done", blocker=None),
-        ),
-    )
-    monkeypatch.setattr(
-        repository_execution,
-        "git_diff_check",
-        lambda *_args, **_kwargs: SimpleNamespace(status="done", blocker=None),
-    )
-    monkeypatch.setattr(
-        repository_execution,
-        "evaluate_agent_evidence",
-        lambda _input: gate or SimpleNamespace(
-            passed=True,
-            can_prepare_draft_pr=True,
-            reason="all evidence passed",
-        ),
-    )
-    return state, changed
-
-
-def _run_closeout(state):
-    return repository_execution._closeout_repository_job(
-        object(),
-        job=state["job"],
-        claim_ref="agent-zero-a2a:claim:closeout:a:test",
-        bound_ref="agent-zero-a2a:task-original",
-        workspace_root=Path("/tmp/not-used-by-mocked-tools"),
-    )
-
-
-def test_documentation_regression_accepts_bounded_readme_change(tmp_path: Path):
-    repo = tmp_path / "agent-test" / "repo"
-    repo.mkdir(parents=True)
-    (repo / "README.md").write_text(
-        "# Sovereign Studio ATO [live-vnext:test:p1]\n\nBody stays intact.\n",
-        encoding="utf-8",
-    )
-
-    result = repository_execution._documentation_regression(
-        _job(),
-        ("README.md",),
-        tmp_path,
-    )
-
-    assert result == (
-        True,
-        "documentation-regression: 1 UTF-8 documentation file(s) verified; README heading preserved",
-    )
-
-
-def test_documentation_regression_rejects_readme_heading_break(tmp_path: Path):
-    repo = tmp_path / "agent-test" / "repo"
-    repo.mkdir(parents=True)
-    (repo / "README.md").write_text("Sovereign Studio ATO\n", encoding="utf-8")
-
-    result = repository_execution._documentation_regression(
-        _job(),
-        ("README.md",),
-        tmp_path,
-    )
-
-    assert result == (
-        False,
-        "Documentation regression requires README.md to preserve its first Markdown heading.",
-    )
-
-
-def test_documentation_regression_never_replaces_code_regression(tmp_path: Path):
-    repo = tmp_path / "agent-test" / "repo"
-    repo.mkdir(parents=True)
-    (repo / "README.md").write_text("# Sovereign Studio ATO\n", encoding="utf-8")
-    (repo / "backend.py").write_text("value = 1\n", encoding="utf-8")
-
-    assert repository_execution._documentation_regression(
-        _job(),
-        ("README.md", "backend.py"),
-        tmp_path,
-    ) is None
-
-
-def test_closeout_readme_only_does_not_require_unprovisioned_frontend_dependencies(monkeypatch, tmp_path: Path):
-    state, _changed = _patch_closeout_baseline(
-        monkeypatch,
-        janitor_metadata={
-            "severityCounts": {},
-            "recommendedTestCommand": "pnpm run type-check && pnpm run test",
-        },
-    )
-    baseline_tool = repository_execution.run_agent_job_tool
-    test_calls: list[str] = []
-
-    def tool(job_value, action, params, root):
-        if action == "git-status":
-            return _done_tool(changed_files=("README.md",))
-        if action == "test":
-            test_calls.append(str(params.get("command") or "auto"))
-            return _failed_tool("frontend dependency tree is intentionally absent")
-        return baseline_tool(job_value, action, params, root)
-
-    monkeypatch.setattr(repository_execution, "run_agent_job_tool", tool)
-    repo = tmp_path / "agent-test" / "repo"
-    repo.mkdir(parents=True)
-    (repo / "README.md").write_text(
-        "# Sovereign Studio ATO [live-vnext:test:p1]\n\nBody stays intact.\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(repository_execution, "draft_pr_input_from_job", lambda job: job)
-    monkeypatch.setattr(
-        repository_execution,
-        "prepare_draft_pr",
-        lambda _input: SimpleNamespace(
-            allowed=True,
-            blockers=(),
-            summary="ready",
-            head_branch="sovereign/agent-test",
-            base_branch="main",
-            title="Draft: docs regression",
-            body="verified evidence",
-        ),
-    )
-
-    def mark(_conn, **kwargs):
-        job = state["job"]
-        state["job"] = replace(job, status="validating", pr_state="ready")
-
-    monkeypatch.setattr(repository_execution, "mark_draft_pr_prepared", mark)
-
-    result = repository_execution._closeout_repository_job(
-        object(),
-        job=state["job"],
-        claim_ref="agent-zero-a2a:claim:closeout:a:test",
-        bound_ref="agent-zero-a2a:task-original",
-        workspace_root=tmp_path,
-    )
-
-    assert test_calls == []
-    assert result.status == "validating"
-    assert result.pr_state == "ready"
-    assert result.changed_files == ("README.md",)
-    assert "documentation-regression" in result.test_summary
-
-
-def test_closeout_blocks_when_no_changes_exist(monkeypatch):
-    state = _patch_job_store(monkeypatch, _job(external_ref="agent-zero-a2a:claim:closeout:a:test"))
-    monkeypatch.setattr(
-        repository_execution,
-        "run_agent_job_tool",
-        lambda *_args, **_kwargs: _done_tool(changed_files=()),
-    )
-
-    result = _run_closeout(state)
-
+def test_revoked_permission_never_starts_executor(pending_execution):
+    revoked, _ = create_revocation_transition(pending_execution.receipts[-1], revocation_sequence=2,
+        revocation_epoch_ms=2000, reason_code="OWNER_REVOKED", revoker_identity="owner-regression")
+    pending_execution.receipts.append(revoked)
+    result = pending_execution.submit()
     assert result.status == "blocked"
-    assert "without workspace changes" in (result.blocker or "")
+    assert result.events[-1]["stage"] == "repository_revocation_blocked"
+    assert pending_execution.model_calls == 0
 
 
-def test_closeout_blocks_when_full_diff_is_missing(monkeypatch):
-    state, _changed = _patch_closeout_baseline(monkeypatch)
-    monkeypatch.setattr(
-        repository_execution,
-        "git_diff_full",
-        lambda *_args, **_kwargs: (b"", SimpleNamespace(status="done", blocker=None)),
-    )
-
-    result = _run_closeout(state)
-
+@pytest.mark.parametrize("field,value", [("job_id", "agent-other"), ("repo_url", "https://github.com/other/repo"),
+                                         ("user_id", "other-owner"), ("workspace_id", "other-workspace"),
+                                         ("mission", "A different instruction")])
+def test_permission_for_another_scope_never_starts_executor(pending_execution, field, value):
+    pending_execution.job = replace(pending_execution.job, **{field: value})
+    result = pending_execution.submit()
     assert result.status == "blocked"
-    assert "diff is missing" in (result.blocker or "")
+    assert pending_execution.model_calls == 0
 
 
-def test_closeout_blocks_when_git_diff_check_fails(monkeypatch):
-    state, _changed = _patch_closeout_baseline(monkeypatch)
-    monkeypatch.setattr(
-        repository_execution,
-        "git_diff_check",
-        lambda *_args, **_kwargs: SimpleNamespace(status="failed", blocker="trailing whitespace"),
-    )
-
-    result = _run_closeout(state)
-
+def test_unexpected_preflight_error_is_visible_and_does_not_leave_running_claim(pending_execution, monkeypatch):
+    def unreadable(*args, **kw):
+        raise RuntimeError("private-provider-password must not enter evidence")
+    monkeypatch.setattr(execution, "read_latest_permission_receipt", unreadable)
+    result = pending_execution.submit()
     assert result.status == "blocked"
-    assert result.blocker == "trailing whitespace"
+    assert result.events[-1]["stage"] == "sovereign_executor_submit_failed"
+    assert "RuntimeError" in result.blocker
+    assert "private-provider-password" not in result.blocker
+    assert pending_execution.model_calls == 0
 
 
-def test_closeout_blocks_on_critical_janitor_finding(monkeypatch):
-    state, _changed = _patch_closeout_baseline(
-        monkeypatch,
-        janitor_metadata={"severityCounts": {"critical": 1}, "recommendedTestCommand": "pytest"},
-    )
-
-    result = _run_closeout(state)
-
-    assert result.status == "blocked"
-    assert "critical repository defect" in (result.blocker or "")
-
-
-def test_closeout_splits_janitor_shell_combination_and_never_executes_control_token(monkeypatch):
-    state, _changed = _patch_closeout_baseline(
-        monkeypatch,
-        janitor_metadata={
-            "severityCounts": {},
-            "recommendedTestCommand": "pnpm run type-check && pnpm test",
-        },
-    )
-    observed_commands: list[str] = []
-    original_tool = repository_execution.run_agent_job_tool
-
-    def tool(job_value, action, params, root):
-        if action == "test":
-            observed_commands.append(str(params.get("command") or ""))
-            return _done_tool(output="tests passed")
-        return original_tool(job_value, action, params, root)
-
-    monkeypatch.setattr(repository_execution, "run_agent_job_tool", tool)
-    monkeypatch.setattr(
-        repository_execution,
-        "prepare_draft_pr",
-        lambda _input: SimpleNamespace(
-            allowed=True,
-            blockers=(),
-            summary="ready",
-            head_branch="sovereign/agent-test",
-            base_branch="main",
-            title="Draft: test",
-            body="evidence",
-        ),
-    )
-    monkeypatch.setattr(repository_execution, "draft_pr_input_from_job", lambda job: job)
-    monkeypatch.setattr(repository_execution, "mark_draft_pr_prepared", lambda *_args, **_kwargs: None)
-
-    result = _run_closeout(state)
-
-    assert result.status == "running"
-    assert observed_commands == ["pnpm test"]
-    assert all("&&" not in command for command in observed_commands)
+@pytest.fixture
+def runtime_readback():
+    payload = {"jobId": "agent-regression", "loop": 1, "rawModelOutputPersisted": False}
+    row = {"event_id": "event-real", "run_id": "repo-agent-regression", "agent_id": "free_single_agent",
+           "type": "single_agent_started", "status": "RUNNING", "source": "agents-sdk",
+           "summary": "Persisted agent phase.", "next_action": "WAIT_FOR_AGENT",
+           "created_at": "2026-10-02T21:10:26Z", "evidence_id": "evidence-real",
+           "sha256": runtime_store._digest_text(runtime_store._json(payload)), "payload": payload,
+           "user_id": "owner-regression", "job_id": "agent-regression",
+           "evidence_run_id": "repo-agent-regression", "evidence_agent_id": "free_single_agent"}
+    state = SimpleNamespace(rows=[row], queries=[])
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def execute(self, sql, params): state.queries.append((sql, params))
+        def fetchall(self): return state.rows
+    conn = SimpleNamespace(cursor=lambda: Cursor())
+    state.read = lambda: runtime_store.read_job_runtime_evidence(conn, user_id="owner-regression", job_id="agent-regression")
+    return state
 
 
-def test_closeout_blocks_when_regression_fails(monkeypatch):
-    state, _changed = _patch_closeout_baseline(monkeypatch, test_result=_failed_tool("regression red"))
-
-    result = _run_closeout(state)
-
-    assert result.status == "blocked"
-    assert result.blocker == "regression red"
-
-
-def test_closeout_blocks_when_evidence_gate_rejects(monkeypatch):
-    state, _changed = _patch_closeout_baseline(
-        monkeypatch,
-        gate=SimpleNamespace(
-            passed=False,
-            can_prepare_draft_pr=False,
-            reason="evidence gate red",
-        ),
-    )
-
-    result = _run_closeout(state)
-
-    assert result.status == "blocked"
-    assert result.blocker == "evidence gate red"
+def test_runtime_readback_exposes_real_evidence_identity_without_raw_payload(runtime_readback):
+    events = runtime_readback.read()
+    assert events[0]["eventId"] == "event-real"
+    assert events[0]["evidenceId"] == "evidence-real"
+    assert events[0]["evidenceSha256"] == runtime_readback.rows[0]["sha256"]
+    assert events[0]["at"] == "2026-10-02T21:10:26Z"
+    assert "payload" not in events[0]
+    sql, params = runtime_readback.queries[0]
+    assert "run.user_id = %s::uuid AND run.job_id = %s" in sql
+    assert params == ("owner-regression", "agent-regression", 100)
 
 
-def test_all_closeout_evidence_allows_prepare_but_never_creates_pr(monkeypatch):
-    state, changed = _patch_closeout_baseline(monkeypatch)
-    prepared_calls: list[dict] = []
-
-    monkeypatch.setattr(repository_execution, "draft_pr_input_from_job", lambda job: job)
-    monkeypatch.setattr(
-        repository_execution,
-        "prepare_draft_pr",
-        lambda _input: SimpleNamespace(
-            allowed=True,
-            blockers=(),
-            summary="ready",
-            head_branch="sovereign/agent-test",
-            base_branch="main",
-            title="Draft: test",
-            body="verified evidence",
-        ),
-    )
-
-    def mark(_conn, **kwargs):
-        prepared_calls.append(kwargs)
-        job = state["job"]
-        state["job"] = replace(job, status="validating", pr_state="ready")
-
-    monkeypatch.setattr(repository_execution, "mark_draft_pr_prepared", mark)
-
-    result = _run_closeout(state)
-
-    assert prepared_calls and prepared_calls[0]["job_id"] == "agent-test"
-    assert result.status == "validating"
-    assert result.pr_state == "ready"
-    assert result.external_ref == "agent-zero-a2a:task-original"
-    assert result.changed_files == changed
-    assert result.draft_pr_url is None
-    assert result.pr_url is None
-
-def test_active_task_stalls_fail_closed_after_bounded_window(monkeypatch):
-    stale = replace(
-        _job(),
-        updated_at=datetime.now(timezone.utc) - timedelta(seconds=601),
-    )
-    state = _patch_job_store(monkeypatch, stale)
-    monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
-
-    class Client:
-        def get_task(self, task_id):
-            assert task_id == "task-original"
-            return AgentZeroA2ATask(task_id=task_id, state="working")
-
-    result = repository_execution.reconcile_repository_execution(
-        object(),
-        user_id="owner-test",
-        job_id="agent-test",
-        a2a_client_factory=Client,
-    )
-
-    assert result is not None
-    assert result.status == "blocked"
-    assert "AGENT_ZERO_A2A_STALLED" in (result.blocker or "")
-    assert any(event.stage == "agent_zero_a2a_task_stalled" for event in state["events"])
+@pytest.mark.parametrize("field,value", [("user_id", "other-owner"), ("job_id", "agent-other"),
+    ("evidence_run_id", "repo-other"), ("evidence_agent_id", "other-agent"), ("sha256", "0"*64),
+    ("created_at", None)])
+def test_runtime_evidence_contradictions_fail_closed(runtime_readback, field, value):
+    runtime_readback.rows[0][field] = value
+    with pytest.raises(ValueError): runtime_readback.read()
 
 
-def test_fresh_active_task_remains_running(monkeypatch):
-    fresh = replace(_job(), updated_at=datetime.now(timezone.utc))
-    _patch_job_store(monkeypatch, fresh)
-    monkeypatch.setenv("SOVEREIGN_REPOSITORY_STALL_SECONDS", "300")
-
-    class Client:
-        def get_task(self, task_id):
-            return AgentZeroA2ATask(task_id=task_id, state="working")
-
-    result = repository_execution.reconcile_repository_execution(
-        object(),
-        user_id="owner-test",
-        job_id="agent-test",
-        a2a_client_factory=Client,
-    )
-
-    assert result is not None
-    assert result.status == "running"
+def test_empty_runtime_evidence_does_not_manufacture_status_messages(runtime_readback):
+    runtime_readback.rows = []
+    assert runtime_readback.read() == ()
 
 
-def test_server_reconciler_dispatches_pending_submit_instead_of_client_reconcile(monkeypatch):
-    candidate = _job(external_ref=repository_execution._pending_submit_ref("agent-test"))
-    connections = []
-    submitted = []
-
-    class Conn:
-        def __init__(self):
-            self.closed = False
-
-        def close(self):
-            self.closed = True
-
-    def factory():
-        conn = Conn()
-        connections.append(conn)
-        return conn
-
-    monkeypatch.setattr(
-        repository_execution,
-        "list_reconcilable_repository_jobs",
-        lambda _conn, *, limit=50: (candidate,),
-    )
-    monkeypatch.setattr(
-        repository_execution,
-        "_submit_pending_repository_job",
-        lambda _conn, *, job: submitted.append(job.job_id) or job,
-    )
-    monkeypatch.setattr(
-        repository_execution,
-        "reconcile_repository_execution",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("pending submit must use worker dispatch")),
-    )
-
-    summary = repository_execution.reconcile_repository_jobs_once(
-        get_connection=factory,
-        workspace_root=Path("/tmp/server-owned-reconcile"),
-    )
-
-    assert summary == {
-        "scanned": 1,
-        "reconciled": 1,
-        "transientFailures": 0,
-        "unexpectedFailures": 0,
-    }
-    assert submitted == ["agent-test"]
-    assert len(connections) == 2
-    assert all(conn.closed for conn in connections)
-
-
-def test_server_reconciler_processes_bound_job_without_client_polling(monkeypatch):
-    candidate = _job()
-    connections = []
+def test_real_executor_heartbeat_lifetime_and_claim_binding(pending_execution, monkeypatch):
     observed = []
+    monkeypatch.setattr(execution, "_executor_heartbeat_seconds", lambda: 0.01)
+    async def scenario():
+        second = asyncio.Event()
+        def persist(conn, **kw):
+            observed.append(kw)
+            if len(observed) == 2: second.set()
+            return True
+        monkeypatch.setattr(execution, "append_repository_executor_heartbeat", persist)
+        async def model():
+            await asyncio.wait_for(second.wait(), timeout=1)
+            return "real-coroutine-return"
+        result = await execution._run_with_executor_heartbeat(model, get_connection=lambda: SimpleNamespace(close=lambda: None),
+            job=pending_execution.job, run_id="repo-agent-regression", claim_ref="claim-exact")
+        assert result == "real-coroutine-return"
+        assert len(observed) == 2
+        await asyncio.sleep(0.03)
+        assert len(observed) == 2  # observer is cancelled before closeout
+    asyncio.run(scenario())
+    assert all(row["job_id"] == "agent-regression" and row["claim_ref"] == "claim-exact" for row in observed)
 
-    class Conn:
-        def __init__(self):
-            self.closed = False
 
-        def close(self):
-            self.closed = True
+def test_lost_heartbeat_claim_blocks_model_invocation(pending_execution, monkeypatch):
+    monkeypatch.setattr(execution, "append_repository_executor_heartbeat", lambda *args, **kw: False)
+    result = pending_execution.submit()
+    assert result.status == "blocked"
+    assert pending_execution.model_calls == 0
+    assert "EXECUTOR_HEARTBEAT_CLAIM_NOT_CURRENT" in result.blocker
 
-    def factory():
-        conn = Conn()
-        connections.append(conn)
-        return conn
+
+@pytest.mark.parametrize("current", [True, False])
+def test_heartbeat_persistence_is_owner_claim_bound_and_never_updates_progress(current):
+    queries, commits, rollbacks = [], [], []
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def execute(self, sql, params): queries.append((sql, params))
+        def fetchone(self): return {"trace_id": "trace-real"} if current else None
+    conn = SimpleNamespace(cursor=lambda: Cursor(), commit=lambda: commits.append(True), rollback=lambda: rollbacks.append(True))
+    claim = "sovereign-local-runner:claim:submit:exact-test"
+    result = runtime_store.append_repository_executor_heartbeat(conn, user_id="owner-regression", job_id="agent-regression",
+        run_id="repo-agent-regression", claim_ref=claim)
+    assert result is current
+    sql, params = queries[0]
+    assert "job.status = 'running' AND job.external_ref = %s" in sql
+    assert "run.user_id = %s::uuid AND job.user_id = %s::uuid" in sql
+    assert params == ("owner-regression", "owner-regression", "repo-agent-regression", "agent-regression", claim)
+    assert not any("UPDATE " in sql.upper() for sql, _ in queries)
+    assert len(queries) == (3 if current else 1)
+    assert len(commits) == int(current)
+    assert len(rollbacks) == int(not current)
+
+
+def test_heartbeat_payload_hash_is_verified_and_old_claim_cannot_look_current(runtime_readback):
+    row = runtime_readback.rows[0]
+    row["type"] = "sovereign_executor_heartbeat"
+    row["payload"] = {"jobId": "agent-regression", "progressImplied": False, "claimSha256": "0"*64}
+    row["sha256"] = runtime_store._digest_text(runtime_store._json(row["payload"]))
+    assert runtime_readback.read()[0]["heartbeatCurrent"] is False
+    row["payload"]["progressImplied"] = True
+    row["sha256"] = runtime_store._digest_text(runtime_store._json(row["payload"]))
+    with pytest.raises(ValueError): runtime_readback.read()
+
+
+def source(relative: str) -> str:
+    return (ROOT / relative).read_text("utf-8")
+
+
+def section(text: str, start: str, end: str) -> str:
+    start_index = text.index(start)
+    end_index = text.index(end, start_index)
+    return text[start_index:end_index]
+
+
+def test_active_repository_executor_is_sovereign_local_only() -> None:
+    runtime = source("backend/agent_runtime/repository_execution.py")
+    assert "AgentZeroA2AClient" not in runtime
+    assert "AgentZeroA2AError" not in runtime
+    assert "agent-zero-a2a:" not in runtime
+    assert '_EXECUTOR_PREFIX: Final[str] = "sovereign-local-runner:"' in runtime
+    assert '_EXECUTOR_PENDING_PREFIX: Final[str] = "sovereign-local-runner:pending:submit:"' in runtime
+    assert '_EXECUTOR_CLAIM_PREFIX: Final[str] = "sovereign-local-runner:claim:"' in runtime
+
+
+def test_repository_start_clones_into_the_isolated_workspace() -> None:
+    runtime = source("backend/agent_runtime/repository_execution.py")
+    start = section(
+        runtime,
+        "def start_repository_execution(",
+        "def _submit_pending_repository_job(",
+    )
+    assert "provision_workspace=True" in start
+    assert "clone_repo=True" in start
+    assert "clone_repo=False" not in start
+    assert "sovereign_repository_checked_out" in start
+    assert "sovereign_local_execution_queued" in start
+
+
+def test_single_agent_run_is_persisted_before_model_execution() -> None:
+    runtime = source("backend/agent_runtime/repository_execution.py")
+    submit = section(runtime, "def _ensure_local_single_agent_run(", "def _submit_after_claim(")
+    assert "create_agent_run(" in submit
+    assert "read_agent_run(" in submit
+    assert "read_agent_task_ids(" in submit
+    assert "create_repository_single_agent_task(" in submit
+    assert '"free_single_agent"' in submit and '"paid_single_agent"' in submit
+    assert 'status="RUNNING"' in submit
+    assert 'source="agents-sdk"' in submit
+
+
+def test_local_executor_binds_real_repository_toolset_and_free_route() -> None:
+    runtime = source("backend/agent_runtime/repository_execution.py")
+    submit = section(runtime, "def _submit_after_claim(", "def _safe_regression_commands(")
+    assert "BoundRepositoryToolset(" in submit
+    assert "write_confirmed=True" in submit
+    assert "run_free_single_agent(" in submit
+    assert "repository_tool_factory=repository_toolset.tools_for_role" in submit
+    assert "capability_tool_factory=None" in submit
+    assert 'requested_mode=execution_mode' in submit
+    assert 'read_repository_execution_mode(conn, job=job)' in submit
+    assert 'requested_mode="paid"' in submit
+    assert "FREE_SINGLE_AGENT_PROFILE" in submit
+    assert "route_provider_model" in submit
+
+
+def test_local_executor_uses_the_isolated_repository_directory_as_tool_root() -> None:
+    runtime = source("backend/agent_runtime/repository_execution.py")
+    assert "repo_dir_for_workspace(workspace_id, workspace_root)" in runtime
+    assert "workspace_root=repo_path.parent.parent" in runtime
+
+
+def test_pending_reconcile_forwards_a_fresh_database_connection_and_workspace() -> None:
+    runtime = source("backend/agent_runtime/repository_execution.py")
+    pending = section(runtime, "def _submit_pending_repository_job(", "def _safe_regression_commands(")
+    reconcile = section(runtime, "def reconcile_repository_jobs_once(", "def start_repository_reconciler(")
+    assert "get_connection: ConnectionFactory | None = None" in pending
+    assert "workspace_root=workspace_root" in pending
+    assert "get_connection=get_connection" in pending
+    assert "workspace_root=workspace_root" in reconcile
+    assert "get_connection=get_connection" in reconcile
+
+
+def test_local_executor_closeout_requires_real_git_diff_and_regression() -> None:
+    runtime = source("backend/agent_runtime/repository_execution.py")
+    closeout = section(runtime, "def _closeout_repository_job(", "def reconcile_repository_execution(")
+    assert 'run_agent_job_tool(job, "git-status"' in closeout
+    assert 'run_agent_job_tool(job, "diff"' in closeout
+    assert "git_diff_full(" in closeout
+    assert "git_diff_check(" in closeout
+    assert "repository_regression_started" in closeout
+    assert 'run_agent_job_tool(' in closeout
+    assert '"test"' in closeout
+    assert "evaluate_agent_evidence(" in closeout
+    assert "prepare_draft_pr(" in closeout
+
+
+def test_local_executor_never_auto_merges_or_deploys() -> None:
+    tools = source("backend/agent_runtime/cognitive_repository_tools.py")
+    task = section(tools, "def create_repository_single_agent_task(", "def _require_function_tool(")
+    assert "No background agent, production deploy, merge or auto-merge is started." in task
+    assert "start background agents" in task
+    assert "merge a pull request" in task
+    assert "deploy to production" in task
+    assert "claim success without tool, diff and test evidence" in task
+
+
+def test_cancellation_is_local_only() -> None:
+    runtime = source("backend/agent_runtime/repository_execution.py")
+    cancel = section(runtime, "def cancel_repository_execution(", "def _block_job(")
+    assert 'status="blocked"' in cancel
+    assert "sovereign_executor_cancelled" in cancel
+    assert "external executor cancellation" in cancel
+    assert "AgentZeroA2AClient" not in cancel
+    assert "submit_repository_task" not in cancel
+
+
+def test_frontend_repository_surface_matches_local_executor_contract() -> None:
+    chat = source("src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx")
+    adapter = source("src/features/control-surface-vnext/adapter/repository-bound-adapter.ts")
+    client = source("src/features/product/runtime/sovereignAgentClient.ts")
+    assert "Sovereign · Free" in chat
+    assert "Paid · direct OpenRouter" in chat
+    assert "Free · direct FreeLLM. No credit deduction" in chat
+    assert "Agent Zero" not in chat
+    assert "executor === 'sovereign-local-runner'" in adapter
+    assert "agent-zero-a2a:" not in adapter
+    assert "Agent Zero A2A" not in client
+    assert "Sovereign-local-runner route" in client
+
+
+def test_unified_frontend_backend_boundary_has_no_external_repository_executor() -> None:
+    runtime = source("src/features/product/runtime/sovereignAgentRuntime.ts")
+    boundary = source("src/features/product/runtime/sovereignEngineBoundary.ts")
+    bridge = source("src/features/product/runtime/devChatWorkerBridge.ts")
+    assert "readSameOriginBackendUrl()" in runtime
+    assert "await transport.startRepositoryExecution(command.payload.input)" in boundary
+    assert "await transport.listJobs()" in boundary
+    assert "agent-zero-a2a:" not in runtime
+    assert "agent-zero-a2a:" not in bridge
+
+
+def test_canonical_and_shipping_repository_execution_mirrors_are_equal() -> None:
+    canonical = ROOT / "backend/agent_runtime/repository_execution.py"
+    shipping = ROOT / "scripts/sovereign-backend/agent_runtime/repository_execution.py"
+    assert shipping.read_bytes() == canonical.read_bytes()
+
+def test_free_request_rejection_rotates_to_next_verified_route_before_mutation(
+    pending_execution, monkeypatch
+):
+    route_a = {"id": "free-a", "model_id": "model-a"}
+    route_b = {"id": "free-b", "model_id": "model-b"}
+    resolution_a = SimpleNamespace(
+        profile_id=execution.FREE_SINGLE_AGENT_PROFILE,
+        repository_execution_allowed=True,
+        primary_route=route_a,
+        candidate_routes=(route_a, route_b),
+        agent_route=route_a,
+    )
+    resolution_b = SimpleNamespace(
+        profile_id=execution.FREE_SINGLE_AGENT_PROFILE,
+        repository_execution_allowed=True,
+        primary_route=route_b,
+        candidate_routes=(route_b,),
+        agent_route=route_b,
+    )
+
+    class Toolset:
+        def tools_for_role(self, _role):
+            return []
+
+        def summary(self):
+            return {"rolesWithMutations": []}
+
+    monkeypatch.setattr(execution, "BoundRepositoryToolset", lambda **_kwargs: Toolset())
+    monkeypatch.setattr(execution, "load_execution_resolution", lambda *args, **kwargs: resolution_a)
+    monkeypatch.setattr(execution, "route_provider_model", lambda route: route["model_id"])
+
+    attempted_routes = []
+
+    async def model(*args, route, **kwargs):
+        attempted_routes.append(route["id"])
+        if route["id"] == "free-a":
+            raise execution.SwarmExecutionError(
+                stage="free-single-agent",
+                family="FREELLM_REQUEST_REJECTED",
+                error_type="BadRequestError",
+                next_action="ADVANCE_FREE_REVOLVER_ROUTE",
+                retryable=True,
+                http_status=400,
+            )
+        return {"status": "BLOCKED", "reason": "second verified route reached"}
+
+    monkeypatch.setattr(execution, "run_free_single_agent", model)
+    monkeypatch.setattr(
+        execution,
+        "advance_free_revolver_resolution",
+        lambda resolution, *, failed_route_id, reason: (
+            resolution_b if failed_route_id == "free-a" else None
+        ),
+    )
+    cooled = []
+    monkeypatch.setattr(
+        execution,
+        "_record_repository_free_route_cooldown",
+        lambda _get_connection, *, resolution, failure: cooled.append(
+            resolution.primary_route["id"]
+        ),
+    )
+
+    result = pending_execution.submit()
+
+    assert attempted_routes == ["free-a", "free-b"]
+    assert cooled == ["free-a"]
+    assert result.status == "blocked"
+    assert any(event["stage"] == "sovereign_free_route_rotated" for event in result.events)
+
+
+def test_completed_without_repository_effect_rotates_then_blocks(
+    pending_execution, monkeypatch
+):
+    route_a = {"id": "free-a", "model_id": "model-a"}
+    route_b = {"id": "free-b", "model_id": "model-b"}
+    resolution_a = SimpleNamespace(
+        profile_id=execution.FREE_SINGLE_AGENT_PROFILE,
+        repository_execution_allowed=True,
+        primary_route=route_a,
+        candidate_routes=(route_a, route_b),
+        agent_route=route_a,
+    )
+    resolution_b = SimpleNamespace(
+        profile_id=execution.FREE_SINGLE_AGENT_PROFILE,
+        repository_execution_allowed=True,
+        primary_route=route_b,
+        candidate_routes=(route_b,),
+        agent_route=route_b,
+    )
+
+    class Toolset:
+        def tools_for_role(self, _role):
+            return []
+
+        def summary(self):
+            return {"rolesWithMutations": []}
+
+    monkeypatch.setattr(execution, "BoundRepositoryToolset", lambda **_kwargs: Toolset())
+    monkeypatch.setattr(execution, "load_execution_resolution", lambda *args, **kwargs: resolution_a)
+    monkeypatch.setattr(execution, "route_provider_model", lambda route: route["model_id"])
+
+    attempted_routes = []
+
+    async def model(*args, route, **kwargs):
+        attempted_routes.append(route["id"])
+        return {"status": "COMPLETED", "repositoryExecutionPerformed": False}
+
+    monkeypatch.setattr(execution, "run_free_single_agent", model)
+    monkeypatch.setattr(
+        execution,
+        "advance_free_revolver_resolution",
+        lambda resolution, *, failed_route_id, reason: (
+            resolution_b if failed_route_id == "free-a" else None
+        ),
+    )
+
+    result = pending_execution.submit()
+
+    assert attempted_routes == ["free-a", "free-b"]
+    assert result.status == "blocked"
+    assert "No verified FreeLLM candidate produced a repository mutation." in result.blocker
+    assert any(
+        event["stage"] == "sovereign_free_route_no_repository_effect_rotated"
+        for event in result.events
+    )
+    assert result.events[-1]["stage"] == "sovereign_executor_no_repository_effect"
+
+
+def test_block_job_synchronizes_linked_agent_run_to_blocked(monkeypatch):
+    job = StoredSovereignAgentJob(
+        job_id="agent-sync",
+        user_id="owner-sync",
+        executor="sovereign-local-runner",
+        repo_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+        branch="main",
+        mission="Repair runtime state.",
+        status="running",
+        workspace_id="agent-sync",
+        external_ref="sovereign-local-runner:agent-sync",
+    )
+    state = SimpleNamespace(job=job, transitions=[])
 
     monkeypatch.setattr(
-        repository_execution,
-        "list_reconcilable_repository_jobs",
-        lambda _conn, *, limit=50: (candidate,),
+        execution,
+        "update_agent_job_state",
+        lambda _conn, **kwargs: setattr(
+            state,
+            "job",
+            replace(
+                state.job,
+                status=kwargs.get("status", state.job.status),
+                blocker=kwargs.get("blocker", state.job.blocker),
+            ),
+        ),
+    )
+    monkeypatch.setattr(execution, "append_agent_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(execution, "read_agent_job", lambda *args, **kwargs: state.job)
+    monkeypatch.setattr(
+        execution,
+        "read_agent_run",
+        lambda *args, **kwargs: SimpleNamespace(status="VERIFYING", trace_id="trace-sync"),
+    )
+    monkeypatch.setattr(
+        execution,
+        "read_agent_task_ids",
+        lambda *args, **kwargs: {"free_single_agent": "task-sync"},
+    )
+    monkeypatch.setattr(
+        execution,
+        "transition_agent_run",
+        lambda *args, **kwargs: state.transitions.append(kwargs),
     )
 
-    def reconcile(_conn, *, user_id, job_id, workspace_root=None, a2a_client_factory=None):
-        observed.append((user_id, job_id, workspace_root))
-        return candidate
-
-    monkeypatch.setattr(repository_execution, "reconcile_repository_execution", reconcile)
-
-    summary = repository_execution.reconcile_repository_jobs_once(
-        get_connection=factory,
-        workspace_root=Path("/tmp/server-owned-reconcile"),
+    result = execution._block_job(
+        SimpleNamespace(),
+        job,
+        "Repository closeout has no workspace changes.",
+        "repository_closeout_git_status_blocked",
     )
 
-    assert summary == {
-        "scanned": 1,
-        "reconciled": 1,
-        "transientFailures": 0,
-        "unexpectedFailures": 0,
-    }
-    assert observed == [("owner-test", "agent-test", Path("/tmp/server-owned-reconcile"))]
-    assert len(connections) == 2
-    assert all(conn.closed for conn in connections)
+    assert result.status == "blocked"
+    assert len(state.transitions) == 1
+    transition = state.transitions[0]
+    assert transition["run_id"] == "repo-agent-sync"
+    assert transition["status"] == "BLOCKED"
+    assert transition["task_id"] == "task-sync"
+    assert transition["evidence_payload"]["repositoryJobStatus"] == "blocked"
 
 
-class _PyformatCursor:
-    def __enter__(self):
-        return self
+def test_free_request_rejection_does_not_replay_after_repository_mutation(
+    pending_execution, monkeypatch
+):
+    route_a = {"id": "free-a", "model_id": "model-a"}
+    resolution_a = SimpleNamespace(
+        profile_id=execution.FREE_SINGLE_AGENT_PROFILE,
+        repository_execution_allowed=True,
+        primary_route=route_a,
+        candidate_routes=(route_a,),
+        agent_route=route_a,
+    )
 
-    def __exit__(self, *_args):
-        return False
+    class MutatedToolset:
+        def tools_for_role(self, _role):
+            return []
 
-    def execute(self, sql, params):
-        rendered = sql % tuple(params)
-        assert "LIKE 'agent-zero-a2a:%'" in rendered
-        assert "NOT LIKE 'agent-zero-a2a:claim:%'" in rendered
+        def summary(self):
+            return {"rolesWithMutations": ["free_single_agent"]}
 
-    def fetchall(self):
-        return []
+    monkeypatch.setattr(execution, "BoundRepositoryToolset", lambda **_kwargs: MutatedToolset())
+    monkeypatch.setattr(execution, "load_execution_resolution", lambda *args, **kwargs: resolution_a)
+    monkeypatch.setattr(execution, "route_provider_model", lambda route: route["model_id"])
 
+    attempts = []
 
-class _PyformatConnection:
-    def cursor(self):
-        return _PyformatCursor()
+    async def model(*args, **kwargs):
+        attempts.append("free-a")
+        raise execution.SwarmExecutionError(
+            stage="free-single-agent",
+            family="FREELLM_REQUEST_REJECTED",
+            error_type="BadRequestError",
+            next_action="ADVANCE_FREE_REVOLVER_ROUTE",
+            retryable=True,
+            http_status=400,
+        )
 
+    monkeypatch.setattr(execution, "run_free_single_agent", model)
+    advanced = []
+    monkeypatch.setattr(
+        execution,
+        "advance_free_revolver_resolution",
+        lambda *args, **kwargs: advanced.append(True),
+    )
 
-def test_reconcilable_job_query_escapes_like_wildcards_for_pyformat_driver():
-    assert list_reconcilable_repository_jobs(_PyformatConnection()) == ()
+    result = pending_execution.submit()
+
+    assert attempts == ["free-a"]
+    assert advanced == []
+    assert result.status == "blocked"
+    assert result.events[-1]["stage"] == "sovereign_executor_execution_failed"

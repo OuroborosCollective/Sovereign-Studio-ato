@@ -271,7 +271,7 @@ expected_tools = {
 tool_names = {tool.name for tool in launcher.mcp._tool_manager.list_tools()}
 assert len(tool_names) == 256, len(tool_names)
 assert expected_tools <= tool_names, sorted(expected_tools - tool_names)
-assert len(tool_names - expected_tools) == 251, len(tool_names - expected_tools)
+assert len(tool_names - expected_tools) == 253, len(tool_names - expected_tools)
 revision = os.environ.get('SOVEREIGN_SOURCE_REVISION', '')
 assert len(revision) == 40 and all(character in '0123456789abcdef' for character in revision), revision
 assert revision == os.environ.get('SOVEREIGN_EXPECTED_WORKFLOW_REVISION'), revision

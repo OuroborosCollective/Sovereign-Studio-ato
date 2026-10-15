@@ -18,7 +18,7 @@ describe('adminApiClient typed provider surface read model', () => {
     setAdminKey('test-admin-key');
 
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const path = new URL(String(input)).pathname;
+      const path = new URL(String(input), 'https://test.local').pathname;
       calls.push(path);
       const payloadByPath: Record<string, unknown> = {
         '/api/admin/llm/revolver-v3/providers': {
@@ -137,7 +137,7 @@ describe('adminApiClient typed provider surface read model', () => {
     setAdminKey('test-admin-key');
 
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const path = new URL(String(input)).pathname;
+      const path = new URL(String(input), 'https://test.local').pathname;
       const payloadByPath: Record<string, unknown> = {
         '/api/admin/llm/revolver-v3/providers': {
           ok: true,

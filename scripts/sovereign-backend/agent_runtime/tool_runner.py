@@ -378,7 +378,8 @@ def _route_result(action: str, tool_name: str, execution: ToolExecution) -> Tool
     elif action == "git-status":
         changed_files = _changed_files_from_status(output, result.metadata)
     elif action == "diff":
-        diff_summary = output[:4000]
+        changed_files = result.changed_files
+        diff_summary = output[:4000] if output and output != "No changes" else None
     elif action == "test":
         test_summary = output[:4000]
     elif action == "janitor":

@@ -3,12 +3,16 @@ from __future__ import annotations
 MUTATING_ACTIONS = frozenset(
     {
         "host_worker_canary",
+        "ssh_console_owner_action",
+        "ssh_console_assistant_inspect",
+        "ssh_console_assistant_workspace",
         "agent_zero_a2a_canary",
         "resolve_backend_image",
         "preview_verified_migration",
         "apply_verified_migration",
         "postgres_admin_sql",
         "aurion_account_role_apply",
+        "aurion_admin_mcp_write",
         "git_push_main",
         "github_rerun_failed_workflows",
         "github_workflow_dispatch",

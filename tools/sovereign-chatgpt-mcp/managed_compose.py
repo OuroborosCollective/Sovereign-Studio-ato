@@ -65,6 +65,17 @@ FREELLMAPI_PROVIDER_SECRET_ROOT = "/opt/sovereign-owner-managed/freellm-provider
 FREELLMAPI_BOOTSTRAP_COMMAND = ["node", "/opt/sovereign/freellm-bootstrap.mjs"]
 FREELLMAPI_RUNTIME_UID = 1000
 FREELLMAPI_RUNTIME_GID = 1000
+IT_TOOLS_CONTAINER = "sovereign-it-tools"
+IT_TOOLS_IMAGE = (
+    "ghcr.io/corentinth/it-tools:2024.10.22-7ca5933@"
+    "sha256:8b8128748339583ca951af03dfe02a9a4d7363f61a216226fc28030731a5a61f"
+)
+IT_TOOLS_REPO_DIGEST = (
+    "ghcr.io/corentinth/it-tools@"
+    "sha256:8b8128748339583ca951af03dfe02a9a4d7363f61a216226fc28030731a5a61f"
+)
+IT_TOOLS_AGENT_ZERO_CONTAINER = "agent-zero-xrev-agent-zero-1"
+IT_TOOLS_INTERNAL_URL = "http://sovereign-it-tools/"
 FREELLMPOOL_CONTAINER = "sovereign-freellmpool"
 FREELLMPOOL_IMAGE = (
     "ghcr.io/ouroboroscollective/sovereign-freellmpool@"
@@ -203,6 +214,17 @@ STACKS: dict[str, ManagedStack] = {
             "/opt/sovereign-freellmapi",
             FREELLMAPI_PROVIDER_SECRET_ROOT,
         ),
+    ),
+    "sovereign-it-tools": ManagedStack(
+        stack_id="sovereign-it-tools",
+        project_name="sovereign-it-tools",
+        anchor_container=IT_TOOLS_CONTAINER,
+        expected_containers=(IT_TOOLS_CONTAINER,),
+        allowed_services=("it-tools",),
+        deploy_root="/opt/sovereign-it-tools",
+        template_name="sovereign-it-tools",
+        allowed_networks=("sovereign-private",),
+        allowed_bind_roots=("/opt/sovereign-it-tools",),
     ),
 }
 
@@ -450,12 +472,32 @@ class ManagedComposeRuntime:
     def plan(self, stack_id: str) -> dict[str, Any]:
         stack = self._stack(stack_id)
         files, bundle_sha = self._template_files(stack)
+        anchor = self._inspect(stack.anchor_container)
+        topology = (
+            self._patchmon_topology_plan()
+            if stack.stack_id == "patchmon-sovereign"
+            else {"ok": True, "required": False}
+        )
+        confirmation = self._patchmon_confirmation(bundle_sha, topology)
+        runtime_canary = (
+            self._it_tools_agent_zero_canary()
+            if stack.stack_id == "sovereign-it-tools" and anchor.get("running")
+            else {
+                "ok": False,
+                "status": "IT_TOOLS_NOT_RUNNING",
+                "responseBodyReturned": False,
+                "secretValuesReturned": False,
+            }
+            if stack.stack_id == "sovereign-it-tools"
+            else {"ok": True, "status": "NOT_REQUIRED"}
+        )
         return {
             "ok": True,
             "status": "PLAN_READY" if files else "TEMPLATE_NOT_REGISTERED",
             "stackId": stack.stack_id,
             "project": stack.project_name,
-            "anchor": self._inspect(stack.anchor_container),
+            "anchor": anchor,
+            "runtimeCanary": runtime_canary,
             "expectedContainers": list(stack.expected_containers),
             "deployRoot": stack.deploy_root,
             "templateRegistered": bool(files),
@@ -464,6 +506,9 @@ class ManagedComposeRuntime:
                 for name, payload in files
             ],
             "templateBundleSha256": bundle_sha,
+            "confirmationSha256": confirmation,
+            "networkRepair": topology,
+            "readyToDeploy": bool(files and topology.get("ok")),
             "acceptedInputs": ["stack_id", "confirmation_sha256"],
             "composeWriteEnabled": (
                 os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() == "1"
@@ -485,6 +530,128 @@ class ManagedComposeRuntime:
                 }
                 else "external_or_not_required"
             ),
+        }
+
+    @staticmethod
+    def _patchmon_confirmation(bundle_sha: str, topology: dict[str, Any]) -> str:
+        if not topology.get("required"):
+            return bundle_sha
+        return _sha256(json.dumps(
+            {"bundleSha256": bundle_sha, "stateSha256": topology.get("stateSha256")},
+            sort_keys=True, separators=(",", ":"),
+        ).encode())
+
+    def _patchmon_inventory(self) -> dict[str, Any]:
+        # Reuse the canonical secret-free reader, including its full-fleet and
+        # independently observed Redis TCP evidence. No new Docker authority.
+        from patchmon_operator import PatchmonOperatorRuntime
+
+        return PatchmonOperatorRuntime(runner=self._runner).runtime_inventory(
+            include_fleet=True, max_fleet_containers=64,
+        )
+
+    def _patchmon_destination_preflight(self) -> bool:
+        name = "patchmon-sovereign_patchmon-internal-v2"
+        listed = self._run(["docker", "network", "ls", "--filter", f"name=^{name}$", "--format", "{{.ID}}"], timeout=30)
+        if not listed.get("ok"):
+            return False
+        ids = listed.get("stdout", "").split()
+        if not ids:
+            return True
+        if len(ids) != 1:
+            return False
+        inspected = self._run(["docker", "network", "inspect", name], timeout=30)
+        if not inspected.get("ok"):
+            return False
+        try:
+            networks = json.loads(inspected.get("stdout", ""))
+            network = networks[0] if len(networks) == 1 else {}
+            labels = network.get("Labels") or {}
+            members = {c.get("Name") for c in (network.get("Containers") or {}).values()}
+            return bool(network.get("Name") == name and network.get("Driver") == "bridge"
+                        and network.get("Internal") is True
+                        and labels.get("com.docker.compose.project") == "patchmon-sovereign"
+                        and labels.get("com.docker.compose.network") == "patchmon-internal"
+                        and members <= set(STACKS["patchmon-sovereign"].expected_containers))
+        except (ValueError, TypeError, AttributeError):
+            return False
+
+    @staticmethod
+    def _patchmon_volumes(inventory: dict[str, Any]) -> dict[str, str]:
+        expected = {
+            "patchmon-sovereign-database-1": ("/var/lib/postgresql/data", "patchmon-sovereign_patchmon_postgres_data"),
+            "patchmon-sovereign-redis-1": ("/data", "patchmon-sovereign_patchmon_redis_data"),
+        }
+        result = {}
+        for container, (destination, name) in expected.items():
+            mounts = inventory.get("containers", {}).get(container, {}).get("mounts", [])
+            matches = [m for m in mounts if m.get("destination") == destination]
+            if len(matches) != 1 or matches[0].get("type") != "volume" or matches[0].get("name") != name or matches[0].get("rw") is not True:
+                return {}
+            result[container] = name
+        return result
+
+    def _patchmon_topology_plan(self) -> dict[str, Any]:
+        inventory = self._patchmon_inventory()
+        containers = inventory.get("containers", {})
+        present = [c for c in containers.values() if c.get("present")]
+        if not present and len(containers) == 4 and inventory.get("fleet", {}).get("ok") is True:
+            return {"ok": True, "required": False, "status": "FIRST_INSTALL"}
+        violations = inventory.get("boundaryViolations", [])
+        required = bool(violations)
+        if inventory.get("ok") is True:
+            return {"ok": True, "required": False, "status": "TOPOLOGY_CURRENT"}
+        dependencies = inventory.get("redisDependencies", {})
+        blockers = []
+        expected = set(STACKS["patchmon-sovereign"].expected_containers)
+        if set(containers) != expected or len(present) != 4:
+            blockers.append("PATCHMON_CONTAINER_SET_INCOMPLETE")
+        if any(c.get("project") != "patchmon-sovereign" for c in present):
+            blockers.append("PATCHMON_CONTAINER_OWNERSHIP_UNVERIFIED")
+        if not required or inventory.get("httpHealth", {}).get("ok") is not True:
+            blockers.append("PATCHMON_BASELINE_UNHEALTHY")
+        if dependencies.get("status") != "REDIS_DEPENDENCY_EVIDENCE_OBSERVED" or inventory.get("fleet", {}).get("ok") is not True:
+            blockers.append("REDIS_DEPENDENCY_EVIDENCE_INCOMPLETE")
+        if dependencies.get("unknownConnectionCount") != 0:
+            blockers.append("REDIS_UNKNOWN_CLIENTS")
+        if any(c.get("container") != "patchmon-sovereign-server-1" for c in dependencies.get("connectedConsumers", [])):
+            blockers.append("REDIS_EXTERNAL_CONNECTED_CONSUMER")
+        for consumer in dependencies.get("configuredConsumers", []):
+            if consumer.get("container") != "patchmon-sovereign-server-1" and consumer.get("match") != "OTHER_REDIS":
+                blockers.append("REDIS_EXTERNAL_OR_UNRESOLVED_CONFIGURATION")
+        volumes = self._patchmon_volumes(inventory)
+        if len(volumes) != 2:
+            blockers.append("PATCHMON_PERSISTENT_VOLUME_IDENTITY_UNVERIFIED")
+        if any(
+            n.get("name") in {"patchmon-sovereign_patchmon-internal", "patchmon-sovereign_patchmon-internal-v2", "patchmon-sovereign_patchmon-edge"}
+            and any(member.get("name") not in expected for member in n.get("members", []))
+            for n in inventory.get("networks", [])
+        ):
+            blockers.append("PATCHMON_FOREIGN_NETWORK_MEMBER")
+        # A point-in-time negative consumer snapshot never proves mounted or
+        # dormant configuration absent. Keep this an explicit review boundary.
+        if required and any(
+            {n.get("name", "") for n in c.get("networks", [])}
+            - {"patchmon-sovereign_patchmon-internal", "patchmon-sovereign_patchmon-internal-v2", "patchmon-sovereign_patchmon-edge"}
+            for c in present
+        ):
+            blockers.append("REDIS_FOREIGN_NETWORK_DEPENDENCY_REVIEW_REQUIRED")
+        state = {
+            "containers": {name: {k: c.get(k) for k in ("id", "imageId", "project", "service", "networks", "mounts")} for name, c in sorted(containers.items())},
+            "networks": inventory.get("networks", []),
+            "volumes": volumes,
+            "configuredConsumers": dependencies.get("configuredConsumers", []),
+            "connectedConsumers": sorted(c.get("container", "") for c in dependencies.get("connectedConsumers", [])),
+        }
+        return {
+            "ok": not blockers, "required": required,
+            "status": "PATCHMON_NETWORK_REPAIR_BLOCKED" if blockers else "PATCHMON_NETWORK_REPAIR_READY",
+            "blockers": sorted(set(blockers)), "stateSha256": _sha256(json.dumps(state, sort_keys=True, separators=(",", ":")).encode()),
+            "volumes": volumes,
+            "destinationNetwork": "patchmon-sovereign_patchmon-internal-v2",
+            "oldNetworkPreserved": True, "volumesDeleted": False,
+            "redisReplacedByExternalService": False,
+            "truthNotice": "Foreign network membership and unresolved Redis configuration require separate dependency review before migration; empty client snapshots never authorize detachment.",
         }
 
     @staticmethod
@@ -592,6 +759,19 @@ class ManagedComposeRuntime:
                 and image != FREELLMAPI_IMAGE
             ):
                 raise RuntimeError("FreeLLM API muss exakt auf v0.5.0 und den freigegebenen Digest gepinnt sein")
+            if stack.stack_id == "sovereign-it-tools" and service_name == "it-tools":
+                if image != IT_TOOLS_IMAGE:
+                    raise RuntimeError("IT-Tools muss exakt auf den freigegebenen Release-Digest gepinnt sein")
+                if str(service.get("user") or "") != "101:101":
+                    raise RuntimeError("IT-Tools muss mit der gepinnten Nicht-Root-Identität laufen")
+                if service.get("read_only") is not True:
+                    raise RuntimeError("IT-Tools muss ein read-only Root-Dateisystem verwenden")
+                if set(str(value) for value in (service.get("cap_drop") or [])) != {"ALL"}:
+                    raise RuntimeError("IT-Tools muss alle Linux-Capabilities verwerfen")
+                if "no-new-privileges:true" not in {
+                    str(value) for value in (service.get("security_opt") or [])
+                }:
+                    raise RuntimeError("IT-Tools muss no-new-privileges erzwingen")
             service_networks = service.get("networks")
             if isinstance(service_networks, dict):
                 used_networks = set(service_networks)
@@ -1778,6 +1958,92 @@ raise SystemExit(0 if verified is not None else 2)
         }
 
     @staticmethod
+    def _it_tools_transport_ready(state: dict[str, Any]) -> bool:
+        published = state.get("publishedPorts") or {}
+        security_opt = {str(value) for value in (state.get("securityOpt") or [])}
+        cap_drop = {str(value) for value in (state.get("capDrop") or [])}
+        image_reference = str(state.get("imageReference") or "")
+        repo_digests = {str(value) for value in (state.get("repoDigests") or [])}
+        return bool(
+            state.get("present")
+            and state.get("running")
+            and state.get("project") == "sovereign-it-tools"
+            and state.get("service") == "it-tools"
+            and set(state.get("networks") or []) == {"sovereign-private"}
+            and not published
+            and (
+                image_reference == IT_TOOLS_IMAGE
+                or IT_TOOLS_REPO_DIGEST in repo_digests
+            )
+            and state.get("runtimeUser") == "101:101"
+            and state.get("readOnlyRootfs") is True
+            and state.get("privileged") is False
+            and "ALL" in cap_drop
+            and "no-new-privileges:true" in security_opt
+        )
+
+    def _it_tools_agent_zero_canary(self) -> dict[str, Any]:
+        script = (
+            "import hashlib,json,urllib.request;"
+            f"r=urllib.request.urlopen({IT_TOOLS_INTERNAL_URL!r},timeout=5);"
+            "b=r.read(2000001);"
+            "print(json.dumps({'status':int(getattr(r,'status',0)),"
+            "'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()},"
+            "sort_keys=True,separators=(',',':')))"
+        )
+        last_family = "unknown"
+        for _attempt in range(15):
+            result = self._run(
+                [
+                    "docker",
+                    "exec",
+                    IT_TOOLS_AGENT_ZERO_CONTAINER,
+                    "python",
+                    "-c",
+                    script,
+                ],
+                timeout=15,
+            )
+            if result.get("ok"):
+                try:
+                    payload = json.loads(str(result.get("stdout") or "").strip().splitlines()[-1])
+                    status = int(payload.get("status") or 0)
+                    response_bytes = int(payload.get("bytes") or 0)
+                    response_sha256 = str(payload.get("sha256") or "")
+                except (IndexError, TypeError, ValueError, json.JSONDecodeError):
+                    last_family = "invalid_agent_zero_canary_response"
+                else:
+                    if (
+                        status == 200
+                        and 0 < response_bytes <= 2_000_000
+                        and re.fullmatch(r"[0-9a-f]{64}", response_sha256)
+                    ):
+                        return {
+                            "ok": True,
+                            "status": "IT_TOOLS_AGENT_ZERO_REACHABLE",
+                            "sourceContainer": IT_TOOLS_AGENT_ZERO_CONTAINER,
+                            "targetUrl": IT_TOOLS_INTERNAL_URL,
+                            "httpStatus": status,
+                            "responseBytes": response_bytes,
+                            "responseSha256": response_sha256,
+                            "responseBodyReturned": False,
+                            "secretValuesReturned": False,
+                        }
+                    last_family = "unexpected_http_response"
+            else:
+                last_family = "agent_zero_exec_or_network_unavailable"
+            time.sleep(2)
+        return {
+            "ok": False,
+            "status": "IT_TOOLS_AGENT_ZERO_UNREACHABLE",
+            "sourceContainer": IT_TOOLS_AGENT_ZERO_CONTAINER,
+            "targetUrl": IT_TOOLS_INTERNAL_URL,
+            "errorFamily": last_family,
+            "responseBodyReturned": False,
+            "secretValuesReturned": False,
+        }
+
+    @staticmethod
     def _backend_transport_ready(state: dict[str, Any]) -> bool:
         bindings = (state.get("publishedPorts") or {}).get("8787/tcp", [])
         loopback_ready = any(
@@ -2090,8 +2356,20 @@ const call = async (names, payload) => {
                 "status": "BLOCKED",
                 "blocker": f"Für {stack.stack_id} ist noch kein geprüftes Compose-Template registriert",
             }
-        if confirmation_sha256 != bundle_sha:
+        topology = (
+            self._patchmon_topology_plan()
+            if stack.stack_id == "patchmon-sovereign"
+            else {"ok": True, "required": False}
+        )
+        if not topology.get("ok"):
+            return {"ok": False, "status": "BLOCKED", "blocker": "PATCHMON_NETWORK_DEPENDENCY_REVIEW_REQUIRED", "networkRepair": topology, "mutationPerformed": False}
+        expected_confirmation = self._patchmon_confirmation(bundle_sha, topology)
+        if stack.stack_id == "patchmon-sovereign" and confirmation_sha256 != expected_confirmation:
+            return {"ok": False, "status": "BLOCKED", "blocker": "CURRENT_STATE_CONFIRMATION_MISMATCH", "expected": expected_confirmation, "mutationPerformed": False}
+        if stack.stack_id != "patchmon-sovereign" and confirmation_sha256 != bundle_sha:
             return {"ok": False, "status": "BLOCKED", "blocker": "Template-Bundle-Hash stimmt nicht", "expected": bundle_sha}
+        if topology.get("required") and not self._patchmon_destination_preflight():
+            return {"ok": False, "status": "BLOCKED", "blocker": "PATCHMON_DESTINATION_NETWORK_UNVERIFIED", "mutationPerformed": False}
 
         resource_preflight = (
             self._milvus_resource_preflight()
@@ -2120,12 +2398,26 @@ const call = async (names, payload) => {
                 "networkPreflight": network_preflight,
             }
 
-        secret_env = self._ensure_stack_secret_env(stack)
-        _compose_path, temporary, _rendered = self._render_template(stack, files)
-        temporary.cleanup()
         deploy_root = Path(stack.deploy_root)
         if deploy_root.is_symlink():
             return {"ok": False, "status": "BLOCKED", "blocker": "Deploy-Root darf kein Symlink sein"}
+        previous_files = []
+        if topology.get("required"):
+            for name, _ in files:
+                previous = deploy_root / name
+                if previous.is_symlink() or not previous.is_file():
+                    return {"ok": False, "status": "BLOCKED", "blocker": "PATCHMON_ROLLBACK_TEMPLATE_UNAVAILABLE", "mutationPerformed": False}
+                previous_files.append((name, previous.read_bytes()))
+            _, rollback_temporary, _ = self._render_template(stack, previous_files)
+            rollback_temporary.cleanup()
+            # Rebind after rendering/validation, immediately before any file or
+            # container change. A queued confirmation cannot outlive state drift.
+            rebound = self._patchmon_topology_plan()
+            if not rebound.get("ok") or self._patchmon_confirmation(bundle_sha, rebound) != confirmation_sha256:
+                return {"ok": False, "status": "BLOCKED", "blocker": "PATCHMON_TOPOLOGY_CHANGED_BEFORE_APPLY", "mutationPerformed": False}
+        secret_env = self._ensure_stack_secret_env(stack)
+        _compose_path, temporary, _rendered = self._render_template(stack, files)
+        temporary.cleanup()
         deploy_root.mkdir(parents=True, exist_ok=True, mode=0o750)
         os.chmod(deploy_root, 0o750)
         self._write_template_files(deploy_root, files)
@@ -2144,8 +2436,20 @@ const call = async (names, payload) => {
         if env_path.is_file() and not env_path.is_symlink():
             compose_argv.extend(["--env-file", str(env_path)])
         compose_argv.extend(["--file", str(deploy_root / compose_name)])
-        result = self._run([*compose_argv, "up", "-d", "--remove-orphans"], timeout=600)
+        up_arguments = (
+            ["up", "-d", "--force-recreate", *stack.allowed_services]
+            if topology.get("required")
+            else ["up", "-d", "--remove-orphans"]
+        )
+        try:
+            result = self._run([*compose_argv, *up_arguments], timeout=600)
+        except (OSError, subprocess.TimeoutExpired):
+            if topology.get("required"):
+                return self._patchmon_rollback(stack, compose_argv, previous_files, topology)
+            raise
         if not result["ok"]:
+            if topology.get("required"):
+                return self._patchmon_rollback(stack, compose_argv, previous_files, topology)
             return {
                 "ok": False,
                 "status": "FAILED",
@@ -2158,7 +2462,7 @@ const call = async (names, payload) => {
             "reason": None,
             "ok": True,
         }
-        if stack.stack_id == "patchmon-sovereign":
+        if stack.stack_id == "patchmon-sovereign" and not topology.get("required"):
             server_state = self._inspect(stack.anchor_container)
             if not self._patchmon_server_transport_ready(server_state):
                 repair_result = self._run(
@@ -2192,7 +2496,19 @@ const call = async (names, payload) => {
                         "transportRepair": transport_repair,
                     }
 
-        states = self._verify_expected(stack)
+        try:
+            states = self._verify_expected(stack)
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            if topology.get("required"):
+                return self._patchmon_rollback(stack, compose_argv, previous_files, topology)
+            raise
+        if topology.get("required"):
+            try:
+                after = self._patchmon_inventory()
+            except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                return self._patchmon_rollback(stack, compose_argv, previous_files, topology)
+            if after.get("ok") is not True or self._patchmon_volumes(after) != topology.get("volumes"):
+                return self._patchmon_rollback(stack, compose_argv, previous_files, topology)
         if stack.stack_id == "sovereign-backend":
             transport_verified = self._backend_transport_ready(states.get(stack.anchor_container, {}))
         elif stack.stack_id == "patchmon-sovereign":
@@ -2201,6 +2517,8 @@ const call = async (names, payload) => {
             transport_verified = self._code_server_transport_ready(states.get(stack.anchor_container, {}))
         elif stack.stack_id == "sovereign-freellmapi":
             transport_verified = self._freellmapi_transport_ready(states.get(stack.anchor_container, {}))
+        elif stack.stack_id == "sovereign-it-tools":
+            transport_verified = self._it_tools_transport_ready(states.get(stack.anchor_container, {}))
         else:
             transport_verified = True
 
@@ -2245,6 +2563,8 @@ const call = async (names, payload) => {
             }
         elif stack.stack_id == "code-server-46bq":
             runtime_canary = self._code_server_runtime_canary()
+        elif stack.stack_id == "sovereign-it-tools":
+            runtime_canary = self._it_tools_agent_zero_canary()
         else:
             runtime_canary = {"ok": True, "status": "NOT_REQUIRED"}
         runtime_ok = (
@@ -2254,12 +2574,15 @@ const call = async (names, payload) => {
         )
         legacy_retirement = {"ok": True, "status": "NOT_REQUIRED"}
         runtime_ok = bool(runtime_ok and legacy_retirement.get("ok"))
+        if topology.get("required") and not runtime_ok:
+            return self._patchmon_rollback(stack, compose_argv, previous_files, topology)
         return {
             "ok": runtime_ok,
             "status": "DEPLOYED_VERIFIED" if runtime_ok else "DEPLOYED_UNVERIFIED",
             "stackId": stack.stack_id,
             "project": stack.project_name,
             "templateBundleSha256": bundle_sha,
+            "networkRepair": topology,
             "containers": states,
             "transportVerified": transport_verified,
             "transportRepair": transport_repair,
@@ -2269,4 +2592,23 @@ const call = async (names, payload) => {
             "resourcePreflight": resource_preflight,
             "secretEnvironment": secret_env,
             "secretValuesExposed": False,
+        }
+
+    def _patchmon_rollback(self, stack: ManagedStack, compose_argv: list[str], previous_files: list[tuple[str, bytes]], topology: dict[str, Any]) -> dict[str, Any]:
+        try:
+            self._write_template_files(Path(stack.deploy_root), previous_files)
+            restored = self._run(
+                [*compose_argv, "up", "-d", "--force-recreate", "--pull", "never", *stack.allowed_services],
+                timeout=600,
+            )
+            observed = self._patchmon_inventory()
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            restored, observed = {"ok": False}, {}
+        volumes_preserved = self._patchmon_volumes(observed) == topology.get("volumes")
+        return {
+            "ok": False, "status": "PATCHMON_MIGRATION_FAILED",
+            "mutationPerformed": True,
+            "rollback": {"attempted": True, "commandAccepted": bool(restored.get("ok")), "volumesPreserved": volumes_preserved, "httpHealthy": observed.get("httpHealth", {}).get("ok") is True},
+            "oldNetworkPreserved": True, "volumesDeleted": False,
+            "runtimeVerified": False, "secretValuesExposed": False,
         }

@@ -99,25 +99,29 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
         </span>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <ul
+        role="list"
+        aria-label="Ergebnis-Details"
+        style={{ display: 'flex', flexDirection: 'column', gap: 4, margin: 0, padding: 0, listStyle: 'none' }}
+      >
+        <li style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span style={{ fontSize: 11, color: C.textSub, width: 52, flexShrink: 0 }}>Typ</span>
           <span style={{ fontSize: 12, color: C.text }}>Draft PR</span>
-        </div>
+        </li>
         {prNumber && (
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <li style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 11, color: C.textSub, width: 52, flexShrink: 0 }}>PR</span>
             <span style={{ fontSize: 12, color: C.sky, fontFamily: 'monospace' }} title={`Pull Request ${prNumber}`}>{prNumber}</span>
-          </div>
+          </li>
         )}
         {repoFullName && (
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <li style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 11, color: C.textSub, width: 52, flexShrink: 0 }}>Repo</span>
             <span style={{ fontSize: 12, color: C.text, fontFamily: 'monospace' }} title={repoFullName}>{repoFullName}</span>
-          </div>
+          </li>
         )}
         {branchName && (
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <li style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 11, color: C.textSub, width: 52, flexShrink: 0 }}>Branch</span>
             <span
               title={branchName}
@@ -130,23 +134,23 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
             >
               {branchName}
             </span>
-          </div>
+          </li>
         )}
         {commitSha && (
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <li style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 11, color: C.textSub, width: 52, flexShrink: 0 }}>Commit</span>
             <span style={{ fontSize: 12, color: C.sky, fontFamily: 'monospace' }} title={`Commit SHA: ${commitSha}`}>
               {commitSha.slice(0, 7)}
             </span>
-          </div>
+          </li>
         )}
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <li style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span style={{ fontSize: 11, color: C.textSub, width: 52, flexShrink: 0 }}>Checks</span>
           <span style={{ fontSize: 12, color, fontFamily: 'monospace' }} title={`Status: ${checksLabel(checksState)}`}>
             {checksLabel(checksState)}
           </span>
-        </div>
-      </div>
+        </li>
+      </ul>
 
       <div
         style={{
@@ -161,7 +165,7 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
           <button
             type="button"
             onClick={onOpen}
-            className="focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
+            className="focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none transition-opacity hover:opacity-90"
             style={{
               padding: '7px 14px',
               borderRadius: 8,
@@ -181,7 +185,7 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
           <button
             type="button"
             onClick={onViewDiff}
-            className="focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none"
+            className="focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none transition-opacity hover:opacity-90"
             style={{
               padding: '7px 14px',
               borderRadius: 8,
@@ -201,7 +205,7 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
           <button
             type="button"
             onClick={onWatchChecks}
-            className="focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
+            className="focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none transition-opacity hover:opacity-90"
             style={{
               padding: '7px 14px',
               borderRadius: 8,

@@ -118,3 +118,43 @@ def test_widget_registers_one_resource_and_status_tool() -> None:
     assert serialized_resource["_meta"]["openai/widgetDomain"] == WIDGET_DOMAIN
     assert read_contents[0].meta["ui"]["domain"] == WIDGET_DOMAIN
     assert read_contents[0].meta["openai/widgetDomain"] == WIDGET_DOMAIN
+
+
+def test_widget_status_call_preserves_runtime_evidence() -> None:
+    mcp = FastMCP("widget-call-test")
+    register_sovereign_cognitive_widget(
+        mcp, read_only_annotations=READ_ONLY, status_provider=_status
+    )
+    result = asyncio.run(mcp.call_tool("sovereign_cognitive_architecture_status", {}))
+    assert result.structuredContent["controllerRuns"]["latestRun"]["events"][0]["agentId"] == "dispatcher"
+    assert result.structuredContent["draftPr"]["ready"] is False
+    assert result.structuredContent.get("secretsExposed", False) is False
+    assert result.meta["sensitiveValuesIncluded"] is False
+
+
+def test_widget_global_and_thread_entrypoints_preserve_read_only_tool() -> None:
+    mcp = FastMCP("widget-entrypoint-test")
+    register_sovereign_cognitive_widget(
+        mcp, read_only_annotations=READ_ONLY, status_provider=_status
+    )
+    tool = asyncio.run(mcp.list_tools())[0]
+    assert tool.meta["openai/ui"] == {
+        "entrypoints": [{"type": "global"}, {"type": "thread"}]
+    }
+    assert tool.annotations.readOnlyHint is True
+    assert tool.annotations.destructiveHint is False
+
+
+def test_widget_javascript_host_boundary() -> None:
+    import shutil
+    import subprocess
+    import pytest
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node unavailable; host bridge test requires a Node runner.")
+    result = subprocess.run(
+        [node, "--test", str(MCP_ROOT / "tests" / "test_cognitive_widget_bridge.cjs")],
+        capture_output=True, text=True, timeout=30, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

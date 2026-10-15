@@ -87,6 +87,8 @@ describe('classifySovereignAgentHttpFailure', () => {
 
     // Assert
     expect(credits.kind).toBe('paid_credits_required');
+    expect(credits.title).toContain('provider-finanziertes');
+    expect(credits.guidance).toContain('Account-Credits');
     expect(credits.guidance).toContain('kein stiller Wechsel');
     expect(purchase.kind).toBe('paid_purchase_required');
     expect(generic.kind).toBe('generic');

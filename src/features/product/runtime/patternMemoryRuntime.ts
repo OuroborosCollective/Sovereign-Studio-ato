@@ -126,7 +126,18 @@ function normalizeTag(value: string): string {
 }
 
 function normalizeTags(tags: string[] = []): string[] {
-  return Array.from(new Set(tags.map(normalizeTag).filter(Boolean))).slice(0, MAX_TAGS);
+  // ⚡ Bolt: Consolidate chained map, filter, Set creation, and slice operations into a single bounded loop
+  const tagsSet = new Set<string>();
+  const normalized: string[] = [];
+  for (const raw of tags) {
+    if (normalized.length >= MAX_TAGS) break;
+    const tag = normalizeTag(raw);
+    if (tag && !tagsSet.has(tag)) {
+      tagsSet.add(tag);
+      normalized.push(tag);
+    }
+  }
+  return normalized;
 }
 
 function knownScope(scope: string): scope is PatternOwnerScope {

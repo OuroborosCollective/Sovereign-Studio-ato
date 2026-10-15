@@ -29,9 +29,9 @@ from .productivity_insights import (
     validate_mission,
 )
 from .contracts import SovereignAgentEvent, normalize_agent_job_result, sanitize_agent_text
-from .cognitive_run_store import read_agent_run_receipts
+from .cognitive_run_store import read_agent_run_receipts, read_job_runtime_evidence
 from .cognitive_swarm_routes import start_cognitive_swarm_run
-from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal
+from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal, verify_draft_pr_for_job
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
 from .evidence_gate import EvidenceGateResult, evidence_gate_signal
 from .git_workspace import git_diff_full
@@ -46,11 +46,12 @@ from .github_access import (
     verify_github_access_scope,
 )
 from .job_lifecycle import create_sovereign_agent_job, generate_agent_job_id
-from .job_store import append_agent_evidence_anchor, append_agent_event, append_agent_github_draft_pr_readback, list_agent_evidence_anchors, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
+from .job_store import append_agent_evidence_anchor, append_agent_event, append_agent_github_draft_pr_readback, list_agent_evidence_anchors, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, read_latest_agent_github_draft_pr_readback, update_agent_job_state
 from .repository_execution import (
     RepositoryExecutionError,
     RepositoryExecutionTransientError,
-    is_repository_a2a_job,
+    cancel_repository_execution,
+    is_repository_executor_job,
     reconcile_repository_execution,
     start_repository_execution,
 )
@@ -143,7 +144,32 @@ def _job_to_api(job) -> dict[str, Any]:
         "testSummary": job.test_summary,
         "blocker": job.blocker,
         "events": list(job.events),
+        "createdAt": _api_timestamp(getattr(job, "created_at", None)),
+        "updatedAt": _api_timestamp(getattr(job, "updated_at", None)),
     }
+
+
+def _api_timestamp(value: Any) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+def _job_runtime_readback(conn: Any, job: Any) -> dict[str, Any]:
+    body = _job_to_api(job)
+    try:
+        events = read_job_runtime_evidence(conn, user_id=job.user_id, job_id=job.job_id, external_ref=job.external_ref)
+        body["runtimeEvidence"] = {"jobId": job.job_id, "readbackState": "live", "events": list(events)}
+    except Exception as exc:
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+        body["runtimeEvidence"] = {
+            "jobId": job.job_id, "readbackState": "unavailable", "events": [],
+            "error": f"Runtime evidence readback failed ({type(exc).__name__}).",
+        }
+    body["serverObservedAt"] = datetime.now(timezone.utc).isoformat()
+    return body
 
 
 def _result_to_api(result) -> dict[str, Any]:
@@ -328,6 +354,64 @@ def register_sovereign_agent_routes(
 
     def _connection():
         return get_connection()
+
+    @app.route("/api/user/agent/control-surface", methods=["GET"])
+    @require_session
+    def user_get_control_surface_readback():
+        from .control_surface_readback import (
+            read_control_surface_agents, read_control_surface_credits,
+            read_control_surface_integrations, read_control_surface_routing,
+        )
+        user_id = _current_session_user_id()
+        job_id = str(request.args.get("jobId") or "").strip()
+        if len(job_id) > 200:
+            return jsonify({"error": "job_id_invalid"}), 400
+        conn = _connection()
+        try:
+            job = read_agent_job(conn, user_id=user_id, job_id=job_id) if job_id else None
+            if job_id and job is None:
+                return jsonify({"error": "owned_job_not_found"}), 404
+            body = {"schemaVersion": "sovereign.control-surface-readback.v1", "jobId": job_id or None,
+                    "observedAt": datetime.now(timezone.utc).isoformat()}
+            if job is not None:
+                from .repository_execution import read_repository_execution_mode
+                try:
+                    body["jobExecutionMode"] = read_repository_execution_mode(conn, job=job)
+                except Exception:
+                    conn.rollback()
+                    body["jobExecutionMode"] = None
+            for key, reader in (
+                ("agents", lambda: read_control_surface_agents(conn, user_id=user_id, job=job)),
+                ("credits", lambda: read_control_surface_credits(conn, user_id=user_id)),
+            ):
+                try:
+                    body[key] = reader()
+                    if key == "agents":
+                        body["agentReadbackState"] = "live"
+                except Exception as exc:
+                    rollback = getattr(conn, "rollback", None)
+                    if callable(rollback):
+                        rollback()
+                    if key == "agents":
+                        body.update({"agents": [], "agentReadbackState": "unavailable", "agentBlocker": "agent_readback_unavailable"})
+                    else:
+                        body[key] = {"readbackState": "unavailable", "creditStateVerified": False,
+                                     "blocker": "credit_state_verification_failed" if isinstance(exc, ValueError) else "credit_readback_unavailable"}
+            service = app.extensions.get("sovereign_enterprise_platform")
+            try:
+                if service is None:
+                    raise LookupError("integration_projection_unavailable")
+                body["integrations"] = read_control_surface_integrations(service.integrations)
+                body["integrationReadbackState"] = "live"
+            except Exception:
+                body.update({"integrations": [], "integrationReadbackState": "unavailable",
+                             "integrationBlocker": "integration_readback_unavailable"})
+            body["routing"] = read_control_surface_routing(get_connection, user_id=user_id, credits=body["credits"])
+            response = jsonify(body)
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            return response
+        finally:
+            _close(conn)
 
     def _resolve_live_workspace_context(conn: Any, job: Any) -> Any | None:
         if get_live_workspace_context is None:
@@ -1192,7 +1276,7 @@ def register_sovereign_agent_routes(
                 "code": "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE",
                 "error": (
                     "Toolchain handoff is diagnostic only. Repository clone/mutation "
-                    "must use /api/user/agent/repository/run and Agent Zero A2A."
+                    "must use /api/user/agent/repository/run; Sovereign-local-runner is the only repository executor."
                 ),
             }), 409
         evidence_text = str(body.get("evidenceText") or body.get("logText") or "")
@@ -1530,11 +1614,11 @@ def register_sovereign_agent_routes(
             return jsonify({
                 "ok": False,
                 "runtime": "sovereign-agent",
-                "execution": "repository-single-a2a",
+                "execution": "repository-single-sovereign-local",
                 "code": "GITHUB_CREDENTIAL_FORBIDDEN_ON_EXECUTION",
                 "error": (
                     "Repository execution never accepts a Sovereign GitHub OAuth/token credential. "
-                    "Agent Zero owns repository access for implementation."
+                    "Sovereign-local-runner owns repository access and implementation."
                 ),
             }), 400
         conn = _connection()
@@ -1550,14 +1634,14 @@ def register_sovereign_agent_routes(
                 return jsonify({
                     "ok": False,
                     "runtime": "sovereign-agent",
-                    "execution": "repository-single-a2a",
+                    "execution": "repository-single-sovereign-local",
                     "error": sanitize_agent_text(str(exc), 400),
                 }), 400
             ok = job.status not in ("blocked", "failed")
             return jsonify({
                 "ok": ok,
                 "runtime": "sovereign-agent",
-                "execution": "repository-single-a2a",
+                "execution": "repository-single-sovereign-local",
                 "jobId": job.job_id,
                 "job": _job_to_api(job),
             }), 202 if ok else 409
@@ -1584,7 +1668,7 @@ def register_sovereign_agent_routes(
                 "code": "REPOSITORY_EXECUTION_REQUIRES_AGENT_ZERO_A2A_ROUTE",
                 "error": (
                     "User-facing repository clone/mutation is exclusive to "
-                    "/api/user/agent/repository/run and Agent Zero A2A."
+                    "/api/user/agent/repository/run and sovereign-local-runner."
                 ),
             }), 409
         payload = {**body}
@@ -1761,7 +1845,7 @@ def register_sovereign_agent_routes(
                     "blocker": "AGENT_ZERO_A2A_READBACK_UNAVAILABLE",
                     "error": sanitize_agent_text(str(exc), 400),
                 }), 503
-            return jsonify({"runtime": "sovereign-agent", "job": _job_to_api(job)})
+            return jsonify({"runtime": "sovereign-agent", "job": _job_runtime_readback(conn, job)})
         finally:
             _close(conn)
 
@@ -2123,8 +2207,75 @@ def register_sovereign_agent_routes(
                 "sessionBindingHash": envelope_session_binding_hash,
                 "attemptId": envelope_attempt_id,
                 "evidenceAnchors": current,
+                "githubDraftPrReadback": read_latest_agent_github_draft_pr_readback(conn, user_id=user_id, job_id=job_id),
                 "historicalEvidenceAnchors": historical,
                 "authoritative": False,
+            })
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/publication-readback", methods=["GET"])
+    @require_session
+    def read_agent_publication_readback(job_id: str):
+        """Reconcile one existing Draft PR against the current live GitHub state."""
+        user_id = _current_session_user_id()
+        conn = db_connect()
+        try:
+            job = read_agent_job(conn, user_id=user_id, job_id=job_id)
+            if job is None:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            if not (job.pr_state == "created" and (job.pr_url or job.draft_pr_url)):
+                return jsonify({
+                    "ok": True,
+                    "jobId": job_id,
+                    "currentGitHubDraftPrReadback": None,
+                    "reconciliationStatus": "NOT_PUBLISHED",
+                })
+            try:
+                evidence = verify_draft_pr_for_job(job, conn)
+            except ValueError as exc:
+                return jsonify({
+                    "ok": True,
+                    "jobId": job_id,
+                    "currentGitHubDraftPrReadback": None,
+                    "reconciliationStatus": "CONTRADICTED",
+                    "blocker": str(exc),
+                })
+            except RuntimeError as exc:
+                return jsonify({
+                    "ok": True,
+                    "jobId": job_id,
+                    "currentGitHubDraftPrReadback": None,
+                    "reconciliationStatus": "UNAVAILABLE",
+                    "blocker": str(exc),
+                })
+            current = {
+                "jobId": job_id,
+                "prUrl": evidence.pr_url,
+                "prNumber": evidence.pr_number,
+                "headSha": evidence.readback_head_sha,
+                "publishedHeadSha": evidence.published_head_sha,
+                "readbackHeadSha": evidence.readback_head_sha,
+                "draftVerified": evidence.draft_verified is True,
+                "prStateVerified": evidence.state,
+                "headBranch": evidence.head_branch,
+                "baseBranch": evidence.base_branch,
+                "readbackVerified": evidence.readback_verified is True,
+                "checksReadbackVerified": evidence.checks_readback_verified is True,
+                "ciState": evidence.ci_state,
+                "checkRunCount": evidence.check_run_count,
+                "checksPendingCount": evidence.checks_pending_count,
+                "checksSuccessCount": evidence.checks_success_count,
+                "checksFailureCount": evidence.checks_failure_count,
+                "statusContextCount": evidence.status_context_count,
+            }
+            from .fleet_supervisor import stable_hash
+            current["sourceHash"] = stable_hash(current)
+            return jsonify({
+                "ok": True,
+                "jobId": job_id,
+                "currentGitHubDraftPrReadback": current,
+                "reconciliationStatus": "VERIFIED",
             })
         finally:
             _close(conn)
@@ -2179,15 +2330,25 @@ def register_sovereign_agent_routes(
                 return jsonify({"error": "Job nicht gefunden"}), 404
             if job.status in ("completed", "failed", "blocked", "cleaned"):
                 return jsonify({"error": "Job ist bereits terminal", "status": job.status}), 400
-            if is_repository_a2a_job(job):
+            if is_repository_executor_job(job):
+                try:
+                    cancelled = cancel_repository_execution(conn, job=job)
+                except RepositoryExecutionError as exc:
+                    return jsonify({
+                        "ok": False,
+                        "runtime": "sovereign-agent",
+                        "jobId": job_id,
+                        "status": job.status,
+                        "blocker": "SOVEREIGN_LOCAL_CANCEL_NOT_PROVEN",
+                        "error": str(exc),
+                    }), 409
                 return jsonify({
-                    "ok": False,
+                    "ok": True,
                     "runtime": "sovereign-agent",
                     "jobId": job_id,
-                    "status": job.status,
-                    "blocker": "AGENT_ZERO_A2A_CANCEL_NOT_PROVEN",
-                    "error": "The active Agent Zero A2A task cannot be marked cancelled until upstream task cancellation has an exact readback contract.",
-                }), 409
+                    "status": cancelled.status,
+                    "blocker": cancelled.blocker,
+                })
             update_agent_job_state(
                 conn,
                 job_id=job_id,

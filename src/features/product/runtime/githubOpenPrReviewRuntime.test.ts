@@ -83,6 +83,52 @@ describe('githubOpenPrReviewRuntime', () => {
     });
   });
 
+  it('bounds parsed string lists before processing oversized backend evidence', async () => {
+    const strings = (prefix: string, count: number) => Array.from({ length: count }, (_, index) => `${prefix}-${index}`);
+    const fetchMock = vi.fn(async () => response({
+      ok: true,
+      owner: SNAPSHOT.owner,
+      repo: SNAPSHOT.repo,
+      openPrCount: 1,
+      reviewMode: 'read_only',
+      githubWriteRequired: false,
+      executorStarted: false,
+      bounded: true,
+      pullRequests: [{
+        number: 42,
+        title: 'Bound evidence',
+        url: 'https://github.com/example/repo/pull/42',
+        draft: true,
+        headSha: 'c'.repeat(40),
+        baseRef: 'main',
+        mergeable: true,
+        mergeableState: 'clean',
+        changedFiles: 150,
+        additions: 1,
+        deletions: 0,
+        filePaths: strings('src/file', 150),
+        generatedArtifactCandidates: strings('dist/file', 50),
+        checkSummary: {
+          successful: 1,
+          pending: 25,
+          failed: 25,
+          failedNames: strings('failed', 50),
+          pendingNames: strings('pending', 50),
+        },
+        blockers: strings('blocker', 50),
+      }],
+    }));
+
+    const result = await fetchOpenPrReviewEvidence(SNAPSHOT, fetchMock as typeof fetch);
+    const pr = result.evidence?.pullRequests[0];
+
+    expect(pr?.filePaths).toHaveLength(100);
+    expect(pr?.generatedArtifactCandidates).toHaveLength(20);
+    expect(pr?.checkSummary.failedNames).toHaveLength(20);
+    expect(pr?.checkSummary.pendingNames).toHaveLength(20);
+    expect(pr?.blockers).toHaveLength(20);
+  });
+
   it('formats mergeability, checks and artifact candidates without claiming more than evidence', () => {
     const text = formatOpenPrReviewEvidence({
       ok: true,

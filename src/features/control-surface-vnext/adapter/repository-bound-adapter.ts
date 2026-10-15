@@ -2,7 +2,7 @@ import {
   resolveSovereignAgentConfig,
   type SovereignAgentConfig,
 } from '../../product/runtime/sovereignAgentRuntime';
-import type { AgentMode, Skill } from '../types/domain';
+import type { AgentMode, ExecutionMode, Skill } from '../types/domain';
 import type { RestoredRepositoryRun } from './interface';
 import {
   extractGitHubRepositoryUrl,
@@ -23,33 +23,41 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
-const RESUMABLE_REPOSITORY_STATUSES = new Set(['running', 'validating']);
+const RESUMABLE_REPOSITORY_STATUSES = new Set([
+  'queued',
+  'provisioning',
+  'running',
+  'waiting-for-user',
+  'validating',
+]);
 
 function isResumableRepositoryRun(candidate: JsonRecord): boolean {
   const status = stringValue(candidate.status)?.toLowerCase();
   const workspaceId = stringValue(candidate.workspaceId);
-  const externalRef = stringValue(candidate.externalRef);
+  const executor = stringValue(candidate.executor);
   return Boolean(
     status
     && RESUMABLE_REPOSITORY_STATUSES.has(status)
     && workspaceId
-    && externalRef?.startsWith('agent-zero-a2a:'),
+    && executor === 'sovereign-local-runner',
   );
 }
 
 export function buildRepositoryBoundRunRequest(
   mission: string,
   agentMode: AgentMode = 'single',
+  executionMode: ExecutionMode = 'free',
 ): JsonRecord {
   const normalizedMission = mission.trim();
   if (!normalizedMission) throw new Error('Mission text is required.');
   if (agentMode !== 'single') {
-    throw new Error('The vNext Draft-PR path currently requires one Free single agent.');
+    throw new Error('The vNext Draft-PR path requires exactly one single agent.');
   }
+  if (executionMode !== 'free' && executionMode !== 'paid') throw new Error('An explicit Free or Paid execution mode is required.');
   const explicitRepositoryUrl = extractGitHubRepositoryUrl(normalizedMission);
   return {
     mission: normalizedMission,
-    mode: 'free',
+    mode: executionMode,
     agentMode: 'single',
     intentMode: 'repository_execution',
     repositoryBranch: 'main',
@@ -74,9 +82,14 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
     fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
     config: SovereignAgentConfig = resolveSovereignAgentConfig(),
   ) {
-    super(fetcher, config);
+    const repositoryConfig = resolveSovereignAgentConfig({
+      enabled: true,
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: config.agentApiUrl,
+    });
+    super(fetcher, repositoryConfig);
     this.repositoryFetcher = fetcher;
-    this.repositoryConfig = config;
+    this.repositoryConfig = repositoryConfig;
   }
 
   override async checkHealth(): Promise<{ status: string; latencyMs: number }> {
@@ -97,12 +110,12 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
   }
 
   override async getSkills(): Promise<Skill[]> {
-    // Repository execution has no Swarm worker graph. An empty projection is
-    // preferable to inventing worker capabilities from a Swarm manifest.
-    return [];
+    const readback = await this.getControlSurface();
+    if (readback.agentReadbackState !== 'live') throw new Error(readback.agentBlocker || 'Agent readback unavailable.');
+    return readback.agents.map(agent => ({ id: agent.id, name: agent.name, description: agent.description, source: 'core' }));
   }
 
-  override async restoreLatestRepositoryRun(): Promise<RestoredRepositoryRun | null> {
+  async restoreLatestRepositoryRun(): Promise<RestoredRepositoryRun | null> {
     if (!this.repositoryConfig.ready) return null;
     const response = await this.repositoryFetcher(
       endpoint(this.repositoryConfig.agentApiUrl, '/api/user/agent/jobs?limit=20'),
@@ -136,14 +149,14 @@ export class SovereignProductionAdapter extends SovereignProductionAdapterBase {
     return null;
   }
 
-  override async runSwarm(
+  override async runSingleAgent(
     prompt: string,
-    _toolchains: string[],
+    _toolchains: string[] = [],
     _activeSkillIds: string[] = [],
-    agentMode: AgentMode = 'single',
+    executionMode: ExecutionMode = 'free',
   ): Promise<{ jobId: string }> {
     if (!this.repositoryConfig.ready) throw new Error(this.repositoryConfig.reason);
-    const payload = buildRepositoryBoundRunRequest(prompt, agentMode);
+    const payload = buildRepositoryBoundRunRequest(prompt, 'single', executionMode);
     const response = await this.repositoryFetcher(
       endpoint(this.repositoryConfig.agentApiUrl, '/api/user/agent/repository/run'),
       {

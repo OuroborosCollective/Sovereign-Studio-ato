@@ -1,13 +1,12 @@
-"""Single-Agent repository execution through one Agent Zero A2A task.
+"""Single-Agent repository execution through Sovereign's internal executor.
 
-This is intentionally not a cognitive-swarm adapter.  Sovereign owns the
-persisted job, repository clone, shared workspace, evidence closeout and Draft-PR
-gates. Agent Zero is one bounded external implementation worker only.
+Sovereign owns the persisted job, repository checkout, workspace mutation,
+evidence closeout and Draft-PR gates. No external execution worker is used.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import asyncio
 import hashlib
 import logging
 import os
@@ -18,17 +17,45 @@ import time
 from typing import Any, Callable, Final
 import uuid
 
-from .agent_zero_a2a import (
-    AgentZeroA2AClient,
-    AgentZeroA2AError,
-    AgentZeroA2ASubmitOutcomeUnknown,
-    AgentZeroA2ATaskLost,
-)
 from .contracts import SovereignAgentEvent, sanitize_agent_text
+from .cognitive_repository_tools import BoundRepositoryToolset, create_repository_single_agent_task
+from .cognitive_run_store import (
+    append_repository_executor_heartbeat,
+    create_agent_run,
+    read_agent_run,
+    read_agent_task_ids,
+    record_agent_stage_event,
+    transition_agent_run,
+)
+from .cognitive_swarm_agents import MissionIntent, SwarmExecutionError, run_free_single_agent, run_paid_single_agent
+from .cognitive_usage_billing import AgentBillingError, AgentStageBilling
 from .draft_pr_gate import draft_pr_input_from_job, prepare_draft_pr
+from .durable_workflow import (
+    PermissionDecision,
+    StepKind,
+    WorkflowBinding,
+    WorkflowDefinition,
+    WorkflowStep,
+    approve_permission,
+    canonical_sha256,
+    create_permission_request,
+)
+from .durable_workflow_store import (
+    append_permission_receipt,
+    bind_repository_job_permission,
+    persist_workflow_run,
+    read_latest_permission_receipt,
+    read_permission_authority_head,
+    read_repository_job_permission_binding,
+)
+from .revocation_closure import RevocationClosureError, require_live_permission
+from .rescue import resolve_github_head
 from .evidence_gate import EvidenceGateInput, evaluate_agent_evidence
 from .git_workspace import git_diff_check, git_diff_full
 from .job_lifecycle import create_sovereign_agent_job
+from .repository_miha_hunt import (
+    MihaCodeHuntError, run_repository_miha_code_hunt, persist_repository_miha_code_hunt,
+)
 from .job_store import (
     StoredSovereignAgentJob,
     append_agent_event,
@@ -40,16 +67,24 @@ from .job_store import (
 )
 from .tool_runner import run_agent_job_tool
 from .workspace_policy import repo_dir_for_workspace, validate_workspace_relative_path
+from llm_execution_resolver import (
+    FREE_SINGLE_AGENT_PROFILE,
+    FREE_SWARM_PROFILE,
+    PAID_SWARM_PROFILE,
+    advance_free_revolver_resolution,
+    load_execution_resolution,
+)
+from llm_revolver import route_quota_scope
+from llm_transport import route_provider_model
 
 
 ConnectionFactory = Callable[[], Any]
-A2AClientFactory = Callable[[], AgentZeroA2AClient]
 
 _REPOSITORY_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-_A2A_NORMAL_PREFIX: Final[str] = "agent-zero-a2a:"
-_A2A_RETRY_PREFIX: Final[str] = "agent-zero-a2a:retry:"
-_A2A_PENDING_PREFIX: Final[str] = "agent-zero-a2a:pending:submit:"
-_A2A_CLAIM_PREFIX: Final[str] = "agent-zero-a2a:claim:"
+_EXECUTOR_PREFIX: Final[str] = "sovereign-local-runner:"
+_EXECUTOR_RETRY_PREFIX: Final[str] = "sovereign-local-runner:retry:"
+_EXECUTOR_PENDING_PREFIX: Final[str] = "sovereign-local-runner:pending:submit:"
+_EXECUTOR_CLAIM_PREFIX: Final[str] = "sovereign-local-runner:claim:"
 _MAX_CLOSEOUT_DIFF_BYTES: Final[int] = 2_000_000
 _MAX_CLOSEOUT_CHANGED_FILES: Final[int] = 50
 _MAX_DOCUMENTATION_REGRESSION_BYTES: Final[int] = 1_000_000
@@ -77,6 +112,16 @@ _SHELL_CONTROL_TOKENS: Final[frozenset[str]] = frozenset({"||", ";", "|", ">", "
 _RECONCILER_THREAD_LOCK = threading.Lock()
 _RECONCILER_THREAD: threading.Thread | None = None
 _LOGGER = logging.getLogger(__name__)
+REPOSITORY_EXECUTION_MODE: Final[str] = "free"
+
+
+def repository_execution_manifest() -> dict[str, Any]:
+    """Declare the same bounded policy enforced at submit, never worker liveness."""
+    return {
+        "executor": "sovereign-local-runner", "agentMode": "single",
+        "executionModes": [REPOSITORY_EXECUTION_MODE, "paid"], "draftPrOnly": True,
+        "freeToPaidFallbackAllowed": False, "paidBilling": "agents-sdk-stage-reservation-and-settlement",
+    }
 
 
 class RepositoryExecutionError(RuntimeError):
@@ -99,17 +144,101 @@ def _repository_reconciler_poll_seconds() -> float:
     return _bounded_env_seconds("SOVEREIGN_REPOSITORY_RECONCILER_POLL_SECONDS", 2.0, 0.5, 30.0)
 
 
-def _repository_stall_seconds() -> float:
-    return _bounded_env_seconds("SOVEREIGN_REPOSITORY_STALL_SECONDS", 1800.0, 300.0, 86400.0)
+def _executor_heartbeat_seconds() -> float:
+    return _bounded_env_seconds("SOVEREIGN_REPOSITORY_HEARTBEAT_SECONDS", 15.0, 5.0, 60.0)
 
 
-def _job_age_seconds(job: StoredSovereignAgentJob) -> float | None:
-    observed = job.updated_at or job.created_at
-    if not isinstance(observed, datetime):
-        return None
-    if observed.tzinfo is None:
-        observed = observed.replace(tzinfo=timezone.utc)
-    return max(0.0, (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds())
+def _record_repository_free_route_cooldown(
+    get_connection: ConnectionFactory,
+    *,
+    resolution: Any,
+    failure: SwarmExecutionError,
+) -> None:
+    """Cool down one rejected FreeLLM quota scope before advancing the revolver."""
+    try:
+        route = dict(resolution.primary_route)
+        scope = route_quota_scope(route)
+    except (AttributeError, TypeError, ValueError):
+        return
+    cooldown_seconds = 60 if failure.http_status == 429 else 300
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """INSERT INTO llm_route_revolver_state
+                       (quota_scope, status, consecutive_failures, cooldown_until,
+                        quota_remaining, quota_reset_at, last_route_id,
+                        last_http_status, last_blocker, last_attempt_at, updated_at)
+                   VALUES (%s, 'cooldown', 1,
+                           NOW() + (%s * INTERVAL '1 second'),
+                           0, NOW() + (%s * INTERVAL '1 second'),
+                           %s, %s, %s, NOW(), NOW())
+                   ON CONFLICT (quota_scope) DO UPDATE SET
+                       status='cooldown',
+                       consecutive_failures=llm_route_revolver_state.consecutive_failures + 1,
+                       cooldown_until=EXCLUDED.cooldown_until,
+                       quota_remaining=0,
+                       quota_reset_at=EXCLUDED.quota_reset_at,
+                       last_route_id=EXCLUDED.last_route_id,
+                       last_http_status=EXCLUDED.last_http_status,
+                       last_blocker=EXCLUDED.last_blocker,
+                       last_attempt_at=NOW(),
+                       updated_at=NOW()""",
+                (
+                    scope,
+                    cooldown_seconds,
+                    cooldown_seconds,
+                    str(route.get("id") or "")[:240],
+                    failure.http_status,
+                    failure.family[:240],
+                ),
+            )
+        connection.commit()
+    except Exception:
+        rollback = getattr(connection, "rollback", None)
+        if callable(rollback):
+            rollback()
+    finally:
+        close = getattr(connection, "close", None)
+        if callable(close):
+            close()
+
+
+async def _run_with_executor_heartbeat(
+    invocation: Callable[[], Any], *, get_connection: ConnectionFactory,
+    job: StoredSovereignAgentJob, run_id: str, claim_ref: str,
+) -> Any:
+    def observe() -> bool:
+        heartbeat_conn = get_connection()
+        try:
+            return append_repository_executor_heartbeat(
+                heartbeat_conn, user_id=job.user_id, job_id=job.job_id,
+                run_id=run_id, claim_ref=claim_ref,
+            )
+        finally:
+            _close_reconciler_connection(heartbeat_conn)
+
+    if not observe():
+        raise RepositoryExecutionError("EXECUTOR_HEARTBEAT_CLAIM_NOT_CURRENT")
+
+    async def heartbeat() -> None:
+        while True:
+            await asyncio.sleep(_executor_heartbeat_seconds())
+            try:
+                if not observe():
+                    return
+            except Exception as exc:
+                _LOGGER.warning("repository heartbeat unavailable job=%s type=%s", job.job_id, type(exc).__name__)
+
+    observer = asyncio.create_task(heartbeat())
+    try:
+        return await invocation()
+    finally:
+        observer.cancel()
+        try:
+            await observer
+        except asyncio.CancelledError:
+            pass
 
 
 def _configured_repository_url() -> str:
@@ -122,12 +251,29 @@ def _configured_repository_url() -> str:
     return f"https://github.com/{value}"
 
 
+def _resolve_expected_head_sha(repo_url: str, branch: str) -> str:
+    """Resolve a branch HEAD SHA via the public GitHub API (read-only)."""
+    try:
+        revision = resolve_github_head(repo_url, branch, token=None)
+    except (ValueError, OSError) as exc:
+        raise RepositoryExecutionError(
+            "repository head could not be resolved for "
+            f"{repo_url}#{branch}: {sanitize_agent_text(str(exc), 200)}"
+        ) from exc
+    sha = str(revision.get("baseSha") or "").strip().lower()
+    if not sha:
+        raise RepositoryExecutionError(
+            f"repository head resolved an empty SHA for {repo_url}#{branch}"
+        )
+    return sha
+
+
 def _normalized_repository_payload(body: dict[str, Any]) -> dict[str, Any]:
     mode = str(body.get("mode") or "free").strip().lower()
     agent_mode = str(body.get("agentMode") or "single").strip().lower()
     intent_mode = str(body.get("intentMode") or "repository_execution").strip().lower()
-    if mode != "free":
-        raise RepositoryExecutionError("repository execution requires mode=free; paid fallback is forbidden")
+    if mode not in repository_execution_manifest()["executionModes"]:
+        raise RepositoryExecutionError("repository execution requires explicit mode=free or mode=paid; paid fallback is forbidden")
     if agent_mode != "single":
         raise RepositoryExecutionError("repository execution requires exactly one agent")
     if intent_mode != "repository_execution":
@@ -147,6 +293,8 @@ def _normalized_repository_payload(body: dict[str, Any]) -> dict[str, Any]:
         "draftPrOnly": True,
         "allowAutoMerge": False,
     }
+    if mode == "paid":
+        payload["executionMode"] = "paid"
     expected_head = str(body.get("expectedHeadSha") or "").strip().lower()
     if expected_head:
         payload["expectedHeadSha"] = expected_head
@@ -155,38 +303,110 @@ def _normalized_repository_payload(body: dict[str, Any]) -> dict[str, Any]:
 
 def _claim(kind: str, identity: str = "") -> str:
     digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16] if identity else "new"
-    return f"{_A2A_CLAIM_PREFIX}{kind}:{digest}:{uuid.uuid4().hex}"
+    return f"{_EXECUTOR_CLAIM_PREFIX}{kind}:{digest}:{uuid.uuid4().hex}"
 
 
-def _normal_ref(task_id: str) -> str:
-    return f"{_A2A_NORMAL_PREFIX}{task_id}"
+def _executor_ref(job_id: str, retry: bool = False) -> str:
+    return f"{_EXECUTOR_RETRY_PREFIX if retry else _EXECUTOR_PREFIX}{job_id}"
 
 
 def _pending_submit_ref(job_id: str) -> str:
     digest = hashlib.sha256(job_id.encode("utf-8")).hexdigest()[:24]
-    return f"{_A2A_PENDING_PREFIX}{digest}"
+    return f"{_EXECUTOR_PENDING_PREFIX}{digest}"
 
 
-def _retry_ref(task_id: str) -> str:
-    return f"{_A2A_RETRY_PREFIX}{task_id}"
+def is_repository_executor_job(job: StoredSovereignAgentJob | None) -> bool:
+    return bool(job and str(job.external_ref or "").startswith(_EXECUTOR_PREFIX))
 
 
-def _bound_task(external_ref: str) -> tuple[str, bool] | None:
-    if external_ref.startswith(_A2A_RETRY_PREFIX):
-        task_id = external_ref[len(_A2A_RETRY_PREFIX):]
-        return (task_id, True) if task_id else None
-    if (
-        external_ref.startswith(_A2A_NORMAL_PREFIX)
-        and not external_ref.startswith(_A2A_CLAIM_PREFIX)
-        and not external_ref.startswith(_A2A_PENDING_PREFIX)
-    ):
-        task_id = external_ref[len(_A2A_NORMAL_PREFIX):]
-        return (task_id, False) if task_id else None
-    return None
+def _synchronize_linked_agent_run_blocked(
+    conn: Any,
+    *,
+    job: StoredSovereignAgentJob,
+    blocker: str,
+    stage: str,
+    next_action: str = "REPAIR_REPOSITORY_EXECUTION_BLOCKER",
+) -> None:
+    """Keep persisted Agents-SDK run/task state aligned with a blocked repository job."""
+
+    run_id = f"repo-{job.job_id}"
+    try:
+        run = read_agent_run(conn, user_id=job.user_id, run_id=run_id)
+        if run is None:
+            return
+        if str(getattr(run, "status", "") or "").upper() in {
+            "BLOCKED", "FAILED_FINAL", "COMPLETED", "DRAFT_PR_CREATED",
+        }:
+            return
+        task_ids = read_agent_task_ids(conn, run_id=run_id)
+        task_id = task_ids.get("free_single_agent") or task_ids.get("paid_single_agent")
+        agent_id = (
+            "free_single_agent"
+            if task_ids.get("free_single_agent")
+            else "paid_single_agent"
+            if task_ids.get("paid_single_agent")
+            else "orchestrator"
+        )
+        transition_agent_run(
+            conn,
+            user_id=job.user_id,
+            run_id=run_id,
+            status="BLOCKED",
+            source="agents-sdk",
+            trace_id=str(getattr(run, "trace_id", "") or f"trace-{job.job_id}"),
+            reason=blocker,
+            next_action=next_action,
+            evidence_kind=stage,
+            evidence_summary=(
+                "The linked repository job entered a blocked terminal state; "
+                "the persisted agent run was synchronized to BLOCKED."
+            ),
+            evidence_payload={
+                "jobId": job.job_id,
+                "workspaceId": str(job.workspace_id or job.job_id),
+                "repositoryJobStatus": "blocked",
+                "repositoryBlockerStage": stage,
+                "rawModelOutputPersisted": False,
+            },
+            agent_id=agent_id,
+            task_id=task_id,
+        )
+    except Exception as exc:
+        _LOGGER.warning(
+            "repository agent-run terminal synchronization failed job=%s type=%s",
+            job.job_id,
+            type(exc).__name__,
+        )
 
 
-def is_repository_a2a_job(job: StoredSovereignAgentJob | None) -> bool:
-    return bool(job and str(job.external_ref or "").startswith(_A2A_NORMAL_PREFIX))
+def cancel_repository_execution(
+    conn: Any,
+    *,
+    job: StoredSovereignAgentJob,
+) -> StoredSovereignAgentJob:
+    """Stop the persisted Sovereign-local job without contacting another executor."""
+    if job.status in {"completed", "failed", "blocked", "cleaned"}:
+        return job
+    blocker = "Cancelled by owner; Sovereign-local-runner will perform no further work."
+    update_agent_job_state(
+        conn,
+        job_id=job.job_id,
+        status="blocked",
+        blocker=blocker,
+    )
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="sovereign_executor_cancelled",
+        level="warning",
+        message="Owner cancellation recorded locally; no external executor cancellation is required.",
+    ))
+    _synchronize_linked_agent_run_blocked(
+        conn,
+        job=job,
+        blocker=blocker,
+        stage="sovereign_executor_cancelled",
+        next_action="RUN_CANCELLED",
+    )
+    return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
 
 
 def _block_job(conn: Any, job: StoredSovereignAgentJob, reason: str, stage: str) -> StoredSovereignAgentJob:
@@ -197,7 +417,143 @@ def _block_job(conn: Any, job: StoredSovereignAgentJob, reason: str, stage: str)
         level="warning",
         message=blocker,
     ))
+    _synchronize_linked_agent_run_blocked(
+        conn,
+        job=job,
+        blocker=blocker,
+        stage=stage,
+    )
     return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+
+
+def _require_repository_effect_authority(conn: Any, *, job: StoredSovereignAgentJob) -> bool:
+    """Resolve this job's canonical, current permission before executor effects."""
+    binding = read_repository_job_permission_binding(conn, job_id=job.job_id)
+    if binding is None:
+        return False
+    latest = read_latest_permission_receipt(conn, permission_id=str(binding.get("permission_id") or ""))
+    if latest is None:
+        raise RevocationClosureError("repository job permission authority is unreadable")
+    receipt, _sequence = latest
+    expected_parameters = {
+        "job_id": job.job_id, "repository": job.repo_url, "branch": job.branch,
+        "mission_sha256": canonical_sha256({"mission": job.mission}),
+    }
+    if "execution_mode" in receipt.normalized_parameters:
+        mode = receipt.normalized_parameters["execution_mode"]
+        if mode not in {"free", "paid"}:
+            raise RevocationClosureError("repository permission execution mode is invalid")
+        expected_parameters["execution_mode"] = mode
+    if (
+        binding.get("job_id") != job.job_id
+        or binding.get("workflow_run_id") != f"repo-run-{job.job_id}"
+        or receipt.binding.workflow_run_id != binding.get("workflow_run_id")
+        or receipt.permission_id != binding.get("permission_id")
+        or receipt.receipt_hash != binding.get("approved_receipt_hash")
+        or receipt.binding.owner_identity != str(job.user_id)
+        or receipt.binding.tenant_or_org_identity != str(job.user_id)
+        or receipt.binding.repository_identity != job.repo_url
+        or receipt.binding.workspace_id != str(job.workspace_id or job.job_id)
+        or receipt.tool_name != "sovereign-local-runner"
+        or receipt.capability != "repository.sovereign-execute"
+        or receipt.step_id != "repository-sovereign-execute"
+        or receipt.normalized_parameters != expected_parameters
+        or receipt.parameters_hash != canonical_sha256(expected_parameters)
+        or receipt.valid_until_epoch <= int(time.time())
+    ):
+        raise RevocationClosureError("repository job permission is stale or bound to another scope")
+    head = read_permission_authority_head(conn, permission_id=receipt.permission_id)
+    require_live_permission(receipt, head)
+    return True
+
+
+def read_repository_execution_mode(conn: Any, *, job: StoredSovereignAgentJob) -> str:
+    """The immutable permission parameters bind Paid; legacy jobs remain Free."""
+    binding = read_repository_job_permission_binding(conn, job_id=job.job_id)
+    if binding is None:
+        return "free"
+    latest = read_latest_permission_receipt(conn, permission_id=str(binding.get("permission_id") or ""))
+    if latest is None:
+        raise RepositoryExecutionError("repository_execution_mode_unreadable")
+    receipt, _ = latest
+    if (receipt.binding.owner_identity != str(job.user_id)
+            or receipt.normalized_parameters.get("job_id") != job.job_id):
+        raise RepositoryExecutionError("repository_execution_mode_scope_mismatch")
+    mode = receipt.normalized_parameters.get("execution_mode", "free")
+    if mode not in {"free", "paid"}:
+        raise RepositoryExecutionError("repository_execution_mode_invalid")
+    return mode
+
+
+def _ensure_local_single_agent_run(
+    get_connection: ConnectionFactory,
+    *,
+    job: StoredSovereignAgentJob,
+    execution_mode: str = "free",
+) -> tuple[str, str, str]:
+    """Create or reuse exactly one persisted Agents-SDK run for this repository job."""
+    run_id = f"repo-{job.job_id}"
+    session_key = f"repo-session-{job.job_id}"
+    trace_id = f"repo-trace-{job.job_id}"
+    conn = get_connection()
+    try:
+        run = read_agent_run(conn, user_id=job.user_id, run_id=run_id)
+        if run is None:
+            created = create_agent_run(
+                conn,
+                user_id=job.user_id,
+                run_id=run_id,
+                session_key=session_key,
+                mission=job.mission,
+                supplied_evidence="",
+                trace_id=trace_id,
+                max_active_specialists=1,
+                max_iterations=2,
+                job_id=job.job_id,
+            )
+            evidence_id = created["evidenceId"]
+            trace_id = created["traceId"]
+        else:
+            evidence_id = run.evidence_id
+            trace_id = run.trace_id
+        task_ids = read_agent_task_ids(conn, run_id=run_id)
+        agent_id = "paid_single_agent" if execution_mode == "paid" else "free_single_agent"
+        task_id = task_ids.get(agent_id)
+        if not task_id:
+            task_id = create_repository_single_agent_task(
+                conn,
+                run_id=run_id,
+                evidence_id=evidence_id,
+                write_confirmed=True,
+                execution_mode=execution_mode,
+            )
+        transition_agent_run(
+            conn,
+            user_id=job.user_id,
+            run_id=run_id,
+            status="RUNNING",
+            source="agents-sdk",
+            trace_id=trace_id,
+            reason="Sovereign-local-runner admitted the repository mission to the foreground single agent.",
+            next_action=f"WAIT_FOR_{execution_mode.upper()}_SINGLE_AGENT",
+            evidence_kind="repository_execution_started",
+            evidence_summary=f"A persisted {execution_mode} single-agent run owns the isolated repository workspace.",
+            evidence_payload={
+                "jobId": job.job_id,
+                "workspaceId": str(job.workspace_id or job.job_id),
+                "executor": "sovereign-local-runner",
+                "externalExecutor": False,
+                "backgroundAgents": 0,
+                "executionMode": execution_mode,
+            },
+            agent_id=agent_id,
+            task_id=task_id,
+        )
+        return run_id, trace_id, task_id
+    finally:
+        close = getattr(conn, "close", None)
+        if callable(close):
+            close()
 
 
 def _submit_after_claim(
@@ -206,31 +562,248 @@ def _submit_after_claim(
     job: StoredSovereignAgentJob,
     claim_ref: str,
     retry: bool,
-    a2a_client_factory: A2AClientFactory,
+    workspace_root: Path | None = None,
+    get_connection: ConnectionFactory | None = None,
 ) -> StoredSovereignAgentJob:
     try:
-        task = a2a_client_factory().submit_repository_task(
-            workspace_id=str(job.workspace_id or job.job_id),
-            repository_url=job.repo_url,
-            branch=job.branch,
-            mission=job.mission,
-        )
-    except AgentZeroA2ASubmitOutcomeUnknown as exc:
+        if not _require_repository_effect_authority(conn, job=job):
+            return _block_job(
+                conn,
+                job,
+                "Repository effect path is not bound to a live canonical permission; submit is blocked.",
+                "repository_permission_unbound",
+            )
+    except RevocationClosureError as exc:
         return _block_job(
             conn,
             job,
-            f"{exc.family}: task acceptance is unknown; automatic resubmit is forbidden.",
-            "agent_zero_a2a_submit_outcome_unknown",
-        )
-    except AgentZeroA2AError as exc:
-        return _block_job(
-            conn,
-            job,
-            f"{exc.family}: {exc.next_action}",
-            "agent_zero_a2a_submit_failed",
+            f"REVOKED_BEFORE_SOVEREIGN_EFFECT: {exc}",
+            "repository_revocation_blocked",
         )
 
-    target_ref = _retry_ref(task.task_id) if retry else _normal_ref(task.task_id)
+    workspace_id = str(job.workspace_id or job.job_id)
+    resolved_connection_factory = get_connection or (lambda: conn)
+    repo_path = repo_dir_for_workspace(workspace_id, workspace_root)
+    if not repo_path.is_dir() or not (repo_path / ".git").is_dir():
+        return _block_job(
+            conn,
+            job,
+            "Sovereign executor workspace repository is unavailable; no external executor fallback is allowed.",
+            "sovereign_executor_workspace_missing",
+        )
+
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="sovereign_executor_started",
+        level="success",
+        message="Sovereign-local-runner owns repository execution; no external executor is used.",
+    ))
+    update_agent_job_state(
+        conn,
+        job_id=job.job_id,
+        status="running",
+        workspace_id=workspace_id,
+        clear_blocker=True,
+    )
+
+    try:
+        execution_mode = read_repository_execution_mode(conn, job=job)
+        agent_id = "paid_single_agent" if execution_mode == "paid" else "free_single_agent"
+        run_id, trace_id, task_id = _ensure_local_single_agent_run(
+            resolved_connection_factory,
+            job=job,
+            execution_mode=execution_mode,
+        )
+        resolution = load_execution_resolution(
+            resolved_connection_factory,
+            user_id=job.user_id,
+            requested_mode=execution_mode,
+        )
+        expected_profiles = {PAID_SWARM_PROFILE} if execution_mode == "paid" else {FREE_SINGLE_AGENT_PROFILE, FREE_SWARM_PROFILE}
+        if resolution is None or resolution.profile_id not in expected_profiles:
+            raise RepositoryExecutionError(f"NO_VERIFIED_{execution_mode.upper()}_SINGLE_AGENT_ROUTE")
+        if not resolution.repository_execution_allowed:
+            raise RepositoryExecutionError("REPOSITORY_EXECUTION_NOT_ALLOWED_FOR_FREE_SINGLE_AGENT")
+        repository_toolset = BoundRepositoryToolset(
+            get_connection=resolved_connection_factory,
+            user_id=job.user_id,
+            run_id=run_id,
+            job_id=job.job_id,
+            task_ids_by_agent={agent_id: task_id},
+            workspace_root=repo_path.parent.parent,
+            write_confirmed=True,
+        )
+        free_route_failover_count = 0
+
+        def stage_observer(stage: dict[str, object]) -> dict[str, str]:
+            stage_conn = resolved_connection_factory()
+            try:
+                return record_agent_stage_event(
+                    stage_conn,
+                    user_id=job.user_id,
+                    run_id=run_id,
+                    trace_id=trace_id,
+                    agent_id=str(stage.get("agentId") or agent_id),
+                    event_type=str(stage.get("eventType") or "agent_stage"),
+                    status=str(stage.get("status") or "RUNNING"),
+                    summary=str(stage.get("summary") or "Sovereign agent stage changed."),
+                    next_action=str(stage.get("nextAction") or "WAIT_FOR_FREE_SINGLE_AGENT"),
+                    evidence_payload={
+                        "jobId": job.job_id,
+                        "executor": "sovereign-local-runner",
+                        "loop": stage.get("loop"),
+                        "repositoryExecution": True,
+                        "executionMode": execution_mode,
+                        "rawModelOutputPersisted": False,
+                    },
+                    task_id=task_id,
+                )
+            finally:
+                close = getattr(stage_conn, "close", None)
+                if callable(close):
+                    close()
+
+        mission_intent = MissionIntent(
+            mode="repository_execution",
+            normalized_goal=job.mission[:2000],
+            requires_online_tools=True,
+            requires_repository_workspace=True,
+            learning_scope=[],
+            confidence=1.0,
+        )
+        while True:
+            model = route_provider_model(resolution.primary_route)
+            if not model:
+                raise RepositoryExecutionError("RESOLVED_FREE_AGENT_MODEL_MISSING")
+            invocation_kwargs = dict(evidence="", model=model, intent=mission_intent,
+                route=resolution.primary_route, stage_observer=stage_observer,
+                repository_tool_factory=repository_toolset.tools_for_role, capability_tool_factory=None)
+            try:
+                if execution_mode == "paid":
+                    # Only an explicit, persisted Paid permission can reach this billing owner.
+                    billing = AgentStageBilling(get_connection=resolved_connection_factory, user_id=job.user_id,
+                        run_id=run_id, trace_id=trace_id, route=resolution.primary_route, requested_mode="paid", allow_premium=True)
+                    invocation = lambda: run_paid_single_agent(job.mission, stage_billing=billing, **invocation_kwargs)
+                else:
+                    invocation = lambda: run_free_single_agent(job.mission, **invocation_kwargs)
+                agent_result = asyncio.run(_run_with_executor_heartbeat(
+                    invocation,
+                    get_connection=resolved_connection_factory, job=job, run_id=run_id, claim_ref=claim_ref,
+                ))
+                repository_summary = repository_toolset.summary()
+                mutations = list(repository_summary.get("rolesWithMutations") or [])
+                if str(agent_result.get("status") or "BLOCKED") == "COMPLETED" and not mutations:
+                    next_resolution = (
+                        advance_free_revolver_resolution(
+                            resolution,
+                            failed_route_id=str(resolution.primary_route.get("id") or ""),
+                            reason="repository_free_route_completed_without_mutation_advanced_to_next_quota_scope",
+                        )
+                        if execution_mode == "free"
+                        else None
+                    )
+                    if next_resolution is not None:
+                        free_route_failover_count += 1
+                        append_agent_event(conn, job.job_id, SovereignAgentEvent(
+                            stage="sovereign_free_route_no_repository_effect_rotated",
+                            level="warning",
+                            message=(
+                                "A FreeLLM candidate returned COMPLETED without a repository mutation; "
+                                "Sovereign advanced to the next verified quota scope before closeout."
+                            ),
+                        ))
+                        resolution = next_resolution
+                        continue
+                    return _block_job(
+                        conn,
+                        job,
+                        (
+                            "No verified FreeLLM candidate produced a repository mutation."
+                            if execution_mode == "free"
+                            else "The paid single-agent model completed without a repository mutation."
+                        ),
+                        "sovereign_executor_no_repository_effect",
+                    )
+                break
+            except SwarmExecutionError as exc:
+                if execution_mode != "free" or not exc.retryable:
+                    raise
+                repository_summary = repository_toolset.summary()
+                if list(repository_summary.get("rolesWithMutations") or []):
+                    # Never replay a model turn after a repository mutation may
+                    # already have happened; exactly-once effects outrank failover.
+                    raise
+                failed_route_id = str(resolution.primary_route.get("id") or "")
+                next_resolution = advance_free_revolver_resolution(
+                    resolution,
+                    failed_route_id=failed_route_id,
+                    reason="repository_free_route_failed_advanced_to_next_quota_scope",
+                )
+                if next_resolution is None:
+                    raise
+                _record_repository_free_route_cooldown(
+                    resolved_connection_factory,
+                    resolution=resolution,
+                    failure=exc,
+                )
+                free_route_failover_count += 1
+                append_agent_event(conn, job.job_id, SovereignAgentEvent(
+                    stage="sovereign_free_route_rotated",
+                    level="warning",
+                    message=(
+                        "A FreeLLM candidate failed before repository mutation; "
+                        "Sovereign advanced to the next verified quota scope."
+                    ),
+                ))
+                resolution = next_resolution
+        if str(agent_result.get("status") or "BLOCKED") != "COMPLETED":
+            return _block_job(
+                conn,
+                job,
+                str(agent_result.get("reason") or agent_result.get("blocker") or "Sovereign single-agent execution was blocked.")[:2000],
+                "sovereign_executor_execution_blocked",
+            )
+        transition_conn = resolved_connection_factory()
+        try:
+            transition_agent_run(
+                transition_conn,
+                user_id=job.user_id,
+                run_id=run_id,
+                status="VERIFYING",
+                source="agents-sdk",
+                trace_id=trace_id,
+                reason="Sovereign-local-runner completed the foreground model pass; repository evidence is being closed out.",
+                next_action="VERIFY_SINGLE_AGENT_WORKSPACE_EVIDENCE",
+                evidence_kind="repository_execution_completed",
+                evidence_summary="Foreground single-agent model execution returned; Git, diff and regression closeout remains authoritative.",
+                evidence_payload={
+                    "jobId": job.job_id,
+                    "executor": "sovereign-local-runner",
+                    "repositoryExecutionPerformed": bool(agent_result.get("repositoryExecutionPerformed")),
+                    "backgroundAgentsStarted": 0,
+                    "rawModelOutputPersisted": False,
+                    "executionMode": execution_mode,
+                    "freeRouteFailoverCount": free_route_failover_count,
+                },
+                agent_id=agent_id,
+                task_id=task_id,
+            )
+        finally:
+            close = getattr(transition_conn, "close", None)
+            if callable(close):
+                close()
+    except AgentBillingError as exc:
+        return _block_job(conn, job,
+            f"{exc.family}; requiredCredits={exc.required_credits}; availableProviderFundedCredits={exc.available_credits}",
+            "sovereign_executor_billing_blocked")
+    except Exception as exc:
+        return _block_job(
+            conn,
+            job,
+            sanitize_agent_text(str(exc), 2000) or "Sovereign-local-runner execution failed closed.",
+            "sovereign_executor_execution_failed",
+        )
+
+    target_ref = f"sovereign-local-runner:{'retry:' if retry else ''}{job.job_id}"
     if not compare_and_swap_agent_job_external_ref(
         conn,
         job_id=job.job_id,
@@ -240,19 +813,100 @@ def _submit_after_claim(
         return _block_job(
             conn,
             job,
-            "Agent Zero task was submitted but its persisted binding could not be finalized; refusing any resubmit.",
-            "agent_zero_a2a_binding_finalize_failed",
+            "Sovereign executor binding could not be finalized; refusing duplicate execution.",
+            "sovereign_executor_binding_finalize_failed",
         )
+
     append_agent_event(conn, job.job_id, SovereignAgentEvent(
-        stage="agent_zero_a2a_retry_submitted" if retry else "agent_zero_a2a_submitted",
+        stage="sovereign_executor_bound",
         level="success",
         message=(
-            "Exactly one restart-recovery Agent Zero A2A task was submitted nonblocking."
+            "Sovereign-local-runner bound for restart recovery after verified model execution."
             if retry
-            else "Exactly one Agent Zero A2A task was submitted nonblocking."
+            else "Sovereign-local-runner bound as the sole repository executor after verified foreground execution."
         ),
     ))
     return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+
+
+def _bind_repository_execution_permission(
+    conn: Any,
+    *,
+    job: StoredSovereignAgentJob,
+    expected_head_sha: str,
+    execution_mode: str = "free",
+) -> None:
+    if execution_mode not in {"free", "paid"}:
+        raise RepositoryExecutionError("repository_permission_execution_mode_invalid")
+    if not expected_head_sha:
+        append_agent_event(conn, job.job_id, SovereignAgentEvent(
+            stage="repository_revocation_uncovered",
+            level="warning",
+            message=(
+                "SRCC revocation coverage is unavailable because this repository mission "
+                "was not bound to an exact expectedHeadSha."
+            ),
+        ))
+        return
+
+    from .durable_workflow import WorkflowState
+    step = WorkflowStep(
+        step_id="repository-sovereign-execute",
+        kind=StepKind.TOOL_MUTATION,
+        allowed_from=(WorkflowState.READY,),
+        allowed_to=(WorkflowState.RUNNING,),
+        permission_required=True,
+        capability="repository.sovereign-execute",
+        timeout_seconds=3600,
+        max_attempts=2,
+        idempotency_key=f"repository-submit:{job.job_id}",
+        required_readback_kinds=("sovereign_local_execution",),
+    )
+    definition = WorkflowDefinition.create(
+        workflow_id=f"repository-execution-{job.job_id}",
+        steps=(step,),
+    )
+    binding = WorkflowBinding(
+        workflow_run_id=f"repo-run-{job.job_id}",
+        workflow_definition_hash=definition.definition_hash,
+        owner_identity=str(job.user_id),
+        tenant_or_org_identity=str(job.user_id),
+        repository_identity=job.repo_url,
+        workspace_id=str(job.workspace_id or job.job_id),
+        base_revision=expected_head_sha,
+        head_revision=expected_head_sha,
+    )
+    persist_workflow_run(conn, binding)
+    requested = create_permission_request(
+        binding=binding,
+        definition=definition,
+        step_id=step.step_id,
+        tool_name="sovereign-local-runner",
+        parameters={
+            "job_id": job.job_id,
+            "repository": job.repo_url,
+            "branch": job.branch,
+            "mission_sha256": canonical_sha256({"mission": job.mission}),
+            **({"execution_mode": "paid"} if execution_mode == "paid" else {}),
+        },
+        expected_changed_paths=(),
+        valid_until_epoch=int(time.time()) + 21600,
+        max_attempts=2,
+    )
+    append_permission_receipt(conn, receipt=requested, sequence=0)
+    approved = approve_permission(
+        requested,
+        approver_identity=f"owner-{job.user_id}",
+        approval_source="repository-run-owner-session",
+        observed_epoch=int(time.time()),
+    )
+    append_permission_receipt(conn, receipt=approved, sequence=1)
+    bind_repository_job_permission(conn, job_id=job.job_id, approved_receipt=approved)
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="repository_permission_bound",
+        level="success",
+        message="Repository submit authority is bound to an append-only permission chain.",
+    ))
 
 
 def start_repository_execution(
@@ -261,28 +915,25 @@ def start_repository_execution(
     user_id: str,
     body: dict[str, Any],
     workspace_root: Path | None = None,
-    a2a_client_factory: A2AClientFactory = AgentZeroA2AClient.from_env,
 ) -> StoredSovereignAgentJob:
-    """Persist one Agent-Zero-only repository job and queue its A2A submit.
-
-    Sovereign provisions only the shared filesystem slot. It never resolves a
-    GitHub OAuth credential and never clones the implementation repository on
-    the execution path. The server-owned reconciler submits exactly one A2A task;
-    Agent Zero owns repository access and checkout through its own configured
-    repository/GitHub capability.
-    """
+    """Persist one Sovereign-local repository job and queue its local execution."""
 
     if "githubAccessToken" in body:
         raise RepositoryExecutionError("GITHUB_CREDENTIAL_FORBIDDEN_ON_EXECUTION")
 
     payload = _normalized_repository_payload(body)
+    if not str(payload.get("expectedHeadSha") or "").strip():
+        payload["expectedHeadSha"] = _resolve_expected_head_sha(
+            str(payload.get("repoUrl") or "").strip(),
+            str(payload.get("branch") or "main").strip() or "main",
+        )
     lifecycle = create_sovereign_agent_job(
         conn,
         user_id=user_id,
         payload=payload,
         workspace_root=workspace_root,
         provision_workspace=True,
-        clone_repo=False,
+        clone_repo=True,
     )
     job = read_agent_job(conn, user_id=user_id, job_id=lifecycle.job_id)
     if job is None:
@@ -296,16 +947,47 @@ def start_repository_execution(
             clear_blocker=True,
         )
         append_agent_event(conn, job.job_id, SovereignAgentEvent(
-            stage="agent_zero_repository_access_delegated",
+            stage="sovereign_repository_checked_out",
             level="success",
-            message=(
-                "Sovereign provisioned only the shared workspace; repository checkout "
-                "is delegated exclusively to Agent Zero without Sovereign GitHub OAuth."
-            ),
+            message="Sovereign-local-runner owns repository checkout and execution inside the isolated workspace.",
         ))
         job = read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
     if job.status != "running":
         return job
+
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="repository_execution_contract_bound",
+        level="success",
+        message=(
+            "Repository execution contract bound: Sovereign persists the job, repository state and evidence; "
+            "sovereign-local-runner is the sole executor and no external execution worker is allowed."
+        ),
+    ))
+    job = read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
+
+    # Mandatory read-only MIHA code-hunt sits between frontend submission and
+    # durable executor admission. A failed evidence readback never queues Git work.
+    try:
+        miha_receipt = run_repository_miha_code_hunt(
+            job, workspace_root=workspace_root,
+            expected_head_sha=str(payload.get("expectedHeadSha") or "").lower(),
+        )
+        miha_digest = persist_repository_miha_code_hunt(conn, job_id=job.job_id, receipt=miha_receipt)
+    except Exception as exc:
+        return _block_job(conn, job,
+            f"MIHA_PREEXECUTION_NOT_VERIFIED: {type(exc).__name__}",
+            "miha_preexecution_blocked")
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="miha_preexecution_verified", level="success",
+        message=f"Read-only code hunt verified against exact repository revision; receipt sha256:{miha_digest}.",
+    ))
+
+    _bind_repository_execution_permission(
+        conn,
+        job=job,
+        expected_head_sha=str(payload.get("expectedHeadSha") or "").strip().lower(),
+        execution_mode=str(payload.get("executionMode") or "free"),
+    )
 
     pending_ref = _pending_submit_ref(job.job_id)
     if not compare_and_swap_agent_job_external_ref(
@@ -314,12 +996,11 @@ def start_repository_execution(
         expected_ref=None,
         new_ref=pending_ref,
     ):
-        # Another caller already owns or queued the external-effect boundary.
         return read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
     append_agent_event(conn, job.job_id, SovereignAgentEvent(
-        stage="agent_zero_a2a_submit_queued",
+        stage="sovereign_local_execution_queued",
         level="info",
-        message="Agent Zero A2A submission was durably queued for the server-owned reconciler.",
+        message="Sovereign-local-runner execution was durably queued for the server-owned reconciler.",
     ))
     return read_agent_job(conn, user_id=user_id, job_id=job.job_id) or job
 
@@ -328,12 +1009,13 @@ def _submit_pending_repository_job(
     conn: Any,
     *,
     job: StoredSovereignAgentJob,
-    a2a_client_factory: A2AClientFactory = AgentZeroA2AClient.from_env,
+    workspace_root: Path | None = None,
+    get_connection: ConnectionFactory | None = None,
 ) -> StoredSovereignAgentJob:
-    """Claim and execute one durable initial submit outside the HTTP request."""
+    """Claim and execute one durable local repository run outside the HTTP request."""
 
     pending_ref = str(job.external_ref or "")
-    if job.status != "running" or not pending_ref.startswith(_A2A_PENDING_PREFIX):
+    if job.status != "running" or not pending_ref.startswith(_EXECUTOR_PENDING_PREFIX):
         return job
     claim_ref = _claim("submit", job.job_id)
     if not compare_and_swap_agent_job_external_ref(
@@ -344,13 +1026,26 @@ def _submit_pending_repository_job(
     ):
         return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
     claimed = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-    return _submit_after_claim(
-        conn,
-        job=claimed,
-        claim_ref=claim_ref,
-        retry=False,
-        a2a_client_factory=a2a_client_factory,
-    )
+    try:
+        return _submit_after_claim(
+            conn,
+            job=claimed,
+            claim_ref=claim_ref,
+            retry=False,
+            workspace_root=workspace_root,
+            get_connection=get_connection,
+        )
+    except Exception as exc:
+        # Never turn a claimed submit into an invisible perpetual RUNNING job.
+        # Retain the claim to prevent duplicate effects; expose only the error type.
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+        return _block_job(
+            conn, claimed,
+            f"Sovereign-local-runner submit failed closed ({type(exc).__name__}); no automatic replay is allowed.",
+            "sovereign_executor_submit_failed",
+        )
 
 
 def _safe_regression_commands(recommended: object) -> tuple[str, ...]:
@@ -436,7 +1131,7 @@ def _closeout_repository_job(
         return _block_job(
             conn,
             job,
-            status_result.blocker or status_result.error or "Agent Zero completed without workspace changes.",
+            status_result.blocker or status_result.error or "Sovereign-local-runner completed without workspace changes.",
             "repository_closeout_git_status_blocked",
         )
 
@@ -499,6 +1194,26 @@ def _closeout_repository_job(
             "repository_closeout_janitor_critical",
         )
 
+    # Observed work remains evidence even when the following regression blocks.
+    # Do not require passing tests before reporting real workspace changes.
+    diff_summary = sanitize_agent_text(patch.decode("utf-8", errors="replace"), 4000)
+    update_agent_job_state(
+        conn,
+        job_id=job.job_id,
+        status="running",
+        changed_files=status_result.changed_files,
+        diff_summary=diff_summary,
+    )
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="repository_regression_started",
+        level="info",
+        message=(
+            f"Observed {len(status_result.changed_files)} changed file(s) in the shared workspace. "
+            "Diff and Janitor checks passed; independent regression is now pending."
+        ),
+    ))
+    job = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
+
     documentation_regression = _documentation_regression(job, status_result.changed_files, workspace_root)
     test_outputs: list[str] = []
     if documentation_regression is not None:
@@ -547,7 +1262,6 @@ def _closeout_repository_job(
                 )
             test_outputs.append(str(test_result.output or "Auto-detected regression passed.")[:2000])
 
-    diff_summary = sanitize_agent_text(patch.decode("utf-8", errors="replace"), 4000)
     test_summary = sanitize_agent_text("\n".join(test_outputs), 4000)
     gate = evaluate_agent_evidence(EvidenceGateInput(
         job_id=job.job_id,
@@ -602,7 +1316,7 @@ def _closeout_repository_job(
         return _block_job(
             conn,
             prepared,
-            "Draft-PR preparation succeeded but the Agent Zero closeout binding could not be restored.",
+            "Draft-PR preparation succeeded but the Sovereign-local-runner closeout binding could not be restored.",
             "repository_closeout_binding_restore_failed",
         )
     append_agent_event(conn, evidenced.job_id, SovereignAgentEvent(
@@ -613,174 +1327,25 @@ def _closeout_repository_job(
     return read_agent_job(conn, user_id=evidenced.user_id, job_id=evidenced.job_id) or evidenced
 
 
-def _recover_lost_original_task(
-    conn: Any,
-    *,
-    job: StoredSovereignAgentJob,
-    bound_ref: str,
-    task_id: str,
-    workspace_root: Path | None,
-    a2a_client_factory: A2AClientFactory,
-) -> StoredSovereignAgentJob:
-    # A2A task storage is not the repository truth boundary. A missing task may
-    # follow an Agent Zero restart or an in-memory task-store loss after the
-    # shared workspace was already mutated. Inspect the owned workspace first;
-    # never duplicate repository work merely because tasks/get returned 404.
-    status_result = run_agent_job_tool(job, "git-status", {}, workspace_root)
-    if status_result.status != "done":
-        return _block_job(
-            conn,
-            job,
-            (
-                "AGENT_ZERO_A2A_TASK_LOST: the original task is no longer readable and "
-                "workspace mutation state could not be verified; recovery submit is quarantined."
-            ),
-            "agent_zero_a2a_lost_workspace_unverified",
-        )
-
-    if status_result.changed_files:
-        claim_ref = _claim("closeout-lost", task_id)
-        if not compare_and_swap_agent_job_external_ref(
-            conn,
-            job_id=job.job_id,
-            expected_ref=bound_ref,
-            new_ref=claim_ref,
-        ):
-            return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-        claimed = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-        append_agent_event(conn, job.job_id, SovereignAgentEvent(
-            stage="agent_zero_a2a_lost_workspace_changes_detected",
-            level="warning",
-            message=(
-                "The original Agent Zero task is no longer readable, but the owned shared workspace "
-                "contains real changes; Sovereign will close out those changes without resubmitting."
-            ),
-        ))
-        return _closeout_repository_job(
-            conn,
-            job=claimed,
-            claim_ref=claim_ref,
-            bound_ref=bound_ref,
-            workspace_root=workspace_root,
-        )
-
-    claim_ref = _claim("retry", task_id)
-    if not compare_and_swap_agent_job_external_ref(
-        conn,
-        job_id=job.job_id,
-        expected_ref=bound_ref,
-        new_ref=claim_ref,
-    ):
-        return read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-    claimed = read_agent_job(conn, user_id=job.user_id, job_id=job.job_id) or job
-    append_agent_event(conn, job.job_id, SovereignAgentEvent(
-        stage="agent_zero_a2a_original_task_lost",
-        level="warning",
-        message=(
-            "The persisted original Agent Zero task is gone and the owned workspace has no changes; "
-            "one atomic recovery submit is allowed."
-        ),
-    ))
-    return _submit_after_claim(
-        conn,
-        job=claimed,
-        claim_ref=claim_ref,
-        retry=True,
-        a2a_client_factory=a2a_client_factory,
-    )
-
-
 def reconcile_repository_execution(
     conn: Any,
     *,
     user_id: str,
     job_id: str,
     workspace_root: Path | None = None,
-    a2a_client_factory: A2AClientFactory = AgentZeroA2AClient.from_env,
 ) -> StoredSovereignAgentJob | None:
-    """Read/reconcile one persisted repository job without spawning duplicates."""
+    """Reconcile one Sovereign-local repository job without external polling."""
 
     job = read_agent_job(conn, user_id=user_id, job_id=job_id)
-    if job is None or job.status != "running" or not is_repository_a2a_job(job):
+    if job is None or job.status != "running":
         return job
     external_ref = str(job.external_ref or "")
-    if external_ref.startswith(_A2A_PENDING_PREFIX):
-        # Pending submission is server-worker-owned. User/client polling must be
-        # read-only and must never perform the outbound Agent Zero side effect.
+    if not external_ref.startswith(_EXECUTOR_PREFIX):
         return job
-    if external_ref.startswith(_A2A_CLAIM_PREFIX):
-        # Another request owns the side-effect boundary. A stale claim requires
-        # operator evidence rather than an automatic duplicate submit.
+    if external_ref.startswith(_EXECUTOR_PENDING_PREFIX) or external_ref.startswith(_EXECUTOR_CLAIM_PREFIX):
         return job
-    binding = _bound_task(external_ref)
-    if binding is None:
-        return _block_job(
-            conn,
-            job,
-            "Persisted Agent Zero A2A binding is invalid.",
-            "agent_zero_a2a_binding_invalid",
-        )
-    task_id, is_retry = binding
-    try:
-        task = a2a_client_factory().get_task(task_id)
-    except AgentZeroA2ATaskLost:
-        if is_retry:
-            return _block_job(
-                conn,
-                job,
-                "The one restart-recovery Agent Zero task is also lost; no further resubmit is allowed.",
-                "agent_zero_a2a_retry_task_lost",
-            )
-        return _recover_lost_original_task(
-            conn,
-            job=job,
-            bound_ref=external_ref,
-            task_id=task_id,
-            workspace_root=workspace_root,
-            a2a_client_factory=a2a_client_factory,
-        )
-    except AgentZeroA2AError as exc:
-        raise RepositoryExecutionTransientError(
-            f"{exc.family}: task readback is unavailable; no resubmit was performed"
-        ) from exc
 
-    if task.active:
-        age_seconds = _job_age_seconds(job)
-        if age_seconds is not None and age_seconds >= _repository_stall_seconds():
-            return _block_job(
-                conn,
-                job,
-                (
-                    "AGENT_ZERO_A2A_STALLED: the external task remained active beyond the "
-                    "bounded server reconciliation window; workspace publication is quarantined "
-                    "and automatic resubmit is forbidden."
-                ),
-                "agent_zero_a2a_task_stalled",
-            )
-        return job
-    if task.interrupted:
-        return _block_job(
-            conn,
-            job,
-            f"Agent Zero A2A task requires unsupported external input/state: {task.state}.",
-            "agent_zero_a2a_task_interrupted",
-        )
-    if task.failed:
-        return _block_job(
-            conn,
-            job,
-            f"Agent Zero A2A task terminated without successful completion: {task.state}.",
-            "agent_zero_a2a_task_failed",
-        )
-    if not task.completed:
-        return _block_job(
-            conn,
-            job,
-            f"Agent Zero A2A task returned unsupported state: {task.state}.",
-            "agent_zero_a2a_task_state_invalid",
-        )
-
-    claim_ref = _claim("closeout", task_id)
+    claim_ref = _claim("closeout", job.job_id)
     if not compare_and_swap_agent_job_external_ref(
         conn,
         job_id=job.job_id,
@@ -797,6 +1362,36 @@ def reconcile_repository_execution(
         workspace_root=workspace_root,
     )
 
+def recover_stalled_repository_job_from_verified_readback(
+    conn: Any,
+    *,
+    user_id: str,
+    job_id: str,
+    workspace_root: Path | None = None,
+) -> tuple[StoredSovereignAgentJob | None, bool]:
+    """Recover a blocked local job only when its workspace still contains real evidence."""
+    job = read_agent_job(conn, user_id=user_id, job_id=job_id)
+    if job is None:
+        return None, False
+    if job.status != "blocked" or not is_repository_executor_job(job):
+        return job, False
+    status_result = run_agent_job_tool(job, "git-status", {}, workspace_root)
+    if status_result.status != "done" or not status_result.changed_files:
+        return job, False
+    update_agent_job_state(conn, job_id=job.job_id, status="running", clear_blocker=True)
+    append_agent_event(conn, job.job_id, SovereignAgentEvent(
+        stage="self_healing_workspace_readback_recovered",
+        level="success",
+        message="Workspace readback proved real changes exist; Sovereign resumed canonical closeout without external execution.",
+    ))
+    recovered = reconcile_repository_execution(
+        conn,
+        user_id=user_id,
+        job_id=job_id,
+        workspace_root=workspace_root,
+    )
+    return recovered, True
+
 def _close_reconciler_connection(conn: Any) -> None:
     close = getattr(conn, "close", None)
     if callable(close):
@@ -809,13 +1404,7 @@ def reconcile_repository_jobs_once(
     workspace_root: Path | None = None,
     limit: int = 50,
 ) -> dict[str, int]:
-    """Reconcile persisted A2A repository jobs without any client polling.
-
-    Pending initial submits are claimed and executed here, never in a user HTTP
-    request. Bound tasks retain the existing CAS ownership for retry and closeout,
-    so multiple backend processes cannot duplicate the external task or Draft-PR
-    preparation.
-    """
+    """Reconcile persisted Sovereign-local repository jobs without client-side execution."""
 
     listing_conn = get_connection()
     try:
@@ -829,8 +1418,13 @@ def reconcile_repository_jobs_once(
     for candidate in candidates:
         conn = get_connection()
         try:
-            if str(candidate.external_ref or "").startswith(_A2A_PENDING_PREFIX):
-                _submit_pending_repository_job(conn, job=candidate)
+            if str(candidate.external_ref or "").startswith(_EXECUTOR_PENDING_PREFIX):
+                _submit_pending_repository_job(
+                    conn,
+                    job=candidate,
+                    workspace_root=workspace_root,
+                    get_connection=get_connection,
+                )
             else:
                 reconcile_repository_execution(
                     conn,
@@ -844,7 +1438,7 @@ def reconcile_repository_jobs_once(
         except Exception as exc:  # keep the daemon alive; no secret-shaped payload is logged
             unexpected_failures += 1
             _LOGGER.warning(
-                "repository A2A reconcile failed job=%s type=%s",
+                "repository local-runner reconcile failed job=%s type=%s",
                 candidate.job_id,
                 type(exc).__name__,
             )
@@ -863,13 +1457,7 @@ def start_repository_reconciler(
     get_connection: ConnectionFactory,
     workspace_root: Path | None = None,
 ) -> bool:
-    """Start one process-local daemon that owns A2A lifecycle reconciliation.
-
-    Multiple backend processes remain safe: active-task reads are side-effect free
-    and every retry/closeout effect is still protected by the existing persisted
-    ``external_ref`` compare-and-swap boundary. On process restart the fresh daemon
-    scans the database again, so client presence is never required for completion.
-    """
+    """Start one process-local daemon that owns Sovereign repository lifecycle reconciliation."""
 
     global _RECONCILER_THREAD
     with _RECONCILER_THREAD_LOCK:
@@ -885,14 +1473,14 @@ def start_repository_reconciler(
                     )
                 except Exception as exc:
                     _LOGGER.warning(
-                        "repository A2A reconcile cycle failed type=%s",
+                        "repository local-runner reconcile cycle failed type=%s",
                         type(exc).__name__,
                     )
                 time.sleep(_repository_reconciler_poll_seconds())
 
         _RECONCILER_THREAD = threading.Thread(
             target=loop,
-            name="sovereign-repository-a2a-reconciler",
+            name="sovereign-repository-local-reconciler",
             daemon=True,
         )
         _RECONCILER_THREAD.start()

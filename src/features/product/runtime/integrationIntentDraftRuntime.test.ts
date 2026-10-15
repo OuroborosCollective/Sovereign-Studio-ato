@@ -24,6 +24,13 @@ describe('integrationIntentDraftRuntime', () => {
   // ─────────────────────────────────────────────────────────────
 
   describe('createIntegrationIntentDraft', () => {
+    it('keeps unique directory order within the first twenty files and caps suggestions at three', () => {
+      const paths = ['README.md', 'alpha/a', 'alpha/b', 'beta/a', 'gamma/a', 'delta/a'];
+      const draft = createIntegrationIntentDraft('Ergänze eine Verbesserung', paths.map(path => ({ path, type: 'blob' })));
+      expect(draft?.affectedFiles).toEqual(['alpha/', 'beta/', 'gamma/']);
+      const late = [...Array.from({ length: 20 }, (_, i) => ({ path: `file${i}`, type: 'blob' as const })), { path: 'late/a', type: 'blob' as const }];
+      expect(createIntegrationIntentDraft('Ergänze eine Verbesserung', late)?.affectedFiles).toEqual([]);
+    });
     it('creates draft from normal implementation text', () => {
       const input = 'Der Bot soll jede Eingabe als Integrationsauftrag verstehen';
       const draft = createIntegrationIntentDraft(input, undefined, { now: 1700000000000, idSeed: 'test1' });

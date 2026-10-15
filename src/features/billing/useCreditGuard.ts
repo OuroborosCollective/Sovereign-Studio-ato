@@ -36,7 +36,7 @@ import { calculateCredits } from './costConfig';
 
 const API_BASE: string =
   (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
-  'https://sovereign-backend.arelorian.de';
+  '';
 
 function getCreditsSnapshot(): number {
   return store.getState().billing.credits;

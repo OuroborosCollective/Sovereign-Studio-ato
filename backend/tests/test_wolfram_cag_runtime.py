@@ -27,6 +27,10 @@ ledger = _load(
     ROOT / "backend" / "agent_runtime" / "wolfram_cag_partner_ledger.py",
     "wolfram_cag_partner_ledger_runtime_test",
 )
+binding = _load(
+    ROOT / "backend" / "agent_runtime" / "wolfram_cag_runtime_binding.py",
+    "wolfram_cag_runtime_binding_runtime_test",
+)
 
 agent_runtime_pkg = ModuleType("agent_runtime")
 agent_runtime_pkg.__path__ = []
@@ -45,6 +49,8 @@ _STUBBED_MODULE_KEYS = (
     "agent_runtime.adapters",
     "agent_runtime.adapters.wolfram_agenttools",
     "agent_runtime.wolfram_cag_partner_ledger",
+    "agent_runtime.wolfram_cag_runtime_binding",
+    "agent_runtime.wolfram_source_intelligence",
     "flask",
 )
 _saved_sys_modules = {key: sys.modules.get(key) for key in _STUBBED_MODULE_KEYS}
@@ -53,6 +59,11 @@ sys.modules["agent_runtime"] = agent_runtime_pkg
 sys.modules["agent_runtime.adapters"] = adapters_pkg
 sys.modules["agent_runtime.adapters.wolfram_agenttools"] = adapter
 sys.modules["agent_runtime.wolfram_cag_partner_ledger"] = ledger
+sys.modules["agent_runtime.wolfram_cag_runtime_binding"] = binding
+source_intelligence = _load(
+    ROOT / "backend" / "agent_runtime" / "wolfram_source_intelligence.py",
+    "agent_runtime.wolfram_source_intelligence",
+)
 
 fake_request = SimpleNamespace(headers={}, get_json=lambda silent=True: {})
 flask_module = ModuleType("flask")
@@ -177,6 +188,7 @@ def test_runtime_routes_require_owner_bridge_and_reject_arbitrary_input(monkeypa
     runtime.register_wolfram_cag_runtime(app, get_connection=lambda: _Connection())
     status_route = app.routes[("/api/internal/wolfram-cag/status", ("GET",))]
     canary_route = app.routes[("/api/internal/wolfram-cag/canary", ("POST",))]
+    source_route = app.routes[("/api/internal/wolfram-cag/source-intelligence", ("POST",))]
 
     runtime.request.headers = {}
     denied_body, denied_status = status_route()
@@ -193,6 +205,41 @@ def test_runtime_routes_require_owner_bridge_and_reject_arbitrary_input(monkeypa
     invalid_component_body, invalid_component_status = canary_route()
     assert invalid_component_status == 400
     assert "unknown CAG capability" in invalid_component_body["error"]
+
+    runtime.request.get_json = lambda silent=True: {
+        "operation": "parse",
+        "source": "1+1",
+        "sourceEgressApproved": False,
+    }
+    blocked_body, blocked_status = source_route()
+    assert blocked_status == 403
+    assert blocked_body["blocker"] == "source_egress_approval_required"
+    assert blocked_body["sourceEgressOccurred"] is False
+
+    monkeypatch.setattr(
+        runtime,
+        "run_wolfram_source_intelligence",
+        lambda **kwargs: {
+            "ok": True,
+            "status": "WOLFRAM_SOURCE_INTELLIGENCE_SUCCEEDED_UNVERIFIED",
+            "operation": kwargs["operation"],
+            "sourceSha256": "f" * 64,
+            "sourceExecuted": False,
+            "sourceEgressOccurred": True,
+            "mutationPerformed": False,
+            "runtimeVerified": False,
+            "secretValuesReturned": False,
+        },
+    )
+    runtime.request.get_json = lambda silent=True: {
+        "operation": "parse",
+        "source": "1+1",
+        "sourceEgressApproved": True,
+    }
+    source_body, source_status = source_route()
+    assert source_status == 200
+    assert source_body["sourceExecuted"] is False
+    assert source_body["runtimeVerified"] is False
 
 
 @pytest.mark.parametrize("payload", [["list"], "string", 123, True])

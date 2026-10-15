@@ -13,6 +13,7 @@ from typing import Any, Final
 # One bounded ceiling shared by SDK requests, diagnostics and paid reservations.
 # Reasoning tokens consume the same completion budget as the visible JSON.
 AGENT_OUTPUT_TOKEN_LIMIT: Final[int] = 8_192
+SINGLE_AGENT_REQUEST_LIMIT: Final[int] = 12
 
 _LENGTH_REASONS: Final[frozenset[str]] = frozenset(
     {"length", "max_tokens", "max_output_tokens", "max_completion_tokens"}

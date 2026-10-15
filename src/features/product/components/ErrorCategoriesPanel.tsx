@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useId } from 'react';
 import { AlertCircle, AlertTriangle, Bug, CheckCircle2, Code, Eye, FileWarning, Lock, Shield, Type, Wrench, XCircle, Zap } from 'lucide-react';
 import type { ScanFinding, ScanFindingCategory, ScanFindingRegistry, ScanFindingSeverity } from '../runtime/scanFindingRegistry';
 import { SCAN_FINDING_CATEGORIES, groupScanFindingsByCategory, summarizeScanFindingRegistry } from '../runtime/scanFindingRegistry';
@@ -65,6 +65,7 @@ function categoryClasses(category: ScanFindingCategory): string {
 }
 
 export const ErrorCategoriesPanel: React.FC<ErrorCategoriesPanelProps> = ({ registry, onFindingClick, className = '' }) => {
+  const titleId = useId();
   // ⚡ Bolt: Consolidate multiple O(N) array filter passes into a single loop.
   // This avoids intermediate array allocations, reducing GC pressure and UI re-render latency by ~50%.
   const { activeFindings, grouped, bySeverity } = useMemo(() => {
@@ -85,17 +86,22 @@ export const ErrorCategoriesPanel: React.FC<ErrorCategoriesPanelProps> = ({ regi
   const resolvedCount = registry.findings.length - activeFindings.length;
 
   return (
-    <section aria-label="Fehlerkategorien Übersicht" className={`rounded-2xl border border-slate-700/60 bg-slate-900 ${className}`}>
+    <section
+      aria-labelledby={titleId}
+      className={`rounded-2xl border border-slate-700/60 bg-slate-900 ${className}`}
+    >
       <header className="border-b border-slate-700/70 px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <AlertCircle size={18} className="text-cyan-300" aria-hidden="true" />
             <div>
-              <h3 className="text-sm font-bold text-slate-100">Fehlerkategorien</h3>
+              <h3 id={titleId} className="text-sm font-bold text-slate-100">Fehlerkategorien</h3>
               <p className="text-[11px] text-slate-500">{summary}</p>
             </div>
           </div>
           <span
+            role="status"
+            aria-label={`${activeFindings.length} aktive Findings, ${resolvedCount} gelöst`}
             title={`${activeFindings.length} aktive Findings, ${resolvedCount} gelöst`}
             className="rounded-full border border-slate-600/60 px-2 py-1 text-[10px] text-slate-300"
           >
@@ -104,62 +110,68 @@ export const ErrorCategoriesPanel: React.FC<ErrorCategoriesPanelProps> = ({ regi
         </div>
       </header>
 
-      <div className="grid gap-2 p-4 sm:grid-cols-4">
+      <ul role="list" aria-label="Schweregrad-Statistik" className="grid gap-2 p-4 sm:grid-cols-4">
         {(Object.keys(bySeverity) as ScanFindingSeverity[]).map((severity) => (
-          <div
+          <li
             key={severity}
             title={`${bySeverity[severity]} ${SEVERITY_LABELS[severity]}-Findings`}
             className={`rounded-xl border p-3 ${severityClasses(severity)}`}
           >
             <div className="text-[10px] uppercase tracking-wider opacity-75">{SEVERITY_LABELS[severity]}</div>
             <div className="text-2xl font-bold">{bySeverity[severity]}</div>
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
 
-      <div className="space-y-3 p-4 pt-0">
+      <div className="p-4 pt-0">
         {activeFindings.length === 0 ? (
           <p className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-100">
             Keine aktiven Finding-Blocker im Registry-Snapshot.
           </p>
-        ) : SCAN_FINDING_CATEGORIES.map((category) => {
-          const findings = grouped[category];
-          if (!findings.length) return null;
-          return (
-            <div key={category} className={`rounded-xl border p-3 ${categoryClasses(category)}`}>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-100">
-                  {categoryIcon(category)}
-                  {CATEGORY_LABELS[category]}
-                </div>
-                <span
-                  title={`${findings.length} aktive ${CATEGORY_LABELS[category]}-Findings`}
-                  className="rounded-full border border-slate-600/60 px-2 py-0.5 text-[10px] text-slate-300"
-                >
-                  {findings.length}
-                </span>
-              </div>
-              <div className="space-y-2">
-                {findings.slice(0, 6).map((finding) => (
-                  <button
-                    key={finding.id}
-                    type="button"
-                    title={`Finding anzeigen: ${finding.title}`}
-                    onClick={() => onFindingClick?.(finding)}
-                    className="w-full rounded-lg border border-slate-700/50 bg-slate-950/40 p-2 text-left transition hover:border-cyan-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold text-slate-100">{finding.title}</span>
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] ${severityClasses(finding.severity)}`}>{SEVERITY_LABELS[finding.severity]}</span>
+        ) : (
+          <ul role="list" aria-label="Aktive Fehlerkategorien" className="space-y-3">
+            {SCAN_FINDING_CATEGORIES.map((category) => {
+              const findings = grouped[category];
+              if (!findings.length) return null;
+              return (
+                <li key={category} className={`rounded-xl border p-3 ${categoryClasses(category)}`}>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-100">
+                      {categoryIcon(category)}
+                      {CATEGORY_LABELS[category]}
                     </div>
-                    <p title={finding.filePath} className="mt-1 text-[11px] text-slate-400">{finding.filePath}</p>
-                    <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">{finding.fixTips || finding.description}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
-        })}
+                    <span
+                      title={`${findings.length} aktive ${CATEGORY_LABELS[category]}-Findings`}
+                      className="rounded-full border border-slate-600/60 px-2 py-0.5 text-[10px] text-slate-300"
+                    >
+                      {findings.length}
+                    </span>
+                  </div>
+                  <ul role="list" aria-label={`${CATEGORY_LABELS[category]}-Findings`} className="space-y-2">
+                    {findings.slice(0, 6).map((finding) => (
+                      <li key={finding.id}>
+                        <button
+                          type="button"
+                          aria-label={`Finding anzeigen: ${finding.title}`}
+                          title={`Finding anzeigen: ${finding.title}`}
+                          onClick={() => onFindingClick?.(finding)}
+                          className="w-full rounded-lg border border-slate-700/50 bg-slate-950/40 p-2 text-left transition hover:border-cyan-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-slate-100">{finding.title}</span>
+                            <span className={`rounded-full border px-2 py-0.5 text-[10px] ${severityClasses(finding.severity)}`}>{SEVERITY_LABELS[finding.severity]}</span>
+                          </div>
+                          <p title={finding.filePath} className="mt-1 text-[11px] text-slate-400">{finding.filePath}</p>
+                          <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">{finding.fixTips || finding.description}</p>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
 
       <footer className="flex items-center justify-center gap-2 border-t border-slate-700/70 bg-slate-950/40 px-4 py-2 text-[10px] text-slate-500">

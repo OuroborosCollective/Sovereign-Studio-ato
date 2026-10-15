@@ -4,7 +4,7 @@ import { fetchWithStepUp } from '../security/securityApi';
 
 const API_BASE: string =
   (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
-  'https://sovereign-backend.arelorian.de';
+  '';
 
 export type SubscriptionTier = 'free' | 'pro' | 'enterprise' | 'custom';
 

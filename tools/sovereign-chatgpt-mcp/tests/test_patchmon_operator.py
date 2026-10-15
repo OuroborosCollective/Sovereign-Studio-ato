@@ -87,7 +87,7 @@ def test_free_text_redaction_removes_secret_shaped_values() -> None:
 
 
 def test_runtime_inventory_does_not_return_container_environment_or_mount_sources(monkeypatch) -> None:
-    internal_network = "patchmon-sovereign_patchmon-internal"
+    internal_network = "patchmon-sovereign_patchmon-internal-v2"
     edge_network = "patchmon-sovereign_patchmon-edge"
 
     def runner(argv, **kwargs):
@@ -227,7 +227,7 @@ def test_runtime_inventory_does_not_return_container_environment_or_mount_source
 
 
 def test_runtime_inventory_blocks_network_mode_and_attachment_drift(monkeypatch) -> None:
-    internal_network = "patchmon-sovereign_patchmon-internal"
+    internal_network = "patchmon-sovereign_patchmon-internal-v2"
     edge_network = "patchmon-sovereign_patchmon-edge"
     services = {
         "patchmon-sovereign-server-1": "server",

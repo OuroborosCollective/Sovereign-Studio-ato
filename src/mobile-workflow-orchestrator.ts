@@ -49,6 +49,18 @@ function trimUi(value: string): string {
 }
 
 function sanitizeDecision(decision: MobileWorkflowOrchestratorDecision): MobileWorkflowOrchestratorDecision {
+  let lines: string[] = SAFE_FALLBACK.lines;
+
+  if (Array.isArray(decision.lines)) {
+    // ⚡ Bolt: Consolidate chained map, filter, and slice operations into a single bounded loop
+    lines = [];
+    for (const raw of decision.lines) {
+      if (lines.length >= 8) break;
+      const line = trimUi(String(raw));
+      if (line) lines.push(line);
+    }
+  }
+
   return {
     lamp: LAMPS.includes(decision.lamp) ? decision.lamp : SAFE_FALLBACK.lamp,
     mode: MODES.includes(decision.mode) ? decision.mode : SAFE_FALLBACK.mode,
@@ -56,9 +68,7 @@ function sanitizeDecision(decision: MobileWorkflowOrchestratorDecision): MobileW
     summary: trimUi(decision.summary) || SAFE_FALLBACK.summary,
     targetNav: TARGETS.includes(decision.targetNav) ? decision.targetNav : null,
     autoOpenTarget: Boolean(decision.autoOpenTarget),
-    lines: Array.isArray(decision.lines)
-      ? decision.lines.map((line) => trimUi(String(line))).filter(Boolean).slice(0, 8)
-      : SAFE_FALLBACK.lines,
+    lines,
   };
 }
 

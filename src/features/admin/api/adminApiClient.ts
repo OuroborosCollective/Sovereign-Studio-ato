@@ -19,7 +19,7 @@ export const ADMIN_API_BASE: string = configuredAdminApiBase
   ? configuredAdminApiBase.replace(/\/$/, '')
   : backendServedAdmin
     ? window.location.origin
-    : 'https://sovereign-backend.arelorian.de';
+    : '';
 
 let adminKeyInMemory = '';
 
@@ -531,6 +531,45 @@ export type LlmRouteUpdate = Partial<Pick<
   'disabled' | 'priority' | 'billingCategory' | 'markupMultiplier' | 'quotaScope'
 >>;
 
+export type SelfHealingMode = 'OBSERVE_ONLY' | 'ASK_FIRST' | 'AUTO_SAFE' | 'AUTO_BOUNDED_CODE_REPAIR';
+export type SelfHealingFailureFamily =
+  | 'EXECUTOR_MISMATCH'
+  | 'ENDPOINT_ROUTE_MISMATCH'
+  | 'HANDOFF_TIMEOUT_WITH_READBACK'
+  | 'JOB_STATE_TRANSITION_VIOLATION'
+  | 'BILLING_ROUTE_MISMATCH';
+
+export interface SelfHealingAuthority {
+  configured: boolean;
+  active: boolean;
+  mode: SelfHealingMode;
+  allowedFailureFamilies: SelfHealingFailureFamily[];
+  maxAutoRepairsPerHour: number;
+  maxAutoRepairsPerDay: number;
+  maxChangedFiles: number;
+  expiresAt: string | null;
+  paused: boolean;
+  grantSha256: string | null;
+  lastUsedAt: string | null;
+}
+
+export interface SelfHealingIncident {
+  incidentId: string;
+  sourceJobId: string;
+  failureFamily: SelfHealingFailureFamily;
+  observationSha256: string;
+  cagVerified: boolean;
+  cagRequestSha256: string | null;
+  cagResponseSha256: string | null;
+  cagResultSha256: string | null;
+  repairContractSha256: string | null;
+  repairJobId: string | null;
+  status: string;
+  blocker: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AuditEntry {
   id: string;
   adminId: string;
@@ -686,9 +725,8 @@ async function req<T>(
 
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
-  let res: Response;
   try {
-    res = await fetch(`${ADMIN_API_BASE}${path}`, {
+    const res = await fetch(`${ADMIN_API_BASE}${path}`, {
       ...options,
       signal: controller.signal,
       credentials: 'omit',
@@ -699,36 +737,41 @@ async function req<T>(
         ...(options.headers ?? {}),
       },
     });
+
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) clearAdminKey();
+      const body = await res.json().catch(error => {
+        if (controller.signal.aborted) throw error;
+        return {};
+      }) as {
+        error?: string | { message?: string; code?: string };
+        message?: string;
+        blocker?: unknown;
+      };
+      const message = typeof body.error === 'string'
+        ? body.error
+        : body.error?.message ?? body.message;
+      const blocker = typeof body.blocker === 'string'
+        && /^[a-z][a-z0-9_:-]{0,159}$/i.test(body.blocker)
+        ? body.blocker
+        : null;
+      // Preserve the backend's bounded cause instead of reducing provider
+      // failures to an uncorrelated "Unknown error".
+      throw new Error(blocker
+        ? `${blocker} · HTTP ${res.status}${message ? ` · ${message}` : ''}`
+        : message ?? `HTTP ${res.status}`);
+    }
+    // fetch resolves at the headers. Keep the same deadline through body
+    // consumption so every admin hook can leave its loading state.
+    return await res.json() as T;
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (controller.signal.aborted) {
       throw new Error(`Backend-Zeitüberschreitung nach ${Math.ceil(timeoutMs / 1000)} Sekunden.`);
     }
     throw error;
   } finally {
     window.clearTimeout(timeout);
   }
-
-  if (!res.ok) {
-    if (res.status === 401 || res.status === 403) clearAdminKey();
-    const body = await res.json().catch(() => ({})) as {
-      error?: string | { message?: string; code?: string };
-      message?: string;
-      blocker?: unknown;
-    };
-    const message = typeof body.error === 'string'
-      ? body.error
-      : body.error?.message ?? body.message;
-    const blocker = typeof body.blocker === 'string'
-      && /^[a-z][a-z0-9_:-]{0,159}$/i.test(body.blocker)
-      ? body.blocker
-      : null;
-    // Preserve the backend's bounded cause instead of reducing provider
-    // failures to an uncorrelated "Unknown error".
-    throw new Error(blocker
-      ? `${blocker} · HTTP ${res.status}${message ? ` · ${message}` : ''}`
-      : message ?? `HTTP ${res.status}`);
-  }
-  return res.json() as Promise<T>;
 }
 
 async function resolveProtectedOwnerInput(
@@ -866,6 +909,51 @@ async function autoConfigureFreellmProviderKey(
 // ── API client ────────────────────────────────────────────────────────────────
 
 export const adminApiClient = {
+  getSelfHealingAuthority() {
+    return req<{ ok: true; authority: SelfHealingAuthority; consentNotice: string; secretValuesReturned: false }>(
+      '/api/admin/self-healing/authority',
+    );
+  },
+
+  updateSelfHealingAuthority(data: {
+    mode: SelfHealingMode;
+    allowedFailureFamilies: SelfHealingFailureFamily[];
+    maxAutoRepairsPerHour: number;
+    maxAutoRepairsPerDay: number;
+    maxChangedFiles: number;
+    expiresInSeconds: number;
+    paused?: boolean;
+  }) {
+    return req<{ ok: true; authority: SelfHealingAuthority; secretValuesReturned: false }>(
+      '/api/admin/self-healing/authority',
+      { method: 'PUT', body: JSON.stringify(data) },
+    );
+  },
+
+  revokeSelfHealingAuthority() {
+    return req<{ ok: true; authority: SelfHealingAuthority; revoked: true; secretValuesReturned: false }>(
+      '/api/admin/self-healing/authority',
+      { method: 'DELETE' },
+    );
+  },
+
+  getSelfHealingIncidents() {
+    return req<{ ok: true; incidents: SelfHealingIncident[]; secretValuesReturned: false }>(
+      '/api/admin/self-healing/incidents',
+    );
+  },
+
+  approveSelfHealingIncident(incidentId: string, expiresInSeconds = 900) {
+    return req<{
+      ok: true;
+      approval: { approvalId: string; approvalSha256: string; expiresAt: string; reused: boolean };
+      oneUse: true;
+      secretValuesReturned: false;
+    }>(`/api/admin/self-healing/incidents/${encodeURIComponent(incidentId)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ expiresInSeconds }),
+    });
+  },
 
   ping() {
     return req<AdminUser & { ok: true; authMode: string }>('/api/admin/ping');

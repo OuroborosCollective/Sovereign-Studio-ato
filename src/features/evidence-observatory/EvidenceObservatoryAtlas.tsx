@@ -121,7 +121,27 @@ export function EvidenceObservatoryAtlas() {
 
   const selected = useMemo(() => cases.find((item) => item.caseId === selectedId) || cases[0], [cases, selectedId]);
   const pinnedCases = useMemo(() => cases.filter((item) => pinned.includes(item.caseId)), [cases, pinned]);
-  const projects = useMemo(() => [...new Set(cases.map((item) => item.projectId).filter(Boolean) as string[])].sort(), [cases]);
+  // ⚡ Bolt: Single-pass Set accumulator replaces multi-pass .map().filter() array allocations
+  const projects = useMemo(() => {
+    const set = new Set<string>();
+    for (const item of cases) {
+      if (item.projectId) set.add(item.projectId);
+    }
+    return [...set].sort();
+  }, [cases]);
+
+  // ⚡ Bolt: Single-pass O(N) loop replaces 3 separate sequential .reduce() passes over cases array during rendering
+  const stats = useMemo(() => {
+    let sourceCount = 0;
+    let originCount = 0;
+    let neededCount = 0;
+    for (const item of cases) {
+      sourceCount += item.sources?.length || 0;
+      originCount += independentOriginCount(item);
+      neededCount += item.evidenceNeeded?.length || 0;
+    }
+    return { sourceCount, originCount, neededCount };
+  }, [cases]);
 
   const refresh = async () => {
     setLoading(true);
@@ -230,9 +250,9 @@ export function EvidenceObservatoryAtlas() {
         <>
           <section className="eo-stat-grid">
             <div><strong>{cases.length}</strong><span>sichtbare Cases</span></div>
-            <div><strong>{cases.reduce((total, item) => total + item.sources.length, 0)}</strong><span>Quelleneinträge</span></div>
-            <div><strong>{cases.reduce((total, item) => total + independentOriginCount(item), 0)}</strong><span>Origin-Familien</span></div>
-            <div><strong>{cases.reduce((total, item) => total + (item.evidenceNeeded?.length || 0), 0)}</strong><span>offene Evidence-Bedarfe</span></div>
+            <div><strong>{stats.sourceCount}</strong><span>Quelleneinträge</span></div>
+            <div><strong>{stats.originCount}</strong><span>Origin-Familien</span></div>
+            <div><strong>{stats.neededCount}</strong><span>offene Evidence-Bedarfe</span></div>
           </section>
 
           <DensityPanel cases={cases} />

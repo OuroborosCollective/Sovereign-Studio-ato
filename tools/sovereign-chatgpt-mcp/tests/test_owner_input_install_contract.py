@@ -137,6 +137,7 @@ def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> Non
     assert deploy.count('--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"') == 1
     assert compose.count("/opt/secure:/opt/secure:ro") == 1
     assert compose.count("/opt/sovereign-owner-managed:/opt/sovereign-owner-managed:rw") == 1
+    assert "WOLFRAM_CAG_API_KEY_FILE: /opt/sovereign-owner-managed/wolfram_cag_api_key.txt" in compose
     assert 'WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"' in deploy
     assert 'WORKSPACE_CONTAINER_ROOT="/var/lib/sovereign-agent/workspaces"' in deploy
     assert 'chown "$WORKSPACE_UID:$WORKSPACE_GID" "$WORKSPACE_HOST_ROOT"' in deploy
@@ -252,10 +253,18 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert "owner_input.create_request(" in server
     assert server.count("def wolfram_cag_status(") == 1
     assert server.count("def wolfram_cag_canary(") == 1
+    assert server.count("def wolfram_cag_runtime_evidence_bind(") == 1
+    assert server.count("def wolfram_source_intelligence(") == 1
     assert "provider_runtime.wolfram_cag_status()" in server
     assert "provider_runtime.wolfram_cag_canary(components)" in server
+    assert "provider_runtime.wolfram_source_intelligence(" in server
+    assert "provider_runtime.wolfram_cag_bind_runtime_evidence(" in server
     assert "def wolfram_cag_status(" in client
     assert "def wolfram_cag_canary(" in client
+    assert "def wolfram_source_intelligence(" in client
+    assert "source_egress_approved" in server
+    assert "source_egress_approved" in client
+    assert "def wolfram_cag_bind_runtime_evidence(" in client
     assert server.count("def openrouter_provider_status(") == 1
     assert server.count("def openrouter_provider_activate(") == 1
     assert server.count("def openrouter_free_status(") == 1
@@ -366,4 +375,4 @@ def test_mcp_github_app_installation_secret_is_file_mounted_and_pat_free() -> No
     assert 'GITHUB_TOKEN' not in compose
     assert '/opt/secure/sovereign-github-app/private-key.pem:/run/secrets/sovereign-github-app-private-key.pem:ro' in compose
     assert 'github_installation_auth.py' in dockerfile
-    assert 'PyJWT[crypto]==2.13.0' in requirements
+    assert 'PyJWT[crypto]==2.15.0' in requirements

@@ -90,6 +90,17 @@ test('only required workflows and one bounded owner recovery lane receive direct
   assert.match(boundaryWorkflow, /Upload bounded drift evidence/);
 });
 
+test('public site validation remains required without a direct PR runner', () => {
+  const review = read('.github/workflows/sovereign-public-site-check.yml');
+  const release = read('.github/workflows/release-verification.yml');
+  assert.doesNotMatch(review, /^\s{2}pull_request:\s*$/m);
+  assert.match(review, /workflow_dispatch:/);
+  assert.ok(release.includes("python3 -m unittest discover -s tests -p 'test_public_site_contract.py' -v"));
+  assert.ok(release.includes('python3 scripts/verify-public-site.py --root public-site --mode preview'));
+  const step = release.split('      - name: Public Site Preview Contracts\n')[1].split('      - name: ')[0];
+  assert.doesNotMatch(step, /continue-on-error|\n\s+if:/);
+});
+
 test('Agent Runtime Tests is the only direct backend PR job', () => {
   const requiredWorkflow = read('.github/workflows/sovereign-agent-backend.yml');
   const supplementalWorkflow = read('.github/workflows/sovereign-agent-supplemental.yml');

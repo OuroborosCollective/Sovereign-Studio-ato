@@ -10,6 +10,21 @@ Extend the existing Sovereign ChatGPT MCP container with the final operational, 
 
 ## Duplicate handling
 
+## Evidence Flywheel integration
+
+All capabilities in this skill use the same repository-wide evidence flywheel:
+
+```
+exact revision → baseline → bounded execution → causal failure analysis
+→ minimal fix → regression/benchmark → independent readback → Memory receipt
+```
+
+The flywheel is procedural only. It does not replace the existing MCP registry, approval policy, receipts, architecture sensors, PatchMon or target-system readbacks.
+
+For evaluation work, never lower thresholds, skip flaky cases, move reference outputs just to make a run pass, or treat self-grading as independent verification. For mutation-capable work, preserve Action Preview → authority/scope → approval → effect → Action Receipt → independent readback, including a fresh revocation check for asynchronous effects.
+
+
+
 Number 29, `MCP Tool Contract Registry`, already exists as `mcp_tool_contract_registry` in the operational-governance skill. It is reused rather than duplicated. The remaining numbered capabilities add 27 distinct tools plus one assurance inventory tool.
 
 ## Installed capabilities

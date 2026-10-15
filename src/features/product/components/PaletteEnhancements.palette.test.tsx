@@ -22,8 +22,12 @@ import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { AgentResultCard } from './AgentResultCard';
+import { AgentWorkTimeline } from './AgentWorkTimeline';
 import { TestRunnerResultCard } from './TestRunnerResultCard';
 import { Ampel } from './Ampel';
+import { WorkerBlockerCard } from './WorkerBlockerCard';
+import { MissionValidatorCard } from './MissionValidatorCard';
+import { PatternKnowledgeCard } from './PatternKnowledgeCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -127,27 +131,87 @@ describe('Palette Accessibility Enhancements', () => {
       expect(closeButton).toHaveAttribute('title', 'Patch Diff schließen');
     });
 
-    it('Runtime Logs close button keeps matching aria-label and title', () => {
-      render(<RuntimeEvidenceLogSheet entries={[]} onClose={vi.fn()} />);
+    it('Runtime Logs close button keeps matching aria-label and title, links section heading, supports Escape key dismiss, and renders lineage list', () => {
+      const onClose = vi.fn();
+      const mockEntries = [
+        {
+          id: 'log-1',
+          at: Date.now(),
+          source: 'action_stream' as const,
+          scope: 'ui',
+          level: 'info' as const,
+          message: 'Task initialized',
+        },
+      ];
+
+      const { rerender } = render(<RuntimeEvidenceLogSheet entries={mockEntries} onClose={onClose} />);
+
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toHaveAttribute('aria-labelledby', 'runtime-evidence-logs-title');
+
+      const heading = screen.getByRole('heading', { name: 'Runtime Evidence Logs', level: 3 });
+      expect(heading).toHaveAttribute('id', 'runtime-evidence-logs-title');
 
       const closeButton = screen.getByRole('button', { name: 'Runtime Logs schließen' });
       expect(closeButton).toHaveAttribute('aria-label', 'Runtime Logs schließen');
       expect(closeButton).toHaveAttribute('title', 'Runtime Logs schließen');
+      expect(closeButton).toHaveClass('focus-visible:ring-2');
+
+      const logItem = screen.getByTitle('Runtime Event (action_stream / ui): Task initialized');
+      expect(logItem).toBeInTheDocument();
+
+      const lineageList = screen.getByRole('list', { name: 'Evidence Lineage Chains' });
+      expect(lineageList).toBeInTheDocument();
+
+      // Press Escape key
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+
+      // Empty state
+      rerender(<RuntimeEvidenceLogSheet entries={[]} onClose={onClose} />);
+      expect(screen.getByText('Noch keine Runtime-Ereignisse.')).toBeInTheDocument();
     });
 
-    it('FileContentPreviewSheet close button has matching aria-label and title', () => {
-      render(
+    it('FileContentPreviewSheet close button has matching aria-label and title, scrollable pre, and send to chat button attributes', () => {
+      const onSendToChat = vi.fn();
+      const { container, rerender } = render(
         <FileContentPreviewSheet
           filePath="src/main.tsx"
           result={{ status: 'loaded', content: 'console.log("hello");', sizeBytes: 22, sha: '123', language: 'typescript' }}
           loading={false}
           onClose={vi.fn()}
+          onSendToChat={onSendToChat}
         />
       );
 
       const closeButton = screen.getByRole('button', { name: 'Vorschau schließen' });
       expect(closeButton).toHaveAttribute('aria-label', 'Vorschau schließen');
       expect(closeButton).toHaveAttribute('title', 'Vorschau schließen');
+
+      const preBlock = screen.getByLabelText('Dateiinhalt');
+      expect(preBlock).toHaveAttribute('tabIndex', '0');
+      expect(preBlock).toHaveClass('focus-visible:ring-2');
+
+      const sendToChatBtn = screen.getByRole('button', { name: 'Dateiinhalt in Chat übernehmen' });
+      expect(sendToChatBtn).toHaveAttribute('title', 'Dateiinhalt in Chat übernehmen');
+      expect(sendToChatBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(sendToChatBtn);
+      expect(onSendToChat).toHaveBeenCalledTimes(1);
+
+      // Error state
+      rerender(
+        <FileContentPreviewSheet
+          filePath="src/main.tsx"
+          result={{ status: 'error', error: 'File read error', content: '', sizeBytes: 0, sha: '', language: '' }}
+          loading={false}
+          onClose={vi.fn()}
+        />
+      );
+
+      const warningIcon = container.querySelector('[aria-hidden="true"]');
+      expect(warningIcon).toBeInTheDocument();
+      expect(warningIcon).toHaveTextContent('⚠️');
     });
   });
 
@@ -195,14 +259,21 @@ describe('Palette Accessibility Enhancements', () => {
       expect(missionBtn).toHaveClass('focus-visible:ring-2');
     });
 
-    it('WorkflowRepairPanel Use Repair Mission button is stateful', () => {
+    it('WorkflowRepairPanel has region landmark, severity badge tooltip/aria-label, keyboard-navigable pre block, focus ring button, and semantic list', () => {
       const mockPlan = {
         summary: 'Repair summary',
         severity: 'high',
         reason: 'Failed build',
         mission: 'Repair mission content',
         blocked: false,
-        actions: [],
+        actions: [
+          {
+            id: 'act-1',
+            title: 'Fix TypeScript Build',
+            rationale: 'Missing prop type',
+            suggestedFiles: ['src/App.tsx'],
+          },
+        ],
       };
       const onUseMission = vi.fn();
 
@@ -210,14 +281,32 @@ describe('Palette Accessibility Enhancements', () => {
         <WorkflowRepairPanel plan={mockPlan} onUseMission={onUseMission} />
       );
 
+      const section = screen.getByRole('region', { name: 'Workflow Repair Planner' });
+      expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', screen.getByRole('heading', { name: 'Workflow Repair Planner' }).id);
+
+      const severityBadge = screen.getByTitle('Severity: high');
+      expect(severityBadge).toBeInTheDocument();
+      expect(severityBadge).toHaveAttribute('aria-label', 'Severity: high');
+
+      const preBlock = screen.getByLabelText('Workflow repair planner mission text');
+      expect(preBlock).toHaveAttribute('tabIndex', '0');
+      expect(preBlock).toHaveClass('focus-visible:ring-2');
+
       let repairBtn = screen.getByRole('button', { name: 'Use Repair Mission in Builder' });
-      expect(repairBtn).toHaveAttribute('title', 'Reparaturauftrag in den Builder übernehmen');
+      expect(repairBtn).toHaveAttribute('title', 'Use repair mission in Builder');
+      expect(repairBtn).not.toHaveAttribute('aria-label');
+      expect(repairBtn).toHaveClass('focus-visible:ring-2');
+
+      const actionsList = screen.getByRole('list', { name: 'Recommended repair actions' });
+      expect(actionsList).toBeInTheDocument();
+      expect(screen.getByText('Fix TypeScript Build')).toBeInTheDocument();
 
       const blockedPlan = { ...mockPlan, blocked: true };
       rerender(<WorkflowRepairPanel plan={blockedPlan} onUseMission={onUseMission} />);
 
       repairBtn = screen.getByRole('button', { name: 'Use Repair Mission in Builder' });
-      expect(repairBtn).toHaveAttribute('title', 'Reparaturauftrag blockiert');
+      expect(repairBtn).toHaveAttribute('title', 'Repair mission blocked');
     });
 
     it('WorkbenchSidePanel buttons have matching attributes', () => {
@@ -404,7 +493,7 @@ describe('Palette Accessibility Enhancements', () => {
     it('An Agent Senden button has correct state-dependent title and no redundant aria-label', () => {
       const options = [{ id: 'opt1', label: 'Option 1' }, { id: 'opt2', label: 'Option 2' }];
       const handleAnswer = vi.fn();
-      const { rerender } = render(
+      const { container, rerender } = render(
         <AgentQuestionCard
           question="Test Question"
           options={options}
@@ -412,12 +501,18 @@ describe('Palette Accessibility Enhancements', () => {
         />
       );
 
+      const icon = container.querySelector('[aria-hidden="true"]');
+      expect(icon).toBeInTheDocument();
+      expect(icon).toHaveTextContent('?');
+
       const sendButton = screen.getByRole('button', { name: /An Agent senden/i });
       expect(sendButton).toHaveAttribute('title', 'Bitte wählen Sie zuerst eine Option aus');
       expect(sendButton).not.toHaveAttribute('aria-label');
+      expect(sendButton).toHaveClass('focus-visible:ring-2');
 
       const opt1 = screen.getByRole('radio', { name: 'Option 1' });
       expect(opt1).toHaveAttribute('title', 'Option 1');
+      expect(opt1).toHaveClass('focus-visible:ring-2');
       fireEvent.click(opt1);
 
       expect(sendButton).toHaveAttribute('title', 'Ausgewählte Antwort an den Agenten senden');
@@ -865,7 +960,7 @@ describe('Palette Accessibility Enhancements', () => {
   });
 
   describe('ErrorCategoriesPanel Accessibility and Hover Discoverability Enhancements', () => {
-    it('renders with section aria-label and native hover tooltips on badges, cards, and buttons', () => {
+    it('renders with section landmark linked to header, status role on count badge, semantic lists, and tooltips on buttons', () => {
       const mockRegistry = {
         findings: [
           {
@@ -900,11 +995,25 @@ describe('Palette Accessibility Enhancements', () => {
 
       render(<ErrorCategoriesPanel registry={mockRegistry} onFindingClick={onFindingClick} />);
 
-      const section = screen.getByRole('region', { name: 'Fehlerkategorien Übersicht' });
+      const section = screen.getByRole('region', { name: 'Fehlerkategorien' });
       expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', screen.getByRole('heading', { name: 'Fehlerkategorien', level: 3 }).id);
 
-      const statusBadge = screen.getByText('1 aktiv · 1 gelöst');
+      const heading = screen.getByRole('heading', { name: 'Fehlerkategorien', level: 3 });
+      expect(heading.id).toBeTruthy();
+
+      const statusBadge = screen.getByRole('status', { name: '1 aktive Findings, 1 gelöst' });
+      expect(statusBadge).toBeInTheDocument();
       expect(statusBadge).toHaveAttribute('title', '1 aktive Findings, 1 gelöst');
+
+      const severityList = screen.getByRole('list', { name: 'Schweregrad-Statistik' });
+      expect(severityList).toBeInTheDocument();
+
+      const activeCategoriesList = screen.getByRole('list', { name: 'Aktive Fehlerkategorien' });
+      expect(activeCategoriesList).toBeInTheDocument();
+
+      const typeErrorFindingsList = screen.getByRole('list', { name: 'TypeScript-Findings' });
+      expect(typeErrorFindingsList).toBeInTheDocument();
 
       const criticalCard = screen.getByTitle('1 kritisch-Findings');
       expect(criticalCard).toBeInTheDocument();
@@ -912,7 +1021,8 @@ describe('Palette Accessibility Enhancements', () => {
       const findingCategoryBadge = screen.getByTitle('1 aktive TypeScript-Findings');
       expect(findingCategoryBadge).toBeInTheDocument();
 
-      const findingBtn = screen.getByRole('button', { name: /Unresolved TypeScript Type Error/i });
+      const findingBtn = screen.getByRole('button', { name: 'Finding anzeigen: Unresolved TypeScript Type Error' });
+      expect(findingBtn).toHaveAttribute('aria-label', 'Finding anzeigen: Unresolved TypeScript Type Error');
       expect(findingBtn).toHaveAttribute('title', 'Finding anzeigen: Unresolved TypeScript Type Error');
       expect(findingBtn).toHaveClass('focus-visible:ring-2');
 
@@ -1050,7 +1160,7 @@ describe('Palette Accessibility Enhancements', () => {
   });
 
   describe('AgentResultCard Accessibility and Micro-UX Enhancements', () => {
-    it('renders with title tooltips on metadata and styled action buttons with descriptive tooltips', () => {
+    it('renders with title tooltips on metadata, semantic list, and styled action buttons with descriptive tooltips', () => {
       const mockSnapshot = {
         id: 'work-123',
         state: 'draft_pr_ready' as const,
@@ -1079,6 +1189,9 @@ describe('Palette Accessibility Enhancements', () => {
       const region = screen.getByRole('region', { name: 'Agent Ergebnis' });
       expect(region).toBeInTheDocument();
 
+      const detailsList = screen.getByRole('list', { name: 'Ergebnis-Details' });
+      expect(detailsList).toBeInTheDocument();
+
       expect(screen.getByTitle('Pull Request #42')).toBeInTheDocument();
       expect(screen.getByTitle('owner/repo')).toBeInTheDocument();
       expect(screen.getByTitle('feature/amazing-ux')).toBeInTheDocument();
@@ -1088,14 +1201,17 @@ describe('Palette Accessibility Enhancements', () => {
       const openBtn = screen.getByRole('button', { name: 'Öffnen' });
       expect(openBtn).toHaveAttribute('title', 'Draft PR auf GitHub öffnen');
       expect(openBtn).toHaveClass('focus-visible:ring-2');
+      expect(openBtn).toHaveClass('transition-opacity');
 
       const diffBtn = screen.getByRole('button', { name: 'Diff ansehen' });
       expect(diffBtn).toHaveAttribute('title', 'Diff-Vorschau der Änderungen anzeigen');
       expect(diffBtn).toHaveClass('focus-visible:ring-2');
+      expect(diffBtn).toHaveClass('transition-opacity');
 
       const watchBtn = screen.getByRole('button', { name: 'Checks beobachten' });
       expect(watchBtn).toHaveAttribute('title', 'GitHub Commit Checks live beobachten');
       expect(watchBtn).toHaveClass('focus-visible:ring-2');
+      expect(watchBtn).toHaveClass('transition-opacity');
 
       fireEvent.click(openBtn);
       expect(onOpen).toHaveBeenCalledTimes(1);
@@ -1182,6 +1298,246 @@ describe('Palette Accessibility Enhancements', () => {
       const hiddenElements = container.querySelectorAll('[aria-hidden="true"]');
       // 3 status light dots + 1 non-compact status text label = 4 hidden elements
       expect(hiddenElements.length).toBe(4);
+    });
+  });
+
+  describe('WorkerBlockerCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders alert container with aria-hidden decorative icon, focus-visible ring styles, and native title tooltips', () => {
+      const mockBlocker = {
+        message: 'LLM-Runtime nicht erreichbar',
+        diagnostic: {
+          route: '/api/chat',
+          model: 'gemini-2.0-flash',
+          messageCount: 1,
+          scope: 'authentication' as const,
+          status: 401,
+          canClientFix: true,
+          nextAction: 'retry',
+        },
+        createdAt: Date.now(),
+      };
+
+      const onLogin = vi.fn();
+      const onRetry = vi.fn();
+      const onExplain = vi.fn();
+      const onAgentInstead = vi.fn();
+
+      const { container } = render(
+        <WorkerBlockerCard
+          blocker={mockBlocker}
+          onLogin={onLogin}
+          onRetry={onRetry}
+          onExplain={onExplain}
+          onAgentInstead={onAgentInstead}
+          userMessage="Fix this issue in code"
+          allowAgentAction={true}
+        />
+      );
+
+      const alert = screen.getByRole('alert');
+      expect(alert).toBeInTheDocument();
+
+      const warningIcon = container.querySelector('[aria-hidden="true"]');
+      expect(warningIcon).toBeInTheDocument();
+      expect(warningIcon).toHaveTextContent('⚠️');
+
+      const loginBtn = screen.getByRole('button', { name: 'Bei Sovereign anmelden' });
+      expect(loginBtn).toHaveAttribute('title', 'Bei Sovereign anmelden');
+      expect(loginBtn).toHaveClass('focus-visible:ring-2');
+
+      const retryBtn = screen.getByRole('button', { name: 'Worker-Anfrage erneut ausführen' });
+      expect(retryBtn).toHaveAttribute('title', 'Worker-Anfrage erneut ausführen');
+      expect(retryBtn).toHaveClass('focus-visible:ring-2');
+
+      const explainBtn = screen.getByRole('button', { name: 'Diagnose und Fehlerursache erklären' });
+      expect(explainBtn).toHaveAttribute('title', 'Diagnose und Fehlerursache erklären');
+      expect(explainBtn).toHaveClass('focus-visible:ring-2');
+
+      const agentBtn = screen.getByRole('button', { name: 'Sovereign Agent für Code-Auftrag nutzen' });
+      expect(agentBtn).toHaveAttribute('title', 'Sovereign Agent für diesen Code-Auftrag nutzen');
+      expect(agentBtn).toHaveClass('focus-visible:ring-2');
+    });
+  });
+
+  describe('MissionValidatorCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders card section linked to title, with score badge tooltips, structured list, and focus-visible buttons', () => {
+      const mockResult = {
+        score: 75,
+        status: 'ready' as const,
+        questions: ['Gibt es spezielle Randfälle?', 'Welches Framework wird bevorzugt?'],
+        resolvedTransport: 'gemini-live',
+        modelUsed: 'gemini-2.0-flash',
+      };
+
+      const onContinue = vi.fn();
+      const onEdit = vi.fn();
+
+      render(
+        <MissionValidatorCard
+          result={mockResult}
+          onContinue={onContinue}
+          onEdit={onEdit}
+        />
+      );
+
+      const section = screen.getByTestId('mission-validator-card');
+      expect(section).toHaveAttribute('aria-labelledby', 'mission-validator-title');
+
+      const heading = screen.getByRole('heading', { name: 'Pre-flight Mission Validator', level: 3 });
+      expect(heading).toHaveAttribute('id', 'mission-validator-title');
+
+      const scoreBadge = screen.getByTitle('Qualitätsscore: 75 von 100');
+      expect(scoreBadge).toBeInTheDocument();
+      expect(scoreBadge).toHaveAttribute('aria-label', 'Qualitätsscore: 75 von 100');
+
+      const list = screen.getByRole('list', { name: 'Empfohlene Ergänzungen zur Mission' });
+      expect(list).toBeInTheDocument();
+      expect(screen.getAllByRole('listitem')).toHaveLength(2);
+
+      const editBtn = screen.getByRole('button', { name: 'Mission ergänzen' });
+      expect(editBtn).toHaveAttribute('title', 'Mission im Eingabefeld bearbeiten und präzisieren');
+      expect(editBtn).toHaveClass('focus-visible:ring-2');
+
+      const continueBtn = screen.getByRole('button', { name: 'Trotzdem starten' });
+      expect(continueBtn).toHaveAttribute('title', 'Mission ohne Ergänzung direkt ausführen');
+      expect(continueBtn).toHaveClass('focus-visible:ring-2');
+
+      const sourceElement = screen.getByTitle('Quelle der Missionsevaluierung: gemini-live · gemini-2.0-flash');
+      expect(sourceElement).toBeInTheDocument();
+
+      fireEvent.click(editBtn);
+      expect(onEdit).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(continueBtn);
+      expect(onContinue).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('AgentWorkTimeline Accessibility and Micro-UX Enhancements', () => {
+    it('renders semantic event list, native tooltips, and focus-visible action controls', () => {
+      const snapshot = {
+        id: 'work-timeline-123',
+        state: 'draft_pr_ready' as const,
+        jobId: 'job-99',
+        branchName: 'feature/timeline-ux',
+        commitSha: 'c0ff33112233',
+        repoFullName: 'owner/timeline-repo',
+        draftPrUrl: 'https://github.com/owner/timeline-repo/pull/1',
+        events: [
+          { id: 'ev-1', ts: Date.now() - 5000, state: 'intent_detected' as const, label: 'Auftrag erkannt', detail: 'Analysis complete' },
+          { id: 'ev-2', ts: Date.now() - 4000, state: 'executor_started' as const, label: 'Executor gestartet' },
+          { id: 'ev-3', ts: Date.now() - 3000, state: 'patch_generated' as const, label: 'Patch generiert' },
+          { id: 'ev-4', ts: Date.now() - 2000, state: 'tests_passed' as const, label: 'Tests bestanden' },
+          { id: 'ev-5', ts: Date.now() - 1000, state: 'draft_pr_ready' as const, label: 'Draft PR erstellt' },
+        ],
+        created: Date.now() - 6000,
+        updated: Date.now() - 1000,
+      };
+      const onOpenPr = vi.fn();
+      const onViewDiff = vi.fn();
+
+      render(<AgentWorkTimeline snapshot={snapshot} onOpenPr={onOpenPr} onViewDiff={onViewDiff} />);
+
+      const timeline = screen.getByRole('region', { name: 'Agent Work Timeline' });
+      expect(timeline).toBeInTheDocument();
+      expect(timeline).toHaveAttribute('aria-busy', 'false');
+      expect(timeline).toHaveClass('sovereign-instrument-panel');
+      expect(timeline).toHaveClass('sovereign-runtime-timeline');
+      expect(timeline).toHaveClass('sovereign-runtime-timeline--verified');
+      expect(screen.getByRole('list', { name: 'Ereignisprotokoll' })).toBeInTheDocument();
+      expect(screen.getAllByRole('listitem')).toHaveLength(4);
+
+      const expandBtn = screen.getByRole('button', { name: '1 ältere Ereignisse anzeigen' });
+      expect(expandBtn).toHaveAttribute('title', '1 ältere Ereignisse anzeigen');
+      expect(expandBtn).toHaveAttribute('aria-expanded', 'false');
+      expect(expandBtn).toHaveAttribute('aria-controls', 'agent-work-events');
+      expect(expandBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(expandBtn);
+
+      const collapseBtn = screen.getByRole('button', { name: 'Weniger Ereignisse anzeigen' });
+      expect(collapseBtn).toHaveAttribute('title', 'Weniger Ereignisse anzeigen');
+      expect(collapseBtn).toHaveAttribute('aria-expanded', 'true');
+      expect(collapseBtn).toHaveAttribute('aria-controls', 'agent-work-events');
+      expect(collapseBtn).toHaveClass('focus-visible:ring-2');
+      expect(screen.getByTitle('owner/timeline-repo')).toBeInTheDocument();
+      expect(screen.getByTitle('feature/timeline-ux')).toBeInTheDocument();
+      expect(screen.getByTitle('Commit SHA: c0ff33112233')).toBeInTheDocument();
+      expect(screen.getByTitle('Analysis complete')).toBeInTheDocument();
+
+      const openPrBtn = screen.getByRole('button', { name: 'PR öffnen' });
+      const viewDiffBtn = screen.getByRole('button', { name: 'Diff ansehen' });
+      expect(openPrBtn).toHaveAttribute('title', 'Draft PR auf GitHub öffnen');
+      expect(openPrBtn).toHaveClass('focus-visible:ring-2');
+      expect(viewDiffBtn).toHaveAttribute('title', 'Diff-Vorschau der Änderungen anzeigen');
+      expect(viewDiffBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(openPrBtn);
+      fireEvent.click(viewDiffBtn);
+      expect(onOpenPr).toHaveBeenCalledTimes(1);
+      expect(onViewDiff).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('PatternKnowledgeCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders section linked to heading, semantic metric list, scope tags list, and focus-visible action buttons', () => {
+      const counters = {
+        totalStored: 12,
+        verifiedCount: 8,
+        localExecutableCount: 5,
+        frequentlyUsedCount: 3,
+        lastSuccessfulReuseAt: 1700000000000,
+        localUserCount: 4,
+        remoteUserCount: 2,
+        sharedDerivedCount: 1,
+      };
+
+      const onShowDetails = vi.fn();
+      const onUseLocalMode = vi.fn();
+
+      render(
+        <PatternKnowledgeCard
+          counters={counters}
+          onShowDetails={onShowDetails}
+          onUseLocalMode={onUseLocalMode}
+        />
+      );
+
+      const section = screen.getByRole('region', { name: 'Dein Sovereign-Wissensstand' });
+      expect(section).toBeInTheDocument();
+
+      const heading = screen.getByRole('heading', { name: 'Dein Sovereign-Wissensstand', level: 2 });
+      expect(section).toHaveAttribute('aria-labelledby', heading.id);
+
+      const metricsList = screen.getByRole('list', { name: 'Wissensstand-Metriken' });
+      expect(metricsList).toBeInTheDocument();
+
+      const metricItems = screen.getAllByRole('listitem');
+      expect(metricItems.length).toBeGreaterThanOrEqual(5);
+
+      const sourcesGroup = screen.getByRole('group', { name: 'Musterquellen' });
+      expect(sourcesGroup).toBeInTheDocument();
+
+      const sourcesList = screen.getByRole('list', { name: 'Aktive Musterquellen' });
+      expect(sourcesList).toBeInTheDocument();
+
+      expect(screen.getByTitle('Aus dem lokalen Musterbestand')).toBeInTheDocument();
+      expect(screen.getByTitle('Aus dem entfernten Musterbestand')).toBeInTheDocument();
+      expect(screen.getByTitle('Aus geteilten Sovereign-Mustern abgeleitet')).toBeInTheDocument();
+
+      const detailsBtn = screen.getByRole('button', { name: 'Wissensstand-Details ansehen' });
+      expect(detailsBtn).toHaveAttribute('title', 'Detaillierte Übersicht der gespeicherten Muster anzeigen');
+      expect(detailsBtn).toHaveClass('focus-visible:ring-2');
+
+      const localModeBtn = screen.getByRole('button', { name: 'Lokalen Modus nutzen' });
+      expect(localModeBtn).toHaveAttribute('title', 'Lokalen Modus für gespeicherte Abläufe aktivieren');
+      expect(localModeBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(detailsBtn);
+      expect(onShowDetails).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(localModeBtn);
+      expect(onUseLocalMode).toHaveBeenCalledTimes(1);
     });
   });
 });

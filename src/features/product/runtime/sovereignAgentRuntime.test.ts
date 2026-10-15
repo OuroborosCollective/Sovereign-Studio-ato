@@ -14,11 +14,27 @@ describe('sovereignAgentRuntime', () => {
   it('uses only the internal backend mode', () => {
     expect(resolveSovereignAgentConfig({ enabled: true, agentApiUrl: 'https://agent.example.test' })).toMatchObject({ ready: true, deploymentMode: 'sovereign-agent-backend' });
   });
-  it('uses the current HTTPS or localhost origin when no build-time backend URL is present', () => {
-    vi.stubGlobal('window', { location: { origin: 'https://studio.example.test' } });
+  it('resolves the production backend from the same browser origin when no override exists', () => {
+    vi.stubGlobal('window', { location: { origin: 'https://knd.arelorian.de' } });
     const config = resolveSovereignAgentConfig();
-    expect(config.agentApiUrl).toBe('https://studio.example.test');
-    expect(config).toMatchObject({ ready: true, deploymentMode: 'sovereign-agent-backend' });
+    expect(config).toMatchObject({
+      enabled: true,
+      ready: true,
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://knd.arelorian.de',
+    });
+  });
+  it('allows an explicit same-origin backend mode without inventing an external agent host', () => {
+    expect(resolveSovereignAgentConfig({
+      enabled: true,
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: '',
+    })).toMatchObject({
+      enabled: true,
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: '',
+      ready: true,
+    });
   });
   it('rejects unsafe non-local HTTP URLs', () => {
     expect(resolveSovereignAgentConfig({ enabled: true, agentApiUrl: 'http://agent.example.test' }).ready).toBe(false);

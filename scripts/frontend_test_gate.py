@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shell-free frontend contract, regression and smoke-test orchestrator.
+"""Shell-free unified-app contract, regression and smoke-test orchestrator.
 
 The existing release workflow invokes the package scripts and captures their stdout
 in a bounded artifact. This orchestrator replaces nested npm/shell chains with a
@@ -22,7 +22,7 @@ import subprocess
 import sys
 from typing import Sequence
 
-SCHEMA_VERSION = "sovereign.frontend-test-gate.v1"
+SCHEMA_VERSION = "sovereign.unified-app-test-gate.v1"
 DEFAULT_TIMEOUT_SECONDS = 900
 _MAX_SAFE_LINE = 420
 _MAX_FORWARDED_CAUSAL_LINES = 32

@@ -13,6 +13,7 @@ from typing import Any
 
 from admin_mode import PrivateAdminRuntime
 from agent_zero_diagnostics import AgentZeroDiagnosticsRuntime
+from aurion_admin_mcp_lane import AurionAdminMcpRuntime
 from aurion_operator import AurionOperatorRuntime
 from browserless_reader import BrowserlessReplayReader
 from command_contract import (
@@ -33,6 +34,7 @@ from operations import OperationsRuntime
 from patchmon_fleet import PatchmonFleetRuntime
 from patchmon_operator import PatchmonOperatorRuntime
 from policy import validate_container
+from owner_ssh_console import OwnerSSHConsole
 from self_update import SelfUpdateRuntime
 
 MAX_REQUEST_BYTES = 1_200_000
@@ -56,6 +58,7 @@ class BrokerRuntime:
             "ghcr.io/ouroboroscollective/sovereign-backend",
         ).strip()
         self.operations = OperationsRuntime()
+        self.owner_ssh = OwnerSSHConsole()
         self.agent_zero_diagnostics = AgentZeroDiagnosticsRuntime()
         self.browserless = BrowserlessReplayReader()
         self.document_pipeline = DocumentPipelineRuntime()
@@ -78,6 +81,7 @@ class BrokerRuntime:
         )
         self.admin = PrivateAdminRuntime(self.operations)
         self.aurion = AurionOperatorRuntime()
+        self.aurion_admin_mcp = AurionAdminMcpRuntime()
         self.self_update = SelfUpdateRuntime()
         self.github = GitHubAdminRuntime(self.self_update)
 
@@ -449,21 +453,28 @@ class BrokerRuntime:
             schedule_override=str(values.get("schedule_override") or ""),
         )
 
+    @staticmethod
+    def _n8n_retired_result() -> dict[str, Any]:
+        """Fail closed for the owner's permanently retired n8n integration."""
+        return {
+            "ok": False,
+            "status": "N8N_RETIRED_OWNER_POLICY",
+            "blocker": "n8n is permanently retired; see Sovereign issue #2261",
+            "mutationPerformed": False,
+        }
+
     def managed_compose_plan(self, values: dict[str, Any]) -> dict[str, Any]:
-        """Route the fixed n8n host stage through the existing managed-compose plan surface."""
+        """Reject the retired n8n stage; preserve unrelated managed stacks."""
         stack_id = str(values.get("stack_id") or "").strip()
         if stack_id == "n8n-host-stage1":
-            return self.n8n_host_maintenance.stage1_plan()
+            return self._n8n_retired_result()
         return self.managed_compose.plan(stack_id=stack_id)
 
     def managed_compose_apply(self, values: dict[str, Any]) -> dict[str, Any]:
-        """Route the fixed n8n host stage through the existing managed-compose apply surface."""
+        """Never resurrect n8n, including with an old confirmation digest."""
         stack_id = str(values.get("stack_id") or "").strip()
         if stack_id == "n8n-host-stage1":
-            return self.n8n_host_maintenance.stage1_apply(
-                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
-                owner_approved=self.private_owner_mode,
-            )
+            return self._n8n_retired_result()
         return self.managed_compose.deploy(
             stack_id=stack_id,
             confirmation_sha256=str(values.get("confirmation_sha256") or ""),
@@ -484,7 +495,17 @@ class BrokerRuntime:
                 "blocker": "Mutierende Befehle dürfen nicht direkt von außen über den Broker-Socket ausgeführt werden",
                 "next_action": "submit_validated_intent_to_host_command_queue",
             }
+        if action.startswith("ssh_console_") and not self.private_owner_mode:
+            return {"ok": False, "status": "BLOCKED", "blocker": "SSH console requires private owner mode"}
         handlers = {
+            "ssh_console_status": lambda values: self.owner_ssh.status(str(values.get("session_id") or "")),
+            "ssh_console_owner_action": lambda values: self.owner_ssh.owner_action(str(values.get("operation_id") or "")),
+            "ssh_console_assistant_inspect": lambda values: self.owner_ssh.assistant_inspect(str(values.get("session_id") or ""), str(values.get("operation") or "")),
+            "ssh_console_assistant_workspace": lambda values: self.owner_ssh.assistant_workspace(
+                session_id=str(values.get("session_id") or ""), source_revision=str(values.get("source_revision") or ""),
+                action=values.get("action"), path=values.get("path", ""), content=values.get("content", ""),
+                expected_sha256=values.get("expected_sha256", ""), argv=values.get("argv"),
+                timeout_seconds=values.get("timeout_seconds", 30)),
             "broker_health": self.health,
             "host_worker_canary": lambda _values: {
                 "ok": True,
@@ -578,6 +599,16 @@ class BrokerRuntime:
                 open_id=str(values.get("open_id") or ""),
                 role=str(values.get("role") or ""),
                 expected_revision=str(values.get("expected_revision") or ""),
+            ),
+            "aurion_admin_mcp_read": lambda values: self.aurion_admin_mcp.call(
+                tool_name=str(values.get("tool_name") or ""),
+                arguments=values.get("arguments") if isinstance(values.get("arguments"), dict) else {},
+                require_write=False,
+            ),
+            "aurion_admin_mcp_write": lambda values: self.aurion_admin_mcp.call(
+                tool_name=str(values.get("tool_name") or ""),
+                arguments=values.get("arguments") if isinstance(values.get("arguments"), dict) else {},
+                require_write=True,
             ),
             "aurion_account_role_apply": lambda values: self.aurion.account_role_apply(
                 open_id=str(values.get("open_id") or ""),
@@ -685,25 +716,8 @@ class BrokerRuntime:
                 confirmation_digest=str(values.get("confirmation_digest") or ""),
             ),
             "managed_compose_stack_plan": self.managed_compose_plan,
-            "n8n_workflow_plan": lambda values: self.n8n_workflows.plan(
-                lane_id=str(values.get("lane_id") or ""),
-                operation=str(values.get("operation") or ""),
-                workflow_id=str(values.get("workflow_id") or ""),
-                spec=values.get("spec") if isinstance(values.get("spec"), dict) else None,
-            ),
-            "n8n_workflow_apply": lambda values: self.n8n_workflows.apply(
-                lane_id=str(values.get("lane_id") or ""),
-                operation=str(values.get("operation") or ""),
-                workflow_id=str(values.get("workflow_id") or ""),
-                spec=values.get("spec") if isinstance(values.get("spec"), dict) else None,
-                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
-                owner_approved=standing_owner_delegation_approved(
-                    private_owner_mode=self.private_owner_mode,
-                    caller_attestation=bool(
-                        values.get("owner_approved", False)
-                    ),
-                ),
-            ),
+            "n8n_workflow_plan": lambda _values: self._n8n_retired_result(),
+            "n8n_workflow_apply": lambda _values: self._n8n_retired_result(),
             "memory_gateway_collection_canary": lambda _values: self.managed_compose.memory_gateway_collection_canary(),
             "litellm_provider_model_inventory": lambda _values: self.managed_compose.litellm_provider_model_inventory(),
             "openai_project_runtime_evidence": lambda _values: self.managed_compose.openai_project_runtime_evidence(),

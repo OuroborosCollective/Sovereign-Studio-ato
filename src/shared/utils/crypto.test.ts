@@ -55,6 +55,11 @@ describe('maskSecrets', () => {
     expect(maskSecrets(`Failed with ${secret}`)).toBe('Failed with gsk_****');
   });
 
+  it('masks xAI style keys', () => {
+    const secret = 'xai-1234567890abcdefghijklmnopqrstuvwxyz';
+    expect(maskSecrets(`Failed with ${secret}`)).toBe('Failed with xai-****');
+  });
+
   it('masks OpenAI Project keys', () => {
     const secret = 'sk-proj-abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz01';
     expect(maskSecrets(`Using ${secret}`)).toBe('Using sk-proj-****');
@@ -120,12 +125,128 @@ describe('maskSecrets', () => {
     expect(maskSecrets('registration_token: reg_token_val_555')).toBe('registration_token: ****');
     expect(maskSecrets('access_key_id=AKIAIOSFODNN7EXAMPLE')).toBe('access_key_id=****');
     expect(maskSecrets('aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY')).toBe('aws_secret_access_key: ****');
+    expect(maskSecrets('tenant_secret: tenant_sec_val_101')).toBe('tenant_secret: ****');
+    expect(maskSecrets('tenant_key=tenant_key_val_202')).toBe('tenant_key=****');
+    expect(maskSecrets('license_key: lic_key_val_303')).toBe('license_key: ****');
+    expect(maskSecrets('license_secret=lic_sec_val_404')).toBe('license_secret=****');
+    expect(maskSecrets('org_key: org_key_val_505')).toBe('org_key: ****');
+    expect(maskSecrets('org_secret=org_sec_val_606')).toBe('org_secret=****');
+    expect(maskSecrets('private_key_passphrase: my_secret_passphrase')).toBe('private_key_passphrase: ****');
+    expect(maskSecrets('key_passphrase=my_key_passphrase_123')).toBe('key_passphrase=****');
+    expect(maskSecrets('sendgrid_key: sg_secret_val_101')).toBe('sendgrid_key: ****');
+    expect(maskSecrets('resend_key=resend_secret_val_202')).toBe('resend_key=****');
+    expect(maskSecrets('mailgun_key: mailgun_secret_val_303')).toBe('mailgun_key: ****');
+    expect(maskSecrets('postmark_key=postmark_secret_val_404')).toBe('postmark_key=****');
+    expect(maskSecrets('twilio_key: twilio_key_val_505')).toBe('twilio_key: ****');
+    expect(maskSecrets('twilio_secret=twilio_secret_val_606')).toBe('twilio_secret=****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
     expect(maskSecrets('"password": "my-secret-password"')).toBe('"password": ****');
     expect(maskSecrets("'api_key': 'abc123+/~='")).toBe("'api_key': ****");
     expect(maskSecrets('token: value_with_@#$%^&*')).toBe('token: ****');
+  });
+
+  it('masks common communication-provider env labels without masking plain provider text', () => {
+    expect(maskSecrets('SENDGRID_API_KEY=sg_env_value_101')).toBe('SENDGRID_API_KEY=****');
+    expect(maskSecrets('RESEND_API_KEY=resend_env_value_202')).toBe('RESEND_API_KEY=****');
+    expect(maskSecrets('MAILGUN_API_KEY=mailgun_env_value_303')).toBe('MAILGUN_API_KEY=****');
+    expect(maskSecrets('POSTMARK_SERVER_TOKEN=postmark_env_value_404')).toBe('POSTMARK_SERVER_TOKEN=****');
+    expect(maskSecrets('TWILIO_AUTH_TOKEN=twilio_env_value_505')).toBe('TWILIO_AUTH_TOKEN=****');
+    expect(maskSecrets('TWILIO_API_SECRET=twilio_env_value_606')).toBe('TWILIO_API_SECRET=****');
+
+    const plain = 'sendgrid_key rotation docs mention resend_key and twilio_secret without assignments';
+    expect(maskSecrets(plain)).toBe(plain);
+  });
+
+  it('masks AI, vector DB and cloud provider credential labels without masking unassigned label mentions', () => {
+    expect(maskSecrets('cohere_key: cohere_key_val_101')).toBe('cohere_key: ****');
+    expect(maskSecrets('cohere_secret=cohere_secret_val_202')).toBe('cohere_secret=****');
+    expect(maskSecrets('cohere_token: cohere_token_val_303')).toBe('cohere_token: ****');
+    expect(maskSecrets('pinecone_key=pinecone_key_val_404')).toBe('pinecone_key=****');
+    expect(maskSecrets('pinecone_secret: pinecone_secret_val_505')).toBe('pinecone_secret: ****');
+    expect(maskSecrets('qdrant_key=qdrant_key_val_606')).toBe('qdrant_key=****');
+    expect(maskSecrets('qdrant_secret: qdrant_secret_val_707')).toBe('qdrant_secret: ****');
+    expect(maskSecrets('deepseek_key: deepseek_key_val_707')).toBe('deepseek_key: ****');
+    expect(maskSecrets('deepseek_secret=deepseek_secret_val_808')).toBe('deepseek_secret=****');
+    expect(maskSecrets('deepseek_token: deepseek_token_val_909')).toBe('deepseek_token: ****');
+    expect(maskSecrets('perplexity_key=perplexity_key_val_111')).toBe('perplexity_key=****');
+    expect(maskSecrets('perplexity_secret: perplexity_secret_val_222')).toBe('perplexity_secret: ****');
+    expect(maskSecrets('replicate_key=replicate_key_val_333')).toBe('replicate_key=****');
+    expect(maskSecrets('replicate_secret: replicate_secret_val_444')).toBe('replicate_secret: ****');
+    expect(maskSecrets('cloudflare_token=cloudflare_token_val_555')).toBe('cloudflare_token=****');
+    expect(maskSecrets('cloudflare_key: cloudflare_key_val_666')).toBe('cloudflare_key: ****');
+    expect(maskSecrets('cloudflare_secret=cloudflare_secret_val_777')).toBe('cloudflare_secret=****');
+    expect(maskSecrets('elevenlabs_key: elevenlabs_key_val_123')).toBe('elevenlabs_key: ****');
+    expect(maskSecrets('elevenlabs_secret=elevenlabs_sec_val_456')).toBe('elevenlabs_secret=****');
+    expect(maskSecrets('elevenlabs_token: elevenlabs_tok_val_789')).toBe('elevenlabs_token: ****');
+    expect(maskSecrets('eleven_labs_key=eleven_labs_key_val_101')).toBe('eleven_labs_key=****');
+    expect(maskSecrets('stability_key: stability_key_val_202')).toBe('stability_key: ****');
+    expect(maskSecrets('stability_secret=stability_sec_val_303')).toBe('stability_secret=****');
+    expect(maskSecrets('fal_key: fal_key_val_404')).toBe('fal_key: ****');
+    expect(maskSecrets('fal_secret=fal_sec_val_505')).toBe('fal_secret=****');
+    expect(maskSecrets('"deepseek_key": "quoted_value_123"')).toBe('"deepseek_key": ****');
+
+    const plain = 'cohere_key pinecone_secret qdrant_key deepseek_key perplexity_secret replicate_key cloudflare_token elevenlabs_key stability_key fal_secret without assignments';
+    expect(maskSecrets(plain)).toBe(plain);
+  });
+
+  it('masks Stripe and Sentry credential labels without masking unassigned label mentions', () => {
+    expect(maskSecrets('sentry_dsn: https://abc123456789@o123456.ingest.sentry.io/123456')).toBe('sentry_dsn: ****');
+    expect(maskSecrets('sentry_key=sentry_key_val_101')).toBe('sentry_key=****');
+    expect(maskSecrets('stripe_key: pk_test_1234567890abcdef')).toBe('stripe_key: ****');
+    expect(maskSecrets('stripe_secret=sk_test_1234567890abcdef')).toBe('stripe_secret=****');
+    expect(maskSecrets('stripe_token: tok_1234567890abcdef')).toBe('stripe_token: ****');
+    expect(maskSecrets('"stripe_secret": "quoted_secret_val"')).toBe('"stripe_secret": ****');
+
+    const plain = 'stripe_key docs mention sentry_dsn and stripe_secret without assignments';
+    expect(maskSecrets(plain)).toBe(plain);
+  });
+
+
+  it('keeps colons as field boundaries outside Sentry DSNs', () => {
+    for (const label of ['password', 'token', 'cohere_key', 'pinecone_secret', 'qdrant_key', 'stripe_secret', 'sentry_key', 'sendgrid_key']) {
+      expect(maskSecrets(label + '=synthetic:status=ok')).toBe(label + '=****:status=ok');
+    }
+  });
+
+  it('masks complete Sentry DSNs while preserving surrounding fields and delimiters', () => {
+    const dsn = 'https://synthetic:synthetic@example.invalid:8443/42';
+    for (const label of ['sentry_dsn', 'SENTRY_DSN', 'sentry-dsn', 'sentrydsn']) {
+      expect(maskSecrets(label + '=' + dsn + ',status=ok')).toBe(label + '=****,status=ok');
+      expect(maskSecrets(label + ': "' + dsn + '"; status=ok')).toBe(label + ': ****; status=ok');
+      expect(maskSecrets('{"' + label + '":"' + dsn + '","status":"ok"}')).toBe('{"' + label + '":****,"status":"ok"}');
+      expect(maskSecrets(label + '=' + dsn + '\nstatus=ok')).toBe(label + '=****\nstatus=ok');
+    }
+    expect(maskSecrets("sentry_dsn='" + dsn + "' stripe_key=synthetic")).toBe('sentry_dsn=**** stripe_key=****');
+  });
+
+  it('does not consume the next line after an empty credential assignment', () => {
+    for (const label of ['sentry_dsn', 'stripe_key', 'cohere_key', 'password', 'twilio_secret']) {
+      for (const newline of ['\n', '\r\n']) {
+        const text = label + ': \t' + newline + 'status=ok';
+        expect(maskSecrets(text)).toBe(text);
+      }
+    }
+  });
+
+  it('preserves unassigned labels and embedded noncredential words', () => {
+    for (const label of ['cohere_key', 'cohere_secret', 'cohere_token', 'pinecone_key', 'pinecone_secret', 'qdrant_key', 'qdrant_secret', 'stripe_key', 'stripe_secret', 'stripe_token', 'sentry_key', 'sentry_dsn']) {
+      for (const text of [label, label + ' docs', label + ':', label + '=', label + '_description=public']) {
+        expect(maskSecrets(text)).toBe(text);
+      }
+    }
+    expect(maskSecrets('mytoken=public')).toBe('mytoken=public');
+  });
+
+  it('retains case and separator variants and repeat-call behavior', () => {
+    for (const label of ['COHERE_KEY', 'PINECONE-SECRET', 'qdrantsecret', 'STRIPE_TOKEN', 'SENTRY_KEY']) {
+      const text = label + ' = synthetic';
+      expect(maskSecrets(text)).toBe(label + ' = ****');
+      expect(maskSecrets(text)).toBe(label + ' = ****');
+      expect(maskSecrets('ordinary text')).toBe('ordinary text');
+      expect(maskSecrets(text)).toBe(label + ' = ****');
+    }
   });
 
   it('masks multiple secrets in one string', () => {

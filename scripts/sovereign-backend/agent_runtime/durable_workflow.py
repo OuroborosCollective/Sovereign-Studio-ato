@@ -294,6 +294,57 @@ class PermissionReceipt:
         return canonical_sha256(self.canonical()) == self.receipt_hash
 
 
+def permission_receipt_from_dict(raw: Mapping[str, Any]) -> PermissionReceipt:
+    body = dict(raw or {})
+    if body.get("schema_version") != PERMISSION_SCHEMA_VERSION:
+        raise DurableWorkflowError("unsupported permission receipt schema")
+    binding_raw = body.get("binding")
+    if not isinstance(binding_raw, Mapping):
+        raise DurableWorkflowError("permission binding is missing")
+    binding = WorkflowBinding(
+        workflow_run_id=str(binding_raw.get("workflow_run_id") or ""),
+        workflow_definition_hash=str(binding_raw.get("workflow_definition_hash") or ""),
+        owner_identity=str(binding_raw.get("owner_identity") or ""),
+        tenant_or_org_identity=str(binding_raw.get("tenant_or_org_identity") or ""),
+        repository_identity=str(binding_raw.get("repository_identity") or ""),
+        workspace_id=str(binding_raw.get("workspace_id") or ""),
+        base_revision=str(binding_raw.get("base_revision") or ""),
+        head_revision=str(binding_raw.get("head_revision")) if binding_raw.get("head_revision") is not None else None,
+        merge_revision=str(binding_raw.get("merge_revision")) if binding_raw.get("merge_revision") is not None else None,
+        integration_id=str(binding_raw.get("integration_id")) if binding_raw.get("integration_id") is not None else None,
+        issue_number=int(binding_raw["issue_number"]) if binding_raw.get("issue_number") is not None else None,
+        pull_request_number=int(binding_raw["pull_request_number"]) if binding_raw.get("pull_request_number") is not None else None,
+    )
+    receipt = PermissionReceipt(
+        permission_id=str(body.get("permission_id") or ""),
+        binding=binding,
+        step_id=str(body.get("step_id") or ""),
+        tool_name=str(body.get("tool_name") or ""),
+        capability=str(body.get("capability") or ""),
+        normalized_parameters=_canonical(
+            body.get("normalized_parameters")
+            if isinstance(body.get("normalized_parameters"), Mapping)
+            else {}
+        ),
+        parameters_hash=_require_sha64(str(body.get("parameters_hash") or ""), "parameters hash"),
+        expected_changed_paths=tuple(str(v) for v in body.get("expected_changed_paths") or ()),
+        required_readback_kinds=tuple(str(v) for v in body.get("required_readback_kinds") or ()),
+        valid_until_epoch=int(body.get("valid_until_epoch") or 0),
+        max_attempts=int(body.get("max_attempts") or 0),
+        decision=PermissionDecision(str(body.get("decision") or "")),
+        approver_identity=str(body.get("approver_identity")) if body.get("approver_identity") is not None else None,
+        approval_source=str(body.get("approval_source")) if body.get("approval_source") is not None else None,
+        predecessor_receipt_hash=_require_sha64(
+            str(body.get("predecessor_receipt_hash") or ""),
+            "predecessor receipt hash",
+        ),
+        receipt_hash=_require_sha64(str(body.get("receipt_hash") or ""), "receipt hash"),
+    )
+    if not receipt.verify():
+        raise DurableWorkflowError("permission receipt canonical hash is contradicted")
+    return receipt
+
+
 @dataclass(frozen=True, slots=True)
 class ExecutionReceipt:
     execution_id: str
@@ -426,6 +477,7 @@ def approve_permission(receipt: PermissionReceipt, *, approver_identity: str, ap
         decision=PermissionDecision.APPROVED,
         approver_identity=_require_identifier(approver_identity, "approver identity"),
         approval_source=_require_identifier(approval_source, "approval source"),
+        predecessor_receipt_hash=receipt.receipt_hash,
         receipt_hash="",
     )
     return replace(approved, receipt_hash=canonical_sha256(approved.canonical()))

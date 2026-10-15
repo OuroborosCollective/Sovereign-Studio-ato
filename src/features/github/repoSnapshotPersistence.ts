@@ -41,12 +41,20 @@ export function createDurableRepoSnapshot(input: {
   repoFiles: RepoFile[];
   savedAt?: number;
 }): DurableRepoSnapshot {
+  // ⚡ Bolt: Consolidate chained map, filter, and slice operations into a single bounded loop
+  const repoFiles: RepoFile[] = [];
+  for (const raw of input.repoFiles) {
+    if (repoFiles.length >= MAX_FILES) break;
+    const file = normalizeRepoFile(raw);
+    if (file) repoFiles.push(file);
+  }
+
   return {
     version: 1,
     repoUrl: cleanText(input.repoUrl),
     repoBranch: cleanText(input.repoBranch, 160),
     repoStatus: cleanText(input.repoStatus, 1000),
-    repoFiles: input.repoFiles.map(normalizeRepoFile).filter((file): file is RepoFile => Boolean(file)).slice(0, MAX_FILES),
+    repoFiles,
     savedAt: typeof input.savedAt === 'number' && Number.isFinite(input.savedAt) && input.savedAt > 0 ? input.savedAt : Date.now(),
   };
 }

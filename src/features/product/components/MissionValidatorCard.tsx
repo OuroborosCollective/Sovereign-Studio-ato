@@ -7,26 +7,65 @@ interface MissionValidatorCardProps {
 }
 
 export function MissionValidatorCard({ result, onContinue, onEdit }: MissionValidatorCardProps) {
+  const sourceText = result.status === 'ready'
+    ? `${result.resolvedTransport || 'Modellroute'}${result.modelUsed ? ` · ${result.modelUsed}` : ''}`
+    : 'deterministischer Fallback';
+
   return (
-    <section className="mx-3 my-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm" data-testid="mission-validator-card">
+    <section
+      className="mx-3 my-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+      data-testid="mission-validator-card"
+      aria-labelledby="mission-validator-title"
+    >
       <div className="flex items-center justify-between gap-3">
-        <strong>Pre-flight Mission Validator</strong>
-        <span className="rounded-full border border-amber-400/50 px-2 py-1 font-mono text-xs">{result.score}/100</span>
+        <h3 id="mission-validator-title" className="font-semibold text-amber-200">
+          Pre-flight Mission Validator
+        </h3>
+        <span
+          className="rounded-full border border-amber-400/50 px-2 py-1 font-mono text-xs text-amber-300"
+          title={`Qualitätsscore: ${result.score} von 100`}
+          aria-label={`Qualitätsscore: ${result.score} von 100`}
+        >
+          {result.score}/100
+        </span>
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
         Die Mission ist noch breit. Das ist eine Warnung, kein erfundener Runtime-Blocker.
       </p>
       {result.questions.length > 0 && (
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
-          {result.questions.map((question) => <li key={question}>{question}</li>)}
+        <ul
+          className="mt-2 list-disc space-y-1 pl-5 text-xs text-amber-100/90"
+          role="list"
+          aria-label="Empfohlene Ergänzungen zur Mission"
+        >
+          {result.questions.map((question) => (
+            <li key={question}>{question}</li>
+          ))}
         </ul>
       )}
       <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" className="rounded-md border px-3 py-2 text-xs" onClick={onEdit}>Mission ergänzen</button>
-        <button type="button" className="rounded-md bg-amber-500 px-3 py-2 text-xs font-semibold text-black" onClick={onContinue}>Trotzdem starten</button>
+        <button
+          type="button"
+          className="rounded-md border border-amber-500/40 px-3 py-2 text-xs font-medium text-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none transition-colors hover:bg-amber-500/20"
+          onClick={onEdit}
+          title="Mission im Eingabefeld bearbeiten und präzisieren"
+        >
+          Mission ergänzen
+        </button>
+        <button
+          type="button"
+          className="rounded-md bg-amber-500 px-3 py-2 text-xs font-semibold text-black focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-none transition-colors hover:bg-amber-400"
+          onClick={onContinue}
+          title="Mission ohne Ergänzung direkt ausführen"
+        >
+          Trotzdem starten
+        </button>
       </div>
-      <p className="mt-2 text-[11px] text-muted-foreground">
-        Quelle: {result.status === 'ready' ? `${result.resolvedTransport || 'Modellroute'}${result.modelUsed ? ` · ${result.modelUsed}` : ''}` : 'deterministischer Fallback'}
+      <p
+        className="mt-2 text-[11px] text-muted-foreground"
+        title={`Quelle der Missionsevaluierung: ${sourceText}`}
+      >
+        Quelle: {sourceText}
       </p>
     </section>
   );

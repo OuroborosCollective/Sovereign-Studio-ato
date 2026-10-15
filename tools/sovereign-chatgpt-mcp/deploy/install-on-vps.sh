@@ -25,6 +25,8 @@ FREELLMAPI_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-freellmapi"
 FREELLMAPI_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-freellmapi"
 BACKEND_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-backend"
 BACKEND_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-backend"
+IT_TOOLS_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-it-tools"
+IT_TOOLS_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-it-tools"
 DOCKER_AUTH_DIR="$INSTALL_ROOT/docker-auth"
 WORKSPACE_DIR="$INSTALL_ROOT/workspaces"
 COMMAND_QUEUE_DIR="$INSTALL_ROOT/command-queue"
@@ -60,7 +62,7 @@ MCP_UID="10001"
 MCP_GID="10001"
 MCP_HOST_PORT="8090"
 NEURO_RUNTIME_STATE_HOST_DIR="$INSTALL_ROOT/tool-routing-state/neuro-runtime"
-EXPECTED_MCP_TOOL_COUNT="253"
+EXPECTED_MCP_TOOL_COUNT="258"
 MCP_IMAGE_REPOSITORY="${SOVEREIGN_MCP_IMAGE_REPOSITORY:-ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp}"
 EXPECTED_REVISION="${SOVEREIGN_MCP_EXPECTED_REVISION:-}"
 EXPECTED_MCP_DIGEST="${SOVEREIGN_MCP_EXPECTED_DIGEST:-}"
@@ -1167,8 +1169,8 @@ python3 -m py_compile "$SOURCE_DIR/deploy/run-coordinated-release-readback.py" \
   || fail "coordinated release reconciler timer is missing"
 
 getent group sovereign-mcp >/dev/null 2>&1 || groupadd --system sovereign-mcp
-install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$PGBACKWEB_TEMPLATE_DIR" "$PATCHMON_TEMPLATE_DIR" "$CODE_SERVER_TEMPLATE_DIR" "$MILVUS_TEMPLATE_DIR" "$FREELLMAPI_TEMPLATE_DIR" "$BACKEND_TEMPLATE_DIR" "$INSTALL_ROOT/continuity-data" "$INSTALL_ROOT/tool-routing-state"
-for MANAGED_COMPOSE_ROOT in /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r /opt/patchmon-sovereign /opt/milvus-sovereign /opt/sovereign-freellmapi /opt/sovereign-bytebase /opt/sovereign-metamcp; do
+install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$PGBACKWEB_TEMPLATE_DIR" "$PATCHMON_TEMPLATE_DIR" "$CODE_SERVER_TEMPLATE_DIR" "$MILVUS_TEMPLATE_DIR" "$FREELLMAPI_TEMPLATE_DIR" "$IT_TOOLS_TEMPLATE_DIR" "$BACKEND_TEMPLATE_DIR" "$INSTALL_ROOT/continuity-data" "$INSTALL_ROOT/tool-routing-state"
+for MANAGED_COMPOSE_ROOT in /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r /opt/patchmon-sovereign /opt/milvus-sovereign /opt/sovereign-freellmapi /opt/sovereign-it-tools /opt/sovereign-bytebase /opt/sovereign-metamcp; do
   if [[ -e "$MANAGED_COMPOSE_ROOT" || -L "$MANAGED_COMPOSE_ROOT" ]]; then
     [[ -d "$MANAGED_COMPOSE_ROOT" && ! -L "$MANAGED_COMPOSE_ROOT" ]] \
       || fail "managed compose root is not a regular directory: $MANAGED_COMPOSE_ROOT"
@@ -1252,14 +1254,26 @@ if ! valid_mcp_image_digest "$PREVIOUS_MCP_IMAGE_DIGEST"; then
 fi
 ROLLBACK_ARMED=1
 
+INSTALL_STAGE="prepare_control_plane_directory_ownership"
+set_managed_control_plane_directory_ownership "$BROKER_DIR" "broker"
+set_managed_control_plane_directory_ownership "$BIN_DIR" "bin"
+set_managed_control_plane_directory_ownership "$COMPOSE_TEMPLATE_ROOT" "templates"
+set_managed_control_plane_directory_ownership "$PGBACKWEB_TEMPLATE_DIR" "templates/pgbackweb-wq5r"
+set_managed_control_plane_directory_ownership "$PATCHMON_TEMPLATE_DIR" "templates/patchmon-sovereign"
+set_managed_control_plane_directory_ownership "$CODE_SERVER_TEMPLATE_DIR" "templates/code-server-46bq"
+set_managed_control_plane_directory_ownership "$MILVUS_TEMPLATE_DIR" "templates/milvus-sovereign"
+set_managed_control_plane_directory_ownership "$FREELLMAPI_TEMPLATE_DIR" "templates/sovereign-freellmapi"
+set_managed_control_plane_directory_ownership "$IT_TOOLS_TEMPLATE_DIR" "templates/sovereign-it-tools"
+set_managed_control_plane_directory_ownership "$BACKEND_TEMPLATE_DIR" "templates/sovereign-backend"
+
 INSTALL_STAGE="copy_control_plane_files"
-for file in Dockerfile requirements.txt policy.py github_installation_auth.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py desktop_worker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py github_issue_contracts.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py sovereign_rescue_widget.py server.py aurion_operator.py tool_extensions.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py predictive_tool_router.py tool_success_ranking.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py patchmon_operator.py patchmon_fleet.py n8n_workflow_runtime.py n8n_workflow_tools.py launcher.py docker-compose.yml; do
+for file in Dockerfile requirements.txt policy.py github_installation_auth.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py desktop_worker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py github_issue_contracts.py owner_input_widget.py owner_ssh_widget.py owner_ssh_workspace.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py sovereign_rescue_widget.py server.py aurion_admin_mcp_lane.py aurion_operator.py tool_extensions.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py predictive_tool_router.py tool_success_ranking.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py patchmon_operator.py patchmon_fleet.py n8n_workflow_runtime.py n8n_workflow_tools.py launcher.py docker-compose.yml; do
   install_managed_control_plane_file 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file" "runtime/$file"
 done
 install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/CONTEXT.md" "$INSTALL_ROOT/continuity-data/CONTEXT.md" "continuity-data/CONTEXT.md"
 install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/LEDGER.jsonl" "$INSTALL_ROOT/continuity-data/LEDGER.jsonl" "continuity-data/LEDGER.jsonl"
 
-for file in broker.py agent_zero_diagnostics.py agent_zero_backend_probe.py aurion_operator.py desktop_worker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_installation_auth.py ci_repair_tools.py llm_boundary_ledger.py llm_boundary_contract.py self_update.py policy.py self_heal.py managed_compose.py n8n_host_maintenance.py n8n_workflow_runtime.py patchmon_operator.py patchmon_fleet.py fleet_maintenance.py; do
+for file in broker.py owner_ssh_console.py owner_ssh_workspace.py agent_zero_diagnostics.py agent_zero_backend_probe.py aurion_admin_mcp_lane.py aurion_operator.py desktop_worker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_installation_auth.py ci_repair_tools.py llm_boundary_ledger.py llm_boundary_contract.py self_update.py policy.py self_heal.py managed_compose.py n8n_host_maintenance.py n8n_workflow_runtime.py patchmon_operator.py patchmon_fleet.py fleet_maintenance.py; do
   install_managed_control_plane_file 0640 "$SOURCE_DIR/$file" "$BROKER_DIR/$file" "broker/$file"
 done
 install_managed_control_plane_file 0640 "$SOURCE_DIR/config/sovereign-governance-mode.json" "$BROKER_GOVERNANCE_MODE" "broker/sovereign-governance-mode.json"
@@ -1275,6 +1289,7 @@ backup_managed_control_plane_file "$CODE_SERVER_TEMPLATE_DIR/docker-compose.yml"
 backup_managed_control_plane_file "$MILVUS_TEMPLATE_DIR/docker-compose.yml" "templates/milvus-sovereign/docker-compose.yml"
 backup_managed_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmapi/docker-compose.yml"
 backup_managed_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs" "templates/sovereign-freellmapi/sovereign-freellm-bootstrap.mjs"
+backup_managed_control_plane_file "$IT_TOOLS_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-it-tools/docker-compose.yml"
 remove_managed_legacy_file "$COMPOSE_TEMPLATE_ROOT/sovereign-omniroute/docker-compose.yml" "templates/sovereign-omniroute/docker-compose.yml"
 backup_managed_control_plane_file "$BACKEND_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-backend/docker-compose.yml"
 for file in deploy-sovereign-backend rollback-sovereign-backend bootstrap-database install-secure-tunnel validate-tunnel-doctor-report reconcile-main-release run-coordinated-release-readback; do
@@ -1298,6 +1313,7 @@ install_managed_control_plane_file 0640 "$CODE_SERVER_TEMPLATE_SOURCE/docker-com
 install_managed_control_plane_file 0640 "$MILVUS_TEMPLATE_SOURCE/docker-compose.yml" "$MILVUS_TEMPLATE_DIR/docker-compose.yml" "templates/milvus-sovereign/docker-compose.yml"
 install_managed_control_plane_file 0640 "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmapi/docker-compose.yml"
 install_managed_control_plane_file 0640 "$FREELLMAPI_TEMPLATE_SOURCE/sovereign-freellm-bootstrap.mjs" "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs" "templates/sovereign-freellmapi/sovereign-freellm-bootstrap.mjs"
+install_managed_control_plane_file 0640 "$IT_TOOLS_TEMPLATE_SOURCE/docker-compose.yml" "$IT_TOOLS_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-it-tools/docker-compose.yml"
 remove_managed_legacy_directory "$COMPOSE_TEMPLATE_ROOT/sovereign-omniroute" "templates/sovereign-omniroute"
 install_managed_control_plane_file 0640 "$BACKEND_TEMPLATE_SOURCE/docker-compose.yml" "$BACKEND_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-backend/docker-compose.yml"
 install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/deploy-sovereign-backend" "$BIN_DIR/deploy-sovereign-backend" "bin/deploy-sovereign-backend"
@@ -1322,15 +1338,6 @@ grep -q '^StartLimitBurst=3$' "$TUNNEL_SERVICE" || fail "installed tunnel unit h
 if grep -Eq 'c[u]rl[[:space:]]' "$TUNNEL_SERVICE"; then
   fail "installed tunnel unit still contains a curl-based MCP probe"
 fi
-set_managed_control_plane_directory_ownership "$BROKER_DIR" "broker"
-set_managed_control_plane_directory_ownership "$BIN_DIR" "bin"
-set_managed_control_plane_directory_ownership "$COMPOSE_TEMPLATE_ROOT" "templates"
-set_managed_control_plane_directory_ownership "$PGBACKWEB_TEMPLATE_DIR" "templates/pgbackweb-wq5r"
-set_managed_control_plane_directory_ownership "$PATCHMON_TEMPLATE_DIR" "templates/patchmon-sovereign"
-set_managed_control_plane_directory_ownership "$CODE_SERVER_TEMPLATE_DIR" "templates/code-server-46bq"
-set_managed_control_plane_directory_ownership "$MILVUS_TEMPLATE_DIR" "templates/milvus-sovereign"
-set_managed_control_plane_directory_ownership "$FREELLMAPI_TEMPLATE_DIR" "templates/sovereign-freellmapi"
-set_managed_control_plane_directory_ownership "$BACKEND_TEMPLATE_DIR" "templates/sovereign-backend"
 
 INSTALL_STAGE="prepare_private_environment_files"
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -1369,10 +1376,11 @@ if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
     SOVEREIGN_MCP_ENABLE_SELF_UPDATE \
     SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE \
     SOVEREIGN_MCP_ENABLE_AURION_OPERATOR \
-    SOVEREIGN_MCP_ENABLE_AURION_WRITE; do
+    SOVEREIGN_MCP_ENABLE_AURION_WRITE \
+    SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP; do
     set_value "$MANAGED_ENV" "$OWNER_CAPABILITY" "1"
   done
-  EXPECTED_MCP_TOOL_COUNT="256"
+  EXPECTED_MCP_TOOL_COUNT="261"
 fi
 INSTALL_STAGE="bind_private_owner_github_capabilities_to_ephemeral_app_auth"
 if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
@@ -1475,7 +1483,7 @@ for REQUIRED_WORKFLOW in android.yml e2e-testing.yml sovereign-backend-image.yml
 done
 unset REQUIRED_WORKFLOW CURRENT_ALLOWED_WORKFLOWS
 
-for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless gpt-tika gpt-gotenberg gpt-dozzle code-server-46bq-code-server-1 pgbackweb-wq5r-pgbackweb-1 pgbackweb-wq5r-db-1 patchmon-sovereign-server-1 patchmon-sovereign-database-1 patchmon-sovereign-redis-1 patchmon-sovereign-guacd-1 sovereign-freellmapi; do
+for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless gpt-tika gpt-gotenberg gpt-dozzle code-server-46bq-code-server-1 pgbackweb-wq5r-pgbackweb-1 pgbackweb-wq5r-db-1 patchmon-sovereign-server-1 patchmon-sovereign-database-1 patchmon-sovereign-redis-1 patchmon-sovereign-guacd-1 sovereign-freellmapi sovereign-it-tools; do
   CURRENT_ALLOWED_CONTAINERS="$(read_mcp_value SOVEREIGN_MCP_ALLOWED_CONTAINERS)"
   if [[ -z "$CURRENT_ALLOWED_CONTAINERS" ]]; then
     set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER"
@@ -1539,12 +1547,14 @@ fi
 set_value "$MANAGED_ENV" SOVEREIGN_MCP_IMAGE "$MCP_IMAGE_DIGEST"
 export SOVEREIGN_MCP_IMAGE="$MCP_IMAGE_DIGEST"
 
+# Pass only the configured Aurion credential file reference to the existing host
+# broker. Never copy raw access tokens or invent an Aurion authority here.
 INSTALL_STAGE="write_broker_environment"
 prepare_managed_private_file_mutation "$BROKER_ENV" "broker-environment"
 INSTALL_STAGE="mutate_managed_private_file:broker-environment"
 if ! {
   for environment_file in "$ENV_FILE" "$MANAGED_ENV"; do
-    grep -E '^(SOVEREIGN_MCP_REPOSITORY|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ALLOWED_WORKFLOWS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_PRIVATE_OWNER_MODE|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_PR_MERGE|SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL|SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE|SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE|SOVEREIGN_MCP_ENABLE_AURION_OPERATOR|SOVEREIGN_MCP_ENABLE_AURION_WRITE|SOVEREIGN_MCP_GITHUB_CAPABILITIES_AVAILABLE|SOVEREIGN_MCP_GITHUB_APP_ID|SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE|SOVEREIGN_BACKEND_MANAGED_ENV_FILE)=' "$environment_file" || true
+    grep -E '^(SOVEREIGN_MCP_REPOSITORY|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ALLOWED_WORKFLOWS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_PRIVATE_OWNER_MODE|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_PR_MERGE|SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL|SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE|SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE|SOVEREIGN_MCP_ENABLE_AURION_OPERATOR|SOVEREIGN_MCP_ENABLE_AURION_WRITE|SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP|AURION_ADMIN_MCP_ACCESS_TOKEN_FILE|AURION_ADMIN_MCP_RESOURCE_URL|AURION_ADMIN_MCP_SCOPES|AURION_ADMIN_MCP_WOLFRAM_ENABLED|SOVEREIGN_MCP_GITHUB_CAPABILITIES_AVAILABLE|SOVEREIGN_MCP_GITHUB_APP_ID|SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE|SOVEREIGN_BACKEND_MANAGED_ENV_FILE)=' "$environment_file" || true
   done
   printf 'SOVEREIGN_MCP_DEPLOY_SCRIPT=%s\n' "$BIN_DIR/deploy-sovereign-backend"
   printf 'SOVEREIGN_MCP_ROLLBACK_SCRIPT=%s\n' "$BIN_DIR/rollback-sovereign-backend"
@@ -2078,6 +2088,7 @@ docker exec sovereign-chatgpt-mcp test -f /app/skills/sovereign-operational-gove
 docker exec sovereign-chatgpt-mcp test -f /app/skills/sovereign-operational-assurance/SKILL.md || fail "operational assurance skill manifest is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp test -f /app/skills/sovereign-mcp-optimal-operation/SKILL.md || fail "optimal operation skill manifest is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp test -f /app/skills/sovereign-neuro-teaching-runtime/SKILL.md || fail "neuro teaching skill manifest is missing from the MCP image"
+docker exec sovereign-chatgpt-mcp test -f /app/skills/sovereign-evidence-flywheel/SKILL.md || fail "evidence flywheel skill manifest is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp test -f /app/config/sovereign-mcp-operating-profile.json || fail "versioned MCP operating profile is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp test -f /app/config/sovereign-continuity-policy.json || fail "versioned continuity policy is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp test -f /app/continuity-data/CONTEXT.md || fail "continuity context is missing from the MCP image"
@@ -2104,106 +2115,33 @@ if ! docker exec sovereign-chatgpt-mcp python -c 'import neuro_architecture_cont
   printf 'Neuro import-only preflight was non-terminal; authoritative isolated Neuro canary follows.\n' >&2
 fi
 
-INSTALL_STAGE="verify_live_tool_surface_and_widget_domain"
-docker exec -i sovereign-chatgpt-mcp python - <<'PY'
-import asyncio
+INSTALL_STAGE="resolve_expected_mcp_tool_surface"
+# The base registry excludes the separately scoped Aurion Admin MCP lane.
+# Derive its additional names from the declared scope contract, never from the
+# observed registry count, so a missing registration still fails the canary.
+EXPECTED_MCP_TOOL_COUNT="$(docker exec -i sovereign-chatgpt-mcp python - "$EXPECTED_MCP_TOOL_COUNT" <<'PY'
+import os
+import sys
 
-import launcher
-import server
+from aurion_admin_mcp_lane import AurionAdminMcpRuntime, exposed_tool_names
 
-required_tools = {
-    "agent_zero_backend_diagnostics",
-    "agent_zero_a2a_canary",
-    "backend_architecture_assess",
-    "deterministic_architecture_inventory",
-    "mcp_tool_contract_registry",
-    "neuro_event_commit",
-    "neuro_event_route_preview",
-    "neuro_runtime_contract_status",
-    "operational_assurance_skill_inventory",
-    "patchmon_tool_inventory",
-    "repository_architecture_drift_report",
-    "repository_architecture_snapshot",
-    "aurion_account_role_readback",
-    "aurion_account_role_plan",
-    "aurion_account_role_apply",
-    "teaching_lesson_simulate",
-    "teaching_package_assess",
-}
-tools = asyncio.run(launcher.mcp.list_tools())
-tool_names = {tool.name for tool in tools}
-neuro_tools = {
-    "neuro_event_commit",
-    "neuro_event_route_preview",
-    "neuro_runtime_contract_status",
-    "teaching_lesson_simulate",
-    "teaching_package_assess",
-}
-missing_tools = sorted(required_tools - tool_names)
-assert not missing_tools, {"missingRequiredTools": missing_tools, "toolCount": len(tool_names)}
-assert len(tool_names) == 256, {"expectedToolCount": 256, "actualToolCount": len(tool_names)}
-assert neuro_tools <= tool_names, sorted(neuro_tools - tool_names)
-registry = server._live_mcp_registry_evidence()
-assert registry.get("registry_runtime_verified") is True, registry
-assert registry.get("registry_tool_count") == len(tool_names), (registry, len(tool_names))
-resources = asyncio.run(launcher.mcp.list_resources())
-cognitive_resource = next(
-    resource
-    for resource in resources
-    if str(resource.uri) == "ui://sovereign/dev_dashboard.v2.html"
-)
-serialized = cognitive_resource.model_dump(by_alias=True)
-resource_meta = serialized.get("_meta") or {}
-expected_domain = "https://sovereign-backend.arelorian.de"
-assert (resource_meta.get("ui") or {}).get("domain") == expected_domain, resource_meta
-assert resource_meta.get("openai/widgetDomain") == expected_domain, resource_meta
-print(
-    {
-        "toolCount": len(tool_names),
-        "registrySha256": registry.get("registry_tool_names_sha256"),
-        "widgetDomain": expected_domain,
-        "widgetUri": str(cognitive_resource.uri),
-    }
-)
+additional_tools = ()
+if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP", "0").strip() == "1":
+    additional_tools = exposed_tool_names(
+        AurionAdminMcpRuntime()._local_allowed_scopes(),
+        wolfram_enabled=os.getenv("AURION_ADMIN_MCP_WOLFRAM_ENABLED", "0").strip() == "1",
+    )
+print(int(sys.argv[1]) + len(additional_tools))
 PY
+)"
+[[ "$EXPECTED_MCP_TOOL_COUNT" =~ ^[0-9]+$ ]] || fail "declared MCP tool count is invalid"
+
+INSTALL_STAGE="verify_live_tool_surface_and_widget_domain"
+docker exec sovereign-chatgpt-mcp python /app/deployment_registry_probe.py surface "${EXPECTED_MCP_TOOL_COUNT}"
 
 INSTALL_STAGE="verify_mcp_tool_surface_preservation"
 NEW_MCP_REGISTRY_FILE="$ROLLBACK_DIR/new-mcp-registry-contracts.json"
-docker exec -i sovereign-chatgpt-mcp python - <<'PY' > "$NEW_MCP_REGISTRY_FILE"
-from dataclasses import asdict
-import json
-
-import launcher
-import operational_governance_tools
-
-registry = operational_governance_tools.mcp_tool_contract_registry(include_schemas=True)
-payload = asdict(registry)
-tools = sorted(payload.get("tools") or [], key=lambda item: str(item.get("name") or ""))
-names = [item.get("name") for item in tools]
-if (
-    registry.ok is not True
-    or registry.status != "MCP_TOOL_REGISTRY_READY"
-    or registry.runtimeVerified is not True
-    or registry.truncated is True
-    or registry.toolCount != len(tools)
-    or any(not isinstance(name, str) or not name for name in names)
-    or names != sorted(set(names))
-):
-    raise SystemExit("replacement MCP returned an invalid complete contract registry")
-print(
-    json.dumps(
-        {
-            "schemaVersion": "sovereign.mcp-deployment-contract-surface.v1",
-            "registrySnapshotSha256": registry.registrySnapshotSha256,
-            "toolCount": len(tools),
-            "tools": tools,
-        },
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-)
-PY
+docker exec sovereign-chatgpt-mcp python /app/deployment_registry_probe.py snapshot "${EXPECTED_MCP_TOOL_COUNT}" > "$NEW_MCP_REGISTRY_FILE"
 chmod 0600 "$NEW_MCP_REGISTRY_FILE"
 # The replacement registry itself remains a hard runtime invariant. Historical
 # predecessor compatibility is evidence, not deployment authority.
@@ -2222,6 +2160,7 @@ required_additions = {
     "neuro_runtime_contract_status",
     "teaching_lesson_simulate",
     "teaching_package_assess",
+    "wolfram_source_intelligence",
 }
 if (
     value.get("schemaVersion") != "sovereign.mcp-deployment-contract-surface.v1"
@@ -2266,6 +2205,7 @@ expected_additions = {
     "neuro_runtime_contract_status",
     "teaching_lesson_simulate",
     "teaching_package_assess",
+    "wolfram_source_intelligence",
 }
 
 
@@ -2703,7 +2643,7 @@ if predecessor_captured:
     additions = sorted(set(new_by_name) - set(previous_by_name))
     if len(previous_names) == 244 and expected_additions.isdisjoint(previous_names):
         if set(additions) != expected_additions:
-            raise SystemExit("244-tool predecessor did not receive exactly the five approved additions")
+            raise SystemExit("244-tool predecessor did not receive exactly the six approved additions")
     for name in previous_names:
         old = previous_by_name[name]
         new = new_by_name[name]
@@ -2801,12 +2741,14 @@ set +e
 CANARY_OUTPUT="$(
 docker exec -i \
   -e SOVEREIGN_EXPECTED_CANARY_REVISION="$EXPECTED_REVISION" \
+  -e SOVEREIGN_EXPECTED_MCP_TOOL_COUNT="$EXPECTED_MCP_TOOL_COUNT" \
   sovereign-chatgpt-mcp python - 2>&1 <<'PY'
 import asyncio
 from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import sqlite3
 import sys
@@ -2816,7 +2758,34 @@ import tempfile
 canary_phase = "bootstrap"
 
 
-def _safe_canary_exception_hook(error_type, _error, _traceback) -> None:
+def _safe_canary_exception_details(error_name, error) -> dict[str, object]:
+    if error_name == "AssertionError" and hasattr(error, "model_dump"):
+        dumped = error.model_dump()
+        data = dumped.get("data") if isinstance(dumped, dict) else None
+        evidence = dumped.get("evidence") if isinstance(dumped, dict) else None
+        return {
+            "ok": dumped.get("ok"),
+            "status": dumped.get("status"),
+            "failureFamily": dumped.get("failureFamily"),
+            "blocker": dumped.get("blocker"),
+            "evidenceToolCount": evidence.get("toolCount") if isinstance(evidence, dict) else None,
+            "dataModules": data.get("modules") if isinstance(data, dict) else None,
+            "dataDeploymentBinding": data.get("deploymentBinding") if isinstance(data, dict) else None,
+            "dataLedger": data.get("ledger") if isinstance(data, dict) else None,
+            "dataFoundationLedger": data.get("foundationLedger") if isinstance(data, dict) else None,
+            "dataAdmissions": data.get("admissions") if isinstance(data, dict) else None,
+            "dataGlobalLedgerQuota": data.get("globalLedgerQuota") if isinstance(data, dict) else None,
+            "dataToolOutcomeQuota": data.get("toolOutcomeQuota") if isinstance(data, dict) else None,
+            "stateInitializedByThisCall": data.get("stateInitializedByThisCall") if isinstance(data, dict) else None,
+        }
+    detail = str(error).strip()
+    if detail:
+        text_value = re.sub(r"[^A-Za-z0-9_.:=-]+", "_", detail)[:1000]
+        if text_value:
+            return {"message": text_value}
+    return {"message": error_name}
+
+def _safe_canary_exception_hook(error_type, error, _traceback) -> None:
     error_name = str(getattr(error_type, "__name__", "UnknownError"))
     if not error_name.isidentifier() or len(error_name) > 80:
         error_name = "UnknownError"
@@ -2826,6 +2795,7 @@ def _safe_canary_exception_hook(error_type, _error, _traceback) -> None:
                 "status": "NEURO_DEPLOYMENT_CANARY_FAILED",
                 "phase": canary_phase,
                 "errorType": error_name,
+                "errorDetails": _safe_canary_exception_details(error_name, error),
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -2896,20 +2866,50 @@ with tempfile.TemporaryDirectory(
     assert getattr(commit_tool.fn, "__sovereign_operating_profile_wrapped__", False)
 
     registered_tools = list(launcher.mcp._tool_manager.list_tools())
-    assert len({tool.name for tool in registered_tools}) == 256
+    expected_tool_count = int(os.environ["SOVEREIGN_EXPECTED_MCP_TOOL_COUNT"])
+    assert len({tool.name for tool in registered_tools}) == expected_tool_count
 
     def call_registered(tool_name: str, arguments: dict[str, object]):
         return asyncio.run(tool_manager.call_tool(tool_name, arguments, convert_result=False))
 
     canary_phase = "contract_status"
     empty_status = call_registered("neuro_runtime_contract_status", {})
-    assert empty_status.ok is True, empty_status
-    assert empty_status.status == "NEURO_RUNTIME_CONTRACT_READY", empty_status
-    assert empty_status.evidence["toolCount"] == 256, empty_status
-    assert empty_status.data["stateInitializedByThisCall"] is False, empty_status
+
+    def contract_status_summary(status):
+        def safe_value(obj, key):
+            if isinstance(obj, dict):
+                return obj.get(key)
+            return getattr(obj, key, None)
+
+        evidence = safe_value(status, "evidence") or {}
+        data = safe_value(status, "data") or {}
+        return (
+            f"ok={safe_value(status, 'ok')},"
+            f"status={safe_value(status, 'status')},"
+            f"failureFamily={safe_value(status, 'failureFamily')},"
+            f"toolCount={safe_value(evidence, 'toolCount')},"
+            f"stateInitializedByThisCall={safe_value(data, 'stateInitializedByThisCall')}"
+        )
+
+    def require_contract_status(condition, label, status):
+        if not condition:
+            raise AssertionError(f"contract_status.{label}:{contract_status_summary(status)}")
+
+    require_contract_status(empty_status.ok is True, "ok", empty_status)
+    require_contract_status(empty_status.status == "NEURO_RUNTIME_CONTRACT_READY", "status", empty_status)
+    require_contract_status(
+        empty_status.evidence["toolCount"] == expected_tool_count,
+        "toolCount",
+        empty_status,
+    )
+    require_contract_status(
+        empty_status.data["stateInitializedByThisCall"] is False,
+        "stateInitializedByThisCall",
+        empty_status,
+    )
     assert not isolated_state.exists(), "read-only status initialized isolated state"
     # Continuity is advisory provenance and intentionally not required for this
-    # deployment canary. Guard every one of the 251 non-neuro tools
+    # deployment canary. Guard every non-neuro tool in the configured registry
     # for the remainder of the canary while leaving only the five additive
     # Neuro/Teacher wrapper chains callable.
     guarded_tool_calls: list[str] = []
@@ -2925,7 +2925,7 @@ with tempfile.TemporaryDirectory(
 
         registered_tool.fn = forbidden_selected_tool_call
         guarded_tool_names.append(tool_name)
-    assert len(set(guarded_tool_names)) == 251, len(set(guarded_tool_names))
+    assert len(set(guarded_tool_names)) == expected_tool_count - 5, len(set(guarded_tool_names))
 
     now = datetime.now(timezone.utc)
     now = now.replace(microsecond=(now.microsecond // 1000) * 1000)
@@ -2956,7 +2956,7 @@ with tempfile.TemporaryDirectory(
         "change_event": event.to_dict(),
         "request_id": "request.neuro-deployment-canary",
         "session_id": "session.neuro-deployment-canary",
-        "mission_summary": "Read MCP runtime status.",
+        "mission_summary": "Read the last private MCP state.",
         "required_capabilities": ["runtime"],
         "allowed_effects": ["read"],
         "relevance_threshold": 1,
@@ -3282,8 +3282,8 @@ print(
     json.dumps(
         {
             "status": "NEURO_DEPLOYMENT_CANARY_VERIFIED",
-            "registryToolCount": 256,
-            "guardedPredecessorToolCount": 251,
+            "registryToolCount": expected_tool_count,
+            "guardedPredecessorToolCount": len(set(guarded_tool_names)),
             "quarantineNoMutation": True,
             "previewProposalOnly": True,
             "selectedToolsExecuted": False,
@@ -3318,6 +3318,53 @@ import sys
 
 phase_pattern = re.compile(r"^[a-z][a-z0-9_-]{0,79}$")
 error_pattern = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,79}$")
+def _compact_error_details(payload):
+    details = payload.get("errorDetails")
+    if not isinstance(details, dict):
+        return ""
+    parts = []
+    message = details.get("message")
+    if isinstance(message, str) and message.strip():
+        message_value = re.sub(r"[^A-Za-z0-9_.:,=-]+", "_", message.strip())[:800]
+        if message_value:
+            parts.append(f"message={message_value}")
+    for key in (
+        "ok",
+        "status",
+        "blocker",
+        "stateInitializedByThisCall",
+        "evidenceToolCount",
+    ):
+        value = details.get(key)
+        if value is None:
+            continue
+        text_value = re.sub(r"[^A-Za-z0-9_.:-]+", "_", str(value))[:160]
+        if text_value:
+            parts.append(f"{key}={text_value}")
+    for key, label in (
+        ("dataModules", "modules"),
+        ("dataDeploymentBinding", "deployment"),
+        ("dataLedger", "ledger"),
+        ("dataFoundationLedger", "foundation"),
+        ("dataAdmissions", "admissions"),
+        ("dataGlobalLedgerQuota", "globalQuota"),
+        ("dataToolOutcomeQuota", "toolQuota"),
+    ):
+        value = details.get(key)
+        if not isinstance(value, dict):
+            continue
+        status = re.sub(r"[^A-Za-z0-9_.:-]+", "_", str(value.get("status") or ""))[:80]
+        if status:
+            parts.append(f"{label}={status}")
+        if "integrityVerified" in value:
+            parts.append(f"{label}Integrity={int(value.get('integrityVerified') is True)}")
+        if "ready" in value:
+            parts.append(f"{label}Ready={int(value.get('ready') is True)}")
+        if "exceeded" in value:
+            parts.append(f"{label}Exceeded={int(value.get('exceeded') is True)}")
+    compact = ",".join(parts)
+    return compact[:1200]
+
 for raw_line in reversed(sys.stdin.read().splitlines()):
     try:
         payload = json.loads(raw_line)
@@ -3334,12 +3381,13 @@ for raw_line in reversed(sys.stdin.read().splitlines()):
         and phase_pattern.fullmatch(phase)
         and error_pattern.fullmatch(error_type)
     ):
-        print(f"phase={phase};error={error_type}")
+        detail = _compact_error_details(payload)
+        print(f"phase={phase};error={error_type}" + (f";details={detail}" if detail else ""))
         break
 '
   )"
   unset CANARY_OUTPUT
-  if [[ ! "$CANARY_DIAGNOSTIC" =~ ^phase=[a-z][a-z0-9_-]{0,79}\;error=[A-Za-z_][A-Za-z0-9_]{0,79}$ ]]; then
+  if [[ ! "$CANARY_DIAGNOSTIC" =~ ^phase=[a-z][a-z0-9_-]{0,79}\;error=[A-Za-z_][A-Za-z0-9_]{0,79}(\;details=[A-Za-z0-9_.:,=-]{1,1200})?$ ]]; then
     CANARY_DIAGNOSTIC="phase=unclassified;error=UnknownError"
   fi
   fail "isolated neuro runtime canary failed: $CANARY_DIAGNOSTIC"
@@ -3621,6 +3669,8 @@ else
   [[ "$PREVIOUS_MCP_TOOL_SURFACE_CAPTURED" == "0" ]] \
     || fail "first-install state conflicts with predecessor registry evidence"
 fi
+INSTALL_STAGE="verify_auth_proxy_public_routing"
+python3 "$SOURCE_DIR/deploy/repair-auth-proxy-routing.py"
 TOOLCHAIN_ROLLBACK_ARMED=0
 INSTALL_STAGE="completed"
 INSTALL_COMPLETED=1
@@ -3636,4 +3686,4 @@ if [[ "$PREVIOUS_MCP_CONTAINER_PRESENT" == "1" ]]; then
     || SEMANTIC_COMPATIBILITY_VERIFIED_JSON=true
   FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON=false
 fi
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"neuro_runtime_tools":true,"foundation_runtime":true,"teaching_runtime_tools":true,"neuro_functional_canary":true,"neuro_tamper_detection":true,"neuro_selected_tools_executed":false,"registered_tool_surface_canary":true,"teaching_functional_canary":true,"teaching_source_provenance_canary":true,"teaching_package_mutated":false,"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only","read_only_tool_calls_persisted":false,"canary_persisted_outcome_tools":["neuro_event_commit"],"mcp_tool_count":%s,"predecessor_container_present":%s,"predecessor_registry_capture_mode":"%s","previous_tool_surface_compared":%s,"semantic_compatibility_verified":%s,"semantic_compatibility_blocking":false,"first_install_without_predecessor":%s,"first_install_attested":%s,"event_delta_projection":"incremental","operating_profile_enforced":true,"continuity_advisory":true,"github_app_repository_canary":true,"persistent_github_token_present":false,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"deployment_source_scope":"%s","toolchain_install_required":%s,"toolchain_revision":"%s","toolchain_revision_verified":%s,"toolchain_health_readback":%s,"toolchain_n8n_evidence_auth_canary":%s,"toolchain_rollback_capable":%s,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE" "$EXPECTED_MCP_TOOL_COUNT" "$PREDECESSOR_CONTAINER_PRESENT_JSON" "$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE" "$PREVIOUS_TOOL_SURFACE_COMPARED_JSON" "$SEMANTIC_COMPATIBILITY_VERIFIED_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$DEPLOYMENT_SOURCE_SCOPE" "$TOOLCHAIN_INSTALL_REQUIRED_JSON" "$TOOLCHAIN_INSTALLED_REVISION" "$TOOLCHAIN_REVISION_VERIFIED_JSON" "$TOOLCHAIN_HEALTH_READBACK_JSON" "$TOOLCHAIN_AUTH_CANARY_JSON" "$TOOLCHAIN_ROLLBACK_CAPABLE_JSON"
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"neuro_runtime_tools":true,"foundation_runtime":true,"teaching_runtime_tools":true,"neuro_functional_canary":true,"neuro_tamper_detection":true,"neuro_selected_tools_executed":false,"registered_tool_surface_canary":true,"teaching_functional_canary":true,"teaching_source_provenance_canary":true,"teaching_package_mutated":false,"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only","read_only_tool_calls_persisted":false,"canary_persisted_outcome_tools":["neuro_event_commit"],"mcp_tool_count":%s,"predecessor_container_present":%s,"predecessor_registry_capture_mode":"%s","previous_tool_surface_compared":%s,"semantic_compatibility_verified":%s,"semantic_compatibility_blocking":false,"first_install_without_predecessor":%s,"first_install_attested":%s,"event_delta_projection":"incremental","operating_profile_enforced":true,"continuity_advisory":true,"github_app_repository_canary":true,"persistent_github_token_present":false,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"deployment_source_scope":"%s","toolchain_install_required":%s,"toolchain_revision":"%s","toolchain_revision_verified":%s,"toolchain_health_readback":%s,"toolchain_n8n_evidence_auth_canary":%s,"toolchain_rollback_capable":%s,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-it-tools"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE" "$EXPECTED_MCP_TOOL_COUNT" "$PREDECESSOR_CONTAINER_PRESENT_JSON" "$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE" "$PREVIOUS_TOOL_SURFACE_COMPARED_JSON" "$SEMANTIC_COMPATIBILITY_VERIFIED_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$DEPLOYMENT_SOURCE_SCOPE" "$TOOLCHAIN_INSTALL_REQUIRED_JSON" "$TOOLCHAIN_INSTALLED_REVISION" "$TOOLCHAIN_REVISION_VERIFIED_JSON" "$TOOLCHAIN_HEALTH_READBACK_JSON" "$TOOLCHAIN_AUTH_CANARY_JSON" "$TOOLCHAIN_ROLLBACK_CAPABLE_JSON"

@@ -146,6 +146,7 @@ function scanRuntimeContracts() {
   const app = read('src/App.tsx');
   const surface = read('src/features/control-surface-vnext/App.tsx');
   const adapter = read('src/features/control-surface-vnext/adapter/production-adapter.ts');
+  const repositoryAdapter = read('src/features/control-surface-vnext/adapter/repository-bound-adapter.ts');
   const adapterContext = read('src/features/control-surface-vnext/adapter/context.tsx');
   const publication = read('src/features/control-surface-vnext/components/PublicationInspector/PublicationInspector.tsx');
   const operatorAuth = read('src/features/control-surface-vnext/components/Auth/OperatorAuthModal.tsx');
@@ -168,12 +169,13 @@ function scanRuntimeContracts() {
   }
 
   if (
-    /new SovereignProductionAdapter\(\)/.test(adapterContext)
-    && /credentials:\s*'include'/.test(adapter)
-    && /'\/api\/user\/agent\/swarm\/run'/.test(adapter)
+    /from ['"]\.\/repository-bound-adapter['"]/.test(adapterContext)
+    && /new SovereignProductionAdapter\(\)/.test(adapterContext)
+    && /credentials:\s*'include'/.test(repositoryAdapter)
+    && /'\/api\/user\/agent\/repository\/run'/.test(repositoryAdapter)
     && /setActiveRunId\(accepted\.jobId\)/.test(surface)
-    && !/MockSovereignBackendAdapter|fallbackMock|\/api\/config\//.test(adapter)
-  ) pass('vnext:production-adapter', 'vNext dispatch is bound to the single authenticated production adapter without simulator fallback.');
+    && !/MockSovereignBackendAdapter|fallbackMock|\/api\/config\//.test(repositoryAdapter)
+  ) pass('vnext:production-adapter', 'vNext dispatch is bound to the repository-scoped live production adapter and backend-accepted run id.');
   else fail('vnext:production-adapter', 'vNext must use the live production adapter and only adopt the backend-accepted run id.');
 
   if (

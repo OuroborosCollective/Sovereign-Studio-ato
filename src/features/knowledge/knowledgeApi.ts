@@ -1,6 +1,6 @@
 const API_BASE = (
   (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined)?.trim()
-  || 'https://sovereign-backend.arelorian.de'
+  || ''
 ).replace(/\/$/, '');
 
 export const MAX_KNOWLEDGE_UPLOAD_BYTES = 12 * 1024 * 1024;

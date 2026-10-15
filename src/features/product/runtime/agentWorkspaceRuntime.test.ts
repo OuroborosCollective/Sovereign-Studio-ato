@@ -22,6 +22,17 @@ function validRequest() {
 }
 
 describe('agentWorkspaceRuntime', () => {
+  it('retains the last 200 events in order and sanitizes every retained message', () => {
+    const events = Array.from({ length: 250 }, (_, index) => ({
+      level: 'info' as const, message: `event-${index} password=fixture`, at: index + 1,
+    }));
+    const result = normalizeAgentWorkspaceResult({ events, workspaceId: 'bounded-events', status: 'completed' });
+    expect(result.events).toHaveLength(200);
+    expect(result.events[0].at).toBe(51);
+    expect(result.events[199].at).toBe(250);
+    expect(result.events.every(event => event.message.includes('[redacted]'))).toBe(true);
+    expect(events[50].message).toContain('password=fixture');
+  });
   it('builds a Draft-PR-only internal Sovereign Agent workspace request by default', () => {
     const request = validRequest();
 
@@ -29,6 +40,30 @@ describe('agentWorkspaceRuntime', () => {
     expect(request.draftPrOnly).toBe(true);
     expect(request.workspaceHost).toBe('managed-ephemeral');
     expect(validateAgentWorkspaceRequest(request).allowed).toBe(true);
+  });
+
+  it('accepts Bolt only on the remote-snapshot host and never aliases it to a local workspace', () => {
+    const request = buildAgentWorkspaceRequest({
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      branch: 'main',
+      task: 'Run the revision-pinned snapshot executor.',
+      executor: 'bolt-diy-snapshot',
+      workspaceHost: 'remote-snapshot',
+    });
+
+    expect(request.executor).toBe('bolt-diy-snapshot');
+    expect(request.workspaceHost).toBe('remote-snapshot');
+    expect(validateAgentWorkspaceRequest(request).allowed).toBe(true);
+
+    expect(validateAgentWorkspaceRequest({
+      ...request,
+      workspaceHost: 'managed-ephemeral',
+    }).blockers).toContain('Bolt snapshot executor requires the remote-snapshot workspace host.');
+
+    expect(validateAgentWorkspaceRequest({
+      ...validRequest(),
+      workspaceHost: 'remote-snapshot',
+    }).blockers).toContain('Remote snapshot workspace host requires the bolt-diy-snapshot executor.');
   });
 
   it('blocks invalid repo urls, empty tasks and non-draft execution', () => {

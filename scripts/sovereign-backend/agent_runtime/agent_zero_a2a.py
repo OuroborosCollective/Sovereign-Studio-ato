@@ -27,6 +27,7 @@ from .workspace_policy import (
 _A2A_TASK_ID_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
 _A2A_WORKSPACE_ID_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
 _A2A_READ_TIMEOUT_SECONDS: Final[int] = 30
+_A2A_CANCEL_TIMEOUT_SECONDS: Final[int] = 5
 # message/send is explicitly nonblocking. A slow acknowledgement must never tie
 # up the server-owned repository reconciler for minutes; an expired acceptance
 # window remains outcome-unknown and therefore fail-closed/no-resubmit.
@@ -169,8 +170,22 @@ def build_repository_task_prompt(
         "repository target and the checked-out branch matches the requested branch; otherwise stop with "
         "AGENT_ZERO_REPOSITORY_ACCESS_UNAVAILABLE. "
         "Do not push to GitHub, create or merge a PR, deploy, mutate a database, inspect or disclose secrets, "
-        "or claim Sovereign evidence/success. "
+        "or claim Sovereign evidence/success. If the user's mission asks for a push, Draft PR, publication, merge, "
+        "tests, evidence, or deployment, that clause is downstream intent for Sovereign after your workspace mutation. "
+        "It is NOT a contradictory instruction and you must not spend model turns debating it. Your only responsibility "
+        "is the requested repository file mutation inside the shared workspace. Before repository access, use Agent Zero's "
+        "configured repository credential non-interactively and never wait for a username/password prompt. If authenticated "
+        "repository access cannot be proven immediately, stop with AGENT_ZERO_REPOSITORY_ACCESS_UNAVAILABLE. "
+        "A private IT-Tools utility UI is available inside the trusted Agent Zero/Sovereign network at "
+        "http://sovereign-it-tools/. When the bounded repository task genuinely benefits from JSON/YAML "
+        "conversion, encoding or decoding, hashing, regex exploration, timestamp work, or similar deterministic "
+        "developer utilities, you may use Agent Zero's browser capability against that internal UI. IT-Tools is "
+        "only a convenience calculator: its output is never Sovereign evidence, authority, validation, permission, "
+        "or a substitute for the required regression/readback gates. Do not use it when it is not useful. "
         "Read only files needed for the requested mutation and write only inside the stated workspace. "
+        "Use fresh bounded terminal invocations for repository inspection and mutation. If a terminal command "
+        "times out or returns control without a shell prompt, reset that terminal session before the next command; "
+        "never keep issuing commands into a possibly busy session. "
         "Do not install dependencies or run tests, builds, linters, audits, package managers or other validation, "
         "even when the mission mentions them; Sovereign owns all regression, janitor and evidence gates after "
         "your workspace mutation. Once the requested file changes are saved, stop immediately and return a "
@@ -213,16 +228,20 @@ class AgentZeroA2AClient:
         # protected token in headers rather than Agent Zero's token-in-URL mode.
         return f"{self.config.base_url.rstrip('/')}/a2a/"
 
-    def _post_rpc(self, payload: dict[str, Any], *, submit: bool) -> Mapping[str, Any]:
+    def _post_rpc(self, payload: dict[str, Any], *, submit: bool, timeout_seconds: int | None = None) -> Mapping[str, Any]:
         try:
             response = requests.post(
                 self.endpoint,
                 headers=self._headers(),
                 json=payload,
                 timeout=(
-                    _A2A_SUBMIT_TIMEOUT_SECONDS
-                    if submit
-                    else min(self.config.timeout_seconds, _A2A_READ_TIMEOUT_SECONDS)
+                    timeout_seconds
+                    if timeout_seconds is not None
+                    else (
+                        _A2A_SUBMIT_TIMEOUT_SECONDS
+                        if submit
+                        else min(self.config.timeout_seconds, _A2A_READ_TIMEOUT_SECONDS)
+                    )
                 ),
                 allow_redirects=False,
             )
@@ -336,6 +355,29 @@ class AgentZeroA2AClient:
             "params": {"id": normalized_task_id},
         }
         task = _parse_task(self._post_rpc(payload, submit=False))
+        if task.task_id != normalized_task_id:
+            raise AgentZeroA2AError(
+                "AGENT_ZERO_A2A_TASK_ID_MISMATCH",
+                "FAIL_CLOSED_ON_A2A_TASK_IDENTITY_MISMATCH",
+            )
+        return task
+
+    def cancel_task(self, task_id: str) -> AgentZeroA2ATask:
+        """Request A2A cancellation and require exact task/state readback."""
+        normalized_task_id = _normalize_task_id(task_id)
+        payload = {
+            "jsonrpc": "2.0",
+            "id": str(uuid.uuid4()),
+            "method": "tasks/cancel",
+            "params": {"id": normalized_task_id},
+        }
+        task = _parse_task(
+            self._post_rpc(
+                payload,
+                submit=False,
+                timeout_seconds=_A2A_CANCEL_TIMEOUT_SECONDS,
+            )
+        )
         if task.task_id != normalized_task_id:
             raise AgentZeroA2AError(
                 "AGENT_ZERO_A2A_TASK_ID_MISMATCH",

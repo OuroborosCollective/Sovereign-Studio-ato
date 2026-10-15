@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import ToolBase, ToolResult, ToolPolicyError
+from ..git_workspace import git_repository_diff_full
 
 
 def _run_git(args: list[str], cwd: str | Path, timeout: int = 60) -> tuple[int, str, str]:
@@ -121,6 +122,18 @@ class GitDiffTool(ToolBase):
             return ToolResult(
                 status="blocked",
                 blocker="Not a git repository",
+            )
+
+        if not params.get("staged") and not params.get("stat") and not params.get("file"):
+            patch, receipt = git_repository_diff_full(repo_path, max_files=50)
+            output = patch.decode("utf-8", errors="replace")
+            return ToolResult(
+                status="done" if receipt.status == "done" else "blocked",
+                output=output or ("No changes" if receipt.status == "done" else None),
+                blocker=receipt.blocker,
+                changed_files=receipt.changed_files,
+                metadata={"staged": False, "basis": "HEAD", "includes_untracked": True},
+                exit_code=receipt.exit_code,
             )
 
         args = ["diff"]

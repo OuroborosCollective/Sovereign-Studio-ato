@@ -53,6 +53,26 @@ describe('architecture enhancement runtimes', () => {
     expect(report.findings[0].kind).toBe('type-mismatch');
   });
 
+  it('deduplicates changed paths and computes evidence state without array passes', () => {
+    const result = buildMergeBlastRadiusGate({
+      changedPaths: ['src/runtime/a.ts', 'src/runtime/a.ts', 'backend/security/auth.py'],
+      totalAddedLines: 10,
+      totalRemovedLines: 5,
+      dependencyImpact: [
+        { targetPath: 'src/runtime/a.ts', importerPaths: ['src/x.ts'], importerCount: 1, scannedFileCount: 1, complete: true, risk: 'low' },
+        { targetPath: 'backend/security/auth.py', importerPaths: ['src/y.ts'], importerCount: 2, scannedFileCount: 2, complete: true, risk: 'medium' },
+      ],
+      testEvidenceReady: true,
+      securityEvidenceReady: true,
+      releaseEvidenceReady: true,
+    });
+
+    expect(result.score).toBe(26);
+    expect(result.level).toBe('medium');
+    expect(result.reasons).toContain('Critical surfaces changed: src/runtime/a.ts, backend/security/auth.py.');
+    expect(result.requiresAdditionalEvidence).toBe(false);
+  });
+
   it('raises blast radius for critical high-impact changes', () => {
     const result = buildMergeBlastRadiusGate({
       changedPaths: ['backend/auth/routes.py', '.github/workflows/release.yml'],

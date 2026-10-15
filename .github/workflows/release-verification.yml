@@ -162,6 +162,13 @@ jobs:
         shell: bash
         run: pnpm exec vitest run scripts/runtime-canary-matrix-gate.test.mjs
 
+      - name: Public Site Preview Contracts
+        id: public_site_preview
+        shell: bash
+        run: |
+          python3 -m unittest discover -s tests -p 'test_public_site_contract.py' -v
+          python3 scripts/verify-public-site.py --root public-site --mode preview
+
       - name: Required Gate Priority Contract Tests
         id: required_gate_priority
         shell: bash

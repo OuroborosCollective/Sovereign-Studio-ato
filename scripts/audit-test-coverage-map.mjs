@@ -474,6 +474,7 @@ for (const entry of files) rootCounts.set(entry.testRoot, (rootCounts.get(entry.
 const report = {
   schemaVersion: 'sovereign.test-coverage-map.v2',
   generatedAt: new Date().toISOString(),
+  productArchitecture: 'unified-app',
   discovery: {
     scope: 'tracked repository test conventions',
     excludedDirectories: [...SKIPPED_DIRECTORIES].sort(),

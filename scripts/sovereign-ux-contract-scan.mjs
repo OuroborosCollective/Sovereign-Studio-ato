@@ -125,7 +125,7 @@ function run() {
   requireText(repositoryAdapter, /credentials:\s*'include'/, 'adapter:http-only-session', 'Repository requests rely on the backend HTTP-only session.');
   requireText(repositoryAdapter, /'\/api\/user\/agent\/repository\/run'/, 'adapter:repository-run', 'vNext repository mission dispatch uses the direct persisted repository-job endpoint.');
   forbidText(repositoryAdapter, /'\/api\/user\/agent\/swarm\/run'/, 'adapter:no-repository-swarm-run', 'The vNext repository path must not dispatch through the Swarm run endpoint.');
-  requireText(adapter, /\/api\/user\/agent\/swarm\/runs\/\$\{encodeURIComponent\(requested\)\}/, 'adapter:generic-run-readback', 'The generic adapter still supports persisted Swarm-run readback for non-repository product paths.');
+  requireText(adapter, /\/api\/user\/agent\/single\/runs\/\$\{encodeURIComponent\(requested\)\}/, 'adapter:generic-run-readback', 'The generic adapter still supports persisted single-agent run readback for non-repository product paths.');
   requireText(adapter, /this\.client\.getJob\(jobId\)/, 'adapter:linked-job', 'Direct repository work is read through the exact backend job id.');
   requireText(adapter, /this\.client\.getEvidenceAnchors\(jobId\)/, 'adapter:evidence-anchors', 'Workspace revision comes from evidence anchors bound to the direct job id.');
   requireText(adapter, /this\.client\.prepareDraftPr\(jobId\)/, 'adapter:draft-prepare', 'Draft PR preparation uses the existing server gate against the exact job id.');
@@ -159,7 +159,10 @@ function run() {
   requireText(runtimeMonitor, /Nothing is synthesized to fill this panel\./, 'monitor:no-synthesis', 'Runtime monitor explicitly refuses synthesized evidence.');
   requireText(workspaceProjection, /REVISION UNVERIFIED/, 'workspace:revision-unverified', 'Workspace shows unverified revision until evidence supplies it.');
   requireText(workspaceProjection, /This does not claim the repository is globally clean\./, 'workspace:no-global-clean-claim', 'Empty changed-file projection does not claim global clean state.');
-  requireText(integrationProjection, /read-only[\s\S]*does not invent attachment state/, 'integration:read-only', 'Integration projection remains read-only until a real server contract exists.');
+  requireText(integrationProjection, /A configured or isolated service is not a verified attachment or permission to execute tools\./, 'integration:read-only', 'Integration observations do not grant attachment state or execution permission.');
+  requireText(adapter, /\/api\/user\/agent\/control-surface[\s\S]*parseControlSurfaceReadback/, 'integration:server-contract', 'Integrations come from the authenticated, validated backend control-surface readback.');
+  requireText(integrationProjection, /RegistryReadbackStatus[\s\S]*integrations\.map[\s\S]*item\.status/, 'integration:server-projection', 'Integration status is projected from actual server rows with explicit freshness.');
+  requireText(integrationProjection, /item\.source[\s\S]*item\.observedAt[\s\S]*item\.readbackSha256/, 'integration:provenance', 'Every integration exposes its source, observation time and readback hash.');
 
   requireText(forms, /SOVEREIGN_FORM_REPO_URL/, 'form:repo-url', 'Repo URL contract remains defined.');
   requireText(forms, /SOVEREIGN_FORM_PRIVATE_ACCESS/, 'form:private-access', 'Private-access contract remains defined.');

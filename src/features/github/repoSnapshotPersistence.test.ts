@@ -48,3 +48,16 @@ describe('durable repo snapshot persistence', () => {
     expect(loadDurableRepoSnapshot(storage)).toBeNull();
   });
 });
+
+
+it('bounds accepted snapshot entries while retaining order after invalid rows', () => {
+  const repoFiles = [
+    { path: '', type: 'blob' as const },
+    ...Array.from({ length: 505 }, (_, i) => ({ path: `src/file-${i}.ts`, type: 'blob' as const })),
+  ];
+  const snapshot = createDurableRepoSnapshot({ repoUrl: 'https://github.com/owner/repo', repoBranch: 'main', repoStatus: 'observed', repoFiles, savedAt: 10 });
+  expect(snapshot.repoFiles).toHaveLength(500);
+  expect(snapshot.repoFiles[0].path).toBe('src/file-0.ts');
+  expect(snapshot.repoFiles[499].path).toBe('src/file-499.ts');
+  expect(repoFiles).toHaveLength(506);
+});

@@ -24,6 +24,22 @@ def _load() -> ModuleType:
     return module
 
 
+def test_neuro_canary_diagnostic_accepts_bounded_details() -> None:
+    module = _load()
+    reason = (
+        "isolated neuro runtime canary failed: "
+        "phase=contract_status;error=AssertionError;"
+        "details=ok=False,status=NEURO_RUNTIME_CONTRACT_DEGRADED,"
+        "ledger=NOT_INITIALIZED,ledgerIntegrity=0,stateInitializedByThisCall=0"
+    )
+    match = module.MCP_NEURO_CANARY_FAILURE_RE.fullmatch(reason)
+    assert match is not None
+    assert match.group("phase") == "contract_status"
+    assert match.group("error_type") == "AssertionError"
+    assert "NEURO_RUNTIME_CONTRACT_DEGRADED" in (match.group("details") or "")
+
+
+
 def test_release_gate_accepts_only_exact_successful_revision(monkeypatch) -> None:
     module = _load()
     revision = "a" * 40
@@ -154,107 +170,98 @@ def test_waiting_release_gate_performs_no_image_or_runtime_mutation(monkeypatch,
     assert json.loads((tmp_path / "status.json").read_text("utf-8"))["revision"] == revision
 
 
-def test_agent_zero_workspace_mount_is_noop_when_already_verified(monkeypatch) -> None:
+def _current_runtime_adapters(monkeypatch, *, mount_change=None, environment=None):
     module = _load()
-    runtime = {
-        "present": True,
-        "running": True,
-        "mountVerified": True,
-        "mount": {
-            "type": "bind",
-            "source": "/opt/sovereign-agent-workspaces",
-            "destination": "/a0/sovereign-workspaces",
-            "readWrite": True,
-        },
+    revision = "a" * 40
+    backend = {"digest": "sha256:" + "b" * 64}
+    mcp = {"digest": "sha256:" + "c" * 64}
+    mount = {
+        "Type": "bind",
+        "Source": "/opt/sovereign-agent-workspaces",
+        "Destination": "/var/lib/sovereign-agent/workspaces",
+        "RW": True,
     }
-    monkeypatch.setattr(module, "_agent_zero_runtime_identity", lambda: dict(runtime))
-    monkeypatch.setattr(
-        module,
-        "_run",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("compose must not run when the mount is already verified")
-        ),
-    )
-
-    result = module._ensure_agent_zero_workspace_mount()
-
-    assert result["status"] == "ALREADY_CURRENT"
-    assert result["mutationPerformed"] is False
-    assert result["mountVerified"] is True
-
-
-def test_agent_zero_workspace_mount_recreates_only_compose_service_without_pull_or_build(
-    monkeypatch, tmp_path
-) -> None:
-    module = _load()
-    state_dir = tmp_path / "state"
-    host_root = tmp_path / "workspaces"
-    working_dir = tmp_path / "agent-zero"
-    host_root.mkdir()
-    host_root.chmod(0o770)
-    working_dir.mkdir()
-    compose_file = working_dir / "compose.yml"
-    compose_file.write_text("services:\n  agent-zero:\n    image: agent0ai/agent-zero:latest\n", "utf-8")
-
-    monkeypatch.setattr(module, "STATE_DIR", state_dir)
-    monkeypatch.setattr(module, "STATUS_FILE", state_dir / "status.json")
-    monkeypatch.setattr(module, "AGENT_ZERO_OVERRIDE_FILE", state_dir / "agent-zero-workspace.override.yml")
-    monkeypatch.setattr(module, "AGENT_ZERO_WORKSPACE_HOST_ROOT", host_root)
-
-    before = {
-        "present": True,
-        "running": True,
-        "mountVerified": False,
-        "mount": None,
-        "containerId": "old-agent-zero",
-        "imageId": "sha256:" + "a" * 64,
-        "compose": {
-            "project": "agent-zero-xrev",
-            "service": "agent-zero",
-            "workingDir": str(working_dir),
-            "configFiles": [str(compose_file)],
-        },
-    }
-    after = {
-        **before,
-        "mountVerified": True,
-        "containerId": "new-agent-zero",
-        "mount": {
-            "type": "bind",
-            "source": str(host_root),
-            "destination": "/a0/sovereign-workspaces",
-            "readWrite": True,
-        },
-    }
-    identities = [before, after]
-    monkeypatch.setattr(module, "_agent_zero_runtime_identity", lambda: identities.pop(0))
+    if mount_change:
+        mount.update(mount_change)
     calls = []
 
-    def run(argv, **kwargs):
-        calls.append((argv, kwargs))
-        return subprocess.CompletedProcess(argv, 0, "", "")
+    def run(argv, **_kwargs):
+        calls.append(argv)
+        if argv[:2] == ["docker", "inspect"]:
+            container = argv[2]
+            assert container in {"sovereign-backend", "sovereign-chatgpt-mcp"}
+            payload = [{
+                "Id": container + "-id",
+                "Image": container + "-image",
+                "State": {"Running": True, "Health": {"Status": "healthy"}},
+                "Mounts": [mount] if container == "sovereign-backend" else [],
+                "Config": {"Env": environment if environment is not None else [
+                    "SOVEREIGN_AGENT_WORKSPACE_ROOT=/var/lib/sovereign-agent/workspaces",
+                    "SOVEREIGN_AGENT_WORKSPACE_UID=10001",
+                    "SOVEREIGN_AGENT_WORKSPACE_GID=10001",
+                    "PRIVATE_VALUE=must-not-appear-in-evidence",
+                ]},
+            }]
+        elif argv[:3] == ["docker", "image", "inspect"]:
+            is_backend = argv[3] == "sovereign-backend-image"
+            repository = module.BACKEND_REPOSITORY if is_backend else module.MCP_REPOSITORY
+            digest = backend["digest"] if is_backend else mcp["digest"]
+            payload = [{
+                "Config": {"Labels": {"org.opencontainers.image.revision": revision}},
+                "RepoDigests": [repository + "@" + digest],
+            }]
+        else:
+            raise AssertionError(f"unexpected command: {argv}")
+        return subprocess.CompletedProcess(argv, 0, json.dumps(payload), "")
 
     monkeypatch.setattr(module, "_run", run)
+    monkeypatch.setattr(module, "_toolchain_identity", lambda _revision: {"current": True})
+    monkeypatch.setattr(
+        module, "_broker_call",
+        lambda method, *_args, **_kwargs: (
+            {"status": "BROKER_READY"} if method == "broker_health"
+            else {"ok": True, "status": "PATCHMON_RUNTIME_VERIFIED"}
+        ),
+    )
+    return module, revision, backend, mcp, calls
 
-    result = module._ensure_agent_zero_workspace_mount()
 
-    assert result["status"] == "MOUNT_REPAIRED"
-    assert result["mutationPerformed"] is True
-    assert result["mountVerified"] is True
-    assert result["imagePreserved"] is True
-    assert result["containerRecreated"] is True
-    assert len(calls) == 1
-    argv, kwargs = calls[0]
-    assert argv[:4] == ["docker", "compose", "-p", "agent-zero-xrev"]
-    assert "--no-deps" in argv
-    assert "--force-recreate" in argv
-    assert "--no-build" in argv
-    assert argv[argv.index("--pull") + 1] == "never"
-    assert argv[-1] == "agent-zero"
-    assert kwargs["cwd"] == working_dir
-    override = module.AGENT_ZERO_OVERRIDE_FILE.read_text("utf-8")
-    assert str(host_root) in override
-    assert "/a0/sovereign-workspaces" in override
+def test_runtime_readback_uses_current_backend_workspace_without_retired_container(monkeypatch):
+    module, revision, backend, mcp, calls = _current_runtime_adapters(monkeypatch)
+    result = module._runtime_readback(revision, backend, mcp)
+    assert result["backend"]["workspace"]["mountVerified"] is True
+    assert result["backend"]["workspace"]["configurationVerified"] is True
+    assert result["backend"]["workspace"]["executor"] == "sovereign-local-runner"
+    assert "agentZero" not in result
+    assert "must-not-appear-in-evidence" not in json.dumps(result)
+    assert len(calls) == 4
+    assert all(argv[:2] == ["docker", "inspect"] or argv[:3] == ["docker", "image", "inspect"] for argv in calls)
+
+
+@pytest.mark.parametrize("mount_change", [
+    {"Type": "volume"}, {"Source": "/wrong-root"},
+    {"Destination": "/missing-workspace"}, {"RW": False},
+])
+def test_runtime_readback_blocks_invalid_current_workspace(monkeypatch, mount_change):
+    module, revision, backend, mcp, _calls = _current_runtime_adapters(
+        monkeypatch, mount_change=mount_change,
+    )
+    with pytest.raises(module.ReconcileError, match="backend workspace"):
+        module._runtime_readback(revision, backend, mcp)
+
+
+@pytest.mark.parametrize("environment", [
+    [],
+    ["SOVEREIGN_AGENT_WORKSPACE_ROOT=/wrong-root"],
+    ["SOVEREIGN_AGENT_WORKSPACE_ROOT=/var/lib/sovereign-agent/workspaces",
+     "SOVEREIGN_AGENT_WORKSPACE_UID=0", "SOVEREIGN_AGENT_WORKSPACE_GID=10001"],
+])
+def test_runtime_readback_blocks_invalid_workspace_configuration(monkeypatch, environment):
+    module, revision, backend, mcp, _calls = _current_runtime_adapters(
+        monkeypatch, environment=environment,
+    )
+    with pytest.raises(module.ReconcileError, match="backend workspace"):
+        module._runtime_readback(revision, backend, mcp)
 
 
 def _scoped_reconcile_fixture(
@@ -338,6 +345,7 @@ def _scoped_reconcile_fixture(
         ),
     )
     monkeypatch.setattr(module, "_container_identity", container_identity)
+    monkeypatch.setattr(module, "_toolchain_identity", lambda _revision: {"current": True})
     monkeypatch.setattr(
         module,
         "_backend_health_identity",
@@ -595,15 +603,6 @@ def test_unexpected_runtime_readback_failure_stays_redacted_and_retains_mutation
         module,
         "_deploy_mcp_from_ci_scope",
         lambda *_args, **_kwargs: {"status": "DEPLOYED", "revision": scope["revision"]},
-    )
-    monkeypatch.setattr(
-        module,
-        "_ensure_agent_zero_workspace_mount",
-        lambda: {
-            "status": "ALREADY_CURRENT",
-            "mutationPerformed": False,
-            "mountVerified": True,
-        },
     )
     raw_secret = "private-broker-error-detail"
     monkeypatch.setattr(

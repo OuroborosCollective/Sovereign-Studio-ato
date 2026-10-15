@@ -1,0 +1,48 @@
+name: Sovereign Public Site - Publish GitHub Pages
+
+# Deliberately manual only: no release from an unreviewed PR or unrelated main push.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sovereign-public-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact main revision
+        uses: actions/checkout@v6
+      - name: Test static-site and deployment gate
+        run: python3 -m unittest discover -s tests -p 'test_public_site_contract.py' -v
+      - name: Fail closed on legal placeholders, unsafe links or noindex
+        run: python3 scripts/verify-public-site.py --root public-site --mode release
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload only the isolated static public-site folder
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: public-site
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy previously validated static artifact
+        id: deployment
+        uses: actions/deploy-pages@v4

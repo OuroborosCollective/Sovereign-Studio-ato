@@ -188,6 +188,214 @@ def append_agent_event(conn: Any, job_id: str, event: SovereignAgentEvent) -> No
     conn.commit()
 
 
+def append_agent_progress_receipt(
+    conn: Any,
+    *,
+    job_id: str,
+    receipt: Mapping[str, Any],
+    commit: bool = True,
+) -> str:
+    """Persist one hash-validated, predecessor-bound SCPL progress receipt.
+
+    The canonical job row is locked so two reconcilers cannot both extend the
+    same receipt head.  This is append-only persistence, not job-state truth.
+    """
+
+    from .causal_progress_lease import (
+        CausalProgressContractError,
+        CausalProgressReceiptV1,
+        validate_progress_successor,
+    )
+
+    canonical = CausalProgressReceiptV1.from_dict(receipt).to_dict()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT job_id FROM sovereign_agent_jobs WHERE job_id = %s FOR UPDATE",
+            (job_id,),
+        )
+        if cur.fetchone() is None:
+            raise CausalProgressContractError("progress receipt job does not exist")
+        cur.execute(
+            """
+            SELECT payload
+            FROM sovereign_agent_events
+            WHERE job_id = %s
+              AND stage = 'agent_zero_material_progress_observed'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (job_id,),
+        )
+        row = cur.fetchone()
+        previous = None
+        if row:
+            raw = row.get("payload") if isinstance(row, Mapping) else None
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise CausalProgressContractError(
+                        "previous progress receipt payload is invalid JSON"
+                    ) from exc
+            if not isinstance(raw, Mapping):
+                raise CausalProgressContractError("previous progress receipt payload is invalid")
+            previous = CausalProgressReceiptV1.from_dict(raw)
+
+        current = CausalProgressReceiptV1.from_dict(canonical)
+        validate_progress_successor(previous, current)
+
+        cur.execute(
+            """
+            INSERT INTO sovereign_agent_events (job_id, stage, level, message, payload)
+            VALUES (%s, 'agent_zero_material_progress_observed', 'info', %s, %s::jsonb)
+            """,
+            (
+                job_id,
+                sanitize_agent_text(
+                    f"Material repository progress observed: {canonical['progressKind']}.",
+                    300,
+                ),
+                _json(canonical),
+            ),
+        )
+    if commit:
+        conn.commit()
+    return str(canonical["receiptSha256"])
+
+
+def list_agent_progress_receipts(
+    conn: Any,
+    *,
+    job_id: str,
+    max_receipts: int = 2048,
+) -> tuple[dict[str, Any], ...]:
+    """Read and verify the complete bounded SCPL chain oldest-first.
+
+    Invalid JSON, invalid hashes, missing predecessors and chain truncation are
+    evidence failures. They are never skipped or repaired optimistically.
+    """
+
+    from .causal_progress_lease import (
+        CausalProgressContractError,
+        CausalProgressReceiptV1,
+        validate_progress_successor,
+    )
+
+    safe_limit = max(1, min(int(max_receipts), 8192))
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT event.payload
+            FROM sovereign_agent_events AS event
+            WHERE event.job_id = %s
+              AND event.stage = 'agent_zero_material_progress_observed'
+            ORDER BY event.created_at ASC, event.id ASC
+            LIMIT %s
+            """,
+            (job_id, safe_limit + 1),
+        )
+        rows = cur.fetchall()
+    if len(rows) > safe_limit:
+        raise CausalProgressContractError(
+            "causal progress chain exceeds the bounded readback limit"
+        )
+
+    receipts: list[dict[str, Any]] = []
+    previous = None
+    seen_material_fingerprints: set[str] = set()
+    for row in rows:
+        raw = row.get("payload") if isinstance(row, Mapping) else row[0]
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise CausalProgressContractError(
+                    "causal progress receipt payload is invalid JSON"
+                ) from exc
+        if not isinstance(raw, Mapping):
+            raise CausalProgressContractError(
+                "causal progress receipt payload is not an object"
+            )
+        current = CausalProgressReceiptV1.from_dict(raw)
+        validate_progress_successor(previous, current)
+        if (
+            current.progress_kind != "A2A_STATE_TRANSITION"
+            and current.current_workspace_readback_sha256
+            in seen_material_fingerprints
+        ):
+            raise CausalProgressContractError(
+                "causal progress chain reuses a previously credited workspace fingerprint"
+            )
+        seen_material_fingerprints.add(current.current_workspace_readback_sha256)
+        receipts.append(current.to_dict())
+        previous = current
+    return tuple(receipts)
+
+
+def read_latest_agent_progress_receipt(
+    conn: Any,
+    *,
+    job_id: str,
+) -> dict[str, Any] | None:
+    """Return the newest valid SCPL receipt for one job, or None."""
+
+    from .causal_progress_lease import (
+        CausalProgressContractError,
+        CausalProgressReceiptV1,
+    )
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT payload
+            FROM sovereign_agent_events
+            WHERE job_id = %s
+              AND stage = 'agent_zero_material_progress_observed'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (job_id,),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    raw = row.get("payload") if isinstance(row, Mapping) else None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(raw, Mapping):
+        return None
+    try:
+        return CausalProgressReceiptV1.from_dict(raw).to_dict()
+    except (CausalProgressContractError, TypeError, ValueError):
+        return None
+
+
+def has_agent_progress_fingerprint(
+    conn: Any,
+    *,
+    job_id: str,
+    workspace_readback_sha256: str,
+) -> bool:
+    """Return whether this authoritative workspace state was already credited."""
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT 1
+            FROM sovereign_agent_events
+            WHERE job_id = %s
+              AND stage = 'agent_zero_material_progress_observed'
+              AND payload->>'currentWorkspaceReadbackSha256' = %s
+            LIMIT 1
+            """,
+            (job_id, str(workspace_readback_sha256).lower()),
+        )
+        return cur.fetchone() is not None
+
+
 def append_agent_projection(conn: Any, *, job_id: str, projection: Mapping[str, Any]) -> None:
     """Persist a redacted projection observation without changing canonical job truth."""
     payload = dict(projection)
@@ -306,6 +514,75 @@ def append_agent_github_draft_pr_readback(
     return source_hash
 
 
+def read_latest_agent_github_draft_pr_readback(
+    conn: Any,
+    *,
+    user_id: str,
+    job_id: str,
+) -> dict[str, Any] | None:
+    """Read the newest persisted, hash-validated GitHub Draft-PR readback."""
+
+    from .fleet_supervisor import stable_hash
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT event.payload
+            FROM sovereign_agent_events AS event
+            JOIN sovereign_agent_jobs AS job ON job.job_id = event.job_id
+            WHERE event.job_id = %s
+              AND job.user_id = %s
+              AND event.stage = 'github_draft_pr_readback'
+            ORDER BY event.created_at DESC, event.id DESC
+            LIMIT 1
+            """,
+            (job_id, user_id),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    raw = row.get("payload") if isinstance(row, Mapping) else None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(raw, Mapping):
+        return None
+    canonical = {
+        "schemaVersion": str(raw.get("schemaVersion") or ""),
+        "prUrl": str(raw.get("prUrl") or ""),
+        "prNumber": raw.get("prNumber"),
+        "headSha": str(raw.get("headSha") or "").lower(),
+        "publishedHeadSha": str(raw.get("publishedHeadSha") or "").lower(),
+        "readbackHeadSha": str(raw.get("readbackHeadSha") or "").lower(),
+        "draftVerified": raw.get("draftVerified") is True,
+        "prStateVerified": str(raw.get("prStateVerified") or ""),
+        "readbackVerified": raw.get("readbackVerified") is True,
+        "checksReadbackVerified": raw.get("checksReadbackVerified") is True,
+        "ciState": str(raw.get("ciState") or "none"),
+        "checkRunCount": int(raw.get("checkRunCount") or 0),
+        "checksPendingCount": int(raw.get("checksPendingCount") or 0),
+        "checksSuccessCount": int(raw.get("checksSuccessCount") or 0),
+        "checksFailureCount": int(raw.get("checksFailureCount") or 0),
+        "statusContextCount": int(raw.get("statusContextCount") or 0),
+    }
+    if raw.get("sourceHash") != stable_hash(canonical) or raw.get("authoritative") is not True:
+        return None
+    if not (
+        canonical["schemaVersion"] == "sovereign.github-draft-pr-readback.v1"
+        and canonical["draftVerified"]
+        and canonical["prStateVerified"] == "open"
+        and canonical["readbackVerified"]
+        and canonical["checksReadbackVerified"]
+        and canonical["headSha"] == canonical["publishedHeadSha"] == canonical["readbackHeadSha"]
+    ):
+        return None
+    canonical["sourceHash"] = str(raw["sourceHash"])
+    canonical["jobId"] = job_id
+    return canonical
+
+
 def list_agent_evidence_anchors(
     conn: Any,
     *,
@@ -403,12 +680,13 @@ def update_agent_job_state(
     draft_pr_url: str | None = None,
     blocker: str | None = None,
     clear_blocker: bool = False,
+    preserve_job_state: bool = False,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE sovereign_agent_jobs
-            SET status = input.status,
+            SET status = CASE WHEN input.preserve_job_state THEN sovereign_agent_jobs.status ELSE input.status END,
                 workspace_id = COALESCE(input.workspace_id, sovereign_agent_jobs.workspace_id),
                 external_ref = COALESCE(input.external_ref, sovereign_agent_jobs.external_ref),
                 changed_files = CASE
@@ -434,6 +712,7 @@ def update_agent_job_state(
                 END,
                 draft_pr_url = COALESCE(input.draft_pr_url, sovereign_agent_jobs.draft_pr_url),
                 blocker = CASE
+                    WHEN input.preserve_job_state THEN sovereign_agent_jobs.blocker
                     WHEN input.clear_blocker THEN NULL
                     ELSE COALESCE(input.blocker, sovereign_agent_jobs.blocker)
                 END
@@ -445,6 +724,7 @@ def update_agent_job_state(
                        %s::text AS diff_summary,
                        %s::text AS test_summary,
                        %s::text AS draft_pr_url,
+                       %s::boolean AS preserve_job_state,
                        %s::boolean AS clear_blocker,
                        %s::text AS blocker,
                        %s::text AS job_id
@@ -459,6 +739,7 @@ def update_agent_job_state(
                 sanitize_agent_text(diff_summary, 4000) if diff_summary else None,
                 sanitize_agent_text(test_summary, 4000) if test_summary else None,
                 draft_pr_url if draft_pr_url and draft_pr_url.startswith("https://github.com/") else None,
+                bool(preserve_job_state),
                 bool(clear_blocker),
                 sanitize_agent_text(blocker, 1200) if blocker else None,
                 job_id,
@@ -621,8 +902,8 @@ def list_reconcilable_repository_jobs(
             """
             SELECT * FROM sovereign_agent_jobs
             WHERE status = 'running'
-              AND external_ref LIKE 'agent-zero-a2a:%%'
-              AND external_ref NOT LIKE 'agent-zero-a2a:claim:%%'
+              AND external_ref LIKE 'sovereign-local-runner:%%'
+              AND external_ref NOT LIKE 'sovereign-local-runner:claim:%%'
             ORDER BY updated_at ASC, job_id ASC
             LIMIT %s
             """,

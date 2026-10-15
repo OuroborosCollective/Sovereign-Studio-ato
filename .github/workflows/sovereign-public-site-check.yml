@@ -1,0 +1,20 @@
+name: Sovereign Public Site - Review
+
+on:
+  # PR validation runs in the required Release Gate to preserve runner priority.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-site-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout reviewed revision
+        uses: actions/checkout@v6
+      - name: Test real validator and site contracts
+        run: python3 -m unittest discover -s tests -p 'test_public_site_contract.py' -v
+      - name: Validate static content and local links
+        run: python3 scripts/verify-public-site.py --root public-site --mode preview

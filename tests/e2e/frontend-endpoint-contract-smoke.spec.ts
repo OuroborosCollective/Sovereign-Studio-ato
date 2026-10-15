@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Route } from '@playwright/test';
+import { controlSurfaceFixture } from './fixtures/control-surface';
 
 const REPOSITORY_ROOT = process.cwd();
 const REPORT_RELATIVE_PATH = '.security-reports/sovereign-frontend-endpoints.json';
@@ -155,8 +156,8 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     });
   });
 
-  test('the built vNext surface dispatches one persisted repository job and preserves a backend blocker without synthesizing publication', async ({ page }) => {
-    const observed: Array<{ method: string; path: string }> = [];
+  for (const mode of ['free', 'paid'] as const) test(`the built vNext surface dispatches one explicit ${mode} repository job and preserves a backend blocker without synthesizing publication`, async ({ page }) => {
+    const observed: Array<{ method: string; path: string; origin: string }> = [];
     const unexpectedApiRequests: Array<{ method: string; path: string }> = [];
     const repositoryBodies: Array<Record<string, unknown>> = [];
     const pageErrors: string[] = [];
@@ -181,7 +182,9 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     page.on('pageerror', error => pageErrors.push(error.message));
     page.on('request', request => {
       const url = new URL(request.url());
-      if (url.pathname.startsWith('/api/')) observed.push({ method: request.method(), path: url.pathname });
+      if (url.pathname.startsWith('/api/')) {
+        observed.push({ method: request.method(), path: url.pathname, origin: url.origin });
+      }
     });
 
     await page.route('**/api/**', async route => {
@@ -191,6 +194,8 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
       await fulfillJson(route, { error: 'unexpected_frontend_endpoint_smoke_request' }, 501);
     });
     await page.route('**/api/auth/me', route => fulfillJson(route, currentUser));
+    await page.route('**/api/user/agent/control-surface**', route => fulfillJson(route,
+      controlSurfaceFixture(new URL(route.request().url()).searchParams.get('jobId'), mode)));
     await page.route('**/api/user/agent/jobs?limit=1', route => fulfillJson(route, { jobs: [] }));
     await page.route('**/api/user/agent/jobs?limit=20', route => fulfillJson(route, { jobs: [], total: 0 }));
     await page.route('**/api/user/agent/toolchain/manifest', route => fulfillJson(route, {
@@ -209,7 +214,8 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
           jobId,
           workspaceId,
           status: 'running',
-          externalRef: 'agent-zero-a2a:task-smoke',
+          externalRef: 'sovereign-local-runner:task-smoke',
+          executor: 'sovereign-local-runner',
           changedFiles: [],
           events: [],
         },
@@ -220,7 +226,8 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
         jobId,
         workspaceId,
         status: 'blocked',
-        externalRef: 'agent-zero-a2a:task-smoke',
+        externalRef: 'sovereign-local-runner:task-smoke',
+        executor: 'sovereign-local-runner',
         prState: 'blocked',
         changedFiles: [],
         events: [],
@@ -246,11 +253,13 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     expect(coverageResponse.status()).toBe(200);
     const coveragePayload = await coverageResponse.json() as {
       schemaVersion?: string;
+      productArchitecture?: string;
       totalTestFiles?: number;
       testRoots?: Record<string, number>;
       files?: Array<{ file?: string }>;
     };
     expect(coveragePayload.schemaVersion).toBe('sovereign.test-coverage-map.v2');
+    expect(coveragePayload.productArchitecture).toBe('unified-app');
     expect(coveragePayload.totalTestFiles).toBeGreaterThan(0);
     expect(coveragePayload.files).toHaveLength(coveragePayload.totalTestFiles);
     const publishedTestPaths = new Set((coveragePayload.files ?? []).map((entry) => entry.file));
@@ -262,8 +271,14 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     ]) expect(publishedTestPaths.has(representative)).toBe(true);
     for (const root of ['src', 'backend/tests', 'scripts/tests', 'tests/e2e']) expect(coveragePayload.testRoots?.[root]).toBeGreaterThan(0);
 
-    const composer = page.getByLabel('Mission an Sovereign');
+    const composer = page.getByLabel('Mission to Sovereign');
     await composer.fill('Prüfe den aktuellen Build und ändere nichts ohne die bestehenden Runtime-Gates.');
+    await expect(page.getByLabel('ROUTE').locator(`option[value="${mode}"]`)).toBeEnabled();
+    await page.getByTestId('vnext-mission-controls').locator('summary').click();
+    await expect(page.getByLabel('ROUTE')).toBeVisible();
+    await page.getByLabel('ROUTE').selectOption(mode);
+    await page.getByTestId('vnext-mission-controls').locator('summary').click();
+    await expect(page.getByTestId('builder__start-task')).toBeEnabled();
     await composer.press('Enter');
 
     await expect.poll(() => observed.some(item => item.method === 'POST' && item.path === '/api/user/agent/repository/run')).toBe(true);
@@ -272,10 +287,13 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
     await expect(page.getByText('BLOCKED').first()).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/Smoke blocker preserved from persisted repository job/).first()).toBeVisible({ timeout: 10_000 });
 
+    expect(observed.length).toBeGreaterThan(0);
+    const appOrigin = new URL(page.url()).origin;
+    expect(observed.every(item => item.origin === appOrigin)).toBe(true);
     expect(repositoryBodies).toHaveLength(1);
     expect(repositoryBodies[0]).toEqual({
       mission: 'Prüfe den aktuellen Build und ändere nichts ohne die bestehenden Runtime-Gates.',
-      mode: 'free',
+      mode,
       agentMode: 'single',
       intentMode: 'repository_execution',
       repositoryBranch: 'main',
@@ -318,6 +336,8 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
       await fulfillJson(route, { error: 'unexpected_reload_smoke_request' }, 501);
     });
     await page.route('**/api/auth/me', route => fulfillJson(route, currentUser));
+    await page.route('**/api/user/agent/control-surface**', route => fulfillJson(route,
+      controlSurfaceFixture(new URL(route.request().url()).searchParams.get('jobId'))));
     await page.route('**/api/user/agent/jobs?limit=1', route => fulfillJson(route, { jobs: [] }));
     await page.route('**/api/user/agent/jobs?limit=20', route => fulfillJson(route, {
       jobs: [
@@ -335,7 +355,8 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
           status: 'validating',
           repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
           branch: 'main',
-          externalRef: 'agent-zero-a2a:task-reload-smoke',
+          externalRef: 'sovereign-local-runner:task-reload-smoke',
+          executor: 'sovereign-local-runner',
         },
       ],
       total: 2,
@@ -358,7 +379,8 @@ test.describe('Frontend endpoint contract and vNext control-surface browser smok
         status: 'blocked',
         repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
         branch: 'main',
-        externalRef: 'agent-zero-a2a:task-reload-smoke',
+        externalRef: 'sovereign-local-runner:task-reload-smoke',
+        executor: 'sovereign-local-runner',
         prState: 'blocked',
         changedFiles: [],
         events: [],

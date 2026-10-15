@@ -125,6 +125,17 @@ class PressureBroker(FakeBroker):
         return result
 
 
+class RetiredDocumentBroker(FakeBroker):
+    def call(self, action: str, arguments: dict, timeout: int = 30) -> dict:
+        if action == "document_pipeline_live_canary":
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "GOTENBERG_CONTAINER_NOT_FOUND",
+            }
+        return super().call(action, arguments, timeout)
+
+
 @pytest.fixture()
 def repository(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
@@ -249,6 +260,7 @@ def test_dependency_matrix_maps_failures_and_optional_canaries(registered) -> No
         "knowledge source truth",
     ]
     assert by_name["document-pipeline"]["ok"] is True
+    assert by_name["document-pipeline"]["required"] is False
     assert by_name["milvus-memory-gateway"]["ok"] is True
     assert by_name["wolfram-cag"]["ok"] is True
     assert by_name["wolfram-cag"]["status"] == "WOLFRAM_CAG_CANARIES_SUCCEEDED_UNVERIFIED"
@@ -274,6 +286,20 @@ def test_dependency_matrix_blocks_cag_functions_on_failed_live_canary(registered
         "Wolfram partner analysis receipts",
     ]
     assert result.evidence["raw"]["wolframCanary"]["runtimeVerified"] is False
+
+
+def test_dependency_matrix_treats_retired_document_pipeline_as_optional(registered, monkeypatch) -> None:
+    monkeypatch.setattr(tools, "_BROKER", RetiredDocumentBroker())
+
+    result = tools.runtime_dependency_health_matrix(include_ephemeral_canaries=True)
+
+    assert result.ok is True
+    assert result.status == "DEPENDENCY_MATRIX_HEALTHY"
+    by_name = {item["dependency"]: item for item in result.evidence["dependencies"]}
+    assert by_name["document-pipeline"]["required"] is False
+    assert by_name["document-pipeline"]["ok"] is False
+    assert by_name["document-pipeline"]["status"] == "BLOCKED"
+    assert not any(item.get("dependency") == "document-pipeline" for item in result.findings)
 
 
 def test_dependency_matrix_propagates_capacity_pressure(registered, monkeypatch) -> None:

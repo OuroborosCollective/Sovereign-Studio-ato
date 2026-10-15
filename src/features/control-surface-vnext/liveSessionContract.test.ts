@@ -6,6 +6,13 @@ const accountId = '00000000-0000-4000-8000-000000000123';
 const user = { id: accountId, isGuest: false, isBanned: false, creditStateVerified: true };
 
 describe('live vNext authentication and agent session boundary', () => {
+  it('keeps the default browser E2E build on the unified same-origin contract', () => {
+    const workflow = readFileSync('.github/workflows/e2e-testing.yml', 'utf8');
+    const topEnv = workflow.split(/^env:\s*$/m)[1].split(/^\s*jobs:\s*$/m)[0];
+    const value = topEnv.match(/^  VITE_ADMIN_API_BASE:\s*(.*)$/m)?.[1].trim();
+    expect(value).toBe("''");
+  });
+
   it('uses one preview origin for both real auth modules and the agent adapter', () => {
     const workflow = readFileSync('.github/workflows/e2e-testing.yml', 'utf8');
     const liveJob = workflow.split(/^  live-five-path-draft-pr:\s*$/m)[1];

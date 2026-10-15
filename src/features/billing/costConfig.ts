@@ -23,7 +23,7 @@ export interface CostEntry {
 // Backend API base (same as billingSlice)
 const API_BASE: string =
   (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
-  'https://sovereign-backend.arelorian.de';
+  '';
 
 export const EUR_PER_CREDIT = 0.0001 as const;
 

@@ -1,6 +1,6 @@
 const API_BASE = (
   (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined)?.trim()
-  || 'https://sovereign-backend.arelorian.de'
+  || ''
 ).replace(/\/$/, '');
 
 export type AreInferenceDecision = 'local' | 'online_required' | 'blocked';

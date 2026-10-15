@@ -62,6 +62,7 @@ ConnectionFactory = Callable[[], Any]
 
 ROLE_WORK_PACKAGES: Final[dict[str, str]] = {
     "free_single_agent": "Implement one bounded coding mission in the isolated Code-Server workspace; read before writing and preserve diff plus test evidence.",
+    "paid_single_agent": "Implement one explicitly paid coding mission in the isolated workspace; preserve diff, tests and actual-cost settlement.",
     "data_storage": "Inspect SQL, Agent Job persistence, pattern candidates and pgvector learning; accept learning only after tool and test evidence.",
     "business_core": "Inspect intent, ARE inference and evidence-gate semantics; model output must never create runtime success.",
     "endpoint_bridge": "Inspect route, job, workspace and executor handoff; prove every state transition from real tool evidence.",
@@ -71,6 +72,7 @@ ROLE_WORK_PACKAGES: Final[dict[str, str]] = {
 }
 
 ROLE_PATH_PREFIXES: Final[dict[str, tuple[str, ...]]] = {
+    "paid_single_agent": ("__workspace_all__",),
     "free_single_agent": ("__workspace_all__",),
     "data_storage": (
         "scripts/sovereign-backend/migrations/",
@@ -130,6 +132,7 @@ READ_REPOSITORY_TOOL_NAMES: Final[tuple[str, ...]] = (
     "inspect_repository_diff",
     "run_repository_test",
 )
+REPOSITORY_EDITING_HANDOFF_TOOL: Final[str] = "finish_repository_editing"
 WRITE_REPOSITORY_TOOL_NAMES: Final[tuple[str, ...]] = (
     "apply_exact_repository_patch",
     "write_repository_file",
@@ -553,20 +556,25 @@ def create_repository_single_agent_task(
     run_id: str,
     evidence_id: str,
     write_confirmed: bool,
+    execution_mode: str = "free",
 ) -> str:
-    """Persist exactly one coding task for the free single-agent profile."""
-    task_id = f"free-agent-work-{uuid.uuid4().hex}"
+    """Persist exactly one coding task, keeping Free and Paid identities separate."""
+    if execution_mode not in {"free", "paid"}:
+        raise ValueError("execution mode is invalid")
+    agent_id = f"{execution_mode}_single_agent"
+    task_id = f"{execution_mode}-agent-work-{uuid.uuid4().hex}"
     allowed_tools = (
         *READ_REPOSITORY_TOOL_NAMES,
         *(WRITE_REPOSITORY_TOOL_NAMES if write_confirmed else ()),
+        *((REPOSITORY_EDITING_HANDOFF_TOOL,) if write_confirmed else ()),
     )
     create_agent_task(
         conn,
         run_id=run_id,
         task_id=task_id,
-        agent_id="free_single_agent",
-        specialist_role="free_single_agent",
-        work_package=ROLE_WORK_PACKAGES["free_single_agent"],
+        agent_id=agent_id,
+        specialist_role=agent_id,
+        work_package=ROLE_WORK_PACKAGES[agent_id],
         evidence_id=evidence_id,
         status="QUEUED",
         next_action="EXECUTE_SINGLE_AGENT_WORKSPACE_MISSION",
@@ -575,7 +583,7 @@ def create_repository_single_agent_task(
         acceptance_criteria=(
             "The single agent uses real workspace tools before making repository claims.",
             "Every write remains inside the isolated Agent Job repository clone.",
-            "Status, diff and at least one relevant test are read after mutation.",
+            "Editing hands off to server-owned status, diff and relevant regression verification before Draft-PR readiness.",
             "No background agent, production deploy, merge or auto-merge is started.",
         ),
         forbidden_actions=(
@@ -1058,16 +1066,19 @@ class BoundRepositoryToolset:
         return assignment
 
     def allowed_paths(self, role: str) -> tuple[str, ...]:
-        if role == "free_single_agent":
+        if role in {"free_single_agent", "paid_single_agent"}:
             return (".",)
         return ROLE_PATH_PREFIXES.get(role, ())
 
     def allowed_tool_names(self, role: str) -> tuple[str, ...]:
-        return (
+        names = (
             (*READ_REPOSITORY_TOOL_NAMES, *WRITE_REPOSITORY_TOOL_NAMES)
             if self.write_confirmed
             else READ_REPOSITORY_TOOL_NAMES
         )
+        if self.write_confirmed and role in {"free_single_agent", "paid_single_agent"}:
+            return (*names, REPOSITORY_EDITING_HANDOFF_TOOL)
+        return names
 
     def _validate_role_path(self, role: str, path: str) -> str:
         normalized = _safe_path(path)
@@ -1156,7 +1167,9 @@ class BoundRepositoryToolset:
             )
             result = run_agent_job_tool(self.job_id, action, parameters, repository_path)
             merged = _merge_job_evidence(job, result)
-            gate = append_tool_result_to_job(conn, self.job_id, merged)
+            # Tool receipts are intermediate: only the executor may close the job.
+            # Preserve a concurrent cancellation/revocation and its blocker atomically.
+            gate = append_tool_result_to_job(conn, self.job_id, merged, preserve_job_state=True)
             if assignment is not None:
                 attempt, attempt_workspace = self._resolve_active_fleet_worktree(
                     role=role,
@@ -1453,6 +1466,19 @@ class BoundRepositoryToolset:
                 function_tool(write_repository_file),
                 function_tool(apply_exact_repository_patch),
             ))
+        if self.write_confirmed and role in {"free_single_agent", "paid_single_agent"}:
+            def finish_repository_editing(summary: str) -> str:
+                """End editing once the requested files are ready; the server independently verifies regression and Draft-PR readiness."""
+                status = json.loads(self._execute(role, "git-status", {}))
+                diff = json.loads(self._execute(role, "diff", {"stat": False, "staged": False}))
+                if status["status"] != "done" or diff["status"] != "done" or not diff["diffSummary"]:
+                    return "Repository editing ended without verified changes; server closeout must fail closed."
+                return (
+                    "Repository editing handed to independent server verification. "
+                    "Tests, Draft-PR readiness and publication are still pending. "
+                    + _redact(summary, 2000)
+                )
+            tools.append(function_tool(finish_repository_editing))
         return tools
 
     def summary(self) -> dict[str, Any]:

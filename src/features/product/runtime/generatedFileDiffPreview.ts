@@ -53,7 +53,12 @@ function preview(content: string, maxChars = 1800): string {
 
 export function buildUnifiedLikePreview(path: string, oldContent: string | null, newContent: string): string {
   if (oldContent === null) {
-    return [`+++ ${path}`, ...newContent.split(/\r?\n/).slice(0, 80).map((line) => `+${line}`)].join('\n');
+    const lines = newContent.split(/\r?\n/);
+    const out = [`+++ ${path}`];
+    for (let i = 0; i < lines.length && i < 80; i++) {
+      out.push(`+${lines[i]}`);
+    }
+    return out.join('\n');
   }
 
   const oldLines = oldContent.split(/\r?\n/);

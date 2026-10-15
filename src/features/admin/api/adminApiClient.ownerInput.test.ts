@@ -18,7 +18,7 @@ describe('adminApiClient protected owner-input endpoint', () => {
     let observedBodyCopy: Uint8Array | undefined;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe(
-        'https://sovereign-backend.arelorian.de/api/admin/owner-input/requests/request-1/resolve?decision=yes',
+        '/api/admin/owner-input/requests/request-1/resolve?decision=yes',
       );
       expect(init).toMatchObject({
         method: 'POST',

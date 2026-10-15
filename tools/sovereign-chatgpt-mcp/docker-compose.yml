@@ -35,6 +35,7 @@ services:
       - "${BROKER_GID:?BROKER_GID must match the sovereign-mcp host group}"
     networks:
       - supabase_default
+      - sovereign_mcp_auth_internal
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -43,3 +44,6 @@ services:
 networks:
   supabase_default:
     external: true
+  sovereign_mcp_auth_internal:
+    external: true
+    name: sovereign-mcp-auth-internal

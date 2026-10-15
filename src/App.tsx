@@ -34,6 +34,7 @@ export default function App() {
       data-primary-surface="sovereign-control-surface-vnext"
       data-truth-scope="runtime-readback-only"
       aria-label="Sovereign Control Surface"
+      className="sovereign-control-surface"
       style={CHAT_FIRST_STYLE}
     >
       <SovereignControlSurfaceVNext />

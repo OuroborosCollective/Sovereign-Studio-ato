@@ -8,8 +8,8 @@
  * or create folders. It defines and validates the contract that an external executor must obey.
  */
 
-export type AgentWorkspaceExecutor = 'sovereign-local-runner';
-export type AgentWorkspaceHost = 'managed-ephemeral' | 'self-hosted-runner';
+export type AgentWorkspaceExecutor = 'sovereign-local-runner' | 'bolt-diy-snapshot';
+export type AgentWorkspaceHost = 'managed-ephemeral' | 'self-hosted-runner' | 'remote-snapshot';
 export type AgentWorkspaceStatus = 'queued' | 'running' | 'completed' | 'failed' | 'blocked' | 'cleaned';
 export type AgentWorkspaceEventLevel = 'info' | 'warning' | 'error';
 export type AgentWorkspaceIntentKind = 'none' | 'read-only' | 'code-execution';
@@ -112,11 +112,11 @@ export function sanitizeWorkspaceEvent(event: AgentWorkspaceEvent): AgentWorkspa
 }
 
 export function isSupportedWorkspaceExecutor(value: unknown): value is AgentWorkspaceExecutor {
-  return value === 'sovereign-local-runner';
+  return value === 'sovereign-local-runner' || value === 'bolt-diy-snapshot';
 }
 
 export function isSupportedWorkspaceHost(value: unknown): value is AgentWorkspaceHost {
-  return value === 'managed-ephemeral' || value === 'self-hosted-runner';
+  return value === 'managed-ephemeral' || value === 'self-hosted-runner' || value === 'remote-snapshot';
 }
 
 export function isTerminalWorkspaceStatus(status: AgentWorkspaceStatus): boolean {
@@ -143,6 +143,8 @@ export function normalizeWorkspacePath(path: string): string | null {
  * @deprecated Pass intentKind to decideAgentWorkspaceIntent instead.
  */
 export function classifyWorkspaceIntent(_message: string): AgentWorkspaceIntentKind {
+  // Runtime routing is owned by the declared intent boundary. This deterministic
+  // compatibility helper never infers write intent from user text.
   return 'none';
 }
 
@@ -209,6 +211,14 @@ export function validateAgentWorkspaceRequest(request: AgentWorkspaceRequest): A
     warnings.push('Self-hosted runner must enforce its own quota, timeout and cleanup policy.');
   }
 
+  if (request.workspaceHost === 'remote-snapshot' && request.executor !== 'bolt-diy-snapshot') {
+    blockers.push('Remote snapshot workspace host requires the bolt-diy-snapshot executor.');
+  }
+
+  if (request.executor === 'bolt-diy-snapshot' && request.workspaceHost !== 'remote-snapshot') {
+    blockers.push('Bolt snapshot executor requires the remote-snapshot workspace host.');
+  }
+
   const allowedPaths = request.allowedPaths?.map(normalizeWorkspacePath) ?? [];
   const forbiddenPaths = request.forbiddenPaths?.map(normalizeWorkspacePath) ?? [];
   if (allowedPaths.some((path) => !path)) blockers.push('Workspace allowedPaths contains an unsafe path.');
@@ -261,7 +271,8 @@ export function normalizeAgentWorkspaceResult(value: Partial<AgentWorkspaceResul
   return {
     workspaceId: sanitizeWorkspaceId(value.workspaceId),
     status: normalizeWorkspaceStatus(value.status),
-    events: (value.events ?? []).map(sanitizeWorkspaceEvent).slice(-200),
+    // ⚡ Bolt: Slice before mapping to avoid processing discarded elements
+    events: (value.events ?? []).slice(-200).map(sanitizeWorkspaceEvent),
     changedFiles,
     diffSummary: value.diffSummary ? trimTo(sanitizeWorkspaceText(value.diffSummary.trim()), 2000) : undefined,
     testSummary: value.testSummary ? trimTo(sanitizeWorkspaceText(value.testSummary.trim()), 2000) : undefined,

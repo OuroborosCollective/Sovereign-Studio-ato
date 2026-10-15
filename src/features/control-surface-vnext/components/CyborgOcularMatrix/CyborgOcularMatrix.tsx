@@ -1,12 +1,11 @@
-import React, { useEffect, useMemo } from 'react';
-import { motion, useMotionValue, useSpring, useTransform } from 'motion/react';
+import React, { useEffect } from 'react';
+import { motion, useMotionValue, useReducedMotion, useSpring, useTransform } from 'motion/react';
 import type { JobPhase } from '../../types/domain';
 import { playAwakeningSound } from '../../utils/audio';
 
 interface Props { isTyping?: boolean; jobPhase?: JobPhase; }
 
 const ACTIVE = new Set<JobPhase>(['DISPATCHING', 'PROVISIONING', 'EXECUTING', 'FINALIZING', 'READY_TO_PUBLISH']);
-const BLADE_ANGLES = [0, 60, 120, 180, 240, 300];
 
 function phaseLabel(phase: JobPhase): string {
   switch (phase) {
@@ -30,64 +29,86 @@ export function CyborgOcularMatrix({ isTyping = false, jobPhase = 'IDLE' }: Prop
   const rawY = useMotionValue(0);
   const x = useSpring(rawX, { stiffness: 210, damping: 24, mass: 0.45 });
   const y = useSpring(rawY, { stiffness: 210, damping: 24, mass: 0.45 });
-  const irisX = useTransform(x, [-1, 1], [-6, 6]);
-  const irisY = useTransform(y, [-1, 1], [-5, 5]);
-  const pupilX = useTransform(x, [-1, 1], [-9, 9]);
-  const pupilY = useTransform(y, [-1, 1], [-7, 7]);
+  const pointerX = useTransform(x, [-1, 1], [-8, 8]);
+  const pointerY = useTransform(y, [-1, 1], [-5, 5]);
+  const reducedMotion = useReducedMotion();
   const active = ACTIVE.has(jobPhase);
-  const ownerWait = jobPhase === 'AWAITING_OWNER_INPUT';
-  const blocked = jobPhase === 'BLOCKED' || jobPhase === 'FAILED';
-  const completed = jobPhase === 'COMPLETED';
   const awake = isTyping || jobPhase !== 'IDLE';
-  const accent = completed ? '#10b981' : blocked || ownerWait ? '#ff8c00' : '#ff1e38';
   const label = phaseLabel(isTyping && jobPhase === 'IDLE' ? 'AWAKENING' : jobPhase);
 
   useEffect(() => {
     const onPointer = (event: PointerEvent) => {
-      const nx = Math.max(-1, Math.min(1, (event.clientX / Math.max(1, window.innerWidth) - 0.5) * 2));
-      const ny = Math.max(-1, Math.min(1, (event.clientY / Math.max(1, window.innerHeight) - 0.5) * 2));
-      rawX.set(nx); rawY.set(ny);
+      rawX.set(Math.max(-1, Math.min(1, (event.clientX / Math.max(1, window.innerWidth) - 0.5) * 2)));
+      rawY.set(Math.max(-1, Math.min(1, (event.clientY / Math.max(1, window.innerHeight) - 0.5) * 2)));
     };
+    const center = () => { rawX.set(0); rawY.set(0); };
     window.addEventListener('pointermove', onPointer, { passive: true });
-    return () => window.removeEventListener('pointermove', onPointer);
+    document.documentElement.addEventListener('pointerleave', center);
+    return () => {
+      window.removeEventListener('pointermove', onPointer);
+      document.documentElement.removeEventListener('pointerleave', center);
+    };
   }, [rawX, rawY]);
 
   useEffect(() => { if (awake) playAwakeningSound(); }, [awake]);
 
-  const speed = useMemo(() => active ? 1.4 : ownerWait ? 2.8 : completed ? 8 : 14, [active, ownerWait, completed]);
-
   return (
-    <div className="relative flex items-center gap-2 select-none shrink-0" data-testid="vnext-cyborg-ocular-matrix" aria-label={`Sovereign ocular phase ${jobPhase}`}>
-      <div className="relative w-[88px] h-[48px] md:w-[112px] md:h-[58px] flex items-center justify-center overflow-visible">
+    <div
+      className="relative flex h-[58px] w-[126px] shrink-0 select-none items-center justify-center md:h-[66px] md:w-[146px]"
+      data-testid="vnext-cyborg-ocular-matrix"
+      role="img"
+      aria-label={`Sovereign eye: ${label}`}
+      title="EFFECTS DECORATIVE · STATE READBACK"
+    >
+      <motion.div
+        className="absolute inset-[3px] border border-cyan-200/20 bg-black/30 [clip-path:polygon(13%_0,87%_0,100%_50%,87%_100%,13%_100%,0_50%)]"
+        animate={reducedMotion ? undefined : { opacity: active ? [0.42, 0.82, 0.42] : [0.32, 0.48, 0.32] }}
+        transition={{ duration: active ? 1.4 : 3.2, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <div className="absolute inset-x-3 top-1/2 h-px bg-gradient-to-r from-transparent via-cyan-200/55 to-transparent" />
+      <div className="absolute left-1 top-1/2 font-mono text-[5px] tracking-[0.18em] text-cyan-100/45">SOV</div>
+      <div className="absolute right-1 top-1/2 font-mono text-[5px] tracking-[0.18em] text-cyan-100/45">ATO</div>
+
+      <motion.div
+        className="relative h-[45px] w-[96px] overflow-hidden border border-white/45 bg-black shadow-[0_0_20px_rgba(126,231,255,0.28),inset_0_0_18px_rgba(0,0,0,0.95)] [clip-path:polygon(7%_50%,18%_17%,50%_4%,82%_17%,93%_50%,82%_83%,50%_96%,18%_83%)] md:h-[51px] md:w-[108px]"
+        animate={reducedMotion ? undefined : { scaleY: [1, 1, 0.07, 1, 1] }}
+        transition={{ duration: 7.2, times: [0, 0.5, 0.515, 0.535, 1], repeat: Infinity, ease: 'easeInOut' }}
+      >
+        <div className="absolute inset-[2px] bg-[radial-gradient(ellipse_at_center,#ffffff_0%,#f8fdff_46%,#c8d7df_72%,#56616a_100%)] [clip-path:inherit]" />
+        <div className="absolute inset-x-0 top-0 h-[30%] bg-gradient-to-b from-black/35 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-[27%] bg-gradient-to-t from-black/28 to-transparent" />
+
         <motion.div
-          className="absolute inset-[3px] rounded-[50%] border bg-black/70 shadow-[inset_0_0_28px_rgba(0,0,0,1)]"
-          animate={{ borderColor: accent, boxShadow: awake ? `inset 0 0 28px rgba(0,0,0,1),0 0 22px ${accent}55` : 'inset 0 0 28px rgba(0,0,0,1),0 0 8px rgba(255,30,56,.15)' }}
-        />
-
-        <motion.div className="absolute w-[62px] h-[62px] md:w-[75px] md:h-[75px] rounded-full" animate={{ rotate: 360 }} transition={{ duration: speed * 4.2, repeat: Infinity, ease: 'linear' }}>
-          {BLADE_ANGLES.map((angle) => <motion.div key={angle} className="absolute left-1/2 top-1/2 origin-[0_0]" style={{ rotate: angle }}><motion.div className="absolute -top-[2px] left-[8px] w-[21px] md:w-[27px] h-[5px] clip-path-polygon bg-gradient-to-r from-transparent to-[var(--red-pulse)]" style={{ background: `linear-gradient(90deg, transparent, ${accent})`, clipPath: 'polygon(0 40%,85% 0,100% 50%,85% 100%,0 60%)' }} animate={{ opacity: active ? [0.35, 1, 0.35] : 0.42 }} transition={{ duration: 0.75, repeat: active ? Infinity : 0, delay: angle / 520 }} /></motion.div>)}
-        </motion.div>
-
-        <motion.div className="absolute w-[48px] h-[48px] md:w-[57px] md:h-[57px] rounded-full border border-white/10" animate={{ rotate: -360, scale: active ? [1, 1.08, 1] : 1 }} transition={{ rotate: { duration: speed * 2.5, repeat: Infinity, ease: 'linear' }, scale: { duration: 0.55, repeat: active ? Infinity : 0 } }}>
-          {[0, 45, 90, 135].map((a) => <span key={a} className="absolute left-1/2 top-1/2 w-[1px] h-[27px] origin-top bg-gradient-to-b from-white/25 to-transparent" style={{ transform: `rotate(${a}deg)` }} />)}
-        </motion.div>
-
-        <motion.div className="absolute w-[36px] h-[29px] md:w-[43px] md:h-[35px] rounded-[50%] border" style={{ x: irisX, y: irisY, borderColor: accent, background: `radial-gradient(circle at 50% 50%, ${accent}55 0%, #30000b 42%, #09090b 70%)`, boxShadow: `0 0 15px ${accent}88,inset 0 0 15px ${accent}55` }} animate={active ? { scale: [0.96, 1.09, 0.96], filter: ['brightness(.9)', 'brightness(1.6)', 'brightness(.9)'] } : { scale: awake ? 1 : 0.82 }} transition={{ duration: active ? 0.72 : 0.35, repeat: active ? Infinity : 0 }}>
-          <motion.div className="absolute inset-[7px] md:inset-[8px] rounded-full bg-black border" style={{ x: pupilX, y: pupilY, borderColor: accent, boxShadow: `0 0 10px ${accent}` }}>
-            <motion.div className="absolute left-[30%] top-[20%] w-[3px] h-[3px] rounded-full bg-white" animate={{ opacity: awake ? [0.4, 1, 0.4] : 0.25 }} transition={{ duration: 1.2, repeat: Infinity }} />
+          className="absolute inset-0 flex items-center justify-center"
+          animate={reducedMotion ? undefined : { x: [-4, 7, 7, -6, -4], y: [0, -2, 3, 1, 0] }}
+          transition={{ duration: 8.5, times: [0, 0.24, 0.5, 0.76, 1], repeat: Infinity, ease: 'easeInOut' }}
+        >
+          <motion.div className="relative h-10 w-10 rounded-full" style={{ x: reducedMotion ? 0 : pointerX, y: reducedMotion ? 0 : pointerY }}>
+            <div className="absolute inset-0 rounded-full border border-slate-950/70 bg-[conic-gradient(from_0deg,#07131a,#d9f9ff,#365e70,#ffffff,#173847,#bcefff,#07131a)] shadow-[0_0_12px_rgba(116,225,255,0.72),inset_0_0_10px_rgba(0,0,0,0.8)]" />
+            <motion.div className="absolute inset-[4px] rounded-full border border-cyan-50/70 border-dashed" animate={reducedMotion ? undefined : { rotate: 360 }} transition={{ duration: 9, repeat: Infinity, ease: 'linear' }} />
+            <motion.div className="absolute inset-[8px] rounded-full border border-slate-950/70 border-dotted" animate={reducedMotion ? undefined : { rotate: -360 }} transition={{ duration: 5.5, repeat: Infinity, ease: 'linear' }} />
+            <div className="absolute inset-[11px] rounded-full bg-black ring-1 ring-cyan-100/45 shadow-[0_0_9px_rgba(0,0,0,1)]">
+              <span className="absolute left-[3px] top-[3px] h-[4px] w-[4px] rounded-full bg-white shadow-[0_0_5px_white]" />
+            </div>
           </motion.div>
         </motion.div>
 
-        {active && <motion.div className="absolute left-[6px] right-[6px] h-[1px]" style={{ background: accent, boxShadow: `0 0 8px ${accent}` }} animate={{ top: ['18%', '82%', '18%'], opacity: [0, 1, 0] }} transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }} />}
-        {ownerWait && <motion.div className="absolute inset-0 rounded-[50%] border-2 border-dashed" style={{ borderColor: accent }} animate={{ rotate: [0, 360], scale: [1, 1.09, 1] }} transition={{ rotate: { duration: 2.6, repeat: Infinity, ease: 'linear' }, scale: { duration: 0.8, repeat: Infinity } }} />}
-        {blocked && <motion.div className="absolute inset-[1px] rounded-[50%] border" style={{ borderColor: accent }} animate={{ opacity: [0.25, 1, 0.25] }} transition={{ duration: 0.45, repeat: Infinity }} />}
-      </div>
+        <motion.div
+          className="absolute inset-y-0 w-px bg-cyan-100/65 shadow-[0_0_7px_rgba(165,243,252,0.9)]"
+          animate={reducedMotion ? { left: '50%', opacity: 0.35 } : { left: ['14%', '86%', '14%'], opacity: active ? [0.25, 0.9, 0.25] : [0.15, 0.45, 0.15] }}
+          transition={{ duration: active ? 2.2 : 4.8, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <div className="absolute left-1/2 top-1 h-2 w-px -translate-x-1/2 bg-cyan-200/40" />
+        <div className="absolute bottom-1 left-1/2 h-2 w-px -translate-x-1/2 bg-cyan-200/40" />
+        <div className="absolute left-2 top-1/2 h-px w-3 bg-cyan-200/40" />
+        <div className="absolute right-2 top-1/2 h-px w-3 bg-cyan-200/40" />
+      </motion.div>
 
-      <div className="hidden lg:flex flex-col min-w-[116px] font-mono leading-tight">
-        <span className="text-[7.5px] tracking-[0.18em] text-[var(--text-dim)]">OCULAR MATRIX // LIVE UI</span>
-        <motion.span className="text-[9px] font-black tracking-wider" animate={{ color: accent, textShadow: awake ? `0 0 7px ${accent}66` : 'none' }}>{label}</motion.span>
-        <span className="text-[7px] text-[var(--text-dim)]">EFFECTS DECORATIVE · STATE READBACK</span>
-      </div>
+      <motion.div
+        className="pointer-events-none absolute inset-[7px] border border-cyan-100/10 [clip-path:polygon(10%_0,90%_0,100%_50%,90%_100%,10%_100%,0_50%)]"
+        animate={reducedMotion ? undefined : { scale: active ? [0.98, 1.04, 0.98] : [1, 1.015, 1], opacity: [0.22, 0.5, 0.22] }}
+        transition={{ duration: active ? 1.6 : 3.4, repeat: Infinity, ease: 'easeInOut' }}
+      />
     </div>
   );
 }

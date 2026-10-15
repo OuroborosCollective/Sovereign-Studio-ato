@@ -591,3 +591,633 @@ Learned: Start-path exclusivity is insufficient when resume/recovery code can re
 Open: Exact-head CI, merge readback, immutable Backend revision/digest, PatchMon/Fleet health and the deployed UI → persisted job → exactly one Agent Zero A2A → empty root `testfile` smoke remain required.
 Next safe step: Require terminal exact-head gates, merge only if green, then prove the exact merged Backend image and run the no-OAuth/no-Swarm/no-billing production smoke.
 
+### 2026-09-19 — Agent-Zero-only production smoke lane
+Status: SOURCE_AND_CI_VERIFIED; deployed smoke pending.
+Task: Add a production-only proof for deployed UI → persisted repository job → exactly one Agent Zero A2A task → shared workspace → empty root `testfile`, with no OAuth/Swarm/billing/Draft-PR execution fallback.
+Decisions: Use an opt-in `workflow_dispatch` lane with `contents: read`, no GitHub token or publication step; bind backend `/health` to exact revision/digest; verify `testfile` through the existing job-owned file and git-status readbacks.
+Evidence: Memory pre-read on `main@5d23e0f0274e33140cc35e88aca0a7fefeb63109`; production backend `sha256:b6e7cafc8bae27f391a0b9397769cab9283ea9dec68a184bd41378beb0b462df` and Agent Zero healthy with RW shared-workspace mount. PR #2016 pre-Memory head `97c6ae14148c796872028d667d613581a4b10597`: Agent Backend 1305 passed/1 skipped, Revision Guardian, Boundary Ledger, Continuity, Integration Plan, MCP validator and Release Verification all succeeded.
+Learned: The existing job-owned FileReadTool plus git-status already proves regular-file identity, zero bytes, empty SHA-256 and uncommitted state; no new runtime readback API or GitHub execution authority is needed.
+Open: This Memory append changes the PR head; exact-head gates, merge/deploy revision+digest readback and the real dispatched production smoke are still required.
+Next safe step: Require terminal checks on the new exact head, merge only if green, deploy/read back that exact revision and dispatch the smoke.
+
+
+### 2026-09-19 — Production smoke canonical UI route correction
+Status: SOURCE_PATCHED; exact-head CI and redispatch pending.
+Task: Repair the first real Agent-Zero-only production smoke after it failed before repository execution because the workflow targeted the callback/rescue host instead of the canonical deployed user app.
+Decisions: Bind the smoke UI to `https://sovereign-backend.arelorian.de/app/`; keep `chat.arelorian.de` out of the workflow execution surface; preserve the existing read-only workflow permissions and all OAuth/Swarm/billing/Draft-PR negative assertions.
+Evidence: Memory pre-read completed on `main@01ddd09863e958c4b4bc8d55c6adee376059e0c9`. Production release is verified at Backend `sha256:2f7079f691e15262dc133b42e95d9e98eb6225ee6e4a2c50cd1863205a9b036b`, MCP `sha256:f77aef81dcd16c6d41894da7a2cdd1f83122565d7aeeaf47dcd4fe4933a6c0a5`, runtime receipt `217fccd5352997b523c35fe5a953abdb4c6f74bcd3931af923d580730be709c2`. Smoke run `35471558556` failed causally with `DEPLOYED_UI_HTTP_404` before any repository/A2A action. The live backend source owns `/app/` as the canonical user-app route and `docs/GITHUB_OAUTH_SETUP.md` names that URL as the productive frontend. Focused contract 3/3, `git diff --check`, backend compile and workflow schema diagnostics pass after the correction.
+Learned: OAuth callback/rescue origins are not interchangeable with the product UI truth boundary; production smoke must bind to the route actually serving the revision-stamped user artifact.
+Open: Exact-head GitHub gates, merge/deploy readback for the correction and a fresh production smoke still remain before final E2E verification.
+Next safe step: Publish one Draft PR, require exact-head terminal green, merge under Owner approval, verify the resulting production revision/digest, then redispatch the same smoke and read its artifact to terminal.
+
+
+### 2026-09-20 — Agent Zero observation, CAG order and abort feedback
+Status: IMPLEMENTED_IN_REPOSITORY; CI and production verification pending.
+Task: Investigate the owner's stalled-video job and restore the compact route control and centered white eye while retaining Agent Zero as the sole GitHub executor.
+Evidence: Exact base/runtime `ddecf91c8bffb9a72db71917c404f26e17faa505`, backend image `sha256:fb29f55f2731c73214131cab970449658d0e4ce12152c6165d80c9fa84a968f4`. Job `agent-6adc254dd9e54e85baa660ef2011c18c` reached `repository_closeout_regression_blocked` at 15:39:19Z because the workspace lacked node_modules. The observed access-delegation/contract-binding order contradicted the CAG invariant, creating a verified-but-false state-transition incident outside the active readback-only repair grant. Frontend Abort threw before HTTP; backend correctly refused to claim an unproven A2A stop.
+Changes: Persist throttled task observations without resetting the stall clock; preserve observed files/diff before regression; correct the CAG order and exclude polling noise; surface readback/abort failures; remove phase-derived percentages; restore the white eye and compact single-agent selector. Three canonical/shipping mirrors remain byte-equal. Added a bounded, pinned Paramiko routing probe with interactive password input and no secret output.
+Validation: 102 focused backend tests passed; two filesystem ownership tests also fail on the unchanged base in this local environment and require CI. Python compile and git diff check passed. Frontend behavior tests await GitHub Actions.
+Open: Production workspace dependency provisioning, verified Agent Zero task cancellation and per-task Low/Free–Medium/Paid–High/Paid binding remain unresolved. Existing backend Free/Paid providers are configured, but the installed Agent Zero model configuration/source is not yet observed. Owner-authorized SSH was unreachable before authentication. Paid options stay explicitly unavailable; no authority, billing, runtime, merge or deployment mutation was performed.
+
+### 2026-09-21 — Deadline frontend/closeout hardening
+Change: Replaced the vNEXT header eye with a deterministic 3D white-eye/black-pupil design and made repository closeout bootstrap missing Node dependencies only from an exact lockfile; the canonical Sovereign origin may use its checked-in pnpm build policy, while other repositories keep lifecycle scripts disabled.
+Learned: The proven completion blocker was not READY_TO_PUBLISH polling but the clean Agent-Zero workspace reaching Sovereign closeout without node_modules; provider timeouts remain a separate runtime risk and are not disguised by this patch.
+Evidence: Pre-memory head `f2b3de5ca55e436da9c4db96a7bad2350ec42edd` passed Release Verification 35614791421, Sovereign Agent Backend 35614791861, Sovereign ChatGPT MCP 35614791402, Integration Plan 35614791399, Continuity 35614791409 and Boundary Drift 35614791537; canonical/shipping TestTool copies are byte-identical. This append changes the head, so exact-head gates remain required before merge.
+
+
+### 2026-09-21 — Agent Zero live-control truth repair
+Change: Added exact A2A `tasks/cancel` confirmation, immutable-created-at stall enforcement, suppressed duplicate unchanged `tasks/get` heartbeats, hardened Agent Zero against reusing timed-out terminal sessions, clarified changed-file UI semantics, and replaced the header eye with a visibly distinct deterministic cyber-ocular HUD.
+Learned: Live job `agent-33db1102b0c34588a980ea248d7a3a58` was genuinely handed to Agent Zero, but `tasks/get` stayed `submitted` while Agent Zero logs showed the workspace task executing and a terminal `ls` returning no output for 30s; repeated submitted events were noise, not progress.
+Evidence: targeted A2A tests 7/7 and repository-execution tests 31/31 pass locally after integrating the monotonic stall fix; PR #2039 Agent Runtime Tests passed on pre-memory head `ce9e2b796a5e80bc368c44a11f24353234b48088`; live DB readback preserved the single task id `5c42f9f0-25c6-4a2a-bff1-54f2eeae5a14` without duplicate submit.
+
+
+### 2026-09-21 — Release Verification stale UI contract repair
+Change: Updated the vNext truth-contract tests to match the merged cyber-ocular geometry and to verify the truthful unavailable-completion message without case-sensitive wording drift.
+Learned: Release Verification run 35623545113 failed because two assertions lagged behind intentional UI copy/geometry changes; production behavior was already correct.
+Evidence: Pre-memory head `d3e88083a0b913a9134939486e0a589e0100640f` passed Release Verification 35626122857 with frontend-smoke 3791 total / 3789 passed / 0 failed / 2 skipped, plus Runtime Unit Tests, Playwright Smoke Gate and Integration Gate success; Agent Backend 35626122841, MCP 35626122862, Continuity 35626122859 and Integration Plan 35626122855 also passed.
+
+### 2026-09-21 — Open-PR runtime consolidation
+Change: Consolidated the live Agent Zero stale-submitted cancellation/workspace-progress repair with the non-contradictory publication-intent prompt and a hard 30-minute repository stall cap; obsolete competing PRs were retired.
+Learned: FastA2A `submitted` is not proof of progress, so stale queue state must be bounded while independently observed workspace mutations are preserved; publication wording belongs to Sovereign, not Agent Zero execution.
+Evidence: Pre-memory head `c8aba8bc7004238685e3b7de056d5fea94acc6a2` passed Release Verification #5924 (frontend smoke 3789 passed / 0 failed / 2 skipped, Runtime Unit, Playwright and Integration success), Agent Backend #3244, MCP #2392, Continuity #2804, Boundary Drift #1646 and Integration Plan #2297.
+
+### 2026-09-21 — Agent Zero IT-Tools private sidecar
+Change: Added digest-pinned IT-Tools as a private managed Compose sidecar and exposed it to Agent Zero only as an optional deterministic developer utility, with no public port or evidence authority.
+Learned: IT-Tools is a static browser UI, so a running container alone proves little; verified deployment must additionally prove the real Agent Zero container can reach the internal UI.
+Evidence: Pre-memory head `9d78549df383ad63c3bf754d7db6d9b8da4a7306` passed 66/66 focused local regressions plus Release Verification 35636412544, MCP 35636412289, Agent Backend 35636412286, Continuity 35636412253, Boundary Drift 35636412305 and Integration Plan 35636412343; PatchMon runtime was 4/4 healthy. Live sidecar deployment remains unclaimed until the merged exact revision passes the Agent-Zero HTTP canary.
+
+### 2026-09-21 — IT-Tools installer copy repair
+Change: Added the missing `IT_TOOLS_TEMPLATE_DIR` bootstrap directory before managed control-plane copy.
+Learned: Registering a managed stack is insufficient if its template target directory is not created before the fail-closed atomic installer copy.
+Evidence: Self-update of main `8739e61eff8988aa3996da87124f570e33af02d7` failed exactly at `copy_control_plane_file:templates/sovereign-it-tools/docker-compose.yml` and rolled back; after the repair 20 installer + 35 managed-compose tests, backend compile and `git diff --check` pass.
+
+### 2026-09-21 — Wolfram source intelligence lane
+Change: Added consent-gated Wolfram CodeParser/CodeInspector/CodeFormatter parse, inspect and format-preview tooling over the existing CAG transport, with source-as-data encoding, 32-KiB input bound, per-call egress approval, structural formatter equivalence, Sovottt MCP exposure and a lane-only 128-KiB normalized-result window while normal CAG remains 4 KiB.
+Learned: Static CodeTools evidence is useful only when source egress, parser structure and result-size boundaries are explicit; provider success remains SUCCEEDED_UNVERIFIED and cannot replace repository/runtime truth.
+Evidence: Pre-memory head `bf6d2b94b71ea2ff03c68b5610267fc7c942dbf5`; Agent Backend #3261 SUCCESS; MCP #2414 SUCCESS with 1058 passed/12 skipped and live registry contract including `wolfram_source_intelligence`; Release Verification #5942 SUCCESS with frontend smoke 3789 passed/0 failed/2 skipped, 11 Playwright smoke and 90 integration tests; Boundary Ledger #1661, Integration Plan #2313 and Continuity #2820 SUCCESS.
+
+### 2026-09-21 — MCP runner immutable-image recovery
+Change: Added an explicit main-only `publish_immutable_mcp` workflow-dispatch recovery mode that publishes/verifies the exact MCP image without implying VPS deployment.
+Learned: Manual VPS bootstrap cannot recover a missing MCP publisher if workflow-dispatch can only validate; image publication and deployment need separate bounded recovery stages.
+Evidence: Coordinated Release 35640973123 on `6325abbb90288c38197f07d6427d1eb6fd0f545f` failed at exact-revision image-workflow evidence while backend digest `sha256:80771f6ba2d08f4c328a3cb83a34c2b247765b024aabdb0dc8e002cdab67d34b` was verified; 13 bootstrap/deploy + 20 installer tests and `git diff --check` pass after the recovery-path change.
+
+
+### 2026-09-21 — Agent Zero Causal Progress Lease
+Status: SOURCE_REGRESSION_VERIFIED; production runtime proof pending
+Änderung: SCPL trennt A2A-Liveness von materieller Git-Progression, persistiert predecessor-/workspace-/taskgebundene Progress-Receipts im bestehenden Event-Store, dedupliziert bereits kreditierte Workspace-Fingerprints und begrenzt Weiterlauf zusätzlich durch eine absolute Deadline; #1525 bleibt alleiniger Worker-Heartbeat-/Fleet-Lease-Owner.
+Erkenntnis: Polling/working ist keine Fortschrittsevidence; selbst ein gültiger Progress-Receipt braucht eine atomar serialisierte predecessor chain, und fehlendes Job-Start-Binding muss fail-closed statt durch eine neu startende Deadline behandelt werden.
+Evidence: Pre-Memory PR #2055 head `4a77b8c392b60bdee27894940505fc63f7ce3f58`; Agent Backend run 35645339576: 1317 passed, 1 skipped plus N+1 malformed-JSON pass; Boundary Ledger 35645339491, Integration Plan 35645339592 und Continuity 35645339613 success; canonical/shipping blobs für cag_self_healing, causal_progress_lease, job_store und repository_execution identisch. Production bleibt UNVERIFIED, da der verfügbare Runtime/MCP-Readback keinen revisions-/digestverifizierten laufenden Stand lieferte.
+Next safe step: Finalen Memory-Head exakt neu prüfen; Draft PR nicht mergen/deployen, bevor Required Checks terminal grün, main weiterhin basegleich und ein späterer revisionsgleicher Agent-Zero/Workspace/PatchMon-Runtime-Readback verfügbar ist.
+
+### 2026-09-21 — SCPL final truth-boundary hardening
+Status: SOURCE_REGRESSION_VERIFIED; production runtime proof pending
+Änderung: SCPL wurde nach dem ersten grünen Stand fail-closed nachgeschärft: fehlende Git-Evidence bleibt `UNVERIFIED` statt als beobachteter Stillstand zu gelten; terminale/gewechselte Job-Bindings können keine späten Progress-Receipts mehr erzeugen; konkurrierende Reconciler übernehmen nur einen real persistierten neuen Receipt-Head; die vollständige append-only Receipt-Chain wird bounded oldest-first validiert; ein Retry-/Task-ID-Wechsel verlängert die Lease nicht ohne einen neuen autoritativen Git-Workspace-Fingerprint.
+Erkenntnis: Fehlende Beobachtbarkeit ist nicht dasselbe wie No-Progress, und neue Executor-Identität ist nicht materieller Fortschritt. Für einen belastbaren Progress-Lease müssen sowohl der aktuelle Workspace-Zustand als auch die gesamte Predecessor-Chain und die noch aktuelle Job-/A2A-Bindung übereinstimmen.
+Evidence: Pre-Memory head `f0778ef1378c226a6bd7ba0dd9c4e049205e8836` auf unverändertem `main@e3875a43f530333aad5670bd450b299aa2216a54`; Agent Backend 35649838961, MCP 35649838965, Release Verification 35649838956, Boundary Ledger 35649838951, Integration Plan 35649838945 und Continuity 35649838981 jeweils SUCCESS; Runtime Unit Tests, Web+Android Build, Artifact Smoke, Playwright Smoke und Integration Gate SUCCESS; canonical/shipping Mirrors für causal_progress_lease, job_store, repository_execution und cag_self_healing 4/4 blob-identisch. Amplitude-Projekt 850948 enthält aktuell keine Events, daher wurde keine erfundene SCPL-Telemetrie ergänzt. Production bleibt UNVERIFIED, weil kein revisions-/digestgleicher PatchMon/Docker-Runtime-Readback verfügbar ist.
+Next safe step: Memory-Head exact erneut durch alle Required Checks prüfen; Draft PR weder mergen noch deployen, solange Runtime-Parität nicht separat real belegt ist.
+
+
+
+### 2026-09-22 — N+1 malformed JSON hardening rebased onto current main
+Status: PARTIAL
+Task: Carry the reviewed N+1 malformed-JSON hardening from stale PR #2057 onto current main after PR sweep.
+Decisions:
+- Preserve `request.get_json(force=True, silent=True)` on all three N+1 POST endpoints so non-dictionary JSON reaches the existing typed 400 response instead of an unhandled parser exception.
+- Update both canonical backend and mirrored Sovereign backend files; do not weaken the existing payload contract.
+Touched surfaces: `backend/n_plus_one/routes.py`, `scripts/sovereign-backend/n_plus_one/routes.py`, existing `backend/tests/test_n1_json_validation.py`.
+Evidence: Original PR #2057 had all available CI lanes successful and failed only the mergeability freshness check because its base was stale; current main still contained the vulnerable `force=True` calls, so the narrow patch was reapplied on a fresh current-main branch.
+Learned: A stale but clean security fix should be re-derived against current ownership rather than merged through a divergent branch.
+Open: Current-main branch needs exact-head CI/runtime readback before merge.
+Next safe step: Create a Draft PR, require all checks, then merge only after green exact-head evidence.
+### 2026-09-23 — Evidence Flywheel + consent boundary integration
+Status: PARTIAL — source patch and Draft PR created; exact-head CI/runtime verification pending
+Task: Integrate vendor-neutral evaluation patterns from the supplied skills archive into Sovereign without creating a second runtime, registry, approval system or evidence truth layer.
+Decisions: Add the revision-bound Evidence Flywheel skill to agent/runtime surfaces; bind engineering work to real baseline → bounded execution → causal failure analysis → minimal repair → regression/benchmark → independent readback; extend the existing consent pattern with Action Preview, authority/scope binding, causal Action Receipt and asynchronous revocation checks; preserve Agent Zero as the repository executor and do not reintroduce Swarm, awareness-monitor execution or LiteLLM.
+Touched surfaces: AGENTS.md; .agents/skills/evidence-flywheel/; tools/sovereign-chatgpt-mcp/skills/sovereign-evidence-flywheel/; existing consent/operational-assurance skills; evidence-flywheel architecture doc; installer contract; regression contract test.
+Evidence: Current main baseline 7e1aa5e354807ade245486ae9f4c3bb6ee495e53; Draft PR #2071 head before this Memory append 88f550ea29ab38b77d404a35405b231607e0dd6b; exact-head GitHub Actions were observed running/queued, not green. Supplied archive SHA-256 dbfb60b5e0fbd84c2fbf16c1ae3d527cfb3782e7455d896a9e6749781e5c8787.
+Learned: The useful archive contribution is the evaluation discipline itself; Sovereign already owns the necessary architecture, consent, registry, benchmark, CI and readback primitives, so duplicating them would increase drift rather than reduce it.
+Open: New Memory append changes the PR head; exact-head CI, runtime identity, PatchMon readback and any merge remain pending.
+Next safe step: Re-read this exact branch head, require terminal checks and only then consider the normal Owner/merge gate.
+
+
+### 2026-09-23 — Evidence Flywheel contract regression repair
+Status: PARTIAL — source regression repaired; exact-head revalidation pending
+Task: Repair the exact-head MCP gate failure introduced by the Evidence Flywheel integration.
+Decisions: Keep the regression test strict and align the canonical/packaged skill wording instead of weakening the assertion.
+Touched surfaces: `.agents/skills/evidence-flywheel/SKILL.md`, `tools/sovereign-chatgpt-mcp/skills/sovereign-evidence-flywheel/SKILL.md`.
+Evidence: Exact-head `9e9866252e786e2846037c98e52c25b97e28617a` had 1066 passed / 12 skipped / 1 failed; the sole failure was `test_evidence_flywheel_contract_contains_required_boundaries` because `causal failure-family analysis` was absent while the semantically equivalent `failure-family analysis` was present. The failing MCP workflow was `Sovereign ChatGPT MCP` run `35805757831`, job `107006753984`; all other terminal PR #2071 runs were successful, and all five PR #483 runs were successful.
+Learned: Contract tests must remain exact enough to protect the intended method, while canonical text should expose the required invariant unambiguously; mirror parity is preserved.
+Open: The repair changes the PR head, so no green claim or merge is valid until the new exact head is re-run through all required gates.
+Next safe step: Re-read the new PR head, require terminal exact-head CI, then perform the required independent/runtime readbacks before any merge decision.
+
+
+### 2026-09-23 — Evidence Flywheel mirror-contract regression repair
+Status: PARTIAL — source repair committed; exact-head revalidation pending
+Task: Repair the second MCP contract regression on PR #2071 without weakening the regression suite.
+Decisions: Keep the exact contract assertions; align the canonical and packaged flywheel skills byte-for-byte, expose the required Action Preview wording in both, and use the contract’s required `fake snapshot` invariant rather than removing the guard.
+Touched surfaces: `.agents/skills/evidence-flywheel/SKILL.md`; `tools/sovereign-chatgpt-mcp/skills/sovereign-evidence-flywheel/SKILL.md`.
+Evidence: Exact-head `58e291a3c56aa2a30f9d2461390ef373b7ca9b09` MCP run `35809701860` failed 2/1067 tests: canonical/runtime mirror parity and the required `fake snapshot` wording. The repair commits are `60acd77522d024af792e38e7937e282fe4dd4441` and `8e2cbfdc3cf8fd1d027f1d6dd13ed9ad1e89a695`; the packaged mirror now uses the canonical content.
+Learned: Contract tests are correctly detecting both semantic wording drift and mirror divergence; the right fix is canonical contract alignment, not test relaxation.
+Open: The new head still needs terminal exact-head CI and independent runtime/readback evidence before merge.
+Next safe step: Re-read the final branch head, require all required gates to finish green, then perform the normal runtime/PatchMon evidence checks before any merge.
+
+
+### 2026-09-23 — Evidence Flywheel installer boundary readback repair
+Status: PARTIAL — post-merge source defect repaired; final main/runtime readback pending
+Task: Repair the Evidence Flywheel installer command boundary found by independent post-merge readback.
+Decisions: Replace the literal \\n between the Neuro Teaching and Evidence Flywheel installer checks with a real shell command boundary; keep the fail-closed checks intact and do not weaken contracts or tests.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `Memory.md`.
+Evidence: Evidence Flywheel integration merged as main commit `9eb27019aeea7b8589814a5cce436f64aba76a8e`. Independent file readback found a literal \\n in the installer. Repair head is `d391adfcfae96483d682ed42603fff08f9aa6765`, PR #2073. Exact-head Required Checks: Continuity 2933, Integration Plan 2426, Agent Backend 3367, Release Verification 6057, Boundary Ledger 1759 and MCP 2540 all SUCCESS.
+Learned: Post-merge source readback can expose shell-boundary defects that static integration contracts did not catch; the smallest causal repair is preferable to test relaxation or a second implementation path.
+Open: PR #2073 still needs the normal merge gate and post-merge main/runtime readback; no live PatchMon/host runtime claim is made because no remote device was available.
+Next safe step: Merge the exact verified head, resolve the new main revision, then repeat installer, CI and applicable runtime identity/readback checks.
+
+### 2026-09-23 — Hostinger sovereign-toolchain dotenv boundary repair
+Status: PARTIAL — repository fix prepared; Hostinger update revalidation pending
+Task: Remove an unnecessary .env dependency from tools/sovereign-toolchain/docker-compose.yml that can cause Hostinger to reject the project before runtime values are resolved.
+Decisions: Keep BROKER_GID and SOVEREIGN_MCP_IMAGE dynamic and immutable in the MCP deployment path; do not commit host-specific values or secrets. The toolchain Compose file contains no references requiring those variables, so the redundant env_file: .env declaration is removed.
+Touched surfaces: tools/sovereign-toolchain/docker-compose.yml; tools/sovereign-toolchain/tests/test_compose_contract.py.
+Evidence: exact main baseline 5511c638e8ba0384420979692dd63ed7ec1d4b9d; Compose before SHA-256 54e090ca6695ba62c42005d5db174b5e6896e399f5399724fb35eb5cdff6f347; after SHA-256 57ce56a785e40f08c4c3ec5f0648b936b899ee8161c20378cdd9c4f96a30c09a; repository schema diagnostics CLEAR; diff is exactly two deleted env_file lines plus one new regression test.
+Learned: Hostinger should not inherit MCP-only environment requirements merely because the toolchain Compose file declares a blanket .env file; host-specific broker/image identity remains owned by the MCP installer and runtime.
+Open: New draft PR and exact-head GitHub regression are pending; actual Hostinger revalidation still requires the Hostinger project endpoint/configuration to be reachable.
+Next safe step: publish the Draft PR, require terminal CI, then retry the Hostinger update and read back the project state.
+
+### 2026-09-24 — Real Aurion Admin MCP tool-lane integration
+Status: PARTIAL — contract/runtime surfaces integrated; authenticated Admin-MCP canary and production activation remain pending
+Task: Integrate the existing Aurion Admin MCP as a Sovereign/Sovottt private tool-lane without inventing an API, authority or authentication layer.
+Decisions: Reuse the existing HTTPS `/admin-mcp` resource, Aurion's OIDC/JWKS + audience + persisted `role=admin` authority and the three existing scopes; expose the 53 registered Aurion tools through the Sovereign private broker with separate read and write dispatch actions; keep Aurion as final schema/authorization authority; no Keycloak/OAuth/FusionAuth changes and no new public `/admin-*` route.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/aurion_admin_mcp_lane.py`, `server.py`, `broker.py`, `command_contract.py`, Docker/install contracts, and regression tests.
+Evidence: Uploaded Aurion snapshot fingerprints matched `AURION_ADMIN_MCP_CONTRACT.md`, `server/adminMcp.ts`, `server/adminMcpProtocol.ts`, and `shared/aurionAuthoringContract.ts`; 53-tool registration order and handler mappings captured; Admin-MCP lane tests 11/11 and install contract 21/21; Aurion and MariaDB containers healthy; PatchMon fleet runtime verified; no feature deployment performed.
+Learned: Aurion already provides the complete admin authority boundary; Sovereign should remain an adapter/broker lane and must not reproduce Aurion authorization or write logic.
+Open: No valid admin OAuth bearer was available for a live privileged `tools/call`; deployed Sovereign MCP still runs revision `5511c638e8ba0384420979692dd63ed7ec1d4b9d` and its immutable digest is not exposed by current readback. Two unrelated baseline suites remain red on fresh main: `test_tool_success_ranking.py` (7 failures) and `test_coordinated_release_reconciler.py` (13 failures).
+Next safe step: Review the Draft PR at exact head, obtain authenticated Admin-MCP read/plan canary evidence, then consider deployment/merge only after the normal owner gate.
+
+### 2026-09-24 — Aurion Admin MCP live-count gate final main repair
+Status: PARTIAL — exact current-main repair prepared; CI/runtime activation pending
+Task: Re-derive the post-merge Aurion Admin MCP live tool-count repair directly from current `main` after the prior PR branch conflicted during synchronization.
+Decisions: Preserve the merged 288-tool Private Owner Mode expectation, but make the live FastMCP registry assertion consume `EXPECTED_MCP_TOOL_COUNT` instead of a second hardcoded 258 value; keep 255 for non-owner mode and retain existing Aurion scope/authority boundaries.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py`; `Memory.md`.
+Evidence: Fresh workspace based on `main@1f85621741107e7242841f7a87a91a4da2acd04d`; installer patch SHA `497bd98e7f2a92a28e1d5ddc54d8e39f79e472a10d12800908befeaf151b12db`; focused Aurion lane/install tests remain green on the available runtime; local installer-contract execution is CI-owned because PyYAML installation is disabled in the MCP container.
+Learned: The merged installer has two independent live tool-count assertions; both must bind to the same computed expectation or revisionsame activation fails closed.
+Open: Publish this clean current-main branch, require terminal exact-head CI, then rerun immutable MCP publish/self-update and verify live revision plus digest.
+Next safe step: Create the Draft PR and use GitHub Actions as the authoritative dependency/test environment before any merge.
+
+### 2026-09-24 — Aurion Admin MCP post-merge installer count repair
+Status: PARTIAL — source repair verified; post-merge runtime retry pending
+Task: Repair the private MCP installer count after the merged Aurion Admin MCP lane caused the revisionsame Self-Update to fail at live tool-surface verification.
+Decisions: Keep Aurion disabled by default, but in Private Owner Mode count the existing 258-tool surface plus the 30 default read-only Aurion Admin tools, yielding 288; do not broaden scopes or change Aurion authority.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py`.
+Evidence: Main merge `ad4df69377eecbc5ba46a4a0bb4c0afdaea87e34`; immutable MCP publish and digest verification run `35957957386` SUCCESS; failed Self-Update stage `verify_live_tool_surface_and_widget_domain`; focused regressions 9/9 installer-contract, 11/11 Aurion lane, 21/21 install-contract plus `git diff --check` green after repair.
+Learned: Enabling a gated dynamic MCP surface in the installer requires the live expected tool count to follow the actual scope-gated registration, not the pre-integration baseline.
+Open: Repair needs a Draft PR and exact-head CI before another merge; Self-Update had rolled back cleanly and the running MCP remained on the prior verified digest.
+Next safe step: Publish the narrow repair, require terminal exact-head CI, then rerun the immutable MCP publish/self-update path and read back revision plus digest.
+
+### 2026-09-24 — Aurion Neuro-canary tool-count final repair
+Status: PARTIAL — exact current-main source repair verified; Draft PR pending
+Task: Remove the remaining stale 258 assumptions from the isolated Neuro deployment canary after the merged Aurion Admin MCP lane expanded the real Private Owner Mode tool surface.
+Decisions: Pass `EXPECTED_MCP_TOOL_COUNT` explicitly into the isolated canary and bind both registry-count assertions to it; keep the canary test harness at 258 because it intentionally does not enable the Aurion Admin MCP lane.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py`; `Memory.md`.
+Evidence: Current main before repair `3e362695060069646786bb5c8460948da9e7b79d`; Self-Update failure at `verify_isolated_neuro_runtime_canary`, phase `registry_surface`; focused installer-contract 9/9, Aurion lane 11/11, install-contract 21/21 and `git diff --check` pass after the final source/test correction.
+Learned: The Neuro runtime contract was already dynamic; the final activation blocker was stale deployment-canary literals, not a Neuro implementation defect.
+Open: Draft PR and exact-head GitHub CI remain pending; after merge, rerun immutable publish/self-update and verify the live revision plus digest.
+Next safe step: Create the Draft PR from the current-main branch and require terminal green exact-head CI.
+
+### 2026-09-24 — Repository execution expectedHeadSha binding repair
+Status: PARTIAL — source + regression verified; live deployment pending
+Task: Bind missing repository `expectedHeadSha` server-side at the real repository execution boundary instead of requiring the frontend caller to supply it.
+Decisions: Resolve the selected GitHub branch HEAD read-only via the existing `resolve_github_head` path, reject empty resolution, preserve the exact SHA through the existing job lifecycle, and update the canonical/shipping execution mirrors together. Add a regression proving a missing caller SHA is filled before job creation.
+Touched surfaces: `backend/agent_runtime/repository_execution.py`, `scripts/sovereign-backend/agent_runtime/repository_execution.py`, `backend/tests/test_repository_execution.py`.
+Evidence: Isolated workspace `job-83df4958ae2b` on `main@6baf7dd7d2ab179f580be65cf2f29c40bcf34484`; `test_repository_execution.py` 38/38, `test_repository_single_a2a_contract.py` 4/4, `test_agent_zero_only_execution_contract.py` 4/4; canonical/shipping modified files remain byte-identical after applying the same patch. Running `sovereign-backend` is healthy but still on the pre-patch immutable runtime, so no production-live claim is made.
+Learned: The frontend can remain neutral about the revision while Sovereign itself binds the exact repository HEAD at the backend truth boundary; caller-supplied SHA remains accepted and unchanged when present.
+Open: Draft PR exact-head CI and immutable runtime deployment/readback are still required.
+Next safe step: Create the Draft PR, require terminal exact-head CI, then deploy and read back the exact revision/digest before claiming the frontend issue fixed live.
+
+### 2026-09-25 — AgentWorkTimeline a11y cleanup carried forward
+Status: PARTIAL — current-main patch prepared; CI/runtime readback pending
+Task: Carry forward the reviewed AgentWorkTimeline accessibility/micro-UX improvements without overwriting newer Palette tests already integrated on main.
+Decisions: Keep the semantic `<ul>/<li>` event structure, native detail/status/metadata tooltips, decorative `aria-hidden` indicators, focus-visible action affordances, and the existing current-main WorkerBlockerCard/MissionValidatorCard tests. Rework the stale PR test as an additive AgentWorkTimeline regression rather than deleting newer tests.
+Touched surfaces: `src/features/product/components/AgentWorkTimeline.tsx`, `src/features/product/components/PaletteEnhancements.palette.test.tsx`.
+Evidence: Source PR #2069 head `bcce3a17c717b954ea1ecfe50fb5184eac79e5e9` was green but GitHub reported `mergeable_state=dirty` against current `main@395d3b38507bb1e62af7aabe7c2418496f400c50`; its original test patch removed two newer test blocks. Fresh current-main workspace preserved those blocks, applied only the Timeline implementation delta, and added an additive Timeline accessibility regression.
+Learned: A stale accessibility PR can be salvaged safely by transplanting only the functional delta and composing its regression with the current test suite instead of copying an obsolete aggregate test snapshot.
+Open: Fresh current-main branch still needs exact-head CI and merge readback.
+Next safe step: Run the targeted and required GitHub checks, then create and merge only the exact green head.
+
+### 2026-09-25 — MergeBlastRadius optimization current-main refresh
+Status: PARTIAL — functional delta prepared on fresh main; CI/readback pending
+Task: Refresh the reviewed single-pass MergeBlastRadius gate optimization from stale PR #2097 onto the latest main without carrying stale branch metadata.
+Decisions: Preserve the deterministic runtime optimization and focused score/decision regression; do not overwrite newer main content.
+Touched surfaces: `src/features/product/runtime/mergeBlastRadiusGateRuntime.ts`, `src/features/product/runtime/architectureEnhancements.test.ts`.
+Evidence: Source PR #2097 head `b08af178a12d6fab4db1bfb964be7e785e5afd53` became dirty after main advanced to the #2096 merge. Fresh workspace `job-f9257e03e4eb` materialized only the two functional/test paths from the exact source head; current-main Memory was read before editing.
+Learned: A clean current-main refresh is safer than rebasing a stale performance branch when only two deterministic files carry the intended feature.
+Open: Fresh current-main Draft PR publication and exact-head CI remain pending.
+Next safe step: Publish the refreshed branch, close stale #2097, then merge only after terminal green checks.
+
+
+### 2026-09-25 — Premium Sovereign control-surface design system
+Status: VERIFIED repository/CI; runtime deployment unchanged
+Task: Establish the production Frontend Design Premium layer for the canonical Sovereign Control Surface vNext.
+Decisions: Keep the existing vNext control surface and runtime-readback truth boundary; centralize durable visual intent in DESIGN.md and reusable premium instrumentation tokens in the existing biomodular theme; use carbon surfaces, laser-red causal signalling, emerald evidence seals, and restrained motion rather than a generic dashboard restyle.
+Touched surfaces: DESIGN.md; src/App.tsx; src/features/control-surface-vnext/theme/biomodular.css.
+Evidence: PR #2106 at the pre-memory head passed 38 terminal CI checks with no failures; PatchMon fleet evidence reported the PR head revision-bound and mergeable/clean; no production deployment mutation was performed. Runtime resolver separately reported the existing deployed MCP revision/digest gap, which is unrelated to this frontend source change and is not claimed fixed here.
+Learned: Premium visual quality should be encoded as a durable system and applied to the canonical shell without creating a parallel UI or weakening the runtime truth boundary.
+Open: Re-run exact-head CI after this Memory entry changes the PR SHA; merge remains owner-authorized work only.
+Next safe step: Verify the new exact PR head, then proceed with the normal review/merge gate if explicitly authorized.
+
+### 2026-09-25 — Responsive truth-contract accessibility regression repair
+Status: PARTIAL / repair prepared; exact-head CI reset pending
+Task: Repair the failing responsive control-surface truth contract caused by the Modal accessibility hardening.
+Decisions: Keep `aria-labelledby` with the stable React `useId()` title binding; update the regression contract to assert the actual accessible-dialog semantics instead of weakening Modal back to `aria-label`.
+Touched surfaces: `src/features/control-surface-vnext/controlSurfaceTruthContract.test.ts`; `Memory.md`.
+Evidence: PR #2106 exact head `4f946c4274b5fa15dc496b64d96856694f0caf27` Release Verification run `36161485222` failed 1/3820 frontend smoke tests because the unchanged truth-contract still expected `aria-label={title}`. The exact workflow log identified that stale assertion; the narrow replacement was applied in isolated workspace `job-ffa17689136c`, and the actual Modal source was re-read to verify it uses `aria-labelledby={titleId}`.
+Learned: Accessibility semantic hardening must update its source-of-truth contract assertions in the same change block; otherwise the regression suite correctly reports the contract mismatch.
+Open: The repaired head needs fresh exact-head CI; no merge or runtime-green claim is made yet.
+Next safe step: Publish the test + Memory repair to PR #2106, require terminal exact-head CI, then merge only the verified final head.
+
+
+### 2026-09-25 — Owner consent instrumentation without card UI
+Status: PARTIAL / repository integration complete; exact-head CI pending
+Task: Extend the canonical Sovereign Control Surface with a server-bound human-in-the-loop action/consent surface while preserving the existing runtime authority boundaries.
+Decisions: Treat consent as instrumentation, not a dashboard card; show server-supplied request facts and verbatim rationale; expose only explicit approve/reject decisions for approval interactions; keep protected approvals fail-closed; use the shared modal's least-destructive initial focus, Escape handling, focus trap and restoration; do not add authority, credentials or local state as a substitute for backend truth.
+Touched surfaces: src/features/control-surface-vnext/components/OwnerInteraction/OwnerInteractionModal.tsx; OwnerInteractionModal.test.tsx; Modal.tsx; adapter/production-adapter.ts; types/domain.ts; theme/biomodular.css; src/App.tsx; PR #2106 metadata.
+Evidence: Workspace SHA-bound edits succeeded; focused regression coverage was added; PR #2106 now points at d291ee0177e5b5d6120e2dbf637e29a9e1739385; no production deployment mutation occurred. Local command execution was unavailable because the bounded workspace runner rejected the requested commands as not allowlisted; this is not treated as a test result.
+Learned: Consent UX can reuse the existing approval endpoint and persisted-run model without creating a second authority layer; the UI can remain highly explicit without becoming a card grid.
+Open: Exact-head GitHub CI is still running; no runtime-green claim is made.
+Next safe step: Re-read the final PR head, verify terminal checks and review-thread state, then merge only through the owner-authorized exact-head gate.
+
+### 2026-09-25 — AgentWorkTimeline premium system convergence
+Status: PARTIAL — source/test delta prepared; CI and PR publication pending
+Task: Optimize the existing AgentWorkTimeline so it participates in the shared Sovereign premium design system instead of maintaining a parallel local palette and inline layout rules.
+Decisions: Preserve the runtime snapshot as the only state source; replace local color/geometry constants with shared biomodular tokens/classes; expose active state through `aria-busy`, status through a polite live region, blocker state through `role="alert"`, and expand/collapse through explicit `aria-expanded` + `aria-controls`; keep 44px interactive targets and responsive sizing.
+Touched surfaces: `src/features/product/components/AgentWorkTimeline.tsx`; `src/features/control-surface-vnext/theme/biomodular.css`; `src/features/product/components/PaletteEnhancements.palette.test.tsx`; `Memory.md`.
+Evidence: Isolated workspace `job-0824f8203ff8` is based exactly on main `fdacfc31ec21994098a543c041cd18561e1abff2`. Source diff now removes the Timeline-local palette and inline geometry, adds shared premium timeline classes, and extends the existing Timeline regression with class/ARIA assertions. The bounded local check runner rejected generic check commands as not allowlisted; this is not treated as a test result. A YAML/JSON schema scanner was intentionally not used as code validation because it cannot parse TSX/CSS and reported format mismatch on all three frontend files.
+Learned: The Echoes of Aurion inventory's core State → Evidence → Readback → Projection → Interaction → Command → State boundary is best reflected by making runtime status semantics explicit in the presentation layer rather than introducing client-side state claims.
+Open: Exact-head frontend CI, Draft-PR publication, review/merge, and production runtime/readback remain pending.
+Next safe step: Publish the exact current workspace head only after the owner-authorized Draft-PR gate, then require terminal CI and the normal runtime/readback checks before any live claim.
+
+### 2026-09-26 — SovereignControlFrame premium convergence
+Status: PARTIAL — source/test delta prepared; exact-head CI and publication pending
+Task: Continue the Frontend Design Premium integration from AgentWorkTimeline into the canonical SovereignControlFrame without creating a parallel UI or changing runtime truth ownership.
+Decisions: Remove screen-local signal colors, move frame geometry/semantics into shared biomodular tokens/classes, remove wall-clock display from the status surface, replace the 393px cap with responsive 320px+ behavior, use 44px runtime/module controls, add explicit `aria-busy`, `aria-expanded`, `aria-controls`, `aria-pressed`, keyboard-scrollable evidence regions, and keep runtime state projection-only.
+Touched surfaces: `src/features/product/components/SovereignControlFrame.tsx`; `src/features/product/components/SovereignControlFrame.test.tsx`; `src/features/control-surface-vnext/theme/biomodular.css`; `Memory.md`.
+Evidence: Current source baseline is `main@9b4c0a6ba45b9b726434742e6621b181264d6051`; working integration remains on the exact prior workspace head `fdacfc31ec21994098a543c041cd18561e1abff2`. Wolfram contrast calculation confirms project semantic text/state pairs against Carbon meet the intended contrast range except `Text Dim` as a non-primary metadata color (2.62:1); existing DESIGN.md already assigns Text Dim to low-priority metadata. PatchMon runtime evidence reports its core stack healthy, but unrelated active alerts/reboot/update conditions remain, so no deployment-green claim is made.
+Learned: The control frame should read as an instrument surface whose semantic state comes from the existing runtime state model; time-of-view and local color constants add no truth and create avoidable drift.
+Open: Current exact-head component/test suite has not yet been executed by an allowlisted Node runner; Draft PR, terminal CI, browser/runtime verification and merge are pending.
+Next safe step: Publish the exact workspace head, consume terminal CI as the authoritative test result, then perform exact-head/revision/readback checks before any merge or live correctness claim.
+
+### 2026-09-26 — Timeline regression assertion repair
+Status: PARTIAL — test repair prepared; exact-head CI pending
+Task: Repair the AgentWorkTimeline accessibility regression that failed the Release Gate after the premium convergence.
+Decisions: Keep the component behavior unchanged; after expansion, assert the newly rendered collapse control instead of reading `aria-expanded` from the expand control that React correctly removes from the DOM.
+Touched surfaces: `src/features/product/components/PaletteEnhancements.palette.test.tsx`; `Memory.md`.
+Evidence: Exact-head Release Verification run `36256183818` bound to `f2792e1e888b00e686c24ecd745efaca9546cd94` failed only `Runtime Unit Tests`; frontend smoke reported 3818 passed, 1 failed, 2 skipped, identifying this Timeline test. Runtime source confirms `draft_pr_ready` is terminal and `isActiveState` excludes it. The failing assertion was a stale-reference check on the removed expand button; the narrow test-only repair was applied without changing runtime behavior.
+Learned: Expand/collapse tests must assert the control currently present in the DOM after the state transition, not the DOM node that the transition intentionally removes.
+Open: The rerun is currently executing against the same exact head; merge remains blocked until terminal green evidence.
+Next safe step: Consume the rerun result, then perform exact-head revision/review/readback checks before merge.
+### 2026-09-26 — Neuro canary failure evidence hardening
+Status: PARTIAL — diagnostic instrumentation prepared; runtime repair not yet verified
+Task: Preserve the existing fail-closed Neuro deployment canary while making a contract-status AssertionError diagnostically actionable without returning credentials or mutating runtime state during diagnosis.
+Decisions: Keep the existing isolated read-only canary and its execution/approval boundaries unchanged; on failure, emit bounded, secret-free contract fields when the assertion carries the structured Neuro status object, and otherwise only a bounded error message.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_install_contract.py`; `Memory.md`.
+Evidence: Main remains `9215436b10c13115f50b2582da7e5422004ce043`. The failed self-update is bound to `verify_isolated_neuro_runtime_canary` / `contract_status` / `AssertionError`; direct runtime readback currently shows the existing container healthy, `MCP_PROTOCOL_READY`, and broker `BROKER_READY`, while aggregate self-update status remains FAILED. Source inspection confirms GitHub access uses the ephemeral GitHub App installation flow and removes persistent `GITHUB_TOKEN`; the secure tunnel transports only the loopback MCP endpoint.
+Learned: The prior canary failure envelope discarded the assertion payload entirely, so an exact structured contract defect could not be distinguished from other AssertionError paths. The repository already has read-only contract fields suitable for bounded diagnosis.
+Open: The V2 workspace/auth bridge still reports missing `GITHUB_TOKEN` and is not currently consuming the deployed tunnel/App-auth boundary; no persistent token has been introduced.
+Next safe step: Run the targeted installer-contract and Neuro tests on this branch, publish a Draft PR, consume terminal CI, then retry the exact revision-bound self-update and inspect the now-bounded canary evidence.
+### 2026-09-26 — Neuro canary diagnostic propagation
+Status: PARTIAL — diagnostic propagation prepared; production runtime verification pending
+Task: Preserve bounded Neuro contract details from the isolated installer canary through the self-update failure reason and coordinated-release reconciler.
+Decisions: Keep the existing fail-closed canary and GitHub/tunnel auth boundaries unchanged; extend only the secret-free `phase=…;error=…` envelope with an optional compact `details=` field, while keeping historical detail strings valid.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/deploy/reconcile-main-release.py`; `tools/sovereign-chatgpt-mcp/tests/test_coordinated_release_reconciler.py`; `Memory.md`.
+Evidence: The previous exact-head MCP run on the branch reached 1078 passed, 12 skipped, 1 warning; its only failure was the expected fixture mismatch after the first evidence-envelope extension. Source inspection shows Self-Update passes the installer failure reason through its bounded status detail, while the reconciler previously rejected any appended diagnostic fields.
+Learned: The correct propagation boundary is the installer failure reason itself; no second GitHub credential path or tunnel-specific token handling is needed.
+Open: New exact-head CI after this propagation patch and subsequent production self-update remain pending.
+Next safe step: Consume terminal CI, then merge only after exact-head green evidence and retry the self-update to obtain the concrete `contract_status` mismatch.
+### 2026-09-26 — Neuro diagnostic parser regression repair
+Status: PARTIAL — test correction prepared; terminal CI and production verification pending
+Task: Correct the regression-test helper introduced for bounded Neuro canary diagnostic propagation.
+Decisions: Load the reconciler module through its existing `_load()` helper before asserting the parser contract; no production behavior changed.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/tests/test_coordinated_release_reconciler.py`; `Memory.md`.
+Evidence: Exact-head CI `36261661268` on `88ed11503383fa0a7505faf266afee31226a7932` reached 1079 passed, 12 skipped, 1 warning with one isolated `NameError` because the new test referenced an unloaded `module`. Source inspection confirmed the production parser patch itself was the exercised target and the test failure occurred before parser execution.
+Learned: New parser regression tests must use the repository's established dynamic module loader when testing executable deployment scripts.
+Open: Fresh exact-head CI, merge, and exact-revision runtime self-update remain pending.
+Next safe step: Consume the new CI run for this test-only correction, then continue with the existing exact-head and runtime evidence gates.
+### 2026-09-26 — UX scanner route truth alignment
+Status: PARTIAL — scanner contract corrected; terminal CI and runtime verification pending
+Task: Align the production UX contract scanner with the current generic adapter readback route.
+Decision: Keep the implementation on the current persisted single-agent readback path `/api/user/agent/single/runs/:id`; update only the scanner's stale Swarm-route expectation and message.
+Touched surfaces: `scripts/sovereign-ux-contract-scan.mjs`; `Memory.md`.
+Evidence: Release Verification `36261836922` on exact branch head `f5ddb80dd3680ff8ae3ead569b89b48ca314fc7c` ran 3820/3823 frontend smoke tests successfully and failed the UX scanner only at `adapter:generic-run-readback`. Direct source inspection of `production-adapter.ts` shows `getRun()` reads `/api/user/agent/single/runs/${encodeURIComponent(requested)}`.
+Learned: The correct repair is to remove stale contract expectations rather than reintroduce deprecated Swarm routing into the live adapter.
+Open: New exact-head CI on this scanner correction, then merge and retry the immutable runtime self-update.
+Next safe step: Consume terminal exact-head gates and keep the Neuro/Auth changes unchanged.
+### 2026-09-26 — Publication readback eligibility regression repair
+Status: PARTIAL — adapter repair prepared; terminal CI and runtime verification pending
+Task: Prevent vNext repository-session readback from probing the Draft-PR publication endpoint before a persisted job reaches an eligible Draft-PR state.
+Decision: Gate publication readback on backend-owned `prState` values `ready` or `created`; keep the existing independent GitHub readback path intact for actual Draft-PR-capable jobs.
+Touched surfaces: `src/features/control-surface-vnext/adapter/production-adapter.ts`; `Memory.md`.
+Evidence: Release Verification `36262099192` on `616f2a2e466af8be09b71b23250c257cc0666da2` failed only two Playwright endpoint-contract scenarios because the blocked persisted repository job triggered unexpected `GET /api/user/agent/jobs/<jobId>/publication-readback`; the backend lifecycle source defines `pr_state='ready'` in `mark_draft_pr_prepared` and `pr_state='created'` in `mark_draft_pr_created`.
+Learned: Publication readback is a post-gate projection, not part of blocked/validating session rehydration. Conditioning it on the persisted backend state removes the redundant request without weakening verified Draft-PR readback.
+Open: Fresh exact-head CI and merge/runtime verification remain pending.
+Next safe step: Consume terminal CI; if green, merge only at exact head and retry the immutable self-update so the bounded Neuro canary evidence can expose the remaining contract defect.
+### 2026-09-26 — Neuro contract assertion evidence
+Status: PARTIAL — canary assertion context hardened; production re-run pending
+Task: Preserve the concrete contract-status assertion context when the isolated Neuro canary fails with a plain AssertionError.
+Decision: Add a secret-free `contract_status.<field>:...` assertion message for the four contract checks and preserve bounded AssertionError text in the existing diagnostic envelope.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `tools/sovereign-chatgpt-mcp/tests/test_install_contract.py`; `Memory.md`.
+Evidence: Exact main revision `ab32b5afac2c0d3a89aafcaba5dbfbf2b4ed406e` failed the revised self-update at `verify_isolated_neuro_runtime_canary / contract_status / AssertionError`. The preceding exact-head CI for PR #2114 was terminal green, and the direct live container remains healthy, so the missing information is the failing contract field, not container liveness.
+Learned: A bare AssertionError has no payload, so diagnostic hooks must attach bounded, non-sensitive contract summaries at the assertion site to make the failure actionable.
+Open: New CI/Draft PR plus exact-revision runtime retry are pending.
+Next safe step: Run terminal CI for this focused canary-evidence patch, merge if exact-head green, then retry the same immutable image path and consume the newly propagated assertion context.
+
+### 2026-09-26 — Live-path scanner truth alignment
+Status: PARTIAL — scanner contract repaired; PR/CI and runtime verification pending
+Task: Align the vNext live-path scanner with the repository-bound production adapter actually injected by the canonical control-surface context.
+Decisions: Keep `repository-bound-adapter.ts` as the vNext execution owner; change only the scanner's stale expectation from the legacy base adapter Swarm route to the repository-bound `/api/user/agent/repository/run` route and authenticated session contract.
+Touched surfaces: `scripts/sovereign-live-path-scan.mjs`; `Memory.md`.
+Evidence: Exact `main@21866343af61e13e83c9b7b366aa3549dc4487a1` failed `Sovereign Runtime Contract Scan` only at `vnext:production-adapter`. Source readback shows `context.tsx` imports `./repository-bound-adapter`, whose `runSingleAgent()` posts to `/api/user/agent/repository/run`; the base adapter intentionally retains non-repository single-agent readback at `/api/user/agent/single/runs/:id`.
+Learned: Contract scanners must validate the actual injected production implementation, not a superseded base-class route that is no longer the vNext repository execution owner.
+Open: The scanner fix now needs exact-head GitHub CI; deployment remains blocked by the independent Neuro canary/registry evidence problem.
+Next safe step: Create/update the Draft PR from this exact workspace, consume terminal CI, then retry the current immutable MCP self-update only after the CI evidence is green.
+### 2026-09-26 — Neuro canary hook NameError repair
+Status: PARTIAL — hook repair prepared; terminal CI and runtime retry pending
+Task: Prevent the isolated Neuro deployment canary failure hook from masking a real AssertionError with its own NameError.
+Decision: Import Python `re` in the embedded canary because `_safe_canary_exception_details()` uses `re.sub`; no canary assertions or runtime semantics changed.
+Touched surfaces: `tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh`; `Memory.md`.
+Evidence: Exact main `65832c46071ff06dc2af4c8821a0f9c289779def` had MCP image CI green and self-update restarted the container, but the post-install canary ended as `phase=unclassified;error=UnknownError`. Source inspection showed the hook calls `re.sub` without importing `re`; the live rollback container retained the old registry after failure.
+Learned: A diagnostic hook is part of the failure contract and must itself be dependency-complete; otherwise the original contract AssertionError becomes invisible and the self-update parser correctly falls back to UnknownError.
+Open: This exact branch needs terminal MCP/Release CI, then the immutable MCP self-update must be retried and its live registry/revision/digest read back.
+Next safe step: Consume exact-head CI, merge only when terminal green, then retry the same immutable self-update and verify the Neuro tool surface through the real MCP endpoint.
+
+### 2026-09-26 — Neuro tool-lane registration ordering hardening
+Status: PARTIAL — launcher ordering repair prepared; CI and runtime retry pending
+Task: Keep the five Neuro/Teacher registrations after all other module registrations so the canonical lane is present when the deployment canary counts the live tool surface.
+Decision: Move the existing single Neuro registration call to the end of module registration and before output-contract/enforcement installation; keep the expected Private Owner Mode count at 288.
+Touched surfaces: tools/sovereign-chatgpt-mcp/launcher.py; tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py; Memory.md.
+Evidence: main 658f2837cca76c17ac0a37b32e9a0d69979a80f4 reached the isolated deployment canary and reported a runtime registry count of 283 against the expected 288. The predecessor comparison showed no removal of five legacy tool implementations.
+Learned: The observed five-tool delta is consistent with the Neuro/Teacher lane being absent after composition; lowering the 288 gate would hide the defect.
+Open: Exact-head CI and the production self-update retry remain pending.
+Next safe step: Consume terminal exact-head CI, retry the exact current-main self-update, then verify the live Neuro names and total registry count.
+
+### 2026-09-29 — Unified-App Error Hunter: CI gateway fixture drift
+Status: PARTIAL — root cause fixed in branch; terminal CI and runtime verification pending
+Task: Repair the unified frontend/backend same-origin contract after the release unit gate failed on the exact unified-app revision.
+Decisions: Keep the web product's API defaults same-origin; scope the production `VITE_ADMIN_API_BASE` gateway override to native/package build paths and explicitly clear it for browser unit tests. Keep the GitHub App OAuth callback absolute because it is an external provider redirect binding, not a browser API base.
+Touched surfaces: `.github/workflows/android.yml`; `src/features/product/llm/adapters/primaryBridgeAdapter.test.ts`; `scripts/audit-test-coverage-map.mjs`; `tests/e2e/frontend-endpoint-contract-smoke.spec.ts`; `scripts/frontend_test_gate.py`; `Memory.md`.
+Evidence: Android validation run `36491277485`, job `109160197936`, checked out exact `0b2f24db548386e23d45cead1dc1636eecdee2df` and failed the `endpoint-client-vitest` stage with 9 failures / 16 passes / 0 skips. The same job exposed `VITE_ADMIN_API_BASE=https://sovereign-backend.arelorian.de` as a job-level environment value. All nine failures were endpoint-client assertions whose expected contract is now relative/same-origin. Branch `sovereign/chatgpt/1790634034-unified-app-error-hunter` is 5 commits ahead of main with no divergence and contains the scoped CI/test-contract fixes; no OAuth callback was rewritten.
+Learned: A native build-time gateway variable must not leak into browser unit-test evaluation of same-origin defaults; otherwise the test suite measures CI configuration instead of the unified web product contract. Provider redirect URIs remain a separate absolute boundary.
+Open: Terminal CI for the new head and independent runtime/readback evidence are still required before merge or any Green-State claim.
+Next safe step: Open the Draft PR, consume the targeted/broad GitHub checks on the new exact head, then review the adjacent endpoint/route and authority-boundary families for additional confirmed drift.
+
+### 2026-09-29 — Unified-App Error Hunter run 2: E2E gateway contamination
+Status: PARTIAL — source-level root cause confirmed and patched; terminal CI remains pending
+Task: Remove the remaining split-origin assumption from the default browser E2E build after the unified-app migration.
+Decision: The normal browser E2E job must build with an empty `VITE_ADMIN_API_BASE`, preserving same-origin application routing. The explicit live-five-path job keeps its own loopback API base and production backend proxy target; native Android release retains the real external gateway where required.
+Touched surfaces: `.github/workflows/e2e-testing.yml`; `src/features/control-surface-vnext/liveSessionContract.test.ts`; `tests/e2e/frontend-endpoint-contract-smoke.spec.ts`.
+Evidence: Current main `6a28679690bb76478a1da4c8098b0e84b77e460d` still had top-level `VITE_ADMIN_API_BASE=https://sovereign-backend.arelorian.de` in `e2e-testing.yml`. The default browser job builds with Vite and has no backend proxy target configured; application code reads `import.meta.env.VITE_ADMIN_API_BASE`. The E2E suite globally intercepts `**/api/**` and previously recorded only the request path, so a browser test could pass while requests were compiled to the external gateway instead of same-origin. The smoke now records and asserts request origin against the loaded app origin. Current CI `Current App E2E Smoke` was green on main, which therefore does not prove same-origin request construction.
+Learned: Same-origin E2E requires both runtime request interception and build-time endpoint configuration to be aligned; a broad Playwright route mock can otherwise mask an origin regression. Vite documents that `VITE_*` values are exposed to client code and statically replaced during build.
+Open: New head requires terminal E2E, type/test/build and independent runtime readback before merge; no product runtime mutation is claimed by this test-only/config-only fix.
+Next safe step: Consume the exact-head GitHub checks, then continue the adjacent routing/consent/observability hunt only from the new head.
+### 2026-10-01 — MCP Private-Owner canary count alignment
+Status: PARTIAL — installer/test repair verified; MCP redeployment pending
+Task: Correct the private-owner deployment canary expectation that blocked the exact main@e92120eea8ff4f254ce0a19a1358d2b8255734d9 MCP rollout.
+Decisions: Align the Private Owner Mode EXPECTED_MCP_TOOL_COUNT with the current canonical live registry contract at 258; do not lower the canary based on the failed runtime alone.
+Touched surfaces: tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh; tools/sovereign-chatgpt-mcp/tests/test_neuro_deployment_install_contract.py; Memory.md.
+Evidence: Immutable MCP image for e92120ee... is published as sha256:83266846fcf93403aa6ea056274ea63365f5caf59158bbbb9c93751b6e70757c. Current VPS readback still shows the rollback image sha256:6040a4dabdc192867295644b24a33913fc9f33ad44399c04afc650b67da94a50, bound to revision 50925f32489fe8dff4192e9320787a8009f89ce0. The live Neuro contract reports registry tool count 258. Exact local embedded-canary contract test passed 9/9 after changing the private-owner expectation from 288 to 258; installer contract passed 21/21; runtime-boundary contract passed 2/2; git diff --check passed. Coordinated-release reconciler test suite remained 25 passed / 13 failed because the isolated runner has no systemctl, unrelated to this count repair.
+Learned: The release blocker was a stale private-owner count expectation. The current source and live rollback registry both use 258, while the installer still promoted 288 during Private Owner Mode, causing the new MCP image deployment to fail closed and roll back.
+Open: The corrected installer is not yet merged or deployed, and the independent runtime receipt remains red.
+Next safe step: Publish the repair as a Draft PR, consume terminal GitHub checks, then rerun the exact immutable MCP deployment and independent runtime receipt against the repaired head.
+
+### 2026-10-01 — Sovereign MCP auth-proxy network recovery
+Status: PARTIAL — persistent topology repair and focused regressions verified; full CI/runtime pending.
+Change: Preserve loopback-only MCP publishing and Supabase while joining the existing sovereign-mcp-auth-internal network. Align the structured Compose regression with both required networks. Remove one duplicate crypto import that blocked the repository-wide CI parser, with a Node --check regression that never executes the production smoke.
+Learning: Plugin registration, Docker upstream reachability and immutable MCP rollout are separate boundaries. The coordinated release workflow already runs on main pushes and successfully reached the VPS; its legacy manual bootstrap is a different path.
+Evidence: PR #2162 head 663144b407ba13274bd433bc4781993150b378de completed with 1,080 MCP tests passed, one stale network assertion failed and 12 skipped. All three focused regressions passed after repair. Private workspace plugin Plugin_6d4d1ed827f48191a999eaeccc0067f7 was independently confirmed in workspace 7970213e-99dc-4611-a6fe-07adb3cc58b9. Run 36795623217 returned MCP_UPDATE_FAILED_BACKEND_PRESERVED at verify_live_tool_surface_and_widget_domain; the rolled-back MCP still had only supabase_default.
+Open: New exact-head terminal CI, merged-revision image/runtime receipt, authenticated public initialize/tools-list and a successful ChatGPT tool invocation are required before claiming recovery.
+
+
+### 2026-10-01 — Scoped MCP registry and public OAuth routing recovery
+Status: IMPLEMENTED_IN_REPOSITORY — focused checks passed; exact-head CI and runtime deployment pending.
+Change: Add the declared Aurion Admin MCP scope lane to the installer's base tool expectation and require its names; keep live registry and widget-domain assertions. Repair only the existing proxy's seven confirmed MCP/OAuth paths above Aurion's router priority through the canonical installer, preserving FusionAuth, root/Admin MCP discovery, auth settings and network attachments. Pin the proxy's current local immutable image identity and retain a private exact-byte Compose backup and bounded rollback.
+Learning: The predecessor registry at 258 is not the new private-owner image's registry: the enabled read-scope Admin lane adds 30 tools. Internal proxy metadata was correct, but Aurion's Host-only priority 1000 intercepted the public MCP discovery and OAuth bridge paths.
+Evidence: PR #2162 exact head 14b4a100aadcc28fd9baa67a349f1e06682e144e completed all applicable checks green and merged as bfc39305cb30fe1bedfce7dc7c400b54577905a7. Release run 36855378896 failed at verify_live_tool_surface_and_widget_domain and rolled back. Its candidate image and a separate isolated inspection with no production env files, volumes or network both verified 288 tools and the required widget domain; the rollback image had 258. Pinned-SSH readbacks confirmed the proxy's FusionAuth configuration and path-specific metadata. Nine routing regressions, including permission denial and exact-byte rollback, and shell/Python syntax checks passed locally; declared scope calculator returned 288/293/306/311 and rejected invalid scope with the bundled requests dependency.
+Open: Exact-head aggregate CI, the merged-revision immutable release and signed runtime receipt, authenticated public MCP tools, and an actual ChatGPT tool call remain required before claiming recovery.
+
+
+### 2026-10-01 — Scoped registry Neuro deployment canary recovery
+Status: TESTED_AT_REVISION — isolated candidate-image canary passed; exact-head CI and production receipt pending.
+Change: Make the existing canary request the private MCP state explicitly while retaining its exact mcp_self_update_status selection and every no-execution, replay, tamper, provenance and cleanup assertion. Report the independently validated configured tool count and guarded names. Exercise the real embedded canary across baseline and all four declared Admin/Wolfram scope configurations.
+Learning: The generic runtime-status fixture selected the valid newly registered aurion_runtime_identity tool. The resulting route_preview assertion, rather than registry drift, caused the release rollback; its failure hash matched an isolated reproduction exactly.
+Evidence: Main e38064a11d43629c75d4540e9c11e155cda9f50f release 36863912603 rolled back at verify_isolated_neuro_runtime_canary. Diagnostic 36893900319 reproduced failure SHA-256 492e90f8e52237890a26331640d6c369b9629fd17789e47bdc684ca807a7a44a in the same immutable image without production env files, volumes or network. Diagnostic 36895026989 passed the complete unchanged guard assertions with the precise mission and 288 registered tools; its old hard-coded report counts are corrected by this patch.
+Open: Exact-head CI, merged-revision immutable deployment and signed runtime receipt, public FusionAuth/MCP discovery and an authenticated ChatGPT tool call remain required before claiming recovery.
+
+### 2026-10-02 — QuickNode Bitcoin RPC preparation
+Status: PARTIAL — tested locally; account authentication and production runtime blocked.
+Change: Add explicit protected-HTTPS QuickNode mode alongside default Core Basic Auth; mirror the adapter, restrict ingestion reads, reject redirects, redact credential-bearing errors, verify mainnet/genesis/full blocks before writes, bind workflow inputs through environment variables, require persistent storage outside checkout, and run new regressions in the existing Bitcoin CI job.
+Learning: The QuickNode management API key, private RPC endpoint URL, GitHub secrets and persistent indexer are separate boundaries. A connector connection or passing adapter fixture cannot prove hosted RPC or full-chain readiness.
+Evidence: Source main@819413c3b165662e5f9225f0268784655b320dfa lacks QuickNode auth mode; 61 focused local tests pass, including actual local HTTP-to-SQLite ingest/resume over an explicit fixture, workflow execution gates and mirror parity. Both QuickNode list-chains/list-endpoints calls returned HTTP 403 AuthenticationError for the configured x-api-key. No endpoint, secret, production store or service was changed; no external Bitcoin RPC success is claimed.
+Open/next: Read exact-head CI, repair QuickNode account authentication through a secure connection channel, verify endpoint permissions/quota and historical blocks, provision/read back issue #2089's persistent runner/store, then execute a bounded real ingest before an authorized full-chain run. Merge and release remain separately evidence-gated.
+
+
+### 2026-10-02 — Unified PR backlog review
+Status: TESTED_AT_REVISION — local checks passed; exact-head CI and merge readback pending.
+Change: Review all 16 open PRs from main bc51ae5f1d24de3b185cef2456a4f4b9643b05ba; combine useful source changes from twelve, reject empty #2166 and unsafe/disconnected #2161, #2156, #2148. Preserve canonical frontend/backend ownership, repair stale PyJWT installer expectation and three existing TypeScript/runtime projection contracts.
+Learning: An accepted abort is not a cancelled backend job; wait for independent phase readback. Do not optimize duplicate matching or cache mutable public inputs without preserving behavior.
+Evidence: 169 focused frontend tests, 25 runtime/adapter tests, 16 MCP/auth tests; final release gate 25 endpoint tests, 3,830 smoke passes (two skipped), 90 integration passes; production build and artifact smoke passed. Static architecture scans are advisory. Local Chromium download failed; browser E2E remains delegated to CI. Details: docs/reviews/PR_BACKLOG_REVIEW_2026-10-02.md.
+Open: Exact-head terminal CI, merge/main readback and closing superseded originals; no production runtime claim.
+
+
+### 2026-10-02 — Admin response-body loading deadline
+Status: TESTED_AT_REVISION — local verification complete; exact-head CI and authenticated production readback pending.
+Task/decision: Repair the shared Admin API client's unbounded response-body read. Keep the existing request deadline active through success/error JSON consumption, propagate body aborts as bounded timeouts, and retain immediate 401/403 authority revocation and backend blocker details.
+Touched surfaces: src/features/admin/api/adminApiClient.ts; src/features/admin/api/adminApiClient.loading.test.tsx; Memory.md.
+Evidence: Baseline main@15cd8adb941cb981cc87894f974577c0e68bab3e; actual loopback HTTP streams reproduced four failures before the fix, including loading=true in the real users hook. After repair: 18 Admin tests, 25 endpoint tests, 3,837 smoke passes (two skipped), 90 integration tests, three canonical Admin delivery tests, type-check, production build, artifact smoke, static live-path/UX scans and diff check passed. Client Git blob 0e127d4cd6093eacf42e71a714bc8fb13debdd91. Public runtime /health returned that baseline revision with digest sha256:e031a66b5d4cc180f2302981ac059ff230c0e472e98cf8829ec99529e85055bd; /admin/ returned CANONICAL_REACT_ADMIN; unauthenticated /api/admin/ping returned 401.
+Learned: fetch resolves when headers arrive; clearing the timer there leaves res.json() and every dependent loading projection unbounded. This reproducible client defect is not yet proof of the owner's authenticated production outage cause.
+Open/next: Publish the Draft PR, consume terminal exact-head CI, obtain the required specific owner merge approval, then use the existing immutable coordinated release and verify authenticated data/runtime identity. No production mutation or authenticated recovery is claimed.
+
+
+### 2026-10-02 — Repository executor and Runtime Monitor evidence
+Decision: Restore the missing live permission gate, persist unexpected submit failures, and project owner/job-bound SDK evidence into the Runtime Monitor. Preserve server timestamps; distinguish claim-bound executor heartbeats from progress and polling.
+Evidence: Nine submit, six UI and three real HTTP body regressions reproduced the defects. Initial exact-head CI passed 1,322 backend tests including five PostgreSQL checks; production read-only validation confirmed the evidence query and owner isolation. The reported job has no SDK/heartbeat/file evidence and now has a persisted cancellation. GET deadlines cover response bodies; heartbeat age continues during failed polling.
+Next: Consume final exact-head CI, obtain specific merge/release authorization, then independently verify deployed execution. No production recovery is claimed.
+
+### 2026-10-03 — Live chat registries, credit readback and explicit Paid repository mode
+Decision: Replace empty Agents/Attachments projections with authenticated persisted agent tasks and existing integration readbacks. Display ledger-verified account/provider credits. Bind explicit Paid selection to the existing permission chain and OpenRouter reservation/actual-cost owner; Free never bills or escalates to Paid.
+Evidence: Six registry/balance regressions and ten UI regressions failed before implementation. Local validation passes 149 UI tests and 135 focused backend tests; two workspace ownership checks remain required in CI because local mapped-filesystem chown is unavailable. Seven shipping-schema PostgreSQL checks require the disposable CI service. Paid stages reserve before provider I/O and settle before completion; the request ceiling matches the SDK turn ceiling.
+Next: Verify the expanded exact head in CI and the deployed authenticated UI/runtime. The original cancelled job is not replayed. No new production Paid call or recovered repository execution is claimed.
+
+
+### 2026-10-03 — PR #2180 communication-provider secret masking refresh
+Status: VERIFIED review; merge gated by refreshed exact-head CI
+Task: Rebase PR #2180 onto current main and re-check communication-provider secret masking for false positives and obvious label gaps.
+Decisions:
+- Preserve the narrow provider-label additions; do not add speculative bare-token patterns.
+- Add regression coverage for common provider env labels and for plain provider-name text without assignment syntax.
+Touched surfaces: `src/shared/utils/crypto.ts`, `src/shared/utils/crypto.test.ts`, `Memory.md`.
+Evidence:
+- Original PR head `c3249578559095a61f907ac38fee30528d4529dd` had five exact-head workflows green: Sovereign ChatGPT MCP, Release Verification, Integration Plan Lane Gate, Sovereign Continuity Evidence, Sovereign Agent Backend.
+- Main was confirmed at `b2b9d131f00bfe5a551cf5b65dfbacdff8fcf93a`; its intervening changes did not touch either crypto file.
+Learned: Existing generic suffix labels already cover standard provider env names such as `*_API_KEY`, `*_AUTH_TOKEN` and `*_API_SECRET`; the provider-specific additions safely cover shorter aliases without masking ordinary prose.
+Open: Refreshed exact-head workflows must be green on the resulting PR revision before merge.
+Next safe step: Verify all five exact-head workflows on the refreshed head, then mark ready and merge only if mergeable.
+
+
+### 2026-10-04 — Revision-pinned Bolt.diy snapshot executor
+Status: VERIFIED repository integration; external Bolt runtime transport not claimed
+Task: Add Bolt.diy as a Sovereign external development executor for ZIP-based repository snapshots with optional Python/Blender/game-dev add-ons.
+Decisions: Model Bolt as `bolt-diy-snapshot` on `remote-snapshot`; pin every job/result to an exact Git SHA; probe add-ons instead of assuming them; keep production/VPS/DB/gameplay/direct-merge authority false.
+Touched surfaces: `src/features/product/runtime/sovereignBoltSnapshotExecutor.ts`; its test; `agentWorkspaceRuntime.ts` + test; `docs/BOLT_DIY_SNAPSHOT_EXECUTOR.md`.
+Evidence: PR #2186 pre-memory head `088b764b47fff52e6febdb479618665e365b76b1`; Sovereign Agent Backend, Boundary Ledger Drift, Sovereign ChatGPT MCP, Sovereign Continuity Evidence, Integration Plan Lane Gate and Release Verification all completed success on that exact revision.
+Learned: Bolt's ZIP import is a remote snapshot, not a durable local workspace; add-on availability must be observed and revision provenance must survive the ZIP boundary.
+Open: No live Bolt transport/API handshake or external add-on probe is claimed in this repository-only integration.
+Next safe step: Wire the real HTTPS/transport adapter only when Bolt exposes a stable authenticated API/contract, preserving this exact-revision/evidence boundary.
+
+
+### 2026-10-04 — Open-PR backlog consolidation
+Status: VERIFIED repository integration; no production runtime claim
+Task: Review every open Sovereign PR, preserve only evidence-backed changes on current main, and close duplicate/unsafe branches.
+Decisions: Salvage #2185, #2184, #2182 and #2179 into consolidated Draft PR #2187; reject #2183, #2181, #2178 and #2175 for failing routing regressions, unbenchmarked cache complexity, a non-canonical fallback-metadata path, or unreliable disabled-button tooltips. Keep merge authority separate.
+Touched surfaces: bounded GitHub PR evidence parsing; provider secret masking; Scan Finding and Repo Readiness accessibility; docs/reviews/OPEN_PR_BACKLOG_REVIEW_2026-10-04.md; original PR conversations/states.
+Evidence: pre-memory head 78f321914467b500bf0ac3fdadbd7bbc4410b495 passed Release Verification 37182605244, Sovereign Agent Backend 37182605241, Sovereign ChatGPT MCP 37182605233, Integration Plan Lane Gate 37182605283, Boundary Ledger Drift 37182605224 and Sovereign Continuity Evidence 37182605243. Original red heads #2184/#2179 failed hidden-details accessibility assertions; #2183 failed two PAL routing regressions. All eight original PRs were reviewed and closed with rationale.
+Learned: Old green checks do not make stale branches safe; re-deriving useful deltas on current main exposed interaction-test defects and prevented disconnected metadata/speculative performance changes from entering the canonical path.
+Open: This Memory append changes the PR head, so final exact-head CI remains required. Draft PR #2187 stays unmerged until a merge is explicitly authorized.
+Next safe step: Verify the final #2187 head across the six required workflows; only then mark the consolidation ready for an explicitly authorized merge.
+
+### 2026-10-05 — Repository FreeLLM 400 failover and credit truth
+Status: SOURCE_REGRESSION_VERIFIED — six exact-head PR workflows passed on pre-Memory head; live rollout/readback still pending
+Task: Repair repository-local jobs that terminally blocked on the first `FREELLM_REQUEST_REJECTED` despite remaining verified FreeLLM candidates, and stop the control surface from conflating account credits with Paid provider-funded balance.
+Decisions: FreeLLM HTTP 400 advances only to the next verified Free quota scope and only before any repository mutation; after effects, replay remains fail-closed; no Free-to-Paid fallback. Preserve the provider-funded Paid safety boundary while exposing `provider_funded_credits_required` separately from the verified account balance.
+Touched surfaces: cognitive failure classification; repository executor/revolver cooldown; canonical/shipping control readback; vNext ChatSurface/client; focused backend/UI regressions, including 46 verified FreeLLMAPI canaries with 1545 account credits and zero provider-funded Paid budget.
+Evidence: Pre-Memory head `39d7c3c73c015af4af9e45827ae2822ef73d1d44` passed Release Verification 37369677297, Boundary Ledger Drift 37369677274, Sovereign ChatGPT MCP 37369677234, Sovereign Agent Backend 37369677329, Sovereign Continuity Evidence 37369677361 and Integration Plan Lane Gate 37369677369; the 46-canary resolver regression retains all 46 verified candidates while keeping provider-funded Paid budget separate.
+Learned: Repository execution had lost the Free revolver's existing pre-effect failover semantics; general account credits and provider-funded OpenRouter budget are intentionally separate truth boundaries.
+Open: This Memory correction changes the PR head, so final exact-head CI must be read again. Immutable deployment plus one fresh real Free repository mission must still prove runtime rotation/success; Paid availability still requires its separate provider-funded readback.
+Next safe step: Require terminal checks on this Memory-corrected head, then deploy the exact revision and obtain fresh runtime readback before any merge claim.
+
+### 2026-10-07 — Consolidate credential masking PRs #2197 and #2205
+Status: PARTIAL — source runtime regressions verified; final-head CI pending.
+Task/decision: Keep #2197; carry all provider additions and original tests from #2205 onto main 7667fccb7696b944c4953128cadb327f2b50a1f7. Preserve communication-provider and generic env suffix coverage. Limit new URL colon support to sentry_dsn; stop empty assignments crossing lines and avoid matching alphanumeric word suffixes.
+Touched surfaces: src/shared/utils/crypto.ts; src/shared/utils/crypto.test.ts; Memory.md.
+Evidence: Original main and #2205 source executed under Node 24 reproduced colon overmasking and newline consumption; 101 direct assertions importing the consolidated production source passed. Original PR test assertions retained; focused Vitest and required CI remain pending at publication.
+Learned: Expanding one shared credential character class also expands every generic label; DSN-specific syntax needs a separate bounded rule. Underscore/hyphen env suffix matching is intentionally retained for existing provider contracts.
+Open/next: Read back the published files and exact-head gates before closing the redundant draft. No merge, deployment or production-runtime verification claimed.
+
+
+### 2026-10-08 — Readable mission chat and named test commands
+Status: PARTIAL — source regressions passed; exact-head frontend/browser CI and live rollout pending.
+Change: Bound the existing chat dock to half the panel with collapsible controls; keep route/cost disclosure outside the collapsed panel. Align the mirrored TestTool allowlist with documented unit/smoke/integration/release-gate script names and return actionable rejection guidance without granting arbitrary commands.
+Learning: A non-shrinking control block can consume the message viewport; an empty untracked Tester file is not test evidence, and the supplied job log does not reveal its rejected command.
+Evidence: main 8bb9b8250fc95b94cc402efa298e2725b433abd5; new tests first reproduced two failures, then 10 boundary tests (including real passing/failing pytest subprocesses and mirror parity), 36 repository execution tests, 33 evidence-gate tests and diff check passed. Added UI interaction and three phone-height browser regressions; MCP requires frontend checks in GitHub Actions. Static architecture reports are orientation only.
+Open: Verify exact-head CI and deployed mobile/job behavior; original job was neither replayed nor claimed recovered. No merge or deployment in this work block.
+
+### 2026-10-08 — PR #2213 browser interaction follow-up
+Change: Open the collapsed mission controls before selecting Free/Paid in the existing endpoint browser test and close them before dispatch; preserve every request and blocker assertion.
+Learning: Native details requires the same explicit interaction in browser tests as in the product.
+Evidence: Release Verification 37747356213 at 55caaf7d882de158ef0be6aecd453d75754a88a0 passed typecheck, unit tests, build and all three new phone layout cases; both route-selection cases failed because the select was hidden. Final-head CI remains required before the owner-authorized merge; production recovery is not claimed.
+
+
+### 2026-10-08 — PR #2217 source-map-js security review
+Status: TESTED_AT_REVISION — final-head CI remains required before merge.
+Change: Restore and reopen owner-authorized #2217 at 7b0d6afde9bd36c02043fd394d578124724f7fa8; retain only the RN lockfile version/URL/integrity update to 1.2.2 plus this append-only review entry.
+Learning: RN is excluded from the canonical pnpm workspace and marked legacy-retired in e2e-testing.yml; green product CI is not RN build evidence. The sole RN resolution is @expo/metro-config -> postcss 8.5.22 -> source-map-js 1.2.2, satisfying ^1.2.1.
+Evidence: npm ci --dry-run --ignore-scripts succeeded without lockfile changes. Downloaded 1.2.2 tarball SHA-512 matches the lockfile; all 12 runtime/type files match upstream v1.2.2 commit 0a1d334fd1e55a47df97fcd60a7915d46df3b08a. All 145 upstream tests pass against that exact npm artifact both normally and with Node 24 string-code-generation disabled. Baseline 1.2.1 reproduces invalid/oversized/nested offset failures and 531441 nested source reads versus one in 1.2.2; CSP-equivalent quick-sort checks fail 0/3 on 1.2.1. Full vulnerable-baseline suite was stopped after additional SourceNode amplification failure; no baseline pass claimed. Original-head Release Verification run 37750702232 passed typecheck, runtime tests, build/Android sync, artifact/browser smoke and integration; backend/MCP/continuity/integration-lane workflows passed.
+Open/next: Revalidate the final Memory-bearing head and exact merge/main readback. No installed RN app, browser CSP deployment, or production rollout is claimed.
+
+
+### 2026-10-08 — Owner-authorized PR backlog consolidation
+Status: IMPLEMENTED_IN_REPOSITORY; exact final-head CI and merge readback remain required.
+Change: Select reviewed fixes from #2200/#2203/#2206/#2209/#2210/#2212/#2216/#2218/#2219/#2220 on main b2e301ed164189ec42011229b559038a202982f6. Exclude Agent Zero, changed lineage/replay semantics, generated noise and the unapproved empty-file regression exemption.
+Evidence: 132 focused frontend, 85 Observatory and 30 backend tests pass; frozen pnpm 9.12.2 install succeeds. Observatory counterexamples exposed and fixed source/tool/time and cross-run digest validation gaps. Preserve all 81 boundary classifications and canonical/shipping parity.
+Open/next: docs/reviews/PR_BACKLOG_REVIEW_2026-10-08.md binds all 16 original heads and decisions. Merge only after final-head gates, close superseded/rejected originals and read back zero open PRs. No deployed or live-provider recovery claim.
+
+### 2026-10-09 — Standalone Sovereign GitHub Pages marketing surface
+Status: PARTIAL — isolated source and local tests; exact-head CI, merge, publication and legal approvals pending.
+Change: Add `public-site/` HTML/CSS, imprint/privacy drafts, static site validator and regression suite, review and manual Pages workflows, release guide; no backend, Android or MCP mutation.
+Evidence: Base `5b0d686a03989f4228d9bfcd3c48400af70590ff`; focused real-site pytest 7/7 passed and local git diff --check returned 0 (untracked paths not yet staged); publication mode intentionally blocked by missing legal and noindex markers.
+Learned: A repository documentation page is not a runtime claim or a legally cleared public launch; publishing requires specific approval, release gate and independent HTTPS readback.
+Open/next: Review exact PR head and GitHub Actions; complete imprint/privacy/contact and Pages Settings, obtain owner approval before merge and manual publication.
+
+
+### 2026-10-10 — Native Sovott MCP Evidence-Oberfläche
+
+Status: IMPLEMENTED_IN_REPOSITORY; gezielte Widget-Regression bestanden (5 Pytest-Prüfungen einschließlich 10 JavaScript-Host-/DOM-Randfällen), git diff --check bestanden. Bestehende Ressource/Registry um globale und Thread-Einstiege, MCP-App-Handshake, fehlerfeste Readbacks sowie Workspace-/PR-/CI-/Deployment-Ansicht erweitert; Scope- und CI-Head-Abweichungen fail-closed. Keine Merge-/Deploy-Aktion ausgeführt. CI am finalen PR-Head, immutable Release, installierte Registry und visueller ChatGPT-Host-Test bleiben separat erforderlich. Simulierter Host-Rand ist kein Runtime-/Deployment-Beweis.
+
+
+### 2026-10-11 — Owner SSH console and scoped assistance
+Status: IMPLEMENTED_IN_REPOSITORY; live VPS and immutable deployment evidence pending.
+Change: Extend the existing protected owner HTTPS surface, MCP host broker and host command queue with SSH password/key login, verified ed25519 host keys, one shared OpenSSH transport, a fixed inspection menu and session-bound expiring/revocable assistant grants; preserve byte-identical backend mirrors.
+Evidence: Main baseline a9e735d9bb4dfe296411a80057a8fee8144bac9d. Canonical SSH tests 23/23, host queue regressions 9/9 and installer contracts 21/21 passed; actual page scripts parse with Node. HTTP owner-route tests are delegated to the existing required Agent Runtime Tests because Flask is unavailable in the isolated check environment. Adapter tests are not live SSH proof.
+Learned/open: Control-socket checks alone do not prove closure; closure now requires readback and removes credentials only after confirmation. Secrets never enter MCP arguments or queued jobs. Final exact-head CI, immutable image, deployment/registry/container/PatchMon readback, protected owner credential entry and real target connection remain required. Free shell commands, key passphrases and MFA are outside this first menu scope.
+
+### 2026-10-12 — Canonical Aurion account role identifiers
+Status: IMPLEMENTED_IN_REPOSITORY; local verification recorded; exact-head CI and immutable runtime release pending.
+Change: Share one bounded openId pattern between the existing Aurion account-role MCP schemas and host operator: existing local handles or canonical lowercase SHA-256 OIDC identifiers. Update registry descriptions; preserve the owner intersection, write flags, host command queue, exact runtime revision, confirmation hash, fixed parameterized SQL and independent row/runtime readback.
+Evidence: Main baseline a5e3d1ff29337436636210c442533b6189f47972 passed 52 focused checks. The new exported-schema/Pydantic cases reproduce exactly three OIDC acceptance failures on that preserved baseline; current focused and neighboring checks pass 183/183. Full MCP suite: 1221 passed, 12 skipped, one failed because sudo is absent; the unchanged baseline reproduces the same missing-sudo failure. No full-suite pass is claimed. Compile, diff and local 290-tool private registry checks passed; no account-role tool was executed. Boundary-ledger reconciliation preserves all 81 reviewed classifications and updates only source bindings; no new or removed candidate and no owner decision.
+Learned/open: The existing role operator had a local-login input clamp even though Aurion persists OIDC users in the same canonical users table. Adapter tests and local registry inspection do not prove deployed authority or a role change. The conservative predecessor regex/description comparator remains unchanged; its semantic-compatibility result is a non-blocking advisory.
+Next safe step: Verify required checks at the final reviewed head, publish an immutable merge-revision image and read back deployed MCP identity/registry before planning a role change for the exact existing canonical row. Persisted Aurion role and an authenticated Admin MCP readback remain required; no merge, deployment or production write occurred here.
+
+
+### 2026-10-12 — Repair existing Aurion MCP argument transport
+<!-- integration-memory: pr=2251 -->
+Status: TESTED_AT_REVISION; final-head CI and deployed Aurion access remain unverified.
+Task/change: Correct FastMCP call metadata for the existing Aurion proxy in `tools/sovereign-chatgpt-mcp/server.py`; add focused real registration/protocol regressions. Reuse the current host broker and Aurion authority; no DBHub service or database mutation.
+Evidence: Code head `7a5d7072d641628c0e0721035c805f194339ab72`, Draft PR #2251. Baseline reproduced 14 missing-kwargs failures; candidate passed 16 new tests (including real MCP initialize/list/call with only the external broker isolated), 11 existing lane tests, 38 operator tests and diff validation. Boundary-ledger and integration-plan CI passed on this code head; final Memory-bearing head requires fresh CI.
+Learned: Replacing the published input schema does not replace FastMCP's generated function validator; both metadata paths must agree while preserving omitted optionals, raw JSON strings and exact integer values.
+Open/next: Full MCP CI, immutable reviewed release, installed registry/image identity and authenticated Aurion readback remain required. The live connector still reports the old kwargs error; no merge, self-update or production success is claimed.
+Evidence follow-up: Full CI on 62af314e4931dab5ae51e1f5020f069a8bf5d75e passed 1237 tests / skipped 12 and failed only the source-bound review-ledger freshness test. Reconciliation preserves all 81 reviewed classifications and updates two existing server bindings; no new/removed candidates or owner decisions. All four ledger regressions now pass; the final ledger-bearing head requires a new full run.
+
+### 2026-10-13 — Password-first VPS owner SSH console
+Status: PATCHED; exact-head regression and live deploy/readback PENDING.
+Task: Make the existing /owner-ssh interface usable with public VPS IP, SSH username and password, without requiring the owner to paste an unrelated CI public key or a private login key.
+Decisions: Default to SSH password mode, query only the candidate ed25519 server host key without credentials, display its SHA256 fingerprint for independent comparison in the provider's authenticated VPS console, require explicit fingerprint confirmation before allowing SSH authentication, then pin the candidate with StrictHostKeyChecking=yes. Keep public-IP-only target restrictions, protected owner files, broker-only action dispatch, bounded inspection menu, expiring delegation and CI authorized_keys command restrictions unchanged.
+Touched surfaces: scripts/sovereign-backend/owner_ssh_routes.py; byte-identical owner_ssh_console.py in scripts/sovereign-backend and tools/sovereign-chatgpt-mcp; backend/tests/test_owner_ssh_routes.py; tools/sovereign-chatgpt-mcp/tests/test_owner_ssh_console.py; tools/sovereign-chatgpt-mcp/README.md; Memory.md.
+Evidence: Existing runtime check vps_ssh_session_status reported SSH_NOT_CONNECTED before these changes. Branch includes exact-code negative tests for private-address scanning, invalid SSH host identity and secret-free server discovery. Passing CI is required; no Hostinger SSH session, credential exchange or live VPS connection is claimed.
+Learned: The line prefixed by command= in the user's authorized_keys configuration is a restricted client authorization, NOT a server host key. Requiring manual public key text in the password UI caused unnecessary confusion; server identity verification remains mandatory even with password authentication.
+Open: Run exact-head CI; review and merge only after required gates. Ship the backend/host worker together and verify a real owner-authenticated password session, pinned server fingerprint, menu readback and revocation. No server SSH policy relaxation or production database operation.
+Next safe step: Review the scoped PR and perform independent VPS fingerprint comparison before initial connection.
+
+### 2026-10-13 — Keep foreground repository tool receipts nonterminal
+Status: TESTED_AT_REVISION; exact-head CI and live runtime readback pending.
+Change: Preserve canonical job status and blocker during foreground single-agent tool receipts, including rejected tests and pending evidence; retain normal generic-API status transitions, strict heartbeat claim fencing and byte-equal backend/deployment mirrors.
+Learned: A rejected intermediate tool marked the entire running job blocked, causing its next strict heartbeat to report EXECUTOR_HEARTBEAT_CLAIM_NOT_CURRENT even though the submit claim remained unchanged.
+Evidence: Main baseline fb26b9470a104b59b26ee57c64e32026bfe5f9c8; initial focused local Pytest 57 passed (new lifecycle 5, repository execution 38, repository tools 14); backend/deployment mirrors equal. MIHA-style code fault follow-up on PR #2260 exact head 793663a98a03ba522ca716d44e016bc4d48378d8: GitHub CI first runs and subsequent MCP rerun independently reproduced two backend FakeCursor contract failures and two MCP faults (boundary ledger stale SHA bindings, SSH fixture literal backslash-n). Repaired FakeCursor SQL positional mapping and cancellation-preservation regression; repaired SSH fixture newlines (29 passed, 2 skipped local). Ledger reconciliation preserves 81 classifications and proposes two SHA bindings, but application still pending clean-worktree prerequisite. Additional backend-rerun in progress; local backend routes suite cannot collect because Flask is unavailable. GitHub exact-head CI, immutable deployment and runtime canary required. No production mutation or runtime repair claimed. Follow-up in the SAME Draft PR: a bounded deterministic MIHA-inspired read-only preexecution code hunt was inserted after the real Git checkout and before permission binding/queued sovereign-local-runner execution. It verifies the exact HEAD and clean checkout, rescans source-hash-backed Janitor candidates (max 20 scans, 200 files; 5 admitted per depth; max 4 evidenced neighbors; depth bound 10), persists a private source-reference-only graph plus SHA256 receipt and independent same-job database readback; failures block before executor admission, with no public dataset export. Focused current regression: 7 MIHA + 38 repository-executor + 14 cognitive-tools = 59 passed; backend/shipping mirrors must be byte-equal. Learned: submission validation and source-grounded code diagnosis are distinct truth phases; a scan provides only static candidates, never proven runtime defects or execution approval. Merge-gate follow-up: GitHub CI Sovereign Agent Runtime Tests failed on a stale FakeCursor positional mapping; actual job_store SQL has preserve_job_state at 7, clear_blocker at 8, blocker at 9 and job_id at 10. Patched FakeCursor without changing production job-store behavior. Local lifecycle 13/13, MIHA 7/7 and repository execution 38/38 green; exact new-head CI, immutable deployment and authenticated runtime canary still required.
+
+### 2026-10-13 — Retire n8n broker entrypoints (Issue #2261)
+Change: Fail closed n8n workflow plan/apply and the legacy n8n-host-stage1 Compose plan/apply regardless of owner approval; keep unrelated Compose paths intact. Learned: The old n8n Evidence systemd listener is still required by installer and release gates, so host retirement needs a separately verified, coordinated migration; the reported compromise is not independently verified. Evidence: Live VPS 24/24 running containers retained and no running n8n container, legacy evidence unit active; safe Docker cleanup reclaimed 1,275,494,400 bytes with volumes preserved; isolated broker 22/22, host-maintenance 20/20, workflow 33/33 and Compose 35/35 tests passed. Exact-head CI, immutable deployment and host retirement/readback pending.
+
+### 2026-10-13 — Bounded owner SSH workspace sessions
+Change: Extend the existing owner surface, host queue, broker and pinned SSH transport with one revocable 900–3600-second workspace grant and repeated init/write/read/run actions; synchronize shipping mirrors and helper staging. Test code uses a non-root namespace/cgroup; source labels, file hashes, in-flight cancellation and transient-unit readbacks remain explicit.
+Learned: A queued revoke cannot interrupt an occupied worker alone; a durable owner marker and live stdin lease are needed. Root inside a local user namespace is not proof that host UID provisioning or VPS namespace support works.
+Evidence: Existing workspace job-6c139eea89a9, baseline 3d596ac7681bf09a2abfa0855b16891d1ef2662e; focused workspace 29/29 and SSH/MCP registration 35/35 (2 skipped) pass on the candidate, HTTP owner routes 16/16 pass in an isolated Flask test environment; git diff check and mirrored SSH/contract readback pass. Real process tests cover repeated Python runs, timeout, output bounds, path/link denial and host-abort child termination. Final-head CI, installed helper/registry, actual VPS grant, cgroup/namespace/resource canary and Aurion incident repair remain pending; no runtime completion or production rollout is claimed.
+
+### 2026-10-13 — Read the installed MCP over its actual HTTP endpoint
+Change: Replace duplicate-server installer surface/snapshot probes with a bounded loopback MCP client; retain declared counts, scoped required tools, broker identity/hash, complete schema registry and both widget-domain checks. Learned: the first workspace rollout failed at verify_live_tool_surface_and_widget_domain with exit 137; OOM is not independently proven. Recovery exposed an older control plane, so GitHub-App workspace preparation became unavailable. Evidence: PR #2264 merged at 82c75e834f79c5242a441a77b9c8b40fcbbb3048; matching backend digest is healthy, MCP update failed. The replacement client passes 14 real SDK HTTP tests locally and in existing isolated workspace job-6c139eea89a9; separate-client peak RSS 64,716 KiB, no launcher/server import. Full installer collection lacks PyYAML in the restored host environment; final CI and actual installer/VPS workspace readback remain required. No successful workspace grant/run or Aurion repair is claimed.
+
+
+### 2026-10-14 — Remove retired Agent Zero from coordinated release evidence
+Change: Remove the obsolete Agent Zero mount inspection and Compose recreation path; bind read-only workspace evidence to the same sovereign-backend container snapshot used for revision/digest parity, and require its canonical bind mount and workspace UID/GID configuration in the signed receipt validator. Learned: release run 38474572031 attempt 3 failed on the retired Agent Zero container while backend/MCP were already current at 7a8d8deebedac95b675bc38104ffc5cc2bce005d; retired runtime repair must not be a release prerequisite. Evidence: workspace job-d2b962bfc7c4; new runtime regressions reproduced failure before repair, then reconciler suite 44/44 passed. Four genuinely SSH-signed invalid-workspace receipts were incorrectly accepted before the validator fix and rejected after it; eight local receipt tests pass. Existing root/sudo integration cannot run in these isolated environments and remains an exact-head CI requirement. CI, immutable installation and independent target readback still pending; no runtime completion or Aurion repair claimed.
+
+
+### 2026-10-14 — Preserve SSH workspace failure evidence and cleanup
+Change: Keep transient-unit stop and independent state readback in the controller's unconditional cleanup path; validate unit receipts and expose only fixed failure families through the existing console, with byte-equal shipping mirrors. Learned: after connector refresh, a real same-grant VPS write/read produced matching hashes at main 2e1d958b866c648bca2df48ad4edb1e8d26e095e, but program execution returned only a generic blocked result. Inspection found controller timeouts skipped cleanup and wrapper errors lost their causal family; neither finding alone establishes the live failure's root cause. Evidence: two regressions failed on the original target_action path before repair; 41 workspace and 38 console tests pass, with two OpenSSH checks unavailable in the isolated MCP environment. Missing bubblewrap now blocks before unit admission so a cleanup failure cannot hide that prerequisite; stale-hash refusal and a second hash-bound write/read also pass on the real VPS. Exact-head CI, immutable installation and a new real VPS execution/termination canary remain required; no completed Aurion repair or live workspace execution is claimed.
+
+
+### 2026-10-14 — Verify VPS execution and preserve timeout receipts
+Change: Separate the workspace execution deadline from the systemd watchdog by a bounded three-second receipt/termination margin; keep canonical and shipping helpers byte-equal and retain the real VPS canary fixture. Learned: live dbafe4ebdc8a25560d482612ecdc6885ad7f11a7 execution was blocked by missing bubblewrap; the existing PatchMon package lane installed bubblewrap 0.6.1 (run 754cf73e-d4c0-4f39-909a-5f4cb6a92e5d completed). Python and Node then ran as UID/GID 65534; eight isolation checks passed and independent Python/Node file hashes matched. A two-second timeout stopped its child and unit, but the same-time systemd watchdog erased the supervisor receipt. Evidence: new deadline regression failed before repair; 42 workspace and 38 console checks pass (2 OpenSSH checks skipped locally); live Python marker SHA256 1c5d29f887d43dce93897061320707cefb398e6cbd3ebe8fac4deea471b8c3cc. Exact-head CI and post-install timeout receipt remain required. PatchMon network drift and Aurion memory/auth work remain open; no complete release or Aurion repair is claimed.
+
+
+### 2026-10-12 — Aurion broker configuration after PR #2251 runtime readback
+Status: BLOCKED for authenticated Aurion completion; installer follow-up locally tested, final-head CI and deployment pending.
+Change: Preserve explicitly configured Aurion Admin MCP settings and the protected access-token file reference in the existing host-broker environment projection. Raw access tokens remain excluded; no new registry, service, database, credential or authority is created.
+Evidence: PR #2251 merged as c6dad9c404381128ace0ad94dca5377e6de2be58; merge-head MCP CI passed 1238 tests with 12 skipped. Running MCP image digest sha256:4a848d29af8863e4c256405aa5224ef3f5a70f5834e8d75b64252ee4d3632fa3 and installed 290-tool registry were independently read back. Live empty-object Aurion calls reach the broker but return AURION_ADMIN_ACCESS_TOKEN_MISSING. The actual installer projection reproduced six failures; the minimal allowlist correction passes all eight new executable projection tests plus 77 neighboring argument/protocol, lane, operator and owner-input installer checks.
+Learned/open: Successful argument transport is not authenticated Aurion success. Coordinated release run 38208625577 deployed the immutable MCP/backend images but its receipt fails first at agent_zero_workspace_mount because agent-zero-xrev-agent-zero-1 is absent; existing PatchMon network drift is an additional unresolved finding. A protected valid Aurion OAuth credential and final-head release/runtime verification remain required. No runtime completion or remediation of unrelated fleet drift is claimed.
+
+### 2026-10-14 — Reconcile Aurion broker projection with current main
+Change: Resolve PR #2252 against main 331187583d0d55b26ad4f29706057fcca54d1fa4 while preserving all newer SSH/release code and both append-only memory histories; retain only the original five configured Aurion settings in the broker projection. Learned: current main still reproduces six projection failures and live Aurion readback still reports AURION_ADMIN_ACCESS_TOKEN_MISSING; forwarding configuration does not establish credential existence. Evidence: 8 projection, 11 lane, 38 operator and 21 installer tests pass on the exact unchanged current installer plus the original scoped patch; diff check passes. Final merge-head CI and authenticated post-deploy readback remain required; PatchMon network drift remains unresolved.
+
+
+### 2026-10-14 — Bound Redis dependency evidence before network repair
+Change: Extend the existing PatchMon inventory with recognized Redis endpoint matches and a separate established-TCP snapshot from fixed proc files in the identity-checked Redis container; no credentials, URLs, Redis data, generic commands or network mutations are returned/performed. Learned: network membership alone cannot establish service dependency, and an empty point-in-time/configuration result never authorizes detachment. Evidence: baseline c5622084f369d10c5d2c51c2fb8fc08f94d4b031; 17 new dependency regressions and 11 existing operator tests pass, diff check passes. Existing installed SSH timeout canary independently returned TIMEOUT/255, stopped its unit/child and allowed a subsequent unprivileged run. The candidate's extra VPS source-transfer check was blocked by the existing secret-argument gate; no bypass or candidate host-runtime success is claimed. Exact-head CI, immutable deployment and live Redis consumer readback remain required; PatchMon topology, Aurion OAuth credential/configuration and memory stabilization remain open.
+
+
+### 2026-10-14 — Guard PatchMon topology migration and preserve persistent volumes
+Change: Extend the existing managed Compose plan/deploy path with state-bound topology confirmation, explicit internal-v2 network ownership checks, four-service-only recreation, named-volume readback and an in-process previous-template rollback; retain old networks and all data volumes. Unresolved/foreign Redis consumers and network memberships fail closed before credentials, templates or containers are changed.
+Learned: Live PatchMon already uses its own Redis; 11 observed connections came from its server, but Aurion REDIS_URL remains OTHER_OR_UNRESOLVED and Redis has four foreign network attachments. That snapshot cannot authorize detachment. The new pre-write regression fails on baseline 989d1d0c4a6cf4a60967142405fcf303329db579 and passes on the candidate.
+Evidence: Isolated workspace job-191815e55a4a; 12 migration, 35 managed Compose and 11 PatchMon operator tests pass (58 total). Read-only architecture snapshot 5b1cdeaf716b38afc569c60a7cd5d1104c010ada31310ad34f7515b5689d7784 and drift/backend assessments reviewed as static candidates only. Earlier same-session recovery independently verified MCP/broker/worker and immutable MCP digest sha256:6e2f7cbcca673775cec9fa934a994edf10a39b532217601b4c155eddabdbc317; that is not candidate migration evidence. Hostinger VPS tools remain unavailable despite nine registered connector modules. No production network, Redis data or volume was modified by this work. Exact-head CI and real Docker migration/rollback remain unverified; live consumer/configuration review blocks applying the candidate. Next: review the Draft PR, resolve the foreign Redis dependency evidence, then require explicit exact-head merge authority, immutable installation and independent topology/volume/HTTP readback.

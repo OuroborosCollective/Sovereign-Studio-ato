@@ -3,6 +3,32 @@ import { buildRepositoryBoundRunRequest, SovereignProductionAdapter } from './re
 import type { SovereignAgentConfig } from '../../product/runtime/sovereignAgentRuntime';
 
 describe('vNext repository-bound Draft-PR mission contract', () => {
+  it('dispatches an explicit Paid selection to the same guarded repository endpoint without changing the Free default', async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ jobId: 'agent-paid-real' }), { status: 202 }));
+    const adapter = new SovereignProductionAdapter(fetcher, { enabled: true, deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://agent.example.test', ready: true, reason: 'ready' });
+    await adapter.runSingleAgent('Create Testgb.', [], [], 'paid');
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({ mode: 'paid', agentMode: 'single', intentMode: 'repository_execution' });
+    expect(buildRepositoryBoundRunRequest('Create Testgb.').mode).toBe('free');
+    expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/repository/run');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it('sends Abort to the bound backend job and preserves a truthful cancellation rejection', async () => {
+    const reason = 'Cancellation is not supported by the connected Agent Zero task contract. The job remains active; no stop was confirmed.';
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      ok: false, blocker: 'AGENT_ZERO_A2A_CANCEL_NOT_PROVEN', error: reason,
+    }), { status: 409 }));
+    const adapter = new SovereignProductionAdapter(fetcher as typeof fetch, {
+      enabled: true, deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://agent.example.test', ready: true, reason: 'ready',
+    });
+
+    await expect(adapter.abortJob('agent-cancel-test')).rejects.toThrow(reason);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/jobs/agent-cancel-test/cancel');
+    expect(fetcher.mock.calls[0][1]).toMatchObject({ method: 'POST', credentials: 'include' });
+  });
+
   it('keeps a normal repository instruction in repository execution even without a GitHub URL', () => {
     expect(buildRepositoryBoundRunRequest('Please add the repository readme a smiley like this :)')).toEqual({
       mission: 'Please add the repository readme a smiley like this :)',
@@ -30,6 +56,22 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     expect(() => buildRepositoryBoundRunRequest('Ändere README.md.', 'swarm')).toThrow(/single agent/i);
   });
 
+  it('defaults the vNext adapter to the real browser origin without an external agent host', async () => {
+    vi.stubGlobal('window', { location: { origin: 'https://knd.arelorian.de' } });
+    const fetcher = vi.fn(async (_url: RequestInfo | URL) => new Response(JSON.stringify({
+      ok: true,
+      jobId: 'agent-same-origin-1',
+      job: { jobId: 'agent-same-origin-1' },
+    }), { status: 202 }));
+    const adapter = new SovereignProductionAdapter(fetcher as typeof fetch);
+
+    await expect(adapter.runSingleAgent('Prüfe den aktuellen Build.')).resolves.toEqual({ jobId: 'agent-same-origin-1' });
+    expect(fetcher).toHaveBeenCalledWith('https://knd.arelorian.de/api/user/agent/repository/run', expect.objectContaining({
+      method: 'POST',
+      credentials: 'include',
+    }));
+  });
+
   it('starts the vNext mission through the dedicated repository endpoint and returns the persisted job id', async () => {
     const config: SovereignAgentConfig = {
       enabled: true,
@@ -45,7 +87,7 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     }), { status: 202 }));
     const adapter = new SovereignProductionAdapter(fetcher as unknown as typeof fetch, config);
 
-    const accepted = await adapter.runSwarm('Ändere README.md.', [], [], 'single');
+    const accepted = await adapter.runSingleAgent('Ändere README.md.', [], []);
 
     expect(accepted).toEqual({ jobId: 'agent-repository-1' });
     expect(fetcher).toHaveBeenCalledTimes(1);
@@ -84,7 +126,7 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
           repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
           branch: 'main',
           workspaceId: 'agent-persisted-latest',
-          externalRef: 'agent-zero-a2a:task-persisted',
+          executor: 'sovereign-local-runner',
         },
       ],
       total: 2,
@@ -104,6 +146,44 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     expect((fetcher.mock.calls[0][1] as RequestInit).method).toBe('GET');
     expect((fetcher.mock.calls[0][1] as RequestInit).credentials).toBe('include');
   });
+
+  it.each(['queued', 'provisioning', 'waiting-for-user'])(
+    'restores a bound %s repository job after reload without dispatching a duplicate',
+    async (status) => {
+      const config: SovereignAgentConfig = {
+        enabled: true,
+        deploymentMode: 'sovereign-agent-backend',
+        agentApiUrl: 'https://agent.example.test',
+        ready: true,
+        reason: 'ready',
+      };
+      const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => new Response(JSON.stringify({
+        jobs: [
+          {
+            jobId: `agent-${status}`,
+            mission: 'Keep the accepted repository mission bound across reload.',
+            status,
+            repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+            branch: 'main',
+            workspaceId: `agent-${status}`,
+            executor: 'sovereign-local-runner',
+          },
+        ],
+        total: 1,
+      }), { status: init?.method === 'POST' ? 500 : 200 }));
+      const adapter = new SovereignProductionAdapter(fetcher as unknown as typeof fetch, config);
+
+      await expect(adapter.restoreLatestRepositoryRun()).resolves.toEqual({
+        jobId: `agent-${status}`,
+        mission: 'Keep the accepted repository mission bound across reload.',
+        status,
+        repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+        branch: 'main',
+      });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect((fetcher.mock.calls[0][1] as RequestInit).method).toBe('GET');
+    },
+  );
 
   it('skips a stale pre-A2A running clone instead of locking the composer after reload', async () => {
     const config: SovereignAgentConfig = {
@@ -154,7 +234,7 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
           repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
           branch: 'main',
           workspaceId: 'agent-failed-latest',
-          externalRef: 'agent-zero-a2a:task-failed',
+          executor: 'sovereign-local-runner',
         },
         {
           jobId: 'agent-active',
@@ -163,7 +243,7 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
           repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
           branch: 'main',
           workspaceId: 'agent-active',
-          externalRef: 'agent-zero-a2a:task-active',
+          executor: 'sovereign-local-runner',
         },
       ],
       total: 2,
@@ -210,6 +290,7 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     expect(health.status).toBe('ready');
     expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/jobs?limit=1');
     expect(String(fetcher.mock.calls[0][0])).not.toContain('/swarm/');
-    await expect(adapter.getSkills()).resolves.toEqual([]);
+    await expect(adapter.getSkills()).rejects.toThrow('Control surface readback schema or job binding is invalid.');
+    expect(fetcher.mock.calls[1][0]).toBe('https://agent.example.test/api/user/agent/control-surface');
   });
 });

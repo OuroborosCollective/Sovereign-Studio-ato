@@ -13,17 +13,23 @@ export function useSovereignJob(jobId: string | null) {
       return adapter.getJob(jobId);
     },
     enabled: Boolean(jobId),
-    refetchInterval: (result) => {
-      const phase = result.state.data?.phase;
-      return phase && TERMINAL.has(phase) ? false : 1500;
+    refetchInterval: (query) => {
+      const phase = query.state.data?.phase;
+      if (phase && TERMINAL.has(phase)) return 15000;
+      return query.state.error ? 3000 : 1500;
     },
+    refetchOnReconnect: true,
+    refetchOnMount: 'always',
   });
   const abortMutation = useMutation({
+    mutationKey: ['sovereign-vnext-abort', jobId],
     mutationFn: () => {
       if (!jobId) throw new Error('No run ID');
       return adapter.abortJob(jobId);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sovereign-vnext-job', jobId] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['sovereign-vnext-job', jobId] });
+    },
   });
   const prepareMutation = useMutation({
     mutationFn: () => {
@@ -46,6 +52,7 @@ export function useSovereignJob(jobId: string | null) {
     error: query.error,
     abort: abortMutation.mutateAsync,
     isAborting: abortMutation.isPending,
+    abortError: abortMutation.error,
     prepareDraftPr: prepareMutation.mutateAsync,
     isPreparingDraftPr: prepareMutation.isPending,
     draftPrPreparation: prepareMutation.data,

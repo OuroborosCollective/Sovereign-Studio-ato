@@ -164,7 +164,16 @@ function GlobalRuntimeMonitor(): React.ReactElement {
   const [autoAdvanceRemaining, setAutoAdvanceRemaining] = useState<number | null>(null);
   const logViewportRef = useRef<HTMLDivElement | null>(null);
   const lastAutoCommandKeyRef = useRef('');
-  const visibleLog = useMemo(() => log.filter((entry) => filterLogEntry(entry, logFilter)).slice(0, MAX_LOG_ENTRIES), [log, logFilter]);
+  const visibleLog = useMemo(() => {
+    const out = [];
+    for (const entry of log) {
+      if (filterLogEntry(entry, logFilter)) {
+        out.push(entry);
+        if (out.length >= MAX_LOG_ENTRIES) break;
+      }
+    }
+    return out;
+  }, [log, logFilter]);
   const autoAdvanceSafe = canAutoAdvanceGuide(coachState, guide.targetTab);
   const repairPanelVisible = showRepairPanel(coachState);
 

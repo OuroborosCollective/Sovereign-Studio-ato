@@ -15,6 +15,7 @@ from agent_runtime.cognitive_run_store import (
     AgentRunIterationLimit,
     AgentRunNotResumable,
     AgentRunResumeConflict,
+    cancel_agent_run,
     claim_agent_run_for_resume,
     create_agent_run,
     list_agent_runs,
@@ -439,6 +440,31 @@ def test_owner_approval_state_resolves_recoverable_failures_without_deleting_his
     assert "resolved_at = COALESCE(resolved_at, NOW())" in resolution_sql
     assert "DELETE" not in resolution_sql
     assert resolution_params == ("run-test",)
+
+
+def test_cancel_run_clears_active_lease_and_persists_controller_event() -> None:
+    conn = FakeConnection()
+    conn.fetchone_rows = [_stored_run_row(status="RUNNING", lease_active=True, resume_task_id="task-active")]
+
+    state = cancel_agent_run(
+        conn,
+        user_id=USER_ID,
+        run_id="run-resumable",
+        trace_id="trace-cancel",
+    )
+
+    assert state["status"] == "BLOCKED"
+    assert state["cancelled"] is True
+    assert state["nextAction"] == "RUN_CANCELLED"
+    assert state["evidenceId"].startswith("evidence-")
+    assert state["eventId"].startswith("event-")
+    assert conn.commits == 1
+    assert [call[0].split()[0] for call in conn.calls] == ["SELECT", "INSERT", "UPDATE", "UPDATE", "INSERT"]
+    assert "FOR UPDATE" in conn.calls[0][0]
+    assert "lease_token = NULL" in conn.calls[2][0]
+    assert "next_action = 'RUN_CANCELLED'" in conn.calls[2][0]
+    assert "UPDATE agent_tasks" in conn.calls[3][0]
+    assert "run_cancelled" in conn.calls[4][0]
 
 
 def test_claim_resume_is_atomic_and_reconstructs_one_bounded_task() -> None:

@@ -20,9 +20,9 @@ import { WorkspaceProjection } from './components/WorkspaceProjection/WorkspaceP
 import { INITIAL_FSM_STATE, jobStateReducer } from './fsm/jobStateMachine';
 import { useOwnerInteraction } from './hooks/useOwnerInteraction';
 import { useSovereignJob } from './hooks/useSovereignJob';
-import { useSwarmRun } from './hooks/useSwarmRun';
+import { useSingleAgentRun } from './hooks/useSwarmRun';
 import './theme/biomodular.css';
-import type { AgentMode, ChatMessage, OwnerInteractionResponse } from './types/domain';
+import type { AgentMode, ChatMessage, ExecutionMode, OwnerInteractionResponse } from './types/domain';
 import { getAudioMuted, playKeystrokeChirp, toggleAudioMute } from './utils/audio';
 import { cx } from './utils/cx';
 
@@ -73,7 +73,8 @@ function Dashboard() {
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<MobileTab>('chat');
-  const [agentMode, setAgentMode] = useState<AgentMode>('single');
+  const agentMode: AgentMode = 'single';
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>('free');
   const [fsmState, dispatchFsm] = useReducer(jobStateReducer, INITIAL_FSM_STATE);
   const isDesktopLayout = useDesktopLayout();
 
@@ -85,15 +86,28 @@ function Dashboard() {
 
   const manifestsEnabled = sessionReady && Boolean(user);
   const toolchains = useQuery({ queryKey: ['vnext-toolchains'], queryFn: () => adapter.getToolchains(), enabled: manifestsEnabled, retry: false });
-  const skills = useQuery({ queryKey: ['vnext-skills'], queryFn: () => adapter.getSkills(), enabled: manifestsEnabled, retry: false });
-  const integrations = useQuery({ queryKey: ['vnext-integrations'], queryFn: () => adapter.getIntegrations(), enabled: manifestsEnabled, retry: false });
-  const activeSkillIds = useMemo(() => (skills.data ?? []).map((item) => item.id), [skills.data]);
+  const control = useQuery({
+    queryKey: ['vnext-control-readback', user?.id, activeRunId],
+    queryFn: () => {
+      if (!adapter.getControlSurface) throw new Error('Control surface readback contract is unavailable.');
+      return adapter.getControlSurface(activeRunId ?? undefined);
+    },
+    enabled: manifestsEnabled, retry: false, staleTime: 0,
+    refetchInterval: query => query.state.error ? 3000 : activeRunId ? 5000 : 15000,
+    refetchOnWindowFocus: true,
+  });
+  const activeSkillIds = useMemo(() => (control.data?.agents ?? []).filter(item => item.kind === 'agent').map(item => item.id), [control.data]);
+  const controlReadbackError = control.error instanceof Error ? control.error.message : undefined;
+  const refreshControl = () => { void control.refetch(); };
   const selectedToolchain = toolchains.data?.find((item) => item.status === 'active') ?? toolchains.data?.[0];
 
   const {
     job,
     isPolling,
     abort,
+    isAborting,
+    abortError,
+    error: readbackError,
     workspace,
     publication,
     prepareDraftPr,
@@ -104,7 +118,7 @@ function Dashboard() {
     isPublishing,
     publishError,
   } = useSovereignJob(activeRunId);
-  const swarmRun = useSwarmRun();
+  const singleAgentRun = useSingleAgentRun();
   const { submitInteraction, isSubmitting: isInteracting } = useOwnerInteraction(activeRunId);
 
   const [messages, setMessages] = useState<ChatMessage[]>([{
@@ -142,7 +156,7 @@ function Dashboard() {
             {
               id: `restored-${restored.jobId}`,
               role: 'assistant' as const,
-              sender: 'SOVEREIGN_SWARM' as const,
+              sender: 'SOVEREIGN_AGENT' as const,
               content: `PERSISTED REPOSITORY SESSION RESTORED :: [${restored.jobId}].\nBackend readback resumed the existing job; no new mission was dispatched.${restored.status ? `\nPersisted state: ${restored.status}` : ''}`,
               timestamp: restoredAt,
             },
@@ -169,14 +183,31 @@ function Dashboard() {
   }, [job?.phase]);
 
   useEffect(() => {
+    if (!job?.assistantMessage || !activeRunId) return;
+    const id = `assistant-${activeRunId}`;
+    setMessages((current) => {
+      if (current.some((message) => message.id === id)) return current;
+      return [...current, {
+        id,
+        role: 'assistant',
+        sender: 'SOVEREIGN_AGENT',
+        content: job.assistantMessage,
+        timestamp: new Date().toISOString(),
+      }];
+    });
+  }, [activeRunId, job?.assistantMessage]);
+
+  useEffect(() => {
     const terminalPhase = job?.phase;
     if (!job?.error?.message || !activeRunId || !terminalPhase || !['BLOCKED', 'FAILED'].includes(terminalPhase)) return;
     setMessages((current) => {
       const id = `terminal-${activeRunId}`;
-      if (current.some((message) => message.id === id)) return current;
+      const content = `RUN ${terminalPhase} :: [${activeRunId}]\n${job.error.message}${job.nextAction ? `\nNEXT: ${job.nextAction}` : ''}`;
+      const existing = current.find((message) => message.id === id);
+      if (existing) return existing.content === content ? current : current.map((message) => message.id === id ? { ...message, content } : message);
       return [...current, {
         id, role: 'system', sender: 'SYSTEM',
-        content: `RUN ${terminalPhase} :: [${activeRunId}]\n${job.error.message}${job.nextAction ? `\nNEXT: ${job.nextAction}` : ''}`,
+        content,
         timestamp: new Date().toISOString(),
       }];
     });
@@ -190,7 +221,7 @@ function Dashboard() {
       return [...current, {
         id: `pr-${pr.pullRequestNumber}`,
         role: 'assistant',
-        sender: 'SOVEREIGN_SWARM',
+        sender: 'SOVEREIGN_AGENT',
         content: `DRAFT PR CREATED AND INDEPENDENTLY READ BACK.\n${pr.url}\nReadback head: ${pr.readbackHeadSha}\nCI: ${pr.ciState}. No merge was performed.`,
         evidenceBadge: `#${pr.pullRequestNumber} GITHUB READBACK`,
         timestamp: new Date().toISOString(),
@@ -217,13 +248,13 @@ function Dashboard() {
     dispatchFsm({ type: 'SUBMIT_ORDER', payload: { objective: mission } });
     setMessages((current) => [...current, { id: `owner-${Date.now()}`, role: 'human', sender: 'HUMAN', content: mission, timestamp: new Date().toISOString() }]);
     try {
-      const accepted = await swarmRun.mutateAsync({ prompt: mission, toolchains: selectedToolchain ? [selectedToolchain.id] : [], activeSkillIds, agentMode });
+      const accepted = await singleAgentRun.mutateAsync({ prompt: mission, toolchains: selectedToolchain ? [selectedToolchain.id] : [], activeSkillIds, agentMode, executionMode });
       setActiveRunId(accepted.jobId);
       dispatchFsm({ type: 'BACKEND_ACCEPTED', payload: { jobId: accepted.jobId } });
       setMessages((current) => [...current.filter((message) => !message.id.startsWith('accepted-')), {
         id: `accepted-${accepted.jobId}`,
         role: 'assistant',
-        sender: 'SOVEREIGN_SWARM',
+        sender: 'SOVEREIGN_AGENT',
         content: `PERSISTED RUN ACCEPTED :: [${accepted.jobId}].\nAwaiting exact run/job/evidence readback. No completion or publication is implied.`,
         timestamp: new Date().toISOString(),
       }]);
@@ -243,25 +274,56 @@ function Dashboard() {
     setMessages((current) => [...current, { id: `owner-response-${Date.now()}`, role: 'human', sender: 'HUMAN', content: `[OWNER RESPONSE SENT TO RUN]: ${value.response}`, timestamp: new Date().toISOString() }]);
   };
 
+  const handleAbortActiveJob = async () => {
+    if (!activeRunId) return;
+    try {
+      await abort();
+      setMessages((current) => [...current, {
+        id: `aborted-${Date.now()}`,
+        role: 'system',
+        sender: 'SYSTEM',
+        content: `ABORT REQUEST ACCEPTED :: ${activeRunId}. Waiting for backend state readback.`,
+        timestamp: new Date().toISOString(),
+      }]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMessages((current) => [...current, {
+        id: `abort-failed-${Date.now()}`,
+        role: 'system',
+        sender: 'SYSTEM',
+        content: `EXECUTION ABORT FAILED :: ${message}`,
+        timestamp: new Date().toISOString(),
+      }]);
+    }
+  };
+
   const command = (
     <ChatSurface
       messages={messages}
       onSendMessage={submitMission}
       jobPhase={currentPhase}
       activeJob={job}
-      onAbortJob={activeRunId ? () => void abort() : undefined}
+      onAbortJob={activeRunId ? handleAbortActiveJob : undefined}
+      isAborting={isAborting}
+      abortError={abortError instanceof Error ? abortError.message : undefined}
       onTypingStateChange={setIsTyping}
       onOpenToolchain={() => setToolchainOpen(true)}
       onOpenSkills={() => setSkillsOpen(true)}
       onOpenIntegrations={() => setIntegrationsOpen(true)}
       activeToolchainName={selectedToolchain?.name ?? 'MANIFEST NOT YET VERIFIED'}
       activeSkillsCount={activeSkillIds.length}
-      activeIntegrationsCount={(integrations.data ?? []).length}
+      activeIntegrationsCount={(control.data?.integrations ?? []).length}
       agentMode={agentMode}
-      onAgentModeChange={setAgentMode}
+      executionMode={executionMode}
+      onExecutionModeChange={setExecutionMode}
+      controlReadback={control.data}
+      controlReadbackError={controlReadbackError}
+      isReadingControl={control.isFetching}
+      onRefreshControl={refreshControl}
     />
   );
-  const monitor = <><NeuralLoadMonitor job={job} phase={currentPhase} /><RuntimeMonitor job={job} isPolling={isPolling} /></>;
+  const pollingError = readbackError instanceof Error ? readbackError.message : undefined;
+  const monitor = <><NeuralLoadMonitor job={job} phase={currentPhase} /><RuntimeMonitor job={job} isPolling={isPolling} readbackError={pollingError} /></>;
   const workspacePanel = <WorkspaceProjection workspace={workspace} workspaceId={job?.backendJobId} sourceStatus={job?.sourceStatus} />;
   const publicationPanel = (
     <PublicationInspector
@@ -279,18 +341,18 @@ function Dashboard() {
 
   return (
     <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-[var(--bg-void)] text-[var(--text-main)] selection:bg-[var(--red-pulse)] selection:text-white font-sans carbon-mesh-bg" data-testid="sovereign-control-surface-vnext">
-      <header className="h-14 sm:h-16 md:h-20 bg-[var(--carbon-deep)] border-b border-[rgba(255,30,56,0.22)] px-2.5 sm:px-4 md:px-6 flex items-center justify-between shrink-0 z-30 shadow-[0_4px_20px_rgba(0,0,0,0.8)] relative">
+      <header className="h-14 sm:h-16 md:h-20 bg-[var(--carbon-deep)] border-b border-[rgba(255,30,56,0.22)] px-2.5 sm:px-4 md:px-6 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1 shrink-0 z-30 shadow-[0_4px_20px_rgba(0,0,0,0.8)] relative">
         <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-[var(--red-laser)] to-transparent" />
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-[var(--carbon-surface)] border border-[var(--red-laser)] flex items-center justify-center text-[var(--red-laser)] shadow-[0_0_15px_rgba(255,30,56,0.4)] theme-diamond-cut shrink-0"><Cpu size={20} className="animate-pulse" /></div>
-          <div className="min-w-0"><div className="flex items-center gap-2"><span className="font-mono text-[11px] sm:text-sm font-black tracking-widest text-white truncate">SOVEREIGN STUDIO ATO</span><span className="hidden sm:inline px-1.5 rounded bg-[rgba(255,30,56,0.15)] text-[var(--red-laser)] border border-[rgba(255,30,56,0.3)] font-mono text-[9px] font-bold">vNEXT</span></div><div className="hidden sm:block text-[9px] font-mono text-[var(--text-dim)]">CYBERNETIC CONTROL SURFACE // RUNTIME TRUTH BOUND</div></div>
+          <div className="min-w-0"><div className="flex items-center gap-2"><span className="font-mono text-[9px] sm:text-sm font-black tracking-wide text-white truncate">SOVEREIGN<span className="hidden lg:inline"> STUDIO ATO</span></span><span className="hidden xl:inline px-1.5 rounded bg-[rgba(255,30,56,0.15)] text-[var(--red-laser)] border border-[rgba(255,30,56,0.3)] font-mono text-[9px] font-bold">vNEXT</span></div><div className="hidden lg:block truncate text-[9px] font-mono text-[var(--text-dim)]">RUNTIME TRUTH BOUND</div></div>
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-3">
-          <CyborgOcularMatrix isTyping={isTyping} jobPhase={currentPhase} />
-          <button type="button" data-testid="operator-auth-btn" onClick={() => setAuthOpen(true)} className={cx('min-h-9 px-2 rounded border font-mono text-[9px] sm:text-[10px] font-bold flex items-center gap-1.5', user && !user.isGuest ? 'bg-[var(--carbon-surface)] border-[rgba(16,185,129,0.35)] text-white' : 'bg-[rgba(255,30,56,0.12)] border-[var(--red-laser)] text-white')}><Lock size={11} className={user && !user.isGuest ? 'text-[var(--emerald-seal)]' : 'text-[var(--red-laser)]'} /><span className="hidden sm:inline max-w-24 truncate">{user && !user.isGuest ? user.displayName : sessionReady ? 'AUTH' : 'SESSION…'}</span></button>
-          <button type="button" data-testid="open-architecture-btn" onClick={() => setArchitectureOpen(true)} className="min-h-9 px-2 rounded border border-white/10 bg-[var(--carbon-surface)] text-[var(--text-muted)] hover:text-white hover:border-[var(--red-laser)] font-mono text-[9px] flex items-center gap-1"><Server size={12} className="text-[var(--red-laser)]" /><span className="hidden md:inline">SPEC</span></button>
-          <button type="button" onClick={() => setAudioMuted(toggleAudioMute())} className="min-h-9 px-2 rounded border border-white/10 bg-[var(--carbon-surface)] text-[var(--text-muted)] hover:text-white">{audioMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}</button>
+        <CyborgOcularMatrix isTyping={isTyping} jobPhase={currentPhase} />
+        <div className="flex items-center justify-self-end gap-1 sm:gap-3">
+          <button type="button" data-testid="operator-auth-btn" aria-label={user && !user.isGuest ? 'Manage account session' : 'Authenticate session'} title={user && !user.isGuest ? 'Manage account session' : 'Authenticate session'} onClick={() => setAuthOpen(true)} className={cx('min-h-9 px-2 rounded border font-mono text-[9px] sm:text-[10px] font-bold flex items-center gap-1.5', user && !user.isGuest ? 'bg-[var(--carbon-surface)] border-[rgba(16,185,129,0.35)] text-white' : 'bg-[rgba(255,30,56,0.12)] border-[var(--red-laser)] text-white')}><Lock size={11} className={user && !user.isGuest ? 'text-[var(--emerald-seal)]' : 'text-[var(--red-laser)]'} /><span className="hidden sm:inline max-w-24 truncate">{user && !user.isGuest ? user.displayName : sessionReady ? 'AUTH' : 'SESSION…'}</span></button>
+          <button type="button" data-testid="open-architecture-btn" aria-label="View technical specification" title="View technical specification" onClick={() => setArchitectureOpen(true)} className="min-h-9 px-2 rounded border border-white/10 bg-[var(--carbon-surface)] text-[var(--text-muted)] hover:text-white hover:border-[var(--red-laser)] font-mono text-[9px] flex items-center gap-1"><Server size={12} className="text-[var(--red-laser)]" /><span className="hidden md:inline">SPEC</span></button>
+          <button type="button" aria-label={audioMuted ? 'Unmute audio' : 'Mute audio'} title={audioMuted ? 'Unmute audio' : 'Mute audio'} onClick={() => setAudioMuted(toggleAudioMute())} className="min-h-9 px-2 rounded border border-white/10 bg-[var(--carbon-surface)] text-[var(--text-muted)] hover:text-white">{audioMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}</button>
         </div>
       </header>
 
@@ -300,7 +362,7 @@ function Dashboard() {
             <div className="w-3/5 lg:w-3/4 min-w-0 h-full">{command}</div>
             <aside className="w-2/5 lg:w-1/4 min-w-[290px] max-w-[460px] h-full bg-[var(--carbon-deep)] border-l border-[rgba(255,30,56,0.18)] flex flex-col overflow-hidden">
               <div className="shrink-0"><NeuralLoadMonitor job={job} phase={currentPhase} /></div>
-              <div className="flex-1 min-h-0 border-b border-white/5"><RuntimeMonitor job={job} isPolling={isPolling} /></div>
+              <div className="flex-1 min-h-0 border-b border-white/5"><RuntimeMonitor job={job} isPolling={isPolling} readbackError={pollingError} /></div>
               <div className="h-[28%] min-h-[130px] border-b border-white/5">{workspacePanel}</div>
               <div className="h-[31%] min-h-[150px]">{publicationPanel}</div>
             </aside>
@@ -322,8 +384,8 @@ function Dashboard() {
       </main>
 
       <ToolchainDock isOpen={toolchainOpen} onClose={() => setToolchainOpen(false)} toolchains={toolchains.data ?? []} selectedToolchainId={selectedToolchain?.id} />
-      <SkillRegistryDrawer isOpen={skillsOpen} onClose={() => setSkillsOpen(false)} skills={skills.data ?? []} activeSkillIds={activeSkillIds} />
-      <IntegrationModal isOpen={integrationsOpen} onClose={() => setIntegrationsOpen(false)} integrations={integrations.data ?? []} />
+      <SkillRegistryDrawer isOpen={skillsOpen} onClose={() => setSkillsOpen(false)} agents={control.data?.agents ?? []} job={job} observedAt={control.data?.observedAt} receivedMonotonicMs={control.data?.receivedMonotonicMs} isLoading={control.isFetching} readbackError={controlReadbackError || control.data?.agentBlocker} onRefresh={refreshControl} />
+      <IntegrationModal isOpen={integrationsOpen} onClose={() => setIntegrationsOpen(false)} integrations={control.data?.integrations ?? []} observedAt={control.data?.observedAt} receivedMonotonicMs={control.data?.receivedMonotonicMs} isLoading={control.isFetching} readbackError={controlReadbackError || control.data?.integrationBlocker} onRefresh={refreshControl} />
       <OperatorAuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} />
       <ArchitectureModal isOpen={architectureOpen} onClose={() => setArchitectureOpen(false)} />
       <OwnerInteractionModal interaction={job?.pendingInteraction} onSubmit={respondToOwner} isSubmitting={isInteracting} />

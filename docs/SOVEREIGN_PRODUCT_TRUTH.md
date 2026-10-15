@@ -67,6 +67,10 @@ user input
 
 The model may understand language and propose structured actions. It cannot create permission, capability availability, repository state, passing tests, a PR, a deployment or runtime health.
 
+## Owner SSH session truth
+
+The SSH console uses the existing owner input, host broker and command queue. Credentials never cross MCP arguments or queued jobs. A verified host key, one-use owner action and bounded session identity precede connection. Fixed inspections need an operation-scoped grant. Optional repeated workspace actions need a separate owner-issued 900–3600 second grant, a server-generated isolated directory and hash/revision readbacks. Test code runs without root, host secrets, production mounts or network in a bounded namespace/cgroup. Expiry, durable revocation and channel-loss leases terminate work; the vanished SSH connection cannot reconnect. Merge, deployment and live database authority remain separate. Repository tests do not establish installed sandbox support or live VPS success.
+
 ## Capability truth
 
 Sovereign is one assistant at the product surface but many bounded capabilities internally.

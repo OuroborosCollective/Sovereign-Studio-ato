@@ -25,7 +25,7 @@ class TestTool(ToolBase):
         "command": {
             "type": "string",
             "required": False,
-            "description": "Test command to run (auto-detected if not specified)",
+            "description": "One allowlisted test command, without shell chaining. Examples: pnpm run test:unit, pnpm run test:integration, pnpm run test:release-gate, python3 -m pytest -q. Omit to auto-detect.",
         },
         "path": {
             "type": "string",
@@ -176,9 +176,17 @@ class TestTool(ToolBase):
             ("pytest",),
             ("pnpm", "test"),
             ("pnpm", "run", "test"),
+            ("pnpm", "run", "test:unit"),
+            ("pnpm", "run", "test:smoke"),
+            ("pnpm", "run", "test:integration"),
+            ("pnpm", "run", "test:release-gate"),
             ("pnpm", "exec", "vitest", "run"),
             ("npm", "test"),
             ("npm", "run", "test"),
+            ("npm", "run", "test:unit"),
+            ("npm", "run", "test:smoke"),
+            ("npm", "run", "test:integration"),
+            ("npm", "run", "test:release-gate"),
             ("npx", "vitest", "run"),
             ("npx", "jest"),
             ("go", "test"),
@@ -194,7 +202,19 @@ class TestTool(ToolBase):
             return ToolResult(
                 status="blocked",
                 blocker="Custom test command is not allowlisted",
+                output=(
+                    "No command was executed. Use one supported test invocation, for example "
+                    "pnpm run test:unit, pnpm run test:smoke, pnpm run test:integration, "
+                    "pnpm run test:release-gate, or python3 -m pytest -q. "
+                    "Do not chain commands with shell operators. Read the repository test "
+                    "configuration before choosing a command; do not repeat a rejected invocation."
+                ),
+                metadata={"failure_family": "TEST_COMMAND_NOT_ALLOWLISTED", "executed": False},
             )
+        bootstrap = self._ensure_node_dependencies(cwd, timeout, args)
+        if bootstrap is not None and not bootstrap.is_ok():
+            return bootstrap
+
         if verbose:
             print(f"Running: {' '.join(args)}")
 
@@ -241,6 +261,114 @@ class TestTool(ToolBase):
                 error=f"Test execution failed: {e}",
             )
 
+    def _ensure_node_dependencies(
+        self,
+        cwd: str,
+        timeout: int,
+        args: list[str],
+    ) -> ToolResult | None:
+        """Provision lockfile-bound Node dependencies before repository regression.
+
+        Production workspaces are intentionally clean checkouts. Running a real
+        pnpm/npm/npx regression without dependencies produces a false red even
+        when Agent Zero made a valid change. Dependency installation is therefore
+        bounded to the workspace, requires an exact lockfile, disables lifecycle
+        scripts, and never falls back to an unlocked install.
+        """
+        if not args or args[0] not in {"pnpm", "npm", "npx"}:
+            return None
+
+        root = Path(cwd)
+        package_json = root / "package.json"
+        if not package_json.is_file() or (root / "node_modules").is_dir():
+            return None
+
+        pnpm_lock = root / "pnpm-lock.yaml"
+        npm_lock = root / "package-lock.json"
+        if pnpm_lock.is_file():
+            git_config = root / ".git" / "config"
+            trusted_sovereign_origin = False
+            if git_config.is_file():
+                config_text = git_config.read_text(encoding="utf-8", errors="replace")
+                trusted_sovereign_origin = (
+                    "https://github.com/OuroborosCollective/Sovereign-Studio-ato" in config_text
+                    or "git@github.com:OuroborosCollective/Sovereign-Studio-ato" in config_text
+                )
+            install_args = ["pnpm", "install", "--frozen-lockfile"]
+            bootstrap_kind = (
+                "pnpm_frozen_lockfile_sovereign_policy"
+                if trusted_sovereign_origin
+                else "pnpm_frozen_lockfile_ignore_scripts"
+            )
+            if not trusted_sovereign_origin:
+                install_args.append("--ignore-scripts")
+        elif npm_lock.is_file():
+            install_args = ["npm", "ci", "--ignore-scripts"]
+            bootstrap_kind = "npm_ci_lockfile"
+        else:
+            return ToolResult(
+                status="blocked",
+                blocker="Node dependency bootstrap requires pnpm-lock.yaml or package-lock.json",
+                metadata={"dependency_bootstrap": "lockfile_missing"},
+            )
+
+        install_timeout = min(max(timeout, 300), 600)
+        env = {
+            "PATH": os.environ.get("PATH", ""),
+            "FORCE_COLOR": "0",
+            "CI": "1",
+            "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0",
+        }
+        try:
+            result = subprocess.run(
+                install_args,
+                shell=False,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=install_timeout,
+                env=env,
+            )
+        except subprocess.TimeoutExpired:
+            return ToolResult(
+                status="blocked",
+                blocker=f"Node dependency bootstrap timed out after {install_timeout}s",
+                metadata={"dependency_bootstrap": bootstrap_kind},
+            )
+        except FileNotFoundError as exc:
+            return ToolResult(
+                status="blocked",
+                blocker=f"Node dependency bootstrap command not found: {exc}",
+                metadata={"dependency_bootstrap": bootstrap_kind},
+            )
+        except Exception as exc:
+            return ToolResult(
+                status="error",
+                error=f"Node dependency bootstrap failed: {exc}",
+                metadata={"dependency_bootstrap": bootstrap_kind},
+            )
+
+        output = (result.stdout + "\n" + result.stderr if result.stderr else result.stdout).strip()
+        if result.returncode != 0:
+            failure = f"Node dependency bootstrap failed with exit code {result.returncode}. Last output: {output[-800:]}"
+            return ToolResult(
+                status="error",
+                output=failure + "\n\n" + output,
+                error=failure,
+                metadata={
+                    "dependency_bootstrap": bootstrap_kind,
+                    "exit_code": result.returncode,
+                },
+                exit_code=result.returncode,
+            )
+
+        return ToolResult(
+            status="done",
+            output="Node dependency bootstrap completed from the repository lockfile.",
+            metadata={"dependency_bootstrap": bootstrap_kind, "exit_code": 0},
+            exit_code=0,
+        )
+
     def _run_command(
         self,
         args: list[str],
@@ -248,6 +376,10 @@ class TestTool(ToolBase):
         timeout: int,
     ) -> ToolResult:
         """Run a test command with arguments."""
+        bootstrap = self._ensure_node_dependencies(cwd, timeout, args)
+        if bootstrap is not None and not bootstrap.is_ok():
+            return bootstrap
+
         try:
             result = subprocess.run(
                 args,

@@ -830,3 +830,28 @@ def test_swarm_fails_closed_without_database_resolved_openrouter_route() -> None
     assert captured.value.family == "AGENTS_DIRECT_OPENROUTER_ROUTE_REQUIRED"
     assert captured.value.next_action == "RESOLVE_DATABASE_OPENROUTER_ROUTE"
     assert captured.value.retryable is False
+
+def test_freellm_http_400_is_candidate_retryable_but_paid_http_400_is_terminal() -> None:
+    class BadRequestError(RuntimeError):
+        status_code = 400
+
+    free = classify_swarm_exception(
+        BadRequestError("redacted"),
+        stage="free-single-agent",
+        transport="freellm",
+    )
+    paid = classify_swarm_exception(
+        BadRequestError("redacted"),
+        stage="paid-single-agent",
+        transport="openrouter",
+    )
+
+    assert free.family == "FREELLM_REQUEST_REJECTED"
+    assert free.retryable is True
+    assert free.next_action == "ADVANCE_FREE_REVOLVER_ROUTE"
+    assert free.http_status == 400
+
+    assert paid.family == "OPENROUTER_REQUEST_REJECTED"
+    assert paid.retryable is False
+    assert paid.next_action == "REVIEW_MODEL_AND_STRUCTURED_OUTPUT_CONTRACT"
+    assert paid.http_status == 400
