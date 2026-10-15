@@ -54,6 +54,7 @@ test('only required workflows and one bounded owner recovery lane receive direct
       'sovereign-chatgpt-mcp.yml',
       'sovereign-continuity-gate.yml',
       'sovereign-desktop-worker.yml',
+      'sovereign-public-site-check.yml'
     ],
   );
 
