@@ -118,6 +118,8 @@ def message_to_dict(
 
 
 def parse_send_message(payload: Mapping[str, object]) -> SendMessageRequest:
+    if not isinstance(payload, Mapping):
+        raise ValueError("A2A payload must be a JSON object")
     request_message = SendMessageRequest()
     ParseDict(dict(payload), request_message, ignore_unknown_fields=False)
     if not request_message.message.message_id:
