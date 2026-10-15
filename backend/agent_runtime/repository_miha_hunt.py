@@ -165,7 +165,8 @@ def run_repository_miha_code_hunt(
         raise MihaCodeHuntError("MIHA_READ_ONLY_SCAN_NOT_VERIFIED")
     raw_findings = result.metadata.get("findings")
     scanned = result.metadata.get("scannedFiles")
-    if not isinstance(raw_findings, list) or type(scanned) is not int or scanned < 1:
+    # The provider-neutral kernel freezes tool-result arrays as tuples.
+    if not isinstance(raw_findings, (list, tuple)) or type(scanned) is not int or scanned < 1:
         raise MihaCodeHuntError("MIHA_SCAN_EVIDENCE_MISSING")
     if len(raw_findings) > _MAX_FINDINGS:
         raise MihaCodeHuntError("MIHA_SCAN_FINDINGS_EXCEED_BOUND")
