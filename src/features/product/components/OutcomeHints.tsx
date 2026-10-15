@@ -1,5 +1,5 @@
 import React from "react";
-import type { ChatOutcomeHint } from "../runtime/builderContainerHelpers";
+import { safeHttpsUrl, type ChatOutcomeHint } from "../runtime/builderContainerHelpers";
 import { C } from "./builderConstants";
 
 export function OutcomeHints({ hints }: { hints: ChatOutcomeHint[] }) {
@@ -31,22 +31,26 @@ export function OutcomeHints({ hints }: { hints: ChatOutcomeHint[] }) {
             <span style={{ color: C.border, marginTop: 2, flexShrink: 0 }}>
               ›
             </span>
-            {h.href ? (
-              <a
-                href={h.href}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  color: C.sky,
-                  textDecoration: "underline",
-                  textUnderlineOffset: 3,
-                }}
-              >
-                {h.text}
-              </a>
-            ) : (
-              h.text
-            )}
+            {/* Security: Validate URL protocol scheme (only https://) to prevent protocol injection (e.g. javascript:) and enforce noopener noreferrer against tabnabbing */}
+            {(() => {
+              const safeUrl = safeHttpsUrl(h.href);
+              return safeUrl ? (
+                <a
+                  href={safeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: C.sky,
+                    textDecoration: "underline",
+                    textUnderlineOffset: 3,
+                  }}
+                >
+                  {h.text}
+                </a>
+              ) : (
+                h.text
+              );
+            })()}
           </div>
         ))}
       </div>
