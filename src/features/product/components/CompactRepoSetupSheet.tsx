@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { C } from './builderConstants';
 
 export interface CompactRepoSetupSheetProps {
@@ -11,6 +11,14 @@ export interface CompactRepoSetupSheetProps {
 }
 
 export function CompactRepoSetupSheet({ value, busy, error, onChange, onLoad, onClose }: CompactRepoSetupSheetProps) {
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   const canLoad = !busy && value.trim().length > 0;
 
   const submitTitle = busy
@@ -24,18 +32,13 @@ export function CompactRepoSetupSheet({ value, busy, error, onChange, onLoad, on
       <section
         role="dialog"
         aria-modal="true"
-        aria-label="Repo Setup"
+        aria-labelledby="compact-repo-setup-title"
         onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => {
-          if (event.key !== 'Escape') return;
-          event.stopPropagation();
-          onClose();
-        }}
         style={{ width: '100%', maxWidth: 520, margin: '0 auto', borderRadius: '20px 20px 0 0', border: `1px solid ${C.border}`, background: C.surface, padding: '16px 16px calc(22px + env(safe-area-inset-bottom, 0px))' }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
           <div>
-            <strong style={{ color: C.text }}>Repository laden</strong>
+            <strong id="compact-repo-setup-title" style={{ color: C.text }}>Repository laden</strong>
             <p style={{ color: C.textMuted, fontSize: 11, margin: '5px 0 0' }}>
               Erst ein bestätigter Runtime-Snapshot schaltet Repo-, Files- und Executor-Pfade frei.
             </p>
@@ -57,7 +60,6 @@ export function CompactRepoSetupSheet({ value, busy, error, onChange, onLoad, on
           GitHub Repository URL
           <input
             id="repo-setup-url-input"
-            aria-label="GitHub Repository URL"
             value={value}
             onChange={(event) => onChange(event.target.value)}
             onKeyDown={(event) => {
