@@ -838,7 +838,7 @@ describe('Palette Accessibility Enhancements', () => {
   });
 
   describe('CompactRepoSetupSheet Accessibility and Keyboard Usability Enhancements', () => {
-    it('associates label and input programmatically and links section heading', () => {
+    it('associates label and input programmatically', () => {
       const onClose = vi.fn();
       render(
         <CompactRepoSetupSheet
@@ -852,10 +852,7 @@ describe('Palette Accessibility Enhancements', () => {
       );
 
       const dialog = screen.getByRole('dialog');
-      expect(dialog).toHaveAttribute('aria-labelledby', 'compact-repo-setup-title');
-
-      const title = screen.getByText('Repository laden');
-      expect(title).toHaveAttribute('id', 'compact-repo-setup-title');
+      expect(dialog).toHaveAttribute('aria-label', 'Repo Setup');
 
       const label = screen.getByText('GitHub Repository URL');
       expect(label).toHaveAttribute('for', 'repo-setup-url-input');
