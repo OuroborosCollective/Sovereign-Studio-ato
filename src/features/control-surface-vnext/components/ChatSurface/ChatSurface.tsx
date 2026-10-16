@@ -51,6 +51,7 @@ function MessageCard({ message }: { message: ChatMessage }) {
 
 export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase = 'IDLE', activeJob, onOpenToolchain, onOpenSkills, onOpenIntegrations, onAbortJob, isAborting = false, abortError, onTypingStateChange, activeToolchainName, activeSkillsCount = 0, activeIntegrationsCount = 0, executionMode = 'free', onExecutionModeChange, controlReadback, controlReadbackError, isReadingControl, onRefreshControl }: Props) {
   const [text, setText] = useState('');
+  const [controlsExpanded, setControlsExpanded] = useState(false);
   const readbackUnavailable = activeJob?.workspaceState.readbackState === 'unavailable';
   const executing = ACTIVE_PHASES.includes(jobPhase) && !readbackUnavailable;
   const selectedMode = executing ? controlReadback?.jobExecutionMode ?? executionMode : executionMode;
@@ -101,8 +102,8 @@ export function ChatSurface({ messages, onSubmitOrder, onSendMessage, jobPhase =
       </div>
 
       <div data-testid="vnext-mission-dock" className="shrink-0 min-h-0 max-h-[50%] overflow-y-auto overscroll-contain px-3 sm:px-4 pb-3 sm:pb-4 pt-2 bg-[var(--carbon-base)]">
-        <details className="mb-2" data-testid="vnext-mission-controls">
-          <summary className="min-h-11 cursor-pointer rounded-md border border-white/10 px-2 py-3 font-mono text-[10px] text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20">
+        <details className="mb-2" data-testid="vnext-mission-controls" open={controlsExpanded} onToggle={(e) => setControlsExpanded(e.currentTarget.open)}>
+          <summary aria-expanded={controlsExpanded} title={controlsExpanded ? "Collapse mission controls" : "Expand mission controls to manage execution mode, agents, and toolchains"} className="min-h-11 cursor-pointer rounded-md border border-white/10 px-2 py-3 font-mono text-[10px] text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20">
             Mission controls · {selectedMode.toUpperCase()} · {!fresh ? 'READBACK UNAVAILABLE' : selectedRoute?.available ? 'ROUTE AVAILABLE' : 'ROUTE BLOCKED'}
           </summary>
         <div className="mt-2 mb-2 grid grid-cols-3 gap-1.5">
