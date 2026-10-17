@@ -224,14 +224,19 @@ export function detectSequenceGaps(signals: OrderedSignal[]): Array<{
 
 /**
  * Groups signals by node while preserving canonical order within each group.
+ * ⚡ Bolt: Single-pass Map entry lookup avoiding dual .has() and .get() queries per signal item.
  */
 export function groupByNode(signals: OrderedSignal[]): Map<string, OrderedSignal[]> {
   const groups = new Map<string, OrderedSignal[]>();
 
   for (const signal of signals) {
     const node = signal.node;
-    if (!groups.has(node)) groups.set(node, []);
-    groups.get(node)!.push(signal);
+    let group = groups.get(node);
+    if (!group) {
+      group = [];
+      groups.set(node, group);
+    }
+    group.push(signal);
   }
 
   return groups;
@@ -284,30 +289,33 @@ export function alignByNode(signals: OrderedSignal[]): Map<string, OrderedSignal
 
 /**
  * Validates that all signals in a sequence are bound to the same revision.
+ * ⚡ Bolt: Fast single-pass string comparison loop avoiding O(N) Set instantiation and populating for valid signal sets.
  */
 export function validateRevisionBound(signals: OrderedSignal[], expectedRevision?: string): void {
-  const revisions = new Set<string>();
+  if (signals.length === 0) return;
+
+  const firstRevision = signals[0].metadata.revision;
+
   for (const signal of signals) {
-    revisions.add(signal.metadata.revision);
-  }
-
-  if (revisions.size > 1) {
-    throw new SignalOrderingError(
-      `Multiple revisions in signal set: ${Array.from(revisions).join(', ')}`,
-      'REVISION_MISMATCH',
-      { revisions: Array.from(revisions) },
-    );
-  }
-
-  if (expectedRevision !== undefined) {
-    const actualRevision = signals[0]?.metadata.revision;
-    if (actualRevision !== expectedRevision) {
+    if (signal.metadata.revision !== firstRevision) {
+      const revisions = new Set<string>();
+      for (const s of signals) {
+        revisions.add(s.metadata.revision);
+      }
       throw new SignalOrderingError(
-        `Revision mismatch: expected ${expectedRevision}, got ${actualRevision}`,
+        `Multiple revisions in signal set: ${Array.from(revisions).join(', ')}`,
         'REVISION_MISMATCH',
-        { expected: expectedRevision, actual: actualRevision },
+        { revisions: Array.from(revisions) },
       );
     }
+  }
+
+  if (expectedRevision !== undefined && firstRevision !== expectedRevision) {
+    throw new SignalOrderingError(
+      `Revision mismatch: expected ${expectedRevision}, got ${firstRevision}`,
+      'REVISION_MISMATCH',
+      { expected: expectedRevision, actual: firstRevision },
+    );
   }
 }
 
