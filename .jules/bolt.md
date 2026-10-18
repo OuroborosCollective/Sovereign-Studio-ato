@@ -87,3 +87,6 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+## $(date +%Y-%m-%d) - Optimize hot path array allocations in MonitorCommunicationDock
+**Learning:** Found multiple intermediate array allocations (chained `.slice()`, `.map()`, `.filter()`, and `Set` instantiation) occurring on every render of the `MonitorCommunicationDock` component while determining visible entries. This was a codebase-specific pattern of extracting trailing entries conditionally.
+**Action:** Replaced chained array operations extracting items from the end of an array with a single-pass reverse `for` loop, conditionally appending to the front (`unshift()`), and combined with an early `break` to avoid traversing the entire list. Also wrapped the extraction in a `useMemo` to prevent unnecessary recalculation on every render when entries didn't change.
