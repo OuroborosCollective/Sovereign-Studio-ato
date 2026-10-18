@@ -593,7 +593,7 @@ describe('Palette Accessibility Enhancements', () => {
   });
 
   describe('AutoCodeReviewCard Enhancements', () => {
-    it('Findings button has aria-expanded and stateful dynamic titles; back button has title', () => {
+    it('Findings button has aria-expanded and stateful dynamic titles; back button has title and hover classes; renders semantic lists', () => {
       const mockResult = {
         decision: 'blocked_high',
         summary: 'Review failed due to critical finding.',
@@ -621,8 +621,14 @@ describe('Palette Accessibility Enhancements', () => {
       const article = screen.getByRole('article', { name: 'Code Review Ergebnis' });
       expect(article).toBeInTheDocument();
 
+      const summaryList = screen.getByRole('list', { name: 'Schwachstellen-Übersicht nach Schweregrad' });
+      expect(summaryList).toBeInTheDocument();
+
       const highBadge = screen.getByTitle('1 hohe Schwachstellen (HIGH)');
       expect(highBadge).toBeInTheDocument();
+
+      const findingsList = screen.getByRole('list', { name: 'Gefundene Schwachstellen' });
+      expect(findingsList).toBeInTheDocument();
 
       const findingCard = screen.getByTitle('Schwachstelle in src/features/product/components/AutoCodeReviewCard.tsx (L10): Security (HIGH)');
       expect(findingCard).toBeInTheDocument();
@@ -631,6 +637,7 @@ describe('Palette Accessibility Enhancements', () => {
       expect(findingsBtn).toHaveAttribute('aria-expanded', 'true');
       expect(findingsBtn).toHaveAttribute('title', 'Gefundene Schwachstellen ausblenden');
       expect(findingsBtn).toHaveClass('focus-visible:ring-2');
+      expect(findingsBtn).toHaveClass('hover:opacity-80');
 
       // Click to toggle/close findings
       fireEvent.click(findingsBtn);
@@ -640,6 +647,7 @@ describe('Palette Accessibility Enhancements', () => {
       const backBtn = screen.getByRole('button', { name: /Zurück zum Fix/i });
       expect(backBtn).toHaveAttribute('title', 'Zurück zum Fix-Workflow wechseln');
       expect(backBtn).toHaveClass('focus-visible:ring-2');
+      expect(backBtn).toHaveClass('hover:opacity-90');
     });
   });
 
