@@ -16,7 +16,10 @@
 				"profile",
 				"email"
 			],
-			"forceCodeForRefreshToken": true
+			"forceCodeForRefreshToken": false,
+			"clientId": "511695074775-s08le2ju1k4nl2vv3i150i6tn084b682.apps.googleusercontent.com",
+			"androidClientId": "511695074775-tjlbufo0r0co0eg8rsfonma9dnnv72hl.apps.googleusercontent.com",
+			"serverClientId": "511695074775-s08le2ju1k4nl2vv3i150i6tn084b682.apps.googleusercontent.com"
 		},
 		"SplashScreen": {
 			"launchShowDuration": 1500,
