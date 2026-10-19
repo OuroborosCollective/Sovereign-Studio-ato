@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { C } from './builderConstants';
 
 export type DraftPrEvidenceSource = 'staged' | 'agent' | 'mixed';
@@ -22,6 +22,16 @@ export function DraftPrActionPreview({
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
 }) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onCancel();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
+
   const evidenceLabel = evidenceSource === 'mixed'
     ? 'bestätigte lokale Änderungen und serverseitige Agent-Evidence'
     : evidenceSource === 'agent'
@@ -100,8 +110,7 @@ export function DraftPrActionPreview({
             autoFocus
             onClick={onCancel}
             data-testid="cancel-draft-pr-action-preview"
-            className="focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
-            aria-label="Abbrechen"
+            className="focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none transition-opacity hover:opacity-90"
             title="Übergabe an Runtime abbrechen"
             style={{
               flex: '1 1 180px',
@@ -120,8 +129,7 @@ export function DraftPrActionPreview({
             type="button"
             onClick={onConfirm}
             data-testid="confirm-draft-pr-action-preview"
-            className="focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
-            aria-label="Draft PR nach Serverprüfung posten"
+            className="focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none transition-opacity hover:opacity-90"
             title="Draft PR nach Serverprüfung posten"
             style={{
               flex: '1 1 220px',

@@ -28,6 +28,7 @@ import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
+import { DraftPrActionPreview } from './DraftPrActionPreview';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1546,6 +1547,44 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(localModeBtn);
       expect(onUseLocalMode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('DraftPrActionPreview Accessibility and Micro-UX Enhancements', () => {
+    it('renders alertdialog with accessible title tooltips, hover transitions, no aria-label override on visible button text, and Escape key listener', () => {
+      const onConfirm = vi.fn();
+      const onCancel = vi.fn();
+
+      render(
+        <DraftPrActionPreview
+          repoUrl="https://github.com/owner/repo"
+          branch="feature/test"
+          expectedHeadSha="abcdef1234567890"
+          mission="Build awesome feature"
+          changedFileCount={2}
+          evidenceSource="mixed"
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+        />
+      );
+
+      const dialog = screen.getByRole('alertdialog');
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
+      expect(dialog).toHaveAttribute('aria-labelledby', 'draft-pr-action-preview-title');
+      expect(dialog).toHaveAttribute('aria-describedby', 'draft-pr-action-preview-description');
+
+      const cancelBtn = screen.getByTestId('cancel-draft-pr-action-preview');
+      expect(cancelBtn).not.toHaveAttribute('aria-label');
+      expect(cancelBtn).toHaveAttribute('title', 'Übergabe an Runtime abbrechen');
+      expect(cancelBtn).toHaveClass('hover:opacity-90');
+
+      const confirmBtn = screen.getByTestId('confirm-draft-pr-action-preview');
+      expect(confirmBtn).not.toHaveAttribute('aria-label');
+      expect(confirmBtn).toHaveAttribute('title', 'Draft PR nach Serverprüfung posten');
+      expect(confirmBtn).toHaveClass('hover:opacity-90');
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onCancel).toHaveBeenCalledTimes(1);
     });
   });
 });

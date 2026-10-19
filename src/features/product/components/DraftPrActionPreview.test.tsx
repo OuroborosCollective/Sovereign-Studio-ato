@@ -32,7 +32,8 @@ describe('DraftPrActionPreview', () => {
     expect(onConfirm).toHaveBeenCalledOnce();
   });
 
-  it('provides accessible titles, aria-labels, and focus styles on action buttons and metadata', () => {
+  it('provides accessible titles and focus styles on action buttons without redundant aria-label overrides, and supports Escape key dismiss', () => {
+    const onCancel = vi.fn();
     render(
       <DraftPrActionPreview
         repoUrl="https://github.com/OuroborosCollective/Sovereign-Studio-ato"
@@ -42,21 +43,26 @@ describe('DraftPrActionPreview', () => {
         changedFileCount={2}
         evidenceSource="staged"
         onConfirm={() => {}}
-        onCancel={() => {}}
+        onCancel={onCancel}
       />,
     );
 
     const cancelButton = screen.getByTestId('cancel-draft-pr-action-preview');
-    expect(cancelButton).toHaveAttribute('aria-label', 'Abbrechen');
+    expect(cancelButton).not.toHaveAttribute('aria-label');
     expect(cancelButton).toHaveAttribute('title', 'Übergabe an Runtime abbrechen');
+    expect(cancelButton).toHaveClass('hover:opacity-90');
 
     const confirmButton = screen.getByTestId('confirm-draft-pr-action-preview');
-    expect(confirmButton).toHaveAttribute('aria-label', 'Draft PR nach Serverprüfung posten');
+    expect(confirmButton).not.toHaveAttribute('aria-label');
     expect(confirmButton).toHaveAttribute('title', 'Draft PR nach Serverprüfung posten');
+    expect(confirmButton).toHaveClass('hover:opacity-90');
 
     expect(screen.getByText(/OuroborosCollective\/Sovereign-Studio-ato#sovereign\/chatgpt\/example/)).toHaveAttribute(
       'title',
       'https://github.com/OuroborosCollective/Sovereign-Studio-ato#sovereign/chatgpt/example',
     );
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });
