@@ -1228,3 +1228,11 @@ Status: IMPLEMENTED_IN_REPOSITORY; exact final-head CI and merge readback remain
 Change: Extend the existing label-based secret masker for Linear, DataDog, Algolia and Supabase key, secret and token assignments; add focused synthetic regressions without introducing real credentials.
 Learned: Provider-specific labels can bypass generic naming when product logs preserve the label, so the canonical redaction regex and its executable examples must advance together.
 Evidence: Code head 117736c21be5f57a1a135aa71c0bee5b7f1251ba passed Release Verification, Sovereign Agent Backend, Sovereign ChatGPT MCP, Sovereign Continuity Evidence and Integration Plan Lane Gate; the final Memory-bearing head requires fresh exact-head CI.
+
+
+### 2026-10-20 — Pin ChatGPT MCP SDK 1.30.0 (PR #2304)
+<!-- integration-memory: pr=2304 -->
+Status: CI_VERIFIED repository candidate; deployment and running-registry parity remain unverified.
+Change: Pin `mcp[cli]` from 1.28.1 to 1.30.0 in the canonical Sovereign ChatGPT MCP requirements.
+Learned: The 1.30.0 redirect and OAuth validation changes require immutable deployment plus protocol and registry readback before any runtime claim.
+Evidence: Exact code head `c5c67bfa5d33cc1fdab357d2a66a720ef70bdadd` had 48 terminal checks with 27 success and 20 intentional skips, no failed or pending check, and no unresolved review thread; this Memory-bearing head requires fresh exact-head CI before merge.
