@@ -380,7 +380,3 @@ jobs:
         python3 "$RUNNER_TEMP/verify-login.py" "$readback_dir/downloaded.apk" > "$readback_dir/verified.json"
 'on':
   workflow_dispatch: null
-  pull_request:
-    paths:
-    - .github/workflows/aurion-godot-login.yml
-    - scripts/test_aurion_login_workflow.py
