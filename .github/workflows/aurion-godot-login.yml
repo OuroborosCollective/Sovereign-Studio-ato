@@ -50,8 +50,15 @@ jobs:
           if [ -d "$ANDROID_HOME/licenses" ]; then cp -R "$ANDROID_HOME/licenses" "$AURION_LOGIN_GRADLE_SDK_ROOT/licenses"; fi
           "$SDKMANAGER" --sdk_root="$AURION_LOGIN_GRADLE_SDK_ROOT" "platforms;android-36" "build-tools;36.1.0" "ndk;29.0.14206865"
           node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {cp} from 'node:fs/promises';
+          import {join} from 'node:path';
+          import {androidReport} from './scripts/godot/android-toolchain.mjs';
           import {inspectLoginGradleSdk} from './scripts/godot/gradle-prerequisites.mjs';
           import {lock} from './scripts/godot/toolchain.mjs';
+          const baseline=await androidReport();
+          assert.equal(baseline.status,'ready');
+          await cp(join(baseline.installation,'sdk/platform-tools'),join(process.env.AURION_LOGIN_GRADLE_SDK_ROOT,'platform-tools'),{recursive:true});
           await inspectLoginGradleSdk(process.env.AURION_LOGIN_GRADLE_SDK_ROOT,lock.android.gradleRequirements);
           NODE
       - name: Export and verify Login APK using existing Sovereign signing identity
