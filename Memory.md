@@ -1236,3 +1236,11 @@ Status: CI_VERIFIED repository candidate; deployment and running-registry parity
 Change: Pin `mcp[cli]` from 1.28.1 to 1.30.0 in the canonical Sovereign ChatGPT MCP requirements.
 Learned: The 1.30.0 redirect and OAuth validation changes require immutable deployment plus protocol and registry readback before any runtime claim.
 Evidence: Exact code head `c5c67bfa5d33cc1fdab357d2a66a720ef70bdadd` had 48 terminal checks with 27 success and 20 intentional skips, no failed or pending check, and no unresolved review thread; this Memory-bearing head requires fresh exact-head CI before merge.
+
+
+### 2026-10-20 — Pin GitHub Patch MCP SDK 1.30.0 (PR #2305)
+<!-- integration-memory: pr=2305 -->
+Status: CI_VERIFIED repository candidate; deployment and running-registry parity remain unverified.
+Change: Pin `mcp` from 1.28.1 to 1.30.0 in the isolated Sovereign GitHub Patch MCP lockfile.
+Learned: Same-origin redirect enforcement, idle-session expiry and OAuth issuer validation are behavior changes; runtime compatibility requires immutable deployment and registry/protocol readback.
+Evidence: Original exact code head `186fdfd7c80c8a4804d2937ecd8eaaa71c422b7f` had 32 terminal checks with 22 success and 9 intentional skips, no failed or pending check, and no unresolved review thread; this rebased Memory-bearing head requires fresh exact-head CI before merge.
