@@ -1228,3 +1228,12 @@ Status: IMPLEMENTED_IN_REPOSITORY; exact final-head CI and merge readback remain
 Change: Extend the existing label-based secret masker for Linear, DataDog, Algolia and Supabase key, secret and token assignments; add focused synthetic regressions without introducing real credentials.
 Learned: Provider-specific labels can bypass generic naming when product logs preserve the label, so the canonical redaction regex and its executable examples must advance together.
 Evidence: Code head 117736c21be5f57a1a135aa71c0bee5b7f1251ba passed Release Verification, Sovereign Agent Backend, Sovereign ChatGPT MCP, Sovereign Continuity Evidence and Integration Plan Lane Gate; the final Memory-bearing head requires fresh exact-head CI.
+
+## 2026-10-20 - Accessibility improvements for ChatSurface mission controls
+- **Task:** Improve accessibility of the disclosure widget (`<details>` and `<summary>`) in the mission console.
+- **Decisions:** Used an explicit state variable `isControlsOpen` tracked via `onToggle` and applied `aria-expanded` and a descriptive `title` attribute to the `<summary>`.
+- **Touched Surfaces:** `src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx`
+- **Tests/Evidence:** Manual UI inspection code review, linting, and vitest run over affected files.
+- **Learnings:** Explicit state management enhances standard HTML component accessibility for assistive technologies.
+- **Open Points:** N/A.
+- **Next Safe Step:** Complete remaining verification steps and submit.
