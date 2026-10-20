@@ -123,7 +123,7 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({ isOpen, onClose }) =
             </p>
             <p>
               Die öffentlich abrufbare Fassung dieser Erklärung ist unter
-              {' '}<a className="underline" href="/privacy.html" target="_blank" rel="noreferrer">/privacy.html</a> verfügbar.
+              {' '}<a className="underline" href="/privacy.html" target="_blank" rel="noopener noreferrer">/privacy.html</a> verfügbar.
             </p>
           </section>
         </div>
