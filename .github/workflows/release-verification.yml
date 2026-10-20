@@ -169,6 +169,11 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_public_site_contract.py' -v
           python3 scripts/verify-public-site.py --root public-site --mode preview
 
+      - name: Aurion Login isolation and APK readback contracts
+        run: |
+          python3 -m pip install PyYAML==6.0.3
+          python3 scripts/test_aurion_login_workflow.py
+
       - name: Required Gate Priority Contract Tests
         id: required_gate_priority
         shell: bash

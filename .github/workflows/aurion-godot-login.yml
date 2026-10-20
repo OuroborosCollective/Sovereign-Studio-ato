@@ -1,0 +1,388 @@
+name: Aurion Godot signed Login APK
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: aurion-godot-login-signing
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Install YAML parser for workflow contract tests
+      run: python3 -m pip install PyYAML==6.0.3
+    - name: Test actual workflow isolation and APK readback contracts
+      run: python3 scripts/test_aurion_login_workflow.py
+  build:
+    if: github.repository == 'OuroborosCollective/Sovereign-Studio-ato' && github.ref == 'refs/heads/main' && github.actor_id
+      == '266194342' && github.triggering_actor == github.repository_owner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      AURION_EXPECTED_REVISION: aa66caac05d015bba3f1b4b78c104070b11e91e9
+      AURION_LOGIN_SIGNER_SHA256: F2:E8:FA:1E:81:FB:DA:E5:2E:94:00:AF:32:29:A0:47:79:8D:EB:BE:A0:CF:36:80:A0:4B:E6:54:0D:EF:72:0A
+    steps:
+    - name: Checkout reviewed Aurion source without persisted credentials
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: OuroborosCollective/Echoes_of_Aurion
+        ref: aa66caac05d015bba3f1b4b78c104070b11e91e9
+        persist-credentials: false
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      with:
+        node-version: '22'
+    - name: Require exact source and live Android association before accessing signing secrets
+      run: |
+        set -euo pipefail
+        test "$(git rev-parse HEAD)" = "$AURION_EXPECTED_REVISION"
+        node --input-type=module <<'NODE'
+        import {verifyLiveAssetlinks} from './scripts/godot/login-release-gates.mjs';
+        await verifyLiveAssetlinks({packageName:'org.ouroboroscollective.aurion.godot.login',fingerprint:process.env.AURION_LOGIN_SIGNER_SHA256});
+        NODE
+        node --test scripts/godot/login-release-gates.test.mjs scripts/godot/login-gradle-export.test.mjs scripts/godot/gradle-prerequisites.test.mjs scripts/godot/android-app-link.test.mjs
+    - name: Install and verify pinned Godot and baseline Android tools
+      run: |
+        node scripts/godot/bootstrap.mjs
+        node scripts/godot/bootstrap-android.mjs
+        node scripts/godot/verify-gradle-template.mjs
+    - name: Provision separate Login SDK
+      env:
+        AURION_LOGIN_GRADLE_SDK_ROOT: ${{ runner.temp }}/aurion-login-sdk
+      run: |
+        set -euo pipefail
+        SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+        test -x "$SDKMANAGER"
+        mkdir -p "$AURION_LOGIN_GRADLE_SDK_ROOT"
+        # Preserve the runner's existing accepted SDK licenses; never mutate the pinned Preview SDK.
+        if [ -d "$ANDROID_HOME/licenses" ]; then cp -R "$ANDROID_HOME/licenses" "$AURION_LOGIN_GRADLE_SDK_ROOT/licenses"; fi
+        "$SDKMANAGER" --sdk_root="$AURION_LOGIN_GRADLE_SDK_ROOT" "platforms;android-36" "build-tools;36.1.0" "ndk;29.0.14206865"
+        node --input-type=module <<'NODE'
+        import assert from 'node:assert/strict';
+        import {cp} from 'node:fs/promises';
+        import {join} from 'node:path';
+        import {androidReport} from './scripts/godot/android-toolchain.mjs';
+        import {inspectLoginGradleSdk} from './scripts/godot/gradle-prerequisites.mjs';
+        import {lock} from './scripts/godot/toolchain.mjs';
+        const baseline=await androidReport();
+        assert.equal(baseline.status,'ready');
+        await cp(join(baseline.installation,'sdk/platform-tools'),join(process.env.AURION_LOGIN_GRADLE_SDK_ROOT,'platform-tools'),{recursive:true});
+        await inspectLoginGradleSdk(process.env.AURION_LOGIN_GRADLE_SDK_ROOT,lock.android.gradleRequirements);
+        NODE
+    - name: Build unsigned Login APK without release credentials
+      env:
+        AURION_LOGIN_ALLOW_SIGNED_EXPORT: '1'
+        AURION_LOGIN_GRADLE_SDK_ROOT: ${{ runner.temp }}/aurion-login-sdk
+        AURION_LOGIN_APK_OUTPUT: ${{ runner.temp }}/aurion-login-output
+      run: |
+        node --input-type=module <<'NODE'
+        import assert from 'node:assert/strict';
+        import { cp,mkdir,mkdtemp,readFile,rm,symlink,writeFile,lstat,rename,copyFile } from 'node:fs/promises';
+        import { join,resolve } from 'node:path';
+        import { spawnSync } from 'node:child_process';
+        import { fileURLToPath } from 'node:url';
+        import { repo,root,executable,lock,digest,run } from './scripts/godot/toolchain.mjs';
+        import { androidReport } from './scripts/godot/android-toolchain.mjs';
+        import { inspectLoginGradleSdk,verifyGodotGradleVersions } from './scripts/godot/gradle-prerequisites.mjs';
+        import { stageGodotGradleBuild } from './scripts/godot/android-gradle-link.mjs';
+        import { createLoginPreset,validateSignerConfig,verifySignerOnDisk,validateLoginArtifact,loginPackage } from './scripts/godot/login-gradle-export.mjs';
+        import { requireLoginReleaseInputs,createLoginOverride,assertPackagedBuildRevision,verifyLiveAssetlinks,LOGIN_APK_FILENAME } from './scripts/godot/login-release-gates.mjs';
+
+        function checked(binary,args,env,timeout=60000) {
+         const p=spawnSync(binary,args,{env,encoding:'utf8',timeout,maxBuffer:4*1024*1024});
+         assert.ok(!p.error&&p.status===0,'release tool failed (inspect private operator logs)');
+         return p.stdout;
+        }
+        async function unsignedLoginExport(env=process.env) {
+         const request=requireLoginReleaseInputs(env);
+         const revision=run('git',['-C',repo,'rev-parse','HEAD']);
+         assert.equal(revision,request.revision);
+         run('git',['-C',repo,'diff','--exit-code','HEAD']);
+         assert.equal(run('git',['-C',repo,'ls-files','--others','--exclude-standard','godot-client','scripts/godot']),'');
+         const baseline=await androidReport();
+         assert.equal(baseline.status,'ready','pinned Preview SDK must remain verified');
+         const versions=lock.android.gradleRequirements;
+         await inspectLoginGradleSdk(request.sdkRoot,versions);
+         const jdk=join(baseline.installation,'jdk');
+         const version=lock.engine.version.split('.stable.official')[0]+'.stable';
+         const archive=join(baseline.installation,'data/godot/export_templates',version,'android_source.zip');
+         verifyGodotGradleVersions(run('unzip',['-p',archive,'config.gradle']),versions);
+         await mkdir(request.outputDirectory,{recursive:true,mode:0o700});
+         const outputStat=await lstat(request.outputDirectory);
+         assert.ok(outputStat.isDirectory()&&!outputStat.isSymbolicLink()&&(outputStat.mode&0o077)===0,'private output required');
+         const destination=join(request.outputDirectory,revision);
+         try {await lstat(destination);throw Error('refuse release overwrite');}catch(e){if(e.code!=='ENOENT')throw e;}
+         const job=await mkdtemp(join(root,'signed-login-'));
+         try {
+          const project=join(job,'project');
+          await cp(join(repo,'godot-client'),project,{recursive:true,filter:p=>!p.split('/').includes('.godot')});
+          const original=await readFile(join(project,'export_presets.cfg'),'utf8');
+          await writeFile(join(project,'export_presets.cfg'),createLoginPreset(original).replaceAll('package/signed=true','package/signed=false'),{mode:0o600});
+          await writeFile(join(project,'override.cfg'),createLoginOverride(revision),{mode:0o600});
+          await stageGodotGradleBuild({archive,project,version});
+          const manifestSource=await readFile(join(project,'android/build/src/main/AndroidManifest.xml'),'utf8');
+          assert.match(manifestSource,/android:host="arelogic.space"/);
+          assert.match(manifestSource,/android:path="\/app\/auth\/callback"/);
+          const config=join(job,'config/godot'),data=join(job,'data/godot');
+          await mkdir(config,{recursive:true});await mkdir(data,{recursive:true});
+          await symlink(join(baseline.installation,'data/godot/export_templates'),join(data,'export_templates'));
+          await writeFile(join(config,'editor_settings-4.7.tres'),`[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/java_sdk_path = ${JSON.stringify(jdk)}\nexport/android/android_sdk_path = ${JSON.stringify(request.sdkRoot)}\n`,{mode:0o600});
+          const buildEnv={...env,XDG_CONFIG_HOME:join(job,'config'),XDG_DATA_HOME:join(job,'data'),JAVA_HOME:jdk,ANDROID_HOME:request.sdkRoot,ANDROID_SDK_ROOT:request.sdkRoot,GRADLE_USER_HOME:join(job,'gradle-home')};
+          const apk=join(job,LOGIN_APK_FILENAME);
+          for(const [label,args,timeout] of [['import',['--editor','--import'],240000],['export',['--export-release','Android Login',apk],1200000]]) {
+           const result=spawnSync(executable,['--headless','--path',project,...args],{env:buildEnv,encoding:'utf8',timeout,maxBuffer:8*1024*1024});
+           assert.ok(!result.error&&result.status===0,'Godot '+label+' failed; no release published');
+          }
+          const tools=join(request.sdkRoot,'build-tools',versions.buildTools);
+          const badging=checked(join(tools,'aapt'),['dump','badging',apk],buildEnv);
+          const manifest=checked(join(tools,'aapt'),['dump','xmltree',apk,'AndroidManifest.xml'],buildEnv);
+          const signatureCheck=spawnSync(join(tools,'apksigner'),['verify',apk],{env:buildEnv,encoding:'utf8'});
+          assert.ok(!signatureCheck.error && signatureCheck.status !== 0,'unsigned build must not carry a signing identity');
+          assert.match(manifest,/screenOrientation.*0x0/);
+          const packed=checked('unzip',['-p',apk,'assets/override.cfg'],buildEnv);
+          assertPackagedBuildRevision(packed,revision);
+          const association=await verifyLiveAssetlinks({packageName:loginPackage,fingerprint:env.AURION_LOGIN_SIGNER_SHA256});
+          assert.equal((await androidReport()).treeSha256,baseline.treeSha256,'Preview SDK changed');
+          const evidence={schemaVersion:1,sourceRevision:revision,apkSha256:await digest(apk),packageName:loginPackage,signingState:'unsigned',assetlinks:association,device:'unverified',toolchainLockSha256:await digest(join(repo,'config/godot-toolchain.lock.json'))};
+          const staging=await mkdtemp(join(request.outputDirectory,'.signed-login-'));
+          try {
+           await copyFile(apk,join(staging,LOGIN_APK_FILENAME));
+           await writeFile(join(staging,'build-evidence.json'),JSON.stringify(evidence,null,2)+'\n',{mode:0o600});
+           await rename(staging,destination);
+          } finally {await rm(staging,{recursive:true,force:true});}
+          console.log('UNSIGNED LOGIN BUILD / NOT INSTALLABLE: '+destination);
+          return evidence;
+         } finally {await rm(job,{recursive:true,force:true});}
+        }
+        await unsignedLoginExport();
+        NODE
+    - name: Transfer unsigned APK to isolated signing job
+      id: artifact
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: Aurion-Login-unsigned-${{ env.AURION_EXPECTED_REVISION }}
+        path: |
+          ${{ runner.temp }}/aurion-login-output/${{ env.AURION_EXPECTED_REVISION }}/Aurion-Login.apk
+          ${{ runner.temp }}/aurion-login-output/${{ env.AURION_EXPECTED_REVISION }}/build-evidence.json
+        if-no-files-found: error
+        retention-days: 1
+    outputs:
+      artifact_id: ${{ steps.artifact.outputs.artifact-id }}
+      artifact_digest: ${{ steps.artifact.outputs.artifact-digest }}
+    needs: validate
+  sign:
+    name: Sign isolated unsigned artifact
+    needs: build
+    if: github.repository == 'OuroborosCollective/Sovereign-Studio-ato' && github.ref == 'refs/heads/main' && github.actor_id
+      == '266194342' && github.triggering_actor == github.repository_owner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      AURION_EXPECTED_REVISION: aa66caac05d015bba3f1b4b78c104070b11e91e9
+      AURION_LOGIN_SIGNER_SHA256: F2:E8:FA:1E:81:FB:DA:E5:2E:94:00:AF:32:29:A0:47:79:8D:EB:BE:A0:CF:36:80:A0:4B:E6:54:0D:EF:72:0A
+    steps:
+    - name: Install signing tools without checking out application code
+      run: |
+        set -euo pipefail
+        export JAVA_HOME="$JAVA_HOME_17_X64"
+        "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.1.0"
+        test -x "$ANDROID_HOME/build-tools/36.1.0/apksigner"
+        grep -Fx 'Pkg.Revision=36.1.0' "$ANDROID_HOME/build-tools/36.1.0/source.properties"
+        printf 'JAVA_HOME=%s\n' "$JAVA_HOME" >> "$GITHUB_ENV"
+        printf '%s/bin\n' "$JAVA_HOME" >> "$GITHUB_PATH"
+    - name: Download and bind unsigned input from this run
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
+        ARTIFACT_DIGEST: ${{ needs.build.outputs.artifact_digest }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/aurion-sign-input"
+        gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" > "$RUNNER_TEMP/aurion-sign-input/metadata.json"
+        gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > "$RUNNER_TEMP/aurion-sign-input/input.zip"
+        python3 <<'PYCODE'
+        import hashlib,json,os,pathlib,zipfile
+        root=pathlib.Path(os.environ['RUNNER_TEMP'])/'aurion-sign-input'
+        m=json.loads((root/'metadata.json').read_text())
+        assert str(m['id'])==os.environ['ARTIFACT_ID'] and not m['expired']
+        assert str(m['workflow_run']['id'])==os.environ['GITHUB_RUN_ID']
+        assert m['workflow_run']['head_sha']==os.environ['GITHUB_SHA']
+        assert m['name']=='Aurion-Login-unsigned-'+os.environ['AURION_EXPECTED_REVISION']
+        with (root/'input.zip').open('rb') as f: h=hashlib.file_digest(f,'sha256').hexdigest()
+        assert h==os.environ['ARTIFACT_DIGEST'].removeprefix('sha256:')
+        assert m['digest']=='sha256:'+h
+        with zipfile.ZipFile(root/'input.zip') as z:
+         assert sorted(z.namelist())==['Aurion-Login.apk','build-evidence.json']
+         e=json.loads(z.read('build-evidence.json'))
+         assert e['sourceRevision']==os.environ['AURION_EXPECTED_REVISION'] and e['signingState']=='unsigned'
+         with z.open('Aurion-Login.apk') as src,(root/'unsigned.apk').open('wb') as dst:
+          import shutil
+          shutil.copyfileobj(src,dst)
+        with (root/'unsigned.apk').open('rb') as f: assert hashlib.file_digest(f,'sha256').hexdigest()==e['apkSha256']
+        (root/'build-evidence.json').write_text(json.dumps(e))
+        PYCODE
+        if "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify "$RUNNER_TEMP/aurion-sign-input/unsigned.apk"; then exit 1; fi
+    - name: Prepare repository-owned verification and current domain check
+      run: |
+        cat > "$RUNNER_TEMP/verify-login.py" <<'PYCODE'
+        import hashlib,json,os,pathlib,re,subprocess,sys,urllib.request,zipfile
+        expected=os.environ['AURION_LOGIN_SIGNER_SHA256'].replace(':','').lower()
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+         def redirect_request(self,*args): return None
+        url='https://arelogic.space/.well-known/assetlinks.json'
+        with urllib.request.build_opener(NoRedirect).open(urllib.request.Request(url,headers={'Accept':'application/json','Cache-Control':'no-cache'}),timeout=15) as r:
+         assert r.status==200 and r.headers.get_content_type()=='application/json'
+         body=r.read(65537); assert len(body)<=65536
+         statements=json.loads(body)
+         assert any('delegate_permission/common.handle_all_urls' in s.get('relation',[]) and s.get('target',{}).get('namespace')=='android_app' and s['target'].get('package_name')=='org.ouroboroscollective.aurion.godot.login' and any(v.replace(':','').lower()==expected for v in s['target'].get('sha256_cert_fingerprints',[])) for s in statements)
+        if len(sys.argv)>1:
+         apk=pathlib.Path(sys.argv[1]); tools=pathlib.Path(os.environ['ANDROID_HOME'])/'build-tools/36.1.0'
+         def run(tool,*args): return subprocess.check_output([str(tools/tool),*map(str,args)],text=True)
+         unsigned=len(sys.argv)>2 and sys.argv[2]=='--unsigned'
+         if unsigned:
+          result=subprocess.run([str(tools/'apksigner'),'verify',str(apk)],capture_output=True,timeout=30)
+          assert result.returncode==1
+         else:
+          signature=run('apksigner','verify','--verbose','--print-certs',apk)
+          certs=re.findall(r'Signer #[0-9]+ certificate SHA-256 digest: ([a-fA-F0-9]+)',signature)
+          assert certs==[expected]
+          assert re.search(r'Verified using v2 scheme.*true',signature)
+         badging=run('aapt','dump','badging',apk)
+         assert re.search(r"package: name='org\.ouroboroscollective\.aurion\.godot\.login'.*versionCode='1'.*versionName='0\.1\.0-login'",badging)
+         assert "application-label:'Aurion Login'" in badging
+         assert re.findall(r"uses-permission: name='([^']+)'",badging)==['android.permission.INTERNET']
+         assert re.search(r"native-code: 'arm64-v8a'\s*$",badging,re.M)
+         assert "sdkVersion:'24'" in badging and "targetSdkVersion:'36'" in badging
+         assert 'debuggable' not in badging
+         manifest=run('aapt','dump','xmltree',apk,'AndroidManifest.xml')
+         blocks=re.split(r'(?=^ {6}E: )',manifest,flags=re.M)
+         aliases=[v for v in blocks if v.startswith('      E: activity-alias (')]
+         assert len(aliases)==1
+         alias=aliases[0]
+         assert 'android.intent.action.MAIN' in alias and 'android.intent.category.LAUNCHER' in alias
+         assert re.search(r'android:exported[^\n]*0xffffffff',alias)
+         target=re.search(r'android:targetActivity[^\n]*="([^"]+)"',alias)
+         assert target
+         assert any(re.search(r'android:name[^\n]*="'+re.escape(target[1])+r'"',v) for v in blocks if v.startswith('      E: activity ('))
+         filters=[v for v in re.split(r'(?=^ {8}E: intent-filter)',alias,flags=re.M)[1:] if 'android.intent.action.VIEW' in v]
+         assert len(filters)==1
+         view=filters[0]
+         for value in ['android.intent.category.DEFAULT','android.intent.category.BROWSABLE']:
+          assert value in view
+         for pattern in [r'android:autoVerify[^\n]*0xffffffff',r'android:scheme[^\n]*"https"',r'android:host[^\n]*"arelogic.space"',r'android:path[^\n]*"/app/auth/callback"']:
+          assert re.search(pattern,view)
+         assert re.search(r'screenOrientation.*0x0',manifest)
+         with zipfile.ZipFile(apk) as z:
+          assert len(z.namelist())==len(set(z.namelist()))
+          assert 'lib/arm64-v8a/libgodot_android.so' in z.namelist()
+          assert not any(n.startswith('lib/') and not n.startswith('lib/arm64-v8a/') for n in z.namelist())
+          assert not any(n.startswith('assets/tests/') for n in z.namelist())
+          assert z.read('assets/override.cfg').decode()=='[aurion]\nclient_build="'+os.environ['AURION_EXPECTED_REVISION']+'"\nnative_auth_start_enabled=true\n'
+         with apk.open('rb') as f: digest=hashlib.file_digest(f,'sha256').hexdigest()
+         print(json.dumps({'sourceRevision':os.environ['AURION_EXPECTED_REVISION'],'apkSha256':digest,'packageName':'org.ouroboroscollective.aurion.godot.login','signerSha256':None if unsigned else os.environ['AURION_LOGIN_SIGNER_SHA256'],'signingState':'unsigned' if unsigned else 'verified','assetlinks':{'status':'verified','source':url,'sha256':hashlib.sha256(body).hexdigest()},'device':'unverified'}))
+        PYCODE
+        python3 "$RUNNER_TEMP/verify-login.py"
+    - name: Sign with Sovereign identity using SDK only
+      env:
+        LEGACY_STORE: ${{ secrets.KEYSTORE_BASE64 }}
+        CURRENT_STORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        LEGACY_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        CURRENT_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        LEGACY_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+        CURRENT_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        LEGACY_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        CURRENT_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        AURION_LOGIN_ALLOW_SIGNED_EXPORT: '1'
+        AURION_LOGIN_GRADLE_SDK_ROOT: ${{ runner.temp }}/aurion-login-sdk
+        AURION_LOGIN_APK_OUTPUT: ${{ runner.temp }}/aurion-login-output
+      run: |
+        set -euo pipefail
+        python3 "$RUNNER_TEMP/verify-login.py" "$RUNNER_TEMP/aurion-sign-input/unsigned.apk" --unsigned > /dev/null
+        umask 077
+        private_dir="$(mktemp -d "$RUNNER_TEMP/aurion-signing.XXXXXX")"
+        trap 'rm -rf "$private_dir"' EXIT
+        export AURION_LOGIN_KEYSTORE_PATH="$private_dir/release.jks"
+        if [ -n "$LEGACY_STORE" ]; then
+          signing_store="$LEGACY_STORE"
+          export AURION_LOGIN_KEYSTORE_PASSWORD="$LEGACY_PASSWORD"
+          export AURION_LOGIN_KEY_ALIAS="$LEGACY_ALIAS"
+          export AURION_LOGIN_KEY_PASSWORD="${LEGACY_KEY_PASSWORD:-$LEGACY_PASSWORD}"
+        else
+          signing_store="$CURRENT_STORE"
+          export AURION_LOGIN_KEYSTORE_PASSWORD="$CURRENT_PASSWORD"
+          export AURION_LOGIN_KEY_ALIAS="$CURRENT_ALIAS"
+          export AURION_LOGIN_KEY_PASSWORD="${CURRENT_KEY_PASSWORD:-$CURRENT_PASSWORD}"
+        fi
+        test -n "$AURION_LOGIN_KEYSTORE_PASSWORD"
+        test -n "$AURION_LOGIN_KEY_ALIAS"
+        printf '%s' "$signing_store" | base64 --decode > "$AURION_LOGIN_KEYSTORE_PATH"
+        chmod 600 "$AURION_LOGIN_KEYSTORE_PATH"
+        test -s "$AURION_LOGIN_KEYSTORE_PATH"
+        unset signing_store LEGACY_STORE CURRENT_STORE LEGACY_PASSWORD CURRENT_PASSWORD LEGACY_ALIAS CURRENT_ALIAS LEGACY_KEY_PASSWORD CURRENT_KEY_PASSWORD
+        output="$RUNNER_TEMP/aurion-login-output/$AURION_EXPECTED_REVISION"
+        mkdir -p "$output"
+        "$ANDROID_HOME/build-tools/36.1.0/zipalign" -P 16 -f 4 "$RUNNER_TEMP/aurion-sign-input/unsigned.apk" "$output/aligned.apk"
+        "$ANDROID_HOME/build-tools/36.1.0/apksigner" sign --ks "$AURION_LOGIN_KEYSTORE_PATH" --ks-key-alias "$AURION_LOGIN_KEY_ALIAS" --ks-pass env:AURION_LOGIN_KEYSTORE_PASSWORD --key-pass env:AURION_LOGIN_KEY_PASSWORD --out "$output/Aurion-Login.apk" "$output/aligned.apk"
+        python3 "$RUNNER_TEMP/verify-login.py" "$output/Aurion-Login.apk" > "$output/build-evidence.json"
+        rm "$output/aligned.apk"
+    - name: Publish verified signed APK
+      id: artifact
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: Aurion-Login-${{ env.AURION_EXPECTED_REVISION }}
+        path: |
+          ${{ runner.temp }}/aurion-login-output/${{ env.AURION_EXPECTED_REVISION }}/Aurion-Login.apk
+          ${{ runner.temp }}/aurion-login-output/${{ env.AURION_EXPECTED_REVISION }}/build-evidence.json
+        if-no-files-found: error
+        retention-days: 30
+    - name: Independently read back persisted artifact and APK identity
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ARTIFACT_ID: ${{ steps.artifact.outputs.artifact-id }}
+        ARTIFACT_DIGEST: ${{ steps.artifact.outputs.artifact-digest }}
+      run: |
+        set -euo pipefail
+        readback_dir="$(mktemp -d "$RUNNER_TEMP/aurion-artifact-readback.XXXXXX")"
+        trap 'rm -rf "$readback_dir"' EXIT
+        export AURION_ARTIFACT_READBACK="$readback_dir"
+        [[ "$ARTIFACT_ID" =~ ^[0-9]+$ ]]
+        gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" > "$readback_dir/metadata.json"
+        gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > "$readback_dir/artifact.zip"
+        python3 <<'PY'
+        import hashlib, json, os, pathlib, zipfile
+        root=pathlib.Path(os.environ['AURION_ARTIFACT_READBACK'])
+        metadata=json.loads((root/'metadata.json').read_text())
+        revision=os.environ['AURION_EXPECTED_REVISION']
+        assert str(metadata['id']) == os.environ['ARTIFACT_ID']
+        assert metadata['name'] == 'Aurion-Login-'+revision
+        assert metadata['expired'] is False
+        assert str(metadata['workflow_run']['id']) == os.environ['GITHUB_RUN_ID']
+        assert metadata['workflow_run']['head_sha'] == os.environ['GITHUB_SHA']
+        with (root/'artifact.zip').open('rb') as stream:
+            archive_digest=hashlib.file_digest(stream,'sha256').hexdigest()
+        assert archive_digest == os.environ['ARTIFACT_DIGEST'].removeprefix('sha256:')
+        assert metadata['digest'] == 'sha256:'+archive_digest
+        with zipfile.ZipFile(root/'artifact.zip') as archive:
+            assert sorted(archive.namelist()) == ['Aurion-Login.apk','build-evidence.json']
+            evidence=json.loads(archive.read('build-evidence.json'))
+            with archive.open('Aurion-Login.apk') as src,(root/'downloaded.apk').open('wb') as dst:
+                import shutil
+                shutil.copyfileobj(src,dst)
+            assert evidence['sourceRevision'] == revision
+            assert evidence['packageName'] == 'org.ouroboroscollective.aurion.godot.login'
+            assert evidence['signerSha256'].replace(':','').lower() == os.environ['AURION_LOGIN_SIGNER_SHA256'].replace(':','').lower()
+            with archive.open('Aurion-Login.apk') as stream:
+                apk_digest=hashlib.file_digest(stream,'sha256').hexdigest()
+            assert evidence['apkSha256'] == apk_digest
+        with (pathlib.Path(os.environ['RUNNER_TEMP'])/'aurion-login-output'/revision/'Aurion-Login.apk').open('rb') as stream:
+            assert hashlib.file_digest(stream,'sha256').hexdigest() == apk_digest
+        print('ARCHIVE_READBACK_VERIFIED',os.environ['ARTIFACT_ID'],revision,apk_digest)
+        PY
+        python3 "$RUNNER_TEMP/verify-login.py" "$readback_dir/downloaded.apk" > "$readback_dir/verified.json"
+        echo "SIGNED_APK_READBACK_VERIFIED"
+'on':
+  workflow_dispatch: null
