@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: aurion-godot-login-signing
   cancel-in-progress: false
@@ -76,21 +77,34 @@ jobs:
           AURION_LOGIN_APK_OUTPUT: ${{ runner.temp }}/aurion-login-output
         run: |
           set -euo pipefail
+          node --input-type=module <<'NODE'
+          import {verifyLiveAssetlinks} from './scripts/godot/login-release-gates.mjs';
+          await verifyLiveAssetlinks({packageName:'org.ouroboroscollective.aurion.godot.login',fingerprint:process.env.AURION_LOGIN_SIGNER_SHA256});
+          NODE
           umask 077
           private_dir="$(mktemp -d "$RUNNER_TEMP/aurion-signing.XXXXXX")"
           trap 'rm -rf "$private_dir"' EXIT
           export AURION_LOGIN_KEYSTORE_PATH="$private_dir/release.jks"
-          export AURION_LOGIN_KEYSTORE_PASSWORD="${LEGACY_PASSWORD:-$CURRENT_PASSWORD}"
-          export AURION_LOGIN_KEY_ALIAS="${LEGACY_ALIAS:-$CURRENT_ALIAS}"
-          export AURION_LOGIN_KEY_PASSWORD="${LEGACY_KEY_PASSWORD:-${CURRENT_KEY_PASSWORD:-$AURION_LOGIN_KEYSTORE_PASSWORD}}"
+          if [ -n "$LEGACY_STORE" ]; then
+            signing_store="$LEGACY_STORE"
+            export AURION_LOGIN_KEYSTORE_PASSWORD="$LEGACY_PASSWORD"
+            export AURION_LOGIN_KEY_ALIAS="$LEGACY_ALIAS"
+            export AURION_LOGIN_KEY_PASSWORD="${LEGACY_KEY_PASSWORD:-$LEGACY_PASSWORD}"
+          else
+            signing_store="$CURRENT_STORE"
+            export AURION_LOGIN_KEYSTORE_PASSWORD="$CURRENT_PASSWORD"
+            export AURION_LOGIN_KEY_ALIAS="$CURRENT_ALIAS"
+            export AURION_LOGIN_KEY_PASSWORD="${CURRENT_KEY_PASSWORD:-$CURRENT_PASSWORD}"
+          fi
           test -n "$AURION_LOGIN_KEYSTORE_PASSWORD"
           test -n "$AURION_LOGIN_KEY_ALIAS"
-          printf '%s' "${LEGACY_STORE:-$CURRENT_STORE}" | base64 --decode > "$AURION_LOGIN_KEYSTORE_PATH"
+          printf '%s' "$signing_store" | base64 --decode > "$AURION_LOGIN_KEYSTORE_PATH"
           chmod 600 "$AURION_LOGIN_KEYSTORE_PATH"
           test -s "$AURION_LOGIN_KEYSTORE_PATH"
-          unset LEGACY_STORE CURRENT_STORE LEGACY_PASSWORD CURRENT_PASSWORD LEGACY_ALIAS CURRENT_ALIAS LEGACY_KEY_PASSWORD CURRENT_KEY_PASSWORD
+          unset signing_store LEGACY_STORE CURRENT_STORE LEGACY_PASSWORD CURRENT_PASSWORD LEGACY_ALIAS CURRENT_ALIAS LEGACY_KEY_PASSWORD CURRENT_KEY_PASSWORD
           node scripts/godot/export-login-android.mjs
       - name: Publish verified APK and public evidence only
+        id: artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Aurion-Login-${{ env.AURION_EXPECTED_REVISION }}
@@ -99,3 +113,43 @@ jobs:
             ${{ runner.temp }}/aurion-login-output/${{ env.AURION_EXPECTED_REVISION }}/build-evidence.json
           if-no-files-found: error
           retention-days: 30
+      - name: Independently read back persisted artifact and APK identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.artifact.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.artifact.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          readback_dir="$(mktemp -d "$RUNNER_TEMP/aurion-artifact-readback.XXXXXX")"
+          trap 'rm -rf "$readback_dir"' EXIT
+          export AURION_ARTIFACT_READBACK="$readback_dir"
+          [[ "$ARTIFACT_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" > "$readback_dir/metadata.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > "$readback_dir/artifact.zip"
+          python3 <<'PY'
+          import hashlib, json, os, pathlib, zipfile
+          root=pathlib.Path(os.environ['AURION_ARTIFACT_READBACK'])
+          metadata=json.loads((root/'metadata.json').read_text())
+          revision=os.environ['AURION_EXPECTED_REVISION']
+          assert str(metadata['id']) == os.environ['ARTIFACT_ID']
+          assert metadata['name'] == 'Aurion-Login-'+revision
+          assert metadata['expired'] is False
+          assert str(metadata['workflow_run']['id']) == os.environ['GITHUB_RUN_ID']
+          assert metadata['workflow_run']['head_sha'] == os.environ['GITHUB_SHA']
+          with (root/'artifact.zip').open('rb') as stream:
+              archive_digest=hashlib.file_digest(stream,'sha256').hexdigest()
+          assert archive_digest == os.environ['ARTIFACT_DIGEST'].removeprefix('sha256:')
+          assert metadata['digest'] == 'sha256:'+archive_digest
+          with zipfile.ZipFile(root/'artifact.zip') as archive:
+              assert sorted(archive.namelist()) == ['Aurion-Login.apk','build-evidence.json']
+              evidence=json.loads(archive.read('build-evidence.json'))
+              assert evidence['sourceRevision'] == revision
+              assert evidence['packageName'] == 'org.ouroboroscollective.aurion.godot.login'
+              assert evidence['signerSha256'].replace(':','').lower() == os.environ['AURION_LOGIN_SIGNER_SHA256'].replace(':','').lower()
+              with archive.open('Aurion-Login.apk') as stream:
+                  apk_digest=hashlib.file_digest(stream,'sha256').hexdigest()
+              assert evidence['apkSha256'] == apk_digest
+          with (pathlib.Path(os.environ['RUNNER_TEMP'])/'aurion-login-output'/revision/'Aurion-Login.apk').open('rb') as stream:
+              assert hashlib.file_digest(stream,'sha256').hexdigest() == apk_digest
+          print('ARTIFACT_READBACK_VERIFIED',os.environ['ARTIFACT_ID'],revision,apk_digest)
+          PY
