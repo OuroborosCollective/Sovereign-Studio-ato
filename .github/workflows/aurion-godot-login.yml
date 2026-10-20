@@ -1,0 +1,94 @@
+name: Aurion Godot signed Login APK
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: aurion-godot-login-signing
+  cancel-in-progress: false
+jobs:
+  login:
+    if: github.repository == 'OuroborosCollective/Sovereign-Studio-ato' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      AURION_EXPECTED_REVISION: aa66caac05d015bba3f1b4b78c104070b11e91e9
+      AURION_LOGIN_SIGNER_SHA256: F2:E8:FA:1E:81:FB:DA:E5:2E:94:00:AF:32:29:A0:47:79:8D:EB:BE:A0:CF:36:80:A0:4B:E6:54:0D:EF:72:0A
+    steps:
+      - name: Checkout reviewed Aurion source without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: OuroborosCollective/Echoes_of_Aurion
+          ref: aa66caac05d015bba3f1b4b78c104070b11e91e9
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - name: Require exact source and live Android association before accessing signing secrets
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$AURION_EXPECTED_REVISION"
+          node --input-type=module <<'NODE'
+          import {verifyLiveAssetlinks} from './scripts/godot/login-release-gates.mjs';
+          await verifyLiveAssetlinks({packageName:'org.ouroboroscollective.aurion.godot.login',fingerprint:process.env.AURION_LOGIN_SIGNER_SHA256});
+          NODE
+          node --test scripts/godot/login-release-gates.test.mjs scripts/godot/login-gradle-export.test.mjs scripts/godot/gradle-prerequisites.test.mjs scripts/godot/android-app-link.test.mjs
+      - name: Install and verify pinned Godot and baseline Android tools
+        run: |
+          node scripts/godot/bootstrap.mjs
+          node scripts/godot/bootstrap-android.mjs
+          node scripts/godot/verify-gradle-template.mjs
+      - name: Provision separate Login SDK
+        env:
+          AURION_LOGIN_GRADLE_SDK_ROOT: ${{ runner.temp }}/aurion-login-sdk
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          mkdir -p "$AURION_LOGIN_GRADLE_SDK_ROOT"
+          # Preserve the runner's existing accepted SDK licenses; never mutate the pinned Preview SDK.
+          if [ -d "$ANDROID_HOME/licenses" ]; then cp -R "$ANDROID_HOME/licenses" "$AURION_LOGIN_GRADLE_SDK_ROOT/licenses"; fi
+          "$SDKMANAGER" --sdk_root="$AURION_LOGIN_GRADLE_SDK_ROOT" "platforms;android-36" "build-tools;36.1.0" "ndk;29.0.14206865"
+          node --input-type=module <<'NODE'
+          import {inspectLoginGradleSdk} from './scripts/godot/gradle-prerequisites.mjs';
+          import {lock} from './scripts/godot/toolchain.mjs';
+          await inspectLoginGradleSdk(process.env.AURION_LOGIN_GRADLE_SDK_ROOT,lock.android.gradleRequirements);
+          NODE
+      - name: Export and verify Login APK using existing Sovereign signing identity
+        env:
+          LEGACY_STORE: ${{ secrets.KEYSTORE_BASE64 }}
+          CURRENT_STORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          LEGACY_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          CURRENT_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          LEGACY_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          CURRENT_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          LEGACY_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          CURRENT_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          AURION_LOGIN_ALLOW_SIGNED_EXPORT: '1'
+          AURION_LOGIN_GRADLE_SDK_ROOT: ${{ runner.temp }}/aurion-login-sdk
+          AURION_LOGIN_APK_OUTPUT: ${{ runner.temp }}/aurion-login-output
+        run: |
+          set -euo pipefail
+          umask 077
+          private_dir="$(mktemp -d "$RUNNER_TEMP/aurion-signing.XXXXXX")"
+          trap 'rm -rf "$private_dir"' EXIT
+          export AURION_LOGIN_KEYSTORE_PATH="$private_dir/release.jks"
+          export AURION_LOGIN_KEYSTORE_PASSWORD="${LEGACY_PASSWORD:-$CURRENT_PASSWORD}"
+          export AURION_LOGIN_KEY_ALIAS="${LEGACY_ALIAS:-$CURRENT_ALIAS}"
+          export AURION_LOGIN_KEY_PASSWORD="${LEGACY_KEY_PASSWORD:-${CURRENT_KEY_PASSWORD:-$AURION_LOGIN_KEYSTORE_PASSWORD}}"
+          test -n "$AURION_LOGIN_KEYSTORE_PASSWORD"
+          test -n "$AURION_LOGIN_KEY_ALIAS"
+          printf '%s' "${LEGACY_STORE:-$CURRENT_STORE}" | base64 --decode > "$AURION_LOGIN_KEYSTORE_PATH"
+          chmod 600 "$AURION_LOGIN_KEYSTORE_PATH"
+          test -s "$AURION_LOGIN_KEYSTORE_PATH"
+          unset LEGACY_STORE CURRENT_STORE LEGACY_PASSWORD CURRENT_PASSWORD LEGACY_ALIAS CURRENT_ALIAS LEGACY_KEY_PASSWORD CURRENT_KEY_PASSWORD
+          node scripts/godot/export-login-android.mjs
+      - name: Publish verified APK and public evidence only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Aurion-Login-${{ env.AURION_EXPECTED_REVISION }}
+          path: |
+            ${{ runner.temp }}/aurion-login-output/${{ env.AURION_EXPECTED_REVISION }}/Aurion-Login.apk
+            ${{ runner.temp }}/aurion-login-output/${{ env.AURION_EXPECTED_REVISION }}/build-evidence.json
+          if-no-files-found: error
+          retention-days: 30
