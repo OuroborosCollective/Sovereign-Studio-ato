@@ -69,3 +69,7 @@
 ## 2025-10-05 - [Accessible Chat Streams & Empty States]
 **Learning:** Chat interfaces with dynamically added messages lack screen reader notifications if they do not have a live region. Furthermore, an empty stream provides no context. Adding `role="log"` and `aria-live="polite"` to the container, along with a visually centered empty state, improves both discoverability and accessibility.
 **Action:** Always wrap chat or event streams in an element with `role="log"` or `aria-live="polite"`, and provide a helpful empty state when no items are present.
+
+## $(date +%Y-%m-%d) - Palette: Make restored session age visible
+**Learning:** Adding system messages that act as timeline markers (like session restores) improves the user's mental model of where their session picked back up, and adding specific colors (like emerald for recovery) helps distinguish it from standard tool output.
+**Action:** When restoring persisted state, inject a visual timeline marker into the event stream or chat history to clearly indicate the discontinuity or restoration event.

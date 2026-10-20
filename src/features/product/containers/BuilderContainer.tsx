@@ -3244,8 +3244,18 @@ export function BuilderContainer({
           const age = formatPersistedSessionAge(session);
           if (age.isStale) {
             appendRuntimeNotice(`Warnung: Die wiederhergestellte Session ist älter als 3 Tage (Alter: ${age.text}) und möglicherweise nicht mehr mit dem aktuellen Codebase-Stand synchron.`);
+            // Add a visual indicator to the chat for the restored session
+            setChatHistory(prev => [
+              ...prev,
+              { id: 'system:restore-age', role: 'system', content: `Session wiederhergestellt (Alter: ${age.text})`, timestamp: Date.now() }
+            ]);
           } else {
             appendRuntimeNotice(`Session erfolgreich wiederhergestellt (Alter: ${age.text}).`);
+            // Add a visual indicator to the chat for the restored session
+            setChatHistory(prev => [
+              ...prev,
+              { id: 'system:restore-age', role: 'system', content: `Session wiederhergestellt (Alter: ${age.text})`, timestamp: Date.now() }
+            ]);
           }
         }
       } catch {
