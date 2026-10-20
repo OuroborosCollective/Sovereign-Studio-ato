@@ -1244,3 +1244,11 @@ Status: CI_VERIFIED repository candidate; deployment and running-registry parity
 Change: Pin `mcp` from 1.28.1 to 1.30.0 in the isolated Sovereign GitHub Patch MCP lockfile.
 Learned: Same-origin redirect enforcement, idle-session expiry and OAuth issuer validation are behavior changes; runtime compatibility requires immutable deployment and registry/protocol readback.
 Evidence: Original exact code head `186fdfd7c80c8a4804d2937ecd8eaaa71c422b7f` had 32 terminal checks with 22 success and 9 intentional skips, no failed or pending check, and no unresolved review thread; this rebased Memory-bearing head requires fresh exact-head CI before merge.
+
+
+### 2026-10-20 — Pin Sovereign Toolchain MCP SDK 1.30.0 (PR #2306)
+<!-- integration-memory: pr=2306 -->
+Status: CI_VERIFIED repository candidate; deployed toolchain parity remains unverified.
+Change: Pin `mcp` from 1.29.0 to 1.30.0 in the isolated Sovereign Toolchain lockfile.
+Learned: The maintenance update tightens redirect and OAuth issuer handling and expires idle sessions; operational compatibility must be established by immutable deployment and protocol readback.
+Evidence: Original exact code head `348d5014129a6a0dcd2e13f95785c4b962633098` had 34 terminal checks with 24 success and 9 intentional skips, no failed or pending check, and no unresolved review thread; this rebased Memory-bearing head requires fresh exact-head CI before merge.
