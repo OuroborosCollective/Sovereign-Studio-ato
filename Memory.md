@@ -1260,3 +1260,12 @@ Status: IMPLEMENTED_IN_REPOSITORY; tatsächlicher Gradle-Export, Signatur und Li
 Änderung: Fest gepinnter Aurion-Build ohne Release-Secrets; separater, auf die Owner-Identität begrenzter SDK-Signaturjob ohne Aurion-Checkout, mit zusammengehörigem Secret-Satz, aktueller App-Link-Prüfung und unabhängig heruntergeladener APK-Prüfung.
 Erkenntnis: Ein Artefakt-Hash bindet Bytes, ersetzt aber weder die direkte Zertifikatsprüfung noch die Trennung von Build-Hooks und wiederverwendbarem Schlüssel.
 Evidence: Zehn Tests der tatsächlichen Workflow-Verträge bestehen lokal, inklusive falschem Zertifikat, veralteter Revision, HTML-/widerrufener Domainzuordnung und Zusatzberechtigung; SDK-/HTTPS-Adapter sind ausschließlich Tests. Shell-, JavaScript- und Python-Syntax geprüft. Final-Head-CI und produktiver APK-/Gerätenachweis bleiben erforderlich. Aurion-App-Link-PR #1090 wurde separat als 7ac274ba1305f155e10fdb9223de874e93fb6f5e gemergt; Live-Auslieferung noch ausstehend.
+
+## ChatSidebar Accessibility Improvement
+**Task:** Implemented an accessibility enhancement to the ChatSidebar component.
+**Decisions:** Added `role="log"` and `aria-live="polite"` to the Chat Messages container. This ensures that assistive technologies, such as screen readers, can properly announce dynamic chat streams and empty states as new messages appear.
+**Touched Surfaces:** `src/features/product/components/ChatSidebar.tsx`.
+**Tests/Evidence:** Verified through `npx vitest run` on the component's test file. The container now correctly uses standard WAI-ARIA live region logging.
+**Learnings:** Aligning dynamically updated UI chat sections with appropriate WAI-ARIA live region features is essential for screen reader users to remain aware of ongoing interactions.
+**Open Points:** None.
+**Next Safe Step:** Complete testing and submit pull request.
