@@ -1260,3 +1260,11 @@ Status: IMPLEMENTED_IN_REPOSITORY; tatsächlicher Gradle-Export, Signatur und Li
 Änderung: Fest gepinnter Aurion-Build ohne Release-Secrets; separater, auf die Owner-Identität begrenzter SDK-Signaturjob ohne Aurion-Checkout, mit zusammengehörigem Secret-Satz, aktueller App-Link-Prüfung und unabhängig heruntergeladener APK-Prüfung.
 Erkenntnis: Ein Artefakt-Hash bindet Bytes, ersetzt aber weder die direkte Zertifikatsprüfung noch die Trennung von Build-Hooks und wiederverwendbarem Schlüssel.
 Evidence: Zehn Tests der tatsächlichen Workflow-Verträge bestehen lokal, inklusive falschem Zertifikat, veralteter Revision, HTML-/widerrufener Domainzuordnung und Zusatzberechtigung; SDK-/HTTPS-Adapter sind ausschließlich Tests. Shell-, JavaScript- und Python-Syntax geprüft. Final-Head-CI und produktiver APK-/Gerätenachweis bleiben erforderlich. Aurion-App-Link-PR #1090 wurde separat als 7ac274ba1305f155e10fdb9223de874e93fb6f5e gemergt; Live-Auslieferung noch ausstehend.
+
+
+### 2026-10-21 — Owner-Dispatch fuer signierten Aurion-Login (PR #2320)
+<!-- integration-memory: pr=2320 -->
+Status: TESTED_AT_REVISION; kein signiertes APK- oder Live-Domain-Readback.
+Änderung: Den fehlenden `on: workflow_dispatch`-Ausloeser als einziges Event ergaenzt und einen Regressionstest fuer Event-Exklusivitaet sowie Main-/Owner-Grenzen aufgenommen.
+Erkenntnis: Ein korrekt begrenzter Signierjob bleibt ohne GitHub-Actions-Trigger unerreichbar; gruenes Repository-CI ist kein APK-Beweis.
+Evidence: Quellrevision `8ec6c929c0d00645f522ae6673c56841fcf217f1`, Release-Verifikation Run `39524501171` erfolgreich; vollstaendige CI am neuen Memory-Head und echter Signierlauf/Produktions-Readback bleiben eigenstaendige Gates.
