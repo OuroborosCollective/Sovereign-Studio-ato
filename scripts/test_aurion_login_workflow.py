@@ -26,6 +26,17 @@ class LoginWorkflowTests(unittest.TestCase):
         self.revision = self.sign['env']['AURION_EXPECTED_REVISION']
         self.fingerprint = self.sign['env']['AURION_LOGIN_SIGNER_SHA256']
 
+    def test_manual_owner_dispatch_is_declared_and_exclusive(self):
+        # PyYAML 1.1 may interpret the GitHub Actions key 'on' as boolean True.
+        events = self.workflow.get('on', self.workflow.get(True))
+        self.assertIsInstance(events, dict, 'missing GitHub Actions on: trigger')
+        self.assertEqual(set(events), {'workflow_dispatch'})
+        for name in ('build', 'sign'):
+            expression = self.workflow['jobs'][name]['if']
+            self.assertIn("github.ref == 'refs/heads/main'", expression)
+            self.assertIn("github.actor_id == '266194342'", expression)
+            self.assertIn('github.triggering_actor == github.repository_owner', expression)
+
     def test_build_never_receives_release_secrets(self):
         self.assertNotIn('secrets.', json.dumps(self.workflow['jobs']['build']))
         self.assertEqual(self.sign['needs'], 'build')
