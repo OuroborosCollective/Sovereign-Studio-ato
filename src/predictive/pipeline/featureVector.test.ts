@@ -44,7 +44,7 @@ function createTickWindow(signals: OrderedSignal[], overrides: Partial<TickWindo
     startTick: Math.min(...ticks),
     endTick: Math.max(...ticks),
     signals,
-    nodes: [...new Set(signals.map((s) => s.metadata.node))],
+    nodes: Array.from(new Set(signals.map((s) => s.metadata.node))),
     windowIndex: 0,
     configFingerprint: 'ws=3|ov=0',
     isComplete: true,
