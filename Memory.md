@@ -1260,3 +1260,20 @@ Status: IMPLEMENTED_IN_REPOSITORY; tatsächlicher Gradle-Export, Signatur und Li
 Änderung: Fest gepinnter Aurion-Build ohne Release-Secrets; separater, auf die Owner-Identität begrenzter SDK-Signaturjob ohne Aurion-Checkout, mit zusammengehörigem Secret-Satz, aktueller App-Link-Prüfung und unabhängig heruntergeladener APK-Prüfung.
 Erkenntnis: Ein Artefakt-Hash bindet Bytes, ersetzt aber weder die direkte Zertifikatsprüfung noch die Trennung von Build-Hooks und wiederverwendbarem Schlüssel.
 Evidence: Zehn Tests der tatsächlichen Workflow-Verträge bestehen lokal, inklusive falschem Zertifikat, veralteter Revision, HTML-/widerrufener Domainzuordnung und Zusatzberechtigung; SDK-/HTTPS-Adapter sind ausschließlich Tests. Shell-, JavaScript- und Python-Syntax geprüft. Final-Head-CI und produktiver APK-/Gerätenachweis bleiben erforderlich. Aurion-App-Link-PR #1090 wurde separat als 7ac274ba1305f155e10fdb9223de874e93fb6f5e gemergt; Live-Auslieferung noch ausstehend.
+## 2026-10-21 - Optimize Tick Window Signal Processing (Bolt)
+
+**Context:** The tick window processing pipeline (`src/predictive/pipeline/tickWindow.ts`) is a high-frequency code path that extracts unique ticks from potentially thousands of signals.
+**Task:** Identify and implement ONE small performance improvement that makes the application measurably faster or more efficient without sacrificing readability.
+**Decisions:**
+- Identified a performance bottleneck in `computeTickRanges` and `generateOverlappingTickWindows` where unique ticks are extracted using chained `.map()` and `Set` operations (`[...new Set(signals.map((s) => s.metadata.tick))]`).
+- Replaced the chained operations with a single-pass `for` loop to avoid intermediate array allocations and reduce garbage collection pressure.
+- Added explicit numeric sorting (`.sort((a, b) => a - b)`) to ensure correct order of ticks.
+**Touched Surfaces:**
+- `src/predictive/pipeline/tickWindow.ts`: Refactored `computeTickRanges` and `generateOverlappingTickWindows` functions.
+- `.jules/bolt.md`: Appended a critical learning entry about avoiding chained `.map()` calls for extracting unique fields into a Set.
+**Tests/Evidence:**
+- Successfully ran `pnpm run test:smoke:raw src/predictive/pipeline/tickWindow.test.ts` (all 21 tests passed).
+- Successfully ran `pnpm lint`.
+**Learnings:** Extracting unique fields into a Set from an array using chained `.map()` calls introduces significant intermediate array allocation and garbage collection overhead in high-frequency execution paths. A single-pass `for` loop is much more efficient.
+**Open Points:** None.
+**Next Safe Step:** Complete pre-commit checks and submit the PR.
