@@ -207,7 +207,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
       </header>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4" aria-label="Chat Messages">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4" aria-label="Chat Messages" role="log" aria-live="polite">
         {safeMessages.length === 0 && !isAnalyzing && (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500/10 to-indigo-500/10 border border-cyan-500/20 flex items-center justify-center mb-4">
