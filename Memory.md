@@ -1260,3 +1260,11 @@ Status: IMPLEMENTED_IN_REPOSITORY; tatsächlicher Gradle-Export, Signatur und Li
 Änderung: Fest gepinnter Aurion-Build ohne Release-Secrets; separater, auf die Owner-Identität begrenzter SDK-Signaturjob ohne Aurion-Checkout, mit zusammengehörigem Secret-Satz, aktueller App-Link-Prüfung und unabhängig heruntergeladener APK-Prüfung.
 Erkenntnis: Ein Artefakt-Hash bindet Bytes, ersetzt aber weder die direkte Zertifikatsprüfung noch die Trennung von Build-Hooks und wiederverwendbarem Schlüssel.
 Evidence: Zehn Tests der tatsächlichen Workflow-Verträge bestehen lokal, inklusive falschem Zertifikat, veralteter Revision, HTML-/widerrufener Domainzuordnung und Zusatzberechtigung; SDK-/HTTPS-Adapter sind ausschließlich Tests. Shell-, JavaScript- und Python-Syntax geprüft. Final-Head-CI und produktiver APK-/Gerätenachweis bleiben erforderlich. Aurion-App-Link-PR #1090 wurde separat als 7ac274ba1305f155e10fdb9223de874e93fb6f5e gemergt; Live-Auslieferung noch ausstehend.
+
+## 2026-10-22 - UX: Improved disabled states in ChatSurface
+- **Task:** Improve accessibility and visual feedback for dynamically disabled inputs.
+- **Decisions:** Added dynamic `title` attributes to `<textarea>` and `<select>` to clearly communicate why they are disabled. Added `disabled:cursor-not-allowed` Tailwind styles for explicit visual feedback.
+- **Touched surfaces:** `src/features/control-surface-vnext/components/ChatSurface/ChatSurface.tsx`
+- **Tests/Evidence:** Ran vitest suite (`ChatSurface.test.tsx`) and lint checks.
+- **Learnings:** Placeholders are not fully accessible state indicators; explicit `title` and visual cursor cues are required for dynamic states.
+- **Next safe step:** Await user feedback and continue identifying micro-UX enhancements.
