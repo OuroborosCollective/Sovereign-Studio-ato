@@ -1236,3 +1236,27 @@ Status: CI_VERIFIED repository candidate; deployment and running-registry parity
 Change: Pin `mcp[cli]` from 1.28.1 to 1.30.0 in the canonical Sovereign ChatGPT MCP requirements.
 Learned: The 1.30.0 redirect and OAuth validation changes require immutable deployment plus protocol and registry readback before any runtime claim.
 Evidence: Exact code head `c5c67bfa5d33cc1fdab357d2a66a720ef70bdadd` had 48 terminal checks with 27 success and 20 intentional skips, no failed or pending check, and no unresolved review thread; this Memory-bearing head requires fresh exact-head CI before merge.
+
+
+### 2026-10-20 — Pin GitHub Patch MCP SDK 1.30.0 (PR #2305)
+<!-- integration-memory: pr=2305 -->
+Status: CI_VERIFIED repository candidate; deployment and running-registry parity remain unverified.
+Change: Pin `mcp` from 1.28.1 to 1.30.0 in the isolated Sovereign GitHub Patch MCP lockfile.
+Learned: Same-origin redirect enforcement, idle-session expiry and OAuth issuer validation are behavior changes; runtime compatibility requires immutable deployment and registry/protocol readback.
+Evidence: Original exact code head `186fdfd7c80c8a4804d2937ecd8eaaa71c422b7f` had 32 terminal checks with 22 success and 9 intentional skips, no failed or pending check, and no unresolved review thread; this rebased Memory-bearing head requires fresh exact-head CI before merge.
+
+
+### 2026-10-20 — Pin Sovereign Toolchain MCP SDK 1.30.0 (PR #2306)
+<!-- integration-memory: pr=2306 -->
+Status: CI_VERIFIED repository candidate; deployed toolchain parity remains unverified.
+Change: Pin `mcp` from 1.29.0 to 1.30.0 in the isolated Sovereign Toolchain lockfile.
+Learned: The maintenance update tightens redirect and OAuth issuer handling and expires idle sessions; operational compatibility must be established by immutable deployment and protocol readback.
+Evidence: Original exact code head `348d5014129a6a0dcd2e13f95785c4b962633098` had 34 terminal checks with 24 success and 9 intentional skips, no failed or pending check, and no unresolved review thread; this rebased Memory-bearing head requires fresh exact-head CI before merge.
+
+
+### 2026-10-20 — Isolierter Aurion-Login-Signaturpfad (PR #2314)
+<!-- integration-memory: pr=2314 -->
+Status: IMPLEMENTED_IN_REPOSITORY; tatsächlicher Gradle-Export, Signatur und Live-Login noch unbestätigt.
+Änderung: Fest gepinnter Aurion-Build ohne Release-Secrets; separater, auf die Owner-Identität begrenzter SDK-Signaturjob ohne Aurion-Checkout, mit zusammengehörigem Secret-Satz, aktueller App-Link-Prüfung und unabhängig heruntergeladener APK-Prüfung.
+Erkenntnis: Ein Artefakt-Hash bindet Bytes, ersetzt aber weder die direkte Zertifikatsprüfung noch die Trennung von Build-Hooks und wiederverwendbarem Schlüssel.
+Evidence: Zehn Tests der tatsächlichen Workflow-Verträge bestehen lokal, inklusive falschem Zertifikat, veralteter Revision, HTML-/widerrufener Domainzuordnung und Zusatzberechtigung; SDK-/HTTPS-Adapter sind ausschließlich Tests. Shell-, JavaScript- und Python-Syntax geprüft. Final-Head-CI und produktiver APK-/Gerätenachweis bleiben erforderlich. Aurion-App-Link-PR #1090 wurde separat als 7ac274ba1305f155e10fdb9223de874e93fb6f5e gemergt; Live-Auslieferung noch ausstehend.
