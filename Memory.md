@@ -1260,3 +1260,18 @@ Status: IMPLEMENTED_IN_REPOSITORY; tatsächlicher Gradle-Export, Signatur und Li
 Änderung: Fest gepinnter Aurion-Build ohne Release-Secrets; separater, auf die Owner-Identität begrenzter SDK-Signaturjob ohne Aurion-Checkout, mit zusammengehörigem Secret-Satz, aktueller App-Link-Prüfung und unabhängig heruntergeladener APK-Prüfung.
 Erkenntnis: Ein Artefakt-Hash bindet Bytes, ersetzt aber weder die direkte Zertifikatsprüfung noch die Trennung von Build-Hooks und wiederverwendbarem Schlüssel.
 Evidence: Zehn Tests der tatsächlichen Workflow-Verträge bestehen lokal, inklusive falschem Zertifikat, veralteter Revision, HTML-/widerrufener Domainzuordnung und Zusatzberechtigung; SDK-/HTTPS-Adapter sind ausschließlich Tests. Shell-, JavaScript- und Python-Syntax geprüft. Final-Head-CI und produktiver APK-/Gerätenachweis bleiben erforderlich. Aurion-App-Link-PR #1090 wurde separat als 7ac274ba1305f155e10fdb9223de874e93fb6f5e gemergt; Live-Auslieferung noch ausstehend.
+
+## $(date +%Y-%m-%d) - ux(session): wiederhergestellte Session mit Alter sichtbar machen (Issue #557)
+**Task:** Make restored sessions visible in the UI with their age.
+**Decisions:**
+- Added a visual indicator system message for restored sessions in `BuilderContainer.tsx` using `age.text`.
+- Handled the special `system:restore-age` message in `ChatSidebar.tsx` to render it distinctively (with emerald color and a History icon).
+**Touched Surfaces:**
+- `src/features/product/containers/BuilderContainer.tsx`
+- `src/features/product/components/ChatSidebar.tsx`
+**Tests/Evidence:**
+- Run `pnpm run test:smoke` passed.
+**Learnings:**
+- ChatSidebar had built in user/system handling but it lacked a nice visual indicator for "restored" messages. Used `isRestore` var for conditional formatting.
+**Open Points:** None.
+**Next Safe Step:** Submit the code changes.

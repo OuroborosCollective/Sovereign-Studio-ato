@@ -1,0 +1,13 @@
+🎨 Palette: [UX improvement] ux(session): wiederhergestellte Session mit Alter sichtbar machen
+
+What:
+Make restored sessions visually noticeable in the UI with their age. Added a visual indicator system message for restored sessions in `BuilderContainer.tsx` using `age.text`. The `ChatSidebar.tsx` was already capable of styling it with the `id: system:restore-age`.
+
+Why:
+Adding a system message acting as a timeline marker (like session restores) improves the user's mental model of where their session picked back up.
+
+Before/After:
+Before, there was no prominent visual indicator in the chat itself that a session was just recovered. Now there is a system-level timeline marker in the chat.
+
+Accessibility:
+The `system:restore-age` message natively supports the existing semantic styling and accessibility features of the chat sidebar.
