@@ -24,14 +24,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      AURION_EXPECTED_REVISION: aa66caac05d015bba3f1b4b78c104070b11e91e9
+      AURION_EXPECTED_REVISION: 8c83af2ef0ad92876f6cb4a40901835b930427ea
       AURION_LOGIN_SIGNER_SHA256: F2:E8:FA:1E:81:FB:DA:E5:2E:94:00:AF:32:29:A0:47:79:8D:EB:BE:A0:CF:36:80:A0:4B:E6:54:0D:EF:72:0A
     steps:
     - name: Checkout reviewed Aurion source without persisted credentials
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: OuroborosCollective/Echoes_of_Aurion
-        ref: aa66caac05d015bba3f1b4b78c104070b11e91e9
+        ref: 8c83af2ef0ad92876f6cb4a40901835b930427ea
         persist-credentials: false
     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
       with:
@@ -182,7 +182,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      AURION_EXPECTED_REVISION: aa66caac05d015bba3f1b4b78c104070b11e91e9
+      AURION_EXPECTED_REVISION: 8c83af2ef0ad92876f6cb4a40901835b930427ea
       AURION_LOGIN_SIGNER_SHA256: F2:E8:FA:1E:81:FB:DA:E5:2E:94:00:AF:32:29:A0:47:79:8D:EB:BE:A0:CF:36:80:A0:4B:E6:54:0D:EF:72:0A
     steps:
     - name: Install signing tools without checking out application code
