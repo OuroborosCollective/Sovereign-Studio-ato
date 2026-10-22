@@ -28,7 +28,7 @@ class LoginWorkflowTests(unittest.TestCase):
 
     def test_exact_reviewed_aurion_source_is_pinned_in_build_sign_and_checkout(self):
         # Intentional release checkpoint. Updates require a reviewed exact revision.
-        reviewed = '8c83af2ef0ad92876f6cb4a40901835b930427ea'
+        reviewed = '5452a5d6419146dcd0a62deb938a94db848a6ebe'
         self.assertEqual(len(reviewed), 40)
         self.assertTrue(all(character in '0123456789abcdef' for character in reviewed))
         build = self.workflow['jobs']['build']

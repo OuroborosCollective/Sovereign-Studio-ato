@@ -1260,3 +1260,11 @@ Status: IMPLEMENTED_IN_REPOSITORY; tatsächlicher Gradle-Export, Signatur und Li
 Änderung: Fest gepinnter Aurion-Build ohne Release-Secrets; separater, auf die Owner-Identität begrenzter SDK-Signaturjob ohne Aurion-Checkout, mit zusammengehörigem Secret-Satz, aktueller App-Link-Prüfung und unabhängig heruntergeladener APK-Prüfung.
 Erkenntnis: Ein Artefakt-Hash bindet Bytes, ersetzt aber weder die direkte Zertifikatsprüfung noch die Trennung von Build-Hooks und wiederverwendbarem Schlüssel.
 Evidence: Zehn Tests der tatsächlichen Workflow-Verträge bestehen lokal, inklusive falschem Zertifikat, veralteter Revision, HTML-/widerrufener Domainzuordnung und Zusatzberechtigung; SDK-/HTTPS-Adapter sind ausschließlich Tests. Shell-, JavaScript- und Python-Syntax geprüft. Final-Head-CI und produktiver APK-/Gerätenachweis bleiben erforderlich. Aurion-App-Link-PR #1090 wurde separat als 7ac274ba1305f155e10fdb9223de874e93fb6f5e gemergt; Live-Auslieferung noch ausstehend.
+
+
+### 2026-10-22 — Aurion Login APK an geprüften main-Checkpoint binden (PR #2327)
+<!-- integration-memory: pr=2327 -->
+Status: TESTED_AT_REVISION candidate; final-head CI, Review, Merge und signierte APK bleiben gesondert nachzuweisen.
+Änderung: Checkout, Build-Env, Sign-Env und bestehende Pin-Regression verwenden exakt Aurion `5452a5d6419146dcd0a62deb938a94db848a6ebe`; Owner-only-Gates, Secret-Isolation und Zertifikatsprüfung bleiben unverändert.
+Erkenntnis: Aktuelles main, geprüfter Quellcheckpoint, Workflow-Revision und produktiv signiertes Artefakt sind getrennte Identitäten; ältere fehlgeschlagene DAL-Prüfungen beschreiben nicht den heutigen Produktionszustand.
+Evidence: Aurion-main Godot headless/runtime/software-render Run 39850771500 und Android Preview/APK-Readback 39850771474 SUCCESS; aktualisierte Regression scheitert kausal am alten Pin und danach bestehen alle 11 Workflowtests. Live-DAL liefert am 22.10.2026 HTTP 200 application/json mit passendem Paket und F2:E8:…:72:0A-Fingerprint. Native-Auth-Flag, Signierlauf und unabhängiger APK-Downloadreadback bleiben offen; keine Installationsfreigabe.
