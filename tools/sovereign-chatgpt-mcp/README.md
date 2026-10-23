@@ -1,5 +1,14 @@
 # Sovereign ChatGPT Operator MCP
 
+## Aurion native-auth repair
+
+The dedicated plan/apply/readback lane uses the existing host queue and a new,
+plan-bound one-use approval on the authenticated `/owner-aurion-native-auth` page.
+SSH grants and credential widgets cannot authorize this operation. See
+[NATIVE_AUTH_REPAIR_DRAFT.md](NATIVE_AUTH_REPAIR_DRAFT.md) for exact scope, crash
+recovery, same-image recreation, rollback and evidence limitations. Repository
+implementation does not establish installation or production readiness.
+
 ## Aurion native-auth configuration readback
 
 In private-owner mode, the existing `vps_container_status` inspection of the

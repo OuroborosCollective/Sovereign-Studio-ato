@@ -1,11 +1,13 @@
 """Real coordinator/storage, temporary files, simulated external host adapter."""
 import copy
 import json
+import os
+import traceback
 from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import aurion_native_auth as repair
@@ -14,10 +16,13 @@ import test_aurion_native_auth_files as file_tests
 
 class OperationContracts(unittest.TestCase):
     def setUp(self):
+        ownership = patch.object(os, "fchown", return_value=None)
+        ownership.start()
+        self.addCleanup(ownership.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.root.chmod(0o700)
-        self.metadata = file_tests.FilesystemContracts.root_metadata(self)
+        self.metadata = file_tests.FilesystemContracts.root_metadata(self, protect_test_ancestors=True)
         self.metadata.start()
         self.addCleanup(self.metadata.stop)
         self.addCleanup(self.tmp.cleanup)
@@ -33,7 +38,7 @@ class OperationContracts(unittest.TestCase):
         self.adapter.backup.return_value = "f" * 64
         self.adapter.readback.return_value = {k: True for k in (
             "sameImage", "sameRevision", "healthy", "releaseEnabled", "stateSealKeyPresent",
-            "stateSealKeyValid", "validStart200", "invalidBody400")}
+            "stateSealKeyValid", "configurationBound", "validStart200", "invalidBody400")}
         self.adapter.rollback_readback.return_value = {
             "sameImage": True, "sameRevision": True, "healthy": True, "configurationRestored": True}
         self.state = repair.NativeAuthState(self.root)
@@ -68,7 +73,7 @@ class OperationContracts(unittest.TestCase):
         self.adapter.backup.assert_not_called()
 
     def test_caller_boolean_is_not_authority(self):
-        with self.assertRaises(TypeError):
+        with self.assertRaises(repair.RepairBlocked):
             self.runtime.apply("a" * 32, owner_approved=True)
         with self.assertRaisesRegex(repair.RepairBlocked, "APPROVAL_EXPIRED_OR_INVALID"):
             self.runtime.apply("a" * 32)
@@ -107,8 +112,10 @@ class OperationContracts(unittest.TestCase):
     def test_worker_crash_blocks_other_action_after_restart(self):
         first, second = self.approve(), self.approve()
         self.adapter.recreate_same_image.side_effect = TimeoutError("synthetic adapter outage")
-        with self.assertRaises(TimeoutError):
+        self.adapter.readback.side_effect = TimeoutError("synthetic adapter outage")
+        with self.assertRaisesRegex(repair.RepairBlocked, "HOST_ADAPTER_FAILED"):
             self.runtime.apply(first)
+        self.adapter.readback.side_effect = None
         restarted = repair.NativeAuthRepair(self.adapter, repair.NativeAuthState(self.root), clock=lambda: self.now)
         result = restarted.apply(first)
         self.assertEqual(result["phase"], "CONFIGURATION_WRITTEN")
@@ -116,6 +123,78 @@ class OperationContracts(unittest.TestCase):
             restarted.apply(second)
         self.adapter.apply_configuration.assert_called_once()
         self.adapter.recreate_same_image.assert_called_once()
+
+    def test_failure_between_active_intent_and_receipt_has_no_effect_recovery(self):
+        operation = self.approve()
+        original = self.state.create
+        def fail_receipt(kind, op, record):
+            if kind == "receipt":
+                raise OSError("synthetic interrupted receipt write")
+            return original(kind, op, record)
+        with patch.object(self.state, "create", side_effect=fail_receipt):
+            with self.assertRaisesRegex(repair.RepairBlocked, "NATIVE_AUTH_OPERATION_UNAVAILABLE"):
+                self.runtime.apply(operation)
+        restarted = repair.NativeAuthRepair(self.adapter, repair.NativeAuthState(self.root), clock=lambda: self.now)
+        self.assertEqual(restarted.readback(operation)["phase"], "NO_EFFECT_PREPARATION_INCOMPLETE")
+        self.assertTrue(restarted.apply(operation)["noTargetEffects"])
+        self.adapter.backup.assert_not_called()
+        plan = restarted.plan("a" * 40)
+        new = restarted.issue(plan["planHash"], "a" * 40)
+        self.assertNotEqual(new["operationId"], operation)
+        self.assertEqual(self.state.read("receipt", operation)["phase"], "NO_EFFECT_PREPARATION_INCOMPLETE")
+        self.assertIsNone(self.state.read("approval", operation))
+        self.adapter.apply_configuration.assert_not_called()
+
+    def test_secret_adapter_exceptions_have_fixed_public_traceback(self):
+        for method in ("snapshot", "backup", "apply_configuration", "readback"):
+            with self.subTest(method=method):
+                # Each case uses its own independent operation state directory.
+                marker = "SYNTHETIC_PRIVATE_EXCEPTION_" + method
+                if method == "snapshot":
+                    call = lambda: self.runtime.plan("a" * 40)
+                else:
+                    operation = self.approve()
+                    call = lambda: self.runtime.apply(operation)
+                old = getattr(self.adapter, method).side_effect
+                getattr(self.adapter, method).side_effect = ValueError(marker)
+                try:
+                    call()
+                except repair.RepairBlocked as exc:
+                    self.assertEqual(str(exc), "HOST_ADAPTER_FAILED")
+                    self.assertNotIn(marker, "".join(traceback.format_exception(exc)))
+                else:
+                    self.fail("adapter exception accepted")
+                getattr(self.adapter, method).side_effect = old
+                for path in self.root.glob("*.json"):
+                    self.assertNotIn(marker, path.read_text())
+                # Remove only test fixtures between independent failure cases.
+                for path in self.root.iterdir():
+                    path.unlink()
+
+    def test_unsafe_ancestor_rejected(self):
+        self.metadata.stop()
+        with file_tests.FilesystemContracts.root_metadata(self):
+            with self.assertRaisesRegex(repair.RepairBlocked, "STATE_ANCESTOR_PROTECTION"):
+                with self.state.directory():
+                    self.fail("writable /tmp ancestor admitted")
+        self.metadata.start()
+
+    def test_locked_state_uses_pinned_directory_after_path_swap(self):
+        operation = self.approve()
+        displaced = self.root.with_name(self.root.name + "-displaced")
+        try:
+            with self.state.lock():
+                self.root.rename(displaced)
+                self.root.mkdir(mode=0o700)
+                # A root-level filesystem substitution is simulated here;
+                # every state operation must still address the original inode.
+                self.assertIsNotNone(self.state.read("approval", operation))
+                self.state.create("receipt", operation, {"phase": "synthetic"})
+                self.assertEqual(list(self.root.iterdir()), [])
+                self.assertTrue((displaced / self.state.name("receipt", operation)).exists())
+        finally:
+            self.root.rmdir()
+            displaced.rename(self.root)
 
     def test_concurrent_lock_is_denied(self):
         operation = self.approve()

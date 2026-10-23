@@ -16,6 +16,8 @@ from admin_mode import PrivateAdminRuntime
 from agent_zero_diagnostics import AgentZeroDiagnosticsRuntime
 from aurion_admin_mcp_lane import AurionAdminMcpRuntime
 from aurion_operator import AurionOperatorRuntime
+from aurion_native_auth import NativeAuthRepair, NativeAuthState
+from aurion_native_auth_host import AurionNativeAuthHost
 from browserless_reader import BrowserlessReplayReader
 from command_contract import (
     is_mutating_action,
@@ -82,6 +84,8 @@ class BrokerRuntime:
         )
         self.admin = PrivateAdminRuntime(self.operations)
         self.aurion = AurionOperatorRuntime()
+        native_state = NativeAuthState()
+        self.aurion_native_auth = NativeAuthRepair(AurionNativeAuthHost(native_state), native_state)
         self.aurion_admin_mcp = AurionAdminMcpRuntime()
         self.self_update = SelfUpdateRuntime()
         self.github = GitHubAdminRuntime(self.self_update)
@@ -562,7 +566,16 @@ class BrokerRuntime:
             }
         if action.startswith("ssh_console_") and not self.private_owner_mode:
             return {"ok": False, "status": "BLOCKED", "blocker": "SSH console requires private owner mode"}
+        if action.startswith("aurion_native_auth_"):
+            if not self.private_owner_mode or os.getenv("SOVEREIGN_MCP_ENABLE_AURION_OPERATOR", "0").strip() != "1":
+                return {"ok": False, "status": "BLOCKED", "blocker": "NATIVE_AUTH_PRIVATE_OPERATOR_REQUIRED"}
+            expected = {"expected_revision"} if action == "aurion_native_auth_plan" else {"operation_id"}
+            if set(arguments) != expected:
+                return {"ok": False, "status": "BLOCKED", "blocker": "NATIVE_AUTH_ARGUMENTS_INVALID"}
         handlers = {
+            "aurion_native_auth_plan": lambda values: self.aurion_native_auth.plan(values["expected_revision"]),
+            "aurion_native_auth_apply": lambda values: self.aurion_native_auth.apply(values["operation_id"]),
+            "aurion_native_auth_readback": lambda values: self.aurion_native_auth.readback(values["operation_id"]),
             "ssh_console_status": lambda values: self.owner_ssh.status(str(values.get("session_id") or "")),
             "ssh_console_owner_action": lambda values: self.owner_ssh.owner_action(str(values.get("operation_id") or "")),
             "ssh_console_assistant_inspect": lambda values: self.owner_ssh.assistant_inspect(str(values.get("session_id") or ""), str(values.get("operation") or "")),

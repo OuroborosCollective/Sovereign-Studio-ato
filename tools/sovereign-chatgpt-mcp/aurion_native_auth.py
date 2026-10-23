@@ -14,6 +14,8 @@ import re
 import secrets
 import stat
 import time
+import threading
+from functools import wraps
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +23,6 @@ from pathlib import Path
 TARGET = "echoes-of-aurion/aurion"
 ENV_FILE = "/opt/echoes-of-aurion/.env.production"
 RUNTIME_FILE = "/etc/aurion-traefik-runtime.env"
-COMPOSE_FILE = "/opt/echoes-of-aurion/docker-compose.traefik.yml"
 RELEASE = "NATIVE_AUTH_RELEASE_ENABLED"
 SEAL = "NATIVE_AUTH_STATE_SEAL_KEY"
 SHA = re.compile(r"[0-9a-f]{64}")
@@ -31,6 +32,18 @@ OPERATION = re.compile(r"[0-9a-f]{32}")
 
 class RepairBlocked(ValueError):
     """Fixed failure code only: never include input, stderr or file contents."""
+
+
+def redacted_boundary(function):
+    @wraps(function)
+    def guarded(*args, **kwargs):
+        try:
+            return function(*args, **kwargs)
+        except RepairBlocked:
+            raise
+        except Exception:
+            raise RepairBlocked("NATIVE_AUTH_OPERATION_UNAVAILABLE") from None
+    return guarded
 
 
 def fingerprint(value):
@@ -129,7 +142,7 @@ class ProtectedSnapshot:
                 "mode": self.mode, "mtimeNs": self.mtime_ns, "ctimeNs": self.ctime_ns}
 
 
-def read_protected(directory_fd, name, *, limit=1048576):
+def read_protected(directory_fd, name, *, limit=1048576, modes=(0o600,)):
     if "/" in name or name in ("", ".", ".."):
         raise RepairBlocked("FILE_NAME")
     try:
@@ -137,7 +150,7 @@ def read_protected(directory_fd, name, *, limit=1048576):
         try:
             before = os.fstat(fd)
             if (not stat.S_ISREG(before.st_mode) or before.st_uid != 0 or before.st_gid != 0
-                    or stat.S_IMODE(before.st_mode) != 0o600 or before.st_nlink != 1
+                    or stat.S_IMODE(before.st_mode) not in modes or before.st_nlink != 1
                     or before.st_size > limit):
                 raise RepairBlocked("FILE_PROTECTION")
             chunks = []
@@ -174,6 +187,7 @@ def atomic_replace(directory_fd, name, before, content):
                  0o600, dir_fd=directory_fd)
     try:
         with os.fdopen(fd, "wb") as stream:
+            os.fchown(stream.fileno(), 0, 0)
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
@@ -203,10 +217,17 @@ class NativeAuthRepair:
     def __init__(self, adapter, state, *, clock=time.time):
         self.adapter, self.state, self.clock = adapter, state, clock
 
+    def _adapter(self, method, *args):
+        try:
+            return getattr(self.adapter, method)(*args)
+        except Exception:
+            raise RepairBlocked("HOST_ADAPTER_FAILED") from None
+
+    @redacted_boundary
     def plan(self, expected_revision, *, target=TARGET):
         if target != TARGET or not isinstance(expected_revision, str) or not REVISION.fullmatch(expected_revision):
             raise RepairBlocked("TARGET_OR_REVISION_INVALID")
-        snapshot = self.adapter.snapshot(expected_revision)
+        snapshot = self._adapter("snapshot", expected_revision)
         required = {"target", "revision", "containerId", "imageId", "metadataFingerprint",
                     "configurationFingerprint", "schemaVerified", "healthy", "configuration"}
         if set(snapshot) != required:
@@ -235,19 +256,24 @@ class NativeAuthRepair:
                 "effects": ["Set only NATIVE_AUTH_RELEASE_ENABLED=true and NATIVE_AUTH_STATE_SEAL_KEY",
                             "Generate 32 local random bytes only if generateKey=true; otherwise reuse key",
                             "Recreate only echoes-of-aurion/aurion with the identical immutable image",
-                            "Brief service interruption; root-protected backup and controlled rollback"],
+                            "Brief service interruption; root-protected backup and controlled rollback",
+                            "One valid start probe creates one expiring auth transaction through the application API"],
                 "deviceFlow": "UNVERIFIED"}
         return {**body, "planHash": canonical_hash(body)}
 
+    @redacted_boundary
     def issue(self, plan_hash, expected_revision):
         """Authenticated owner-route entrypoint; caller supplies no attestation."""
         with self.state.lock():
-            self.state.require_no_uncertain_operation()
             plan = self.plan(expected_revision)
             if not isinstance(plan_hash, str) or plan_hash != plan["planHash"]:
                 raise RepairBlocked("PLAN_DRIFT")
             if plan["alreadySatisfied"]:
                 raise RepairBlocked("ALREADY_SATISFIED")
+            # Only a new authenticated owner action may retire a provably
+            # pre-effect interrupted preparation; retain a terminal receipt.
+            self.state.recover_preparation_only()
+            self.state.require_no_uncertain_operation()
             operation_id = secrets.token_hex(16)
             record = {"operationId": operation_id, "target": TARGET, "plan": plan,
                       "expiresAt": self.clock() + 300}
@@ -255,14 +281,24 @@ class NativeAuthRepair:
             return {"operationId": operation_id, "expiresAt": record["expiresAt"],
                     "planHash": plan_hash, "target": TARGET}
 
+    @redacted_boundary
     def readback(self, operation_id):
         if not isinstance(operation_id, str) or not OPERATION.fullmatch(operation_id):
             raise RepairBlocked("OPERATION_INVALID")
         receipt = self.state.read("receipt", operation_id)
         if receipt is None:
-            raise RepairBlocked("OPERATION_UNKNOWN")
-        observed = self.adapter.readback(receipt["plan"])
-        return {"operationId": operation_id, "phase": receipt["phase"],
+            receipt = self.state.preparation_only(operation_id)
+            if receipt is None:
+                approval = self.state.read("approval", operation_id)
+                if approval is not None:
+                    return {"operationId": operation_id, "phase": "APPROVAL_PENDING" if self.clock() < approval.get("expiresAt", 0) else "APPROVAL_EXPIRED",
+                            "mutationRetried": False, "deviceFlow": "UNVERIFIED"}
+                raise RepairBlocked("OPERATION_UNKNOWN")
+            return {"operationId": operation_id, "phase": "NO_EFFECT_PREPARATION_INCOMPLETE",
+                    "noTargetEffects": True, "mutationRetried": False, "deviceFlow": "UNVERIFIED",
+                    "nextAction": "new_authenticated_owner_plan_approval"}
+        observed = self._adapter("readback", receipt["plan"], operation_id)
+        return {"operationId": operation_id, "phase": receipt["phase"], "ok": all(self._public_readback(observed).values()),
                 "readback": self._public_readback(observed), "deviceFlow": "UNVERIFIED",
                 "mutationRetried": False}
 
@@ -270,14 +306,16 @@ class NativeAuthRepair:
     def _public_readback(observed):
         # Do not propagate arbitrary adapter output, response bodies or exceptions.
         keys = ("sameImage", "sameRevision", "healthy", "releaseEnabled",
-                "stateSealKeyPresent", "stateSealKeyValid", "validStart200", "invalidBody400")
+                "stateSealKeyPresent", "stateSealKeyValid", "configurationBound", "validStart200", "invalidBody400")
         return {key: observed.get(key) is True for key in keys}
 
+    @redacted_boundary
     def apply(self, operation_id):
         if not isinstance(operation_id, str) or not OPERATION.fullmatch(operation_id):
             raise RepairBlocked("OPERATION_INVALID")
         with self.state.lock():
-            if self.state.read("receipt", operation_id) is not None:
+            if (self.state.read("receipt", operation_id) is not None
+                    or self.state.preparation_only(operation_id) is not None):
                 # A restart, timeout or duplicate delivery may only observe.
                 return self.readback(operation_id)
             self.state.require_no_uncertain_operation()
@@ -299,16 +337,26 @@ class NativeAuthRepair:
                 raise RepairBlocked("APPROVAL_EXPIRED_OR_INVALID")
             # Exceptions/crashes after PREPARED deliberately leave the durable
             # operation uncertain. A retry cannot generate keys or recreate again.
-            backup = self.adapter.backup(plan, operation_id)
+            backup = self._adapter("backup", plan, operation_id)
             if not isinstance(backup, str) or not SHA.fullmatch(backup):
                 raise RepairBlocked("BACKUP_IDENTITY_INVALID")
             receipt.update(phase="BACKUP_VERIFIED", backupIdentity=backup)
             self.state.update(operation_id, receipt)
-            self.adapter.apply_configuration(plan, operation_id)
+            self._adapter("apply_configuration", plan, operation_id)
             receipt["phase"] = "CONFIGURATION_WRITTEN"
             self.state.update(operation_id, receipt)
-            self.adapter.recreate_same_image(plan, operation_id)
-            observed = self._public_readback(self.adapter.readback(plan))
+            probes_completed = False
+            try:
+                self._adapter("recreate_same_image", plan, operation_id)
+                self._adapter("verify_after_recreate", plan, operation_id)
+                probes_completed = True
+            except RepairBlocked:
+                # First read the target after a command/probe failure. Never
+                # repeat the recreation or POST after an uncertain return.
+                pass
+            observed = self._public_readback(self._adapter("readback", plan, operation_id))
+            if not probes_completed:
+                observed.update(validStart200=False, invalidBody400=False)
             if all(observed.values()):
                 receipt.update(phase="VERIFIED", readback=observed)
                 self.state.complete(operation_id, receipt)
@@ -317,8 +365,8 @@ class NativeAuthRepair:
                 # permitting a blind restore over a different deployment.
                 receipt["phase"] = "ROLLBACK_STARTED"
                 self.state.update(operation_id, receipt)
-                self.adapter.rollback(plan, operation_id, backup)
-                rollback = self.adapter.rollback_readback(plan, operation_id, backup)
+                self._adapter("rollback", plan, operation_id, backup)
+                rollback = self._adapter("rollback_readback", plan, operation_id, backup)
                 verified = all(rollback.get(k) is True for k in (
                     "sameImage", "sameRevision", "healthy", "configurationRestored"))
                 receipt["phase"] = "ROLLED_BACK" if verified else "ROLLBACK_UNVERIFIED"
@@ -339,13 +387,18 @@ class NativeAuthState:
     assertions. Only the authenticated backend may issue approval records.
     """
 
-    TERMINAL = frozenset({"VERIFIED", "ROLLED_BACK", "EXPIRED_WITHOUT_EFFECT"})
+    TERMINAL = frozenset({"VERIFIED", "ROLLED_BACK", "EXPIRED_WITHOUT_EFFECT", "NO_EFFECT_PREPARATION_INCOMPLETE"})
 
     def __init__(self, root=None):
         self.root = Path(root or os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", "/opt/sovereign-owner-managed"))
+        self._local = threading.local()
 
     @contextmanager
     def directory(self):
+        pinned = getattr(self._local, "fd", None)
+        if pinned is not None:
+            yield pinned
+            return
         # Traverse with no-follow dirfds, not Path.resolve() followed by open().
         if not self.root.is_absolute() or ".." in self.root.parts:
             raise RepairBlocked("STATE_ROOT_INVALID")
@@ -356,6 +409,9 @@ class NativeAuthState:
                     new_fd = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
                     os.close(fd)
                     fd = new_fd
+                    ancestor = os.fstat(fd)
+                    if ancestor.st_uid != 0 or ancestor.st_gid != 0 or ancestor.st_mode & 0o022:
+                        raise RepairBlocked("STATE_ANCESTOR_PROTECTION")
             except OSError:
                 raise RepairBlocked("STATE_UNAVAILABLE") from None
             info = os.fstat(fd)
@@ -368,8 +424,16 @@ class NativeAuthState:
     @contextmanager
     def lock(self):
         with self.directory() as directory_fd:
-            fd = os.open(".aurion-native-auth.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW,
-                         0o600, dir_fd=directory_fd)
+            try:
+                fd = os.open(".aurion-native-auth.lock", os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                             0o600, dir_fd=directory_fd)
+                try:
+                    os.fchown(fd, 0, 0)
+                except Exception:
+                    os.close(fd)
+                    raise
+            except FileExistsError:
+                fd = os.open(".aurion-native-auth.lock", os.O_RDWR | os.O_NOFOLLOW, dir_fd=directory_fd)
             try:
                 info = os.fstat(fd)
                 if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
@@ -379,7 +443,11 @@ class NativeAuthState:
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     raise RepairBlocked("CONCURRENT_OPERATION") from None
-                yield
+                self._local.fd = directory_fd
+                try:
+                    yield
+                finally:
+                    del self._local.fd
             finally:
                 os.close(fd)
 
@@ -405,15 +473,32 @@ class NativeAuthState:
             return value
 
     def create(self, kind, operation_id, record):
+        # All writers hold lock(). Publish complete JSON by rename; a crash
+        # during serialization must not leave an unreadable active marker.
         name = self.name(kind, operation_id)
         with self.directory() as directory_fd:
-            fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            temporary = ".native-auth-state-" + secrets.token_hex(16)
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                          0o600, dir_fd=directory_fd)
-            with os.fdopen(fd, "w") as stream:
-                json.dump(record, stream, separators=(",", ":"), sort_keys=True)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.fsync(directory_fd)
+            try:
+                with os.fdopen(fd, "w") as stream:
+                    os.fchown(stream.fileno(), 0, 0)
+                    json.dump(record, stream, separators=(",", ":"), sort_keys=True)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                try:
+                    os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise RepairBlocked("STATE_RECORD_EXISTS")
+                os.replace(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+                os.fsync(directory_fd)
+            finally:
+                try:
+                    os.unlink(temporary, dir_fd=directory_fd)
+                except FileNotFoundError:
+                    pass
 
     def update(self, operation_id, receipt):
         name = self.name("receipt", operation_id)
@@ -437,8 +522,31 @@ class NativeAuthState:
             self.remove("active", operation_id)
 
     def begin(self, operation_id, receipt):
-        self.create("active", operation_id, {"operationId": operation_id})
+        self.create("active", operation_id, {**receipt, "phase": "INTENT_ONLY"})
         self.create("receipt", operation_id, receipt)
+
+    def preparation_only(self, operation_id):
+        active = self.read("active", operation_id)
+        if active is None or active.get("operationId") != operation_id:
+            return None
+        if self.read("receipt", operation_id) is not None:
+            return None
+        approval = self.read("approval", operation_id)
+        if (active.get("phase") != "INTENT_ONLY" or not approval
+                or active.get("plan") != approval.get("plan")):
+            raise RepairBlocked("PREPARATION_IDENTITY_UNCERTAIN")
+        return active
+
+    def recover_preparation_only(self):
+        active = self.read("active", "0" * 32)
+        if active is None:
+            return
+        operation_id = active.get("operationId", "")
+        intent = self.preparation_only(operation_id)
+        if intent is not None:
+            self.create("receipt", operation_id, {**intent, "phase": "NO_EFFECT_PREPARATION_INCOMPLETE"})
+            self.consume(operation_id)
+            self.remove("active", operation_id)
 
     def consume(self, operation_id):
         self.remove("approval", operation_id)

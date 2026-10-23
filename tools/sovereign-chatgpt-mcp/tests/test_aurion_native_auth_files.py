@@ -3,6 +3,7 @@ import base64
 import os
 from pathlib import Path
 import secrets
+import stat
 import sys
 import tempfile
 import unittest
@@ -88,6 +89,9 @@ class EnvContracts(unittest.TestCase):
 
 class FilesystemContracts(unittest.TestCase):
     def setUp(self):
+        ownership = patch.object(os, "fchown", return_value=None)
+        ownership.start()
+        self.addCleanup(ownership.stop)
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         self.fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -99,7 +103,7 @@ class FilesystemContracts(unittest.TestCase):
         os.close(self.fd)
         self.temporary.cleanup()
 
-    def root_metadata(self):
+    def root_metadata(self, protect_test_ancestors=False):
         # Only the OS ownership adapter is simulated; real open/read/rename,
         # symlinks, content and inode checks remain exercised on temporary files.
         original = os.fstat
@@ -112,6 +116,8 @@ class FilesystemContracts(unittest.TestCase):
                 if name.startswith("st_"):
                     setattr(proxy, name, getattr(result, name))
             proxy.st_uid = proxy.st_gid = 0
+            if protect_test_ancestors and stat.S_ISDIR(proxy.st_mode):
+                proxy.st_mode &= ~0o022
             return proxy
         return patch.object(repair.os, "fstat", side_effect=fstat)
 
