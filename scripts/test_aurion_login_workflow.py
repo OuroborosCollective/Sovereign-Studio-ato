@@ -26,6 +26,14 @@ class LoginWorkflowTests(unittest.TestCase):
         self.revision = self.sign['env']['AURION_EXPECTED_REVISION']
         self.fingerprint = self.sign['env']['AURION_LOGIN_SIGNER_SHA256']
 
+    def test_exact_reviewed_aurion_revision_is_pinned_in_build_and_sign(self):
+        expected = '410babd16f881bb36c2509b46d196c005e8565ca'
+        build = self.workflow['jobs']['build']
+        self.assertEqual(build['env']['AURION_EXPECTED_REVISION'], expected)
+        self.assertEqual(self.sign['env']['AURION_EXPECTED_REVISION'], expected)
+        checkout = next(step for step in build['steps'] if step['name'].startswith('Checkout reviewed Aurion'))
+        self.assertEqual(checkout['with']['ref'], expected)
+
     def test_build_never_receives_release_secrets(self):
         self.assertNotIn('secrets.', json.dumps(self.workflow['jobs']['build']))
         self.assertEqual(self.sign['needs'], 'build')

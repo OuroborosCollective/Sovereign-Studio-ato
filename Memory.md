@@ -1260,3 +1260,9 @@ Status: IMPLEMENTED_IN_REPOSITORY; tatsächlicher Gradle-Export, Signatur und Li
 Änderung: Fest gepinnter Aurion-Build ohne Release-Secrets; separater, auf die Owner-Identität begrenzter SDK-Signaturjob ohne Aurion-Checkout, mit zusammengehörigem Secret-Satz, aktueller App-Link-Prüfung und unabhängig heruntergeladener APK-Prüfung.
 Erkenntnis: Ein Artefakt-Hash bindet Bytes, ersetzt aber weder die direkte Zertifikatsprüfung noch die Trennung von Build-Hooks und wiederverwendbarem Schlüssel.
 Evidence: Zehn Tests der tatsächlichen Workflow-Verträge bestehen lokal, inklusive falschem Zertifikat, veralteter Revision, HTML-/widerrufener Domainzuordnung und Zusatzberechtigung; SDK-/HTTPS-Adapter sind ausschließlich Tests. Shell-, JavaScript- und Python-Syntax geprüft. Final-Head-CI und produktiver APK-/Gerätenachweis bleiben erforderlich. Aurion-App-Link-PR #1090 wurde separat als 7ac274ba1305f155e10fdb9223de874e93fb6f5e gemergt; Live-Auslieferung noch ausstehend.
+
+### 2026-10-23 — Aurion signed Login revision refresh (research candidate)
+Status: PARTIAL; exact-head CI and signed APK remain unverified.
+Change: Re-pin build checkout and isolated signer to Aurion merge `410babd16f881bb36c2509b46d196c005e8565ca`; add regression requiring identical source revision in all three locations.
+Learned: Green checks on previous Signier-PR #2327 do not establish currency with newly merged Godot map code; pinned revision and owner-only signer remain separate contracts.
+Evidence: Aurion PR #1129 merged and read back `410babd16f881bb36c2509b46d196c005e8565ca`; before merge exact PR head `8086e9126ce07b3935d2c751ac894a48517ad56e` passed Godot, Android preview artifact, determinism and memory-contract CI runs 39877871513/39877871674/39877871739/39877871721. New Sovereign draft still needs fresh CI and review. No signed APK or device login proven.
