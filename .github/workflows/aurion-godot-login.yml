@@ -24,14 +24,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      AURION_EXPECTED_REVISION: c64d9c4d1337b02c7a3662df1cd8733d190e90d0
+      AURION_EXPECTED_REVISION: 9e8c85938408a1f573529a6a4141a19048b47fe9
       AURION_LOGIN_SIGNER_SHA256: F2:E8:FA:1E:81:FB:DA:E5:2E:94:00:AF:32:29:A0:47:79:8D:EB:BE:A0:CF:36:80:A0:4B:E6:54:0D:EF:72:0A
     steps:
     - name: Checkout reviewed Aurion source without persisted credentials
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         repository: OuroborosCollective/Echoes_of_Aurion
-        ref: c64d9c4d1337b02c7a3662df1cd8733d190e90d0
+        ref: 9e8c85938408a1f573529a6a4141a19048b47fe9
         persist-credentials: false
     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
       with:
@@ -182,7 +182,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      AURION_EXPECTED_REVISION: c64d9c4d1337b02c7a3662df1cd8733d190e90d0
+      AURION_EXPECTED_REVISION: 9e8c85938408a1f573529a6a4141a19048b47fe9
       AURION_LOGIN_SIGNER_SHA256: F2:E8:FA:1E:81:FB:DA:E5:2E:94:00:AF:32:29:A0:47:79:8D:EB:BE:A0:CF:36:80:A0:4B:E6:54:0D:EF:72:0A
     steps:
     - name: Install signing tools without checking out application code
@@ -386,3 +386,6 @@ jobs:
         echo "SIGNED_APK_READBACK_VERIFIED"
 'on':
   workflow_dispatch: null
+  push:
+    branches: [main]
+    paths: [.github/workflows/aurion-godot-login.yml]
