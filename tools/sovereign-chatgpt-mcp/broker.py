@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import grp
 import json
 import os
@@ -121,14 +122,72 @@ class BrokerRuntime:
             ),
         }
 
+    @staticmethod
+    def _aurion_auth_configuration(snapshot: Any) -> dict[str, Any]:
+        """Project only two effective configuration predicates, never raw env."""
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get("state"), dict):
+            raise ValueError("invalid inspection")
+        labels = snapshot.get("labels")
+        if not isinstance(labels, dict) or (
+            labels.get("com.docker.compose.project") != "echoes-of-aurion"
+            or labels.get("com.docker.compose.service") != "aurion"
+        ):
+            raise ValueError("invalid scope")
+        revision = labels.get("org.opencontainers.image.revision")
+        container_id, image = snapshot.get("id"), snapshot.get("image")
+        if (
+            not isinstance(revision, str) or not COMMIT_SHA_RE.fullmatch(revision)
+            or not isinstance(container_id, str) or not re.fullmatch(r"[a-f0-9]{64}", container_id)
+            or not isinstance(image, str) or not re.fullmatch(r"sha256:[a-f0-9]{64}", image)
+        ):
+            raise ValueError("invalid identity")
+        environment = snapshot.get("environment")
+        if not isinstance(environment, list) or not all(isinstance(item, str) for item in environment):
+            raise ValueError("invalid environment")
+        values: dict[str, str] = {}
+        for item in environment:
+            name, separator, value = item.partition("=")
+            if name not in {"NATIVE_AUTH_RELEASE_ENABLED", "NATIVE_AUTH_STATE_SEAL_KEY"}:
+                continue
+            if not separator or name in values:
+                raise ValueError("ambiguous configuration")
+            values[name] = value
+        key = values.get("NATIVE_AUTH_STATE_SEAL_KEY", "")
+        valid_key = False
+        if re.fullmatch(r"[A-Za-z0-9_-]{43}", key):
+            decoded = base64.urlsafe_b64decode(key + "=")
+            valid_key = len(decoded) == 32 and base64.urlsafe_b64encode(decoded).decode().rstrip("=") == key
+        enabled = values.get("NATIVE_AUTH_RELEASE_ENABLED") == "true"
+        return {
+            "status": "CONFIGURATION_PREREQUISITES_PRESENT" if enabled and valid_key else "CONFIGURATION_BLOCKED",
+            "sourceRevision": revision,
+            "containerId": container_id,
+            "imageDigest": image,
+            "releaseFlagPresent": "NATIVE_AUTH_RELEASE_ENABLED" in values,
+            "releaseEnabled": enabled,
+            "stateSealKeyPresent": "NATIVE_AUTH_STATE_SEAL_KEY" in values,
+            "stateSealKeyValid": valid_key,
+            "databaseConnection": "UNVERIFIED",
+            "login": "UNVERIFIED",
+        }
+
     def container_status(self, arguments: dict[str, Any]) -> dict[str, Any]:
         container = validate_container(
             str(arguments.get("container") or ""),
             self.allowed_containers,
             allow_any=self.private_owner_mode,
         )
+        aurion_configuration = self.private_owner_mode and container == "echoes-of-aurion-aurion-1"
+        inspect_format = "{{json .State}}"
+        if aurion_configuration:
+            # One Docker snapshot binds predicates to state, revision and image;
+            # raw environment and Docker errors never cross the broker boundary.
+            inspect_format = (
+                '{"state":{{json .State}},"id":{{json .Id}},"image":{{json .Image}},'
+                '"labels":{{json .Config.Labels}},"environment":{{json .Config.Env}}}'
+            )
         result = self._run(
-            ["docker", "inspect", "--format", "{{json .State}}", container],
+            ["docker", "inspect", "--format", inspect_format, container],
             timeout=30,
         )
         if not result["ok"]:
@@ -136,16 +195,22 @@ class BrokerRuntime:
                 "ok": False,
                 "status": "FAILED",
                 "container": container,
-                "error": result["stderr"],
+                "error": "AURION_CONFIGURATION_INSPECTION_FAILED" if aurion_configuration else result["stderr"],
             }
         try:
             state = json.loads(result["stdout"])
-        except json.JSONDecodeError as exc:
+            if aurion_configuration:
+                configuration = self._aurion_auth_configuration(state)
+                return {
+                    "ok": True, "status": "VERIFIED", "container": container,
+                    "state": state["state"], "nativeAuthConfiguration": configuration,
+                }
+        except (json.JSONDecodeError, ValueError):
             return {
                 "ok": False,
                 "status": "FAILED",
                 "container": container,
-                "error": f"Docker state is not valid JSON: {exc}",
+                "error": "Docker inspection is not valid bounded JSON or target metadata",
             }
         return {"ok": True, "status": "VERIFIED", "container": container, "state": state}
 
