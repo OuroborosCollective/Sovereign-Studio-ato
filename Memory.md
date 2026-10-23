@@ -1266,3 +1266,13 @@ Status: PARTIAL; exact-head CI and signed APK remain unverified.
 Change: Re-pin build checkout and isolated signer to Aurion merge `410babd16f881bb36c2509b46d196c005e8565ca`; add regression requiring identical source revision in all three locations.
 Learned: Green checks on previous Signier-PR #2327 do not establish currency with newly merged Godot map code; pinned revision and owner-only signer remain separate contracts.
 Evidence: Aurion PR #1129 merged and read back `410babd16f881bb36c2509b46d196c005e8565ca`; before merge exact PR head `8086e9126ce07b3935d2c751ac894a48517ad56e` passed Godot, Android preview artifact, determinism and memory-contract CI runs 39877871513/39877871674/39877871739/39877871721. New Sovereign draft still needs fresh CI and review. No signed APK or device login proven.
+
+### 2026-10-23 — Aurion SDK parser fix signer source pin
+Status: IMPLEMENTED_IN_REPOSITORY; new exact-head CI and real signing run pending.
+Task: Re-pin protected owner-only Aurion Login build to the Godot SDK metadata parser fix after real failure in workflow 39886214133.
+Decisions: Keep build checkout, expected revision and isolated sign job fixed to Aurion PR #1131 merge `c64d9c4d1337b02c7a3662df1cd8733d190e90d0`; keep secret isolation, signature checks and Android association unchanged.
+Touched surfaces: `.github/workflows/aurion-godot-login.yml`, `scripts/test_aurion_login_workflow.py`.
+Evidence: Aurion exact-head PR #1131 had seven successful checks including Godot runtime and Android Preview; merged SHA independently read back on Aurion main. Earlier signing run 39886214133 failed on SDK metadata and published zero artifacts. Local Sovereign tests and new CI pending.
+Learned: Source pin must advance as one coherent revision across build, checkout and signer before a protected dispatch.
+Open: Exact-head PR review and CI; new owner-dispatched signing run; signed artifact and Samsung Tab A9 verification.
+Next safe step: Merge only after CI, then launch owner-only workflow and inspect actual APK and certificate.
