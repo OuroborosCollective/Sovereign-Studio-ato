@@ -1276,3 +1276,8 @@ Evidence: Aurion exact-head PR #1131 had seven successful checks including Godot
 Learned: Source pin must advance as one coherent revision across build, checkout and signer before a protected dispatch.
 Open: Exact-head PR review and CI; new owner-dispatched signing run; signed artifact and Samsung Tab A9 verification.
 Next safe step: Merge only after CI, then launch owner-only workflow and inspect actual APK and certificate.
+
+### 2026-10-23 — Aurion generated-manifest fix and owner merge signing trigger
+Change: Pin checkout, unsigned build and isolated signer to reviewed Aurion merge 9e8c85938408a1f573529a6a4141a19048b47fe9; allow only main pushes changing this workflow to request signing, retaining the exact owner-ID/triggering-owner guard and manual dispatch.
+Learned: A GitHub-App dispatch is correctly refused by the owner guard; an authorized owner merge can execute the same isolated lane without relying on browser availability. A patched template alone does not prove the packaged Android callback.
+Evidence: Aurion PR #1144 causal-red Android 39992835000 then exact-head green Android 39994003802 and Godot 39994004001; independent unsigned artifact/manifest readback and all Aurion final gates passed. Thirteen local workflow contracts pass, including exact three-source pin and narrowly scoped trigger/owner guards. Exact-head Sovereign CI and the actual signed artifact/certificate/device remain pending.

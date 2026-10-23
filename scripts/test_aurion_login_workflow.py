@@ -27,12 +27,29 @@ class LoginWorkflowTests(unittest.TestCase):
         self.fingerprint = self.sign['env']['AURION_LOGIN_SIGNER_SHA256']
 
     def test_exact_reviewed_aurion_revision_is_pinned_in_build_and_sign(self):
-        expected = 'c64d9c4d1337b02c7a3662df1cd8733d190e90d0'
+        expected = '9e8c85938408a1f573529a6a4141a19048b47fe9'
         build = self.workflow['jobs']['build']
         self.assertEqual(build['env']['AURION_EXPECTED_REVISION'], expected)
         self.assertEqual(self.sign['env']['AURION_EXPECTED_REVISION'], expected)
         checkout = next(step for step in build['steps'] if step['name'].startswith('Checkout reviewed Aurion'))
         self.assertEqual(checkout['with']['ref'], expected)
+
+    def test_owner_push_trigger_is_limited_to_main_workflow_change(self):
+        events = self.workflow['on']
+        self.assertEqual(set(events), {'workflow_dispatch', 'push'})
+        self.assertIsNone(events['workflow_dispatch'])
+        self.assertEqual(events['push'], {
+            'branches': ['main'],
+            'paths': ['.github/workflows/aurion-godot-login.yml'],
+        })
+
+    def test_every_effectful_job_retains_the_exact_owner_identity_guard(self):
+        expected = ("github.repository == 'OuroborosCollective/Sovereign-Studio-ato' "
+                    "&& github.ref == 'refs/heads/main' && github.actor_id == '266194342' "
+                    "&& github.triggering_actor == github.repository_owner")
+        for name in ['build', 'sign']:
+            with self.subTest(job=name):
+                self.assertEqual(' '.join(self.workflow['jobs'][name]['if'].split()), expected)
 
     def test_build_never_receives_release_secrets(self):
         self.assertNotIn('secrets.', json.dumps(self.workflow['jobs']['build']))
