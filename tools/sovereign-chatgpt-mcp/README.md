@@ -1,5 +1,19 @@
 # Sovereign ChatGPT Operator MCP
 
+## Aurion native-auth configuration readback
+
+In private-owner mode, the existing `vps_container_status` inspection of the
+canonical `echoes-of-aurion-aurion-1` container also returns
+`nativeAuthConfiguration`. One Docker snapshot binds this projection to the
+Compose project/service, full source revision, container ID and immutable image.
+Only release-flag presence/exact enablement and state-seal-key presence/canonical
+32-byte validity leave the broker. Raw environment, keys and inspection errors
+are never returned. Other containers and non-private callers retain the original
+state-only contract. Duplicate configuration keys or invalid scope/identity fail
+closed. This readback changes no runtime configuration: database connectivity,
+OAuth handoff and successful login remain independently unverified.
+
+
 ## Owner SSH console
 
 The native `vps_ssh_session_status` view opens `/owner-ssh` on the authenticated Sovereign HTTPS owner surface. The owner enters the public VPS IP, SSH port, username and SSH **password** (default mode). Before sending credentials, **Server prüfen** uses the host worker's credential-free `ssh-keyscan` to show an ed25519 server fingerprint. The owner compares that fingerprint independently with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` in their provider's authenticated VPS console and explicitly confirms it. The backend then pins the exact discovered key using `StrictHostKeyChecking=yes`; a changed or unverified host key is rejected. Optional key-based login remains available, but no SSH public/private key text is needed in password mode. The `authorized_keys` line with `command=...` is a separate restricted CI client credential, NOT a server host identity. Passwords, private keys and protected values are never accepted as MCP arguments or carried in the host command queue. This first version supports public literal VPS IPs and a bounded inspection menu (system, disks, memory, containers and running services), rather than arbitrary terminal commands. Passwords use the fixed root-private OpenSSH askpass adapter; key passphrases and MFA are not supported.
