@@ -14,7 +14,7 @@ export function CompactRepoSetupSheet({ value, busy, error, onChange, onLoad, on
   const canLoad = !busy && value.trim().length > 0;
 
   const submitTitle = busy
-    ? 'Repository-Snapshot wird geladen…'
+    ? 'Repo-Snapshot wird geladen…'
     : !canLoad
     ? 'Bitte geben Sie eine gültige GitHub-Repository-URL ein'
     : 'Repository-Snapshot von der angegebenen URL laden';

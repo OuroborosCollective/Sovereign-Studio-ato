@@ -919,13 +919,14 @@ describe('Palette Accessibility Enhancements', () => {
     });
 
     it('shows stateful submit button titles based on loading status', () => {
+      const onLoadMock = vi.fn();
       const { rerender } = render(
         <CompactRepoSetupSheet
           value=""
           busy={false}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoadMock}
           onClose={vi.fn()}
         />
       );
@@ -941,7 +942,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={false}
           error={null}
           onChange={vi.fn()}
-          onLoad={onLoad}
+          onLoad={onLoadMock}
           onClose={vi.fn()}
         />
       );
@@ -957,14 +958,14 @@ describe('Palette Accessibility Enhancements', () => {
           busy={true}
           error={null}
           onChange={vi.fn()}
-          onLoad={onLoad}
+          onLoad={onLoadMock}
           onClose={vi.fn()}
         />
       );
 
       submitBtn = screen.getByRole('button', { name: 'Repo-Snapshot wird geladen…' });
       expect(submitBtn).toBeDisabled();
-      expect(submitBtn).toHaveAttribute('title', 'Repository-Snapshot wird geladen…');
+      expect(submitBtn).toHaveAttribute('title', 'Repo-Snapshot wird geladen…');
     });
   });
 
