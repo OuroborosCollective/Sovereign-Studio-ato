@@ -1266,3 +1266,17 @@ Status: PARTIAL; exact-head CI and signed APK remain unverified.
 Change: Re-pin build checkout and isolated signer to Aurion merge `410babd16f881bb36c2509b46d196c005e8565ca`; add regression requiring identical source revision in all three locations.
 Learned: Green checks on previous Signier-PR #2327 do not establish currency with newly merged Godot map code; pinned revision and owner-only signer remain separate contracts.
 Evidence: Aurion PR #1129 merged and read back `410babd16f881bb36c2509b46d196c005e8565ca`; before merge exact PR head `8086e9126ce07b3935d2c751ac894a48517ad56e` passed Godot, Android preview artifact, determinism and memory-contract CI runs 39877871513/39877871674/39877871739/39877871721. New Sovereign draft still needs fresh CI and review. No signed APK or device login proven.
+
+
+
+
+
+### Performance Improvement: Consolidated Map and Set Operations in Tick Window
+
+- **Task:** Optimized tick extraction in the predictive pipeline's tick window generation.
+- **Decisions:** Replaced the chained array operations (`[...new Set(signals.map(...))]`) with a single-pass bounded `for` loop over the signals. This avoids intermediate array allocation and garbage collection pressure in high-frequency signal processing paths. Native `sort()` with a numeric compare was used to maintain identical functionality.
+- **Surfaces Touched:** `src/predictive/pipeline/tickWindow.ts`
+- **Tests Evidence:** `pnpm test:all src/predictive/pipeline/tickWindow.test.ts` successfully completed all 21 tests in 19ms. `pnpm run test:smoke` passed (3897 tests).
+- **Learnings:** Consolidating sequential mapping and unique filtering into single-pass imperatively tracked sets reduces O(N^2) multi-pass intermediate array allocation down to minimal O(1) memory overhead. Documented in `.jules/bolt.md`.
+- **Open Points:** None.
+- **Next Safe Step:** Complete pre-commit tests and create PR.
