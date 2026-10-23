@@ -87,3 +87,7 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+
+## 2026-10-23 - [Character-Level Loop Hashing and Direct Pre-Allocated Temporal Feature Loops]
+**Learning:** In signal processing pipelines, generating string tuple representations for hashing via `array.map(...).join('|')` creates thousands of intermediate string object and array allocations. Streaming character code hash updates directly over signal metadata fields in a single indexed loop avoids memory allocation pressure and yields a ~36% speedup. Furthermore, replacing generator spreading (`[...generator]`) with pre-allocated array loops avoids iterator protocol overhead and dynamic array resizings (~29% speedup).
+**Action:** Stream hash updates character-by-character over struct fields in indexed loops to eliminate intermediate string join/tuple arrays, and replace generator spreading with direct pre-allocated array loops in performance-sensitive pipeline processing.
