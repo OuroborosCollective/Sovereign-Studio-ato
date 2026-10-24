@@ -1,6 +1,7 @@
 import React, { useRef, useState, useCallback } from 'react';
 import { Bot, CheckCircle, Loader2, Send, CircleX, ExternalLink, Copy, Check } from 'lucide-react';
 import { FileItem, WorkView, PipelineState, ProjectSettings } from '../types';
+import { safeHttpsUrl } from '../runtime/builderContainerHelpers';
 
 interface MainContentProps {
   workView: WorkView;
@@ -67,6 +68,7 @@ export const MainContent: React.FC<MainContentProps> = ({
       blocked: 'Ich komme alleine nicht weiter. Bitte eingreifen.'
     } satisfies Record<PipelineState, string>)[pipelineState];
   const derivedProgress = progress ?? ({ idle: 0, planning: 10, generating: 25, validating: 45, failed: 60, fixing: 70, revalidating: 88, green: 100, blocked: 65 } satisfies Record<PipelineState, number>)[pipelineState];
+  const safeTargetLink = targetLink ? safeHttpsUrl(targetLink) : undefined;
 
   const handleChatSubmit = () => {
     if (green) {
@@ -135,9 +137,9 @@ export const MainContent: React.FC<MainContentProps> = ({
                     ? 'Alles erledigt. Du musst nicht nochmal auf Senden, Frei oder Pruefen druecken.'
                     : 'Druecke diesen grossen Button. Das blaue Senden-Symbol ist hierfuer nicht noetig.'}
                 </p>
-                {approvalConfirmed && targetLink && (
+                {approvalConfirmed && safeTargetLink ? (
                   <a
-                    href={targetLink}
+                    href={safeTargetLink}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-900 underline"
@@ -145,7 +147,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                     <ExternalLink size={12} />
                     Ziel-Link anzeigen (PR)
                   </a>
-                )}
+                ) : null}
               </div>
               <button
                 type="button"
