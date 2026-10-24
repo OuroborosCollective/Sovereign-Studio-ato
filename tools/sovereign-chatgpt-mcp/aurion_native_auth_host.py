@@ -344,7 +344,7 @@ class AurionNativeAuthHost:
     def name(self, kind, operation_id):
         if kind not in {"backup", "host", "image", "probe"} or not re.fullmatch(r"[0-9a-f]{32}", operation_id):
             raise RepairBlocked("HOST_RECORD_IDENTITY")
-        return "aurion-native-auth-" + kind + "-" + operation_id + ".json"
+        return "aurion-native-auth-" + kind + "-" + operation_id + (".env" if kind == "backup" else ".json")
 
     def write(self, kind, operation_id, raw):
         with self.state.directory() as directory_fd:
@@ -499,6 +499,19 @@ class AurionNativeAuthHost:
             atomic_replace(fd, name, before, json.dumps({"phase": "COMPLETE", "validStart200": valid, "invalidBody400": invalid}).encode())
 
     def readback(self, plan, operation_id):
+        with self.state.directory() as fd:
+            try:
+                os.stat(self.name("host", operation_id), dir_fd=fd, follow_symlinks=False)
+            except FileNotFoundError:
+                # A worker may stop after durable PREPARED but before backup.
+                # Resolve the original deployment read-only; never manufacture
+                # a host record or retry a target effect during recovery.
+                context, production = self.resolve(plan["snapshot"]["revision"])
+                receipt = context["receipt"]
+                return {"sameImage": receipt["imageId"] == plan["snapshot"]["imageId"],
+                        "sameRevision": receipt["revision"] == plan["snapshot"]["revision"],
+                        "healthy": context["healthy"], **configuration(production.raw),
+                        "configurationBound": False, "validStart200": False, "invalidBody400": False}
         result = self.basic_readback(plan, operation_id)
         try:
             probe = json.loads(self.read("probe", operation_id).raw)

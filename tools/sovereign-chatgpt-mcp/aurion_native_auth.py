@@ -286,6 +286,9 @@ class NativeAuthRepair:
         if not isinstance(operation_id, str) or not OPERATION.fullmatch(operation_id):
             raise RepairBlocked("OPERATION_INVALID")
         receipt = self.state.read("receipt", operation_id)
+        if receipt is not None and receipt.get("phase") in {"NO_EFFECT_PREPARATION_INCOMPLETE", "EXPIRED_WITHOUT_EFFECT"}:
+            return {"operationId": operation_id, "phase": receipt["phase"], "noTargetEffects": True,
+                    "mutationRetried": False, "deviceFlow": "UNVERIFIED"}
         if receipt is None:
             receipt = self.state.preparation_only(operation_id)
             if receipt is None:
@@ -317,7 +320,7 @@ class NativeAuthRepair:
             if (self.state.read("receipt", operation_id) is not None
                     or self.state.preparation_only(operation_id) is not None):
                 # A restart, timeout or duplicate delivery may only observe.
-                return self.readback(operation_id)
+                return {**self.readback(operation_id), "replayRejected": True}
             self.state.require_no_uncertain_operation()
             approval = self.state.read("approval", operation_id)
             if (not approval or approval.get("operationId") != operation_id

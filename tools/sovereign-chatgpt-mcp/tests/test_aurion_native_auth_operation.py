@@ -105,7 +105,7 @@ class OperationContracts(unittest.TestCase):
     def test_replay_is_readback_only(self):
         operation = self.approve()
         self.runtime.apply(operation)
-        self.runtime.apply(operation)
+        self.assertTrue(self.runtime.apply(operation)["replayRejected"])
         self.adapter.apply_configuration.assert_called_once()
         self.adapter.recreate_same_image.assert_called_once()
 

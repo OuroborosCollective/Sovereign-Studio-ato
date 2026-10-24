@@ -231,6 +231,36 @@ class HostAdapterContracts(unittest.TestCase):
             self.runtime.plan(self.revision)
         self.assertEqual(self.up_count, 0)
 
+    def test_prepared_without_host_backup_readback_is_read_only(self):
+        plan, operation = self.approve()
+        with self.state.lock():
+            self.state.begin(operation, {"operationId": operation, "plan": plan, "phase": "PREPARED"})
+            self.state.consume(operation)
+        result = self.runtime.readback(operation)
+        self.assertEqual(result["phase"], "PREPARED")
+        self.assertTrue(result["readback"]["sameImage"])
+        self.assertTrue(result["readback"]["healthy"])
+        self.assertEqual(self.up_count, 0)
+        self.assertFalse(any(body is not None for _, body in self.requests))
+
+    def test_existing_key_is_reused_end_to_end(self):
+        raw = core.repaired_env(b"UNRELATED=SYNTHETIC_PRIVATE_ENV_VALUE\n", generate_key=True)
+        raw = raw.replace(b"NATIVE_AUTH_RELEASE_ENABLED=true", b"NATIVE_AUTH_RELEASE_ENABLED=false")
+        self.write(core.ENV_FILE, raw)
+        self.row["Config"]["Env"] = [k + "=" + v for k, v in self.current_env().items()]
+        original_key = core.parse_env(raw)[core.SEAL]
+        plan, operation = self.approve()
+        self.assertFalse(plan["generateKey"])
+        self.runtime.apply(operation)
+        actual = (self.root / core.ENV_FILE.lstrip("/")).read_bytes()
+        self.assertEqual(core.parse_env(actual)[core.SEAL], original_key)
+
+    def test_missing_or_changed_volume_blocks_plan(self):
+        self.row["Mounts"].pop()
+        with self.assertRaisesRegex(core.RepairBlocked, "HOST_ADAPTER_FAILED"):
+            self.runtime.plan(self.revision)
+        self.assertEqual(self.up_count, 0)
+
     def test_receipt_container_drift_blocks(self):
         self.row["Id"] = "0" * 64
         with self.assertRaisesRegex(core.RepairBlocked, "HOST_ADAPTER_FAILED"):
