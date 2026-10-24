@@ -76,7 +76,12 @@ git diff --check
 63 lokale Tests bestanden; echte temporäre Dateien, Inodes, Symlinks und Sperren.
 Root-Metadaten sowie Docker/HTTP/DB werden an externen Testgrenzen simuliert.
 Flask, requests und pytest fehlen lokal; nichts wurde installiert. Authentifizierte
-HTTP-, Broker-/Queue- und echte Registry-Tests laufen in den vorhandenen CI-Gates.
+HTTP-, Broker-/Queue- und echte Registry-Tests wurden in den vorhandenen CI-Gates ausgeführt.
+Am unveränderten Code-Head `1ba3e4f66c34f6f68999fec56652398cd61ee0f6` bestanden:
+- [MCP-CI](https://github.com/OuroborosCollective/Sovereign-Studio-ato/actions/runs/40044212188/job/120722121659): 1444 Tests, zwölf übersprungen; danach Parität, Launcher, Container, Registry (294 Werkzeuge) und Secret-Scan erfolgreich.
+- [Backend-CI](https://github.com/OuroborosCollective/Sovereign-Studio-ato/actions/runs/40044212153/job/120722063058): 1468 Tests, einer übersprungen, plus ein separater Test.
+Die HTTP-Tests führen die echten Auth-Funktionen aus `app.py` mit externen Credential-Lookups als Testadapter aus; kein vollständiger App-/Browser-Login wird behauptet. Der Seitencode wird zusätzlich in Node mit DOM/Fetch-Adaptern ausgeführt.
+Der abschließende reine Dokumentationscommit ändert diesen Code nicht; sein Check-Readback steht im PR.
 Kein Testfixture belegt eine installierte Funktion oder Produktionswirkung.
 
 Runtime, Browser-/Android-Callback, Tokenaustausch, Zonenticket, WebSocket,
