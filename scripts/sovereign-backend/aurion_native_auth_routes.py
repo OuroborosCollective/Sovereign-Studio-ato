@@ -100,7 +100,7 @@ rootgeschützte Sicherung und kontrollierte Rücknahme. Der Starttest erzeugt ei
 Auth-Transaktion. Vollständiger Geräte-Login bleibt UNVERIFIED.</p>
 <label>Owner-Admin-Key <input id="adminKey" type="password" autocomplete="off"></label>
 <button id="login">Anmelden</button><button id="logout">Schlüssel verwerfen</button>
-<p>Der Schlüssel bleibt nur im Seitenspeicher und wird ausschließlich an diese Origin gesendet.</p>
+<p>Der Schlüssel bleibt nur im Seitenspeicher und wird ausschließlich an diese Origin gesendet. Eine erfolgreiche Serverantwort bestätigt erst die Anmeldung.</p>
 <label>Erwartete Aurion-Revision <input id="revision" maxlength="40" size="42"></label>
 <button id="plan" disabled>Plan lesen</button><pre id="preview"></pre>
 <button id="approve" disabled>Diesen Plan einmalig ausführen</button>
@@ -114,13 +114,26 @@ element('preview').textContent='';element('status').textContent='';}
 element('login').onclick=()=>{admin=element('adminKey').value;element('adminKey').value='';
 current=null;element('approve').disabled=true;element('plan').disabled=!admin;};
 element('logout').onclick=forget;window.addEventListener('pagehide',forget);
-async function api(path,body){if(!admin)throw Error('Owner-Anmeldung erforderlich');
-const response=await fetch('/api/admin/aurion-native-auth/'+path,{
+function publicFailure(status,value){
+const allowed={403:['OWNER_OR_ORIGIN_REQUIRED','OWNER_REQUIRED'],
+409:['NATIVE_AUTH_PLAN_UNAVAILABLE','NATIVE_AUTH_APPROVAL_BLOCKED'],
+400:['OPERATION_INVALID'],503:['NATIVE_AUTH_READBACK_UNAVAILABLE']};
+const code=status===401?'AUTHENTICATION_NOT_CONFIRMED':
+((allowed[status]||[]).includes(value?.error)?value.error:'REQUEST_NOT_CONFIRMED');
+return 'HTTP '+status+' · '+code;
+}
+async function api(path,body){if(!admin)throw Error('AUTHENTICATION_NOT_CONFIRMED');
+let response;
+try{response=await fetch('/api/admin/aurion-native-auth/'+path,{
 method:body?'POST':'GET',headers:{Authorization:'Bearer '+admin,
 ...(body?{'Content-Type':'application/json','X-Sovereign-Owner-Action':'aurion-native-auth'}:{})},
 body:body?JSON.stringify(body):undefined,credentials:'same-origin',mode:'same-origin',redirect:'error',cache:'no-store'});
-const value=await response.json();if(!response.ok){if(response.status===401||response.status===403)forget();
-throw Error('Owner-Anfrage nicht bestätigt');}return value;}
+}catch(_){throw Error('NETWORK_RESPONSE_UNAVAILABLE');}
+let value;try{value=await response.json();}catch(_){
+if(response.status===401||response.status===403)forget();
+throw Error('HTTP '+response.status+' · RESPONSE_NOT_JSON');}
+if(!response.ok){const message=publicFailure(response.status,value);
+if(response.status===401||response.status===403)forget();throw Error(message);}return value;}
 const post=api;
 element('revision').oninput=()=>{current=null;element('approve').disabled=true;};
 element('plan').onclick=async()=>{current=null;element('approve').disabled=true;try{
@@ -133,5 +146,5 @@ element('approve').disabled=true;try{const value=await post('approve',{expectedR
 operation=value.operationId;element('status').textContent=JSON.stringify(value,null,2);element('read').disabled=!operation;
 }catch(e){element('status').textContent=e.message;}};
 element('read').onclick=async()=>{if(!operation)return;try{const value=await api('readback/'+operation);
-element('status').textContent=JSON.stringify(value,null,2);}catch(e){element('status').textContent='Readback nicht verfügbar';}};
+element('status').textContent=JSON.stringify(value,null,2);}catch(e){element('status').textContent=e.message;}};
 </script></html>'''
