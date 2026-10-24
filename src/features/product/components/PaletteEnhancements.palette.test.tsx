@@ -174,19 +174,31 @@ describe('Palette Accessibility Enhancements', () => {
 
     it('FileContentPreviewSheet close button has matching aria-label and title, scrollable pre, and send to chat button attributes', () => {
       const onSendToChat = vi.fn();
+      const onClose = vi.fn();
       const { container, rerender } = render(
         <FileContentPreviewSheet
           filePath="src/main.tsx"
           result={{ status: 'loaded', content: 'console.log("hello");', sizeBytes: 22, sha: '123', language: 'typescript' }}
           loading={false}
-          onClose={vi.fn()}
+          onClose={onClose}
           onSendToChat={onSendToChat}
         />
       );
 
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toHaveAttribute('aria-labelledby', 'file-content-preview-title');
+
+      const titleCode = screen.getByText('src/main.tsx');
+      expect(titleCode).toHaveAttribute('id', 'file-content-preview-title');
+
       const closeButton = screen.getByRole('button', { name: 'Vorschau schließen' });
       expect(closeButton).toHaveAttribute('aria-label', 'Vorschau schließen');
       expect(closeButton).toHaveAttribute('title', 'Vorschau schließen');
+      expect(closeButton).toHaveClass('hover:opacity-90');
+
+      const closeChar = closeButton.querySelector('[aria-hidden="true"]');
+      expect(closeChar).toBeInTheDocument();
+      expect(closeChar).toHaveTextContent('×');
 
       const preBlock = screen.getByLabelText('Dateiinhalt');
       expect(preBlock).toHaveAttribute('tabIndex', '0');
@@ -195,9 +207,14 @@ describe('Palette Accessibility Enhancements', () => {
       const sendToChatBtn = screen.getByRole('button', { name: 'Dateiinhalt in Chat übernehmen' });
       expect(sendToChatBtn).toHaveAttribute('title', 'Dateiinhalt in Chat übernehmen');
       expect(sendToChatBtn).toHaveClass('focus-visible:ring-2');
+      expect(sendToChatBtn).toHaveClass('hover:opacity-90');
 
       fireEvent.click(sendToChatBtn);
       expect(onSendToChat).toHaveBeenCalledTimes(1);
+
+      // Press Escape key to trigger onClose
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
 
       // Error state
       rerender(
@@ -209,9 +226,9 @@ describe('Palette Accessibility Enhancements', () => {
         />
       );
 
-      const warningIcon = container.querySelector('[aria-hidden="true"]');
+      const warningIcons = container.querySelectorAll('[aria-hidden="true"]');
+      const warningIcon = Array.from(warningIcons).find(el => el.textContent === '⚠️');
       expect(warningIcon).toBeInTheDocument();
-      expect(warningIcon).toHaveTextContent('⚠️');
     });
   });
 
