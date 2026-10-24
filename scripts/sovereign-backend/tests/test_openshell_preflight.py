@@ -5,8 +5,14 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+import sys
 
-from backend.agent_runtime.openshell_preflight import (
+# Import the actual deployment module used by the backend CI/runtime; do not
+# depend on `backend` being importable inside the sovereign-backend pytest job.
+ROOT = Path(__file__).resolve().parents[3]
+BACKEND_ROOT = ROOT / "scripts" / "sovereign-backend"
+sys.path.insert(0, str(BACKEND_ROOT))
+from agent_runtime.openshell_preflight import (
     OpenShellPreflightError,
     prove_policy,
     sandbox_canary,
@@ -42,7 +48,7 @@ class OpenShellPreflightTests(unittest.TestCase):
         self.assertEqual(receipt["policy_sha256"], self.digest)
 
     def test_hash_mismatch_fails_before_external_execution(self):
-        with patch("backend.agent_runtime.openshell_preflight.subprocess.run") as runner:
+        with patch("agent_runtime.openshell_preflight.subprocess.run") as runner:
             with self.assertRaises(OpenShellPreflightError):
                 prove_policy(self.policy, self.boundary, "0"*64, self.boundary_digest, "0.1.5")
             runner.assert_not_called()
@@ -93,7 +99,7 @@ class OpenShellPreflightTests(unittest.TestCase):
             prove_policy(self.policy, self.boundary, self.digest, self.boundary_digest, "0.1.5", run=timed_out)
 
     def test_pinned_policy_and_mirror_have_exact_checked_in_bytes(self):
-        from backend.agent_runtime.openshell_preflight import EXPECTED_POLICY_SHA256, EXPECTED_BOUNDARY_SHA256
+        from agent_runtime.openshell_preflight import EXPECTED_POLICY_SHA256, EXPECTED_BOUNDARY_SHA256
         import hashlib
         root = Path(__file__).resolve().parents[3]
         self.assertEqual(hashlib.sha256(self.pinned_policy.read_bytes()).hexdigest(), EXPECTED_POLICY_SHA256)
