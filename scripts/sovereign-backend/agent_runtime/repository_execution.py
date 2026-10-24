@@ -66,7 +66,8 @@ from .job_store import (
     update_agent_job_state,
 )
 from .tool_runner import run_agent_job_tool
-from .workspace_policy import repo_dir_for_workspace, validate_workspace_relative_path
+from .workspace_policy import repo_dir_for_workspace, validate_workspace_relative_path, workspace_root as configured_workspace_root
+from .workspace_capacity import admit_workspace_operation, WorkspaceCapacityError
 from llm_execution_resolver import (
     FREE_SINGLE_AGENT_PROFILE,
     FREE_SWARM_PROFILE,
@@ -920,6 +921,14 @@ def start_repository_execution(
 
     if "githubAccessToken" in body:
         raise RepositoryExecutionError("GITHUB_CREDENTIAL_FORBIDDEN_ON_EXECUTION")
+
+    # Reject capacity pressure before GitHub lookups, DB writes or a new clone.
+    # The lower workspace and clone gates recheck under the same filesystem lock.
+    try:
+        with admit_workspace_operation(workspace_root or configured_workspace_root(), creates_workspace=True):
+            pass
+    except WorkspaceCapacityError as exc:
+        raise RepositoryExecutionError(f"HOST_WORKSPACE_ADMISSION_BLOCKED:{exc}") from exc
 
     payload = _normalized_repository_payload(body)
     if not str(payload.get("expectedHeadSha") or "").strip():

@@ -18,6 +18,7 @@ from typing import Iterator, Literal, Mapping, Sequence
 import uuid
 
 from .contracts import SovereignAgentEvent, normalize_agent_paths, sanitize_agent_text
+from .workspace_capacity import admit_workspace_operation
 from .workspace_policy import (
     WorkspacePolicyError,
     normalize_workspace_permissions,
@@ -155,7 +156,7 @@ def git_credential_environment(token: str | None, directory: Path) -> Iterator[M
         askpass.unlink(missing_ok=True)
 
 
-def clone_repo_into_workspace(
+def _clone_repo_into_workspace_unlocked(
     workspace_id: str,
     repo_url: str,
     branch: str = "main",
@@ -204,6 +205,29 @@ def clone_repo_into_workspace(
             blocker=sanitize_agent_text(str(exc), 1200),
         )
 
+
+
+def clone_repo_into_workspace(
+    workspace_id: str,
+    repo_url: str,
+    branch: str = "main",
+    root: Path | None = None,
+    timeout_seconds: int = 120,
+    token: str | None = None,
+) -> GitWorkspaceResult:
+    """Serialize all clones on one workspace volume and recheck free disk."""
+    try:
+        workspace = safe_workspace_path(workspace_id, root)
+        with admit_workspace_operation(workspace.parent, creates_workspace=False):
+            return _clone_repo_into_workspace_unlocked(
+                workspace_id, repo_url, branch, root, timeout_seconds, token,
+            )
+    except Exception as exc:
+        return GitWorkspaceResult(
+            status="blocked",
+            events=(_event("repo_clone_blocked", "warning", str(exc)),),
+            blocker=sanitize_agent_text(str(exc), 1200),
+        )
 
 def git_status_changed_files(workspace_id: str, root: Path | None = None) -> GitWorkspaceResult:
     try:
