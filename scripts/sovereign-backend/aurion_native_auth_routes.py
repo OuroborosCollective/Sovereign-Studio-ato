@@ -1,17 +1,22 @@
 """Owner-authenticated, same-origin approval of one freshly resolved repair plan."""
 import os
 from flask import jsonify, make_response, request
-from aurion_native_auth import NativeAuthRepair, NativeAuthState, OPERATION, RepairBlocked
+from aurion_native_auth import NativeAuthRepair, NativeAuthState, OPERATION, RepairBlocked, plan_diagnostic
 from command_queue import HostCommandQueueClient
 from owner_input_runtime import _no_store, _owner_matches
-from agent_runtime.agent_run_receipts import _broker_call
+from agent_runtime.agent_run_receipts import _broker_call, ReceiptIdentityBlocked
 
 
 class PlanReader:
     def snapshot(self, revision):
-        result = _broker_call("aurion_native_auth_plan", {"expected_revision": revision}, timeout=90)
+        try:
+            result = _broker_call("aurion_native_auth_plan", {"expected_revision": revision}, timeout=90)
+        except ReceiptIdentityBlocked as error:
+            raise RepairBlocked(plan_diagnostic(error.failure_family)) from None
+        if not isinstance(result, dict):
+            raise RepairBlocked("NATIVE_AUTH_PLAN_UNAVAILABLE")
         if "snapshot" not in result or "planHash" not in result:
-            raise RepairBlocked("PLAN_UNAVAILABLE")
+            raise RepairBlocked(plan_diagnostic(result.get("blocker"))) from None
         return result["snapshot"]
 
 
@@ -43,6 +48,9 @@ def register_aurion_native_auth_routes(app, *, require_admin, get_current_admin)
             body = payload({"expectedRevision"})
             runtime = NativeAuthRepair(PlanReader(), NativeAuthState())
             return result(runtime.plan(body["expectedRevision"]))
+        except RepairBlocked as error:
+            code = error.args[0] if len(error.args) == 1 else None
+            return result({"error": plan_diagnostic(code)}, 409)
         except Exception:
             return result({"error": "NATIVE_AUTH_PLAN_UNAVAILABLE"}, 409)
 
@@ -116,7 +124,8 @@ current=null;element('approve').disabled=true;element('plan').disabled=!admin;};
 element('logout').onclick=forget;window.addEventListener('pagehide',forget);
 function publicFailure(status,value){
 const allowed={403:['OWNER_OR_ORIGIN_REQUIRED','OWNER_REQUIRED'],
-409:['NATIVE_AUTH_PLAN_UNAVAILABLE','NATIVE_AUTH_APPROVAL_BLOCKED'],
+409:[
+"NATIVE_AUTH_PLAN_UNAVAILABLE", "NATIVE_AUTH_APPROVAL_BLOCKED", "SCHEMA_MISMATCH", "TARGET_OR_REVISION_INVALID", "TARGET_OR_REVISION_DRIFT", "IDENTITY_UNRESOLVED", "SNAPSHOT_CONTRACT", "CONFIGURATION_CONTRACT", "BASELINE_UNHEALTHY", "EXISTING_KEY_INVALID", "ENV_ENCODING", "ENV_FORMAT", "ENV_DUPLICATE", "ENV_EXPANSION", "FILE_NAME", "FILE_PROTECTION", "FILE_SIZE", "FILE_DRIFT", "FILE_UNAVAILABLE", "HOST_PATH_INVALID", "HOST_DIRECTORY_UNPROTECTED", "DEPLOYMENT_LINK_INVALID", "DEPLOYMENT_LINK_DRIFT", "HEALTH_BODY_SIZE", "HOST_COMMAND_FAILED", "CONTAINER_CARDINALITY", "CONTAINER_IDENTITY", "CONTAINER_ENV_DUPLICATE", "VOLUME_CONFIGURATION_DRIFT", "NETWORK_CONFIGURATION_DRIFT", "HOST_CONFIGURATION_DRIFT", "VOLUMES_UNAVAILABLE", "DEPLOYMENT_RECEIPT_MISMATCH", "ACTIVE_COMPOSE_UNRESOLVED", "DEPLOYMENT_MANIFEST_MISMATCH", "ROUTING_ENV_INVALID", "RUNTIME_DIGEST_MISMATCH", "IMAGE_REVISION_MISMATCH", "IMAGE_PROCESS_OVERRIDE", "IMAGE_HEALTHCHECK_UNVERIFIED", "EFFECTIVE_AUTH_CONFIG_DRIFT", "COMPOSE_SERVICE_MISMATCH", "EFFECTIVE_CONFIG_DRIFT", "NATIVE_AUTH_PRIVATE_OPERATOR_REQUIRED", "BROKER_SOCKET_UNAVAILABLE", "BROKER_SOCKET_PERMISSION_DENIED", "BROKER_RPC_TIMEOUT", "BROKER_RPC_UNAVAILABLE", "BROKER_RESPONSE_TOO_LARGE", "BROKER_RPC_INVALID_RESPONSE", "BROKER_RPC_CONTRACT_MISMATCH"],
 400:['OPERATION_INVALID'],503:['NATIVE_AUTH_READBACK_UNAVAILABLE']};
 const code=status===401?'AUTHENTICATION_NOT_CONFIRMED':
 ((allowed[status]||[]).includes(value?.error)?value.error:'REQUEST_NOT_CONFIRMED');

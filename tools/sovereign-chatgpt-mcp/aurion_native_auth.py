@@ -34,6 +34,65 @@ class RepairBlocked(ValueError):
     """Fixed failure code only: never include input, stderr or file contents."""
 
 
+# Public diagnostics for the read-only plan only. Never infer a code from
+# arbitrary exception text, prefixes, HTTP bodies, SQL or environment contents.
+PLAN_DIAGNOSTIC_CODES = frozenset({
+    'SCHEMA_MISMATCH',
+    'TARGET_OR_REVISION_INVALID',
+    'TARGET_OR_REVISION_DRIFT',
+    'IDENTITY_UNRESOLVED',
+    'SNAPSHOT_CONTRACT',
+    'CONFIGURATION_CONTRACT',
+    'BASELINE_UNHEALTHY',
+    'EXISTING_KEY_INVALID',
+    'ENV_ENCODING',
+    'ENV_FORMAT',
+    'ENV_DUPLICATE',
+    'ENV_EXPANSION',
+    'FILE_NAME',
+    'FILE_PROTECTION',
+    'FILE_SIZE',
+    'FILE_DRIFT',
+    'FILE_UNAVAILABLE',
+    'HOST_PATH_INVALID',
+    'HOST_DIRECTORY_UNPROTECTED',
+    'DEPLOYMENT_LINK_INVALID',
+    'DEPLOYMENT_LINK_DRIFT',
+    'HEALTH_BODY_SIZE',
+    'HOST_COMMAND_FAILED',
+    'CONTAINER_CARDINALITY',
+    'CONTAINER_IDENTITY',
+    'CONTAINER_ENV_DUPLICATE',
+    'VOLUME_CONFIGURATION_DRIFT',
+    'NETWORK_CONFIGURATION_DRIFT',
+    'HOST_CONFIGURATION_DRIFT',
+    'VOLUMES_UNAVAILABLE',
+    'DEPLOYMENT_RECEIPT_MISMATCH',
+    'ACTIVE_COMPOSE_UNRESOLVED',
+    'DEPLOYMENT_MANIFEST_MISMATCH',
+    'ROUTING_ENV_INVALID',
+    'RUNTIME_DIGEST_MISMATCH',
+    'IMAGE_REVISION_MISMATCH',
+    'IMAGE_PROCESS_OVERRIDE',
+    'IMAGE_HEALTHCHECK_UNVERIFIED',
+    'EFFECTIVE_AUTH_CONFIG_DRIFT',
+    'COMPOSE_SERVICE_MISMATCH',
+    'EFFECTIVE_CONFIG_DRIFT',
+    'NATIVE_AUTH_PRIVATE_OPERATOR_REQUIRED',
+    'BROKER_SOCKET_UNAVAILABLE',
+    'BROKER_SOCKET_PERMISSION_DENIED',
+    'BROKER_RPC_TIMEOUT',
+    'BROKER_RPC_UNAVAILABLE',
+    'BROKER_RESPONSE_TOO_LARGE',
+    'BROKER_RPC_INVALID_RESPONSE',
+    'BROKER_RPC_CONTRACT_MISMATCH',
+})
+
+
+def plan_diagnostic(value, fallback="NATIVE_AUTH_PLAN_UNAVAILABLE"):
+    return value if type(value) is str and value in PLAN_DIAGNOSTIC_CODES else fallback
+
+
 def redacted_boundary(function):
     @wraps(function)
     def guarded(*args, **kwargs):
@@ -220,6 +279,12 @@ class NativeAuthRepair:
     def _adapter(self, method, *args):
         try:
             return getattr(self.adapter, method)(*args)
+        except RepairBlocked as error:
+            # Only snapshot diagnostics cross this boundary. Mutation/readback
+            # failures retain their existing generic public contract.
+            code = error.args[0] if len(error.args) == 1 else None
+            raise RepairBlocked(plan_diagnostic(code, "HOST_ADAPTER_FAILED")
+                                if method == "snapshot" else "HOST_ADAPTER_FAILED") from None
         except Exception:
             raise RepairBlocked("HOST_ADAPTER_FAILED") from None
 

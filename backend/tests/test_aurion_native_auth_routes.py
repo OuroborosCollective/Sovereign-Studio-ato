@@ -204,3 +204,37 @@ def test_lost_enqueue_response_remains_uncertain_and_never_resubmits(client, mon
     operation = response.json["operationId"]
     assert api.get("/api/admin/aurion-native-auth/readback/" + operation, headers=headers()).status_code == 200
     assert len(jobs) == 1
+
+
+@pytest.mark.parametrize("blocker,expected", [
+    ("SCHEMA_MISMATCH", "SCHEMA_MISMATCH"),
+    ("NATIVE_AUTH_PRIVATE_OPERATOR_REQUIRED", "NATIVE_AUTH_PRIVATE_OPERATOR_REQUIRED"),
+    ("SYNTHETIC_SECRET_BODY", "NATIVE_AUTH_PLAN_UNAVAILABLE"),
+    ("SCHEMA_MISMATCH SYNTHETIC_SECRET_BODY", "NATIVE_AUTH_PLAN_UNAVAILABLE"),
+    ({"secret": "SYNTHETIC_SECRET_BODY"}, "NATIVE_AUTH_PLAN_UNAVAILABLE"),
+])
+def test_plan_preserves_only_exact_diagnostic_codes(client, monkeypatch, caplog, blocker, expected):
+    api, _, _, jobs, _, root = client
+    monkeypatch.setattr(routes, "_broker_call", lambda *a, **k:
+        {"ok": False, "status": "BLOCKED", "blocker": blocker, "detail": "SYNTHETIC_SECRET_BODY"})
+    response = api.post("/api/admin/aurion-native-auth/plan",
+        json={"expectedRevision": "a" * 40}, headers=headers())
+    assert response.status_code == 409 and response.json == {"error": expected}
+    assert "SYNTHETIC_SECRET_BODY" not in response.text + caplog.text
+    assert jobs == [] and list(root.iterdir()) == []
+
+
+@pytest.mark.parametrize("family,expected", [
+    ("BROKER_RPC_TIMEOUT", "BROKER_RPC_TIMEOUT"),
+    ("SYNTHETIC_SECRET_TRANSPORT", "NATIVE_AUTH_PLAN_UNAVAILABLE"),
+])
+def test_transport_family_is_allowlisted_without_details(client, monkeypatch, caplog, family, expected):
+    api, _, _, jobs, _, root = client
+    def fail(*args, **kwargs):
+        raise routes.ReceiptIdentityBlocked(family, "SYNTHETIC_SECRET_TRANSPORT")
+    monkeypatch.setattr(routes, "_broker_call", fail)
+    response = api.post("/api/admin/aurion-native-auth/plan",
+        json={"expectedRevision": "a" * 40}, headers=headers())
+    assert response.status_code == 409 and response.json == {"error": expected}
+    assert "SYNTHETIC_SECRET_TRANSPORT" not in response.text + caplog.text
+    assert jobs == [] and list(root.iterdir()) == []
