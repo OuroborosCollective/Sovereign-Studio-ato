@@ -16,7 +16,7 @@ export function RegistryReadbackStatus({ observedAt, receivedMonotonicMs, isLoad
   const stale = Boolean(readbackError) || (age != null && age >= 30);
   return <div className="text-[10px] text-[var(--text-muted)] space-y-1">
     <div className="flex items-center justify-between gap-2"><span>{stale ? 'LAST OBSERVED · STALE READBACK' : isLoading ? 'READING SERVER STATE' : observedAt ? 'SERVER READBACK' : 'READBACK UNAVAILABLE'}</span>
-      {onRefresh && <button type="button" onClick={onRefresh} disabled={isLoading} className="min-h-11 px-2 rounded border border-white/10 text-white disabled:opacity-40">REFRESH READBACK</button>}</div>
+      {onRefresh && <button type="button" onClick={onRefresh} disabled={isLoading} className="min-h-11 px-2 rounded border border-white/10 text-white disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--emerald-seal)] hover:bg-white/5 transition-colors">REFRESH READBACK</button>}</div>
     {observedAt && <div className="break-all">Observed: {observedAt}{age != null && <> · received {age}s ago</>}</div>}
     {readbackError && <div role="alert" className="text-[var(--red-alert)] break-words">Readback unavailable: {readbackError}</div>}
   </div>;
