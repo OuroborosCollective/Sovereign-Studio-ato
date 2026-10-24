@@ -447,18 +447,25 @@ export function PlayReleaseChat() {
     setLastFailureDiagnostic(null);
     addMessage('user', text);
 
+    // ⚡ Bolt: Prevent chained O(N) array allocation overhead (.filter.slice.map) by bounded reverse iteration
+    const conversationBuffer: DevChatWorkerMessage[] = [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const entry = messages[i];
+      if (entry.role === 'user' || entry.role === 'assistant') {
+        conversationBuffer.unshift({
+          role: entry.role as 'user' | 'assistant',
+          content: entry.text,
+        });
+        if (conversationBuffer.length >= 18) break;
+      }
+    }
+
     const conversation: DevChatWorkerMessage[] = [
       {
         role: 'system',
         content: 'Du bist Sovereign. Antworte hilfreich, klar und direkt. Behaupte keine ausgeführten Aktionen ohne echte Runtime-Evidence.',
       },
-      ...messages
-        .filter((entry) => entry.role === 'user' || entry.role === 'assistant')
-        .slice(-18)
-        .map((entry): DevChatWorkerMessage => ({
-          role: entry.role as 'user' | 'assistant',
-          content: entry.text,
-        })),
+      ...conversationBuffer,
       { role: 'user', content: text },
     ];
 
@@ -474,13 +481,18 @@ export function PlayReleaseChat() {
       if (parsedRepo) setRepoTarget(nextRepoTarget);
 
       if (nextRepoTarget) {
-        const recentMessages = messages
-          .filter((entry) => entry.role === 'user' || entry.role === 'assistant')
-          .slice(-6)
-          .map((entry): DevChatWorkerMessage => ({
-            role: entry.role as 'user' | 'assistant',
-            content: entry.text,
-          }));
+        // ⚡ Bolt: Prevent chained O(N) array allocation overhead (.filter.slice.map) by bounded reverse iteration
+        const recentMessages: DevChatWorkerMessage[] = [];
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const entry = messages[i];
+          if (entry.role === 'user' || entry.role === 'assistant') {
+            recentMessages.unshift({
+              role: entry.role as 'user' | 'assistant',
+              content: entry.text,
+            });
+            if (recentMessages.length >= 6) break;
+          }
+        }
         const interpreted = await fetchSovereignDirectLlmInterpretation({
           preferredModel: model,
           text,
