@@ -118,3 +118,39 @@ def test_miha_canonical_mirror_parity():
     a = (ROOT / "backend/agent_runtime/repository_miha_hunt.py").read_bytes()
     b = (ROOT / "scripts/sovereign-backend/agent_runtime/repository_miha_hunt.py").read_bytes()
     assert a == b
+
+
+@pytest.mark.parametrize("source, expected_findings", [
+    ("print('ok')\n", 0),
+    ("try:\n    print('ok')\nexcept:\n    pass\n", 2),
+])
+def test_miha_accepts_real_provider_neutral_scan(tmp_path, source, expected_findings):
+    root = tmp_path / "workspaces"
+    repo = root / "agent-real-scan" / "repo"
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "example.py").write_text(source, encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "example.py"], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@example.invalid",
+                    "-c", "user.name=Test", "commit", "-qm", "base"], check=True)
+    head = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+    job = SimpleNamespace(job_id="agent-real-scan", user_id="owner", workspace_id="agent-real-scan",
+                          repo_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+                          branch="main", mission="Inspect this repo")
+
+    # Exercise the registered Janitor through the real immutable-result kernel.
+    result = miha.run_agent_job_tool(job, "janitor", {
+        "mode": "scan", "maxFindings": 20, "maxFiles": 200,
+        "includeDocs": True, "explainWithLocalModel": False,
+    }, root)
+    assert result.status == "done"
+    assert isinstance(result.metadata["findings"], tuple)
+    assert len(result.metadata["findings"]) == expected_findings
+    receipt = miha.run_repository_miha_code_hunt(job, workspace_root=root, expected_head_sha=head)
+    assert receipt["totalStaticCandidates"] == expected_findings
+    assert receipt["scannedFiles"] == 1
+    assert receipt["observedHeadSha"] == head
+    assert receipt["scanReadOnly"] is True
+    for finding in receipt["nodes"][1:]:
+        assert finding["contentSha256"] == hashlib.sha256(source.encode()).hexdigest()
+    assert not subprocess.check_output(["git", "-C", str(repo), "status", "--porcelain"])
