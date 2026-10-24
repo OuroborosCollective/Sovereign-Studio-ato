@@ -216,6 +216,77 @@ class HostAdapterContracts(unittest.TestCase):
         plan = self.runtime.plan(self.revision)
         return plan, self.runtime.issue(plan["planHash"], self.revision)["operationId"]
 
+    def test_routing_database_default_matches_canonical_promoter(self):
+        path = self.root / core.RUNTIME_FILE.lstrip("/")
+        original = path.read_bytes()
+        identities = []
+        for value in (None, "", "echoes-of-aurion-internal"):
+            with self.subTest(value=value):
+                lines = [line for line in original.splitlines() if not line.startswith(b"AURION_DATABASE_NETWORK=")]
+                if value is not None:
+                    lines.append(("AURION_DATABASE_NETWORK=" + value).encode())
+                self.write(core.RUNTIME_FILE, b"\n".join(lines) + b"\n")
+                context, _ = self.host.resolve(self.revision)
+                self.assertEqual(context["composeEnv"]["AURION_DATABASE_NETWORK"], "echoes-of-aurion-internal")
+                self.assertEqual(context["receipt"]["databaseNetwork"], "echoes-of-aurion-internal")
+                identities.append(context["runtimeIdentity"]["sha256"])
+                self.assertTrue(self.runtime.plan(self.revision)["planHash"])
+        self.assertEqual(len(set(identities)), 3)  # raw file drift remains bound
+        self.assertEqual(self.up_count, 0)
+        self.assertFalse(any(self.state_root.glob("*approval*")))
+
+    def test_default_does_not_bypass_actual_network_identity(self):
+        path = self.root / core.RUNTIME_FILE.lstrip("/")
+        raw = path.read_bytes()
+        self.write(core.RUNTIME_FILE, b"\n".join(line for line in raw.splitlines()
+                   if not line.startswith(b"AURION_DATABASE_NETWORK=")) + b"\n")
+        self.row["NetworkSettings"]["Networks"].pop("echoes-of-aurion-internal")
+        with self.assertRaisesRegex(core.RepairBlocked, "NETWORK_CONFIGURATION_DRIFT"):
+            self.runtime.plan(self.revision)
+        self.assertEqual(self.up_count, 0)
+
+    def test_routing_value_free_failure_groups(self):
+        path = self.root / core.RUNTIME_FILE.lstrip("/")
+        original = core.parse_env(path.read_bytes())
+        marker = "SYNTHETIC_ROUTING_SECRET"
+        cases = [
+            ("AURION_ENV_FILE", None, "ROUTING_REQUIRED_KEY_MISSING"),
+            ("AURION_ENV_FILE", marker, "ROUTING_ENV_FILE_MISMATCH"),
+            ("AURION_DOMAIN", marker, "ROUTING_DOMAIN_MISMATCH"),
+            ("TRAEFIK_NETWORK", marker, "ROUTING_PROXY_NETWORK_MISMATCH"),
+            ("AURION_DATABASE_NETWORK", marker, "ROUTING_DATABASE_NETWORK_MISMATCH"),
+            ("TRAEFIK_CERTRESOLVER", "", "ROUTING_CERTRESOLVER_INVALID"),
+            ("TRAEFIK_CERTRESOLVER", marker + "/", "ROUTING_CERTRESOLVER_INVALID"),
+            ("UNEXPECTED", marker, "ROUTING_UNEXPECTED_KEY"),
+        ]
+        for key, value, expected in cases:
+            with self.subTest(code=expected):
+                values = dict(original)
+                if value is None: values.pop(key)
+                else: values[key] = value
+                self.write(core.RUNTIME_FILE, "".join(k + "=" + v + "\n" for k, v in values.items()).encode())
+                with self.assertRaises(core.RepairBlocked) as failure:
+                    self.runtime.plan(self.revision)
+                self.assertEqual(str(failure.exception), expected)
+                self.assertNotIn(marker, str(failure.exception))
+                self.assertEqual(self.up_count, 0)
+
+    def test_routing_receipt_identity_remains_strict(self):
+        original = dict(self.receipt)
+        for field, code in (
+                ("domain", "ROUTING_RECEIPT_DOMAIN_MISMATCH"),
+                ("traefikNetwork", "ROUTING_RECEIPT_PROXY_NETWORK_MISMATCH"),
+                ("databaseNetwork", "ROUTING_RECEIPT_DATABASE_NETWORK_MISMATCH")):
+            with self.subTest(field=field):
+                self.receipt = {**original, field: "SYNTHETIC_RECEIPT_SECRET"}
+                self.write(host.PUBLIC_RECEIPT, json.dumps(self.receipt).encode(), 0o644)
+                self.write(host.RECEIPTS + self.release_id + ".json",
+                           json.dumps({**self.receipt, "recordType": "aurion_traefik_runtime_receipt"}).encode())
+                with self.assertRaises(core.RepairBlocked) as failure:
+                    self.runtime.plan(self.revision)
+                self.assertEqual(str(failure.exception), code)
+                self.assertEqual(self.up_count, 0)
+
     def test_full_adapter_plan_apply_and_readback(self):
         plan, operation = self.approve()
         result = self.runtime.apply(operation)

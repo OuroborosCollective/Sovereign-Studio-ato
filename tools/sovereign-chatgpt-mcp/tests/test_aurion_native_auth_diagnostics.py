@@ -53,6 +53,8 @@ class PlanDiagnostics(unittest.TestCase):
                  (ValueError(secret), 'NATIVE_AUTH_PLAN_UNAVAILABLE'),
                  (core.RepairBlocked(secret), 'NATIVE_AUTH_PLAN_UNAVAILABLE'),
                  (core.RepairBlocked('SCHEMA_MISMATCH '+secret), 'NATIVE_AUTH_PLAN_UNAVAILABLE')]
+        cases.extend((core.RepairBlocked(code), code) for code in sorted(core.PLAN_DIAGNOSTIC_CODES)
+                     if code.startswith('ROUTING_'))
         for failure, expected in cases:
             with self.subTest(expected=expected, exception=type(failure).__name__):
                 class Host:
@@ -88,10 +90,10 @@ global.window={addEventListener(){}};
                 script = page.split('<script>')[1].split('</script>')[0]
                 assertions = '''(async()=>{element('adminKey').value='SYNTHETIC_KEY';element('login').onclick();
 element('revision').value='a'.repeat(40);let calls=0;
-global.fetch=async()=>{calls++;return {status:409,ok:false,json:async()=>(BODY)};};
+global.fetch=async()=>{calls++;return {status:409,ok:false,json:async()=>(__PAYLOAD_JSON__)};};
 await element('plan').onclick();assert.equal(calls,1);assert(element('approve').disabled);
-assert.equal(element('preview').textContent,EXPECTED);
-})().catch(()=>process.exitCode=1);'''.replace('BODY',json.dumps(body)).replace('EXPECTED',json.dumps('HTTP 409 · '+expected))
+assert.equal(element('preview').textContent,__EXPECTED_JSON__);
+})().catch(()=>process.exitCode=1);'''.replace('__PAYLOAD_JSON__',json.dumps(body)).replace('__EXPECTED_JSON__',json.dumps('HTTP 409 · '+expected))
                 ran = subprocess.run(['node','-'], input=harness+script+assertions, text=True, capture_output=True, timeout=10)
                 self.assertEqual(ran.returncode,0,ran.stderr)
                 self.assertNotIn(secret,ran.stdout+ran.stderr)
