@@ -55,9 +55,16 @@ describe('maskSecrets', () => {
     expect(maskSecrets(`Failed with ${secret}`)).toBe('Failed with gsk_****');
   });
 
-  it('masks xAI style keys', () => {
+  it('masks xAI style keys and xAI credential labels', () => {
     const secret = 'xai-1234567890abcdefghijklmnopqrstuvwxyz';
     expect(maskSecrets(`Failed with ${secret}`)).toBe('Failed with xai-****');
+    expect(maskSecrets('xai_key: xai_key_val_101')).toBe('xai_key: ****');
+    expect(maskSecrets('xai_secret=xai_secret_val_202')).toBe('xai_secret=****');
+    expect(maskSecrets('xai_token: xai_token_val_303')).toBe('xai_token: ****');
+    expect(maskSecrets('"xai_key": "xai_key_quoted_val"')).toBe('"xai_key": ****');
+
+    const plain = 'xai_key docs mention xai_secret and xai_token without assignments';
+    expect(maskSecrets(plain)).toBe(plain);
   });
 
   it('masks OpenAI Project keys', () => {
