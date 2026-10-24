@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "acbdd7ef3c2e28e603083eb73f310c4688ef0eb0",
+  "sourceRevision": "57a0f0d9feb0c956452f2db6c527f2aee493238e",
   "rawCandidateCount": 105,
   "canonicalCandidateCount": 82,
   "entries": [
@@ -523,12 +523,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/aurion_native_auth.py",
       "mirrorPaths": [],
       "symbol": "parse_env",
-      "line": 136,
+      "line": 146,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "19ce464923ec9a58972d2761cdb6626c0330c2e4757a2b2dec2edca02627c819",
+      "fileSha256": "bdf09920627e47588e62b6e4bdd9d96ec14f972ca95aed1e4117225cdba30842",
       "anchorSha256": "56cbde2ade3d8b90dbdcf4fb03429a93c9c1777a371fad7b66f73d26b2eaecbb",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:e8986ec88b89aef9b9e97a21",
+      "candidateId": "llm-boundary:99ce4913a280dfc56464496e",
       "classification": "STRUCTURED_POLICY",
       "rationale": "Reviewed strict dotenv grammar for the fixed Aurion repair: startswith and membership checks recognize comments, quoting and prohibited expansion syntax in structured configuration bytes. They do not infer user intent, grant authority, select tools or interpret free language. Duplicate and ambiguous entries fail closed; authenticated owner approval is a separate route."
     },
@@ -1118,5 +1118,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "522181b59a0642ffab7cc93352a06a8527f90135200ce0f1d3f0b0508faba059"
+  "ledgerSha256": "0fb805fb21b2ec6a342d844951f16cbcd15bfbcdbe2852cc823ccc9ba47ea03d"
 }

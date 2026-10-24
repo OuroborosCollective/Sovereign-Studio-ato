@@ -288,16 +288,29 @@ class AurionNativeAuthHost:
             raise RepairBlocked("DEPLOYMENT_MANIFEST_MISMATCH")
         runtime_file = self.files.read(RUNTIME_FILE, secret=True)
         runtime = parse_env(runtime_file.raw)
-        expected_routing = {"AURION_ENV_FILE": ENV_FILE, "AURION_DOMAIN": "arelogic.space",
-                            "TRAEFIK_NETWORK": "areloria_arelorian-network",
-                            "AURION_DATABASE_NETWORK": "echoes-of-aurion-internal"}
-        if (any(runtime.get(k) != v for k, v in expected_routing.items())
-                or not re.fullmatch(r"[A-Za-z0-9_-]+", runtime.get("TRAEFIK_CERTRESOLVER", ""))
-                or set(runtime) != set(expected_routing) | {"TRAEFIK_CERTRESOLVER"}
-                or receipt.get("domain") != runtime["AURION_DOMAIN"]
-                or receipt.get("traefikNetwork") != runtime["TRAEFIK_NETWORK"]
-                or receipt.get("databaseNetwork") != runtime["AURION_DATABASE_NETWORK"]):
-            raise RepairBlocked("ROUTING_ENV_INVALID")
+        # Match pinned promoter read_runtime_env fallback for absent/empty DB
+        # network only. The original file identity remains bound in the plan.
+        runtime["AURION_DATABASE_NETWORK"] = runtime.get("AURION_DATABASE_NETWORK") or "echoes-of-aurion-internal"
+        expected_routing = {"AURION_ENV_FILE": (ENV_FILE, "ROUTING_ENV_FILE_MISMATCH"),
+                            "AURION_DOMAIN": ("arelogic.space", "ROUTING_DOMAIN_MISMATCH"),
+                            "TRAEFIK_NETWORK": ("areloria_arelorian-network", "ROUTING_PROXY_NETWORK_MISMATCH"),
+                            "AURION_DATABASE_NETWORK": ("echoes-of-aurion-internal", "ROUTING_DATABASE_NETWORK_MISMATCH")}
+        required = set(expected_routing) | {"TRAEFIK_CERTRESOLVER"}
+        if required - set(runtime):
+            raise RepairBlocked("ROUTING_REQUIRED_KEY_MISSING")
+        if set(runtime) - required:
+            raise RepairBlocked("ROUTING_UNEXPECTED_KEY")
+        for key, (expected, code) in expected_routing.items():
+            if runtime[key] != expected:
+                raise RepairBlocked(code)
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", runtime["TRAEFIK_CERTRESOLVER"]):
+            raise RepairBlocked("ROUTING_CERTRESOLVER_INVALID")
+        for field, key, code in (
+                ("domain", "AURION_DOMAIN", "ROUTING_RECEIPT_DOMAIN_MISMATCH"),
+                ("traefikNetwork", "TRAEFIK_NETWORK", "ROUTING_RECEIPT_PROXY_NETWORK_MISMATCH"),
+                ("databaseNetwork", "AURION_DATABASE_NETWORK", "ROUTING_RECEIPT_DATABASE_NETWORK_MISMATCH")):
+            if receipt.get(field) != runtime[key]:
+                raise RepairBlocked(code)
         env = self.environment(row)
         compose_env = {**runtime, "AURION_IMAGE_TAG": expected_revision, "AURION_RELEASE_SHA": expected_revision}
         for key, field in DIGEST_FIELDS.items():
