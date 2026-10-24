@@ -38,13 +38,23 @@ function createOrderedSignal(overrides: Partial<OrderedSignal> & { tick: number;
 }
 
 function createTickWindow(signals: OrderedSignal[], overrides: Partial<TickWindow> = {}): TickWindow {
-  const ticks = signals.map((s) => s.metadata.tick);
+  let startTick = Infinity;
+  let endTick = -Infinity;
+  const nodesSet = new Set<string>();
+
+  for (let i = 0; i < signals.length; i++) {
+    const tick = signals[i].metadata.tick;
+    if (tick < startTick) startTick = tick;
+    if (tick > endTick) endTick = tick;
+    nodesSet.add(signals[i].metadata.node);
+  }
+
   return {
     id: 'window-1',
-    startTick: Math.min(...ticks),
-    endTick: Math.max(...ticks),
+    startTick: startTick === Infinity ? 0 : startTick,
+    endTick: endTick === -Infinity ? 0 : endTick,
     signals,
-    nodes: [...new Set(signals.map((s) => s.metadata.node))],
+    nodes: [...nodesSet],
     windowIndex: 0,
     configFingerprint: 'ws=3|ov=0',
     isComplete: true,
