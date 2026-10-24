@@ -640,7 +640,15 @@ describe('RepoInsightEngine', () => {
           ...result.output!.hardeningSuggestions,
           ...result.output!.featureSuggestions,
         ].map((s) => s.priority);
-        expect(top.priority).toBe(Math.min(...allPriorities));
+
+        let minPriority = Infinity;
+        for (let i = 0; i < allPriorities.length; i++) {
+          if (allPriorities[i] < minPriority) {
+            minPriority = allPriorities[i];
+          }
+        }
+
+        expect(top.priority).toBe(minPriority);
       }
     });
 

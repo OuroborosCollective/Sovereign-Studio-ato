@@ -202,22 +202,45 @@ function newestEvidenceRevision(anchors: readonly SovereignWorkspaceEvidenceAnch
 
 function runtimeReadback(snapshot: SovereignAgentJobSnapshot | undefined): Pick<SovereignJob,
   'runtimeEvidence' | 'serverObservedAt' | 'readbackReceivedMonotonicMs' | 'externalRef' | 'lastEventAt' | 'lastHeartbeatAt' | 'persistedEventCount'> {
+  let maxTime = -Infinity;
+  let maxHeartbeat = -Infinity;
+  let progressCount = 0;
+
+  if (snapshot?.events) {
+    for (const event of snapshot.events) {
+      if (typeof event.at === 'number' && Number.isFinite(event.at)) {
+        if (event.at > maxTime) maxTime = event.at;
+      }
+    }
+  }
+
   const runtimeEvents = snapshot?.runtimeEvidence?.events ?? [];
-  const heartbeatTimes = runtimeEvents.filter((event) => event.stage === 'sovereign_executor_heartbeat' && event.heartbeatCurrent === true)
-    .map((event) => Date.parse(event.at));
-  const progress = runtimeEvents.filter((event) => event.stage !== 'sovereign_executor_heartbeat');
-  const times = [
-    ...(snapshot?.events ?? []).map((event) => event.at),
-    ...progress.map((event) => Date.parse(event.at)),
-  ].filter(Number.isFinite);
+  for (const event of runtimeEvents) {
+    const timestamp = Date.parse(event.at);
+    const valid = Number.isFinite(timestamp);
+
+    if (event.stage === 'sovereign_executor_heartbeat') {
+      if (event.heartbeatCurrent === true) {
+        if (valid && timestamp > maxHeartbeat) maxHeartbeat = timestamp;
+      }
+    } else {
+      if (valid && timestamp > maxTime) maxTime = timestamp;
+      progressCount++;
+    }
+  }
+
+  // Fallback to check if we found valid times
+  const lastEventAt = maxTime > -Infinity ? new Date(maxTime).toISOString() : undefined;
+  const lastHeartbeatAt = maxHeartbeat > -Infinity ? new Date(maxHeartbeat).toISOString() : undefined;
+
   return {
     runtimeEvidence: snapshot?.runtimeEvidence,
     serverObservedAt: snapshot?.serverObservedAt,
     readbackReceivedMonotonicMs: snapshot?.readbackReceivedMonotonicMs,
     externalRef: snapshot?.externalRef,
-    lastEventAt: times.length ? new Date(Math.max(...times)).toISOString() : undefined,
-    lastHeartbeatAt: heartbeatTimes.length ? new Date(Math.max(...heartbeatTimes)).toISOString() : undefined,
-    persistedEventCount: (snapshot?.events.length ?? 0) + progress.length,
+    lastEventAt,
+    lastHeartbeatAt,
+    persistedEventCount: (snapshot?.events?.length ?? 0) + progressCount,
   };
 }
 
