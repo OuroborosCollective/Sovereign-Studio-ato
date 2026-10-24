@@ -87,3 +87,7 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+
+## 2026-10-13 - [Single-Pass Filter Consolidation and Module-Scoped Set Lookups in Learning Memory]
+**Learning:** In learning memory queries and runtime summary calculations, chaining multiple `.filter()` passes and performing repetitive array `.includes()` existence checks creates unnecessary intermediate array allocations and O(N) lookup overhead. Converting array existence arrays to module-scoped `Set` instances provides O(1) lookups, while consolidating multi-pass `.filter()` chains into a single `for` loop avoids intermediate array creations and reduces query execution overhead.
+**Action:** Always convert static string arrays used for membership checks to module-scoped `Set` objects and consolidate sequential `.filter()` operations into a single-pass loop.
