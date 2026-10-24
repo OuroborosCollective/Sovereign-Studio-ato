@@ -14,9 +14,12 @@ import time
 from typing import Literal
 
 from .contracts import SovereignAgentEvent, sanitize_agent_text
+from .workspace_capacity import admit_workspace_operation
 from .workspace_policy import (
     WorkspacePolicyError,
+    assert_safe_workspace_id,
     normalize_workspace_permissions,
+    workspace_root,
     repo_dir_for_workspace,
     safe_workspace_path,
 )
@@ -58,8 +61,11 @@ def create_agent_workspace(workspace_id: str, root: Path | None = None) -> Works
                 ),
                 blocker="Workspace already exists for this job.",
             )
-        repo_path.mkdir(parents=True, exist_ok=False)
-        normalize_workspace_permissions(workspace, root or workspace.parent)
+        with admit_workspace_operation(workspace.parent, creates_workspace=True):
+            if workspace.exists():
+                raise WorkspacePolicyError("WORKSPACE_CONCURRENT_PROVISION_BLOCKED")
+            repo_path.mkdir(parents=True, exist_ok=False)
+            normalize_workspace_permissions(workspace, root or workspace.parent)
         return WorkspaceProvisionResult(
             workspace_id=workspace_id,
             status="created",
@@ -82,6 +88,9 @@ def create_agent_workspace(workspace_id: str, root: Path | None = None) -> Works
 
 def cleanup_agent_workspace(workspace_id: str, root: Path | None = None) -> WorkspaceProvisionResult:
     try:
+        raw_workspace = (root or workspace_root()) / assert_safe_workspace_id(workspace_id)
+        if raw_workspace.is_symlink():
+            raise WorkspacePolicyError("WORKSPACE_CLEANUP_SYMLINK_BLOCKED")
         workspace = safe_workspace_path(workspace_id, root)
         if not workspace.exists():
             return WorkspaceProvisionResult(
