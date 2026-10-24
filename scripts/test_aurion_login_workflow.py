@@ -27,7 +27,7 @@ class LoginWorkflowTests(unittest.TestCase):
         self.fingerprint = self.sign['env']['AURION_LOGIN_SIGNER_SHA256']
 
     def test_exact_reviewed_aurion_revision_is_pinned_in_build_and_sign(self):
-        expected = '9e8c85938408a1f573529a6a4141a19048b47fe9'
+        expected = '24a1e4077ce4a5584b20ceeaf533fa417c8575a9'
         build = self.workflow['jobs']['build']
         self.assertEqual(build['env']['AURION_EXPECTED_REVISION'], expected)
         self.assertEqual(self.sign['env']['AURION_EXPECTED_REVISION'], expected)

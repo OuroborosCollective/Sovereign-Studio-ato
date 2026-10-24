@@ -1293,3 +1293,8 @@ Evidence: Real APK device report and valid/invalid live POSTs reproduce NATIVE_A
 
 ### 2026-10-24 — Kanonischer Native-Auth-Routing-Default
 Änderung: Fehlendes/leeres AURION_DATABASE_NETWORK übernimmt ausschließlich den gepinnten Promoter-Default; zehn wertfreie Routing-Untercodes durchlaufen die bestehende Allowlist bis zur UI. Erkenntnis: Der Vertragsfehler ist lokal reproduziert, seine tatsächliche Live-Auslösung bleibt UNVERIFIED. Evidence: 70 lokale Regressionen einschließlich Default-, Netzwerk-/Receipt-Identitäts-, Redaktions- und Mirror-Prüfungen bestanden; Ledger ohne Befund, keine Produktionsänderung.
+
+### 2026-10-24 — Signierte Aurion-APK mit korrigierter JNI-Brücke
+Änderung: Drei bestehende Signierworkflow-Pins und ihr Vertrag binden Aurion-Merge `24a1e4077ce4a5584b20ceeaf533fa417c8575a9`; die inline Gradle-Bereinigung übernimmt begrenzte ENOTEMPTY-Wiederholungen. Owner-Gates, Build-/Signierisolation und bestehendes Zertifikat bleiben erhalten.
+Erkenntnis: Ein unveränderter Signier-Retry hätte erneut APK `9e8c8593` gebaut; dieser Main-Push startet auch die ausdrücklich freigegebene Backend-/MCP-Releasekette.
+Evidence: Aurion #1151 auf exakt `7038453b` unabhängig geprüft und vollständig CI-grün; SHA-gebunden gemergt und Merge zurückgelesen. Pin-Vertrag zunächst kausal rot, danach 13 lokale Workflow-/Signatur-/Artefakt-Verträge bestanden. Signierte APK und produktiver Backend/MCP-Readback bleiben bis tatsächlicher Ausführung UNVERIFIED; kein zusätzlicher Aurion-Serverrelease.
