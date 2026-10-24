@@ -1,17 +1,22 @@
 """Owner-authenticated, same-origin approval of one freshly resolved repair plan."""
 import os
 from flask import jsonify, make_response, request
-from aurion_native_auth import NativeAuthRepair, NativeAuthState, OPERATION, RepairBlocked
+from aurion_native_auth import NativeAuthRepair, NativeAuthState, OPERATION, RepairBlocked, plan_diagnostic
 from command_queue import HostCommandQueueClient
 from owner_input_runtime import _no_store, _owner_matches
-from agent_runtime.agent_run_receipts import _broker_call
+from agent_runtime.agent_run_receipts import _broker_call, ReceiptIdentityBlocked
 
 
 class PlanReader:
     def snapshot(self, revision):
-        result = _broker_call("aurion_native_auth_plan", {"expected_revision": revision}, timeout=90)
+        try:
+            result = _broker_call("aurion_native_auth_plan", {"expected_revision": revision}, timeout=90)
+        except ReceiptIdentityBlocked as error:
+            raise RepairBlocked(plan_diagnostic(error.failure_family)) from None
+        if not isinstance(result, dict):
+            raise RepairBlocked("NATIVE_AUTH_PLAN_UNAVAILABLE")
         if "snapshot" not in result or "planHash" not in result:
-            raise RepairBlocked("PLAN_UNAVAILABLE")
+            raise RepairBlocked(plan_diagnostic(result.get("blocker"))) from None
         return result["snapshot"]
 
 
@@ -43,6 +48,9 @@ def register_aurion_native_auth_routes(app, *, require_admin, get_current_admin)
             body = payload({"expectedRevision"})
             runtime = NativeAuthRepair(PlanReader(), NativeAuthState())
             return result(runtime.plan(body["expectedRevision"]))
+        except RepairBlocked as error:
+            code = error.args[0] if len(error.args) == 1 else None
+            return result({"error": plan_diagnostic(code)}, 409)
         except Exception:
             return result({"error": "NATIVE_AUTH_PLAN_UNAVAILABLE"}, 409)
 
@@ -100,7 +108,7 @@ rootgeschützte Sicherung und kontrollierte Rücknahme. Der Starttest erzeugt ei
 Auth-Transaktion. Vollständiger Geräte-Login bleibt UNVERIFIED.</p>
 <label>Owner-Admin-Key <input id="adminKey" type="password" autocomplete="off"></label>
 <button id="login">Anmelden</button><button id="logout">Schlüssel verwerfen</button>
-<p>Der Schlüssel bleibt nur im Seitenspeicher und wird ausschließlich an diese Origin gesendet.</p>
+<p>Der Schlüssel bleibt nur im Seitenspeicher und wird ausschließlich an diese Origin gesendet. Eine erfolgreiche Serverantwort bestätigt erst die Anmeldung.</p>
 <label>Erwartete Aurion-Revision <input id="revision" maxlength="40" size="42"></label>
 <button id="plan" disabled>Plan lesen</button><pre id="preview"></pre>
 <button id="approve" disabled>Diesen Plan einmalig ausführen</button>
@@ -114,13 +122,27 @@ element('preview').textContent='';element('status').textContent='';}
 element('login').onclick=()=>{admin=element('adminKey').value;element('adminKey').value='';
 current=null;element('approve').disabled=true;element('plan').disabled=!admin;};
 element('logout').onclick=forget;window.addEventListener('pagehide',forget);
-async function api(path,body){if(!admin)throw Error('Owner-Anmeldung erforderlich');
-const response=await fetch('/api/admin/aurion-native-auth/'+path,{
+function publicFailure(status,value){
+const allowed={403:['OWNER_OR_ORIGIN_REQUIRED','OWNER_REQUIRED'],
+409:[
+"NATIVE_AUTH_PLAN_UNAVAILABLE", "NATIVE_AUTH_APPROVAL_BLOCKED", "SCHEMA_MISMATCH", "TARGET_OR_REVISION_INVALID", "TARGET_OR_REVISION_DRIFT", "IDENTITY_UNRESOLVED", "SNAPSHOT_CONTRACT", "CONFIGURATION_CONTRACT", "BASELINE_UNHEALTHY", "EXISTING_KEY_INVALID", "ENV_ENCODING", "ENV_FORMAT", "ENV_DUPLICATE", "ENV_EXPANSION", "FILE_NAME", "FILE_PROTECTION", "FILE_SIZE", "FILE_DRIFT", "FILE_UNAVAILABLE", "HOST_PATH_INVALID", "HOST_DIRECTORY_UNPROTECTED", "DEPLOYMENT_LINK_INVALID", "DEPLOYMENT_LINK_DRIFT", "HEALTH_BODY_SIZE", "HOST_COMMAND_FAILED", "CONTAINER_CARDINALITY", "CONTAINER_IDENTITY", "CONTAINER_ENV_DUPLICATE", "VOLUME_CONFIGURATION_DRIFT", "NETWORK_CONFIGURATION_DRIFT", "HOST_CONFIGURATION_DRIFT", "VOLUMES_UNAVAILABLE", "DEPLOYMENT_RECEIPT_MISMATCH", "ACTIVE_COMPOSE_UNRESOLVED", "DEPLOYMENT_MANIFEST_MISMATCH", "ROUTING_ENV_INVALID", "RUNTIME_DIGEST_MISMATCH", "IMAGE_REVISION_MISMATCH", "IMAGE_PROCESS_OVERRIDE", "IMAGE_HEALTHCHECK_UNVERIFIED", "EFFECTIVE_AUTH_CONFIG_DRIFT", "COMPOSE_SERVICE_MISMATCH", "EFFECTIVE_CONFIG_DRIFT", "NATIVE_AUTH_PRIVATE_OPERATOR_REQUIRED", "BROKER_SOCKET_UNAVAILABLE", "BROKER_SOCKET_PERMISSION_DENIED", "BROKER_RPC_TIMEOUT", "BROKER_RPC_UNAVAILABLE", "BROKER_RESPONSE_TOO_LARGE", "BROKER_RPC_INVALID_RESPONSE", "BROKER_RPC_CONTRACT_MISMATCH"],
+400:['OPERATION_INVALID'],503:['NATIVE_AUTH_READBACK_UNAVAILABLE']};
+const code=status===401?'AUTHENTICATION_NOT_CONFIRMED':
+((allowed[status]||[]).includes(value?.error)?value.error:'REQUEST_NOT_CONFIRMED');
+return 'HTTP '+status+' · '+code;
+}
+async function api(path,body){if(!admin)throw Error('AUTHENTICATION_NOT_CONFIRMED');
+let response;
+try{response=await fetch('/api/admin/aurion-native-auth/'+path,{
 method:body?'POST':'GET',headers:{Authorization:'Bearer '+admin,
 ...(body?{'Content-Type':'application/json','X-Sovereign-Owner-Action':'aurion-native-auth'}:{})},
 body:body?JSON.stringify(body):undefined,credentials:'same-origin',mode:'same-origin',redirect:'error',cache:'no-store'});
-const value=await response.json();if(!response.ok){if(response.status===401||response.status===403)forget();
-throw Error('Owner-Anfrage nicht bestätigt');}return value;}
+}catch(_){throw Error('NETWORK_RESPONSE_UNAVAILABLE');}
+let value;try{value=await response.json();}catch(_){
+if(response.status===401||response.status===403)forget();
+throw Error('HTTP '+response.status+' · RESPONSE_NOT_JSON');}
+if(!response.ok){const message=publicFailure(response.status,value);
+if(response.status===401||response.status===403)forget();throw Error(message);}return value;}
 const post=api;
 element('revision').oninput=()=>{current=null;element('approve').disabled=true;};
 element('plan').onclick=async()=>{current=null;element('approve').disabled=true;try{
@@ -133,5 +155,5 @@ element('approve').disabled=true;try{const value=await post('approve',{expectedR
 operation=value.operationId;element('status').textContent=JSON.stringify(value,null,2);element('read').disabled=!operation;
 }catch(e){element('status').textContent=e.message;}};
 element('read').onclick=async()=>{if(!operation)return;try{const value=await api('readback/'+operation);
-element('status').textContent=JSON.stringify(value,null,2);}catch(e){element('status').textContent='Readback nicht verfügbar';}};
+element('status').textContent=JSON.stringify(value,null,2);}catch(e){element('status').textContent=e.message;}};
 </script></html>'''

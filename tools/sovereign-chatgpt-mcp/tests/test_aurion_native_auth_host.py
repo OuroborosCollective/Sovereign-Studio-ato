@@ -267,13 +267,13 @@ class HostAdapterContracts(unittest.TestCase):
 
     def test_missing_or_changed_volume_blocks_plan(self):
         self.row["Mounts"].pop()
-        with self.assertRaisesRegex(core.RepairBlocked, "HOST_ADAPTER_FAILED"):
+        with self.assertRaisesRegex(core.RepairBlocked, "VOLUME_CONFIGURATION_DRIFT"):
             self.runtime.plan(self.revision)
         self.assertEqual(self.up_count, 0)
 
     def test_receipt_container_drift_blocks(self):
         self.row["Id"] = "0" * 64
-        with self.assertRaisesRegex(core.RepairBlocked, "HOST_ADAPTER_FAILED"):
+        with self.assertRaisesRegex(core.RepairBlocked, "DEPLOYMENT_RECEIPT_MISMATCH"):
             self.runtime.plan(self.revision)
 
     def test_unexpected_receipt_fields_are_never_persisted(self):
@@ -288,7 +288,7 @@ class HostAdapterContracts(unittest.TestCase):
 
     def test_compose_path_cannot_select_other_deployment(self):
         self.row["Config"]["Labels"]["com.docker.compose.project.config_files"] = "/tmp/other.yml"
-        with self.assertRaisesRegex(core.RepairBlocked, "HOST_ADAPTER_FAILED"):
+        with self.assertRaisesRegex(core.RepairBlocked, "ACTIVE_COMPOSE_UNRESOLVED"):
             self.runtime.plan(self.revision)
 
     def test_config_drift_after_approval_denies_all_target_writes(self):
@@ -364,7 +364,7 @@ class HostAdapterContracts(unittest.TestCase):
 
     def test_secret_command_error_is_redacted(self):
         self.host.runner = lambda *a, **k: subprocess.CompletedProcess(a, 1, "SYNTHETIC_PRIVATE_STDOUT", "SYNTHETIC_PRIVATE_STDERR")
-        with self.assertRaisesRegex(core.RepairBlocked, "HOST_ADAPTER_FAILED"):
+        with self.assertRaisesRegex(core.RepairBlocked, "HOST_COMMAND_FAILED"):
             self.runtime.plan(self.revision)
 
 
