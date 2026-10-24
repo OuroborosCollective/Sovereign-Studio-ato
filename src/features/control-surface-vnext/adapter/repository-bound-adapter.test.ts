@@ -147,6 +147,44 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     expect((fetcher.mock.calls[0][1] as RequestInit).credentials).toBe('include');
   });
 
+  it.each(['queued', 'provisioning', 'waiting-for-user'])(
+    'restores a bound %s repository job after reload without dispatching a duplicate',
+    async (status) => {
+      const config: SovereignAgentConfig = {
+        enabled: true,
+        deploymentMode: 'sovereign-agent-backend',
+        agentApiUrl: 'https://agent.example.test',
+        ready: true,
+        reason: 'ready',
+      };
+      const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => new Response(JSON.stringify({
+        jobs: [
+          {
+            jobId: `agent-${status}`,
+            mission: 'Keep the accepted repository mission bound across reload.',
+            status,
+            repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+            branch: 'main',
+            workspaceId: `agent-${status}`,
+            executor: 'sovereign-local-runner',
+          },
+        ],
+        total: 1,
+      }), { status: init?.method === 'POST' ? 500 : 200 }));
+      const adapter = new SovereignProductionAdapter(fetcher as unknown as typeof fetch, config);
+
+      await expect(adapter.restoreLatestRepositoryRun()).resolves.toEqual({
+        jobId: `agent-${status}`,
+        mission: 'Keep the accepted repository mission bound across reload.',
+        status,
+        repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+        branch: 'main',
+      });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect((fetcher.mock.calls[0][1] as RequestInit).method).toBe('GET');
+    },
+  );
+
   it('skips a stale pre-A2A running clone instead of locking the composer after reload', async () => {
     const config: SovereignAgentConfig = {
       enabled: true,
