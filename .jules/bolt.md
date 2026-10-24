@@ -87,3 +87,7 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+
+## 2026-10-21 - [Preventing Timer Leaks and Proxy Overhead in Nested Proxy Handlers]
+**Learning:** In state interception layers, instantiating `Proxy` handlers dynamically on nested object property accesses without top-level delegation causes child handlers to initialize redundant `setInterval` timers, resulting in exponential timer accumulation and severe CPU freezes. In addition, re-creating child `Proxy` wrappers on every getter access incurs high heap allocation overhead. Using a `WeakMap` cache to reuse child proxies and restricting scheduled timer initialization to the root proxy eliminates timer leaks and stabilizes object identity.
+**Action:** Always pass a flag (e.g. `isChild`) to nested proxy handlers to skip recurring timer creation, and cache child object proxy instances in a `WeakMap`.
