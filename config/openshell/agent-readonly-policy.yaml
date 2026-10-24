@@ -1,0 +1,10 @@
+# Sovereign OpenShell canary: no network and no provider credentials.
+# Runtime activation is NOT implied by this checked-in configuration.
+version: 1
+filesystem_policy:
+  include_workdir: false
+  read_only: [/bin, /usr, /lib, /proc, /dev/urandom, /app, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: hard_requirement
+network_policies: {}

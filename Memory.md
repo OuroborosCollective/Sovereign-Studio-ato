@@ -1298,3 +1298,10 @@ Evidence: Real APK device report and valid/invalid live POSTs reproduce NATIVE_A
 Änderung: Drei bestehende Signierworkflow-Pins und ihr Vertrag binden Aurion-Merge `24a1e4077ce4a5584b20ceeaf533fa417c8575a9`; die inline Gradle-Bereinigung übernimmt begrenzte ENOTEMPTY-Wiederholungen. Owner-Gates, Build-/Signierisolation und bestehendes Zertifikat bleiben erhalten.
 Erkenntnis: Ein unveränderter Signier-Retry hätte erneut APK `9e8c8593` gebaut; dieser Main-Push startet auch die ausdrücklich freigegebene Backend-/MCP-Releasekette.
 Evidence: Aurion #1151 auf exakt `7038453b` unabhängig geprüft und vollständig CI-grün; SHA-gebunden gemergt und Merge zurückgelesen. Pin-Vertrag zunächst kausal rot, danach 13 lokale Workflow-/Signatur-/Artefakt-Verträge bestanden. Signierte APK und produktiver Backend/MCP-Readback bleiben bis tatsächlicher Ausführung UNVERIFIED; kein zusätzlicher Aurion-Serverrelease.
+
+### 2026-10-24 — OpenShell-Sandbox-Preflight fuer Sovereign-Executor
+Status: PARTIAL; Draft-PR, keine Runtime-Freigabe.
+Änderung: Opt-in OpenShell-Policy-Prover/Netzwerk-Deny-Canary, gepinnte Policies, kanonischer Python-Code mit bytegleichem Deployment-Mirror und Regressionen; kein Executor-Switchover.
+Erkenntnis: Die nur ls/pwd erlaubende ShellTool-Route ist nicht der eigene Sovereign-Repository-Executor; der alte Kompatibilitaets-Runner ist bewusst quarantiniert, waehrend repository_execution eine getrennte CAS/Heartbeat-Lane besitzt. Quellcode-Verkabelung ist kein Live-Beweis.
+Evidence: Baseline cfa40443d89a4aa1f38e3b974303cfe09ffac8cc, NVIDIA c4688aa8715ea75d6c39fe468361dbbc16c691fa; 11/11 lokale Preflight-Vertragstests PASS, Mirror und Policy-Digests geprueft. Host-Prover, VPS, CI, DB, Sandbox und produktive Executor-E2E UNVERIFIED.
+Offen/Weiter: Head-CI und wirkliche Host-Deny-/Cleanup-Belege; dann ein autorisierter Repo-Patch/Test/DB-Readback innerhalb der isolierten Ausfuehrung. Erst danach SoftwareGPU, spaeter Aurion.
