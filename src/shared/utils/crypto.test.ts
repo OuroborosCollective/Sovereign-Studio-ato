@@ -143,6 +143,11 @@ describe('maskSecrets', () => {
     expect(maskSecrets('datadog_secret=datadog_secret_val_808')).toBe('datadog_secret=****');
     expect(maskSecrets('algolia_key: algolia_key_val_909')).toBe('algolia_key: ****');
     expect(maskSecrets('supabase_secret=supabase_secret_val_101')).toBe('supabase_secret=****');
+    expect(maskSecrets('assemblyai_key: assemblyai_key_val_202')).toBe('assemblyai_key: ****');
+    expect(maskSecrets('deepgram_secret=deepgram_sec_val_303')).toBe('deepgram_secret=****');
+    expect(maskSecrets('weaviate_key: weaviate_key_val_404')).toBe('weaviate_key: ****');
+    expect(maskSecrets('neo4j_password=neo4j_pass_val_505')).toBe('neo4j_password=****');
+    expect(maskSecrets('redis_password: redis_pass_val_606')).toBe('redis_password: ****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
