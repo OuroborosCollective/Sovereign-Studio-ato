@@ -92,18 +92,25 @@ export function computeSignalHash(signals: OrderedSignal[]): string {
   if (signals.length === 0) return 'empty';
 
   // Use tick-sequence-value tuples for hashing
-  const tuples = signals.map(
-    (s) => `${s.metadata.tick}:${s.metadata.sequence}:${s.metadata.node}:${s.value}`,
-  );
-  const combined = tuples.join('|');
-
-  // Simple deterministic hash (FNV-1a inspired)
+  // ⚡ Bolt: Single-pass inline string and hash accumulation replacing .map() array allocation
+  // and .join() large string generation. Reduces GC pressure and speeds up hash computation.
   let hash = 2166136261; // FNV offset basis
   const prime = 16777619;
 
-  for (let i = 0; i < combined.length; i++) {
-    hash ^= combined.charCodeAt(i);
-    hash = Math.imul(hash, prime);
+  for (let i = 0; i < signals.length; i++) {
+    const s = signals[i];
+
+    // Equivalent to .join('|') without array allocations
+    if (i > 0) {
+      hash ^= 124; // charCode for '|'
+      hash = Math.imul(hash, prime);
+    }
+
+    const str = `${s.metadata.tick}:${s.metadata.sequence}:${s.metadata.node}:${s.value}`;
+    for (let j = 0; j < str.length; j++) {
+      hash ^= str.charCodeAt(j);
+      hash = Math.imul(hash, prime);
+    }
   }
 
   // Convert to hex string
