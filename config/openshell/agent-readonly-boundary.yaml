@@ -1,0 +1,20 @@
+# Maximum allowed canary policy. Only the candidate (not this boundary) runs.
+# Future egress changes require explicit review and a new pinned hash.
+version: 1
+filesystem_policy:
+  include_workdir: false
+  read_only: [/bin, /usr, /lib, /proc, /dev/urandom, /app, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: hard_requirement
+network_policies:
+  github_rest_read:
+    name: github-rest-read
+    endpoints:
+      - host: api.github.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+    binaries:
+      - path: /usr/bin/curl
