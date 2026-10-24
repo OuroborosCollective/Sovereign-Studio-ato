@@ -104,14 +104,24 @@ export function MonitorCommunicationDock({
   const [routePickerOpen, setRoutePickerOpen] = useState(false);
   const [routeQuery, setRouteQuery] = useState('');
   const chatMode = mode === 'chat';
-  const visibleEntryIds = new Set(entries.slice(-4).map((entry) => entry.id));
-  entries
-    .filter((entry) => entry.kind === 'user')
-    .slice(-2)
-    .forEach((entry) => visibleEntryIds.add(entry.id));
-  const visibleEntries = chatMode
-    ? entries
-    : entries.filter((entry) => visibleEntryIds.has(entry.id)).slice(-6);
+  // Bolt ⚡ Optimization: Single-pass reverse loop to extract visible entries.
+  // Eliminates multiple intermediate array allocations (.filter(), .slice(), .map(), Set creation) in a hot path.
+  const visibleEntries = useMemo(() => {
+    if (chatMode) return entries;
+    const result: MonitorCommunicationEntry[] = [];
+    let userCount = 0;
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i];
+      let keep = i >= entries.length - 4;
+      if (entry.kind === 'user') {
+        if (userCount < 2) keep = true;
+        userCount++;
+      }
+      if (keep) result.unshift(entry);
+      if (i < entries.length - 4 && userCount >= 2) break;
+    }
+    return result.length > 6 ? result.slice(-6) : result;
+  }, [entries, chatMode]);
   const status = safeText(runtimeStatus, 240) || 'Runtimestatus nicht verfügbar';
   const visibleRouteHint = safeText(routeHint ?? '', 240);
   const selectedRoute = routeOptions.find((route) => route.id === selectedRouteId);
