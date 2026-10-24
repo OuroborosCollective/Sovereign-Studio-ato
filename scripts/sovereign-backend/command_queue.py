@@ -97,13 +97,8 @@ class HostCommandQueueClient:
             return {"ok": False, "status": "QUEUED", "request_id": identifier}
         return {"ok": False, "status": "NOT_FOUND", "request_id": identifier}
 
-    def submit(
-        self,
-        action: str,
-        arguments: dict[str, Any] | None = None,
-        *,
-        timeout: float,
-    ) -> dict[str, Any]:
+    def enqueue(self, action: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Durably admit once without cancelling an unclaimed job on a UI timeout."""
         action_name = str(action or "").strip()
         if not is_mutating_action(action_name):
             raise ValueError(f"Queue akzeptiert nur mutierende allowlistete Aktionen: {action_name}")
@@ -114,8 +109,6 @@ class HostCommandQueueClient:
         self._ensure_paths()
         request_id = uuid.uuid4().hex
         request_path = self.inbox / f"{request_id}.json"
-        processing_path = self.processing / f"{request_id}.json"
-        result_path = self.outbox / f"{request_id}.json"
         payload = json.dumps(
             {
                 "version": 1,
@@ -131,6 +124,25 @@ class HostCommandQueueClient:
             raise ValueError("Command-Queue-Anfrage ist größer als 1,2 MB")
         self._write_atomic(request_path, payload)
 
+        directory_fd = os.open(self.inbox, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        return {"ok": True, "status": "QUEUED", "request_id": request_id}
+
+    def submit(
+        self,
+        action: str,
+        arguments: dict[str, Any] | None = None,
+        *,
+        timeout: float,
+    ) -> dict[str, Any]:
+        queued = self.enqueue(action, arguments)
+        request_id = queued["request_id"]
+        request_path = self.inbox / f"{request_id}.json"
+        processing_path = self.processing / f"{request_id}.json"
+        result_path = self.outbox / f"{request_id}.json"
         deadline = time.monotonic() + max(0.1, float(timeout))
         while time.monotonic() < deadline:
             if result_path.exists() or result_path.is_symlink():

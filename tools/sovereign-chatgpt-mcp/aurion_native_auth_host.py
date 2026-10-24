@@ -34,6 +34,10 @@ DIGEST_FIELDS = {"AURION_BUILD_INPUT_DIGEST": "buildInputDigest",
                  "AURION_ARTIFACT_DIGEST": "artifactDigest",
                  "AURION_RUNTIME_IMAGE_DIGEST": "runtimeImageDigest",
                  "AURION_RELEASE_ARCHIVE_DIGEST": "releaseArchiveDigest"}
+HEALTH_COMMAND = "node -e \"fetch('http://127.0.0.1:3000/healthz').then(async response => { const body=await response.json(); process.exit(response.ok && body.gameDevelopmentStudio?.available===true && body.gameDevelopmentStudio?.version==='1.0.2' ? 0 : 1); }).catch(() => process.exit(1))\""
+HEALTH_TIMING = {"Interval": 30_000_000_000, "Timeout": 5_000_000_000,
+                 "StartPeriod": 20_000_000_000, "Retries": 3}
+
 SCHEMA = json.loads('{"aurionNativeAuthAccessTokens": {"columns": {"expiresAtMs": ["bigint", false], "issuedAtMs": ["bigint", false], "sessionId": ["varchar(64)", false], "tokenDigest": ["varchar(64)", false]}, "indexes": {"PRIMARY": [0, ["tokenDigest"]], "aurionNativeAuthAccessTokens_session_idx": [1, ["sessionId"]]}}, "aurionNativeAuthRefreshTokens": {"columns": {"consumedAtMs": ["bigint", true], "expiresAtMs": ["bigint", false], "issuedAtMs": ["bigint", false], "sessionId": ["varchar(64)", false], "tokenDigest": ["varchar(64)", false]}, "indexes": {"PRIMARY": [0, ["tokenDigest"]], "aurionNativeAuthRefreshTokens_session_idx": [1, ["sessionId"]]}}, "aurionNativeAuthSessions": {"columns": {"absoluteExpiresAtMs": ["bigint", false], "appBuild": ["varchar(120)", false], "createdAtMs": ["bigint", false], "currentRefreshDigest": ["varchar(64)", false], "id": ["varchar(64)", false], "idleExpiresAtMs": ["bigint", false], "revokedAtMs": ["bigint", true], "userId": ["int", false]}, "indexes": {"PRIMARY": [0, ["id"]], "aurionNativeAuthSessions_user_idx": [1, ["userId"]]}}, "aurionNativeAuthTransactions": {"columns": {"appBuild": ["varchar(120)", false], "codeChallenge": ["varchar(43)", false], "consumedAtMs": ["bigint", true], "createdAtMs": ["bigint", false], "expiresAtMs": ["bigint", false], "handoffCodeDigest": ["varchar(64)", true], "handoffExpiresAtMs": ["bigint", true], "id": ["varchar(64)", false], "issuedAtMs": ["bigint", true], "requestStateDigest": ["varchar(64)", false], "requestStateSealed": ["varchar(256)", false], "returnId": ["varchar(64)", false], "verifiedUserId": ["int", true]}, "indexes": {"PRIMARY": [0, ["id"]], "aurionNativeAuthTransactions_expiry_idx": [1, ["expiresAtMs"]], "aurionNativeAuthTransactions_handoff_uq": [0, ["handoffCodeDigest"]]}}}')
 
 DB_SCRIPT = r'''
@@ -155,9 +159,10 @@ class PublicHTTP:
 
 
 class AurionNativeAuthHost:
-    def __init__(self, state, *, runner=subprocess.run, files=None, http=None, sleep=time.sleep):
+    def __init__(self, state, *, runner=subprocess.run, files=None, http=None, sleep=time.sleep, monotonic=time.monotonic):
         self.state, self.runner = state, runner
         self.files, self.http, self.sleep = files or HostFiles(), http or PublicHTTP(), sleep
+        self.monotonic = monotonic
 
     def run(self, argv, *, env=None, timeout=30):
         result = self.runner(argv, capture_output=True, text=True, check=False, timeout=timeout,
@@ -306,6 +311,14 @@ class AurionNativeAuthHost:
             raise RepairBlocked("IMAGE_REVISION_MISMATCH")
         if any(row["Config"].get(k) != image[0]["Config"].get(k) for k in ("Cmd", "Entrypoint", "User", "WorkingDir")):
             raise RepairBlocked("IMAGE_PROCESS_OVERRIDE")
+        healthcheck = image[0]["Config"].get("Healthcheck", {})
+        if (row["Config"].get("Healthcheck") != healthcheck
+                or any(type(healthcheck.get(k)) is not int or healthcheck[k] != v for k, v in HEALTH_TIMING.items())
+                or healthcheck.get("Test") != ["CMD-SHELL", HEALTH_COMMAND]):
+            raise RepairBlocked("IMAGE_HEALTHCHECK_UNVERIFIED")
+        # Grace, all failure intervals/timeouts, plus one scheduling interval.
+        startup_budget = (healthcheck["StartPeriod"] + healthcheck["Retries"] *
+            (healthcheck["Interval"] + healthcheck["Timeout"]) + healthcheck["Interval"]) / 1_000_000_000
         production = self.files.read(ENV_FILE, secret=True)
         parsed = parse_env(production.raw)
         # Never turn a changed non-native configuration into an incidental deploy.
@@ -315,7 +328,7 @@ class AurionNativeAuthHost:
         # field in a future deployment receipt must never become our receipt.
         receipt = {key: receipt[key] for key in ("revision", "releaseId", "containerId", "imageId",
             "domain", "traefikNetwork", "databaseNetwork", "runtimeManifestSha256", *DIGEST_FIELDS.values())}
-        context = {"composePath": compose_path, "composeEnv": compose_env, "receipt": receipt,
+        context = {"startupBudgetSeconds": startup_budget, "healthcheck": healthcheck, "composePath": compose_path, "composeEnv": compose_env, "receipt": receipt,
                    "productionIdentity": production.identity(), "runtimeIdentity": runtime_file.identity(),
                    "composeIdentity": compose_file.identity(), "receiptIdentity": receipt_file.identity(),
                    "privateReceiptIdentity": private_file.identity(), "manifestIdentity": manifest_file.identity(),
@@ -324,7 +337,9 @@ class AurionNativeAuthHost:
         if set(config["services"]) != {"aurion"} or config["services"]["aurion"]["image"] != row["Config"]["Image"]:
             raise RepairBlocked("COMPOSE_SERVICE_MISMATCH")
         effective = config["services"]["aurion"]["environment"]
-        if any(env.get(k) != str(v) for k, v in effective.items()):
+        expected_env = self.environment(image[0])
+        expected_env.update({k: str(v) for k, v in effective.items()})
+        if env != expected_env:
             raise RepairBlocked("EFFECTIVE_CONFIG_DRIFT")
         context["configFingerprint"] = canonical_hash(self.config_without_auth(config))
         status, health = self.http.request("/healthz")
@@ -453,13 +468,17 @@ class AurionNativeAuthHost:
         from aurion_native_auth import valid_key
         result = {"sameImage": row["Image"] == plan["snapshot"]["imageId"],
                   "sameRevision": row["Config"]["Labels"].get("org.opencontainers.image.revision") == plan["snapshot"]["revision"],
-                  "healthy": False, "releaseEnabled": env.get(RELEASE) == "true",
+                  "healthy": False, "healthStatus": (row["State"].get("Health", {}).get("Status", "unknown")
+                      if row["State"].get("Running") is True else "stopped"),
+                  "releaseEnabled": env.get(RELEASE) == "true",
                   "stateSealKeyPresent": bool(env.get(SEAL)), "stateSealKeyValid": valid_key(env.get(SEAL))}
         try:
             status, health = self.http.request("/healthz")
         except Exception:
             status, health = 0, None
-        result["healthy"] = (row["State"].get("Running") is True
+        if row["Config"].get("Healthcheck") != record["healthcheck"]:
+            result["healthStatus"] = "unknown"
+        result["healthy"] = (result["healthStatus"] == "healthy" and row["State"].get("Running") is True
             and row["State"].get("Health", {}).get("Status") == "healthy"
             and all(env.get(k) == expected[v] for k, v in DIGEST_FIELDS.items())
             and status == 200 and self.health_matches(health, expected))
@@ -475,21 +494,34 @@ class AurionNativeAuthHost:
             result["configurationBound"] = False
         return result
 
-    def verify_after_recreate(self, plan, operation_id):
-        result = {}
-        for attempt in range(20):
+    def wait_for_health(self, plan, operation_id):
+        record = self.host_record(operation_id)
+        budget = record["startupBudgetSeconds"]
+        if budget != 155 or any(record["healthcheck"].get(k) != v for k, v in HEALTH_TIMING.items()):
+            raise RepairBlocked("STARTUP_BUDGET_UNVERIFIED")
+        deadline = self.monotonic() + budget
+        while True:
             try:
-                result = self.basic_readback(plan, operation_id)
+                observed = self.basic_readback(plan, operation_id)
             except Exception:
-                result = {}
-            if result.get("healthy") and result.get("sameImage") and result.get("sameRevision"):
-                break
-            if attempt < 19:
-                self.sleep(1)
+                observed = {}
+            identity = observed.get("sameImage") is True and observed.get("sameRevision") is True
+            status = observed.get("healthStatus", "unknown")
+            if identity and observed.get("healthy") is True:
+                return "healthy", observed
+            if identity and status in ("unhealthy", "stopped"):
+                return "unhealthy", observed
+            remaining = deadline - self.monotonic()
+            if remaining <= 0:
+                return ("timeout" if identity and status in ("starting", "healthy") else "unknown"), observed
+            self.sleep(min(2, remaining))
+
+    def verify_after_recreate(self, plan, operation_id):
+        outcome, result = self.wait_for_health(plan, operation_id)
         # Persist admission before sending even one potentially mutating start.
         self.write("probe", operation_id, b'{"phase":"START_ADMITTED","validStart200":false,"invalidBody400":false}')
         valid, invalid = False, False
-        if all(result.get(k) is True for k in ("healthy", "sameImage", "sameRevision", "releaseEnabled", "stateSealKeyValid")):
+        if outcome == "healthy" and all(result.get(k) is True for k in ("healthy", "sameImage", "sameRevision", "releaseEnabled", "stateSealKeyValid")):
             verifier = secrets.token_urlsafe(32)
             challenge = base64.urlsafe_b64encode(__import__("hashlib").sha256(verifier.encode()).digest()).decode().rstrip("=")
             body = {"version": "aurion.native-auth.v1", "codeChallenge": challenge, "codeChallengeMethod": "S256",
@@ -501,6 +533,8 @@ class AurionNativeAuthHost:
             name = self.name("probe", operation_id)
             before = read_protected(fd, name)
             atomic_replace(fd, name, before, json.dumps({"phase": "COMPLETE", "validStart200": valid, "invalidBody400": invalid}).encode())
+
+        return {"startupOutcome": outcome}
 
     def readback(self, plan, operation_id):
         with self.state.directory() as fd:
@@ -538,11 +572,8 @@ class AurionNativeAuthHost:
             raise RepairBlocked("ROLLBACK_CONFIG_DRIFT")
         self.files.replace_env(current, backup.raw)
         self.recreate_same_image(plan, operation_id, restored=True)
-        for attempt in range(20):
-            if self.basic_readback(plan, operation_id)["healthy"]:
-                break
-            if attempt < 19:
-                self.sleep(1)
+        outcome, _ = self.wait_for_health(plan, operation_id)
+        return {"startupOutcome": outcome}
 
     def rollback_readback(self, plan, operation_id, backup_identity):
         result = self.basic_readback(plan, operation_id)

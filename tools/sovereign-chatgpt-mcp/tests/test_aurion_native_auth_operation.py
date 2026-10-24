@@ -36,6 +36,7 @@ class OperationContracts(unittest.TestCase):
         self.adapter = Mock()
         self.adapter.snapshot.side_effect = lambda revision: copy.deepcopy(self.snapshot)
         self.adapter.backup.return_value = "f" * 64
+        self.adapter.verify_after_recreate.return_value = {"startupOutcome": "healthy"}
         self.adapter.readback.return_value = {k: True for k in (
             "sameImage", "sameRevision", "healthy", "releaseEnabled", "stateSealKeyPresent",
             "stateSealKeyValid", "configurationBound", "validStart200", "invalidBody400")}
@@ -213,6 +214,8 @@ class OperationContracts(unittest.TestCase):
     def test_rollback_requires_independent_restore_readback(self):
         operation = self.approve()
         self.adapter.readback.return_value["healthy"] = False
+        self.adapter.readback.return_value["healthStatus"] = "unhealthy"
+        self.adapter.verify_after_recreate.return_value = {"startupOutcome": "unhealthy"}
         result = self.runtime.apply(operation)
         self.assertEqual(result["phase"], "ROLLED_BACK")
         self.adapter.rollback.assert_called_once()
@@ -221,6 +224,8 @@ class OperationContracts(unittest.TestCase):
     def test_failed_rollback_keeps_mutations_blocked(self):
         operation, second = self.approve(), self.approve()
         self.adapter.readback.return_value["healthy"] = False
+        self.adapter.readback.return_value["healthStatus"] = "unhealthy"
+        self.adapter.verify_after_recreate.return_value = {"startupOutcome": "unhealthy"}
         self.adapter.rollback_readback.return_value["configurationRestored"] = False
         self.assertEqual(self.runtime.apply(operation)["phase"], "ROLLBACK_UNVERIFIED")
         with self.assertRaisesRegex(repair.RepairBlocked, "PREVIOUS_OUTCOME_UNCERTAIN"):

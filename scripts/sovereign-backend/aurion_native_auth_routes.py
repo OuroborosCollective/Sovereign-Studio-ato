@@ -58,9 +58,9 @@ def register_aurion_native_auth_routes(app, *, require_admin, get_current_admin)
         except Exception:
             return result({"error": "NATIVE_AUTH_APPROVAL_BLOCKED"}, 409)
         try:
-            queued = HostCommandQueueClient().submit("aurion_native_auth_apply",
-                {"operation_id": approval["operationId"]}, timeout=1)
-            return result({**approval, "requestId": queued.get("request_id"),
+            queued = HostCommandQueueClient().enqueue("aurion_native_auth_apply",
+                {"operation_id": approval["operationId"]})
+            return result({**approval, "requestId": queued.get("request_id"), "queueStatus": queued["status"],
                            "nextAction": "read_operation_and_queue_status"}, 202)
         except Exception:
             # Do not retry a possibly submitted action. Its operation identity
@@ -81,10 +81,9 @@ def register_aurion_native_auth_routes(app, *, require_admin, get_current_admin)
             return result({"error": "NATIVE_AUTH_READBACK_UNAVAILABLE"}, 503)
 
     @app.route("/owner-aurion-native-auth", methods=["GET"])
-    @require_admin
     def native_auth_page():
-        if not owner():
-            return result({"error": "OWNER_REQUIRED"}, 403)
+        # Static login shell, matching /owner-ssh. Every data/action endpoint
+        # retains the real Bearer require_admin and configured-owner checks.
         response = make_response(PAGE)
         response.headers["Content-Security-Policy"] = "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -99,17 +98,30 @@ PAGE = '''<!doctype html><html lang="de"><meta charset="utf-8">
 <p>Risiken: lokale Schlüsselneuanlage, falls erforderlich; kurze Dienstunterbrechung;
 rootgeschützte Sicherung und kontrollierte Rücknahme. Der Starttest erzeugt eine kurzlebige
 Auth-Transaktion. Vollständiger Geräte-Login bleibt UNVERIFIED.</p>
+<label>Owner-Admin-Key <input id="adminKey" type="password" autocomplete="off"></label>
+<button id="login">Anmelden</button><button id="logout">Schlüssel verwerfen</button>
+<p>Der Schlüssel bleibt nur im Seitenspeicher und wird ausschließlich an diese Origin gesendet.</p>
 <label>Erwartete Aurion-Revision <input id="revision" maxlength="40" size="42"></label>
-<button id="plan">Plan lesen</button><pre id="preview"></pre>
+<button id="plan" disabled>Plan lesen</button><pre id="preview"></pre>
 <button id="approve" disabled>Diesen Plan einmalig ausführen</button>
 <button id="read" disabled>Operationszustand lesen</button><pre id="status"></pre>
 <script>
-let current=null, operation=null;
+let current=null, operation=null, admin="";
 const element=id=>document.getElementById(id);
-async function post(path,body){const response=await fetch('/api/admin/aurion-native-auth/'+path,{
-method:'POST',headers:{'Content-Type':'application/json','X-Sovereign-Owner-Action':'aurion-native-auth'},
-body:JSON.stringify(body),credentials:'same-origin',cache:'no-store'}); const value=await response.json();
-if(!response.ok)throw Error(value.error||'Anfrage fehlgeschlagen'); return value;}
+function forget(){admin='';current=null;operation=null;element('adminKey').value='';
+for(const id of ['plan','approve','read'])element(id).disabled=true;
+element('preview').textContent='';element('status').textContent='';}
+element('login').onclick=()=>{admin=element('adminKey').value;element('adminKey').value='';
+current=null;element('approve').disabled=true;element('plan').disabled=!admin;};
+element('logout').onclick=forget;window.addEventListener('pagehide',forget);
+async function api(path,body){if(!admin)throw Error('Owner-Anmeldung erforderlich');
+const response=await fetch('/api/admin/aurion-native-auth/'+path,{
+method:body?'POST':'GET',headers:{Authorization:'Bearer '+admin,
+...(body?{'Content-Type':'application/json','X-Sovereign-Owner-Action':'aurion-native-auth'}:{})},
+body:body?JSON.stringify(body):undefined,credentials:'same-origin',mode:'same-origin',redirect:'error',cache:'no-store'});
+const value=await response.json();if(!response.ok){if(response.status===401||response.status===403)forget();
+throw Error('Owner-Anfrage nicht bestätigt');}return value;}
+const post=api;
 element('revision').oninput=()=>{current=null;element('approve').disabled=true;};
 element('plan').onclick=async()=>{current=null;element('approve').disabled=true;try{
 const revision=element('revision').value; const value=await post('plan',{expectedRevision:revision});
@@ -120,6 +132,6 @@ element('approve').onclick=async()=>{if(!current)return;const chosen=current;cur
 element('approve').disabled=true;try{const value=await post('approve',{expectedRevision:chosen.revision,planHash:chosen.hash});
 operation=value.operationId;element('status').textContent=JSON.stringify(value,null,2);element('read').disabled=!operation;
 }catch(e){element('status').textContent=e.message;}};
-element('read').onclick=async()=>{if(!operation)return;try{const r=await fetch('/api/admin/aurion-native-auth/readback/'+operation,{cache:'no-store',credentials:'same-origin'});
-element('status').textContent=JSON.stringify(await r.json(),null,2);}catch(e){element('status').textContent='Readback nicht verfügbar';}};
+element('read').onclick=async()=>{if(!operation)return;try{const value=await api('readback/'+operation);
+element('status').textContent=JSON.stringify(value,null,2);}catch(e){element('status').textContent='Readback nicht verfügbar';}};
 </script></html>'''

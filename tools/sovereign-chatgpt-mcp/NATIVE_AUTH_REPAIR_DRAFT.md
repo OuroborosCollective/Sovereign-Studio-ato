@@ -10,16 +10,17 @@ Broker-/Host-Worker-Grenze. Nur Apply ist mutationsfähig. Parameter sind aussch
 Revision bzw. servergenerierte Operations-ID. Die private Owner-/Aurion-Operator-Grenze
 bleibt erforderlich; allgemeine Compose- und SSH-Freigaben bleiben unverändert.
 
-Die authentifizierte Seite `/owner-aurion-native-auth` zeigt den frischen Plan und
-Risiken. Nur eine same-origin Owner-Anfrage kann ihn erneut lesen, seinen Hash
+Die statische Login-Seite `/owner-aurion-native-auth` zeigt den frischen Plan und
+Risiken. Sie verwendet denselben Bearer-Login wie die Owner-SSH-Seite, ausschließlich im Seitenspeicher; alle Daten-/Aktionsendpunkte behalten require_admin. Nur eine same-origin Owner-Anfrage kann ihn erneut lesen, seinen Hash
 bestätigen und eine fünf Minuten gültige Einmalaktion erzeugen. MCP-Argumente oder
-das Credential-Widget können diese Freigabe nicht ausstellen. Die Queue enthält nur
+das Credential-Widget können diese Freigabe nicht ausstellen. Nichtabbrechendes Enqueue bewahrt den Job auch bei beschäftigtem Worker; unklare Einreihung wird nicht wiederholt. Die Queue enthält nur
 die Operations-ID; beim Worker werden Ablauf, Plan und sämtliche Identitäten erneut
 geprüft. Die Freigabe wird vor Effekten verbraucht.
 
 Der Host-Adapter löst den aktiven Releasepfad aus Docker-Labels und rootgeschützten
 privaten/öffentlichen Deployment-Receipts auf. Manifest, Compose-Hash, Digestvariablen,
 Image, Revision, Routing, vorhandene Volumes und Healthz müssen übereinstimmen.
+Die gesamte laufende Umgebung muss der Kombination aus Image-Defaults und Compose-env entsprechen; auch entfernte fremde Variablen blockieren.
 Die feste SQL-Prüfung führt nur `SELECT 1` und Information-Schema-Leseabfragen in einer
 Read-only-Transaktion aus. Alle vier Tabellen, Spaltentypen/Nullbarkeit und Indizes
 werden mit Migration 0075 verglichen; Abweichung blockiert ohne Migration.
@@ -37,6 +38,10 @@ Der einmalige Apply-Starttest erzeugt über die Anwendung eine kurzlebige Transa
 er führt keinen Tokenaustausch aus. Körper, Cookies und Transaktions-/Tokenwerte
 werden nicht ausgegeben. Spätere Readbacks senden ausschließlich GET und lesen
 Docker/Dateien sowie die gespeicherten Starttest-Prädikate. Kein Wiederholungs-POST.
+Der Image-/Container-Healthcheck wird gegen den gepinnten Dockerfile-Vertrag geprüft
+(30s Intervall, 5s Timeout, 20s Startperiode, drei Versuche). Eine monotone Startfrist
+von 155s gilt sowohl bei Reparatur als auch Rücknahme. Starting löst vor Ablauf
+keine Rücknahme aus; unbekannter Zustand bleibt unklar und mutationsgesperrt.
 Bei identitätsgebundenem Ausfall ist die Rücknahme an Backup und zuletzt geschriebenen
 Konfigurationsfingerprint gebunden und erhält einen unabhängigen Readback.
 
@@ -68,7 +73,7 @@ python -m unittest discover -s tools/sovereign-chatgpt-mcp/tests -p 'test_aurion
 git diff --check
 ```
 
-54 lokale Tests bestanden; echte temporäre Dateien, Inodes, Symlinks und Sperren.
+63 lokale Tests bestanden; echte temporäre Dateien, Inodes, Symlinks und Sperren.
 Root-Metadaten sowie Docker/HTTP/DB werden an externen Testgrenzen simuliert.
 Flask, requests und pytest fehlen lokal; nichts wurde installiert. Authentifizierte
 HTTP-, Broker-/Queue- und echte Registry-Tests laufen in den vorhandenen CI-Gates.

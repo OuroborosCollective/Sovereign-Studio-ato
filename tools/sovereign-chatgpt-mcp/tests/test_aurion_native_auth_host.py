@@ -138,7 +138,7 @@ class HostAdapterContracts(unittest.TestCase):
             "HostConfig": {"Privileged": False, "ReadonlyRootfs": False, "Memory": 0, "NanoCpus": 0,
                            "PidMode": "", "UsernsMode": "", "RestartPolicy": {"Name": "unless-stopped"}},
             "State": {"Running": True, "Health": {"Status": "healthy"}},
-            "Config": {"Image": "echoes-of-aurion:" + self.revision,
+            "Config": {"Healthcheck": {**host.HEALTH_TIMING, "Test": ["CMD-SHELL", host.HEALTH_COMMAND]}, "Image": "echoes-of-aurion:" + self.revision,
                 "Labels": {"com.docker.compose.project": "echoes-of-aurion", "com.docker.compose.service": "aurion",
                     "com.docker.compose.project.config_files": self.compose_path,
                     "com.docker.compose.project.working_dir": self.release,
@@ -148,9 +148,15 @@ class HostAdapterContracts(unittest.TestCase):
         self.db = schema_rows()
         self.fail_health_after_up = False
         self.up_count = 0
+        self.elapsed = 0
+        self.started_at = 0
+        self.health_after = {}
         self.host = host.AurionNativeAuthHost(self.state, runner=self.runner, files=MappedFiles(self.root),
-                                            http=SimpleNamespace(request=self.http), sleep=lambda _: None)
+                                            http=SimpleNamespace(request=self.http), sleep=self.advance, monotonic=lambda: self.elapsed)
         self.runtime = core.NativeAuthRepair(self.host, self.state)
+
+    def advance(self, seconds):
+        self.elapsed += seconds
 
     def write(self, path, raw, mode=0o600):
         p = self.root / path.lstrip("/")
@@ -166,9 +172,12 @@ class HostAdapterContracts(unittest.TestCase):
     def runner(self, argv, **kwargs):
         self.commands.append((argv, kwargs))
         if argv[:2] == ["docker", "inspect"]:
+            if self.up_count in self.health_after:
+                delay, final = self.health_after[self.up_count]
+                self.row["State"]["Health"]["Status"] = final if self.elapsed - self.started_at >= delay else "starting"
             payload = [self.row]
         elif argv[:3] == ["docker", "image", "inspect"]:
-            payload = [{"Id": self.image, "Config": {"Labels": {"org.opencontainers.image.revision": self.revision}}}]
+            payload = [{"Id": self.image, "Config": {"Env": [], "Healthcheck": {**host.HEALTH_TIMING, "Test": ["CMD-SHELL", host.HEALTH_COMMAND]}, "Labels": {"org.opencontainers.image.revision": self.revision}}}]
         elif argv[:3] == ["docker", "volume", "inspect"]:
             payload = [{"Name": name} for name in host.VOLUMES.values()]
         elif argv[:2] == ["docker", "exec"]:
@@ -178,6 +187,7 @@ class HostAdapterContracts(unittest.TestCase):
         elif argv[:2] == ["docker", "compose"]:
             if "up" in argv:
                 self.up_count += 1
+                self.started_at = self.elapsed
                 self.row["Id"] = "f" * 64
                 self.row["Config"]["Env"] = [k + "=" + v for k, v in self.current_env().items()]
                 self.row["Config"]["Labels"]["com.docker.compose.project.config_files"] = ",".join(argv[i + 1] for i, arg in enumerate(argv) if arg == "-f")
@@ -298,6 +308,59 @@ class HostAdapterContracts(unittest.TestCase):
         self.assertEqual((self.root / core.ENV_FILE.lstrip("/")).read_bytes(), original)
         self.assertEqual(self.up_count, 2)
         self.assertEqual(len([body for _, body in self.requests if body is not None]), 0)
+
+    def test_delayed_healthy_after_normal_start_does_not_roll_back(self):
+        self.health_after[1] = (32, "healthy")
+        _, operation = self.approve()
+        result = self.runtime.apply(operation)
+        self.assertEqual(result["phase"], "VERIFIED")
+        self.assertGreaterEqual(self.elapsed, 32)
+        self.assertEqual(self.up_count, 1)
+
+    def test_start_timeout_rolls_back_and_waits_for_delayed_recovery(self):
+        original = (self.root / core.ENV_FILE.lstrip("/")).read_bytes()
+        self.health_after = {1: (1000, "healthy"), 2: (32, "healthy")}
+        _, operation = self.approve()
+        result = self.runtime.apply(operation)
+        self.assertEqual(result["phase"], "ROLLED_BACK")
+        self.assertEqual(self.elapsed, 187)
+        receipt = self.state.read("receipt", operation)
+        self.assertEqual(receipt["startupOutcome"], "timeout")
+        self.assertEqual(receipt["rollbackStartupOutcome"], "healthy")
+        self.assertEqual((self.root / core.ENV_FILE.lstrip("/")).read_bytes(), original)
+        self.assertFalse(any(body is not None for _, body in self.requests))
+
+    def test_rollback_timeout_remains_uncertain_without_repeated_recreation(self):
+        self.health_after = {1: (0, "unhealthy"), 2: (1000, "healthy")}
+        _, operation = self.approve()
+        result = self.runtime.apply(operation)
+        self.assertEqual(result["phase"], "ROLLBACK_UNVERIFIED")
+        self.assertEqual(self.state.read("receipt", operation)["rollbackStartupOutcome"], "timeout")
+        self.assertEqual(self.elapsed, 155)
+        self.runtime.apply(operation)
+        self.assertEqual(self.up_count, 2)
+
+    def test_unknown_health_does_not_authorize_rollback(self):
+        self.health_after[1] = (0, "unknown")
+        _, operation = self.approve()
+        result = self.runtime.apply(operation)
+        self.assertEqual(result["phase"], "APPLIED_UNVERIFIED")
+        self.assertEqual(self.state.read("receipt", operation)["startupOutcome"], "unknown")
+        self.assertEqual(self.elapsed, 155)
+        self.assertEqual(self.up_count, 1)
+
+    def test_healthcheck_drift_blocks_before_backup(self):
+        self.row["Config"]["Healthcheck"]["Interval"] = 60_000_000_000
+        with self.assertRaises(core.RepairBlocked):
+            self.runtime.plan(self.revision)
+        self.assertEqual(self.up_count, 0)
+
+    def test_removed_unrelated_env_blocks_plan(self):
+        self.write(core.ENV_FILE, b"")
+        with self.assertRaises(core.RepairBlocked):
+            self.runtime.plan(self.revision)
+        self.assertEqual(self.up_count, 0)
+        self.assertFalse(any(self.state_root.glob("*backup*")))
 
     def test_secret_command_error_is_redacted(self):
         self.host.runner = lambda *a, **k: subprocess.CompletedProcess(a, 1, "SYNTHETIC_PRIVATE_STDOUT", "SYNTHETIC_PRIVATE_STDERR")

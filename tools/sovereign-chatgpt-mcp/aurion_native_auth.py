@@ -348,27 +348,36 @@ class NativeAuthRepair:
             self._adapter("apply_configuration", plan, operation_id)
             receipt["phase"] = "CONFIGURATION_WRITTEN"
             self.state.update(operation_id, receipt)
+            startup_outcome = "unknown"
             probes_completed = False
             try:
                 self._adapter("recreate_same_image", plan, operation_id)
-                self._adapter("verify_after_recreate", plan, operation_id)
-                probes_completed = True
+                startup = self._adapter("verify_after_recreate", plan, operation_id)
+                if isinstance(startup, dict) and startup.get("startupOutcome") in {"healthy", "unhealthy", "timeout", "unknown"}:
+                    startup_outcome = startup["startupOutcome"]
+                probes_completed = startup_outcome == "healthy"
             except RepairBlocked:
                 # First read the target after a command/probe failure. Never
                 # repeat the recreation or POST after an uncertain return.
                 pass
-            observed = self._public_readback(self._adapter("readback", plan, operation_id))
+            raw_observed = self._adapter("readback", plan, operation_id)
+            observed = self._public_readback(raw_observed)
+            receipt["startupOutcome"] = startup_outcome
             if not probes_completed:
                 observed.update(validStart200=False, invalidBody400=False)
             if all(observed.values()):
                 receipt.update(phase="VERIFIED", readback=observed)
                 self.state.complete(operation_id, receipt)
-            elif not observed["healthy"] and observed["sameImage"] and observed["sameRevision"]:
+            elif (not observed["healthy"] and observed["sameImage"] and observed["sameRevision"]
+                  and startup_outcome in {"unhealthy", "timeout"}
+                  and raw_observed.get("healthStatus") in {"starting", "healthy", "unhealthy", "stopped"}):
                 # An identity mismatch or merely failed auth probe is not evidence
                 # permitting a blind restore over a different deployment.
                 receipt["phase"] = "ROLLBACK_STARTED"
                 self.state.update(operation_id, receipt)
-                self._adapter("rollback", plan, operation_id, backup)
+                rollback_startup = self._adapter("rollback", plan, operation_id, backup)
+                if isinstance(rollback_startup, dict) and rollback_startup.get("startupOutcome") in {"healthy", "unhealthy", "timeout", "unknown"}:
+                    receipt["rollbackStartupOutcome"] = rollback_startup["startupOutcome"]
                 rollback = self._adapter("rollback_readback", plan, operation_id, backup)
                 verified = all(rollback.get(k) is True for k in (
                     "sameImage", "sameRevision", "healthy", "configurationRestored"))
