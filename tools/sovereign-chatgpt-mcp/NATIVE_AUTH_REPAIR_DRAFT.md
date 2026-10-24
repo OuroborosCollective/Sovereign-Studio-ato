@@ -68,7 +68,7 @@ python -m unittest discover -s tools/sovereign-chatgpt-mcp/tests -p 'test_aurion
 git diff --check
 ```
 
-53 lokale Tests bestanden; echte temporäre Dateien, Inodes, Symlinks und Sperren.
+54 lokale Tests bestanden; echte temporäre Dateien, Inodes, Symlinks und Sperren.
 Root-Metadaten sowie Docker/HTTP/DB werden an externen Testgrenzen simuliert.
 Flask, requests und pytest fehlen lokal; nichts wurde installiert. Authentifizierte
 HTTP-, Broker-/Queue- und echte Registry-Tests laufen in den vorhandenen CI-Gates.

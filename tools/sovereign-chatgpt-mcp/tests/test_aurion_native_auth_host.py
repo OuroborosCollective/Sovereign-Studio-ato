@@ -266,6 +266,16 @@ class HostAdapterContracts(unittest.TestCase):
         with self.assertRaisesRegex(core.RepairBlocked, "HOST_ADAPTER_FAILED"):
             self.runtime.plan(self.revision)
 
+    def test_unexpected_receipt_fields_are_never_persisted(self):
+        marker = "SYNTHETIC_PRIVATE_RECEIPT_FIELD"
+        self.write(host.PUBLIC_RECEIPT, json.dumps({**self.receipt, "unexpected": marker}).encode(), 0o644)
+        _, operation = self.approve()
+        result = self.runtime.apply(operation)
+        self.assertEqual(result["phase"], "VERIFIED")
+        self.assertNotIn(marker, json.dumps(result))
+        for path in self.state_root.glob("*.json"):
+            self.assertNotIn(marker, path.read_text())
+
     def test_compose_path_cannot_select_other_deployment(self):
         self.row["Config"]["Labels"]["com.docker.compose.project.config_files"] = "/tmp/other.yml"
         with self.assertRaisesRegex(core.RepairBlocked, "HOST_ADAPTER_FAILED"):

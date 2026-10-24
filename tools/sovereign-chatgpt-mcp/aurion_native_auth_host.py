@@ -311,6 +311,10 @@ class AurionNativeAuthHost:
         # Never turn a changed non-native configuration into an incidental deploy.
         if any(env.get(k) != parsed.get(k) for k in (RELEASE, SEAL)):
             raise RepairBlocked("EFFECTIVE_AUTH_CONFIG_DRIFT")
+        # Persist only validated, non-secret identity fields. An unexpected
+        # field in a future deployment receipt must never become our receipt.
+        receipt = {key: receipt[key] for key in ("revision", "releaseId", "containerId", "imageId",
+            "domain", "traefikNetwork", "databaseNetwork", "runtimeManifestSha256", *DIGEST_FIELDS.values())}
         context = {"composePath": compose_path, "composeEnv": compose_env, "receipt": receipt,
                    "productionIdentity": production.identity(), "runtimeIdentity": runtime_file.identity(),
                    "composeIdentity": compose_file.identity(), "receiptIdentity": receipt_file.identity(),
