@@ -28,6 +28,7 @@ import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
+import { RepoFileIntegrityMatrix } from './RepoFileIntegrityMatrix';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -918,13 +919,14 @@ describe('Palette Accessibility Enhancements', () => {
     });
 
     it('shows stateful submit button titles based on loading status', () => {
+      const onLoadMock = vi.fn();
       const { rerender } = render(
         <CompactRepoSetupSheet
           value=""
           busy={false}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoadMock}
           onClose={vi.fn()}
         />
       );
@@ -940,7 +942,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={false}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoadMock}
           onClose={vi.fn()}
         />
       );
@@ -956,14 +958,14 @@ describe('Palette Accessibility Enhancements', () => {
           busy={true}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoadMock}
           onClose={vi.fn()}
         />
       );
 
       submitBtn = screen.getByRole('button', { name: 'Repo-Snapshot wird geladen…' });
       expect(submitBtn).toBeDisabled();
-      expect(submitBtn).toHaveAttribute('title', 'Repository-Snapshot wird geladen…');
+      expect(submitBtn).toHaveAttribute('title', 'Repo-Snapshot wird geladen…');
     });
   });
 
@@ -1546,6 +1548,43 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(localModeBtn);
       expect(onUseLocalMode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('RepoFileIntegrityMatrix Accessibility and Micro-UX Enhancements', () => {
+    it('renders section linked to header, keyboard-navigable table region, column headers with scope, row hover feedback, and native tooltips', () => {
+      const mockFiles = [
+        { path: 'src/config.ts', size: 1024 },
+        { path: 'tests/mock.test.ts', size: 512 },
+      ];
+
+      render(<RepoFileIntegrityMatrix files={mockFiles as any} />);
+
+      const section = screen.getByRole('region', { name: 'Repo File Integrity Matrix' });
+      expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', 'repo-file-integrity-title');
+
+      const heading = screen.getByRole('heading', { name: 'Repo File Integrity Matrix', level: 2 });
+      expect(heading).toHaveAttribute('id', 'repo-file-integrity-title');
+
+      const pathOnlyBadge = screen.getByText('path-only, not content scan');
+      expect(pathOnlyBadge).toHaveAttribute('title', 'Static file-path heuristics analysis (content is not scanned)');
+
+      const tableRegion = screen.getByRole('region', { name: 'File integrity entries list' });
+      expect(tableRegion).toBeInTheDocument();
+      expect(tableRegion).toHaveAttribute('tabIndex', '0');
+      expect(tableRegion).toHaveClass('focus-visible:ring-2');
+
+      const columnHeaders = screen.getAllByRole('columnheader');
+      expect(columnHeaders).toHaveLength(5);
+      columnHeaders.forEach((th) => expect(th).toHaveAttribute('scope', 'col'));
+
+      const fileCell = screen.getByTitle('src/config.ts');
+      expect(fileCell).toBeInTheDocument();
+
+      const emptyFiles: any[] = [];
+      const { rerender } = render(<RepoFileIntegrityMatrix files={emptyFiles} />);
+      expect(screen.getByText('Load a repository to inspect file risk markers.')).toBeInTheDocument();
     });
   });
 });
