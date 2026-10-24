@@ -33,10 +33,14 @@ describe('maskSecrets', () => {
     expect(maskSecrets(`Using ${secret}`)).toBe('Using sk-or-v1-****');
   });
 
-  it('masks HuggingFace, Together AI and Pollinations AI keys', () => {
+  it('masks HuggingFace, Together AI, Pollinations AI, Fireworks AI, Cerebras AI and Voyage AI keys', () => {
     expect(maskSecrets('hf_abcdefghijklmnopqrstuvwxyz')).toBe('hf_****');
     expect(maskSecrets('together_abcdefghijklmnopqrstuvwxyz')).toBe('together_****');
     expect(maskSecrets('pollinations_abcdefghijklmnopqrstuvwxyz')).toBe('pollinations_****');
+    expect(maskSecrets('fw_abcdefghijklmnopqrstuvwxyz012345')).toBe('fw_****');
+    expect(maskSecrets('fw-abcdefghijklmnopqrstuvwxyz012345')).toBe('fw_****');
+    expect(maskSecrets('csk-abcdefghijklmnopqrstuvwxyz012345')).toBe('csk-****');
+    expect(maskSecrets('pa-abcdefghijklmnopqrstuvwxyz012345')).toBe('pa-****');
   });
 
   it('masks Bearer tokens', () => {
