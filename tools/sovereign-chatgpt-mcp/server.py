@@ -89,7 +89,8 @@ def _private_admin_capabilities() -> list[str]:
     if os.getenv("SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE", "0").strip() == "1":
         capabilities.extend(("patchmon_patch_write", "fleet_maintenance_write"))
     if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_OPERATOR", "0").strip() == "1":
-        capabilities.extend(("aurion_account_role_readback", "aurion_account_role_plan"))
+        capabilities.extend(("aurion_account_role_readback", "aurion_account_role_plan",
+                             "aurion_native_auth_plan", "aurion_native_auth_apply", "aurion_native_auth_readback"))
         if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_WRITE", "0").strip() == "1":
             capabilities.append("aurion_account_role_apply")
     if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP", "0").strip() == "1":
@@ -2224,6 +2225,38 @@ def postgres_admin_sql(sql: str, database: str = "", timeout_seconds: int = 300)
 
 
 if os.getenv("SOVEREIGN_MCP_ENABLE_AURION_OPERATOR", "0").strip() == "1":
+    @mcp.tool(annotations=NETWORK_READ)
+    def aurion_native_auth_plan(expected_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]) -> dict[str, Any]:
+        """Read the fixed Aurion repair plan. Approve only on /owner-aurion-native-auth; SSH grants do not authorize it."""
+        return broker.call("aurion_native_auth_plan", {"expected_revision": expected_revision}, timeout=120)
+
+    @mcp.tool(annotations=EXTERNAL_WRITE)
+    def aurion_native_auth_apply(operation_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")]) -> dict[str, Any]:
+        """Queue the single owner-approved repair identity. No owner assertion, shell, path, SQL or Compose input."""
+        return broker.call("aurion_native_auth_apply", {"operation_id": operation_id}, timeout=240)
+
+    @mcp.tool(annotations=NETWORK_READ)
+    def aurion_native_auth_readback(operation_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")]) -> dict[str, Any]:
+        """Read one durable operation and current identity/health; never retry a start POST or any repair effect."""
+        return broker.call("aurion_native_auth_readback", {"operation_id": operation_id}, timeout=45)
+
+    class _NativeAuthPlanArguments(ArgModelBase):
+        model_config = ConfigDict(extra="forbid")
+        expected_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+
+    class _NativeAuthOperationArguments(ArgModelBase):
+        model_config = ConfigDict(extra="forbid")
+        operation_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")]
+
+    for _native_name, _native_model in (
+        ("aurion_native_auth_plan", _NativeAuthPlanArguments),
+        ("aurion_native_auth_apply", _NativeAuthOperationArguments),
+        ("aurion_native_auth_readback", _NativeAuthOperationArguments),
+    ):
+        _native_tool = mcp._tool_manager.get_tool(_native_name)
+        _native_tool.fn_metadata.arg_model = _native_model
+        _native_tool.parameters = _native_model.model_json_schema()
+
     @mcp.tool(annotations=NETWORK_READ)
     def aurion_account_role_readback(
         open_id: Annotated[

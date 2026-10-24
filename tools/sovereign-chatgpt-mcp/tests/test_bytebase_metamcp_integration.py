@@ -144,7 +144,8 @@ def test_host_services_load_extension_and_worker_grants_only_required_new_roots(
     assert expected in worker
     assert "/opt/sovereign-bytebase" not in broker.split("ReadWritePaths=", 1)[1].splitlines()[0]
     assert "/opt/sovereign-metamcp" not in broker.split("ReadWritePaths=", 1)[1].splitlines()[0]
-    worker_writes = worker.split("ReadWritePaths=", 1)[1].splitlines()[0]
+    worker_writes = " ".join(line.partition("=")[2] for line in worker.splitlines() if line.startswith("ReadWritePaths="))
+    assert "-/opt/echoes-of-aurion" in worker_writes
     assert "/opt/sovereign-bytebase" in worker_writes
     assert "/opt/sovereign-metamcp" in worker_writes
 
