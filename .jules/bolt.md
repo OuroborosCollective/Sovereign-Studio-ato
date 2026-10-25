@@ -87,3 +87,7 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+
+## 2026-10-25 - [Replacing Array Reduce Iterations]
+**Learning:** In high-frequency execution paths (e.g., neural worker compute ticks, predictive layer norm computation, tool prediction bridge), using `.reduce()` for array iterations causes continuous inline function allocation overhead and increases garbage collection pressure. Replacing `.reduce()` passes with standard `for` loops completely avoids this overhead, making calculations flatter and significantly faster.
+**Action:** In high-frequency execution paths (e.g., loops processing thousands of signals or neural worker compute ticks), replace `.reduce()` array iterations with standard `for` loops. This avoids continuous inline function allocation overhead and reduces garbage collection pressure.

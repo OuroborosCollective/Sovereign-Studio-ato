@@ -169,14 +169,15 @@ export class ErrorComputer {
     const alpha = 0.3; // Smoothing factor
 
     // Calculate weighted average
-    const smoothedError = recentErrors.reduce((sum, e, i) => {
-      const weight = Math.pow(alpha, recentErrors.length - 1 - i);
-      return sum + e.error * weight;
-    }, 0);
-
-    const weightSum = recentErrors.reduce((sum, _, i) => {
-      return sum + Math.pow(alpha, recentErrors.length - 1 - i);
-    }, 0);
+    // ⚡ Bolt: Replaced .reduce() with a standard for loop to avoid continuous inline function allocation overhead
+    let smoothedError = 0;
+    let weightSum = 0;
+    const len = recentErrors.length;
+    for (let i = 0; i < len; i++) {
+      const weight = Math.pow(alpha, len - 1 - i);
+      smoothedError += recentErrors[i].error * weight;
+      weightSum += weight;
+    }
 
     const ema = smoothedError / weightSum;
 
@@ -352,7 +353,12 @@ export function calculateAccuracy(errors: PredictionError[], threshold: number):
  */
 export function calculateMSE(errors: PredictionError[]): number {
   if (errors.length === 0) return 0;
-  const sumSquared = errors.reduce((sum, e) => sum + e.error * e.error, 0);
+  // ⚡ Bolt: Replaced .reduce() with a standard for loop to avoid continuous inline function allocation overhead
+  let sumSquared = 0;
+  for (let i = 0; i < errors.length; i++) {
+    const err = errors[i].error;
+    sumSquared += err * err;
+  }
   return sumSquared / errors.length;
 }
 

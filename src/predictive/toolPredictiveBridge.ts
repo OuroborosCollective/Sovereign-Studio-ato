@@ -148,12 +148,17 @@ export async function getToolPredictions(
     };
   }
 
-  // Calculate success rate from patterns
-  const successCount = patterns.filter(p => p.signalValue > 0.5).length;
+  // Calculate success rate and average confidence from patterns
+  // ⚡ Bolt: Replaced .reduce() with a standard for loop to avoid continuous inline function allocation overhead
+  let successCount = 0;
+  let confSum = 0;
+  for (let i = 0; i < patterns.length; i++) {
+    const p = patterns[i];
+    if (p.signalValue > 0.5) successCount++;
+    confSum += p.avgConfidence;
+  }
   const predictedSuccessRate = successCount / patterns.length;
-  
-  // Calculate average confidence
-  const avgConfidence = patterns.reduce((sum, p) => sum + p.avgConfidence, 0) / patterns.length;
+  const avgConfidence = confSum / patterns.length;
   
   // Generate recommendations
   const recommendations: string[] = [];

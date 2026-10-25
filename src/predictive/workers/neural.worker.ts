@@ -294,7 +294,11 @@ class NeuralNetworkState {
       this.computeTimes.shift();
     }
 
-    const total = this.computeTimes.reduce((sum, t) => sum + t, 0);
+    // ⚡ Bolt: Replaced .reduce() with a standard for loop to avoid continuous inline function allocation overhead
+    let total = 0;
+    for (let i = 0; i < this.computeTimes.length; i++) {
+      total += this.computeTimes[i];
+    }
     this.stats.averageComputeTimeMs = total / this.computeTimes.length;
   }
 
