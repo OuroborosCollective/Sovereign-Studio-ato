@@ -159,6 +159,23 @@ def test_failure_diagnosis_routes_exact_repeated_mcp_400_logs_without_node_repai
     assert "no_repeated_400_window" in result["policy"]["required_post_checks"]
 
 
+def test_failure_diagnosis_ignores_successful_mcp_healthcheck_session_close() -> None:
+    # Real Docker healthchecks perform successful POST /mcp initializes every 30 seconds.
+    result = REPAIR_ENGINE.diagnose(
+        'INFO: 127.0.0.1:43970 - "POST /mcp HTTP/1.1" 200 OK\nTerminating session: None'
+    )
+
+    assert result["status"] == "UNKNOWN"
+    assert result["policy"]["auto_repairable"] is False
+
+
+def test_failure_diagnosis_ignores_session_close_without_failed_mcp_request() -> None:
+    result = REPAIR_ENGINE.diagnose("Terminating session: None")
+
+    assert result["status"] == "UNKNOWN"
+    assert result["policy"]["family"] == "unknown"
+
+
 def test_failure_diagnosis_routes_tunnel_400_to_protocol_probe_repair() -> None:
     result = REPAIR_ENGINE.diagnose("MCP initialize returned HTTP 400 during tunnel-healthcheck")
 

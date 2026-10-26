@@ -105,7 +105,6 @@ _FAILURE_POLICIES = (
         family="mcp_streamable_http_request_contract",
         signatures=(
             "post /mcp http/1.1\" 400 bad request",
-            "terminating session: none",
         ),
         repair_action="identify_calling_client_then_replace_malformed_probe_without_touching_node_or_broker",
         auto_repairable=False,
