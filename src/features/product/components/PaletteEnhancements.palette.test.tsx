@@ -28,6 +28,7 @@ import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
+import { SequentialRuntimePanel } from './SequentialRuntimePanel';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -940,7 +941,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={false}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoad}
           onClose={vi.fn()}
         />
       );
@@ -956,7 +957,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={true}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoad}
           onClose={vi.fn()}
         />
       );
@@ -1546,6 +1547,47 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(localModeBtn);
       expect(onUseLocalMode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('SequentialRuntimePanel Accessibility and Micro-UX Enhancements', () => {
+    it('renders section landmark linked to heading, status badge, semantic step list, and keyboard-navigable history table', () => {
+      const mockState = {
+        activeStep: null,
+        steps: {
+          step1: { status: 'completed' as const, message: 'Step 1 done' },
+          step2: { status: 'running' as const, message: 'Running step 2' },
+          step3: { status: 'idle' as const, message: '' },
+        },
+        history: [
+          { sequence: 1, step: 'step1' as const, status: 'completed' as const, message: 'Step 1 done' },
+          { sequence: 2, step: 'step2' as const, status: 'running' as const, message: 'Running step 2' },
+        ],
+      };
+
+      render(<SequentialRuntimePanel state={mockState as any} />);
+
+      const heading = screen.getByRole('heading', { name: 'Sequential Runtime Guard', level: 2 });
+      expect(heading).toHaveAttribute('id', 'sequential-runtime-guard-heading');
+
+      const section = screen.getByRole('region', { name: 'Sequential Runtime Guard' });
+      expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', 'sequential-runtime-guard-heading');
+
+      const guardStatus = screen.getByRole('status', { name: 'Runtime guard status: ready' });
+      expect(guardStatus).toBeInTheDocument();
+      expect(guardStatus).toHaveAttribute('title', 'Guard ready for next execution step');
+
+      const stepsList = screen.getByRole('list', { name: 'Sequential runtime steps' });
+      expect(stepsList).toBeInTheDocument();
+
+      const historyRegion = screen.getByRole('region', { name: 'Runtime transition history table' });
+      expect(historyRegion).toBeInTheDocument();
+      expect(historyRegion).toHaveAttribute('tabIndex', '0');
+      expect(historyRegion).toHaveClass('focus-visible:ring-2');
+
+      const columnHeaders = screen.getAllByRole('columnheader');
+      expect(columnHeaders).toHaveLength(4);
     });
   });
 });
