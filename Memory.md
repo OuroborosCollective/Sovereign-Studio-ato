@@ -1301,3 +1301,11 @@ Evidence: Aurion #1151 auf exakt `7038453b` unabhängig geprüft und vollständi
 
 ### 2026-10-24 — Sovereign Workspace-Kapazitaetsbremse (Draft)
 Änderung: Atomare, pro Host-Workspace-Root gemeinsame Provisionierungs-/Clone-Sperre, 20-%-Speicherreserve, max. 12 Workspaces, Admission vor GitHub/DB, Symlink-Cleanup-Schutz; kanonische Deployment-Mirrors. Erkenntnis: Der produktive VPS liegt bei 91,52 % Auslastung (380790353920/416055988224 B; 35265634304 B frei); bisherige Job-Klone besitzen keinen belegten Auto-GC. Attribution des Speicherverbrauchs an Klone ist UNVERIFIED. Evidence: Host-Broker Snapshot sha256:3f924742acfaee057923c270ad00a66c92eda8eaf396365878829488a3f667f5; 9 lokale Guard-Vertragstests PASS (externe Runtime-/CI-E2E nach PR offen), keine Host-Loeschungen oder Deployments. Folge: Erst CI/Host-Readback und gezielte Cleanup-Evidence, dann Produktivfreigabe.
+
+### 2026-10-26 — MCP healthcheck self-heal 200 classification (Draft)
+Status: TESTED_AT_REVISION in isolated workspace; CI/merge/deploy pending.
+Change: Remove standalone `terminating session: none` from MCP HTTP failure signature, retain HTTP 400 detection; add explicit 200/session-close and bare-session-close negative regressions.
+Learned: Streamable HTTP valid initialize and stateless session close are not failures; classification must require a failed HTTP response.
+Evidence: Source baseline `dbd4f1938a44b00ecc8d2d78d4e6007418bf6d40`; actual RED `2 failed, 14 passed` before correction and GREEN `16 passed` after (pytest tools/sovereign-chatgpt-mcp/tests/test_self_heal.py); real VPS MCP health 200 with zero failed streak. No runtime code changed on VPS.
+Open: Exact PR/CI and immutable release/readback, as well as separate live Aurion/DB/PatchMon diagnosis and safe VPS disk/OpenClaw ownership proof.
+Next safe step: Draft PR and exact-head CI readback, inspect proposed cleanup without touching persistent data.
