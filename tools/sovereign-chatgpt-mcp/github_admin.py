@@ -690,7 +690,7 @@ class GitHubAdminRuntime:
         payload = self._request(
             "POST",
             f"/repos/{self.repository}/actions/workflows/{selected}/dispatches",
-            json_body={"ref": selected_ref, "inputs": clean_inputs},
+            json_body={"ref": selected_ref, "inputs": clean_inputs, "return_run_details": True},
             expected=(200,),
         )
         if not isinstance(payload, dict):
