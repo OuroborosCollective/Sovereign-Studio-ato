@@ -62,7 +62,7 @@ def test_queue_accepts_metadata_only_and_owner_receipt(client):
 
 @pytest.mark.parametrize("body", [
     {"action": "shell", "command": "synthetic-command"},
-    {"action": "grant", "sessionId": "a" * 32, "operations": ["shell"]},
+    {"action": "grant", "sessionId": "a" * 32, "operations": ["shell"], "ttl": 30},
     {"action": "grant", "sessionId": "a" * 32, "operations": ["disk"], "ttl": 10000},
     {"action": "inspect", "sessionId": "../invalid", "operation": "disk"},
     {"action": "connect", "profile": {"host": "localhost"}},
@@ -72,6 +72,17 @@ def test_invalid_owner_actions_never_enter_queue(client, body):
     response = api.post("/api/admin/owner-ssh/action", json=body, headers=headers())
     assert response.status_code == 400 and writes == [] and jobs == []
     assert "profile" not in response.get_data(as_text=True)
+
+def test_explicit_shell_grant_is_owner_scoped_and_metadata_only(client):
+    api, current, writes, jobs = client
+    response = api.post("/api/admin/owner-ssh/action", json={
+        "action": "grant", "sessionId": "a" * 32, "operations": ["shell"], "ttl": 300
+    }, headers=headers())
+    assert response.status_code == 200
+    assert writes[0][1]["operations"] == ["shell"]
+    assert set(jobs[0][1]) == {"operation_id"}
+    assert "command" not in str(jobs)
+
 
 def test_async_action_is_reported_without_resubmission(client, monkeypatch):
     api, current, writes, jobs = client

@@ -155,6 +155,8 @@ button:disabled{opacity:.45;cursor:wait}label{display:block}.muted{color:#8b949e
 <h3>Meine Hilfe freigeben</h3><p>Nur die ausgewählten Menüaktionen werden freigegeben. Die Freigabe gilt für diese Verbindung und endet automatisch.</p>
 <div id="scope"></div><label>Freigabedauer<select id="grantDuration"><option value="300">5 Minuten</option><option value="900">15 Minuten</option></select></label>
 <label class="check"><input id="workspaceScope" type="checkbox">Isolierten VPS-Workspace freigeben</label>
+<label class="check"><input id="shellScope" type="checkbox">Freie VPS-Befehle erlauben (erhöhtes Risiko)</label>
+<p>Freie Befehle laufen mit den Rechten des angemeldeten SSH-Benutzers. Laufzeit 1–15 Minuten, jederzeit widerrufbar. Vor jeder Freigabe Befehlsfolgen und deren Risiken prüfen. Befehlsausgaben können sensible Informationen enthalten.</p>
 <p>Erlaubt wiederholte Dateiänderungen und Python-/Node-Tests für 15–60 Minuten. Testcode läuft ohne Root-Rechte und ohne Netzwerk oder produktive Dateien. Merge, Deployment und Datenbankänderungen gehören nicht zu dieser Sitzungsberechtigung.</p>
 <label>Workspace-Freigabedauer<select id="workspaceDuration"><option value="900">15 Minuten</option><option value="1800">30 Minuten</option><option value="3600">60 Minuten</option></select></label>
 <button id="grant">Hilfe freigeben</button><button id="revoke">Freigabe widerrufen</button><button id="close">Verbindung beenden</button>
@@ -181,7 +183,7 @@ function receiveProbe(result){
  $('hostConfirmed').checked=false;$('hostVerification').hidden=false;
  message('Server gefunden. Fingerabdruck vor dem Verbinden in der Hostinger-Konsole vergleichen.');
 }
-const names={system:'System',disk:'Festplatten',memory:'Arbeitsspeicher',containers:'Container',services:'Dienste',workspace:'Isolierter Workspace'};
+const names={system:'System',disk:'Festplatten',memory:'Arbeitsspeicher',containers:'Container',services:'Dienste',workspace:'Isolierter Workspace',shell:'Freie VPS-Befehle'};
 async function api(path,body){
  const response=await fetch(path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+admin,...(body?{'Content-Type':'application/json','X-Sovereign-Owner-Action':'ssh-console'}:{})},body:body?JSON.stringify(body):undefined,credentials:'same-origin',mode:'same-origin',cache:'no-store',redirect:'error'});
  const data=await response.json();
@@ -231,7 +233,7 @@ $('connect').onclick=async()=>{
 };
 $('retryClose').onclick=()=>action({action:'close'});
 $('close').onclick=()=>action({action:'close'});$('revoke').onclick=()=>action({action:'revoke'});
-$('grant').onclick=()=>{const ops=Array.from($('scope').querySelectorAll('input:checked')).map(b=>b.value);if($('workspaceScope').checked)ops.push('workspace');return action({action:'grant',operations:ops,ttl:Number($($('workspaceScope').checked?'workspaceDuration':'grantDuration').value)});};
+$('grant').onclick=()=>{if($('shellScope').checked){if(!confirm('Freie VPS-Befehle erlauben? Diese können produktive Dateien und Dienste verändern.'))return;return action({action:'grant',operations:['shell'],ttl:Number($('grantDuration').value)});}const ops=Array.from($('scope').querySelectorAll('input:checked')).map(b=>b.value);if($('workspaceScope').checked)ops.push('workspace');return action({action:'grant',operations:ops,ttl:Number($($('workspaceScope').checked?'workspaceDuration':'grantDuration').value)});};
 setInterval(async()=>{try{
  if(pending&&!busy){const result=await api('/api/admin/owner-ssh/command/'+encodeURIComponent(pending));if(result.status!=='IN_PROGRESS'&&result.status!=='QUEUED'){
  const completedAction=pendingAction;pending='';pendingAction='';

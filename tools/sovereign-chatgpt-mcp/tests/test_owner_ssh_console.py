@@ -192,6 +192,102 @@ def test_password_askpass_is_private_and_not_an_argument(console):
     assert not directory.exists() and not (instance.root / "ssh_console_profile.json").exists()
 
 
+
+def test_shell_requires_specific_owner_delegation(console):
+    instance, session_id, calls = connected(console)
+    with pytest.raises(ValueError, match="delegation"):
+        instance.assistant_shell(session_id, "uname -a")
+    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["disk"], ttl=300))
+    with pytest.raises(ValueError, match="delegation"):
+        instance.assistant_shell(session_id, "uname -a")
+    assert not any("/bin/sh -c" in " ".join(map(str, argv)) for argv in calls)
+
+
+def test_shell_executes_arbitrary_pipeline_on_existing_ssh_transport_without_reconnect(console):
+    instance, session_id, calls = connected(console)
+    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["shell"], ttl=300))
+    observed = []
+    def transport(argv, *, deadline, guard):
+        guard()
+        observed.append(argv)
+        guard()
+        return subprocess.CompletedProcess(argv, 0, "three\\n", "")
+    instance.workspace_runner = transport
+    command = "printf 'one;two;three' | cut -d ';' -f 3"
+    result = instance.assistant_shell(session_id, command, timeout_seconds=25)
+    assert result["status"] == "SSH_SHELL_EXECUTED"
+    assert result["exitCode"] == 0
+    assert result["output"] == "three\\n"
+    assert result["commandSha256"] == hashlib.sha256(command.encode()).hexdigest()
+    assert result["targetStateVerified"] is False
+    assert len(observed) == 1
+    assert "ProxyCommand=false" in observed[0] and "ControlMaster=no" in observed[0]
+    assert "/bin/sh -c" in observed[0][-1]
+    assert command not in instance._state()["lastActivity"]["command"]
+
+
+def test_shell_fails_closed_on_revocation_or_expired_grant(console):
+    instance, session_id, calls = connected(console)
+    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["shell"], ttl=60))
+    instance.owner_action(owner_action(instance, "revoke", sessionId=session_id))
+    with pytest.raises(ValueError, match="delegation"):
+        instance.assistant_shell(session_id, "whoami")
+    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["shell"], ttl=60))
+    state = instance._state()
+    state["grantUntil"] = time.time() - 1
+    instance._write("ssh_console_state.json", state)
+    with pytest.raises(ValueError, match="delegation"):
+        instance.assistant_shell(session_id, "whoami")
+
+
+def test_shell_revocation_during_transport_blocks_result(console):
+    instance, session_id, calls = connected(console)
+    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["shell"], ttl=300))
+    def transport(argv, *, deadline, guard):
+        guard()
+        instance._write("ssh_console_revocation.json", {"sessionId": session_id, "at": time.time()})
+        guard()
+        return subprocess.CompletedProcess(argv, 0, "should-not-return", "")
+    instance.workspace_runner = transport
+    with pytest.raises(ValueError, match="revocation"):
+        instance.assistant_shell(session_id, "uptime")
+    assert instance._state().get("lastActivity") is None
+
+
+def test_shell_failure_and_secret_output_are_not_reported_as_verified(console):
+    instance, profile, calls = console
+    profile.pop("privateKey")
+    profile["password"] = "synthetic-password-not-real"
+    instance._write("ssh_console_profile.json", profile)
+    result = instance.owner_action(owner_action(instance, "connect"))
+    session_id = result["sessionId"]
+    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["shell"], ttl=300))
+    def transport(argv, *, deadline, guard):
+        guard()
+        return subprocess.CompletedProcess(argv, 7, "password=secret-value\\n" + profile["password"], "")
+    instance.workspace_runner = transport
+    result = instance.assistant_shell(session_id, "false")
+    assert result["ok"] is False and result["exitCode"] == 7
+    assert result["targetStateVerified"] is False
+    assert "secret-value" not in json.dumps(result)
+    assert profile["password"] not in json.dumps(result)
+    assert profile["password"] not in json.dumps(instance._state())
+
+
+@pytest.mark.parametrize("command,timeout", [("", 30), ("a" * 9000, 30), ("printf " + chr(0), 30), ("uname", 0), ("uname", 301)])
+def test_shell_invalid_command_or_timeout_rejected_before_transport(console, command, timeout):
+    instance, session_id, calls = connected(console)
+    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["shell"], ttl=300))
+    with pytest.raises(ValueError):
+        instance.assistant_shell(session_id, command, timeout_seconds=timeout)
+
+
+@pytest.mark.parametrize("ops,ttl", [(["shell"], 30), (["shell"], 901), (["shell", "workspace"], 900), (["shell", "disk"], 300)])
+def test_shell_grant_rejects_wrong_lifetime_or_mixed_scope(console, ops, ttl):
+    instance, session_id, calls = connected(console)
+    with pytest.raises(ValueError, match="scope|lifetime"):
+        instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=ops, ttl=ttl))
+
 def test_canonical_backend_mirrors_and_queue_route():
     for name in ("owner_ssh_console.py", "command_queue.py", "command_contract.py"):
         assert (ROOT / "tools/sovereign-chatgpt-mcp" / name).read_bytes() == (ROOT / "scripts/sovereign-backend" / name).read_bytes()
@@ -208,6 +304,9 @@ def test_native_resource_and_tool_argument_boundaries(monkeypatch):
     tools = asyncio.run(server.mcp.list_tools())
     by_name = {tool.name: tool for tool in tools}
     status = by_name["vps_ssh_session_status"]
+    shell = by_name["vps_ssh_shell"]
+    assert "command" in shell.inputSchema["properties"]
+    assert "session_id" in shell.inputSchema["properties"]
     assert status.meta["ui"]["resourceUri"] == URI
     assert status.meta["openai/ui"]["entrypoints"] == [{"type": "global"}, {"type": "thread"}]
     content = asyncio.run(server.mcp.read_resource(URI))
