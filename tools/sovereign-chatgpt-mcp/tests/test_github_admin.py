@@ -1123,6 +1123,7 @@ def test_allowlisted_android_workflow_can_be_dispatched_without_secret_inputs(mo
     assert result["url"].endswith("/actions/runs/1234")
     assert session.calls[0]["headers"]["X-GitHub-Api-Version"] == "2026-03-10"
     assert session.calls[0]["json"]["inputs"]["version_code"] == "101"
+    assert session.calls[0]["json"]["return_run_details"] is True
 
 
 def test_private_owner_mode_can_dispatch_any_safe_repository_workflow(monkeypatch) -> None:
