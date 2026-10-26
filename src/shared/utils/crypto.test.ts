@@ -139,6 +139,12 @@ describe('maskSecrets', () => {
     expect(maskSecrets('postmark_key=postmark_secret_val_404')).toBe('postmark_key=****');
     expect(maskSecrets('twilio_key: twilio_key_val_505')).toBe('twilio_key: ****');
     expect(maskSecrets('twilio_secret=twilio_secret_val_606')).toBe('twilio_secret=****');
+    expect(maskSecrets('github_key: github_key_val_101')).toBe('github_key: ****');
+    expect(maskSecrets('github_secret=github_secret_val_202')).toBe('github_secret=****');
+    expect(maskSecrets('github_token: github_token_val_303')).toBe('github_token: ****');
+    expect(maskSecrets('google_key=google_key_val_404')).toBe('google_key=****');
+    expect(maskSecrets('google_secret: google_secret_val_505')).toBe('google_secret: ****');
+    expect(maskSecrets('google_token=google_token_val_606')).toBe('google_token=****');
     expect(maskSecrets('linear_key: linear_key_val_707')).toBe('linear_key: ****');
     expect(maskSecrets('datadog_secret=datadog_secret_val_808')).toBe('datadog_secret=****');
     expect(maskSecrets('algolia_key: algolia_key_val_909')).toBe('algolia_key: ****');
