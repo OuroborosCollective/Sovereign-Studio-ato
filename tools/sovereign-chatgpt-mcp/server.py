@@ -1438,6 +1438,18 @@ def vps_ssh_inspect(
     return broker.call("ssh_console_assistant_inspect", {"session_id": session_id, "operation": operation}, timeout=35)
 
 
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def vps_ssh_shell(
+    session_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")],
+    command: Annotated[str, Field(min_length=1, max_length=8192)],
+    timeout_seconds: Annotated[int, Field(strict=True, ge=1, le=300)] = 30,
+) -> dict[str, Any]:
+    """Run a free-form owner-delegated VPS command on an existing SSH connection; execution is not target-state readback."""
+    return broker.call("ssh_console_assistant_shell", {
+        "session_id": session_id, "command": command, "timeout_seconds": timeout_seconds,
+    }, timeout=timeout_seconds + 30)
+
+
 @mcp.tool(annotations=READ_ONLY)
 def vps_container_status(container: str = "sovereign-backend") -> dict[str, Any]:
     """Inspect the real state of one allowlisted Docker container through the local broker."""

@@ -1301,3 +1301,14 @@ Evidence: Aurion #1151 auf exakt `7038453b` unabhängig geprüft und vollständi
 
 ### 2026-10-24 — Sovereign Workspace-Kapazitaetsbremse (Draft)
 Änderung: Atomare, pro Host-Workspace-Root gemeinsame Provisionierungs-/Clone-Sperre, 20-%-Speicherreserve, max. 12 Workspaces, Admission vor GitHub/DB, Symlink-Cleanup-Schutz; kanonische Deployment-Mirrors. Erkenntnis: Der produktive VPS liegt bei 91,52 % Auslastung (380790353920/416055988224 B; 35265634304 B frei); bisherige Job-Klone besitzen keinen belegten Auto-GC. Attribution des Speicherverbrauchs an Klone ist UNVERIFIED. Evidence: Host-Broker Snapshot sha256:3f924742acfaee057923c270ad00a66c92eda8eaf396365878829488a3f667f5; 9 lokale Guard-Vertragstests PASS (externe Runtime-/CI-E2E nach PR offen), keine Host-Loeschungen oder Deployments. Folge: Erst CI/Host-Readback und gezielte Cleanup-Evidence, dann Produktivfreigabe.
+
+
+### 2026-10-26 — Owner-bound freie VPS-Shell in Sovott v2 (Draft)
+Status: TESTED_AT_REVISION; exact-head CI, merge, immutable deployment and chat exposure remain unverified.
+Task: Extend the canonical owner SSH console with explicitly selected free-form VPS shell commands.
+Decisions: Reuse host-key-pinned OpenSSH connection, root-only owner credential storage, broker/host-command queue and owner grants. Shell grant is isolated from inspection/workspace grants, expires in 60–900 seconds, and is revocable. Commands are capped at 8192 UTF-8 bytes and 300 seconds, run with the SSH user's actual privileges, never auto-escalate, and return exit code and redacted bounded output but not target-system success. No automatic host action or blanket production privileges.
+Touched surfaces: canonical and backend mirror owner_ssh_console.py and command_contract.py; MCP server.py, broker.py, protected owner UI, SSH regression tests.
+Evidence: isolated workspace job-10abdb575a71 from main dbd4f1938a44b00ecc8d2d78d4e6007418bf6d40; RED 11 failed/41 passed/2 skipped before the implementation; GREEN owner console 52 passed/2 skipped, workspace 42 passed, Python backend_compile and git diff --check pass. No live VPS commands, no secrets or deployments performed.
+Learned: A registered MCP tool is not necessarily exposed by the ChatGPT connector; the new capability needs end-to-end registry exposure readback after immutable deployment. Arbitrary shell output can contain unexpected secrets beyond static redaction patterns; operators must avoid commands dumping secret material. Revocation prevents new/ongoing supervised commands but cannot guarantee rollback of completed remote effects.
+Open: exact PR/CI, full MCP regressions, live MCP registry and ChatGPT tool exposure, owner-specific SSH grant and harmless end-to-end canary.
+Next safe step: review draft, resolve checks, merge and deploy only via existing evidence-bound immutable process.

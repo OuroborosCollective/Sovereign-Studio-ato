@@ -39,7 +39,8 @@ OPERATIONS = {
 # Session scope: 15–60 minutes of repeated non-root workspace tasks;
 # never a generic production-root shell or permission to modify live DBs.
 WORKSPACE_SCOPE = "workspace"
-GRANT_OPERATIONS = frozenset((*OPERATIONS, WORKSPACE_SCOPE))
+SHELL_SCOPE = "shell"
+GRANT_OPERATIONS = frozenset((*OPERATIONS, WORKSPACE_SCOPE, SHELL_SCOPE))
 ID = re.compile(r"^[0-9a-f]{32}$")
 
 MAX_CAPTURE_BYTES = 65536
@@ -473,9 +474,48 @@ class OwnerSSHConsole:
     def validate_grant(ops, ttl):
         if not isinstance(ops, list) or not ops or any(not isinstance(op, str) or op not in GRANT_OPERATIONS for op in ops):
             raise ValueError("Invalid owner SSH delegation scope")
-        low, high = (900, 3600) if WORKSPACE_SCOPE in ops else (30, 900)
+        if SHELL_SCOPE in ops and len(ops) != 1:
+            raise ValueError("SSH shell scope must be separate")
+        low, high = (60, 900) if SHELL_SCOPE in ops else ((900, 3600) if WORKSPACE_SCOPE in ops else (30, 900))
         if type(ttl) is not int or not low <= ttl <= high:
             raise ValueError("Invalid owner SSH delegation lifetime")
+
+    def assistant_shell(self, session_id, command, timeout_seconds=30):
+        if not isinstance(command, str) or not command.strip() or len(command.encode("utf-8")) > 8192 or "\x00" in command:
+            raise ValueError("Invalid SSH shell command")
+        if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 300:
+            raise ValueError("Invalid SSH shell timeout")
+        with self._lock():
+            state = self._state()
+            if state["sessionId"] != session_id:
+                raise ValueError("SSH session identity mismatch")
+            self._ready(state)
+            self._delegation_ready(state, SHELL_SCOPE)
+            def guard():
+                current = self._state()
+                if current["sessionId"] != session_id or current.get("status") != "connected" or time.time() >= current["expiresAt"]:
+                    raise ValueError("SSH session expired or changed")
+                self._delegation_ready(current, SHELL_SCOPE)
+            remote = "/bin/sh -c " + shlex.quote(command)
+            argv = self._base(state)[:-1] + ["-o", "BatchMode=yes", "-o", "ControlMaster=no", "-o", "ProxyCommand=false", state["host"], remote]
+            completed = self.workspace_runner(argv, deadline=min(time.time() + timeout_seconds, state["grantUntil"], state["expiresAt"]), guard=guard)
+            guard()
+            self._ready(state)
+            output = str(completed.stdout or "")[-24000:]
+            profile = self._json("ssh_console_profile.json")
+            for field in ("password", "privateKey"):
+                secret = str(profile.get(field) or "")
+                if secret:
+                    output = output.replace(secret, "[REDACTED]")
+            output = re.sub(r"(?i)(password|secret|token|api[_-]?key)\s*[:=]\s*[^\s]+", r"\1=[REDACTED]", output)
+            output = re.sub(r"(?:ghp_|github_pat_|sk-proj-)[A-Za-z0-9_./+=-]+", "[REDACTED]", output)
+            digest = hashlib.sha256(command.encode()).hexdigest()
+            state["lastActivity"] = {"actor": "assistant", "operation": SHELL_SCOPE, "command": "sha256:" + digest,
+                                     "output": output, "exitCode": completed.returncode, "at": time.time()}
+            self._write("ssh_console_state.json", state)
+            return {"ok": completed.returncode == 0, "status": "SSH_SHELL_EXECUTED" if completed.returncode == 0 else "SSH_SHELL_FAILED",
+                    "sessionId": session_id, "commandSha256": digest, "output": output,
+                    "exitCode": completed.returncode, "targetStateVerified": False, "protectedValuesReturned": False}
 
     def assistant_workspace(self, session_id, source_revision, action, path="", content="",
                             expected_sha256="", argv=None, timeout_seconds=30):
