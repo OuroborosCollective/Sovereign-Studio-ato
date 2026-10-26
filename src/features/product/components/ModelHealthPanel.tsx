@@ -60,12 +60,20 @@ export function ModelHealthPanel({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id="model-health-title" className="font-bold">Model Health Monitor</h2>
-          <p className="mt-1 text-xs text-slate-400">
+          <p
+            className="mt-1 text-xs text-slate-400"
+            role="status"
+            aria-live="polite"
+            aria-label={`${models.length} model(s) total: ${healthyCount} healthy, ${degradedCount} degraded, ${unknownCount} unknown`}
+          >
             {models.length} model(s) · {healthyCount} healthy · {degradedCount} degraded · {unknownCount} unknown
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-500">
+          <span
+            className="text-xs text-slate-500"
+            title={lastCheck ? `Last check: ${new Date(lastCheck).toLocaleString()}` : 'No check performed yet'}
+          >
             Last check: {formatTime(lastCheck)}
           </span>
           {showRefresh && onRefresh && (
@@ -90,10 +98,10 @@ export function ModelHealthPanel({
             <li
               key={model.id}
               title={`${model.name} (${model.isEnabled ? 'Enabled' : 'Disabled'}) - Status: ${model.status}`}
-              className="flex items-center justify-between rounded border border-slate-800 bg-slate-900/70 p-3"
+              className="flex items-center justify-between rounded border border-slate-800 bg-slate-900/70 p-3 transition-colors hover:bg-slate-900/90"
             >
               <div className="flex items-center gap-3">
-                <span className="text-lg" role="img" aria-label={`Status: ${model.status}`} title={`Status: ${model.status}`}>
+                <span className="text-lg" aria-hidden="true" title={`Status: ${model.status}`}>
                   {statusIcon(model.status)}
                 </span>
                 <div>
@@ -121,9 +129,9 @@ export function ModelHealthPanel({
       <div className="mt-4 rounded border border-slate-800 bg-slate-900/70 p-3">
         <h3 className="font-bold text-xs text-slate-400">Health Legend</h3>
         <ul role="list" className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
-          <li>🟢 Healthy: Latency &lt; 2s</li>
-          <li>🟡 Degraded: Latency &gt; 2s</li>
-          <li>⚪ Unknown: Not checked or failed</li>
+          <li><span aria-hidden="true">🟢</span> Healthy: Latency &lt; 2s</li>
+          <li><span aria-hidden="true">🟡</span> Degraded: Latency &gt; 2s</li>
+          <li><span aria-hidden="true">⚪</span> Unknown: Not checked or failed</li>
         </ul>
       </div>
     </section>
