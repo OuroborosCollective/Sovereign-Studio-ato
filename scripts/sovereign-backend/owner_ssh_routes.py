@@ -85,6 +85,11 @@ def register_owner_ssh_routes(app, *, require_admin, get_current_admin):
                 ops, ttl = body.get("operations"), body.get("ttl", 300)
                 OwnerSSHConsole.validate_grant(ops, ttl)
                 record.update(operations=ops, ttl=ttl)
+                if "shell" in ops:
+                    command = body.get("command")
+                    timeout_seconds = body.get("timeoutSeconds", 30)
+                    record.update(commandSha256=OwnerSSHConsole.validate_shell_command(command, timeout_seconds),
+                                  timeoutSeconds=timeout_seconds)
             if action in {"revoke", "close"}:
                 # Cancellation must reach an in-flight worker immediately, before queue dispatch.
                 # This durable marker remains effective if the queued owner action expires.
@@ -155,8 +160,9 @@ button:disabled{opacity:.45;cursor:wait}label{display:block}.muted{color:#8b949e
 <h3>Meine Hilfe freigeben</h3><p>Nur die ausgewählten Menüaktionen werden freigegeben. Die Freigabe gilt für diese Verbindung und endet automatisch.</p>
 <div id="scope"></div><label>Freigabedauer<select id="grantDuration"><option value="300">5 Minuten</option><option value="900">15 Minuten</option></select></label>
 <label class="check"><input id="workspaceScope" type="checkbox">Isolierten VPS-Workspace freigeben</label>
-<label class="check"><input id="shellScope" type="checkbox">Freie VPS-Befehle erlauben (erhöhtes Risiko)</label>
-<p>Freie Befehle laufen mit den Rechten des angemeldeten SSH-Benutzers. Laufzeit 1–15 Minuten, jederzeit widerrufbar. Vor jeder Freigabe Befehlsfolgen und deren Risiken prüfen. Befehlsausgaben können sensible Informationen enthalten.</p>
+<label class="check"><input id="shellScope" type="checkbox">Einen konkreten VPS-Befehl einmalig freigeben</label>
+<label id="shellCommandLabel" hidden>Exakter freizugebender Befehl<textarea id="shellCommand" autocomplete="off" spellcheck="false"></textarea></label>
+<p id="shellScopeHelp" hidden>Die Freigabe gilt nur für diesen exakten Befehl, diese SSH-Verbindung und die gewählte Zeit. Sie wird vor Ausführung verbraucht und kann widerrufen werden. stdout und stderr werden vollständig verworfen; nur Exit-Code und Bytezahlen werden quittiert.</p>
 <p>Erlaubt wiederholte Dateiänderungen und Python-/Node-Tests für 15–60 Minuten. Testcode läuft ohne Root-Rechte und ohne Netzwerk oder produktive Dateien. Merge, Deployment und Datenbankänderungen gehören nicht zu dieser Sitzungsberechtigung.</p>
 <label>Workspace-Freigabedauer<select id="workspaceDuration"><option value="900">15 Minuten</option><option value="1800">30 Minuten</option><option value="3600">60 Minuten</option></select></label>
 <button id="grant">Hilfe freigeben</button><button id="revoke">Freigabe widerrufen</button><button id="close">Verbindung beenden</button>
@@ -197,7 +203,7 @@ function render(state){
  const uncertain=state.status==='close_unverified';
  $('login').hidden=Boolean(admin);$('setup').hidden=!admin||active||uncertain;$('console').hidden=!active;$('uncertain').hidden=!uncertain;
  $('identity').textContent=active?state.username+'@'+state.host+' · '+state.hostFingerprint+' · bis '+new Date(state.expiresAt*1000).toLocaleTimeString():'';
- if(state.lastActivity){const a=state.lastActivity;$('output').textContent='['+a.actor+'] $ '+a.command+'\n'+a.output+'\nExit: '+a.exitCode;}
+ if(state.lastActivity){const a=state.lastActivity;if(a.operation==='shell'){$('output').textContent='[Shell-Ausführungsbeleg]\nFreigabe: '+a.approvalId+'\nQuellrevision: '+a.sourceRevision+'\nBefehls-SHA256: '+a.commandSha256+'\nStatus: '+a.status+'\nstdout-Bytes: '+(a.stdoutBytes??'unbekannt')+' · stderr-Bytes: '+(a.stderrBytes??'unbekannt')+'\nExit: '+a.exitCode+'\nAusgabe: verworfen';}else{$('output').textContent='['+a.actor+'] $ '+a.command+'\n'+a.output+'\nExit: '+a.exitCode;}}
  $('grantState').textContent=state.assistantGrantActive?'Hilfe freigegeben: '+state.allowedOperations.map(op=>names[op]||op).join(', '):'Keine aktive Freigabe für die Assistenz.';
  const resetScope=previous!==session||!$('scope').childElementCount;
  $('operations').replaceChildren();if(resetScope)$('scope').replaceChildren();
@@ -233,7 +239,8 @@ $('connect').onclick=async()=>{
 };
 $('retryClose').onclick=()=>action({action:'close'});
 $('close').onclick=()=>action({action:'close'});$('revoke').onclick=()=>action({action:'revoke'});
-$('grant').onclick=()=>{if($('shellScope').checked){if(!confirm('Freie VPS-Befehle erlauben? Diese können produktive Dateien und Dienste verändern.'))return;return action({action:'grant',operations:['shell'],ttl:Number($('grantDuration').value)});}const ops=Array.from($('scope').querySelectorAll('input:checked')).map(b=>b.value);if($('workspaceScope').checked)ops.push('workspace');return action({action:'grant',operations:ops,ttl:Number($($('workspaceScope').checked?'workspaceDuration':'grantDuration').value)});};
+$('shellScope').onchange=()=>{$('shellCommandLabel').hidden=!$('shellScope').checked;$('shellScopeHelp').hidden=!$('shellScope').checked;};
+$('grant').onclick=()=>{if($('shellScope').checked){const command=$('shellCommand').value;if(!command.trim()){message('Für die Shell-Freigabe zuerst genau einen Befehl eintragen.');return;}const timeoutSeconds=30;if(!confirm('Einmalige Freigabe für genau diesen Befehl?\n\n'+command+'\n\nDer Befehl kann produktive Dateien und Dienste verändern.'))return;$('shellCommand').value='';return action({action:'grant',operations:['shell'],ttl:Number($('grantDuration').value),command,timeoutSeconds});}const ops=Array.from($('scope').querySelectorAll('input:checked')).map(b=>b.value);if($('workspaceScope').checked)ops.push('workspace');return action({action:'grant',operations:ops,ttl:Number($($('workspaceScope').checked?'workspaceDuration':'grantDuration').value)});};
 setInterval(async()=>{try{
  if(pending&&!busy){const result=await api('/api/admin/owner-ssh/command/'+encodeURIComponent(pending));if(result.status!=='IN_PROGRESS'&&result.status!=='QUEUED'){
  const completedAction=pendingAction;pending='';pendingAction='';

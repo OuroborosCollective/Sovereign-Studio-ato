@@ -73,15 +73,30 @@ def test_invalid_owner_actions_never_enter_queue(client, body):
     assert response.status_code == 400 and writes == [] and jobs == []
     assert "profile" not in response.get_data(as_text=True)
 
-def test_explicit_shell_grant_is_owner_scoped_and_metadata_only(client):
+def test_explicit_shell_grant_is_bound_to_exact_owner_approved_command(client):
     api, current, writes, jobs = client
+    command = "systemctl restart example"
     response = api.post("/api/admin/owner-ssh/action", json={
-        "action": "grant", "sessionId": "a" * 32, "operations": ["shell"], "ttl": 300
+        "action": "grant", "sessionId": "a" * 32, "operations": ["shell"], "ttl": 300,
+        "command": command, "timeoutSeconds": 25,
     }, headers=headers())
     assert response.status_code == 200
-    assert writes[0][1]["operations"] == ["shell"]
+    record = writes[0][1]
+    assert record["operations"] == ["shell"] and record["timeoutSeconds"] == 25
+    assert record["commandSha256"] == __import__("hashlib").sha256(command.encode()).hexdigest()
+    assert "command" not in record and command not in json.dumps(writes)
     assert set(jobs[0][1]) == {"operation_id"}
-    assert "command" not in str(jobs)
+
+
+def test_shell_owner_approval_rejects_invalid_timeout_and_command(client):
+    api, current, writes, jobs = client
+    for command, timeout in (("", 30), ("x" * 9000, 30), ("echo \x00", 30), ("id", True), ("id", 301)):
+        response = api.post("/api/admin/owner-ssh/action", json={
+            "action": "grant", "sessionId": "a" * 32, "operations": ["shell"], "ttl": 300,
+            "command": command, "timeoutSeconds": timeout,
+        }, headers=headers())
+        assert response.status_code == 400
+    assert writes == [] and jobs == []
 
 
 def test_async_action_is_reported_without_resubmission(client, monkeypatch):
@@ -102,6 +117,8 @@ def test_owner_page_is_protected_from_embedding_and_storage(client):
     assert response.headers["Referrer-Policy"] == "no-referrer"
     assert "no-store" in response.headers["Cache-Control"]
     assert "localStorage" not in response.get_data(as_text=True)
+    assert "Einen konkreten VPS-Befehl einmalig freigeben" in response.get_data(as_text=True)
+    assert "stdout und stderr werden vollständig verworfen" in response.get_data(as_text=True)
 
 def test_probe_is_owner_guarded_and_contains_no_credential(client):
     api, current, writes, jobs = client

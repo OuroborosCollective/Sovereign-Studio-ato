@@ -1,7 +1,8 @@
 """Owner-bound OpenSSH transport for the existing host command worker.
 
 Credentials are read from the protected owner-managed file, never from tool
-arguments. No arbitrary shell command surface is exposed.
+arguments. Optional shell execution requires a one-use command-, profile- and
+source-revision-bound owner approval.
 """
 from __future__ import annotations
 import base64
@@ -36,8 +37,8 @@ OPERATIONS = {
     "containers": "docker ps --format '{{.Names}} {{.Status}}'",
     "services": "systemctl --no-pager --plain --type=service --state=running",
 }
-# Session scope: 15–60 minutes of repeated non-root workspace tasks;
-# never a generic production-root shell or permission to modify live DBs.
+# Workspace scope: repeated non-root workspace tasks, isolated from live data.
+# Shell scope is separate and permits one exact, owner-approved command only.
 WORKSPACE_SCOPE = "workspace"
 SHELL_SCOPE = "shell"
 GRANT_OPERATIONS = frozenset((*OPERATIONS, WORKSPACE_SCOPE, SHELL_SCOPE))
@@ -79,13 +80,55 @@ def _workspace_transport(argv, *, deadline, guard):
                         size += len(chunk)
             code = process.wait(timeout=1)
             guard()
-            return subprocess.CompletedProcess(argv, code, bytes(output[1]).decode("utf-8"),
-                                               bytes(output[2]).decode("utf-8", "replace"))
+            return subprocess.CompletedProcess(argv, code, bytes(output[1]).decode("utf-8", errors="replace"),
+                                               bytes(output[2]).decode("utf-8", errors="replace"))
         finally:
             try:
                 process.stdin.close()
             except BrokenPipeError:
                 pass
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+
+def _runtime_source_revision():
+    revision = os.getenv("SOVEREIGN_SOURCE_REVISION", "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ValueError("Exact MCP source revision is unavailable")
+    return revision
+
+
+def _shell_transport(argv, *, timeout_seconds, guard):
+    """Run an approved shell command with no stdin and discard every output byte."""
+    counts = {1: 0, 2: 0}
+    deadline = time.monotonic() + timeout_seconds
+    with subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE,
+                          env={"PATH": "/usr/bin:/bin", "LANG": "C", "HOME": "/nonexistent"},
+                          start_new_session=True) as process:
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stdout, selectors.EVENT_READ, 1)
+                selector.register(process.stderr, selectors.EVENT_READ, 2)
+                while selector.get_map():
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired(argv, timeout_seconds)
+                    guard()
+                    for key, _ in selector.select(min(remaining, 0.1)):
+                        chunk = os.read(key.fileobj.fileno(), 8192)
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                            key.fileobj.close()
+                            continue
+                        counts[key.data] += len(chunk)
+            code = process.wait(timeout=max(0.1, deadline - time.monotonic()))
+            guard()
+            result = subprocess.CompletedProcess(argv, code, "", "")
+            result.stdout_bytes = counts[1]
+            result.stderr_bytes = counts[2]
+            return result
+        finally:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
@@ -129,6 +172,7 @@ class OwnerSSHConsole:
         self.root = Path(root or os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", "/opt/sovereign-owner-managed"))
         self.runner = runner or _bounded_run
         self.workspace_runner = workspace_runner or _workspace_transport
+        self.shell_runner = _shell_transport
         self._next_cleanup = 0.0
 
     def _read(self, name, limit=65536):
@@ -290,7 +334,7 @@ class OwnerSSHConsole:
         return state
 
     def _close(self, state, preserve_profile=False):
-        state.update(status="close_unverified", grantUntil=0, allowedOperations=[])
+        state.update(status="close_unverified", grantUntil=0, allowedOperations=[], shellApproval=None, shellExecutionId="")
         self._write("ssh_console_state.json", state)
         try:
             self._run(self._base(state)[:-1] + ["-O", "exit", state["host"]], 5)
@@ -401,6 +445,11 @@ class OwnerSSHConsole:
     def _delegation_ready(self, state, operation):
         if time.time() >= state.get("grantUntil", 0) or operation not in state.get("allowedOperations", []):
             raise ValueError("Owner SSH delegation missing, revoked or expired")
+        if operation == SHELL_SCOPE and not state.get("shellExecutionId"):
+            approval = state.get("shellApproval")
+            if (not isinstance(approval, dict) or approval.get("sourceRevision") != _runtime_source_revision()
+                    or approval.get("profileSha256") != state.get("profileSha256")):
+                raise ValueError("Command-bound owner approval missing or stale")
         try:
             revoked = self._json("ssh_console_revocation.json")
         except FileNotFoundError:
@@ -480,42 +529,102 @@ class OwnerSSHConsole:
         if type(ttl) is not int or not low <= ttl <= high:
             raise ValueError("Invalid owner SSH delegation lifetime")
 
-    def assistant_shell(self, session_id, command, timeout_seconds=30):
-        if not isinstance(command, str) or not command.strip() or len(command.encode("utf-8")) > 8192 or "\x00" in command:
+    @staticmethod
+    def validate_shell_command(command, timeout_seconds):
+        if not isinstance(command, str) or not command.strip() or "\x00" in command:
+            raise ValueError("Invalid SSH shell command")
+        try:
+            encoded = command.encode("utf-8", errors="strict")
+        except UnicodeError as exc:
+            raise ValueError("Invalid SSH shell command encoding") from exc
+        if len(encoded) > 8192:
             raise ValueError("Invalid SSH shell command")
         if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 300:
             raise ValueError("Invalid SSH shell timeout")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def assistant_shell(self, session_id, command, timeout_seconds=30):
+        digest = self.validate_shell_command(command, timeout_seconds)
+        source_revision = _runtime_source_revision()
         with self._lock():
             state = self._state()
             if state["sessionId"] != session_id:
                 raise ValueError("SSH session identity mismatch")
             self._ready(state)
             self._delegation_ready(state, SHELL_SCOPE)
+            approval = state.get("shellApproval")
+            if (not isinstance(approval, dict) or approval.get("commandSha256") != digest
+                    or approval.get("timeoutSeconds") != timeout_seconds
+                    or approval.get("profileSha256") != state.get("profileSha256")
+                    or approval.get("sourceRevision") != source_revision):
+                raise ValueError("Owner approval does not match this command")
+            approval_id = str(approval.get("approvalId") or "")
+            if not ID.fullmatch(approval_id):
+                raise ValueError("Owner shell approval identity is invalid")
+            execution_id = uuid.uuid4().hex
+            state["shellApproval"] = None
+            state["shellExecutionId"] = execution_id
+            state["lastActivity"] = {
+                "actor": "assistant", "operation": SHELL_SCOPE, "status": "SSH_SHELL_STARTED",
+                "sessionId": session_id, "approvalId": approval_id, "executionId": execution_id,
+                "commandSha256": digest, "profileSha256": state["profileSha256"],
+                "sourceRevision": source_revision, "timeoutSeconds": timeout_seconds, "at": time.time(),
+            }
+            self._write("ssh_console_state.json", state)
+
             def guard():
                 current = self._state()
-                if current["sessionId"] != session_id or current.get("status") != "connected" or time.time() >= current["expiresAt"]:
+                if (current["sessionId"] != session_id or current.get("shellExecutionId") != execution_id
+                        or current.get("status") != "connected" or time.time() >= current["expiresAt"]):
                     raise ValueError("SSH session expired or changed")
+                profile_sha = hashlib.sha256(self._read("ssh_console_profile.json")).hexdigest()
+                if profile_sha != current.get("profileSha256"):
+                    raise ValueError("SSH profile changed during shell execution")
+                if _runtime_source_revision() != source_revision:
+                    raise ValueError("MCP source revision changed during shell execution")
                 self._delegation_ready(current, SHELL_SCOPE)
+
             remote = "/bin/sh -c " + shlex.quote(command)
-            argv = self._base(state)[:-1] + ["-o", "BatchMode=yes", "-o", "ControlMaster=no", "-o", "ProxyCommand=false", state["host"], remote]
-            completed = self.workspace_runner(argv, deadline=min(time.time() + timeout_seconds, state["grantUntil"], state["expiresAt"]), guard=guard)
-            guard()
-            self._ready(state)
-            output = str(completed.stdout or "")[-24000:]
-            profile = self._json("ssh_console_profile.json")
-            for field in ("password", "privateKey"):
-                secret = str(profile.get(field) or "")
-                if secret:
-                    output = output.replace(secret, "[REDACTED]")
-            output = re.sub(r"(?i)(password|secret|token|api[_-]?key)\s*[:=]\s*[^\s]+", r"\1=[REDACTED]", output)
-            output = re.sub(r"(?:ghp_|github_pat_|sk-proj-)[A-Za-z0-9_./+=-]+", "[REDACTED]", output)
-            digest = hashlib.sha256(command.encode()).hexdigest()
-            state["lastActivity"] = {"actor": "assistant", "operation": SHELL_SCOPE, "command": "sha256:" + digest,
-                                     "output": output, "exitCode": completed.returncode, "at": time.time()}
-            self._write("ssh_console_state.json", state)
-            return {"ok": completed.returncode == 0, "status": "SSH_SHELL_EXECUTED" if completed.returncode == 0 else "SSH_SHELL_FAILED",
-                    "sessionId": session_id, "commandSha256": digest, "output": output,
-                    "exitCode": completed.returncode, "targetStateVerified": False, "protectedValuesReturned": False}
+            argv = self._base(state)[:-1] + ["-o", "BatchMode=yes", "-o", "ControlMaster=no",
+                                              "-o", "ProxyCommand=false", state["host"], remote]
+            try:
+                completed = self.shell_runner(argv, timeout_seconds=timeout_seconds, guard=guard)
+                guard()
+                self._ready(state)
+                guard()
+                stdout_bytes = max(0, int(getattr(completed, "stdout_bytes", 0)))
+                stderr_bytes = max(0, int(getattr(completed, "stderr_bytes", 0)))
+                status = "SSH_SHELL_EXECUTED" if completed.returncode == 0 else "SSH_SHELL_FAILED"
+                receipt = {**state["lastActivity"], "status": status, "exitCode": completed.returncode,
+                           "stdoutBytes": stdout_bytes, "stderrBytes": stderr_bytes, "at": time.time()}
+                state["lastActivity"] = receipt
+                self._write("ssh_console_state.json", state)
+                return {"ok": completed.returncode == 0, "status": status, "sessionId": session_id,
+                        "approvalId": approval_id, "executionId": execution_id, "commandSha256": digest,
+                        "profileSha256": state["profileSha256"], "sourceRevision": source_revision,
+                        "exitCode": completed.returncode, "stdoutBytes": stdout_bytes, "stderrBytes": stderr_bytes,
+                        "outputReturned": False, "targetStateVerified": False, "protectedValuesReturned": False}
+            except subprocess.TimeoutExpired:
+                current = self._state()
+                current["lastActivity"] = {**current.get("lastActivity", {}), "status": "SSH_SHELL_OUTCOME_UNKNOWN",
+                                            "exitCode": None, "stdoutBytes": None, "stderrBytes": None, "at": time.time()}
+                self._write("ssh_console_state.json", current)
+                return {"ok": False, "status": "SSH_SHELL_OUTCOME_UNKNOWN", "sessionId": session_id,
+                        "approvalId": approval_id, "executionId": execution_id, "commandSha256": digest,
+                        "profileSha256": state["profileSha256"], "sourceRevision": source_revision,
+                        "exitCode": None, "outputReturned": False,
+                        "targetStateVerified": False, "protectedValuesReturned": False}
+            except Exception:
+                current = self._state()
+                current["lastActivity"] = {**current.get("lastActivity", {}), "status": "SSH_SHELL_INTERRUPTED_OUTCOME_UNKNOWN",
+                                            "exitCode": None, "stdoutBytes": None, "stderrBytes": None, "at": time.time()}
+                self._write("ssh_console_state.json", current)
+                raise
+            finally:
+                current = self._state()
+                if current.get("shellExecutionId") == execution_id:
+                    current["shellExecutionId"] = ""
+                    self._write("ssh_console_state.json", current)
 
     def assistant_workspace(self, session_id, source_revision, action, path="", content="",
                             expected_sha256="", argv=None, timeout_seconds=30):
@@ -591,7 +700,7 @@ class OwnerSSHConsole:
                 self._close(state)
                 return {"ok": True, "status": "SSH_CLOSED", "sessionId": state["sessionId"]}
             if selected == "revoke":
-                state.update(grantUntil=0, allowedOperations=[])
+                state.update(grantUntil=0, allowedOperations=[], shellApproval=None, shellExecutionId="")
                 self._write("ssh_console_state.json", state)
                 return {"ok": True, "status": "SSH_DELEGATION_REVOKED"}
             self._ready(state)
@@ -607,11 +716,25 @@ class OwnerSSHConsole:
                     if marker.get("at", 0) >= action.get("createdAt", 0):
                         raise ValueError("Newer SSH revocation blocks this grant")
                     (self.root / "ssh_console_revocation.json").unlink()
+                shell_approval = None
+                if SHELL_SCOPE in ops:
+                    digest = str(action.get("commandSha256") or "")
+                    timeout_seconds = action.get("timeoutSeconds")
+                    if not re.fullmatch(r"[0-9a-f]{64}", digest) or type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 300:
+                        raise ValueError("Command-bound owner approval is required for shell scope")
+                    shell_approval = {"approvalId": uuid.uuid4().hex, "commandSha256": digest,
+                                      "timeoutSeconds": timeout_seconds, "profileSha256": state["profileSha256"],
+                                      "sourceRevision": _runtime_source_revision()}
                 state["workspaceGrantId"] = uuid.uuid4().hex if WORKSPACE_SCOPE in ops else ""
-                state.update(grantUntil=min(time.time() + ttl, state["expiresAt"]), allowedOperations=sorted(set(ops)))
+                state.update(grantUntil=min(time.time() + ttl, state["expiresAt"]),
+                             allowedOperations=sorted(set(ops)), shellApproval=shell_approval, shellExecutionId="")
                 self._write("ssh_console_state.json", state)
                 return {"ok": True, "status": "SSH_DELEGATION_GRANTED", "sessionId": state["sessionId"],
-                        "allowedOperations": state["allowedOperations"], "expiresAt": state["grantUntil"]}
+                        "allowedOperations": state["allowedOperations"], "expiresAt": state["grantUntil"],
+                        "approvalId": shell_approval["approvalId"] if shell_approval else None,
+                        "commandSha256": shell_approval["commandSha256"] if shell_approval else None,
+                        "timeoutSeconds": shell_approval["timeoutSeconds"] if shell_approval else None,
+                        "sourceRevision": shell_approval["sourceRevision"] if shell_approval else None}
             if selected == "inspect":
                 return self._inspect(state, str(action.get("operation") or ""))
             raise ValueError("Owner SSH action is not allowlisted")

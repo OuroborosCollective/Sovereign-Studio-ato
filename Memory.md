@@ -1313,3 +1313,13 @@ Learned: A registered MCP tool is not necessarily exposed by the ChatGPT connect
 CI repair: GitHub run 40349729127 observed 9 failed / 1456 passed / 12 skipped. Corrected exact schema count expectations for one additional vps_ssh_shell tool in installer, workflow and installer-contract tests; preserved the 82 reviewed LLM boundary classifications during deterministic SHA/line rebinding, new ledger SHA-256 f1fd6daf76fb642585190ec370f6cda83e4cf13bf4875117b1cedd4eae7f9101. Local focused MCP neuro installer contract 15 passed and boundary ledger 4 passed after remediation; fresh full CI required.
 Open: exact PR/CI, full MCP regressions, live MCP registry and ChatGPT tool exposure, owner-specific SSH grant and harmless end-to-end canary.
 Next safe step: review draft, resolve checks, merge and deploy only via existing evidence-bound immutable process.
+
+### 2026-10-27 — Command-bound Sovott SSH shell hardening
+Status: PARTIAL; tests and rollout pending
+Task: Harden PR #2358 free-form SSH actions without removing the owner's requested capability.
+Decisions: Require a one-use approval bound to the exact UTF-8 command digest, timeout, SSH profile hash and full `SOVEREIGN_SOURCE_REVISION`; consume before execution and recheck revocation/profile/revision while running. Shell stdin is closed; stdout/stderr bytes are discarded and only bounded metadata receipts are stored/returned, including explicit unknown outcome on timeout/interruption.
+Touched surfaces: `owner_ssh_console.py` canonical/backend mirror, owner SSH route/UI, MCP and Flask regression tests, product-truth contract.
+Evidence: Base `66b703c366762f1c107fcf1e721cc3d76ad0cfaf`; canonical/backend mirror readback mismatch count 0. Focused tests added; CI not yet run. Active MCP registry snapshot `a0ac317c73b94d52c7921011ce5dc882a3f6742ceead5b9eed88af1ed361def8` lists `vps_ssh_shell` as external-write; last self-update state reports revision `9341b5151b9476e95186a03e6ee3deb5fd8cdfa9` but no immutable digest, and GitHub source at that revision lacks the shell registration. This availability/revision conflict is unresolved; no shell command was invoked.
+Learned: Static redaction patterns cannot certify arbitrary shell output as secret-free, so do not return or persist it.
+Open: Focused and aggregate exact-head CI, security review, merge/release gates, then immutable runtime revision/digest and tool-registry readback. Never dispatch shell until the hardened revision is independently bound to production.
+Next safe step: Open a reviewable Draft PR, run the relevant backend/MCP CI gates, and reconcile the active MCP tool listing with its deployed image identity before any shell invocation.
