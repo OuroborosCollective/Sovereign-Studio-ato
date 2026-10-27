@@ -29,6 +29,7 @@ import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
 import { SequentialRuntimePanel } from './SequentialRuntimePanel';
+import { createSequentialRuntimeState } from '../runtime/sequentialRuntimeGuard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -941,7 +942,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={false}
           error={null}
           onChange={vi.fn()}
-          onLoad={onLoad}
+          onLoad={vi.fn()}
           onClose={vi.fn()}
         />
       );
@@ -1552,20 +1553,15 @@ describe('Palette Accessibility Enhancements', () => {
 
   describe('SequentialRuntimePanel Accessibility and Micro-UX Enhancements', () => {
     it('renders section landmark linked to heading, status badge, semantic step list, and keyboard-navigable history table', () => {
-      const mockState = {
-        activeStep: null,
-        steps: {
-          step1: { status: 'completed' as const, message: 'Step 1 done' },
-          step2: { status: 'running' as const, message: 'Running step 2' },
-          step3: { status: 'idle' as const, message: '' },
-        },
-        history: [
-          { sequence: 1, step: 'step1' as const, status: 'completed' as const, message: 'Step 1 done' },
-          { sequence: 2, step: 'step2' as const, status: 'running' as const, message: 'Running step 2' },
-        ],
-      };
+      const mockState = createSequentialRuntimeState();
+      mockState.steps['repo-load'] = { step: 'repo-load', status: 'completed', message: 'Repo loaded' };
+      mockState.steps['package-build'] = { step: 'package-build', status: 'running', message: 'Building package' };
+      mockState.history = [
+        { sequence: 1, step: 'repo-load', status: 'completed', message: 'Repo loaded', at: Date.now() - 2000 },
+        { sequence: 2, step: 'package-build', status: 'running', message: 'Building package', at: Date.now() - 1000 },
+      ];
 
-      render(<SequentialRuntimePanel state={mockState as any} />);
+      render(<SequentialRuntimePanel state={mockState} />);
 
       const heading = screen.getByRole('heading', { name: 'Sequential Runtime Guard', level: 2 });
       expect(heading).toHaveAttribute('id', 'sequential-runtime-guard-heading');

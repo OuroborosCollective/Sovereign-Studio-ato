@@ -17497,7 +17497,7 @@
     },
     {
       "dynamic": false,
-      "line": 1,
+      "line": 2,
       "source": "src/features/product/components/SequentialRuntimePanel.tsx",
       "source_status": "active",
       "target": "src/features/product/runtime/sequentialRuntimeGuard.ts",
@@ -21600,10 +21600,10 @@
       "target_status": "active"
     }
   ],
-  "reportSha256": "3f05d2aa38e7d0081845431e9a1ef4d9d5f848a3bfee89918eb77c078e1da687",
+  "reportSha256": "6d5ebf2bc569935611f7ce11753379f5a4ec787e80a3c7780cb778f5d24873ef",
   "revision": "66b703c366762f1c107fcf1e721cc3d76ad0cfaf",
   "schemaVersion": "sovereign.frontend-endpoint-contracts.v1",
-  "sourceTreeSha256": "0b2a140e898bbe09cce39b8db3d4c00b70287d2891ca0e061e563ad08a715b87",
+  "sourceTreeSha256": "be3d66bc899b39bcc26c54679935afc2a1fa8e04502a6258781476a73d7bb857",
   "status": "pass",
   "summary": {
     "activeExternalRequestCount": 16,
