@@ -189,9 +189,15 @@ describe('maskSecrets', () => {
     expect(maskSecrets('stability_secret=stability_sec_val_303')).toBe('stability_secret=****');
     expect(maskSecrets('fal_key: fal_key_val_404')).toBe('fal_key: ****');
     expect(maskSecrets('fal_secret=fal_sec_val_505')).toBe('fal_secret=****');
+    expect(maskSecrets('fireworks_key: fw_key_val_101')).toBe('fireworks_key: ****');
+    expect(maskSecrets('cerebras_secret=cb_sec_val_202')).toBe('cerebras_secret=****');
+    expect(maskSecrets('voyage_token: voyage_tok_val_303')).toBe('voyage_token: ****');
+    expect(maskSecrets('neon_key=neon_key_val_404')).toBe('neon_key=****');
+    expect(maskSecrets('turso_secret: turso_sec_val_505')).toBe('turso_secret: ****');
+    expect(maskSecrets('upstash_token=upstash_tok_val_606')).toBe('upstash_token=****');
     expect(maskSecrets('"deepseek_key": "quoted_value_123"')).toBe('"deepseek_key": ****');
 
-    const plain = 'cohere_key pinecone_secret qdrant_key deepseek_key perplexity_secret replicate_key cloudflare_token elevenlabs_key stability_key fal_secret without assignments';
+    const plain = 'cohere_key pinecone_secret qdrant_key deepseek_key perplexity_secret replicate_key cloudflare_token elevenlabs_key stability_key fal_secret fireworks_key cerebras_secret voyage_token neon_key turso_secret upstash_token without assignments';
     expect(maskSecrets(plain)).toBe(plain);
   });
 
