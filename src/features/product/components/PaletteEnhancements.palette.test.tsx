@@ -216,7 +216,7 @@ describe('Palette Accessibility Enhancements', () => {
   });
 
   describe('ChangelogPreviewCard, WorkflowRepairPanel, and WorkbenchSidePanel Enhancements', () => {
-    it('ChangelogPreviewCard buttons have descriptive titles, aria-labels, copy feedback state, and accessible pre block', async () => {
+    it('ChangelogPreviewCard buttons have descriptive titles, visible accessible names (WCAG 2.5.3), copy feedback state, Escape key dismiss, and accessible pre block', async () => {
       const mockResult = {
         commitCount: 3,
         source: 'git log',
@@ -236,27 +236,35 @@ describe('Palette Accessibility Enhancements', () => {
       const section = screen.getByTestId('changelog-preview-card');
       expect(section).toHaveAttribute('aria-labelledby', 'changelog-preview-title');
 
-      const closeBtn = screen.getByRole('button', { name: 'Keep-a-Changelog Vorschau schließen' });
+      const closeBtn = screen.getByRole('button', { name: 'Schließen' });
       expect(closeBtn).toHaveAttribute('title', 'Keep-a-Changelog Vorschau schließen');
+      expect(closeBtn).not.toHaveAttribute('aria-label');
       expect(closeBtn).toHaveClass('focus-visible:ring-2');
 
       const preBlock = screen.getByLabelText('Changelog Markdown Vorschau');
       expect(preBlock).toHaveAttribute('tabIndex', '0');
 
-      const copyBtn = screen.getByRole('button', { name: 'Vorschau-Markdown in die Zwischenablage kopieren' });
+      const copyBtn = screen.getByRole('button', { name: 'Kopieren' });
       expect(copyBtn).toHaveAttribute('title', 'Vorschau-Markdown in die Zwischenablage kopieren');
+      expect(copyBtn).not.toHaveAttribute('aria-label');
       expect(copyBtn).toHaveClass('focus-visible:ring-2');
 
       // Click copy button and test temporary feedback state
       await React.act(async () => {
         fireEvent.click(copyBtn);
       });
-      expect(screen.getByRole('button', { name: 'Markdown in Zwischenablage kopiert' })).toBeInTheDocument();
-      expect(screen.getByText('Kopiert ✓')).toBeInTheDocument();
+      const copiedBtn = screen.getByRole('button', { name: 'Kopiert ✓' });
+      expect(copiedBtn).toBeInTheDocument();
+      expect(copiedBtn).toHaveAttribute('title', 'In Zwischenablage kopiert!');
 
-      const missionBtn = screen.getByRole('button', { name: 'Als CHANGELOG-Auftrag in den Builder übernehmen' });
+      const missionBtn = screen.getByRole('button', { name: 'Als CHANGELOG-Auftrag übernehmen' });
       expect(missionBtn).toHaveAttribute('title', 'Als CHANGELOG-Auftrag in den Builder übernehmen');
+      expect(missionBtn).not.toHaveAttribute('aria-label');
       expect(missionBtn).toHaveClass('focus-visible:ring-2');
+
+      // Test Escape key dismiss
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
     });
 
     it('WorkflowRepairPanel has region landmark, severity badge tooltip/aria-label, keyboard-navigable pre block, focus ring button, and semantic list', () => {
