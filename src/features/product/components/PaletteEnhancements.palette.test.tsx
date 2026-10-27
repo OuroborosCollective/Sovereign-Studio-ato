@@ -28,6 +28,7 @@ import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
+import { SlashCommandMenu } from './SlashCommandMenu';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1546,6 +1547,45 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(localModeBtn);
       expect(onUseLocalMode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('SlashCommandMenu Accessibility and Micro-UX Enhancements', () => {
+    it('renders listbox with aria-activedescendant, option ids, title tooltips, and handles click events', () => {
+      const commands = [
+        { cmd: '/fix', description: 'Fix an issue in code' },
+        { cmd: '/test', description: 'Run workspace test suite' },
+      ];
+      const onSelect = vi.fn();
+
+      render(
+        <SlashCommandMenu
+          commands={commands}
+          selectedIndex={0}
+          onSelect={onSelect}
+        />
+      );
+
+      const listbox = screen.getByRole('listbox', { name: 'Sovereign Slash Commands' });
+      expect(listbox).toBeInTheDocument();
+      expect(listbox).toHaveAttribute('aria-activedescendant', 'slash-option-fix');
+
+      const options = screen.getAllByRole('option');
+      expect(options).toHaveLength(2);
+
+      const fixOption = options[0];
+      expect(fixOption).toHaveAttribute('id', 'slash-option-fix');
+      expect(fixOption).toHaveAttribute('aria-selected', 'true');
+      expect(fixOption).toHaveAttribute('title', '/fix – Fix an issue in code');
+      expect(fixOption).toHaveClass('focus-visible:ring-2');
+
+      const testOption = options[1];
+      expect(testOption).toHaveAttribute('id', 'slash-option-test');
+      expect(testOption).toHaveAttribute('aria-selected', 'false');
+      expect(testOption).toHaveAttribute('title', '/test – Run workspace test suite');
+
+      fireEvent.click(testOption);
+      expect(onSelect).toHaveBeenCalledWith(commands[1]);
     });
   });
 });
