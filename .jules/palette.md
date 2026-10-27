@@ -69,3 +69,6 @@
 ## 2025-10-05 - [Accessible Chat Streams & Empty States]
 **Learning:** Chat interfaces with dynamically added messages lack screen reader notifications if they do not have a live region. Furthermore, an empty stream provides no context. Adding `role="log"` and `aria-live="polite"` to the container, along with a visually centered empty state, improves both discoverability and accessibility.
 **Action:** Always wrap chat or event streams in an element with `role="log"` or `aria-live="polite"`, and provide a helpful empty state when no items are present.
+## 2026-10-27 - Focus States for Chat UI Elements
+**Learning:** Secondary or icon-only interactive controls inside forms (like the clear button or send button in ChatSidebar) often lack proper keyboard focus visibility (`focus-visible:ring-2`) and aria-labels in dense custom components.
+**Action:** Always verify that every interactive button and link explicitly implements `focus-visible:outline-none focus-visible:ring-2` to ensure proper keyboard navigation and accessibility, and that icon-only buttons include `aria-label`.
