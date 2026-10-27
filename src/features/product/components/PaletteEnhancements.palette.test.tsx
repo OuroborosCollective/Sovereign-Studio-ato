@@ -28,6 +28,7 @@ import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
+import { ModelHealthPanel } from './ModelHealthPanel';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1546,6 +1547,51 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(localModeBtn);
       expect(onUseLocalMode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('ModelHealthPanel Accessibility and Micro-UX Enhancements', () => {
+    it('renders section landmark, summary role="status", aria-hidden emojis, native title tooltips, and hover transition classes', () => {
+      const models = [
+        { id: 'm1', name: 'GPT-4o', status: 'healthy' as const, isEnabled: true, latencyMs: 120, successCount: 50, errorCount: 0 },
+        { id: 'm2', name: 'Claude 3.5 Sonnet', status: 'degraded' as const, isEnabled: true, latencyMs: 2500, successCount: 40, errorCount: 2 },
+      ];
+      const onRefresh = vi.fn();
+      const now = Date.now();
+
+      const { container } = render(
+        <ModelHealthPanel models={models} onRefresh={onRefresh} lastCheck={now} isChecking={false} />
+      );
+
+      const section = screen.getByRole('region', { name: 'Model Health Monitor' });
+      expect(section).toBeInTheDocument();
+
+      const statusSummary = screen.getByRole('status');
+      expect(statusSummary).toHaveAttribute('aria-label', '2 model(s) total: 1 healthy, 1 degraded, 0 unknown');
+      expect(statusSummary).toHaveTextContent('2 model(s) · 1 healthy · 1 degraded · 0 unknown');
+
+      const lastCheckSpan = screen.getByTitle(`Last check: ${new Date(now).toLocaleString()}`);
+      expect(lastCheckSpan).toBeInTheDocument();
+
+      const refreshBtn = screen.getByRole('button', { name: 'Refresh' });
+      expect(refreshBtn).toHaveAttribute('title', 'Model-Health Status aktualisieren');
+      expect(refreshBtn).toHaveClass('focus-visible:ring-2');
+
+      const modelList = screen.getAllByRole('list')[0];
+      expect(modelList).toBeInTheDocument();
+
+      const modelItems = screen.getAllByRole('listitem');
+      expect(modelItems.length).toBeGreaterThanOrEqual(2);
+
+      const firstItem = modelItems[0];
+      expect(firstItem).toHaveClass('hover:bg-slate-900/90');
+      expect(firstItem).toHaveClass('transition-colors');
+
+      const ariaHiddenEmojiSpans = container.querySelectorAll('span[aria-hidden="true"]');
+      expect(ariaHiddenEmojiSpans.length).toBeGreaterThanOrEqual(5);
+
+      fireEvent.click(refreshBtn);
+      expect(onRefresh).toHaveBeenCalledTimes(1);
     });
   });
 });
