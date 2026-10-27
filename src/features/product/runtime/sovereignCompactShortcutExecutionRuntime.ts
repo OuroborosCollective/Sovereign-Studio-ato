@@ -298,21 +298,33 @@ export function buildSovereignRuntimeEvidenceLog(
   actionEvents: readonly SovereignActionEvent[],
   agentEvents: readonly SovereignAgentRuntimeEvent[],
 ): readonly SovereignRuntimeEvidenceLogEntry[] {
-  const fromActions = actionEvents.filter(isRuntimeEvidenceActionEvent).map((entry) => ({
-    id: `action:${entry.id}`,
-    at: entry.createdAt,
-    source: 'action-stream' as const,
-    level: actionLevel(entry),
-    scope: `${entry.route}/${entry.kind}`,
-    message: maskSecrets(entry.detail ? `${entry.label} · ${entry.detail}` : entry.label),
-  }));
-  const fromAgent = agentEvents.map((entry, index) => ({
-    id: `agent:${entry.at}:${entry.stage}:${index}`,
-    at: entry.at,
-    source: 'agent-runtime' as const,
-    level: entry.level,
-    scope: entry.stage,
-    message: maskSecrets(entry.message),
-  }));
+  const fromActions: SovereignRuntimeEvidenceLogEntry[] = [];
+  // Optimize: single-pass for loop avoids intermediate array allocations from .filter().map()
+  for (let i = 0; i < actionEvents.length; i++) {
+    const entry = actionEvents[i];
+    if (isRuntimeEvidenceActionEvent(entry)) {
+      fromActions.push({
+        id: `action:${entry.id}`,
+        at: entry.createdAt,
+        source: 'action-stream' as const,
+        level: actionLevel(entry),
+        scope: `${entry.route}/${entry.kind}`,
+        message: maskSecrets(entry.detail ? `${entry.label} · ${entry.detail}` : entry.label),
+      });
+    }
+  }
+  const fromAgent: SovereignRuntimeEvidenceLogEntry[] = [];
+  // Optimize: standard for loop avoids function allocation overhead of .map()
+  for (let i = 0; i < agentEvents.length; i++) {
+    const entry = agentEvents[i];
+    fromAgent.push({
+      id: `agent:${entry.at}:${entry.stage}:${i}`,
+      at: entry.at,
+      source: 'agent-runtime' as const,
+      level: entry.level,
+      scope: entry.stage,
+      message: maskSecrets(entry.message),
+    });
+  }
   return [...fromActions, ...fromAgent].sort((left, right) => left.at - right.at);
 }
