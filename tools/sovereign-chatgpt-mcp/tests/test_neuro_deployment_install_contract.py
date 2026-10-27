@@ -54,7 +54,7 @@ EXPECTED_COMPATIBLE_PREDECESSOR_DRIFT = {
 # Deterministic fixture for the currently accepted predecessor contract surface.
 # The installer still verifies the real deployed predecessor independently at runtime.
 BASELINE_PREDECESSOR_SEMANTIC_SHA256 = (
-    "9398f21e81234a30eeb8159e772bdca64a47417ce495e8d98d2a05bb13e54c11"
+    "118c5f895440109d8750e76c2989b07cc80a697058b250d1dbbce8aed933499c"
 )
 
 
@@ -329,10 +329,10 @@ resolve_previous_mcp_registry_capture_mode
                             name="workspace_prepare",
                             description="Create an isolated repository workspace.",
                             annotations=SimpleNamespace(
-                                read_only_hint=False,
-                                destructive_hint=False,
-                                idempotent_hint=False,
-                                open_world_hint=False,
+                                readOnlyHint=False,
+                                destructiveHint=False,
+                                idempotentHint=False,
+                                openWorldHint=False,
                             ),
                             parameters={
                                 "type": "object",
@@ -348,10 +348,10 @@ resolve_previous_mcp_registry_capture_mode
                             name="repository_issue_list",
                             description="List current open GitHub issues with authenticated readback.",
                             annotations=SimpleNamespace(
-                                read_only_hint=True,
-                                destructive_hint=False,
-                                idempotent_hint=True,
-                                open_world_hint=True,
+                                readOnlyHint=True,
+                                destructiveHint=False,
+                                idempotentHint=True,
+                                openWorldHint=True,
                             ),
                             parameters={
                                 "type": "object",
