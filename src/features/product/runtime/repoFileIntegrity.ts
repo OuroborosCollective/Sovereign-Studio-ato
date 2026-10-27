@@ -35,20 +35,28 @@ const MEDIUM_RISK_PATTERNS = [
   /\.old$/i,
 ];
 
-const CODE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.kt', '.java', '.py', '.go', '.rs', '.mjs', '.cjs'];
+// ⚡ Bolt: Fast Set lookup for code extension matching replacing O(N) array scanning
+const CODE_EXTENSIONS_SET = new Set(['.ts', '.tsx', '.js', '.jsx', '.kt', '.java', '.py', '.go', '.rs', '.mjs', '.cjs']);
 const TEST_PATTERNS = [/\.test\./i, /\.spec\./i, /(^|\/)tests?\//i, /(^|\/)__tests__\//i];
 
+// ⚡ Bolt: Fast native string slicing replacing array splitting and filtering
 function fileNameOf(path: string): string {
-  return path.split('/').filter(Boolean).at(-1) ?? path;
+  const lastSlash = path.lastIndexOf('/');
+  return lastSlash >= 0 ? path.slice(lastSlash + 1) : path;
 }
 
-function isCodePath(path: string): boolean {
-  const lower = path.toLowerCase();
-  return CODE_EXTENSIONS.some((ext) => lower.endsWith(ext));
+// ⚡ Bolt: O(1) extension extraction and Set lookup
+function isCodePath(lowerPath: string): boolean {
+  const dotIdx = lowerPath.lastIndexOf('.');
+  return dotIdx !== -1 && CODE_EXTENSIONS_SET.has(lowerPath.slice(dotIdx));
 }
 
+// ⚡ Bolt: Short-circuiting imperative loop replacing .some() callback allocations
 function hasPattern(path: string, patterns: RegExp[]): boolean {
-  return patterns.some((pattern) => pattern.test(path));
+  for (let i = 0; i < patterns.length; i++) {
+    if (patterns[i].test(path)) return true;
+  }
+  return false;
 }
 
 function clampScore(score: number): number {
@@ -125,16 +133,29 @@ const INTEGRITY_RISK_ORDER: Readonly<Record<IntegrityRiskLevel, number>> = {
   low: 2,
 };
 
+// ⚡ Bolt: Single-pass pre-allocated array mapping and fast native lexicographical string comparison tie-breaker
 export function analyzeRepoFileIntegrityList(files: RepoFile[]): RepoFileIntegrityResult[] {
-  return files.map(analyzeRepoFileIntegrity).sort((a, b) => (
+  const len = files.length;
+  const results: RepoFileIntegrityResult[] = new Array(len);
+  for (let i = 0; i < len; i++) {
+    results[i] = analyzeRepoFileIntegrity(files[i]);
+  }
+  return results.sort((a, b) => (
     INTEGRITY_RISK_ORDER[a.riskLevel] - INTEGRITY_RISK_ORDER[b.riskLevel]
-    || a.path.localeCompare(b.path)
+    || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
   ));
 }
 
+// ⚡ Bolt: Single-pass accumulator loop replacing multi-pass .filter().length calls
 export function summarizeFileIntegrity(results: RepoFileIntegrityResult[]): string {
-  const high = results.filter((item) => item.riskLevel === 'high').length;
-  const medium = results.filter((item) => item.riskLevel === 'medium').length;
-  const low = results.filter((item) => item.riskLevel === 'low').length;
+  let high = 0;
+  let medium = 0;
+  let low = 0;
+  for (let i = 0; i < results.length; i++) {
+    const level = results[i].riskLevel;
+    if (level === 'high') high++;
+    else if (level === 'medium') medium++;
+    else if (level === 'low') low++;
+  }
   return `${results.length} entries analyzed (${high} high, ${medium} medium, ${low} low). Confidence: path-only.`;
 }
