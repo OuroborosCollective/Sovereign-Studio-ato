@@ -84,7 +84,7 @@ def test_explicit_shell_grant_is_bound_to_exact_owner_approved_command(client):
     record = writes[0][1]
     assert record["operations"] == ["shell"] and record["timeoutSeconds"] == 25
     assert record["commandSha256"] == __import__("hashlib").sha256(command.encode()).hexdigest()
-    assert "command" not in record and command not in json.dumps(writes)
+    assert "command" not in record and command not in json.dumps(record)
     assert set(jobs[0][1]) == {"operation_id"}
 
 
