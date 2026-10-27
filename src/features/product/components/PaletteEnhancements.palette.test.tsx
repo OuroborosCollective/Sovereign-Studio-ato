@@ -28,6 +28,7 @@ import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
+import { SecurityBlockCard } from './SecurityBlockCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1546,6 +1547,45 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(localModeBtn);
       expect(onUseLocalMode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('SecurityBlockCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders alert container with aria-hidden lock icon, focus-visible ring styles, and native title tooltips', () => {
+      const onOpenSecureAccess = vi.fn();
+      const onDismiss = vi.fn();
+
+      const { container } = render(
+        <SecurityBlockCard
+          title="Sicherheitswarnung: Token erkannt"
+          text="Ihr Text enthält einen vertraulichen Token."
+          hint="Bitte geben Sie keine Tokens im Chat ein."
+          buttonLabel="Sicheren Zugang öffnen"
+          onOpenSecureAccess={onOpenSecureAccess}
+          onDismiss={onDismiss}
+        />
+      );
+
+      const alert = screen.getByRole('alert', { name: 'Sicherheitswarnung: Token erkannt' });
+      expect(alert).toBeInTheDocument();
+
+      const lockIcon = container.querySelector('[aria-hidden="true"]');
+      expect(lockIcon).toBeInTheDocument();
+      expect(lockIcon).toHaveTextContent('🔒');
+
+      const openBtn = screen.getByRole('button', { name: 'Sicheren Zugang öffnen' });
+      expect(openBtn).toHaveAttribute('title', 'Sicheren Zugang öffnen');
+      expect(openBtn).toHaveClass('focus-visible:ring-2');
+
+      const closeBtn = screen.getByRole('button', { name: 'Schließen' });
+      expect(closeBtn).toHaveAttribute('title', 'Sicherheitswarnung schließen');
+      expect(closeBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(openBtn);
+      expect(onOpenSecureAccess).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(closeBtn);
+      expect(onDismiss).toHaveBeenCalledTimes(1);
     });
   });
 });
