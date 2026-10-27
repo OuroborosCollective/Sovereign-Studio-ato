@@ -129,8 +129,14 @@ def _shell_transport(argv, *, timeout_seconds, guard):
             result.stderr_bytes = counts[2]
             return result
         finally:
-            if process.poll() is None:
+            # A shell command can leave descendants holding inherited pipes even
+            # after its leader exits. Always reap its process group on completion
+            # or interruption so a timeout cannot orphan a remote command tree.
+            try:
                 os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            if process.poll() is None:
                 process.wait()
 
 def _bounded_run(argv, *, capture_output, text, timeout, check, stdin, env):

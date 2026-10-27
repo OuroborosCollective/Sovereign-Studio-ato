@@ -348,6 +348,17 @@ def test_shell_transport_discards_binary_streams_and_never_sends_stdin():
     assert completed.stdout_bytes == 1 and completed.stderr_bytes == 1
 
 
+def test_shell_transport_kills_descendants_after_timeout(tmp_path):
+    from owner_ssh_console import _shell_transport
+    marker = tmp_path / "child-finished"
+    child_code = f"import time; time.sleep(0.25); open({str(marker)!r}, 'w').write('done')"
+    parent_code = "import subprocess,sys; subprocess.Popen([sys.executable,'-c'," + repr(child_code) + "]); sys.exit(0)"
+    with pytest.raises(subprocess.TimeoutExpired):
+        _shell_transport([sys.executable, "-c", parent_code], timeout_seconds=0.05, guard=lambda: None)
+    time.sleep(0.4)
+    assert not marker.exists()
+
+
 def test_shell_timeout_returns_ambiguous_receipt_and_consumes_approval(console):
     instance, session_id, calls = connected(console)
     shell_grant(instance, session_id, "long-op", timeout_seconds=2)
