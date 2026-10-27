@@ -406,12 +406,15 @@ export function learnFromActionStream(
   state: PredictiveActionState,
   stream: SovereignActionStreamState,
 ): PredictiveActionState {
-  return stream.events.reduce((current, event) => {
-    if (event.state !== 'blocked' && event.state !== 'failed') return current;
+  // ⚡ Bolt: Use standard for loop instead of .reduce() to prevent continuous inline function allocation overhead in high-frequency path
+  let current = state;
+  for (let i = 0; i < stream.events.length; i++) {
+    const event = stream.events[i];
+    if (event.state !== 'blocked' && event.state !== 'failed') continue;
     const blocker = blockerFromActionEvent(event);
-    if (!blocker) return current;
+    if (!blocker) continue;
     const action = nextActionForBlocker(blocker);
-    return recordPredictiveActionOutcome(current, {
+    current = recordPredictiveActionOutcome(current, {
       blocker,
       predictedAction: action,
       actualAction: action,
@@ -420,7 +423,8 @@ export function learnFromActionStream(
       observedAt: event.createdAt,
       surface: event.route.startsWith('agent-') ? 'agent_evidence' : 'action_stream',
     });
-  }, state);
+  }
+  return current;
 }
 
 export function derivePredictiveMenuSuggestions(

@@ -87,3 +87,7 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+
+## 2026-10-26 - [Array.reduce() Overhead in Event Streams]
+**Learning:** In high-frequency execution paths like event streams processing (e.g., learnFromActionStream), `.reduce()` creates continuous inline function allocation overhead, causing garbage collection pressure and affecting performance.
+**Action:** Replace `.reduce()` array iterations with standard for loops in high-frequency execution paths to avoid continuous inline function allocation overhead and reduce garbage collection pressure.
