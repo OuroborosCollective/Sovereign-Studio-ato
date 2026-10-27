@@ -304,17 +304,28 @@ export function runHardInvariantChannel(
     }];
   }
 
-  const measurementTimes = config.invariants.map(invariant => invariant.measuredAt);
-  const inputWindowHash: InputWindowHash = {
-    hash: hashCanonical(config.invariants),
-    signalCount: config.invariants.length,
-    windowStart: Math.min(...measurementTimes),
-    windowEnd: Math.max(...measurementTimes),
-    featureHash: hashCanonical(config.invariants.map(invariant => ({
+  let windowStart = Infinity;
+  let windowEnd = -Infinity;
+  const featureConfigs = [];
+
+  for (let i = 0; i < config.invariants.length; i++) {
+    const invariant = config.invariants[i];
+    if (invariant.measuredAt < windowStart) windowStart = invariant.measuredAt;
+    if (invariant.measuredAt > windowEnd) windowEnd = invariant.measuredAt;
+
+    featureConfigs.push({
       id: invariant.id,
       category: invariant.category,
       unit: invariant.unit,
-    }))),
+    });
+  }
+
+  const inputWindowHash: InputWindowHash = {
+    hash: hashCanonical(config.invariants),
+    signalCount: config.invariants.length,
+    windowStart: windowStart === Infinity ? 0 : windowStart,
+    windowEnd: windowEnd === -Infinity ? 0 : windowEnd,
+    featureHash: hashCanonical(featureConfigs),
   };
 
   for (const invariant of config.invariants) {
