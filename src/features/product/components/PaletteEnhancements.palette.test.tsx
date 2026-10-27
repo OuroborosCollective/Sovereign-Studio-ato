@@ -847,6 +847,7 @@ describe('Palette Accessibility Enhancements', () => {
 
   describe('CompactRepoSetupSheet Accessibility and Keyboard Usability Enhancements', () => {
     it('associates label and input programmatically', () => {
+      const onClose = vi.fn();
       render(
         <CompactRepoSetupSheet
           value=""
@@ -854,15 +855,21 @@ describe('Palette Accessibility Enhancements', () => {
           error={null}
           onChange={vi.fn()}
           onLoad={vi.fn()}
-          onClose={vi.fn()}
+          onClose={onClose}
         />
       );
+
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toHaveAttribute('aria-label', 'Repo Setup');
 
       const label = screen.getByText('GitHub Repository URL');
       expect(label).toHaveAttribute('for', 'repo-setup-url-input');
 
       const input = screen.getByLabelText('GitHub Repository URL');
       expect(input).toHaveAttribute('id', 'repo-setup-url-input');
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
     });
 
     it('triggers onLoad when pressing Enter inside URL input', () => {
