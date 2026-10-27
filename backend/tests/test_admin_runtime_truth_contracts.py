@@ -101,6 +101,12 @@ def test_credit_package_list_errors_are_not_false_empty_successes() -> None:
         assert '"runtimeState": "failed"}), 500' in source
 
 
+def test_enterprise_admin_ui_validates_owner_url_scheme_and_uses_secure_features() -> None:
+    admin_ui = read(DEPLOY / "enterprise_admin_ui.py")
+    assert "d.ownerUrl.startsWith('https://')" in admin_ui
+    assert "window.open(d.ownerUrl,'_blank','noopener,noreferrer')" in admin_ui
+
+
 def test_backend_release_is_validation_only_and_queue_bound() -> None:
     # Contract drift (production truth): the queue-only release policy gate
     # moved from sovereign-agent-backend.yml to sovereign-agent-supplemental.yml;
