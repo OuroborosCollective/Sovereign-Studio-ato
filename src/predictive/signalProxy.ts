@@ -121,14 +121,18 @@ class RuntimeStateProxyHandler<T extends object> implements ProxyHandler<T> {
   private trackedValues: Map<string, unknown> = new Map();
   private flushInterval: ReturnType<typeof setInterval> | null = null;
   private interceptedPaths: Set<string> = new Set();
+  // Cache child proxies for nested objects to prevent re-creation on every access
+  private childProxies: WeakMap<object, object> = new WeakMap();
 
   constructor(
     private readonly nodeName: string,
     private readonly traceIdProvider: () => TraceId,
     private readonly signalBuffer: SignalBufferManager,
     private readonly config: SignalProxyConfig,
+    private readonly isChild = false,
   ) {
-    if (config.flushIntervalMs > 0) {
+    // Optimization: Only the top-level proxy handles scheduled interval flushing to avoid timer accumulation on child proxies
+    if (config.flushIntervalMs > 0 && !isChild) {
       this.flushInterval = setInterval(() => this.signalBuffer.flush(), config.flushIntervalMs);
     }
   }
@@ -159,12 +163,18 @@ class RuntimeStateProxyHandler<T extends object> implements ProxyHandler<T> {
     }
 
     if (typeof value === 'object' && value !== null) {
-      return new Proxy(value as object, new RuntimeStateProxyHandler(
-        `${this.nodeName}.${prop}`,
-        this.traceIdProvider,
-        this.signalBuffer,
-        { ...this.config, interceptAll: true },
-      ));
+      let childProxy = this.childProxies.get(value);
+      if (!childProxy) {
+        childProxy = new Proxy(value as object, new RuntimeStateProxyHandler(
+          `${this.nodeName}.${prop}`,
+          this.traceIdProvider,
+          this.signalBuffer,
+          { ...this.config, interceptAll: true },
+          true, // isChild = true avoids spawning nested timers
+        ));
+        this.childProxies.set(value, childProxy);
+      }
+      return childProxy;
     }
 
     return value;
