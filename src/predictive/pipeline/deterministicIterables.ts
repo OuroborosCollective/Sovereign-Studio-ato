@@ -158,8 +158,10 @@ export function* chunkwiseOverlap<T>(
     buffer.push(item);
     count++;
     if (buffer.length === size) {
-      yield [...buffer];
-      buffer = buffer.slice(size - overlap);
+      // Optimization: use buffer.slice() copy and splice(0, size - overlap) in-place sliding window shift
+      // to avoid multi-pass array allocation overhead on every chunk yield.
+      yield buffer.slice();
+      buffer.splice(0, size - overlap);
     }
     if (maxItems !== undefined && count >= maxItems) break;
   }
@@ -194,23 +196,39 @@ export function* pairwise<T>(iterable: Iterable<T>): Generator<[T, T]> {
  * This ensures deterministic behavior when sensor sequences are misaligned.
  */
 export function* zipEqual<T>(...iterables: Iterable<T>[]): Generator<T[]> {
-  const iterators = iterables.map((i) => i[Symbol.iterator]());
-  const nexts = iterators.map((it) => it.next());
+  const len = iterables.length;
+  if (len === 0) return;
+
+  const iterators = new Array(len);
+  for (let i = 0; i < len; i++) {
+    iterators[i] = iterables[i][Symbol.iterator]();
+  }
 
   while (true) {
-    const doneCount = nexts.filter((n) => n.done).length;
+    // Optimization: avoid nexts.filter() and nexts.map() per yield step.
+    // Use indexed iteration to collect values and count done iterators directly in a single pass.
+    const row: T[] = new Array(len);
+    let doneCount = 0;
+
+    for (let i = 0; i < len; i++) {
+      const res = iterators[i].next();
+      if (res.done) {
+        doneCount++;
+      } else {
+        row[i] = res.value as T;
+      }
+    }
+
     if (doneCount > 0) {
-      if (doneCount !== nexts.length) {
+      if (doneCount !== len) {
         throw new Error(
-          `zipEqual: iterables have mismatched lengths. ${nexts.length - doneCount} remaining but ${doneCount} exhausted`,
+          `zipEqual: iterables have mismatched lengths. ${len - doneCount} remaining but ${doneCount} exhausted`,
         );
       }
       break;
     }
-    yield nexts.map((n) => n.value);
-    for (let i = 0; i < iterators.length; i++) {
-      nexts[i] = iterators[i].next();
-    }
+
+    yield row;
   }
 }
 
