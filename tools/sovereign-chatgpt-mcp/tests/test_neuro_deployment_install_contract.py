@@ -329,10 +329,10 @@ resolve_previous_mcp_registry_capture_mode
                             name="workspace_prepare",
                             description="Create an isolated repository workspace.",
                             annotations=SimpleNamespace(
-                                readOnlyHint=False,
-                                destructiveHint=False,
-                                idempotentHint=False,
-                                openWorldHint=False,
+                                read_only_hint=False,
+                                destructive_hint=False,
+                                idempotent_hint=False,
+                                open_world_hint=False,
                             ),
                             parameters={
                                 "type": "object",
@@ -348,10 +348,10 @@ resolve_previous_mcp_registry_capture_mode
                             name="repository_issue_list",
                             description="List current open GitHub issues with authenticated readback.",
                             annotations=SimpleNamespace(
-                                readOnlyHint=True,
-                                destructiveHint=False,
-                                idempotentHint=True,
-                                openWorldHint=True,
+                                read_only_hint=True,
+                                destructive_hint=False,
+                                idempotent_hint=True,
+                                open_world_hint=True,
                             ),
                             parameters={
                                 "type": "object",

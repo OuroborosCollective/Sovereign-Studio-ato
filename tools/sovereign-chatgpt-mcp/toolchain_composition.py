@@ -11,10 +11,10 @@ import operational_governance_tools
 
 
 LOCAL_READ_ONLY = ToolAnnotations(
-    readOnlyHint=True,
-    destructiveHint=False,
-    idempotentHint=True,
-    openWorldHint=False,
+    read_only_hint=True,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=False,
 )
 
 SemanticCategory = Literal[
@@ -540,11 +540,11 @@ def mcp_toolchain_compile(
             preconditions=preconditions,
             postconditions=postconditions,
             effect=tool["effect"],
-            is_idempotent=bool(annotations.get("idempotentHint")),
-            is_destructive=bool(annotations.get("destructiveHint")),
+            is_idempotent=bool(annotations.get("idempotent_hint")),
+            is_destructive=bool(annotations.get("destructive_hint")),
             requires_owner_approval=tool["effect"] == "external-write",
             timeout_seconds=120,
-            max_retries=1 if annotations.get("idempotentHint") else 0,
+            max_retries=1 if annotations.get("idempotent_hint") else 0,
             contract_sha256=tool["contractSha256"],
             output_semantic_type=SemanticType(
                 category=_category_for(tool),

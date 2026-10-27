@@ -49,8 +49,8 @@ def test_toolchain_tools_are_registered_with_strict_output_schemas() -> None:
         tool = registered[name]
         assert tool.output_schema["type"] == "object"
         assert tool.output_schema["required"]
-        assert tool.annotations.readOnlyHint is True
-        assert tool.annotations.destructiveHint is False
+        assert tool.annotations.read_only_hint is True
+        assert tool.annotations.destructive_hint is False
 
 
 def test_compile_creates_non_executing_hash_bound_valid_chain() -> None:

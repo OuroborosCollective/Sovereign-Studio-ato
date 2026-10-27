@@ -9,7 +9,7 @@ def _tool(name: str, description: str, capabilities: list[str], effect: str) -> 
         "description": description,
         "capabilities": capabilities,
         "effect": effect,
-        "annotations": {"readOnlyHint": effect == "read", "destructiveHint": False, "idempotentHint": True},
+        "annotations": {"read_only_hint": effect == "read", "destructive_hint": False, "idempotent_hint": True},
         "parameters": {"properties": {}},
         "contractSha256": (name + "0" * 64)[:64],
     }

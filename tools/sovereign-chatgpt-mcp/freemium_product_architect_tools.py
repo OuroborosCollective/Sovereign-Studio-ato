@@ -13,10 +13,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 LOCAL_READ_ONLY = ToolAnnotations(
-    readOnlyHint=True,
-    destructiveHint=False,
-    idempotentHint=True,
-    openWorldHint=False,
+    read_only_hint=True,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=False,
 )
 
 Surface = Literal["custom-gpt-action", "chatgpt-mcp-app", "docker-mcp-agent"]
@@ -106,10 +106,10 @@ class MarketCandidate(StrictModel):
 
 
 class ToolHints(StrictModel):
-    readOnlyHint: bool
-    destructiveHint: bool
-    openWorldHint: bool
-    idempotentHint: bool = True
+    read_only_hint: bool
+    destructive_hint: bool
+    open_world_hint: bool
+    idempotent_hint: bool = True
 
 
 class ProductToolContract(StrictModel):
@@ -360,10 +360,10 @@ def _planned_tool(
         input_fields=input_fields,
         output_fields=output_fields,
         annotations=ToolHints(
-            readOnlyHint=read_only,
-            destructiveHint=False,
-            openWorldHint=False,
-            idempotentHint=True,
+            read_only_hint=read_only,
+            destructive_hint=False,
+            open_world_hint=False,
+            idempotent_hint=True,
         ),
     ))
 
@@ -499,9 +499,9 @@ def freemium_product_contract_validate(
             if _SECRET_INPUT_RE.search(field):
                 errors.append(f"MODEL_VISIBLE_SECRET_INPUT:{tool.name}:{field}")
         mutating_name = any(token in tool.name for token in ("create", "execute", "start", "submit", "push", "export"))
-        if mutating_name and tool.annotations.readOnlyHint:
+        if mutating_name and tool.annotations.read_only_hint:
             errors.append(f"MUTATING_TOOL_MARKED_READ_ONLY:{tool.name}")
-        if tool.annotations.readOnlyHint and tool.annotations.destructiveHint:
+        if tool.annotations.read_only_hint and tool.annotations.destructive_hint:
             errors.append(f"READ_ONLY_TOOL_MARKED_DESTRUCTIVE:{tool.name}")
     if "free" not in tiers or "paid" not in tiers:
         errors.append("FREE_AND_PAID_TOOL_TIERS_REQUIRED")

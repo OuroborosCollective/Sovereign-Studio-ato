@@ -144,11 +144,11 @@ def test_registers_five_backend_tools_and_one_network_revision_tool(repository) 
         "repository_revision_resolve",
     ]
     for name, annotations, description in mcp.tools:
-        assert annotations.readOnlyHint is True
-        assert annotations.destructiveHint is False
-        assert annotations.idempotentHint is True
+        assert annotations.read_only_hint is True
+        assert annotations.destructive_hint is False
+        assert annotations.idempotent_hint is True
         assert description.startswith("Use this when")
-        assert bool(annotations.openWorldHint) is (name == "repository_revision_resolve")
+        assert bool(annotations.open_world_hint) is (name == "repository_revision_resolve")
 
     inventory = tools.backend_engineering_tool_inventory()
     assert is_dataclass(inventory)
@@ -180,10 +180,10 @@ def test_fastmcp_contract_exposes_bounded_inputs_structured_outputs_and_annotati
         tool = registered[name]
         assert tool.output_schema["type"] == "object"
         assert tool.output_schema["required"]
-        assert tool.annotations.readOnlyHint is True
-        assert tool.annotations.destructiveHint is False
-        assert tool.annotations.idempotentHint is True
-        assert bool(tool.annotations.openWorldHint) is (name == "repository_revision_resolve")
+        assert tool.annotations.read_only_hint is True
+        assert tool.annotations.destructive_hint is False
+        assert tool.annotations.idempotent_hint is True
+        assert bool(tool.annotations.open_world_hint) is (name == "repository_revision_resolve")
 
     architecture_parameters = registered["backend_architecture_assess"].parameters["properties"]
     assert architecture_parameters["focus"]["enum"] == [

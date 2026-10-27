@@ -6,8 +6,8 @@ from typing import Any, Final
 from mcp.types import ToolAnnotations
 
 
-NETWORK_READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
-READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+NETWORK_READ = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=True)
+READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
 
 _ALLOWED_OPERATIONS: Final[frozenset[str]] = frozenset({"setup", "verify", "rotate", "incident"})
 _ALLOWED_ENVIRONMENTS: Final[frozenset[str]] = frozenset({"development", "test", "staging", "production"})

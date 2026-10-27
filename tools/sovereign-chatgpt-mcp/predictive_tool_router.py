@@ -257,9 +257,9 @@ def predict_tool_route(
         elif effect == "read":
             score += 15
         annotations = item.get("annotations") if isinstance(item.get("annotations"), dict) else {}
-        if annotations.get("idempotentHint"):
+        if annotations.get("idempotent_hint"):
             score += 6
-        if annotations.get("destructiveHint"):
+        if annotations.get("destructive_hint"):
             score -= 120
         success_bonus = max(0, min(int(bonuses.get(name, 0)), 80)) if matched_stages or matched_actions or matched_objects else 0
         score += success_bonus

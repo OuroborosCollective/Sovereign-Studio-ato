@@ -70,7 +70,7 @@ def test_launcher_registers_combined_governance_and_assurance_registry(monkeypat
     assert required.issubset(names), sorted(required - names)
     tools_by_name = {tool.name: tool for tool in server.mcp._tool_manager.list_tools()}
     expected_opt_out = sum(
-        bool(getattr(tool.annotations, "readOnlyHint", False))
+        bool(getattr(tool.annotations, "read_only_hint", False))
         or bool(getattr(tool.fn, "__sovereign_success_tracking_opt_out__", False))
         for tool in tools_by_name.values()
         if callable(getattr(tool, "fn", None))

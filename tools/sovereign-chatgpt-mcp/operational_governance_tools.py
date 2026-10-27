@@ -17,16 +17,16 @@ from tool_success_ranking import historical_bonus_map, ranking_snapshot, record_
 
 
 LOCAL_READ_ONLY = ToolAnnotations(
-    readOnlyHint=True,
-    destructiveHint=False,
-    idempotentHint=True,
-    openWorldHint=False,
+    read_only_hint=True,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=False,
 )
 NETWORK_READ_ONLY = ToolAnnotations(
-    readOnlyHint=True,
-    destructiveHint=False,
-    idempotentHint=True,
-    openWorldHint=True,
+    read_only_hint=True,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=True,
 )
 
 Capability = Literal[
@@ -653,22 +653,22 @@ def _scrub(value: Any) -> Any:
 
 def _annotation_payload(annotations: Any) -> dict[str, bool]:
     return {
-        "readOnlyHint": bool(getattr(annotations, "readOnlyHint", False)),
-        "destructiveHint": bool(getattr(annotations, "destructiveHint", False)),
-        "idempotentHint": bool(getattr(annotations, "idempotentHint", False)),
-        "openWorldHint": bool(getattr(annotations, "openWorldHint", False)),
+        "read_only_hint": bool(getattr(annotations, "read_only_hint", False)),
+        "destructive_hint": bool(getattr(annotations, "destructive_hint", False)),
+        "idempotent_hint": bool(getattr(annotations, "idempotent_hint", False)),
+        "open_world_hint": bool(getattr(annotations, "open_world_hint", False)),
     }
 
 
 def _effect_from_annotations(annotations: dict[str, bool]) -> str:
     # Destructive contradicts read-only and therefore wins fail-closed.
-    # openWorldHint is orthogonal: a tool may read an external system without
+    # open_world_hint is orthogonal: a tool may read an external system without
     # writing it, so a genuine read-only contract must remain routable as read.
-    if annotations["destructiveHint"]:
+    if annotations["destructive_hint"]:
         return "external-write"
-    if annotations["readOnlyHint"]:
+    if annotations["read_only_hint"]:
         return "read"
-    if annotations["openWorldHint"]:
+    if annotations["open_world_hint"]:
         return "external-write"
     return "workspace-write"
 

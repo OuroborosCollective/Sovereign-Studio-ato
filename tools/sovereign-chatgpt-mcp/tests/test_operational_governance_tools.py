@@ -280,13 +280,13 @@ def test_registers_seventeen_read_only_operational_tools_with_fastmcp_contracts(
     assert len(expected) == 17
     for name in expected:
         tool = registered_tools[name]
-        assert tool.annotations.readOnlyHint is True
-        assert tool.annotations.destructiveHint is False
-        assert tool.annotations.idempotentHint is True
+        assert tool.annotations.read_only_hint is True
+        assert tool.annotations.destructive_hint is False
+        assert tool.annotations.idempotent_hint is True
         assert tool.output_schema["type"] == "object"
         assert tool.description.startswith("Use this when")
     for name in {"schema_migration_reconcile", "llm_route_reliability_assess", "configuration_drift_assess"}:
-        assert registered_tools[name].annotations.openWorldHint is True
+        assert registered_tools[name].annotations.open_world_hint is True
     parameters = registered_tools["tool_recommend_for_mission"].parameters
     capability_items = parameters["properties"]["required_capabilities"]["items"]
     capability_enum = capability_items.get("enum") or parameters.get("$defs", {}).get("Capability", {}).get("enum", [])
@@ -812,17 +812,17 @@ def test_evidence_payloads_redact_secret_shaped_values_and_require_real_backup_d
 def test_effect_annotation_conflicts_fail_safe_without_reclassifying_existing_capabilities() -> None:
     assert tools._effect_from_annotations(
         {
-            "readOnlyHint": True,
-            "destructiveHint": True,
-            "idempotentHint": True,
-            "openWorldHint": False,
+            "read_only_hint": True,
+            "destructive_hint": True,
+            "idempotent_hint": True,
+            "open_world_hint": False,
         }
     ) == "external-write"
     assert tools._effect_from_annotations(
         {
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
-            "openWorldHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
+            "open_world_hint": True,
         }
     ) == "read"

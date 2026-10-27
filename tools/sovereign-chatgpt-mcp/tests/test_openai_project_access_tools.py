@@ -13,7 +13,7 @@ class FakeMCP:
     def tool(self, *, annotations):
         def decorator(function):
             self.names.append(function.__name__)
-            self.open_world[function.__name__] = bool(annotations.openWorldHint)
+            self.open_world[function.__name__] = bool(annotations.open_world_hint)
             return function
 
         return decorator

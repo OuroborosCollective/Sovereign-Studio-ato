@@ -47,7 +47,7 @@ class FakeMCP:
         self.names: list[str] = []
 
     def tool(self, *, annotations):
-        assert annotations.readOnlyHint is True
+        assert annotations.read_only_hint is True
 
         def decorator(function):
             self.names.append(function.__name__)

@@ -18,7 +18,7 @@ from mcp.types import ToolAnnotations
 from policy import safe_repo_path
 
 
-READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
 
 _MAX_ARCHIVE_BYTES: Final[int] = 25 * 1024 * 1024
 _MAX_UNCOMPRESSED_BYTES: Final[int] = 64 * 1024 * 1024
@@ -354,7 +354,7 @@ def skill_capability_extract(workspace_id,bundle_path):
 def skill_tool_contract_preview(workspace_id,bundle_path):
     """Build non-active Sovereign tool contracts from one validated skill."""
     validation=skill_validate(workspace_id,bundle_path); capability=skill_capability_extract(workspace_id,bundle_path); source=str(capability.get("sourceSkill") or "unknown-skill"); profile=SOURCE_PROFILES.get(source)
-    tools=[{"name":name,"annotations":{"readOnlyHint":True,"destructiveHint":False,"idempotentHint":True,"openWorldHint":False},"ownerScopeRequired":True,"evidenceRequiredForSuccess":True,"active":False} for name in (profile or {}).get("tools",[])]
+    tools=[{"name":name,"annotations":{"read_only_hint":True,"destructive_hint":False,"idempotent_hint":True,"open_world_hint":False},"ownerScopeRequired":True,"evidenceRequiredForSuccess":True,"active":False} for name in (profile or {}).get("tools",[])]
     return {"ok":bool(validation["ok"] and tools),"status":"TOOL_CONTRACT_PREVIEW_READY" if validation["ok"] and tools else "TOOL_CONTRACT_PREVIEW_BLOCKED","sourceSkill":source,"bundleSha256":validation["bundleSha256"],"proposedTools":tools,"validationErrors":validation["errors"],"capabilityHash":capability["capabilityHash"],"activationPath":["inspection","contract","isolated_patch","tests","draft_pr","exact_head_ci","immutable_image","live_canary"],"mutationPerformed":False}
 
 

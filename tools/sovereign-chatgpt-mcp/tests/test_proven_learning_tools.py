@@ -93,11 +93,11 @@ def test_tools_have_truthful_annotations_and_forward_exact_plan(tmp_path: Path, 
     monkeypatch.setattr(tools, "_REGISTERED", False)
     tools.register(mcp, FakeRuntime(tmp_path), owner)
 
-    assert mcp.tools["proven_learning_pattern_plan"].readOnlyHint is True
-    assert mcp.tools["proven_learning_pattern_apply"].readOnlyHint is False
-    assert mcp.tools["proven_learning_pattern_apply"].idempotentHint is True
-    assert mcp.tools["proven_learning_owner_approval_request"].idempotentHint is False
-    assert mcp.tools["repository_learning_logbook_update"].idempotentHint is True
+    assert mcp.tools["proven_learning_pattern_plan"].read_only_hint is True
+    assert mcp.tools["proven_learning_pattern_apply"].read_only_hint is False
+    assert mcp.tools["proven_learning_pattern_apply"].idempotent_hint is True
+    assert mcp.tools["proven_learning_owner_approval_request"].idempotent_hint is False
+    assert mcp.tools["repository_learning_logbook_update"].idempotent_hint is True
     assert tools.proven_learning_pattern_plan({"title": "Evidence gate"}) == plan
 
     requested = tools.proven_learning_owner_approval_request(

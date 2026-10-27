@@ -27,7 +27,7 @@ class FakeMCP:
 
     def tool(self, *, annotations):
         def decorator(function):
-            self.tools.append((function.__name__, bool(annotations.readOnlyHint), bool(annotations.destructiveHint)))
+            self.tools.append((function.__name__, bool(annotations.read_only_hint), bool(annotations.destructive_hint)))
             return function
         return decorator
 

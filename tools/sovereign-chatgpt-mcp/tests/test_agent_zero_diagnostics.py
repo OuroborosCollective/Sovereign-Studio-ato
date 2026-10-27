@@ -434,5 +434,5 @@ def test_new_tools_route_through_existing_broker(monkeypatch):
     assert seen[1][0] == "agent_zero_a2a_canary"
     assert seen[1][1]["action"] == "poll"
     registered = {tool.name: tool for tool in server.mcp._tool_manager.list_tools()}
-    assert registered["agent_zero_backend_diagnostics"].annotations.readOnlyHint is True
-    assert registered["agent_zero_a2a_canary"].annotations.readOnlyHint is False
+    assert registered["agent_zero_backend_diagnostics"].annotations.read_only_hint is True
+    assert registered["agent_zero_a2a_canary"].annotations.read_only_hint is False

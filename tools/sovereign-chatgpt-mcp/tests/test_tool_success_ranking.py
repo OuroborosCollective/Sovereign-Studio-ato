@@ -293,12 +293,12 @@ def test_install_opts_out_every_read_only_annotation_and_tracks_mutable_only(
     read_tool = SimpleNamespace(
         name="inspect_status",
         fn=inspect_status,
-        annotations=SimpleNamespace(readOnlyHint=True),
+        annotations=SimpleNamespace(read_only_hint=True),
     )
     write_tool = SimpleNamespace(
         name="commit_change",
         fn=commit_change,
-        annotations=SimpleNamespace(readOnlyHint=False),
+        annotations=SimpleNamespace(read_only_hint=False),
     )
     manager = SimpleNamespace(list_tools=lambda: [read_tool, write_tool])
     receipt = ranking.install_success_tracking(SimpleNamespace(_tool_manager=manager))

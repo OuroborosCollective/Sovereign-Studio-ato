@@ -775,9 +775,9 @@ def install_success_tracking(mcp: Any) -> dict[str, Any]:
             continue
         annotations = getattr(tool, "annotations", None)
         read_only = bool(
-            annotations.get("readOnlyHint", False)
+            annotations.get("read_only_hint", False)
             if isinstance(annotations, dict)
-            else getattr(annotations, "readOnlyHint", False)
+            else getattr(annotations, "read_only_hint", False)
         )
         if read_only or getattr(function, "__sovereign_success_tracking_opt_out__", False):
             opted_out += 1

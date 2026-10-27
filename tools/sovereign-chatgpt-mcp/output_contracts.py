@@ -223,10 +223,10 @@ def install_output_contracts(mcp: Any) -> dict[str, Any]:
 
         annotations = getattr(tool, "annotations", None)
         external_write = bool(
-            not getattr(annotations, "readOnlyHint", False)
+            not getattr(annotations, "read_only_hint", False)
             and (
-                getattr(annotations, "destructiveHint", False)
-                or getattr(annotations, "openWorldHint", False)
+                getattr(annotations, "destructive_hint", False)
+                or getattr(annotations, "open_world_hint", False)
             )
         )
         output_model = ExternalWriteOutput if external_write else ToolOutputEnvelope

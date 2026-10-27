@@ -17,10 +17,10 @@ from policy import contains_high_confidence_secret_value, contains_secret_shaped
 
 
 LOCAL_READ_ONLY = ToolAnnotations(
-    readOnlyHint=True,
-    destructiveHint=False,
-    idempotentHint=True,
-    openWorldHint=False,
+    read_only_hint=True,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=False,
 )
 
 PROFILE_PATH = Path(__file__).resolve().parent / "config" / "sovereign-mcp-operating-profile.json"
@@ -172,15 +172,15 @@ def _tools() -> list[Any]:
 
 def _is_mutable(tool: Any) -> bool:
     annotations = getattr(tool, "annotations", None)
-    return not bool(getattr(annotations, "readOnlyHint", False))
+    return not bool(getattr(annotations, "read_only_hint", False))
 
 
 
 def _effect(tool: Any) -> str:
     annotations = getattr(tool, "annotations", None)
-    if bool(getattr(annotations, "readOnlyHint", False)):
+    if bool(getattr(annotations, "read_only_hint", False)):
         return "read"
-    if bool(getattr(annotations, "openWorldHint", False)) or bool(getattr(annotations, "destructiveHint", False)):
+    if bool(getattr(annotations, "open_world_hint", False)) or bool(getattr(annotations, "destructive_hint", False)):
         return "external-write"
     return "workspace-write"
 
@@ -485,8 +485,8 @@ def _single_toolchain_validation(tool_name: str) -> toolchain_composition.ToolCh
         preconditions=preconditions,
         postconditions=postconditions,
         effect=contract["effect"],
-        is_idempotent=bool(annotations.get("idempotentHint")),
-        is_destructive=bool(annotations.get("destructiveHint")),
+        is_idempotent=bool(annotations.get("idempotent_hint")),
+        is_destructive=bool(annotations.get("destructive_hint")),
         requires_owner_approval=contract["effect"] == "external-write",
         timeout_seconds=120,
         max_retries=0,

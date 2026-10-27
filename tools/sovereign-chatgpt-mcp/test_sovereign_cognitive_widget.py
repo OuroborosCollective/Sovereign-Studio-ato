@@ -19,10 +19,10 @@ from sovereign_cognitive_widget import (
 
 
 READ_ONLY = ToolAnnotations(
-    readOnlyHint=True,
-    destructiveHint=False,
-    idempotentHint=True,
-    openWorldHint=False,
+    read_only_hint=True,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=False,
 )
 
 
@@ -141,8 +141,8 @@ def test_widget_global_and_thread_entrypoints_preserve_read_only_tool() -> None:
     assert tool.meta["openai/ui"] == {
         "entrypoints": [{"type": "global"}, {"type": "thread"}]
     }
-    assert tool.annotations.readOnlyHint is True
-    assert tool.annotations.destructiveHint is False
+    assert tool.annotations.read_only_hint is True
+    assert tool.annotations.destructive_hint is False
 
 
 def test_widget_javascript_host_boundary() -> None:

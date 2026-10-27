@@ -213,16 +213,16 @@ def test_registers_all_assurance_tools_with_bounded_annotations(registered) -> N
     assert set(actual) == expected
     assert len(expected) == 29
     for name, tool in actual.items():
-        assert tool.annotations.destructiveHint is False
-        assert tool.annotations.idempotentHint is True
+        assert tool.annotations.destructive_hint is False
+        assert tool.annotations.idempotent_hint is True
         assert tool.output_schema["type"] == "object"
         assert tool.description.startswith("Use this when")
         if name == "runtime_dependency_health_matrix":
-            assert tool.annotations.readOnlyHint is False
-            assert tool.annotations.openWorldHint is True
+            assert tool.annotations.read_only_hint is False
+            assert tool.annotations.open_world_hint is True
         else:
-            assert tool.annotations.readOnlyHint is True
-    assert actual["vps_capacity_resource_pressure_assess"].annotations.openWorldHint is True
+            assert tool.annotations.read_only_hint is True
+    assert actual["vps_capacity_resource_pressure_assess"].annotations.open_world_hint is True
 
 
 def test_inventory_reuses_existing_registry_and_capacity_reads_live_snapshot(registered) -> None:
