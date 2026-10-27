@@ -19,6 +19,7 @@ import signal
 import stat
 import subprocess
 import time
+import unicodedata
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -361,14 +362,14 @@ class OwnerSSHConsole:
         """Stop and verify the remote systemd cgroup; fail closed if unavailable."""
         unit = self._shell_unit(execution_id)
         remote = ("command -v systemctl >/dev/null 2>&1 || exit 1; "
-                  "load=$(systemctl show --property=LoadState --value " + shlex.quote(unit) + ") || exit 1; "
+                  "load=$(systemctl --user show --property=LoadState --value " + shlex.quote(unit) + ") || exit 1; "
                   "case \"$load\" in not-found) exit 0 ;; loaded) "
-                  "state=$(systemctl show --property=ActiveState --value " + shlex.quote(unit) + ") || exit 1; "
+                  "state=$(systemctl --user show --property=ActiveState --value " + shlex.quote(unit) + ") || exit 1; "
                   "case \"$state\" in inactive|failed) exit 0 ;; "
-                  "active|activating|deactivating) systemctl kill --kill-who=all --signal=SIGKILL "
-                  + shlex.quote(unit) + " && systemctl stop " + shlex.quote(unit)
-                  + " && load=$(systemctl show --property=LoadState --value " + shlex.quote(unit)
-                  + ") && state=$(systemctl show --property=ActiveState --value " + shlex.quote(unit)
+                  "active|activating|deactivating) systemctl --user kill --kill-who=all --signal=SIGKILL "
+                  + shlex.quote(unit) + " && systemctl --user stop " + shlex.quote(unit)
+                  + " && load=$(systemctl --user show --property=LoadState --value " + shlex.quote(unit)
+                  + ") && state=$(systemctl --user show --property=ActiveState --value " + shlex.quote(unit)
                   + ") && { [ \"$load\" = not-found ] || [ \"$state\" = inactive ] || [ \"$state\" = failed ]; } ;; "
                   "*) exit 1 ;; esac ;; *) exit 1 ;; esac")
         argv = self._base(state)[:-1] + ["-o", "BatchMode=yes", "-o", "ControlMaster=no",
@@ -379,14 +380,30 @@ class OwnerSSHConsole:
             return False
         return result.returncode == 0
 
+    def _execution_lock_held(self):
+        """Read-only probe: true only while another worker owns the command lock."""
+        try:
+            fd = os.open(self.root / ".ssh-console.lock", os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError:
+            return False
+        try:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            return False
+        except OSError:
+            return False
+        finally:
+            os.close(fd)
+
     def _recover_orphaned_shell(self, state):
         execution_id = state.get("shellExecutionId")
         if not execution_id:
             return state
-        supervisor_pid = state.get("shellSupervisorPid")
-        expected_start = state.get("shellSupervisorStart")
-        if type(supervisor_pid) is int and expected_start and _process_start_time(supervisor_pid) == expected_start:
-            return state
+        # Callers hold the exclusive SSH-console lock. Therefore no active
+        # shell invocation can still own the execution lease here.
         stopped = self._stop_shell_scope(state, execution_id)
         state = self._state()
         if state.get("shellExecutionId") != execution_id:
@@ -450,8 +467,8 @@ class OwnerSSHConsole:
             return {"ok": True, "status": "SSH_NOT_CONNECTED", "operations": list(OPERATIONS)}
         if session_id and session_id != state["sessionId"]:
             raise ValueError("SSH session identity mismatch")
-        state = self._recover_orphaned_shell(state)
-        observed = state["status"]
+        recovery_required = bool(state.get("shellExecutionId") and not self._execution_lock_held())
+        observed = "SSH_SHELL_RECOVERY_REQUIRED" if recovery_required else state["status"]
         if observed == "connected":
             digest = hashlib.sha256(self._read("ssh_console_profile.json")).hexdigest()
             if time.time() >= state["expiresAt"] or digest != state["profileSha256"]:
@@ -468,7 +485,7 @@ class OwnerSSHConsole:
         return {"ok": True, "status": observed, "sessionId": state["sessionId"],
                 "host": state["host"], "username": state["username"], "expiresAt": state["expiresAt"],
                 "hostFingerprint": state["hostFingerprint"],
-                "assistantGrantActive": grant_active,
+                "assistantGrantActive": grant_active, "shellRecoveryRequired": recovery_required,
                 "allowedOperations": state.get("allowedOperations", []), "operations": list(OPERATIONS),
                 "protectedValuesReturned": False}
 
@@ -615,6 +632,9 @@ class OwnerSSHConsole:
             raise ValueError("Invalid SSH shell command encoding") from exc
         if len(encoded) > 8192:
             raise ValueError("Invalid SSH shell command")
+        if any(unicodedata.category(ch) in {"Cf", "Cs", "Cn", "Zl", "Zp"}
+               or (unicodedata.category(ch) == "Cc" and ch not in "\n\t") for ch in command):
+            raise ValueError("SSH shell command contains hidden display controls")
         if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 300:
             raise ValueError("Invalid SSH shell timeout")
         return hashlib.sha256(encoded).hexdigest()
@@ -666,7 +686,7 @@ class OwnerSSHConsole:
                 self._delegation_ready(current, SHELL_SCOPE)
 
             unit = self._shell_unit(execution_id)
-            remote = ("exec systemd-run --scope --unit=" + shlex.quote(unit) + " --quiet -- "
+            remote = ("exec systemd-run --user --scope --unit=" + shlex.quote(unit) + " --quiet -- "
                       "/bin/sh -c " + shlex.quote(command))
             argv = self._base(state)[:-1] + ["-o", "BatchMode=yes", "-o", "ControlMaster=no",
                                               "-o", "ProxyCommand=false", state["host"], remote]
@@ -793,8 +813,12 @@ class OwnerSSHConsole:
             if selected == "close":
                 self._close(state)
                 return {"ok": True, "status": "SSH_CLOSED", "sessionId": state["sessionId"]}
+            if selected in {"grant", "revoke"}:
+                state = self._recover_orphaned_shell(state)
+                if state.get("shellExecutionId"):
+                    raise ValueError("SSH shell scope termination must be confirmed before changing delegation")
             if selected == "revoke":
-                state.update(grantUntil=0, allowedOperations=[], shellApproval=None, shellExecutionId="")
+                state.update(grantUntil=0, allowedOperations=[], shellApproval=None)
                 self._write("ssh_console_state.json", state)
                 return {"ok": True, "status": "SSH_DELEGATION_REVOKED"}
             self._ready(state)
