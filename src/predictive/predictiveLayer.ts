@@ -331,7 +331,13 @@ export class PredictiveLayer {
   }
 
   private computeNorm(vector: number[]): number {
-    return Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+    // ⚡ Bolt: Replaced .reduce() with a standard for loop to avoid continuous inline function allocation overhead
+    let sum = 0;
+    for (let i = 0; i < vector.length; i++) {
+      const value = vector[i];
+      sum += value * value;
+    }
+    return Math.sqrt(sum);
   }
 
   private estimateMemoryUsage(): number {

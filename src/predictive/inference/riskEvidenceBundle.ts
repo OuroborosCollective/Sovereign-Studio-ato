@@ -62,7 +62,11 @@ function computeBundleHash(
 function computeAggregateScore(receipts: ModelReceipt[]): number {
   if (receipts.length === 0) return 0;
 
-  const sum = receipts.reduce((acc, r) => acc + r.score, 0);
+  // ⚡ Bolt: Replaced .reduce() with a standard for loop to avoid continuous inline function allocation overhead
+  let sum = 0;
+  for (let i = 0; i < receipts.length; i++) {
+    sum += receipts[i].score;
+  }
   return sum / receipts.length;
 }
 
