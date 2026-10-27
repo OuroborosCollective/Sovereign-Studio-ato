@@ -240,6 +240,9 @@ def test_shell_executes_once_and_returns_only_a_revision_bound_receipt(console):
     assert len(observed) == 1
     assert "ProxyCommand=false" in observed[0] and "ControlMaster=no" in observed[0]
     assert "/bin/sh -c" in observed[0][-1]
+    assert "systemd-run --scope" in observed[0][-1]
+    assert "sovott-ssh-shell-" in observed[0][-1]
+    assert any("systemctl show --property=ActiveState" in argv[-1] for argv in calls)
     assert "command" not in instance._state()["lastActivity"]
     assert instance._state()["lastActivity"]["commandSha256"] == result["commandSha256"]
     with pytest.raises(ValueError, match="approval"):
@@ -357,6 +360,42 @@ def test_shell_transport_kills_descendants_after_timeout(tmp_path):
         _shell_transport([sys.executable, "-c", parent_code], timeout_seconds=0.05, guard=lambda: None)
     time.sleep(0.4)
     assert not marker.exists()
+
+
+def test_orphaned_shell_is_stopped_and_recorded_unknown(console):
+    instance, session_id, calls = connected(console)
+    state = instance._state()
+    execution_id = "a" * 32
+    state["shellExecutionId"] = execution_id
+    state["shellSupervisorPid"] = 99999999
+    state["shellSupervisorStart"] = "1"
+    state["lastActivity"] = {"actor": "assistant", "operation": "shell", "status": "SSH_SHELL_STARTED",
+                             "executionId": execution_id}
+    instance._write("ssh_console_state.json", state)
+    observed = instance.status(session_id)
+    state = instance._state()
+    assert observed["assistantGrantActive"] is False
+    assert not state["shellExecutionId"]
+    assert state["lastActivity"]["status"] == "SSH_SHELL_INTERRUPTED_OUTCOME_UNKNOWN"
+    assert state["lastActivity"]["exitCode"] is None
+    assert any("systemctl show --property=ActiveState" in argv[-1] for argv in calls)
+
+
+def test_orphaned_shell_stop_failure_keeps_unknown_execution(console):
+    instance, session_id, _calls = connected(console)
+    state = instance._state()
+    execution_id = "b" * 32
+    state.update(shellExecutionId=execution_id, shellSupervisorPid=99999999,
+                 shellSupervisorStart="1", lastActivity={"operation": "shell", "status": "SSH_SHELL_STARTED",
+                                                         "executionId": execution_id})
+    instance._write("ssh_console_state.json", state)
+    instance.runner = lambda *args, **kwargs: SimpleNamespace(returncode=255, stdout="", stderr="")
+    with pytest.raises(ValueError, match="Orphaned remote SSH shell"):
+        instance.status(session_id)
+    recovered = instance._state()
+    assert recovered["shellExecutionId"] == execution_id
+    assert recovered["lastActivity"]["status"] == "SSH_SHELL_INTERRUPTED_OUTCOME_UNKNOWN"
+    assert recovered["grantUntil"] == 0 and recovered["allowedOperations"] == []
 
 
 def test_shell_timeout_returns_ambiguous_receipt_and_consumes_approval(console):
@@ -494,6 +533,8 @@ def test_actual_page_scripts_parse_without_external_resources(tmp_path):
         assert result.returncode == 0, result.stderr
     assert "localStorage" not in page and "sessionStorage" not in page
     assert "textContent" in page and "innerHTML" not in page
+    assert 'id="shellTimeout"' in page and 'value="300"' in page
+    assert "Number($('shellTimeout').value)" in page
 
 def test_server_host_key_comment_normalized_without_touching_login_method(console):
     instance, profile, calls = console

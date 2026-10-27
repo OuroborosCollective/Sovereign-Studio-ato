@@ -98,6 +98,18 @@ def _runtime_source_revision():
     return revision
 
 
+def _process_start_time(pid):
+    """Return Linux /proc start ticks so stale supervisor PIDs cannot be reused."""
+    if type(pid) is not int or pid < 2:
+        return ""
+    try:
+        stat_text = Path(f"/proc/{pid}/stat").read_text("ascii")
+        fields = stat_text[stat_text.rfind(")") + 2:].split()
+        return fields[19]
+    except (OSError, IndexError, UnicodeError):
+        return ""
+
+
 def _shell_transport(argv, *, timeout_seconds, guard):
     """Run an approved shell command with no stdin and discard every output byte."""
     counts = {1: 0, 2: 0}
@@ -339,7 +351,63 @@ class OwnerSSHConsole:
             raise ValueError("Invalid SSH session identity")
         return state
 
+    @staticmethod
+    def _shell_unit(execution_id):
+        if not ID.fullmatch(str(execution_id or "")):
+            raise ValueError("Invalid SSH shell execution identity")
+        return "sovott-ssh-shell-" + execution_id + ".scope"
+
+    def _stop_shell_scope(self, state, execution_id):
+        """Stop and verify the remote systemd cgroup; fail closed if unavailable."""
+        unit = self._shell_unit(execution_id)
+        remote = ("command -v systemctl >/dev/null 2>&1 || exit 1; "
+                  "load=$(systemctl show --property=LoadState --value " + shlex.quote(unit) + ") || exit 1; "
+                  "case \"$load\" in not-found) exit 0 ;; loaded) "
+                  "state=$(systemctl show --property=ActiveState --value " + shlex.quote(unit) + ") || exit 1; "
+                  "case \"$state\" in inactive|failed) exit 0 ;; "
+                  "active|activating|deactivating) systemctl kill --kill-who=all --signal=SIGKILL "
+                  + shlex.quote(unit) + " && systemctl stop " + shlex.quote(unit)
+                  + " && load=$(systemctl show --property=LoadState --value " + shlex.quote(unit)
+                  + ") && state=$(systemctl show --property=ActiveState --value " + shlex.quote(unit)
+                  + ") && { [ \"$load\" = not-found ] || [ \"$state\" = inactive ] || [ \"$state\" = failed ]; } ;; "
+                  "*) exit 1 ;; esac ;; *) exit 1 ;; esac")
+        argv = self._base(state)[:-1] + ["-o", "BatchMode=yes", "-o", "ControlMaster=no",
+                                         "-o", "ProxyCommand=false", state["host"], remote]
+        try:
+            result = self._run(argv, timeout=12, capture=False)
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return result.returncode == 0
+
+    def _recover_orphaned_shell(self, state):
+        execution_id = state.get("shellExecutionId")
+        if not execution_id:
+            return state
+        supervisor_pid = state.get("shellSupervisorPid")
+        expected_start = state.get("shellSupervisorStart")
+        if type(supervisor_pid) is int and expected_start and _process_start_time(supervisor_pid) == expected_start:
+            return state
+        stopped = self._stop_shell_scope(state, execution_id)
+        state = self._state()
+        if state.get("shellExecutionId") != execution_id:
+            return state
+        activity = dict(state.get("lastActivity") or {})
+        activity.update(status="SSH_SHELL_INTERRUPTED_OUTCOME_UNKNOWN", exitCode=None,
+                        stdoutBytes=None, stderrBytes=None, at=time.time())
+        state["lastActivity"] = activity
+        state.update(grantUntil=0, allowedOperations=[], shellApproval=None)
+        if stopped:
+            state["shellExecutionId"] = ""
+            state.pop("shellSupervisorPid", None)
+            state.pop("shellSupervisorStart", None)
+        self._write("ssh_console_state.json", state)
+        if not stopped:
+            raise ValueError("Orphaned remote SSH shell could not be stopped and verified")
+        return state
+
     def _close(self, state, preserve_profile=False):
+        if state.get("shellExecutionId") and not self._stop_shell_scope(state, state["shellExecutionId"]):
+            raise ValueError("Remote SSH shell scope could not be stopped before closing")
         state.update(status="close_unverified", grantUntil=0, allowedOperations=[], shellApproval=None, shellExecutionId="")
         self._write("ssh_console_state.json", state)
         try:
@@ -382,6 +450,7 @@ class OwnerSSHConsole:
             return {"ok": True, "status": "SSH_NOT_CONNECTED", "operations": list(OPERATIONS)}
         if session_id and session_id != state["sessionId"]:
             raise ValueError("SSH session identity mismatch")
+        state = self._recover_orphaned_shell(state)
         observed = state["status"]
         if observed == "connected":
             digest = hashlib.sha256(self._read("ssh_console_profile.json")).hexdigest()
@@ -389,7 +458,8 @@ class OwnerSSHConsole:
                 observed = "expired"
             elif self._run(self._base(state)[:-1] + ["-O", "check", state["host"]], 5).returncode:
                 observed = "disconnected"
-        grant_active = observed == "connected" and time.time() < state.get("grantUntil", 0)
+        grant_active = (observed == "connected" and time.time() < state.get("grantUntil", 0)
+                        and not state.get("shellExecutionId"))
         if grant_active:
             try:
                 self._delegation_ready(state, next(iter(state.get("allowedOperations", [])), ""))
@@ -554,6 +624,7 @@ class OwnerSSHConsole:
         source_revision = _runtime_source_revision()
         with self._lock():
             state = self._state()
+            state = self._recover_orphaned_shell(state)
             if state["sessionId"] != session_id:
                 raise ValueError("SSH session identity mismatch")
             self._ready(state)
@@ -570,6 +641,10 @@ class OwnerSSHConsole:
             execution_id = uuid.uuid4().hex
             state["shellApproval"] = None
             state["shellExecutionId"] = execution_id
+            state["shellSupervisorPid"] = os.getpid()
+            state["shellSupervisorStart"] = _process_start_time(os.getpid())
+            if not state["shellSupervisorStart"]:
+                raise ValueError("SSH shell supervisor identity unavailable")
             state["lastActivity"] = {
                 "actor": "assistant", "operation": SHELL_SCOPE, "status": "SSH_SHELL_STARTED",
                 "sessionId": session_id, "approvalId": approval_id, "executionId": execution_id,
@@ -590,7 +665,9 @@ class OwnerSSHConsole:
                     raise ValueError("MCP source revision changed during shell execution")
                 self._delegation_ready(current, SHELL_SCOPE)
 
-            remote = "/bin/sh -c " + shlex.quote(command)
+            unit = self._shell_unit(execution_id)
+            remote = ("exec systemd-run --scope --unit=" + shlex.quote(unit) + " --quiet -- "
+                      "/bin/sh -c " + shlex.quote(command))
             argv = self._base(state)[:-1] + ["-o", "BatchMode=yes", "-o", "ControlMaster=no",
                                               "-o", "ProxyCommand=false", state["host"], remote]
             try:
@@ -627,10 +704,21 @@ class OwnerSSHConsole:
                 self._write("ssh_console_state.json", current)
                 raise
             finally:
+                stopped = self._stop_shell_scope(state, execution_id)
                 current = self._state()
                 if current.get("shellExecutionId") == execution_id:
-                    current["shellExecutionId"] = ""
+                    if stopped:
+                        current["shellExecutionId"] = ""
+                        current.pop("shellSupervisorPid", None)
+                        current.pop("shellSupervisorStart", None)
+                    else:
+                        current["lastActivity"] = {**current.get("lastActivity", {}),
+                            "status": "SSH_SHELL_INTERRUPTED_OUTCOME_UNKNOWN", "exitCode": None,
+                            "stdoutBytes": None, "stderrBytes": None, "at": time.time()}
+                        current.update(grantUntil=0, allowedOperations=[], shellApproval=None)
                     self._write("ssh_console_state.json", current)
+                if not stopped:
+                    raise ValueError("Remote SSH shell scope termination is unverified")
 
     def assistant_workspace(self, session_id, source_revision, action, path="", content="",
                             expected_sha256="", argv=None, timeout_seconds=30):
