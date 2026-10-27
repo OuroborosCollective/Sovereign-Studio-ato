@@ -329,6 +329,18 @@ def workspace_prepare(base_branch: str = "main", task_slug: str = "change") -> d
 
 
 @mcp.tool(annotations=READ_ONLY)
+def workspace_inventory() -> dict[str, Any]:
+    """Read-only MCP workspace count and ownership inventory; never creates or deletes."""
+    return runtime.workspace_inventory()
+
+
+@mcp.tool(annotations=SAFE_WRITE)
+def workspace_cleanup(workspace_id: str, abandon_confirmed: bool = False) -> dict[str, Any]:
+    """Remove only an owned workspace after verified Draft PR or explicit owner discard."""
+    return runtime.cleanup_workspace(workspace_id, abandon_confirmed=abandon_confirmed)
+
+
+@mcp.tool(annotations=READ_ONLY)
 def repository_read_file(workspace_id: str, path: str, max_bytes: int = 1_000_000) -> dict[str, Any]:
     """Read one UTF-8 repository file from an isolated workspace and return its SHA-256."""
     return runtime.read_file(workspace_id, path, max_bytes)
