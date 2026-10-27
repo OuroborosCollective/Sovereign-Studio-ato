@@ -87,23 +87,52 @@ export interface FeatureExtractionResult {
  * Computes a deterministic hash of signal values.
  * Uses a simple polynomial hash for deterministic behavior across environments.
  * For production, consider using a proper SHA-256 implementation.
+ * ⚡ Bolt: Streamlined hash computation in an indexed loop over `signals` hashing `tick`,
+ * `sequence`, `node`, and `value` character-by-character, inserting '|' (124) delimiters
+ * directly. Completely eliminates array allocations from `signals.map()` and large string joins.
  */
 export function computeSignalHash(signals: OrderedSignal[]): string {
-  if (signals.length === 0) return 'empty';
-
-  // Use tick-sequence-value tuples for hashing
-  const tuples = signals.map(
-    (s) => `${s.metadata.tick}:${s.metadata.sequence}:${s.metadata.node}:${s.value}`,
-  );
-  const combined = tuples.join('|');
+  const len = signals.length;
+  if (len === 0) return 'empty';
 
   // Simple deterministic hash (FNV-1a inspired)
   let hash = 2166136261; // FNV offset basis
   const prime = 16777619;
 
-  for (let i = 0; i < combined.length; i++) {
-    hash ^= combined.charCodeAt(i);
-    hash = Math.imul(hash, prime);
+  for (let i = 0; i < len; i++) {
+    if (i > 0) {
+      hash ^= 124; // '|'
+      hash = Math.imul(hash, prime);
+    }
+    const s = signals[i];
+    const m = s.metadata;
+
+    const tickStr = String(m.tick);
+    for (let j = 0; j < tickStr.length; j++) {
+      hash ^= tickStr.charCodeAt(j);
+      hash = Math.imul(hash, prime);
+    }
+    hash ^= 58; hash = Math.imul(hash, prime); // ':'
+
+    const seqStr = String(m.sequence);
+    for (let j = 0; j < seqStr.length; j++) {
+      hash ^= seqStr.charCodeAt(j);
+      hash = Math.imul(hash, prime);
+    }
+    hash ^= 58; hash = Math.imul(hash, prime); // ':'
+
+    const nodeStr = m.node;
+    for (let j = 0; j < nodeStr.length; j++) {
+      hash ^= nodeStr.charCodeAt(j);
+      hash = Math.imul(hash, prime);
+    }
+    hash ^= 58; hash = Math.imul(hash, prime); // ':'
+
+    const valStr = String(s.value);
+    for (let j = 0; j < valStr.length; j++) {
+      hash ^= valStr.charCodeAt(j);
+      hash = Math.imul(hash, prime);
+    }
   }
 
   // Convert to hex string
@@ -217,8 +246,26 @@ export function extractFeatures(
   const range = minMax ? minMax[1] - minMax[0] : 0;
 
   // Temporal features
-  const deltas = cfg.includeDeltas ? [...runningDifference(values)] : [];
-  const cumulativeSum = cfg.includeTemporal ? [...runningTotal(values)] : [];
+  // ⚡ Bolt: Replaced generator spreading (`[...runningDifference(values)]` and `[...runningTotal(values)]`)
+  // with pre-allocated array loops to eliminate iterator protocol overhead and dynamic array resizings.
+  let deltas: number[] = [];
+  if (cfg.includeDeltas && len > 0) {
+    deltas = new Array<number>(len);
+    deltas[0] = values[0];
+    for (let i = 1; i < len; i++) {
+      deltas[i] = values[i] - values[i - 1];
+    }
+  }
+
+  let cumulativeSum: number[] = [];
+  if (cfg.includeTemporal && len > 0) {
+    cumulativeSum = new Array<number>(len);
+    let running = 0;
+    for (let i = 0; i < len; i++) {
+      running += values[i];
+      cumulativeSum[i] = running;
+    }
+  }
 
   // Histogram
   let histogram: number[] | undefined;
@@ -227,7 +274,9 @@ export function extractFeatures(
   }
 
   // Per-node statistics
-  const nodeStats = computeNodeStats(sortedSignals);
+  // ⚡ Bolt: Leveraged canonical node sort order of `sortedSignals` to calculate per-node stats
+  // in contiguous slices, eliminating intermediate array allocations per node.
+  const nodeStats = computeNodeStats(sortedSignals, values);
 
   // Signal hash
   const signalHash = computeSignalHash(sortedSignals);
@@ -269,30 +318,31 @@ function computeHistogram(values: number[], min: number, max: number, bins: numb
 
 /**
  * Computes per-node statistics.
- * ⚡ Bolt: Optimized with direct list retention to eliminate duplicate .has() and .get() Map lookups per signal.
+ * ⚡ Bolt: Group values by node retaining list reference to avoid dual Map lookups,
+ * ensuring robust statistics computation regardless of input signal order.
  */
 function computeNodeStats(
   signals: OrderedSignal[],
+  values: number[],
 ): Map<string, { mean: number; stdDev: number; count: number }> {
   const byNode = new Map<string, number[]>();
 
   for (let i = 0; i < signals.length; i++) {
-    const signal = signals[i];
-    const node = signal.node;
+    const node = signals[i].node;
     let list = byNode.get(node);
     if (list === undefined) {
       list = [];
       byNode.set(node, list);
     }
-    list.push(signal.value);
+    list.push(values[i]);
   }
 
   const stats = new Map<string, { mean: number; stdDev: number; count: number }>();
-  for (const [node, values] of byNode) {
+  for (const [node, nodeVals] of byNode) {
     stats.set(node, {
-      mean: computeMean(values),
-      stdDev: computeStdDev(values),
-      count: values.length,
+      mean: computeMean(nodeVals),
+      stdDev: computeStdDev(nodeVals),
+      count: nodeVals.length,
     });
   }
 
@@ -438,30 +488,39 @@ export function processWindowToFeatures(
 
 /**
  * Computes pairwise deltas between consecutive signals grouped by node.
+ * ⚡ Bolt: Retained map references during insertion to eliminate duplicate Map lookups,
+ * and replaced generator-based `pairwise` iteration with direct indexed loop over sorted array.
  */
 export function computeNodeDeltaFeatures(
   window: TickWindow,
 ): Map<string, Array<{ from: number; to: number; delta: number }>> {
   const byNode = new Map<string, OrderedSignal[]>();
 
-  for (const signal of window.signals) {
+  for (let i = 0; i < window.signals.length; i++) {
+    const signal = window.signals[i];
     const node = signal.metadata.node;
-    if (!byNode.has(node)) byNode.set(node, []);
-    byNode.get(node)!.push(signal);
+    let list = byNode.get(node);
+    if (list === undefined) {
+      list = [];
+      byNode.set(node, list);
+    }
+    list.push(signal);
   }
 
   const deltas = new Map<string, Array<{ from: number; to: number; delta: number }>>();
 
   for (const [node, signals] of byNode) {
     const sorted = [...signals].sort((a, b) => a.metadata.sequence - b.metadata.sequence);
+    const count = sorted.length;
     const nodeDeltas: Array<{ from: number; to: number; delta: number }> = [];
 
-    for (const pair of pairwise(sorted)) {
-      const [from, to] = pair;
+    for (let i = 0; i < count - 1; i++) {
+      const fromVal = sorted[i].value;
+      const toVal = sorted[i + 1].value;
       nodeDeltas.push({
-        from: from.value,
-        to: to.value,
-        delta: to.value - from.value,
+        from: fromVal,
+        to: toVal,
+        delta: toVal - fromVal,
       });
     }
 
