@@ -19,6 +19,7 @@ from owner_ssh_console import OwnerSSHConsole, OPERATIONS
 
 @pytest.fixture
 def console(tmp_path, monkeypatch):
+    monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", "f" * 40)
     # Only the external filesystem ownership adapter is mocked on non-root CI.
     # Modes, symlink refusal, persisted state and all production logic are real.
     original = os.fstat
@@ -63,6 +64,11 @@ def connected(console):
     result = instance.owner_action(owner_action(instance, "connect"))
     assert result["ok"]
     return instance, result["sessionId"], calls
+
+def shell_grant(instance, session_id, command, timeout_seconds=30, ttl=300):
+    digest = instance.validate_shell_command(command, timeout_seconds)
+    return instance.owner_action(owner_action(instance, "grant", sessionId=session_id,
+        operations=["shell"], ttl=ttl, commandSha256=digest, timeoutSeconds=timeout_seconds))
 
 def test_owner_connection_checks_host_and_keeps_material_out_of_arguments(console):
     instance, session_id, calls = connected(console)
@@ -193,46 +199,63 @@ def test_password_askpass_is_private_and_not_an_argument(console):
 
 
 
-def test_shell_requires_specific_owner_delegation(console):
+def test_shell_requires_specific_command_bound_owner_approval(console):
     instance, session_id, calls = connected(console)
     with pytest.raises(ValueError, match="delegation"):
         instance.assistant_shell(session_id, "uname -a")
     instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["disk"], ttl=300))
     with pytest.raises(ValueError, match="delegation"):
         instance.assistant_shell(session_id, "uname -a")
+    with pytest.raises(ValueError, match="Command-bound"):
+        instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["shell"], ttl=300))
+    with pytest.raises(ValueError, match="delegation"):
+        instance.assistant_shell(session_id, "uname -a")
+    shell_grant(instance, session_id, "uname -a")
+    with pytest.raises(ValueError, match="Owner approval does not match"):
+        instance.assistant_shell(session_id, "id")
     assert not any("/bin/sh -c" in " ".join(map(str, argv)) for argv in calls)
 
 
-def test_shell_executes_arbitrary_pipeline_on_existing_ssh_transport_without_reconnect(console):
+def test_shell_executes_once_and_returns_only_a_revision_bound_receipt(console):
     instance, session_id, calls = connected(console)
-    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["shell"], ttl=300))
+    command = "printf 'one;two;three' | cut -d ';' -f 3"
+    shell_grant(instance, session_id, command, timeout_seconds=25)
     observed = []
-    def transport(argv, *, deadline, guard):
+    def transport(argv, *, timeout_seconds, guard):
         guard()
         observed.append(argv)
         guard()
-        return subprocess.CompletedProcess(argv, 0, "three\\n", "")
-    instance.workspace_runner = transport
-    command = "printf 'one;two;three' | cut -d ';' -f 3"
+        return SimpleNamespace(returncode=0, stdout="sensitive output", stderr="sensitive error",
+                               stdout_bytes=6, stderr_bytes=8)
+    instance.shell_runner = transport
     result = instance.assistant_shell(session_id, command, timeout_seconds=25)
-    assert result["status"] == "SSH_SHELL_EXECUTED"
-    assert result["exitCode"] == 0
-    assert result["output"] == "three\\n"
+    assert result["status"] == "SSH_SHELL_EXECUTED" and result["exitCode"] == 0
+    assert result["stdoutBytes"] == 6 and result["stderrBytes"] == 8
+    assert result["outputReturned"] is False and "output" not in result
     assert result["commandSha256"] == hashlib.sha256(command.encode()).hexdigest()
+    assert result["profileSha256"] == instance._state()["profileSha256"]
+    assert result["sourceRevision"] == "f" * 40
     assert result["targetStateVerified"] is False
+    assert "sensitive" not in json.dumps(result) and "sensitive" not in json.dumps(instance._state())
     assert len(observed) == 1
     assert "ProxyCommand=false" in observed[0] and "ControlMaster=no" in observed[0]
     assert "/bin/sh -c" in observed[0][-1]
-    assert command not in instance._state()["lastActivity"]["command"]
+    assert "systemd-run --scope" in observed[0][-1]
+    assert "sovott-ssh-shell-" in observed[0][-1]
+    assert any("systemctl show --property=ActiveState" in argv[-1] for argv in calls)
+    assert "command" not in instance._state()["lastActivity"]
+    assert instance._state()["lastActivity"]["commandSha256"] == result["commandSha256"]
+    with pytest.raises(ValueError, match="approval"):
+        instance.assistant_shell(session_id, command, timeout_seconds=25)
 
 
 def test_shell_fails_closed_on_revocation_or_expired_grant(console):
     instance, session_id, calls = connected(console)
-    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["shell"], ttl=60))
+    shell_grant(instance, session_id, "whoami", ttl=60)
     instance.owner_action(owner_action(instance, "revoke", sessionId=session_id))
     with pytest.raises(ValueError, match="delegation"):
         instance.assistant_shell(session_id, "whoami")
-    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["shell"], ttl=60))
+    shell_grant(instance, session_id, "whoami", ttl=60)
     state = instance._state()
     state["grantUntil"] = time.time() - 1
     instance._write("ssh_console_state.json", state)
@@ -240,44 +263,161 @@ def test_shell_fails_closed_on_revocation_or_expired_grant(console):
         instance.assistant_shell(session_id, "whoami")
 
 
-def test_shell_revocation_during_transport_blocks_result(console):
+def test_shell_revocation_during_transport_blocks_result_and_keeps_safe_receipt(console):
     instance, session_id, calls = connected(console)
-    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["shell"], ttl=300))
-    def transport(argv, *, deadline, guard):
+    shell_grant(instance, session_id, "uptime")
+    def transport(argv, *, timeout_seconds, guard):
         guard()
         instance._write("ssh_console_revocation.json", {"sessionId": session_id, "at": time.time()})
         guard()
         return subprocess.CompletedProcess(argv, 0, "should-not-return", "")
-    instance.workspace_runner = transport
+    instance.shell_runner = transport
     with pytest.raises(ValueError, match="revocation"):
         instance.assistant_shell(session_id, "uptime")
-    assert instance._state().get("lastActivity") is None
+    activity = instance._state()["lastActivity"]
+    assert activity["status"] == "SSH_SHELL_INTERRUPTED_OUTCOME_UNKNOWN"
+    assert "output" not in activity and "command" not in activity
 
 
-def test_shell_failure_and_secret_output_are_not_reported_as_verified(console):
+def test_shell_failure_and_secret_output_are_withheld(console):
     instance, profile, calls = console
     profile.pop("privateKey")
     profile["password"] = "synthetic-password-not-real"
     instance._write("ssh_console_profile.json", profile)
     result = instance.owner_action(owner_action(instance, "connect"))
     session_id = result["sessionId"]
-    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["shell"], ttl=300))
-    def transport(argv, *, deadline, guard):
+    shell_grant(instance, session_id, "false")
+    def transport(argv, *, timeout_seconds, guard):
         guard()
-        return subprocess.CompletedProcess(argv, 7, "password=secret-value\\n" + profile["password"], "")
-    instance.workspace_runner = transport
+        return SimpleNamespace(returncode=7, stdout="password=secret-value\\n" + profile["password"],
+                               stderr="database://credential", stdout_bytes=50, stderr_bytes=29)
+    instance.shell_runner = transport
     result = instance.assistant_shell(session_id, "false")
     assert result["ok"] is False and result["exitCode"] == 7
     assert result["targetStateVerified"] is False
+    assert result["outputReturned"] is False and "output" not in result
     assert "secret-value" not in json.dumps(result)
     assert profile["password"] not in json.dumps(result)
     assert profile["password"] not in json.dumps(instance._state())
+    assert "database://credential" not in json.dumps(instance._state())
+
+
+def test_shell_approval_is_bound_to_runtime_source_revision(console):
+    instance, session_id, calls = connected(console)
+    shell_grant(instance, session_id, "uptime")
+    state = instance._state()
+    state["shellApproval"]["sourceRevision"] = "e" * 40
+    instance._write("ssh_console_state.json", state)
+    instance.shell_runner = lambda *_args, **_kwargs: pytest.fail("stale revision reached transport")
+    with pytest.raises(ValueError, match="approval"):
+        instance.assistant_shell(session_id, "uptime")
+
+
+def test_shell_runtime_revision_change_interrupts_inflight_execution(console, monkeypatch):
+    instance, session_id, calls = connected(console)
+    shell_grant(instance, session_id, "uptime")
+    def transport(argv, *, timeout_seconds, guard):
+        monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", "e" * 40)
+        guard()
+    instance.shell_runner = transport
+    with pytest.raises(ValueError, match="source revision changed"):
+        instance.assistant_shell(session_id, "uptime")
+    assert instance._state()["lastActivity"]["status"] == "SSH_SHELL_INTERRUPTED_OUTCOME_UNKNOWN"
+
+
+def test_shell_profile_replacement_interrupts_inflight_execution(console):
+    instance, session_id, calls = connected(console)
+    shell_grant(instance, session_id, "uptime")
+    def transport(argv, *, timeout_seconds, guard):
+        profile = instance._json("ssh_console_profile.json")
+        profile["username"] = "changed"
+        instance._write("ssh_console_profile.json", profile)
+        guard()
+    instance.shell_runner = transport
+    with pytest.raises(ValueError, match="profile changed"):
+        instance.assistant_shell(session_id, "uptime")
+    activity = instance._state()["lastActivity"]
+    assert activity["status"] == "SSH_SHELL_INTERRUPTED_OUTCOME_UNKNOWN"
+    assert instance._state().get("shellApproval") is None
+    assert "output" not in activity
+
+
+def test_shell_transport_discards_binary_streams_and_never_sends_stdin():
+    from owner_ssh_console import _shell_transport
+    code = "import sys;sys.stdout.buffer.write(bytes([255]));sys.stderr.buffer.write(bytes([254]));sys.exit(0 if sys.stdin.buffer.read()==b'' else 2)"
+    completed = _shell_transport([sys.executable, "-c", code], timeout_seconds=3, guard=lambda: None)
+    assert completed.returncode == 0
+    assert completed.stdout == "" and completed.stderr == ""
+    assert completed.stdout_bytes == 1 and completed.stderr_bytes == 1
+
+
+def test_shell_transport_kills_descendants_after_timeout(tmp_path):
+    from owner_ssh_console import _shell_transport
+    marker = tmp_path / "child-finished"
+    child_code = f"import time; time.sleep(0.25); open({str(marker)!r}, 'w').write('done')"
+    parent_code = "import subprocess,sys; subprocess.Popen([sys.executable,'-c'," + repr(child_code) + "]); sys.exit(0)"
+    with pytest.raises(subprocess.TimeoutExpired):
+        _shell_transport([sys.executable, "-c", parent_code], timeout_seconds=0.05, guard=lambda: None)
+    time.sleep(0.4)
+    assert not marker.exists()
+
+
+def test_orphaned_shell_is_stopped_and_recorded_unknown(console):
+    instance, session_id, calls = connected(console)
+    state = instance._state()
+    execution_id = "a" * 32
+    state["shellExecutionId"] = execution_id
+    state["shellSupervisorPid"] = 99999999
+    state["shellSupervisorStart"] = "1"
+    state["lastActivity"] = {"actor": "assistant", "operation": "shell", "status": "SSH_SHELL_STARTED",
+                             "executionId": execution_id}
+    instance._write("ssh_console_state.json", state)
+    observed = instance.status(session_id)
+    state = instance._state()
+    assert observed["assistantGrantActive"] is False
+    assert not state["shellExecutionId"]
+    assert state["lastActivity"]["status"] == "SSH_SHELL_INTERRUPTED_OUTCOME_UNKNOWN"
+    assert state["lastActivity"]["exitCode"] is None
+    assert any("systemctl show --property=ActiveState" in argv[-1] for argv in calls)
+    stop_command = next(argv[-1] for argv in calls if "systemctl show --property=LoadState" in argv[-1])
+    syntax = subprocess.run(["/bin/sh", "-n", "-c", stop_command], capture_output=True, text=True)
+    assert syntax.returncode == 0, syntax.stderr
+
+
+def test_orphaned_shell_stop_failure_keeps_unknown_execution(console):
+    instance, session_id, _calls = connected(console)
+    state = instance._state()
+    execution_id = "b" * 32
+    state.update(shellExecutionId=execution_id, shellSupervisorPid=99999999,
+                 shellSupervisorStart="1", lastActivity={"operation": "shell", "status": "SSH_SHELL_STARTED",
+                                                         "executionId": execution_id})
+    instance._write("ssh_console_state.json", state)
+    instance.runner = lambda *args, **kwargs: SimpleNamespace(returncode=255, stdout="", stderr="")
+    with pytest.raises(ValueError, match="Orphaned remote SSH shell"):
+        instance.status(session_id)
+    recovered = instance._state()
+    assert recovered["shellExecutionId"] == execution_id
+    assert recovered["lastActivity"]["status"] == "SSH_SHELL_INTERRUPTED_OUTCOME_UNKNOWN"
+    assert recovered["grantUntil"] == 0 and recovered["allowedOperations"] == []
+
+
+def test_shell_timeout_returns_ambiguous_receipt_and_consumes_approval(console):
+    instance, session_id, calls = connected(console)
+    shell_grant(instance, session_id, "long-op", timeout_seconds=2)
+    def transport(argv, *, timeout_seconds, guard):
+        guard()
+        raise subprocess.TimeoutExpired(argv, timeout_seconds)
+    instance.shell_runner = transport
+    result = instance.assistant_shell(session_id, "long-op", timeout_seconds=2)
+    assert result["status"] == "SSH_SHELL_OUTCOME_UNKNOWN" and result["exitCode"] is None
+    assert result["outputReturned"] is False
+    with pytest.raises(ValueError, match="approval"):
+        instance.assistant_shell(session_id, "long-op", timeout_seconds=2)
 
 
 @pytest.mark.parametrize("command,timeout", [("", 30), ("a" * 9000, 30), ("printf " + chr(0), 30), ("uname", 0), ("uname", 301)])
 def test_shell_invalid_command_or_timeout_rejected_before_transport(console, command, timeout):
     instance, session_id, calls = connected(console)
-    instance.owner_action(owner_action(instance, "grant", sessionId=session_id, operations=["shell"], ttl=300))
     with pytest.raises(ValueError):
         instance.assistant_shell(session_id, command, timeout_seconds=timeout)
 
@@ -396,6 +536,8 @@ def test_actual_page_scripts_parse_without_external_resources(tmp_path):
         assert result.returncode == 0, result.stderr
     assert "localStorage" not in page and "sessionStorage" not in page
     assert "textContent" in page and "innerHTML" not in page
+    assert 'id="shellTimeout"' in page and 'value="300"' in page
+    assert "Number($('shellTimeout').value)" in page
 
 def test_server_host_key_comment_normalized_without_touching_login_method(console):
     instance, profile, calls = console
