@@ -251,7 +251,7 @@ describe('ChatSidebar', () => {
   describe('Session Restore Handling', () => {
     it('renders the restore indicator icon for restored session messages', () => {
       const restoredMessage: ChatMessage = {
-        id: 'system:restore-age',
+        id: 'restored-monitor-123',
         role: 'system',
         content: 'Session wiederhergestellt (Alter: 2m)',
         timestamp: BASE_TIME,

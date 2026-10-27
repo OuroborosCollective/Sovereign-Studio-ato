@@ -221,7 +221,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
         )}
 
         {safeMessages.map((msg) => {
-          const isRestore = msg.id === 'system:restore-age';
+          const isRestore = msg.id === 'system:restore-age' || msg.id?.startsWith('restored-monitor-') || (msg.role === 'system' && msg.content.includes('wiederhergestellt'));
           return (
           <div
             key={msg.id}
