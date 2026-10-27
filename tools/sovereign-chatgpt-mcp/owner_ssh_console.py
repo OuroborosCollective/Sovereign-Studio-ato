@@ -99,18 +99,6 @@ def _runtime_source_revision():
     return revision
 
 
-def _process_start_time(pid):
-    """Return Linux /proc start ticks so stale supervisor PIDs cannot be reused."""
-    if type(pid) is not int or pid < 2:
-        return ""
-    try:
-        stat_text = Path(f"/proc/{pid}/stat").read_text("ascii")
-        fields = stat_text[stat_text.rfind(")") + 2:].split()
-        return fields[19]
-    except (OSError, IndexError, UnicodeError):
-        return ""
-
-
 def _shell_transport(argv, *, timeout_seconds, guard):
     """Run an approved shell command with no stdin and discard every output byte."""
     counts = {1: 0, 2: 0}
@@ -415,8 +403,6 @@ class OwnerSSHConsole:
         state.update(grantUntil=0, allowedOperations=[], shellApproval=None)
         if stopped:
             state["shellExecutionId"] = ""
-            state.pop("shellSupervisorPid", None)
-            state.pop("shellSupervisorStart", None)
         self._write("ssh_console_state.json", state)
         if not stopped:
             raise ValueError("Orphaned remote SSH shell could not be stopped and verified")
@@ -661,10 +647,6 @@ class OwnerSSHConsole:
             execution_id = uuid.uuid4().hex
             state["shellApproval"] = None
             state["shellExecutionId"] = execution_id
-            state["shellSupervisorPid"] = os.getpid()
-            state["shellSupervisorStart"] = _process_start_time(os.getpid())
-            if not state["shellSupervisorStart"]:
-                raise ValueError("SSH shell supervisor identity unavailable")
             state["lastActivity"] = {
                 "actor": "assistant", "operation": SHELL_SCOPE, "status": "SSH_SHELL_STARTED",
                 "sessionId": session_id, "approvalId": approval_id, "executionId": execution_id,
@@ -729,8 +711,6 @@ class OwnerSSHConsole:
                 if current.get("shellExecutionId") == execution_id:
                     if stopped:
                         current["shellExecutionId"] = ""
-                        current.pop("shellSupervisorPid", None)
-                        current.pop("shellSupervisorStart", None)
                     else:
                         current["lastActivity"] = {**current.get("lastActivity", {}),
                             "status": "SSH_SHELL_INTERRUPTED_OUTCOME_UNKNOWN", "exitCode": None,

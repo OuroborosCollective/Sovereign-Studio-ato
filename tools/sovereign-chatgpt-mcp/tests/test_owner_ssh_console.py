@@ -364,9 +364,9 @@ def test_shell_transport_kills_descendants_after_timeout(tmp_path):
 
 def orphaned_execution(instance, execution_id):
     state = instance._state()
-    state.update(shellExecutionId=execution_id, shellSupervisorPid=99999999,
-                 shellSupervisorStart="1", lastActivity={"operation": "shell", "status": "SSH_SHELL_STARTED",
-                                                         "executionId": execution_id})
+    state.update(shellExecutionId=execution_id,
+                 lastActivity={"operation": "shell", "status": "SSH_SHELL_STARTED",
+                               "executionId": execution_id})
     instance._write("ssh_console_state.json", state)
 
 
