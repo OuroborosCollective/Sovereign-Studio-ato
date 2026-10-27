@@ -24,6 +24,7 @@ import {
   type ToolDefinition,
 } from './toolchainClient';
 import type { LauncherToolProps } from '../launcher/launcherRegistry';
+import { safeHttpsUrl } from '../product/runtime/builderContainerHelpers';
 
 const C = {
   bg: '#0e1116', surface: '#161c24', border: '#232d3a',
@@ -52,6 +53,7 @@ function EndpointRow({ label, url, openable = true }: { label: string; url: stri
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+  const safeUrl = safeHttpsUrl(url);
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: `1px solid ${C.border}` }}>
       <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, minWidth: 64 }}>{label}</span>
@@ -60,8 +62,8 @@ function EndpointRow({ label, url, openable = true }: { label: string; url: stri
         style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', color: copied ? C.green : C.textSub, padding: 0, flexShrink: 0 }}>
         {copied ? <CheckCircle size={16} /> : <Copy size={16} />}
       </button>
-      {openable && (
-        <a href={url} target="_blank" rel="noreferrer" aria-label={`${label}-URL öffnen`}
+      {openable && safeUrl && (
+        <a href={safeUrl} target="_blank" rel="noopener noreferrer" aria-label={`${label}-URL öffnen`}
           style={{ width: 44, height: 44, color: C.textSub, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <ExternalLink size={16} />
         </a>
