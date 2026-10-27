@@ -69,3 +69,6 @@
 ## 2025-10-05 - [Accessible Chat Streams & Empty States]
 **Learning:** Chat interfaces with dynamically added messages lack screen reader notifications if they do not have a live region. Furthermore, an empty stream provides no context. Adding `role="log"` and `aria-live="polite"` to the container, along with a visually centered empty state, improves both discoverability and accessibility.
 **Action:** Always wrap chat or event streams in an element with `role="log"` or `aria-live="polite"`, and provide a helpful empty state when no items are present.
+## 2026-10-17 - Add missing focus styles to ChatMarkdown elements
+**Learning:** The native `outline` can be inconsistent across browsers or disabled altogether, leading to poor keyboard accessibility. For elements with `tabIndex={0}` or interactive semantics, explicit `focus-visible` ring utility classes ensure uniform and accessible focus indication.
+**Action:** Apply Tailwind's `focus-visible:outline-none`, `focus-visible:ring-2`, and `focus-visible:ring-white/20` classes to interactive elements like buttons and scrollable pre tags to enhance keyboard navigation accessibility without compromising visual aesthetics.
