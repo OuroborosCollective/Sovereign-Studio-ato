@@ -67,10 +67,10 @@ def _registry(*, effect: str = "read", contract_override: str | None = None) -> 
         "capabilities": ["observability", "runtime"],
         "effect": effect,
         "annotations": {
-            "readOnlyHint": effect == "read",
-            "destructiveHint": False,
-            "idempotentHint": True,
-            "openWorldHint": effect == "external-write",
+            "read_only_hint": effect == "read",
+            "destructive_hint": False,
+            "idempotent_hint": True,
+            "open_world_hint": effect == "external-write",
         },
         "parameters": {"type": "object", "properties": {}},
         "outputSchema": {"type": "object"},
@@ -284,9 +284,9 @@ def test_registers_exactly_five_tools_with_one_idempotent_local_write() -> None:
         "teaching_package_assess",
         "teaching_lesson_simulate",
     ]
-    assert [annotation.readOnlyHint for _name, annotation in mcp.registered] == [True, True, False, True, True]
-    assert mcp.registered[2][1].idempotentHint is True
-    assert all(annotation.openWorldHint is False for _name, annotation in mcp.registered)
+    assert [annotation.read_only_hint for _name, annotation in mcp.registered] == [True, True, False, True, True]
+    assert mcp.registered[2][1].idempotent_hint is True
+    assert all(annotation.open_world_hint is False for _name, annotation in mcp.registered)
     for function in (
         tools.neuro_runtime_contract_status,
         tools.neuro_event_route_preview,

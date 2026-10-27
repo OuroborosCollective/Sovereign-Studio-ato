@@ -15,10 +15,10 @@ from deterministic_contract import KAPPA_SCALE, replay_verify, transition_previe
 
 
 READ_ONLY = ToolAnnotations(
-    readOnlyHint=True,
-    destructiveHint=False,
-    idempotentHint=True,
-    openWorldHint=False,
+    read_only_hint=True,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=False,
 )
 
 _MAX_TRACKED_FILES: Final[int] = 30_000

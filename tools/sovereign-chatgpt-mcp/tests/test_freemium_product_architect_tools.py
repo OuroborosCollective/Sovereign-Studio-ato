@@ -118,10 +118,10 @@ def test_registers_five_read_only_tools() -> None:
         "freemium_product_bundle_manifest",
     ]
     for _, annotations, description in mcp.tools:
-        assert annotations.readOnlyHint is True
-        assert annotations.destructiveHint is False
-        assert annotations.idempotentHint is True
-        assert annotations.openWorldHint is False
+        assert annotations.read_only_hint is True
+        assert annotations.destructive_hint is False
+        assert annotations.idempotent_hint is True
+        assert annotations.open_world_hint is False
         assert description.startswith("Use this when")
 
 
@@ -142,7 +142,7 @@ def test_fastmcp_contract_has_output_schemas_and_bounded_inputs() -> None:
     for tool in registered.values():
         assert tool.output_schema["type"] == "object"
         assert tool.output_schema["required"]
-        assert tool.annotations.readOnlyHint is True
+        assert tool.annotations.read_only_hint is True
 
     candidate_schema = registered["freemium_market_opportunity_score"].parameters["properties"]["candidates"]
     assert candidate_schema["minItems"] == 3
@@ -224,7 +224,7 @@ def test_contract_validator_rejects_secret_input_unauthenticated_paid_tool_and_m
     paid = product_tools[3].model_copy(update={
         "auth": "none",
         "input_fields": ["executionSpec", "access_token"],
-        "annotations": tools.ToolHints(readOnlyHint=True, destructiveHint=False, openWorldHint=False),
+        "annotations": tools.ToolHints(read_only_hint=True, destructive_hint=False, open_world_hint=False),
     })
     product_tools[3] = paid
     endpoints = [endpoint for endpoint in endpoints if not endpoint.role.startswith("oauth-")]

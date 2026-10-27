@@ -47,7 +47,7 @@ def test_profile_is_loaded_registered_and_enforced_for_every_mutable_tool() -> N
     assert "sovereign_mission_preflight" in tools
 
     for tool in tools.values():
-        if tool.annotations.readOnlyHint:
+        if tool.annotations.read_only_hint:
             continue
         assert tool.meta["sovereign/operatingProfileEnforced"] is True
         assert getattr(tool.fn, "__sovereign_operating_profile_wrapped__", False) is True

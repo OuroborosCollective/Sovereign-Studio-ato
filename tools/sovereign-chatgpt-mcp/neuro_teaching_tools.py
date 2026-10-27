@@ -61,16 +61,16 @@ else:
 
 
 READ_ONLY = ToolAnnotations(
-    readOnlyHint=True,
-    destructiveHint=False,
-    idempotentHint=True,
-    openWorldHint=False,
+    read_only_hint=True,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=False,
 )
 LOCAL_IDEMPOTENT_WRITE = ToolAnnotations(
-    readOnlyHint=False,
-    destructiveHint=False,
-    idempotentHint=True,
-    openWorldHint=False,
+    read_only_hint=False,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=False,
 )
 
 OUTPUT_SCHEMA_VERSION = "sovereign.neuro-teaching-tool-output.v1"
@@ -3335,7 +3335,7 @@ def _record_tool_outcome_event_serialized(event: dict[str, Any]) -> dict[str, An
 
 # These four contracts promise filesystem/ledger immutability.  The global
 # success tracker is intentionally bypassed only for them; otherwise its JSONL
-# ranking event and neuro outcome projection would contradict readOnlyHint.
+# ranking event and neuro outcome projection would contradict read_only_hint.
 for _read_only_tool in (
     neuro_runtime_contract_status,
     neuro_event_route_preview,

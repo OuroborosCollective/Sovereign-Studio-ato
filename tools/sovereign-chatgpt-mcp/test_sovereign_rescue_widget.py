@@ -46,13 +46,13 @@ def test_rescue_tool_registers_current_apps_sdk_metadata() -> None:
     register_sovereign_rescue_widget(
         mcp,
         read_only_annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            idempotentHint=True,
-            openWorldHint=False,
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
         ),
     )
     tools = asyncio.run(mcp.list_tools())
     assert [tool.name for tool in tools] == ["sovereign_rescue_offer"]
     assert tools[0].meta["ui"]["resourceUri"] == WIDGET_URI
-    assert tools[0].annotations.readOnlyHint is True
+    assert tools[0].annotations.read_only_hint is True

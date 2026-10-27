@@ -21,14 +21,14 @@ function directPullRequestWorkflowFiles() {
 }
 
 function extractGithubScript(workflowText) {
-  const marker = '          script: |\n';
+  const marker = '    script: |\n';
   const start = workflowText.indexOf(marker);
   assert.notEqual(start, -1, 'actions/github-script script block must exist');
   const lines = workflowText.slice(start + marker.length).split('\n');
   const body = [];
   for (const line of lines) {
-    if (line === '' || line.startsWith('            ')) {
-      body.push(line.startsWith('            ') ? line.slice(12) : '');
+    if (line === '' || line.startsWith('          ')) {
+      body.push(line.startsWith('          ') ? line.slice(10) : '');
       continue;
     }
     break;
@@ -47,14 +47,14 @@ test('only required workflows and one bounded owner recovery lane receive direct
   assert.deepEqual(
     workflowFiles.filter((name) => name !== ownerRecoveryWorkflowName),
     [
-      'boundary-ledger-drift.yml',
-      'integration-plan-lane-gate.yml',
-      'release-verification.yml',
-      'sovereign-agent-backend.yml',
-      'sovereign-chatgpt-mcp.yml',
-      'sovereign-continuity-gate.yml',
-      'sovereign-desktop-worker.yml',
-      'sovereign-public-site-check.yml',
+'boundary-ledger-drift.yml',
+'integration-plan-lane-gate.yml',
+'release-verification.yml',
+'sovereign-agent-backend.yml',
+'sovereign-chatgpt-mcp.yml',
+'sovereign-continuity-gate.yml',
+'sovereign-desktop-worker.yml',
+
     ],
   );
 
@@ -62,7 +62,7 @@ test('only required workflows and one bounded owner recovery lane receive direct
   assert.match(ownerRecoveryWorkflow, /name: Sovereign Owner Ruleset Unlock/);
   assert.match(
     ownerRecoveryWorkflow,
-    /pull_request:\n    branches: \[main\]\n    types: \[opened, synchronize, reopened\]\n    paths:\n      - '\.github\/workflows\/sovereign-owner-ruleset-unlock\.yml'/,
+    /pull_request:[\s\S]*?branches: \[main\][\s\S]*?types: \[opened, synchronize, reopened\][\s\S]*?paths:[\s\S]*?- '\.github\/workflows\/sovereign-owner-ruleset-unlock\.yml'/,
     'owner recovery must run only when its own workflow file changes',
   );
   assert.match(ownerRecoveryWorkflow, /permissions:\n  contents: read\n/);

@@ -652,7 +652,7 @@ def test_workspace_is_a_real_mcp_tool_with_no_kwargs_permission_bypass(monkeypat
     assert 'kwargs' not in tool.inputSchema['properties']
     assert 'owner_approved' not in tool.inputSchema['properties']
     assert tool.inputSchema['properties']['action']['enum']==['init','write','read','run']
-    assert tool.annotations.readOnlyHint is False
+    assert tool.annotations.read_only_hint is False
     with pytest.raises(Exception):
         asyncio.run(server.mcp.call_tool('vps_ssh_workspace',{'session_id':'a'*32,'source_revision':'a'*40,'action':'run','argv':['sudo','id']}))
     assert calls==[]

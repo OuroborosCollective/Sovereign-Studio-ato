@@ -61,16 +61,16 @@ def test_registration_exposes_exactly_plan_and_apply_with_effect_annotations(
     assert len(mcp.registered) == 2
 
     plan_annotations = mcp.registered[0][1]
-    assert plan_annotations.readOnlyHint is True
-    assert plan_annotations.destructiveHint is False
-    assert plan_annotations.idempotentHint is True
-    assert plan_annotations.openWorldHint is False
+    assert plan_annotations.read_only_hint is True
+    assert plan_annotations.destructive_hint is False
+    assert plan_annotations.idempotent_hint is True
+    assert plan_annotations.open_world_hint is False
 
     apply_annotations = mcp.registered[1][1]
-    assert apply_annotations.readOnlyHint is False
-    assert apply_annotations.destructiveHint is True
-    assert apply_annotations.idempotentHint is False
-    assert apply_annotations.openWorldHint is True
+    assert apply_annotations.read_only_hint is False
+    assert apply_annotations.destructive_hint is True
+    assert apply_annotations.idempotent_hint is False
+    assert apply_annotations.open_world_hint is True
 
     public_names = {function.__name__ for function, _ in mcp.registered}
     assert not any(

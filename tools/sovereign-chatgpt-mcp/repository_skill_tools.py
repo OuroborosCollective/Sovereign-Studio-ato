@@ -18,7 +18,7 @@ from llm_boundary_contract import llm_boundary_candidates as _contract_llm_bound
 from policy import safe_repo_path
 
 
-READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
 
 _MAX_TRACKED_FILES: Final[int] = 30_000
 _MAX_TEXT_BYTES: Final[int] = 1_200_000
