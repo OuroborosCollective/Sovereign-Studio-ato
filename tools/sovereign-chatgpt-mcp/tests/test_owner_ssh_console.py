@@ -379,6 +379,9 @@ def test_orphaned_shell_is_stopped_and_recorded_unknown(console):
     assert state["lastActivity"]["status"] == "SSH_SHELL_INTERRUPTED_OUTCOME_UNKNOWN"
     assert state["lastActivity"]["exitCode"] is None
     assert any("systemctl show --property=ActiveState" in argv[-1] for argv in calls)
+    stop_command = next(argv[-1] for argv in calls if "systemctl show --property=LoadState" in argv[-1])
+    syntax = subprocess.run(["/bin/sh", "-n", "-c", stop_command], capture_output=True, text=True)
+    assert syntax.returncode == 0, syntax.stderr
 
 
 def test_orphaned_shell_stop_failure_keeps_unknown_execution(console):
