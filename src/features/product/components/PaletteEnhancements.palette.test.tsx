@@ -28,6 +28,8 @@ import { Ampel } from './Ampel';
 import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
+import { SequentialRuntimePanel } from './SequentialRuntimePanel';
+import { createSequentialRuntimeState } from '../runtime/sequentialRuntimeGuard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -956,7 +958,7 @@ describe('Palette Accessibility Enhancements', () => {
           busy={true}
           error={null}
           onChange={vi.fn()}
-          onLoad={vi.fn()}
+          onLoad={onLoad}
           onClose={vi.fn()}
         />
       );
@@ -1546,6 +1548,42 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(localModeBtn);
       expect(onUseLocalMode).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('SequentialRuntimePanel Accessibility and Micro-UX Enhancements', () => {
+    it('renders section landmark linked to heading, status badge, semantic step list, and keyboard-navigable history table', () => {
+      const mockState = createSequentialRuntimeState();
+      mockState.steps['repo-load'] = { step: 'repo-load', status: 'completed', message: 'Repo loaded' };
+      mockState.steps['package-build'] = { step: 'package-build', status: 'running', message: 'Building package' };
+      mockState.history = [
+        { sequence: 1, step: 'repo-load', status: 'completed', message: 'Repo loaded', at: Date.now() - 2000 },
+        { sequence: 2, step: 'package-build', status: 'running', message: 'Building package', at: Date.now() - 1000 },
+      ];
+
+      render(<SequentialRuntimePanel state={mockState} />);
+
+      const heading = screen.getByRole('heading', { name: 'Sequential Runtime Guard', level: 2 });
+      expect(heading).toHaveAttribute('id', 'sequential-runtime-guard-heading');
+
+      const section = screen.getByRole('region', { name: 'Sequential Runtime Guard' });
+      expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', 'sequential-runtime-guard-heading');
+
+      const guardStatus = screen.getByRole('status', { name: 'Runtime guard status: ready' });
+      expect(guardStatus).toBeInTheDocument();
+      expect(guardStatus).toHaveAttribute('title', 'Guard ready for next execution step');
+
+      const stepsList = screen.getByRole('list', { name: 'Sequential runtime steps' });
+      expect(stepsList).toBeInTheDocument();
+
+      const historyRegion = screen.getByRole('region', { name: 'Runtime transition history table' });
+      expect(historyRegion).toBeInTheDocument();
+      expect(historyRegion).toHaveAttribute('tabIndex', '0');
+      expect(historyRegion).toHaveClass('focus-visible:ring-2');
+
+      const columnHeaders = screen.getAllByRole('columnheader');
+      expect(columnHeaders).toHaveLength(4);
     });
   });
 });
