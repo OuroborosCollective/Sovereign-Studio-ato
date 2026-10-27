@@ -139,6 +139,9 @@ describe('maskSecrets', () => {
     expect(maskSecrets('postmark_key=postmark_secret_val_404')).toBe('postmark_key=****');
     expect(maskSecrets('twilio_key: twilio_key_val_505')).toBe('twilio_key: ****');
     expect(maskSecrets('twilio_secret=twilio_secret_val_606')).toBe('twilio_secret=****');
+    expect(maskSecrets('xai_key: xai_key_val_101')).toBe('xai_key: ****');
+    expect(maskSecrets('xai_secret=xai_secret_val_202')).toBe('xai_secret=****');
+    expect(maskSecrets('xai_token: xai_token_val_303')).toBe('xai_token: ****');
     expect(maskSecrets('linear_key: linear_key_val_707')).toBe('linear_key: ****');
     expect(maskSecrets('datadog_secret=datadog_secret_val_808')).toBe('datadog_secret=****');
     expect(maskSecrets('algolia_key: algolia_key_val_909')).toBe('algolia_key: ****');
