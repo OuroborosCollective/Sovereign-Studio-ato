@@ -87,3 +87,6 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+## 2026-10-27 - Optimize Multi-Pass Array Traversals
+**Learning:** Chaining declarative array methods like `.filter().map()` or `.map().filter()` causes severe intermediate array allocations and increases CPU and garbage collection pressure, particularly in hot paths like logging and tagging.
+**Action:** Replace all multi-pass `.filter().map()` chains with single-pass imperative `for` loops to eliminate intermediate object allocations and perform filtering and mapping simultaneously.
