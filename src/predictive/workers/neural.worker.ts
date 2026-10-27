@@ -132,18 +132,16 @@ function applyActivation(vector: Float64Array, activation: 'identity' | 'sigmoid
 /**
  * Compute cosine similarity between two vectors.
  */
-function cosineSimilarity(v1: Float64Array, v2: Float64Array): number {
+function cosineSimilarity(v1: Float64Array, v2: Float64Array, norm1: number): number {
   let dotProduct = 0;
-  let norm1 = 0;
   let norm2 = 0;
 
   for (let i = 0; i < v1.length; i++) {
     dotProduct += v1[i] * v2[i];
-    norm1 += v1[i] * v1[i];
     norm2 += v2[i] * v2[i];
   }
 
-  const denominator = Math.sqrt(norm1) * Math.sqrt(norm2);
+  const denominator = Math.sqrt(norm1 * norm2);
   return denominator === 0 ? 0 : dotProduct / denominator;
 }
 
@@ -272,8 +270,14 @@ class NeuralNetworkState {
   ): Array<{ patternId: string; similarity: number }> {
     const results: Array<{ patternId: string; similarity: number }> = [];
 
+    // ⚡ Bolt: Calculate norm once outside the loop to avoid redundant Math.sqrt and multiplication in cosineSimilarity
+    let norm1 = 0;
+    for (let i = 0; i < queryEmbedding.length; i++) {
+      norm1 += queryEmbedding[i] * queryEmbedding[i];
+    }
+
     for (const [patternId, embedding] of this.embeddings) {
-      const similarity = cosineSimilarity(queryEmbedding, embedding);
+      const similarity = cosineSimilarity(queryEmbedding, embedding, norm1);
       if (similarity >= threshold) {
         results.push({ patternId, similarity });
       }

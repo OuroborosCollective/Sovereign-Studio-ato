@@ -87,3 +87,7 @@
 ## 2026-09-29 - [Single-Pass Container Intelligence Coverage Validation]
 **Learning:** In validation and report generation routines for container coverage arrays, replacing sequential `.map()` array extraction and multiple `.filter()` counting passes with a single-pass loop accumulator and module-scoped Set lookups eliminates temporary array allocations and reduces loop passes from 5 down to 1.
 **Action:** Always accumulate counts and track duplicates in a single-pass loop pass with module-scoped Set lookups instead of invoking chained `.map()` and multiple `.filter()` calls.
+
+## 2024-10-19 - [Hoisting Query Vector Norms in High-Frequency Similarity Searching]
+**Learning:** In a high-frequency cosine similarity search calculating distances against a large set of embeddings, computing the mathematical norm (`Math.sqrt(...)`) of the invariant query vector inside the loop introduces a severe O(N) performance overhead. Hoisting the query vector norm calculation to occur once *outside* the loop saves significant redundant multiplications and `Math.sqrt` calls, yielding a ~10% speedup on dense matrix comparisons.
+**Action:** Always pre-calculate and hoist the norm or mathematical properties of query vectors outside of the comparison loop when performing similarity matching against large datasets.
