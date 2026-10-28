@@ -29,6 +29,11 @@ const SHA256_K = new Uint32Array([
   0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ]);
 
+// Module-scoped reused buffers and utilities to eliminate per-call heap allocations
+const SHA_ENCODER = new TextEncoder();
+const SHA256_SCHEDULE = new Uint32Array(64);
+const SHA256_STATE = new Uint32Array(8);
+
 function rotateRight(value: number, bits: number): number {
   return (value >>> bits) | (value << (32 - bits));
 }
@@ -36,58 +41,86 @@ function rotateRight(value: number, bits: number): number {
 export function canonicalJson(value: unknown): string {
   if (value === null) return 'null';
 
-  if (typeof value === 'string' || typeof value === 'boolean') {
+  const valueType = typeof value;
+  if (valueType === 'string' || valueType === 'boolean') {
     return JSON.stringify(value);
   }
 
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) {
+  if (valueType === 'number') {
+    const num = value as number;
+    if (!Number.isFinite(num)) {
       throw new TypeError('Predictive evidence cannot contain non-finite numbers');
     }
-    return Object.is(value, -0) ? '0' : JSON.stringify(value);
+    return Object.is(num, -0) ? '0' : JSON.stringify(num);
   }
 
   if (Array.isArray(value)) {
-    return `[${value.map(item => item === undefined ? 'null' : canonicalJson(item)).join(',')}]`;
+    // Single-pass string builder avoids intermediate .map() array allocations
+    let result = '[';
+    const len = value.length;
+    for (let index = 0; index < len; index += 1) {
+      if (index > 0) result += ',';
+      const item = value[index];
+      result += item === undefined ? 'null' : canonicalJson(item);
+    }
+    return `${result}]`;
   }
 
-  if (typeof value === 'object') {
+  if (valueType === 'object') {
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) {
       throw new TypeError('Predictive evidence must use plain objects');
     }
 
     const record = value as Record<string, unknown>;
-    const entries = Object.keys(record)
-      .filter(key => record[key] !== undefined)
-      .sort()
-      .map(key => `${JSON.stringify(key)}:${canonicalJson(record[key])}`);
-    return `{${entries.join(',')}}`;
+    // Native lexicographical sorting without intermediate .filter() or .map() passes
+    const keys = Object.keys(record).sort();
+    let result = '{';
+    let isFirstKey = true;
+    const keyCount = keys.length;
+    for (let index = 0; index < keyCount; index += 1) {
+      const key = keys[index];
+      const entryVal = record[key];
+      if (entryVal !== undefined) {
+        if (!isFirstKey) result += ',';
+        result += `${JSON.stringify(key)}:${canonicalJson(entryVal)}`;
+        isFirstKey = false;
+      }
+    }
+    return `${result}}`;
   }
 
   throw new TypeError(`Unsupported predictive evidence value: ${typeof value}`);
 }
 
 export function sha256Hex(message: string): string {
-  const bytes = new TextEncoder().encode(message);
-  const paddedLength = Math.ceil((bytes.length + 9) / 64) * 64;
+  const bytes = SHA_ENCODER.encode(message);
+  const len = bytes.length;
+  const paddedLength = Math.ceil((len + 9) / 64) * 64;
   const data = new Uint8Array(paddedLength);
   data.set(bytes);
-  data[bytes.length] = 0x80;
+  data[len] = 0x80;
 
-  let bitLength = BigInt(bytes.length) * 8n;
-  for (let index = 0; index < 8; index += 1) {
-    data[data.length - 1 - index] = Number(bitLength & 0xffn);
-    bitLength >>= 8n;
-  }
+  // Encode 64-bit BigEndian length using 32-bit shift operations to avoid BigInt overhead
+  const bitLenHi = Math.floor((len * 8) / 0x100000000);
+  const bitLenLo = (len * 8) >>> 0;
 
-  const state = new Uint32Array(SHA256_INITIAL);
-  const schedule = new Uint32Array(64);
+  data[paddedLength - 8] = (bitLenHi >>> 24) & 0xff;
+  data[paddedLength - 7] = (bitLenHi >>> 16) & 0xff;
+  data[paddedLength - 6] = (bitLenHi >>> 8) & 0xff;
+  data[paddedLength - 5] = bitLenHi & 0xff;
 
-  for (let offset = 0; offset < data.length; offset += 64) {
+  data[paddedLength - 4] = (bitLenLo >>> 24) & 0xff;
+  data[paddedLength - 3] = (bitLenLo >>> 16) & 0xff;
+  data[paddedLength - 2] = (bitLenLo >>> 8) & 0xff;
+  data[paddedLength - 1] = bitLenLo & 0xff;
+
+  SHA256_STATE.set(SHA256_INITIAL);
+
+  for (let offset = 0; offset < paddedLength; offset += 64) {
     for (let index = 0; index < 16; index += 1) {
       const position = offset + index * 4;
-      schedule[index] = (
+      SHA256_SCHEDULE[index] = (
         (data[position] << 24) |
         (data[position + 1] << 16) |
         (data[position + 2] << 8) |
@@ -96,28 +129,28 @@ export function sha256Hex(message: string): string {
     }
 
     for (let index = 16; index < 64; index += 1) {
-      const value15 = schedule[index - 15];
-      const value2 = schedule[index - 2];
+      const value15 = SHA256_SCHEDULE[index - 15];
+      const value2 = SHA256_SCHEDULE[index - 2];
       const sigma0 = rotateRight(value15, 7) ^ rotateRight(value15, 18) ^ (value15 >>> 3);
       const sigma1 = rotateRight(value2, 17) ^ rotateRight(value2, 19) ^ (value2 >>> 10);
-      schedule[index] = (
-        schedule[index - 16] + sigma0 + schedule[index - 7] + sigma1
+      SHA256_SCHEDULE[index] = (
+        SHA256_SCHEDULE[index - 16] + sigma0 + SHA256_SCHEDULE[index - 7] + sigma1
       ) >>> 0;
     }
 
-    let a = state[0];
-    let b = state[1];
-    let c = state[2];
-    let d = state[3];
-    let e = state[4];
-    let f = state[5];
-    let g = state[6];
-    let h = state[7];
+    let a = SHA256_STATE[0];
+    let b = SHA256_STATE[1];
+    let c = SHA256_STATE[2];
+    let d = SHA256_STATE[3];
+    let e = SHA256_STATE[4];
+    let f = SHA256_STATE[5];
+    let g = SHA256_STATE[6];
+    let h = SHA256_STATE[7];
 
     for (let index = 0; index < 64; index += 1) {
       const sigma1 = rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25);
       const choice = (e & f) ^ (~e & g);
-      const temp1 = (h + sigma1 + choice + SHA256_K[index] + schedule[index]) >>> 0;
+      const temp1 = (h + sigma1 + choice + SHA256_K[index] + SHA256_SCHEDULE[index]) >>> 0;
       const sigma0 = rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22);
       const majority = (a & b) ^ (a & c) ^ (b & c);
       const temp2 = (sigma0 + majority) >>> 0;
@@ -132,17 +165,22 @@ export function sha256Hex(message: string): string {
       a = (temp1 + temp2) >>> 0;
     }
 
-    state[0] = (state[0] + a) >>> 0;
-    state[1] = (state[1] + b) >>> 0;
-    state[2] = (state[2] + c) >>> 0;
-    state[3] = (state[3] + d) >>> 0;
-    state[4] = (state[4] + e) >>> 0;
-    state[5] = (state[5] + f) >>> 0;
-    state[6] = (state[6] + g) >>> 0;
-    state[7] = (state[7] + h) >>> 0;
+    SHA256_STATE[0] = (SHA256_STATE[0] + a) >>> 0;
+    SHA256_STATE[1] = (SHA256_STATE[1] + b) >>> 0;
+    SHA256_STATE[2] = (SHA256_STATE[2] + c) >>> 0;
+    SHA256_STATE[3] = (SHA256_STATE[3] + d) >>> 0;
+    SHA256_STATE[4] = (SHA256_STATE[4] + e) >>> 0;
+    SHA256_STATE[5] = (SHA256_STATE[5] + f) >>> 0;
+    SHA256_STATE[6] = (SHA256_STATE[6] + g) >>> 0;
+    SHA256_STATE[7] = (SHA256_STATE[7] + h) >>> 0;
   }
 
-  return Array.from(state, value => value.toString(16).padStart(8, '0')).join('');
+  // Direct hex formatting eliminates Array.from().join() allocation overhead
+  let hexResult = '';
+  for (let index = 0; index < 8; index += 1) {
+    hexResult += SHA256_STATE[index].toString(16).padStart(8, '0');
+  }
+  return hexResult;
 }
 
 export function hashCanonical(value: unknown): string {
