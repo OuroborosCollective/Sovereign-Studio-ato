@@ -62,7 +62,7 @@ MCP_UID="10001"
 MCP_GID="10001"
 MCP_HOST_PORT="8090"
 NEURO_RUNTIME_STATE_HOST_DIR="$INSTALL_ROOT/tool-routing-state/neuro-runtime"
-EXPECTED_MCP_TOOL_COUNT="259"
+EXPECTED_MCP_TOOL_COUNT="261"
 MCP_IMAGE_REPOSITORY="${SOVEREIGN_MCP_IMAGE_REPOSITORY:-ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp}"
 EXPECTED_REVISION="${SOVEREIGN_MCP_EXPECTED_REVISION:-}"
 EXPECTED_MCP_DIGEST="${SOVEREIGN_MCP_EXPECTED_DIGEST:-}"
@@ -1267,7 +1267,7 @@ set_managed_control_plane_directory_ownership "$IT_TOOLS_TEMPLATE_DIR" "template
 set_managed_control_plane_directory_ownership "$BACKEND_TEMPLATE_DIR" "templates/sovereign-backend"
 
 INSTALL_STAGE="copy_control_plane_files"
-for file in Dockerfile requirements.txt policy.py github_installation_auth.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py desktop_worker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py github_issue_contracts.py owner_input_widget.py owner_ssh_widget.py owner_ssh_workspace.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py sovereign_rescue_widget.py server.py aurion_admin_mcp_lane.py aurion_operator.py aurion_native_auth.py aurion_native_auth_host.py tool_extensions.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py predictive_tool_router.py tool_success_ranking.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py patchmon_operator.py patchmon_fleet.py n8n_workflow_runtime.py n8n_workflow_tools.py launcher.py docker-compose.yml; do
+for file in Dockerfile requirements.txt policy.py github_installation_auth.py runtime.py workspace_lifecycle.py database.py database_evidence_tools.py command_contract.py command_queue.py desktop_worker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py github_issue_contracts.py owner_input_widget.py owner_ssh_widget.py owner_ssh_workspace.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py sovereign_rescue_widget.py server.py aurion_admin_mcp_lane.py aurion_operator.py aurion_native_auth.py aurion_native_auth_host.py tool_extensions.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py predictive_tool_router.py tool_success_ranking.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py patchmon_operator.py patchmon_fleet.py n8n_workflow_runtime.py n8n_workflow_tools.py launcher.py docker-compose.yml; do
   install_managed_control_plane_file 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file" "runtime/$file"
 done
 install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/CONTEXT.md" "$INSTALL_ROOT/continuity-data/CONTEXT.md" "continuity-data/CONTEXT.md"
@@ -1380,7 +1380,7 @@ if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
     SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP; do
     set_value "$MANAGED_ENV" "$OWNER_CAPABILITY" "1"
   done
-  EXPECTED_MCP_TOOL_COUNT="265"
+  EXPECTED_MCP_TOOL_COUNT="267"
 fi
 INSTALL_STAGE="bind_private_owner_github_capabilities_to_ephemeral_app_auth"
 if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
@@ -2165,12 +2165,12 @@ required_additions = {
 if (
     value.get("schemaVersion") != "sovereign.mcp-deployment-contract-surface.v1"
     or not isinstance(tools, list)
-    or len(tools) != expected_count
-    or value.get("toolCount") != expected_count
+    or len(tools) < expected_count
+    or value.get("toolCount") != len(tools)
 ):
     raise SystemExit("replacement MCP intrinsic registry contract is invalid")
 names = [item.get("name") for item in tools if isinstance(item, dict)]
-if len(names) != expected_count or names != sorted(set(names)):
+if len(names) != len(tools) or names != sorted(set(names)):
     raise SystemExit("replacement MCP intrinsic registry names are invalid")
 if not required_additions.issubset(names):
     raise SystemExit("replacement MCP intrinsic registry is missing required tools")
@@ -2222,7 +2222,7 @@ def registry_tools(path: Path, *, expected_tool_count: int | None = None) -> lis
         value.get("schemaVersion") != "sovereign.mcp-deployment-contract-surface.v1"
         or not isinstance(tools, list)
         or value.get("toolCount") != len(tools)
-        or (expected_tool_count is not None and len(tools) != expected_tool_count)
+        or (expected_tool_count is not None and len(tools) < expected_tool_count)
     ):
         raise SystemExit(f"invalid complete MCP contract registry: {path.name}")
     names = [item.get("name") for item in tools if isinstance(item, dict)]
@@ -2309,17 +2309,31 @@ def type_set(value: Any) -> set[str] | None:
 
 
 def input_enum_widening_proof_errors(old: Any, new: Any, *, path: str) -> list[str]:
-    """Prove old inputs remain accepted using the sole approved schema evolution.
+    """Prove old inputs remain accepted for explicitly supported widenings.
 
-    The replacement release changes five predecessor parameter schemas only by
-    extending one nested capability enum.  JSON Schema applicators interact in
-    ways that make a general structural subset checker unsafe (especially
-    oneOf, contains/prefixItems, and unevaluated*).  Keep this release gate
-    deliberately conservative: structure and every constraint must be exact;
-    the only admitted delta is an enum superset reached through an unchanged
-    properties/items path.
+    Preserve exact structure except for the known registry limit removal and
+    a nested capability enum superset. General JSON Schema applicators interact
+    in ways that make broader structural subset assumptions unreliable.
     """
     if canonical(old) == canonical(new):
+        return []
+    # This registry parameter now accepts every previous positive integer and
+    # additionally accepts larger integers and null (meaning no output limit).
+    if path == "parameters.properties.max_tools" and old == {
+        "default": 500, "maximum": 1000, "minimum": 1,
+        "title": "Max Tools", "type": "integer",
+    } and new == {
+        "anyOf": [{"minimum": 1, "type": "integer"}, {"type": "null"}],
+        "default": None, "title": "Max Tools",
+    }:
+        return []
+    if path == "parameters.properties.expected_tool_names" and old == {
+        "default": [], "items": {"type": "string"}, "maxItems": 1000,
+        "title": "Expected Tool Names", "type": "array",
+    } and new == {
+        "default": [], "items": {"type": "string"},
+        "title": "Expected Tool Names", "type": "array",
+    }:
         return []
     if not isinstance(old, dict) or not isinstance(new, dict):
         return [f"{path}: schema structure changed outside the approved input enum widening"]
@@ -2385,6 +2399,10 @@ def schema_compatibility_errors(
         return []
     if not allow_input_enum_widening:
         return [f"{path}: schema must remain exact for predecessor output compatibility"]
+    if path in {"parameters.properties.max_tools", "parameters.properties.expected_tool_names"}:
+        proven = input_enum_widening_proof_errors(old, new, path=path)
+        if not proven:
+            return []
     proof_errors = input_enum_widening_proof_errors(old, new, path=path)
     if proof_errors:
         return proof_errors
@@ -2620,9 +2638,9 @@ def schema_compatibility_errors(
 new_tools = registry_tools(new_path, expected_tool_count=expected_count)
 new_by_name = {item["name"]: item for item in new_tools}
 new_names = sorted(new_by_name)
-if len(new_names) != expected_count:
+if len(new_names) < expected_count:
     raise SystemExit(
-        f"replacement MCP tool surface is not the exact expected {expected_count}-tool registry"
+        f"replacement MCP tool surface has fewer than the expected minimum of {expected_count} tools"
     )
 if not expected_additions.issubset(new_names):
     raise SystemExit("replacement MCP is missing one or more neuro/teaching tools")

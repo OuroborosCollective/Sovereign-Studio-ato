@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 import runtime as runtime_module
+from workspace_lifecycle import mark_workspace_owned
 
 
 class FakeResponse:
@@ -113,6 +114,8 @@ def test_node_checks_are_delegated_without_local_execution(repo_runtime, monkeyp
 
 def test_frontend_draft_pr_is_created_without_local_node_execution(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
+    mark_workspace_owned(repo.parent)
+    branch = runtime._read_metadata(workspace_id)["branch"]
     monkeypatch.setattr(runtime, "validate_continuity_completion", lambda _workspace_id: continuity_completion_receipt())
     (repo / "src/menu.tsx").write_text("export const label = 'New';\n", "utf-8")
     original_run = runtime._run
@@ -126,11 +129,13 @@ def test_frontend_draft_pr_is_created_without_local_node_execution(repo_runtime,
         return original_run(argv, cwd=cwd, timeout=timeout, env=env)
 
     monkeypatch.setattr(runtime, "_run", guarded_run)
-    monkeypatch.setattr(
-        runtime_module.requests,
-        "get",
-        lambda *args, **kwargs: FakeResponse(200, payload=[]),
-    )
+    def fake_get(url, **kwargs):
+        if url.endswith("/pulls/999"):
+            return FakeResponse(200, payload={"state": "open", "draft": True,
+                "head": {"ref": branch, "sha": "a" * 40}, "base": {"ref": "main"}})
+        return FakeResponse(200, payload=[])
+
+    monkeypatch.setattr(runtime_module.requests, "get", fake_get)
     monkeypatch.setattr(
         runtime_module.requests,
         "post",
@@ -162,6 +167,7 @@ def test_frontend_draft_pr_is_created_without_local_node_execution(repo_runtime,
 
 def test_existing_workspace_pr_is_updated_instead_of_duplicated(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
+    mark_workspace_owned(repo.parent)
     monkeypatch.setattr(runtime, "validate_continuity_completion", lambda _workspace_id: continuity_completion_receipt())
     metadata = runtime._read_metadata(workspace_id)
     branch = metadata["branch"]
@@ -176,7 +182,10 @@ def test_existing_workspace_pr_is_updated_instead_of_duplicated(repo_runtime, mo
             return command_result(list(argv))
         return original_run(argv, cwd=cwd, timeout=timeout, env=env)
 
-    def fake_get(*args, **kwargs):
+    def fake_get(url, **kwargs):
+        if url.endswith("/pulls/901"):
+            return FakeResponse(200, payload={"state": "open", "draft": True,
+                "head": {"ref": branch, "sha": "c" * 40}, "base": {"ref": "main"}})
         return FakeResponse(
             200,
             payload=[{
@@ -219,6 +228,8 @@ def test_existing_workspace_pr_is_updated_instead_of_duplicated(repo_runtime, mo
 
 def test_other_open_draft_is_preserved_and_does_not_block_independent_work(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
+    mark_workspace_owned(repo.parent)
+    branch = runtime._read_metadata(workspace_id)["branch"]
     monkeypatch.setattr(runtime, "validate_continuity_completion", lambda _workspace_id: continuity_completion_receipt())
     (repo / "README.md").write_text("parallel useful work\n", "utf-8")
     original_run = runtime._run
@@ -232,10 +243,11 @@ def test_other_open_draft_is_preserved_and_does_not_block_independent_work(repo_
         return original_run(argv, cwd=cwd, timeout=timeout, env=env)
 
     monkeypatch.setattr(runtime, "_run", guarded_run)
-    monkeypatch.setattr(
-        runtime_module.requests,
-        "get",
-        lambda *args, **kwargs: FakeResponse(
+    def fake_get(url, **kwargs):
+        if url.endswith("/pulls/901"):
+            return FakeResponse(200, payload={"state": "open", "draft": True,
+                "head": {"ref": branch, "sha": "d" * 40}, "base": {"ref": "main"}})
+        return FakeResponse(
             200,
             payload=[{
                 "number": 900,
@@ -244,8 +256,9 @@ def test_other_open_draft_is_preserved_and_does_not_block_independent_work(repo_
                 "head": {"ref": "sovereign/other"},
                 "base": {"ref": "main"},
             }],
-        ),
-    )
+        )
+
+    monkeypatch.setattr(runtime_module.requests, "get", fake_get)
     monkeypatch.setattr(
         runtime_module.requests,
         "post",

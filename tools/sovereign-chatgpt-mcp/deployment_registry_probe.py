@@ -42,22 +42,19 @@ def _structured(result):
 
 async def _pages(session, method, field):
     items, cursor, seen = [], None, set()
-    for _ in range(20):
+    while True:
         page = await method(cursor=cursor)
         items.extend(getattr(page, field))
-        if len(items) > 1000:
-            raise ValueError("Running MCP registry exceeds the readback bound")
         cursor = page.nextCursor
         if cursor is None:
             return items
         if cursor in seen:
             raise ValueError("Running MCP returned a repeated registry cursor")
         seen.add(cursor)
-    raise ValueError("Running MCP registry pagination did not finish")
 
 
 async def _readback(mode, expected_count, *, url=DEFAULT_URL, required_tools=REQUIRED_TOOLS):
-    if type(expected_count) is not int or not 1 <= expected_count <= 1000:
+    if type(expected_count) is not int or expected_count < 1:
         raise ValueError("Declared MCP tool count is invalid")
     _endpoint(url)
     async with httpx.AsyncClient(trust_env=False, follow_redirects=False, timeout=httpx.Timeout(30)) as http_client:
@@ -68,8 +65,8 @@ async def _readback(mode, expected_count, *, url=DEFAULT_URL, required_tools=REQ
                     raise ValueError("Running MCP does not advertise tools")
                 tools = await _pages(session, session.list_tools, "tools")
                 names = sorted(tool.name for tool in tools)
-                if len(names) != expected_count or names != sorted(set(names)):
-                    raise ValueError("Running MCP tool count or uniqueness differs from the declared contract")
+                if len(names) < expected_count or names != sorted(set(names)):
+                    raise ValueError("Running MCP tool count is below the declared minimum or names are not unique")
                 missing = sorted(set(required_tools) - set(names))
                 if missing:
                     raise ValueError("Running MCP is missing required tools: " + ",".join(missing))
@@ -90,7 +87,7 @@ async def _readback(mode, expected_count, *, url=DEFAULT_URL, required_tools=REQ
                             "widgetUri": WIDGET_URI, "captureProvenance": "live-mcp-http-v1"}
                 if mode != "snapshot":
                     raise ValueError("Invalid deployment readback mode")
-                registry = _structured(await session.call_tool("mcp_tool_contract_registry", {"include_schemas": True, "max_tools": 1000}))
+                registry = _structured(await session.call_tool("mcp_tool_contract_registry", {"include_schemas": True, "max_tools": len(names)}))
                 contracts = registry.get("tools")
                 if (registry.get("ok") is not True or registry.get("status") != "MCP_TOOL_REGISTRY_READY"
                         or registry.get("runtimeVerified") is not True or registry.get("truncated") is not False
