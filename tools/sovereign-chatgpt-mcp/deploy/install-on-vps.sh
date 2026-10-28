@@ -2311,7 +2311,7 @@ def type_set(value: Any) -> set[str] | None:
 def input_enum_widening_proof_errors(old: Any, new: Any, *, path: str) -> list[str]:
     """Prove old inputs remain accepted for explicitly supported widenings.
 
-    Preserve exact structure except for the known registry limit removal and
+    Preserve exact structure except for the known registry and shell limit removals and
     a nested capability enum superset. General JSON Schema applicators interact
     in ways that make broader structural subset assumptions unreliable.
     """
@@ -2325,6 +2325,20 @@ def input_enum_widening_proof_errors(old: Any, new: Any, *, path: str) -> list[s
     } and new == {
         "anyOf": [{"minimum": 1, "type": "integer"}, {"type": "null"}],
         "default": None, "title": "Max Tools",
+    }:
+        return []
+    # The established owner-shell contract accepts all previous inputs; the
+    # replacement additionally accepts longer commands and no execution timeout.
+    if path == "parameters.properties.command" and old == {
+        "maxLength": 8192, "minLength": 1, "title": "Command", "type": "string",
+    } and new == {"minLength": 1, "title": "Command", "type": "string"}:
+        return []
+    if path == "parameters.properties.timeout_seconds" and old == {
+        "default": 30, "maximum": 300, "minimum": 1,
+        "title": "Timeout Seconds", "type": "integer",
+    } and new == {
+        "anyOf": [{"minimum": 1, "type": "integer"}, {"type": "null"}],
+        "default": None, "title": "Timeout Seconds",
     }:
         return []
     if path == "parameters.properties.expected_tool_names" and old == {
@@ -2399,7 +2413,8 @@ def schema_compatibility_errors(
         return []
     if not allow_input_enum_widening:
         return [f"{path}: schema must remain exact for predecessor output compatibility"]
-    if path in {"parameters.properties.max_tools", "parameters.properties.expected_tool_names"}:
+    if path in {"parameters.properties.max_tools", "parameters.properties.expected_tool_names",
+                "parameters.properties.command", "parameters.properties.timeout_seconds"}:
         proven = input_enum_widening_proof_errors(old, new, path=path)
         if not proven:
             return []

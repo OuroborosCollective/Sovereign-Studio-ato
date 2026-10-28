@@ -1456,7 +1456,7 @@ def vps_ssh_shell(
     command: Annotated[str, Field(min_length=1)],
     timeout_seconds: Annotated[int | None, Field(strict=True, ge=1)] = None,
 ) -> dict[str, Any]:
-    """Queue a VPS command under the existing owner session; poll mcp_host_command_status for its result."""
+    """Run a free-form owner-delegated VPS command on an existing SSH connection; execution is not target-state readback."""
     return broker.command_queue.enqueue("ssh_console_assistant_shell", {
         "session_id": session_id, "command": command, "timeout_seconds": timeout_seconds,
     })

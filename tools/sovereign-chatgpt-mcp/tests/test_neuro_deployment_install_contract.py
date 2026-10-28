@@ -570,6 +570,48 @@ print(json.dumps({
     )
     assert extra_allowed.returncode == 0, extra_allowed.stderr
 
+    # A deployed predecessor already has vps_ssh_shell with finite input
+    # bounds. Prove the new live contract accepts all of those inputs.
+    shell_predecessor = json.loads(json.dumps(predecessor_registry))
+    old_shell = json.loads(json.dumps(next(
+        item for item in current_registry["tools"] if item["name"] == "vps_ssh_shell"
+    )))
+    assert old_shell["description"] == (
+        "Run a free-form owner-delegated VPS command on an existing SSH connection; execution is not target-state readback."
+    )
+    old_shell["parameters"]["properties"]["command"] = {
+        "maxLength": 8192, "minLength": 1, "title": "Command", "type": "string",
+    }
+    old_shell["parameters"]["properties"]["timeout_seconds"] = {
+        "default": 30, "maximum": 300, "minimum": 1,
+        "title": "Timeout Seconds", "type": "integer",
+    }
+    old_shell["contractSha256"] = "ec5a5ec674b2353a4b4141926e7fd3784052dff139dbde595a1a6ba41db3ff24"
+    shell_predecessor["tools"].append(old_shell)
+    shell_predecessor["tools"].sort(key=lambda item: item["name"])
+    shell_predecessor["toolCount"] = len(shell_predecessor["tools"])
+    shell_path = tmp_path / "shell-predecessor.json"
+    shell_path.write_text(json.dumps(shell_predecessor), "utf-8")
+    shell_compatible = subprocess.run(
+        [sys.executable, "-c", comparator, str(shell_path), str(current_path), "1", "267"],
+        capture_output=True, text=True, check=False, timeout=30,
+    )
+    assert shell_compatible.returncode == 0, shell_compatible.stderr
+    shell_receipt = json.loads(shell_compatible.stdout.strip().splitlines()[-1])
+    assert "vps_ssh_shell" in shell_receipt["changedCompatibleContracts"]
+
+    shell_narrowed = json.loads(json.dumps(current_registry))
+    next(item for item in shell_narrowed["tools"] if item["name"] == "vps_ssh_shell")[
+        "parameters"
+    ]["properties"]["command"]["minLength"] = 2
+    shell_narrowed_path = tmp_path / "shell-narrowed.json"
+    shell_narrowed_path.write_text(json.dumps(shell_narrowed), "utf-8")
+    shell_rejected = subprocess.run(
+        [sys.executable, "-c", comparator, str(shell_path), str(shell_narrowed_path), "1", "267"],
+        capture_output=True, text=True, check=False, timeout=30,
+    )
+    assert shell_rejected.returncode != 0 and "vps_ssh_shell" in shell_rejected.stderr
+
     narrowed_registry = json.loads(json.dumps(current_registry))
     registry_contract = next(item for item in narrowed_registry["tools"]
                              if item["name"] == "mcp_tool_contract_registry")
