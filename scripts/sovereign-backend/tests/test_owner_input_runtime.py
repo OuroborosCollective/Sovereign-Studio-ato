@@ -207,7 +207,7 @@ def test_n8n_root_owned_target_rejects_final_ownership_mismatch(
                 st_uid=1000,
                 st_gid=0,
                 st_mode=observed.st_mode,
-            st_size=observed.st_size,
+                st_size=observed.st_size,
             )
         return observed
 
