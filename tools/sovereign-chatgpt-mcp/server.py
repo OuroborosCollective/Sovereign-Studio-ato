@@ -1456,10 +1456,10 @@ def vps_ssh_shell(
     command: Annotated[str, Field(min_length=1)],
     timeout_seconds: Annotated[int | None, Field(strict=True, ge=1)] = None,
 ) -> dict[str, Any]:
-    """Run a VPS command under the existing owner session; long executions continue as queued jobs."""
-    return broker.call("ssh_console_assistant_shell", {
+    """Queue a VPS command under the existing owner session; poll mcp_host_command_status for its result."""
+    return broker.command_queue.enqueue("ssh_console_assistant_shell", {
         "session_id": session_id, "command": command, "timeout_seconds": timeout_seconds,
-    }, timeout=30)
+    })
 
 
 @mcp.tool(annotations=NETWORK_READ)

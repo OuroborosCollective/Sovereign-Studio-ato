@@ -69,12 +69,12 @@ def test_standing_shell_reaches_broker_without_profile_gate(monkeypatch: pytest.
         raise RuntimeError("profile gate was invoked")
 
     calls = []
-    def broker_call(action: str, arguments: dict, *, timeout: int | None = None) -> dict:
-        calls.append((action, arguments, timeout))
-        return {"ok": True, "status": "TEST_BOUNDARY", "mutationPerformed": True}
+    def queue_enqueue(action: str, arguments: dict) -> dict:
+        calls.append((action, arguments))
+        return {"ok": True, "status": "QUEUED", "request_id": "c" * 32}
 
     monkeypatch.setattr(operating_profile, "_gate_or_raise", blocked_gate)
-    monkeypatch.setattr(server.broker, "call", broker_call)
+    monkeypatch.setattr(server.broker.command_queue, "enqueue", queue_enqueue)
     synthetic_value = "sk-" + "abcdefghijklmnopqrstuvwx"
     command = "printf %s " + synthetic_value
     asyncio.run(launcher.mcp._tool_manager.call_tool(
@@ -82,7 +82,7 @@ def test_standing_shell_reaches_broker_without_profile_gate(monkeypatch: pytest.
     ))
     assert calls == [("ssh_console_assistant_shell", {
         "session_id": "a" * 32, "command": command, "timeout_seconds": None
-    }, 30)]
+    })]
     with pytest.raises(Exception, match="profile gate was invoked"):
         asyncio.run(launcher.mcp._tool_manager.call_tool(
             "repository_run_check", {"workspace_id": "test", "check": "test"}, convert_result=False

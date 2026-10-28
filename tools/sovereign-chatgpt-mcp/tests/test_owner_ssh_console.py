@@ -548,9 +548,13 @@ def test_broker_routes_output_read_and_keeps_shell_on_host_queue():
 def test_shell_mcp_accepts_long_commands_and_exposes_output_pages(monkeypatch):
     import server
     calls = []
+    def queue_enqueue(action, arguments):
+        calls.append((action, arguments))
+        return {"ok": True, "status": "QUEUED", "request_id": "c" * 32}
     def broker_call(action, arguments, *, timeout=None):
         calls.append((action, arguments, timeout))
         return {"ok": True, "status": "TEST_BOUNDARY"}
+    monkeypatch.setattr(server.broker.command_queue, "enqueue", queue_enqueue)
     monkeypatch.setattr(server.broker, "call", broker_call)
     command = "printf x # " + "x" * 9000
     asyncio.run(server.mcp._tool_manager.call_tool(
@@ -563,6 +567,17 @@ def test_shell_mcp_accepts_long_commands_and_exposes_output_pages(monkeypatch):
     assert calls[0][0] == "ssh_console_assistant_shell"
     assert calls[0][1]["command"] == command and calls[0][1]["timeout_seconds"] is None
     assert calls[1][0] == "ssh_console_assistant_output" and calls[1][1]["offset"] == 16384
+
+
+def test_shell_queue_admission_remains_queued_without_a_claimant(tmp_path, monkeypatch):
+    import server
+    from command_queue import HostCommandQueueClient
+
+    queue = HostCommandQueueClient(str(tmp_path / "queue"))
+    monkeypatch.setattr(server.broker, "command_queue", queue)
+    queued = server.vps_ssh_shell("a" * 32, "true")
+    assert queued["status"] == "QUEUED"
+    assert queue.status(queued["request_id"])["status"] == "QUEUED"
 
 
 def test_native_resource_and_tool_argument_boundaries(monkeypatch):
