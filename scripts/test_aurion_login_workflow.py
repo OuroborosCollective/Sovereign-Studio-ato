@@ -53,7 +53,7 @@ class LoginWorkflowTests(unittest.TestCase):
 
     def test_signable_3d_build_prepares_and_verifies_real_imported_assets(self):
         build = self.workflow['jobs']['build']
-        body = next(s['run'] for s in build['steps'] if s['name'].startswith('Build unsigned Login APK'))
+        body = next(s['run'] for s in build['steps'] if s.get('name', '').startswith('Build unsigned Login APK'))
         for expression in (
             "from './scripts/godot/export-assets.mjs'",
             'await stageAssetProject(project,revision)',
