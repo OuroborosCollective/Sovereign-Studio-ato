@@ -18,6 +18,12 @@ from typing import Any, Iterator
 import requests
 
 import continuity
+from workspace_lifecycle import (
+    cleanup_managed_workspace,
+    mark_workspace_owned,
+    workspace_creation_guard,
+    workspace_inventory,
+)
 from github_installation_auth import (
     GitHubAppInstallationAuth,
     GitHubAppInstallationConfig,
@@ -174,7 +180,9 @@ class OperatorRuntime:
         branch = validate_branch(f"sovereign/chatgpt/{int(time.time())}-{slug}-{uuid.uuid4().hex[:6]}")
         workspace = self._workspace(workspace_id)
         repo = workspace / "repo"
-        workspace.mkdir(mode=0o700, parents=True, exist_ok=False)
+        with workspace_creation_guard(self.config.workspace_root):
+            workspace.mkdir(mode=0o700, parents=True, exist_ok=False)
+            mark_workspace_owned(workspace)
         with self._askpass() as (_askpass_dir, env):
             clone = self._run(
                 ["git", "clone", "--depth", "1", "--branch", base_branch, f"https://github.com/{self.config.repository}.git", str(repo)],
@@ -197,10 +205,20 @@ class OperatorRuntime:
             "base_branch": base_branch,
             "branch": branch,
             "created_at": int(time.time()),
+            "draft_pr_verified": False,
             "checks": {},
         }
         self._write_metadata(workspace_id, metadata)
         return metadata
+
+    def workspace_inventory(self) -> dict[str, Any]:
+        return workspace_inventory(self.config.workspace_root)
+
+    def cleanup_workspace(self, workspace_id: str, *, abandon_confirmed: bool = False) -> dict[str, Any]:
+        return cleanup_managed_workspace(
+            self.config.workspace_root, workspace_id, self.config.repository,
+            abandon_confirmed=abandon_confirmed,
+        )
 
     def read_file(self, workspace_id: str, path: str, max_bytes: int = MAX_FILE_BYTES) -> dict[str, Any]:
         file_path = safe_repo_path(self._repo(workspace_id), path, must_exist=True)
@@ -971,7 +989,26 @@ class OperatorRuntime:
             "head_sha": payload["head"]["sha"],
         }
         self._write_metadata(workspace_id, metadata)
+        # Independently read back the remote branch/PR before disposing its only working copy.
+        with self.github_auth.headers() as headers:
+            verified = requests.get(
+                f"https://api.github.com/repos/{self.config.repository}/pulls/{payload['number']}",
+                headers=headers, timeout=30,
+            )
+        if verified.status_code != 200:
+            raise RuntimeError("DRAFT_PR_READBACK_UNAVAILABLE; workspace retained")
+        observed = verified.json()
+        if (not isinstance(observed, dict) or observed.get("state") != "open"
+                or not observed.get("draft")
+                or (observed.get("head") or {}).get("sha") != payload["head"]["sha"]
+                or (observed.get("head") or {}).get("ref") != branch
+                or (observed.get("base") or {}).get("ref") != base_branch):
+            raise RuntimeError("DRAFT_PR_READBACK_MISMATCH; workspace retained")
+        metadata["draft_pr_verified"] = True
+        self._write_metadata(workspace_id, metadata)
+        cleanup = self.cleanup_workspace(workspace_id)
         return {
+            "workspace_cleanup": cleanup,
             "ok": True,
             "status": "DRAFT_PR_CREATED" if created else "DRAFT_PR_UPDATED",
             "created": created,
