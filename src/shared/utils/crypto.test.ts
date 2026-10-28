@@ -191,7 +191,19 @@ describe('maskSecrets', () => {
     expect(maskSecrets('fal_secret=fal_sec_val_505')).toBe('fal_secret=****');
     expect(maskSecrets('"deepseek_key": "quoted_value_123"')).toBe('"deepseek_key": ****');
 
-    const plain = 'cohere_key pinecone_secret qdrant_key deepseek_key perplexity_secret replicate_key cloudflare_token elevenlabs_key stability_key fal_secret without assignments';
+    expect(maskSecrets('huggingface_key: hf_val_101')).toBe('huggingface_key: ****');
+    expect(maskSecrets('huggingface_secret=hf_val_202')).toBe('huggingface_secret=****');
+    expect(maskSecrets('huggingface_token: hf_val_303')).toBe('huggingface_token: ****');
+    expect(maskSecrets('hf_key: hf_val_404')).toBe('hf_key: ****');
+    expect(maskSecrets('hf_secret=hf_val_505')).toBe('hf_secret=****');
+    expect(maskSecrets('hf_token: hf_val_606')).toBe('hf_token: ****');
+    expect(maskSecrets('together_key: tog_val_707')).toBe('together_key: ****');
+    expect(maskSecrets('together_secret=tog_val_808')).toBe('together_secret=****');
+    expect(maskSecrets('runpod_key: rp_val_909')).toBe('runpod_key: ****');
+    expect(maskSecrets('runpod_secret=rp_val_101')).toBe('runpod_secret=****');
+    expect(maskSecrets('runpod_token: rp_val_202')).toBe('runpod_token: ****');
+
+    const plain = 'cohere_key pinecone_secret qdrant_key deepseek_key perplexity_secret replicate_key cloudflare_token elevenlabs_key stability_key fal_secret huggingface_key runpod_token without assignments';
     expect(maskSecrets(plain)).toBe(plain);
   });
 
