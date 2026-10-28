@@ -1,8 +1,7 @@
 """Owner-bound OpenSSH transport for the existing host command worker.
 
-Credentials are read from the protected owner-managed file, never from tool
-arguments. Optional shell execution requires a one-use command-, profile- and
-source-revision-bound owner approval.
+Credentials are read from the owner-managed file. The owner's designated VPS
+uses one standing session grant for shell and workspace operations.
 """
 from __future__ import annotations
 import base64
@@ -21,7 +20,7 @@ import subprocess
 import time
 import unicodedata
 import uuid
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from owner_ssh_workspace import validate_request, FAILURE_FAMILIES, ACTIONS as WORKSPACE_ACTIONS, EXECUTABLES as WORKSPACE_EXECUTABLES
 
@@ -39,13 +38,18 @@ OPERATIONS = {
     "services": "systemctl --no-pager --plain --type=service --state=running",
 }
 # Workspace scope: repeated non-root workspace tasks, isolated from live data.
-# Shell scope is separate and permits one exact, owner-approved command only.
 WORKSPACE_SCOPE = "workspace"
 SHELL_SCOPE = "shell"
 GRANT_OPERATIONS = frozenset((*OPERATIONS, WORKSPACE_SCOPE, SHELL_SCOPE))
 ID = re.compile(r"^[0-9a-f]{32}$")
+OWNER_FULL_ACCESS_HOST = "46.202.154.25"
 
 MAX_CAPTURE_BYTES = 65536
+
+
+def _expired(deadline):
+    """None denotes a session or grant with no time-based expiration."""
+    return deadline is not None and time.time() >= deadline
 
 def _workspace_transport(argv, *, deadline, guard):
     """Feed a revocable lease on the existing SSH channel; never reconnect."""
@@ -99,10 +103,10 @@ def _runtime_source_revision():
     return revision
 
 
-def _shell_transport(argv, *, timeout_seconds, guard):
-    """Run an approved shell command with no stdin and discard every output byte."""
+def _shell_transport(argv, *, timeout_seconds, guard, output_streams=None):
+    """Run a shell command; optionally persist both streams without a size cap."""
     counts = {1: 0, 2: 0}
-    deadline = time.monotonic() + timeout_seconds
+    deadline = None if timeout_seconds is None else time.monotonic() + timeout_seconds
     with subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE,
                           env={"PATH": "/usr/bin:/bin", "LANG": "C", "HOME": "/nonexistent"},
@@ -112,18 +116,25 @@ def _shell_transport(argv, *, timeout_seconds, guard):
                 selector.register(process.stdout, selectors.EVENT_READ, 1)
                 selector.register(process.stderr, selectors.EVENT_READ, 2)
                 while selector.get_map():
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
+                    remaining = None if deadline is None else deadline - time.monotonic()
+                    if remaining is not None and remaining <= 0:
                         raise subprocess.TimeoutExpired(argv, timeout_seconds)
                     guard()
-                    for key, _ in selector.select(min(remaining, 0.1)):
+                    for key, _ in selector.select(0.1 if remaining is None else min(remaining, 0.1)):
                         chunk = os.read(key.fileobj.fileno(), 8192)
                         if not chunk:
                             selector.unregister(key.fileobj)
                             key.fileobj.close()
                             continue
                         counts[key.data] += len(chunk)
-            code = process.wait(timeout=max(0.1, deadline - time.monotonic()))
+                        if output_streams is not None:
+                            output_streams[key.data].write(chunk)
+            while process.poll() is None:
+                guard()
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise subprocess.TimeoutExpired(argv, timeout_seconds)
+                time.sleep(0.1)
+            code = process.returncode
             guard()
             result = subprocess.CompletedProcess(argv, code, "", "")
             result.stdout_bytes = counts[1]
@@ -215,6 +226,46 @@ class OwnerSSHConsole:
         finally:
             tmp.unlink(missing_ok=True)
 
+    @staticmethod
+    def _has_full_access(state):
+        return state.get("host") == OWNER_FULL_ACCESS_HOST and state.get("fullAccess") is True
+
+    def _shell_output_chunk(self, state, execution_id, stream, offset=0, limit=65536):
+        if not ID.fullmatch(str(execution_id or "")) or stream not in {"stdout", "stderr"}:
+            raise ValueError("Invalid SSH output identity or stream")
+        if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 65536:
+            raise ValueError("Invalid SSH output range")
+        directory = self.root / ("ssh-" + state["sessionId"])
+        if directory.is_symlink() or not directory.is_dir():
+            raise ValueError("SSH session output directory is unavailable")
+        path = directory / ("output-" + execution_id + "." + stream)
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode):
+                raise ValueError("SSH output is not a regular file")
+            chunk = os.pread(fd, limit, offset)
+        finally:
+            os.close(fd)
+        next_offset = offset + len(chunk)
+        complete = state.get("shellExecutionId") != execution_id
+        return {"ok": True, "status": "SSH_OUTPUT_READ", "sessionId": state["sessionId"],
+                "executionId": execution_id, "stream": stream, "offset": offset,
+                "nextOffset": next_offset, "bytes": len(chunk),
+                "text": chunk.decode("utf-8", errors="replace"),
+                "base64": base64.b64encode(chunk).decode("ascii"),
+                "eof": complete and next_offset >= info.st_size,
+                "protectedValuesReturned": bool(chunk),
+                "secretValuesReturned": bool(chunk), "secretPresenceDetermined": False}
+
+    def assistant_shell_output(self, session_id, execution_id, stream, offset=0, limit=65536):
+        state = self._state()
+        if state["sessionId"] != session_id or not self._has_full_access(state):
+            raise ValueError("Full-access SSH session identity mismatch")
+        self._ready(state)
+        self._delegation_ready(state, SHELL_SCOPE)
+        return self._shell_output_chunk(state, execution_id, stream, offset, limit)
+
     @contextmanager
     def _lock(self):
         if self.root.is_symlink() or not self.root.is_dir():
@@ -277,7 +328,7 @@ class OwnerSSHConsole:
         if any(character in password for character in ("\n", "\r", "\x00")):
             raise ValueError("Invalid SSH password transport format")
         ttl = profile.get("expiresInSeconds", 900)
-        if type(ttl) is not int or not 60 <= ttl <= 3600:
+        if type(ttl) is not int or not (60 <= ttl <= 3600 or (host == OWNER_FULL_ACCESS_HOST and ttl == 0)):
             raise ValueError("Invalid SSH session lifetime")
         return host, port, user, key, private, ttl, password
 
@@ -390,6 +441,12 @@ class OwnerSSHConsole:
         execution_id = state.get("shellExecutionId")
         if not execution_id:
             return state
+        if self._has_full_access(state):
+            activity = dict(state.get("lastActivity") or {})
+            activity.update(status="SSH_SHELL_INTERRUPTED_OUTCOME_UNKNOWN", exitCode=None, at=time.time())
+            state.update(lastActivity=activity, shellExecutionId="")
+            self._write("ssh_console_state.json", state)
+            return state
         # Callers hold the exclusive SSH-console lock. Therefore no active
         # shell invocation can still own the execution lease here.
         stopped = self._stop_shell_scope(state, execution_id)
@@ -409,7 +466,8 @@ class OwnerSSHConsole:
         return state
 
     def _close(self, state, preserve_profile=False):
-        if state.get("shellExecutionId") and not self._stop_shell_scope(state, state["shellExecutionId"]):
+        if (state.get("shellExecutionId") and not self._has_full_access(state)
+                and not self._stop_shell_scope(state, state["shellExecutionId"])):
             raise ValueError("Remote SSH shell scope could not be stopped before closing")
         state.update(status="close_unverified", grantUntil=0, allowedOperations=[], shellApproval=None, shellExecutionId="")
         self._write("ssh_console_state.json", state)
@@ -438,7 +496,7 @@ class OwnerSSHConsole:
         if state.get("status") != "connected":
             raise ValueError("SSH session is closed or unverified")
         digest = hashlib.sha256(self._read("ssh_console_profile.json")).hexdigest()
-        if time.time() >= state["expiresAt"] or digest != state["profileSha256"]:
+        if _expired(state["expiresAt"]) or digest != state["profileSha256"]:
             self._close(state)
             raise ValueError("SSH session expired, changed or closed")
         result = self._run(self._base(state)[:-1] + ["-O", "check", state["host"]], 5)
@@ -457,11 +515,11 @@ class OwnerSSHConsole:
         observed = "SSH_SHELL_RECOVERY_REQUIRED" if recovery_required else state["status"]
         if observed == "connected":
             digest = hashlib.sha256(self._read("ssh_console_profile.json")).hexdigest()
-            if time.time() >= state["expiresAt"] or digest != state["profileSha256"]:
+            if _expired(state["expiresAt"]) or digest != state["profileSha256"]:
                 observed = "expired"
             elif self._run(self._base(state)[:-1] + ["-O", "check", state["host"]], 5).returncode:
                 observed = "disconnected"
-        grant_active = (observed == "connected" and time.time() < state.get("grantUntil", 0)
+        grant_active = (observed == "connected" and not _expired(state.get("grantUntil", 0))
                         and not state.get("shellExecutionId"))
         if grant_active:
             try:
@@ -471,6 +529,7 @@ class OwnerSSHConsole:
         return {"ok": True, "status": observed, "sessionId": state["sessionId"],
                 "host": state["host"], "username": state["username"], "expiresAt": state["expiresAt"],
                 "hostFingerprint": state["hostFingerprint"],
+                "fullAccess": self._has_full_access(state),
                 "assistantGrantActive": grant_active, "shellRecoveryRequired": recovery_required,
                 "allowedOperations": state.get("allowedOperations", []), "operations": list(OPERATIONS),
                 "protectedValuesReturned": False}
@@ -502,17 +561,23 @@ class OwnerSSHConsole:
         if password:
             os.chmod(directory / "askpass", 0o700)
         fingerprint = "SHA256:" + base64.b64encode(hashlib.sha256(base64.b64decode(known.split()[1])).digest()).decode().rstrip("=")
+        full_access = host == OWNER_FULL_ACCESS_HOST
+        expires_at = None if ttl == 0 else time.time() + ttl
         state = {"sessionId": identifier, "host": host, "port": port, "username": user, "authMode": "password" if password else "key",
                  "hostFingerprint": fingerprint, "profileSha256": hashlib.sha256(raw).hexdigest(),
-                 "expiresAt": time.time() + ttl, "status": "connecting", "grantUntil": 0, "allowedOperations": []}
+                 "expiresAt": expires_at, "status": "connecting", "grantUntil": 0, "allowedOperations": [],
+                 "fullAccess": full_access}
         self._write("ssh_console_state.json", state)
         try:
             result = self._run(self._base(state)[:-1] +
-                               ["-o", "ControlMaster=yes", "-o", "ControlPersist=" + str(ttl), "-fN", host], 20,
+                               ["-o", "ControlMaster=yes", "-o", "ControlPersist=" + ("yes" if ttl == 0 else str(ttl)), "-fN", host], 20,
                                askpass=directory / "askpass" if password else None, capture=False)
             if result.returncode:
                 raise ValueError("SSH authentication or trusted-host verification failed")
             state["status"] = "connected"
+            if full_access:
+                state.update(grantUntil=expires_at, allowedOperations=sorted(GRANT_OPERATIONS),
+                             workspaceGrantId=uuid.uuid4().hex, shellGrantId=uuid.uuid4().hex)
             self._write("ssh_console_state.json", state)
             self._ready(state)
         except Exception:
@@ -522,9 +587,9 @@ class OwnerSSHConsole:
                 "hostFingerprint": fingerprint, "protectedValuesReturned": False}
 
     def _delegation_ready(self, state, operation):
-        if time.time() >= state.get("grantUntil", 0) or operation not in state.get("allowedOperations", []):
+        if _expired(state.get("grantUntil", 0)) or operation not in state.get("allowedOperations", []):
             raise ValueError("Owner SSH delegation missing, revoked or expired")
-        if operation == SHELL_SCOPE and not state.get("shellExecutionId"):
+        if operation == SHELL_SCOPE and not self._has_full_access(state) and not state.get("shellExecutionId"):
             approval = state.get("shellApproval")
             if (not isinstance(approval, dict) or approval.get("sourceRevision") != _runtime_source_revision()
                     or approval.get("profileSha256") != state.get("profileSha256")):
@@ -586,7 +651,7 @@ class OwnerSSHConsole:
                 state = self._state()
             except FileNotFoundError:
                 return
-            if state["status"] in {"connected", "close_unverified"} and time.time() >= state["expiresAt"]:
+            if state["status"] in {"connected", "close_unverified"} and _expired(state["expiresAt"]):
                 self._close(state)
 
     def assistant_inspect(self, session_id, operation):
@@ -625,7 +690,106 @@ class OwnerSSHConsole:
             raise ValueError("Invalid SSH shell timeout")
         return hashlib.sha256(encoded).hexdigest()
 
+    def _assistant_full_shell(self, session_id, command, timeout_seconds=None):
+        if not isinstance(command, str) or not command.strip() or "\x00" in command:
+            raise ValueError("Invalid SSH shell command")
+        if timeout_seconds is not None and (type(timeout_seconds) is not int or timeout_seconds < 1):
+            raise ValueError("Invalid SSH shell timeout")
+        try:
+            digest = hashlib.sha256(command.encode("utf-8", errors="strict")).hexdigest()
+        except UnicodeError as exc:
+            raise ValueError("Invalid SSH shell command encoding") from exc
+
+        with self._lock():
+            state = self._recover_orphaned_shell(self._state())
+            if state["sessionId"] != session_id or not self._has_full_access(state):
+                raise ValueError("Full-access SSH session identity mismatch")
+            self._ready(state)
+            self._delegation_ready(state, SHELL_SCOPE)
+            execution_id = uuid.uuid4().hex
+            grant_id = str(state.get("shellGrantId") or "")
+            if not ID.fullmatch(grant_id):
+                raise ValueError("Full-access SSH session grant missing")
+            source_revision = os.getenv("SOVEREIGN_SOURCE_REVISION", "").strip().lower() or None
+            directory = self.root / ("ssh-" + session_id)
+            if directory.is_symlink() or not directory.is_dir():
+                raise ValueError("SSH session output directory is unavailable")
+            state["shellExecutionId"] = execution_id
+            state["lastActivity"] = {
+                "actor": "assistant", "operation": SHELL_SCOPE, "status": "SSH_SHELL_STARTED",
+                "sessionId": session_id, "grantId": grant_id, "executionId": execution_id,
+                "commandSha256": digest, "sourceRevision": source_revision,
+                "timeoutSeconds": timeout_seconds, "at": time.time(),
+            }
+            self._write("ssh_console_state.json", state)
+
+            def guard():
+                current = self._state()
+                if (current["sessionId"] != session_id or current.get("shellExecutionId") != execution_id
+                        or current.get("status") != "connected" or _expired(current["expiresAt"])
+                        or not self._has_full_access(current)):
+                    raise ValueError("SSH session expired or changed")
+                if hashlib.sha256(self._read("ssh_console_profile.json")).hexdigest() != current["profileSha256"]:
+                    raise ValueError("SSH profile changed during shell execution")
+                self._delegation_ready(current, SHELL_SCOPE)
+
+            remote = "exec /bin/sh -c " + shlex.quote(command)
+            argv = self._base(state)[:-1] + ["-o", "BatchMode=yes", "-o", "ControlMaster=no",
+                                              "-o", "ProxyCommand=false", state["host"], remote]
+            try:
+                with ExitStack() as stack:
+                    streams = {}
+                    for number, stream in ((1, "stdout"), (2, "stderr")):
+                        path = directory / ("output-" + execution_id + "." + stream)
+                        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                        streams[number] = stack.enter_context(os.fdopen(fd, "wb", buffering=0))
+                    completed = self.shell_runner(argv, timeout_seconds=timeout_seconds, guard=guard,
+                                                  output_streams=streams)
+                guard()
+                self._ready(state)
+                guard()
+                stdout_bytes = max(0, int(getattr(completed, "stdout_bytes", 0)))
+                stderr_bytes = max(0, int(getattr(completed, "stderr_bytes", 0)))
+                status = "SSH_SHELL_EXECUTED" if completed.returncode == 0 else "SSH_SHELL_FAILED"
+                state["lastActivity"] = {**state["lastActivity"], "status": status,
+                    "exitCode": completed.returncode, "stdoutBytes": stdout_bytes,
+                    "stderrBytes": stderr_bytes, "at": time.time()}
+                state["shellExecutionId"] = ""
+                self._write("ssh_console_state.json", state)
+                stdout = self._shell_output_chunk(state, execution_id, "stdout", limit=16384)
+                stderr = self._shell_output_chunk(state, execution_id, "stderr", limit=16384)
+                return {"ok": completed.returncode == 0, "status": status, "sessionId": session_id,
+                        "grantId": grant_id, "executionId": execution_id, "commandSha256": digest,
+                        "sourceRevision": source_revision, "exitCode": completed.returncode,
+                        "stdoutBytes": stdout_bytes, "stderrBytes": stderr_bytes,
+                        "stdout": stdout, "stderr": stderr, "outputReturned": True,
+                        "targetStateVerified": False, "mutationPerformed": True,
+                        "protectedValuesReturned": bool(stdout_bytes or stderr_bytes),
+                        "secretValuesReturned": bool(stdout_bytes or stderr_bytes),
+                        "secretPresenceDetermined": False}
+            except subprocess.TimeoutExpired:
+                current = self._state()
+                current["lastActivity"] = {**current.get("lastActivity", {}),
+                    "status": "SSH_SHELL_OUTCOME_UNKNOWN", "exitCode": None, "at": time.time()}
+                current["shellExecutionId"] = ""
+                self._write("ssh_console_state.json", current)
+                return {"ok": False, "status": "SSH_SHELL_OUTCOME_UNKNOWN", "sessionId": session_id,
+                        "grantId": grant_id, "executionId": execution_id, "commandSha256": digest,
+                        "sourceRevision": source_revision, "exitCode": None, "outputReturned": False,
+                        "targetStateVerified": False, "protectedValuesReturned": False}
+            except Exception:
+                current = self._state()
+                current["lastActivity"] = {**current.get("lastActivity", {}),
+                    "status": "SSH_SHELL_INTERRUPTED_OUTCOME_UNKNOWN", "exitCode": None, "at": time.time()}
+                current["shellExecutionId"] = ""
+                self._write("ssh_console_state.json", current)
+                raise
+
     def assistant_shell(self, session_id, command, timeout_seconds=30):
+        if self._has_full_access(self._state()):
+            return self._assistant_full_shell(session_id, command, timeout_seconds)
+        if timeout_seconds is None:
+            timeout_seconds = 30
         digest = self.validate_shell_command(command, timeout_seconds)
         source_revision = _runtime_source_revision()
         with self._lock():
@@ -737,12 +901,13 @@ class OwnerSSHConsole:
             def guard():
                 current = self._state()
                 if (current["sessionId"] != session_id or current.get("workspaceGrantId") != grant_id
-                        or current.get("status") != "connected" or time.time() >= current["expiresAt"]
+                        or current.get("status") != "connected" or _expired(current["expiresAt"])
                         or hashlib.sha256(self._read("ssh_console_profile.json")).hexdigest() != current["profileSha256"]):
                     raise ValueError("Workspace session expired or changed")
                 self._delegation_ready(current, WORKSPACE_SCOPE)
+            deadlines = [value for value in (state["grantUntil"], state["expiresAt"]) if value is not None]
             request.update(sessionId=session_id, grantId=grant_id, sourceRevision=source_revision,
-                           deadline=min(state["grantUntil"], state["expiresAt"]))
+                           deadline=min([time.time() + 3590, *deadlines]))
             helper = Path(__file__).with_name("owner_ssh_workspace.py").read_text("utf-8")
             payload = base64.b64encode(json.dumps(request, separators=(",", ":"), ensure_ascii=False).encode()).decode()
             # OpenSSH joins remote arguments through a shell. Quote every fixed helper/data word;
@@ -814,6 +979,14 @@ class OwnerSSHConsole:
                     if marker.get("at", 0) >= action.get("createdAt", 0):
                         raise ValueError("Newer SSH revocation blocks this grant")
                     (self.root / "ssh_console_revocation.json").unlink()
+                if self._has_full_access(state):
+                    state.update(grantUntil=state["expiresAt"], allowedOperations=sorted(GRANT_OPERATIONS),
+                                 workspaceGrantId=uuid.uuid4().hex, shellGrantId=uuid.uuid4().hex,
+                                 shellApproval=None, shellExecutionId="")
+                    self._write("ssh_console_state.json", state)
+                    return {"ok": True, "status": "SSH_DELEGATION_GRANTED", "sessionId": state["sessionId"],
+                            "allowedOperations": state["allowedOperations"], "expiresAt": state["grantUntil"],
+                            "grantId": state["shellGrantId"], "protectedValuesReturned": False}
                 shell_approval = None
                 if SHELL_SCOPE in ops:
                     digest = str(action.get("commandSha256") or "")

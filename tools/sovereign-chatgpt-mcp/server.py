@@ -99,21 +99,28 @@ def _private_admin_capabilities() -> list[str]:
 
 
 def _runtime_boundaries() -> dict[str, Any]:
+    owner_shell_available = os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() == "1"
     return {
         "ok": True,
         "status": "RUNTIME_BOUNDARIES_VERIFIED",
         "node_build_execution": "github_actions_only",
         "local_node_dependency_install_allowed": False,
+        "node_build_execution_scope": "repository_tools",
+        "owner_shell_may_run_vps_commands": owner_shell_available,
         "host_mutation_execution": "host_command_queue_only",
         "direct_broker_socket_mutation_allowed": False,
-        "generic_shell_available": False,
+        "generic_shell_available": owner_shell_available,
+        "generic_shell_requires_authenticated_owner_session": True,
+        "standing_owner_shell_target": "46.202.154.25",
         "workspace_changes_end_at_draft_pr": True,
         "workspace_pr_head_sync": "exact_revision_local_only",
         "workspace_pr_head_sync_force_push_allowed": False,
         "workspace_pr_head_sync_main_mutation_allowed": False,
         "owner_protected_input_execution": "authenticated_owner_ui_only",
-        "llm_can_receive_protected_values": False,
+        "llm_can_receive_protected_values": owner_shell_available,
+        "shell_command_content_screened": False,
         "raw_payment_card_input_allowed": False,
+        "raw_payment_card_input_policy_scope": "owner_protected_input_widget",
         "private_owner_mode_enabled": os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() == "1",
         "active_private_admin_capabilities": _private_admin_capabilities(),
     }
@@ -1453,13 +1460,28 @@ def vps_ssh_inspect(
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def vps_ssh_shell(
     session_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")],
-    command: Annotated[str, Field(min_length=1, max_length=8192)],
-    timeout_seconds: Annotated[int, Field(strict=True, ge=1, le=300)] = 30,
+    command: Annotated[str, Field(min_length=1)],
+    timeout_seconds: Annotated[int | None, Field(strict=True, ge=1)] = None,
 ) -> dict[str, Any]:
     """Run a free-form owner-delegated VPS command on an existing SSH connection; execution is not target-state readback."""
-    return broker.call("ssh_console_assistant_shell", {
+    return broker.command_queue.enqueue("ssh_console_assistant_shell", {
         "session_id": session_id, "command": command, "timeout_seconds": timeout_seconds,
-    }, timeout=timeout_seconds + 30)
+    })
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def vps_ssh_shell_output(
+    session_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")],
+    execution_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")],
+    stream: Literal["stdout", "stderr"],
+    offset: Annotated[int, Field(strict=True, ge=0)] = 0,
+    limit: Annotated[int, Field(strict=True, ge=1, le=65536)] = 65536,
+) -> dict[str, Any]:
+    """Read the next output page from a command in the existing full-access VPS session."""
+    return broker.call("ssh_console_assistant_output", {
+        "session_id": session_id, "execution_id": execution_id,
+        "stream": stream, "offset": offset, "limit": limit,
+    }, timeout=30)
 
 
 @mcp.tool(annotations=READ_ONLY)

@@ -196,7 +196,7 @@ def test_runtime_import_contract_failure_is_bounded_and_phase_diagnostic() -> No
     assert 'parts.append(f"message={message_value}")' in installer
     assert '"stateInitializedByThisCall": data.get("stateInitializedByThisCall")' in installer
     assert 'isolated neuro runtime canary failed: $CANARY_DIAGNOSTIC' in installer
-    assert 'assert launcher.OPERATING_PROFILE_ENFORCEMENT.enforcedToolCount == launcher.OPERATING_PROFILE_ENFORCEMENT.mutableToolCount' in installer
+    assert 'launcher.OPERATING_PROFILE_ENFORCEMENT.enforcedToolCount + len(operating_profile.sovereign_operating_profile_status().invariants["standingOwnerSessionTools"]) == launcher.OPERATING_PROFILE_ENFORCEMENT.mutableToolCount' in installer
     assert 'assert callable(server.aurion_account_role_apply)' in installer
     assert 'assert status.get("status") == "BROKER_READY"' in installer
 
@@ -560,7 +560,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'callable(operating_profile.sovereign_operating_profile_status)' in installer
     assert 'callable(operating_profile.sovereign_mission_preflight)' in installer
     assert 'profile_status.status == "OPERATING_PROFILE_ENFORCED"' in installer
-    assert 'operating_profile_report.enforcedToolCount == operating_profile_report.mutableToolCount' in installer
+    assert 'operating_profile_report.enforcedToolCount + len(operating_profile.sovereign_operating_profile_status().invariants["standingOwnerSessionTools"]) == operating_profile_report.mutableToolCount' in installer
     assert 'callable(operational_governance_tools.operational_skill_inventory)' in installer
     assert 'callable(operational_governance_tools.tool_recommend_for_mission)' in installer
     assert 'callable(operational_governance_tools.mcp_registry_snapshot_verify)' in installer

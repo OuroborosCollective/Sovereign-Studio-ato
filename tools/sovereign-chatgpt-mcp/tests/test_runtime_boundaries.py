@@ -22,6 +22,7 @@ def test_runtime_boundaries_report_enforced_execution_model(monkeypatch) -> None
     ):
         monkeypatch.setenv(name, "1")
 
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_AURION_ADMIN_MCP", "0")
     result = mcp_runtime_boundaries()
 
     assert result["ok"] is True
@@ -30,14 +31,20 @@ def test_runtime_boundaries_report_enforced_execution_model(monkeypatch) -> None
     assert result["local_node_dependency_install_allowed"] is False
     assert result["host_mutation_execution"] == "host_command_queue_only"
     assert result["direct_broker_socket_mutation_allowed"] is False
-    assert result["generic_shell_available"] is False
+    assert result["generic_shell_available"] is True
+    assert result["generic_shell_requires_authenticated_owner_session"] is True
+    assert result["standing_owner_shell_target"] == "46.202.154.25"
+    assert result["node_build_execution_scope"] == "repository_tools"
+    assert result["owner_shell_may_run_vps_commands"] is True
     assert result["workspace_changes_end_at_draft_pr"] is True
     assert result["workspace_pr_head_sync"] == "exact_revision_local_only"
     assert result["workspace_pr_head_sync_force_push_allowed"] is False
     assert result["workspace_pr_head_sync_main_mutation_allowed"] is False
     assert result["owner_protected_input_execution"] == "authenticated_owner_ui_only"
-    assert result["llm_can_receive_protected_values"] is False
+    assert result["llm_can_receive_protected_values"] is True
+    assert result["shell_command_content_screened"] is False
     assert result["raw_payment_card_input_allowed"] is False
+    assert result["raw_payment_card_input_policy_scope"] == "owner_protected_input_widget"
     assert result["private_owner_mode_enabled"] is True
     assert set(result["active_private_admin_capabilities"]) == {
         "private_owner_mode",
@@ -68,6 +75,14 @@ def test_runtime_boundaries_report_enforced_execution_model(monkeypatch) -> None
         "aurion_account_role_plan",
         "aurion_account_role_apply",
     }
+
+
+def test_standing_shell_is_unavailable_outside_private_owner_mode(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0")
+    result = mcp_runtime_boundaries()
+    assert result["generic_shell_available"] is False
+    assert result["llm_can_receive_protected_values"] is False
+    assert result["owner_shell_may_run_vps_commands"] is False
 
 
 def test_issue_tools_publish_strict_input_and_output_schemas() -> None:

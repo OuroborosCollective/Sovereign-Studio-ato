@@ -152,6 +152,22 @@ def test_password_first_page_has_host_identity_confirmation(client):
     assert "knownHostKey:$('hostKey')" not in page
 
 
+def test_designated_vps_can_start_one_unlimited_owner_session(client):
+    import base64
+    api, _current, writes, jobs = client
+    key = "ssh-ed25519 " + base64.b64encode(
+        b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20" + bytes(32)
+    ).decode()
+    response = api.post('/api/admin/owner-ssh/action', json={
+        'action': 'connect', 'profile': {'host': '46.202.154.25', 'port': 22,
+        'username': 'root', 'knownHostKey': key, 'password': 'synthetic', 'expiresInSeconds': 0}
+    }, headers=headers())
+    assert response.status_code == 200 and jobs[0][0] == 'ssh_console_owner_action'
+    page = api.get('/owner-ssh').get_data(as_text=True)
+    assert 'Ohne Zeitlimit (46.202.154.25)' in page
+    assert 'Befehle müssen nicht einzeln bestätigt werden' in page
+
+
 def test_workspace_grant_is_one_owner_action_for_15_to_60_minutes(client):
     api, current, writes, jobs = client
     for ttl in (900, 1800, 3600):

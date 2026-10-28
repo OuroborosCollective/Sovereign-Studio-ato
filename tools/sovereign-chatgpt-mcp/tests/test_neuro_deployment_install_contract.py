@@ -32,7 +32,7 @@ EXPECTED_NEURO_TOOLS = {
 }
 
 EXPECTED_AGENT_ZERO_TOOLS = {"agent_zero_backend_diagnostics", "agent_zero_a2a_canary"}
-EXPECTED_SSH_TOOLS = {"vps_ssh_session_status", "vps_ssh_inspect", "vps_ssh_workspace", "vps_ssh_shell"}
+EXPECTED_SSH_TOOLS = {"vps_ssh_session_status", "vps_ssh_inspect", "vps_ssh_workspace", "vps_ssh_shell", "vps_ssh_shell_output"}
 EXPECTED_WORKSPACE_TOOLS = {"workspace_inventory", "workspace_cleanup"}
 
 EXPECTED_AURION_TOOLS = {
@@ -570,6 +570,48 @@ print(json.dumps({
     )
     assert extra_allowed.returncode == 0, extra_allowed.stderr
 
+    # A deployed predecessor already has vps_ssh_shell with finite input
+    # bounds. Prove the new live contract accepts all of those inputs.
+    shell_predecessor = json.loads(json.dumps(predecessor_registry))
+    old_shell = json.loads(json.dumps(next(
+        item for item in current_registry["tools"] if item["name"] == "vps_ssh_shell"
+    )))
+    assert old_shell["description"] == (
+        "Run a free-form owner-delegated VPS command on an existing SSH connection; execution is not target-state readback."
+    )
+    old_shell["parameters"]["properties"]["command"] = {
+        "maxLength": 8192, "minLength": 1, "title": "Command", "type": "string",
+    }
+    old_shell["parameters"]["properties"]["timeout_seconds"] = {
+        "default": 30, "maximum": 300, "minimum": 1,
+        "title": "Timeout Seconds", "type": "integer",
+    }
+    old_shell["contractSha256"] = "ec5a5ec674b2353a4b4141926e7fd3784052dff139dbde595a1a6ba41db3ff24"
+    shell_predecessor["tools"].append(old_shell)
+    shell_predecessor["tools"].sort(key=lambda item: item["name"])
+    shell_predecessor["toolCount"] = len(shell_predecessor["tools"])
+    shell_path = tmp_path / "shell-predecessor.json"
+    shell_path.write_text(json.dumps(shell_predecessor), "utf-8")
+    shell_compatible = subprocess.run(
+        [sys.executable, "-c", comparator, str(shell_path), str(current_path), "1", "267"],
+        capture_output=True, text=True, check=False, timeout=30,
+    )
+    assert shell_compatible.returncode == 0, shell_compatible.stderr
+    shell_receipt = json.loads(shell_compatible.stdout.strip().splitlines()[-1])
+    assert "vps_ssh_shell" in shell_receipt["changedCompatibleContracts"]
+
+    shell_narrowed = json.loads(json.dumps(current_registry))
+    next(item for item in shell_narrowed["tools"] if item["name"] == "vps_ssh_shell")[
+        "parameters"
+    ]["properties"]["command"]["minLength"] = 2
+    shell_narrowed_path = tmp_path / "shell-narrowed.json"
+    shell_narrowed_path.write_text(json.dumps(shell_narrowed), "utf-8")
+    shell_rejected = subprocess.run(
+        [sys.executable, "-c", comparator, str(shell_path), str(shell_narrowed_path), "1", "267"],
+        capture_output=True, text=True, check=False, timeout=30,
+    )
+    assert shell_rejected.returncode != 0 and "vps_ssh_shell" in shell_rejected.stderr
+
     narrowed_registry = json.loads(json.dumps(current_registry))
     registry_contract = next(item for item in narrowed_registry["tools"]
                              if item["name"] == "mcp_tool_contract_registry")
@@ -1048,7 +1090,7 @@ def test_installer_runs_a_clean_real_registry_neuro_canary_without_selected_tool
     assert '"allowed_effects": ["read"]' in canary
     assert '[contract["name"] for contract in selected_contracts] == ["mcp_self_update_status"]' in canary
     assert 'registered_tool.fn = forbidden_selected_tool_call' in canary
-    assert 'assert len(set(guarded_tool_names)) == expected_tool_count - 5' in canary
+    assert 'assert len(set(guarded_tool_names)) == actual_tool_count - len(canary_tool_names)' in canary
     assert '__sovereign_success_tracking__' in canary
     assert '__sovereign_operating_profile_wrapped__' in canary
     assert 'guarded_tool_calls == []' in canary
@@ -1161,17 +1203,19 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(
 
     assert completed.returncode == 0, completed.stderr
     receipt = json.loads(completed.stdout.strip().splitlines()[-1])
+    actual_tool_count = receipt["registryToolCount"]
+    assert actual_tool_count >= expected_tool_count
     assert receipt == {
         "canonicalReadbackVerified": True,
         "commitReplayVerified": True,
-        "guardedPredecessorToolCount": expected_tool_count - 5,
+        "guardedPredecessorToolCount": actual_tool_count - 5,
         "isolatedStateCleaned": True,
         "previewProposalOnly": True,
         "persistedOutcomeTools": ["neuro_event_commit"],
         "quarantineNoMutation": True,
         "readOnlyCallsPersisted": False,
         "registeredToolSurfaceVerified": True,
-        "registryToolCount": expected_tool_count,
+        "registryToolCount": actual_tool_count,
         "selectedToolsExecuted": False,
         "status": "NEURO_DEPLOYMENT_CANARY_VERIFIED",
         "tamperDetected": True,
@@ -1212,6 +1256,36 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(
         "status": "NEURO_DEPLOYMENT_CANARY_FAILED",
     }
     assert "Traceback" not in (failed.stdout + failed.stderr)
+
+
+def test_private_installer_registry_canary_uses_actual_count(tmp_path: Path) -> None:
+    script = REMOTE_INSTALL.read_text("utf-8")
+    marker = "-i sovereign-chatgpt-mcp python - <<'PY'\n"
+    section = script.split("SOVEREIGN_EXPECTED_WORKFLOW_REVISION=", 1)[1]
+    embedded = section.split(marker, 1)[1].split("\nPY", 1)[0]
+    revision = "a" * 40
+    policy = ROOT / "config" / "sovereign-continuity-policy.json"
+    environment = {
+        **os.environ,
+        "PYTHONPATH": str(ROOT),
+        "SOVEREIGN_SOURCE_REVISION": revision,
+        "SOVEREIGN_EXPECTED_WORKFLOW_REVISION": revision,
+        "SOVEREIGN_NEURO_POLICY_SHA256": hashlib.sha256(policy.read_bytes()).hexdigest(),
+        "SOVEREIGN_NEURO_RUNTIME_TRACKING_ENABLED": "0",
+        "SOVEREIGN_MCP_PRIVATE_OWNER_MODE": "1",
+        "SOVEREIGN_MCP_WORKSPACE_ROOT": str(tmp_path / "workspaces"),
+        "SOVEREIGN_TOOL_RANKING_STATE_ROOT": str(tmp_path / "tool-ranking"),
+        "SOVEREIGN_NEURO_RUNTIME_STATE_ROOT": str(tmp_path / "neuro-runtime"),
+        "SOVEREIGN_MCP_GITHUB_APP_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE": "",
+    }
+    completed = subprocess.run(
+        [sys.executable, "-c", embedded], cwd=ROOT, env=environment,
+        capture_output=True, text=True, check=False, timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr[-4000:]
+    assert "'toolCount':" in completed.stdout
 
 
 def test_exact_ci_launcher_import_runs_with_the_default_registry(tmp_path: Path) -> None:

@@ -581,6 +581,9 @@ class BrokerRuntime:
             "ssh_console_assistant_inspect": lambda values: self.owner_ssh.assistant_inspect(str(values.get("session_id") or ""), str(values.get("operation") or "")),
             "ssh_console_assistant_shell": lambda values: self.owner_ssh.assistant_shell(
                 str(values.get("session_id") or ""), values.get("command"), values.get("timeout_seconds", 30)),
+            "ssh_console_assistant_output": lambda values: self.owner_ssh.assistant_shell_output(
+                str(values.get("session_id") or ""), str(values.get("execution_id") or ""),
+                str(values.get("stream") or ""), values.get("offset", 0), values.get("limit", 65536)),
             "ssh_console_assistant_workspace": lambda values: self.owner_ssh.assistant_workspace(
                 session_id=str(values.get("session_id") or ""), source_revision=str(values.get("source_revision") or ""),
                 action=values.get("action"), path=values.get("path", ""), content=values.get("content", ""),

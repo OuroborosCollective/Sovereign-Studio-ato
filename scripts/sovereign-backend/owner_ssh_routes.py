@@ -152,12 +152,13 @@ button:disabled{opacity:.45;cursor:wait}label{display:block}.muted{color:#8b949e
 <label id="keySection" hidden>Dedizierter SSH-Privatschlüssel ohne Passphrase<textarea id="privateKey" autocomplete="off" spellcheck="false"></textarea></label>
 <label id="passwordSection">SSH-Passwort<input id="password" type="password" autocomplete="off"></label>
 <p class="muted">Schlüssel oder Passwort ausschließlich hier eingeben. Verschlüsselte Schlüssel und zusätzliche MFA-Abfragen sind in dieser Version noch nicht unterstützt.</p>
-<label>Sitzungsdauer<select id="duration"><option value="900">15 Minuten</option><option value="1800">30 Minuten</option><option value="3600">60 Minuten</option></select></label>
+<label>Sitzungsdauer<select id="duration"><option value="0">Ohne Zeitlimit (46.202.154.25)</option><option value="900">15 Minuten</option><option value="1800">30 Minuten</option><option value="3600">60 Minuten</option></select></label>
 <button id="connect">SSH verbinden</button></section>
 <section id="uncertain" hidden><h2>Verbindungsende unbestätigt</h2><p>Die Assistenzfreigabe ist widerrufen. Das Ende der SSH-Verbindung konnte noch nicht bestätigt werden.</p><button id="retryClose">Schließen erneut prüfen</button></section>
 <section id="console" hidden><h2>Aktive Verbindung</h2><p id="identity"></p><p id="grantState"></p>
 <div id="operations"></div>
-<h3>Meine Hilfe freigeben</h3><p>Nur die ausgewählten Menüaktionen werden freigegeben. Die Freigabe gilt für diese Verbindung und endet automatisch.</p>
+<p id="fullAccessNotice" hidden>Für diese VPS-Verbindung gilt die einmalige Freigabe für wiederholte Shell- und Workspace-Aufgaben. Befehle müssen nicht einzeln bestätigt werden.</p>
+<div id="legacyGrant"><h3>Meine Hilfe freigeben</h3><p>Nur die ausgewählten Menüaktionen werden freigegeben. Die Freigabe gilt für diese Verbindung und endet automatisch.</p>
 <div id="scope"></div><label>Freigabedauer<select id="grantDuration"><option value="300">5 Minuten</option><option value="900">15 Minuten</option></select></label>
 <label class="check"><input id="workspaceScope" type="checkbox">Isolierten VPS-Workspace freigeben</label>
 <label class="check"><input id="shellScope" type="checkbox">Einen konkreten VPS-Befehl einmalig freigeben</label>
@@ -166,7 +167,7 @@ button:disabled{opacity:.45;cursor:wait}label{display:block}.muted{color:#8b949e
 <p id="shellScopeHelp" hidden>Die Freigabe gilt nur für diesen exakten Befehl, diese SSH-Verbindung und die gewählte Zeit. Sie wird vor Ausführung verbraucht und kann widerrufen werden. stdout und stderr werden vollständig verworfen; nur Exit-Code und Bytezahlen werden quittiert.</p>
 <p>Erlaubt wiederholte Dateiänderungen und Python-/Node-Tests für 15–60 Minuten. Testcode läuft ohne Root-Rechte und ohne Netzwerk oder produktive Dateien. Merge, Deployment und Datenbankänderungen gehören nicht zu dieser Sitzungsberechtigung.</p>
 <label>Workspace-Freigabedauer<select id="workspaceDuration"><option value="900">15 Minuten</option><option value="1800">30 Minuten</option><option value="3600">60 Minuten</option></select></label>
-<button id="grant">Hilfe freigeben</button><button id="revoke">Freigabe widerrufen</button><button id="close">Verbindung beenden</button>
+<button id="grant">Hilfe freigeben</button></div><button id="restoreFull" hidden>VPS-Freigabe wiederherstellen</button><button id="revoke">Freigabe widerrufen</button><button id="close">Verbindung beenden</button>
 <h3>Konsole</h3><pre id="output" aria-live="polite">Noch keine Aktion ausgeführt.</pre></section>
 <p id="message" role="status" aria-live="polite"></p>
 <script>
@@ -203,8 +204,9 @@ function render(state){
  const active=state.status==='connected';
  const uncertain=state.status==='close_unverified';
  $('login').hidden=Boolean(admin);$('setup').hidden=!admin||active||uncertain;$('console').hidden=!active;$('uncertain').hidden=!uncertain;
- $('identity').textContent=active?state.username+'@'+state.host+' · '+state.hostFingerprint+' · bis '+new Date(state.expiresAt*1000).toLocaleTimeString():'';
- if(state.lastActivity){const a=state.lastActivity;if(a.operation==='shell'){$('output').textContent='[Shell-Ausführungsbeleg]\nFreigabe: '+a.approvalId+'\nQuellrevision: '+a.sourceRevision+'\nBefehls-SHA256: '+a.commandSha256+'\nStatus: '+a.status+'\nstdout-Bytes: '+(a.stdoutBytes??'unbekannt')+' · stderr-Bytes: '+(a.stderrBytes??'unbekannt')+'\nExit: '+a.exitCode+'\nAusgabe: verworfen';}else{$('output').textContent='['+a.actor+'] $ '+a.command+'\n'+a.output+'\nExit: '+a.exitCode;}}
+  $('identity').textContent=active?state.username+'@'+state.host+' · '+state.hostFingerprint+' · '+(state.expiresAt===null?'ohne Zeitlimit':'bis '+new Date(state.expiresAt*1000).toLocaleTimeString()):'';
+  $('fullAccessNotice').hidden=!state.fullAccess;$('legacyGrant').hidden=Boolean(state.fullAccess);$('restoreFull').hidden=!state.fullAccess||state.assistantGrantActive;
+  if(state.lastActivity){const a=state.lastActivity;if(a.operation==='shell'){$('output').textContent='[Shell-Ausführungsbeleg]\nFreigabe: '+(a.grantId||a.approvalId)+'\nQuellrevision: '+a.sourceRevision+'\nBefehls-SHA256: '+a.commandSha256+'\nStatus: '+a.status+'\nstdout-Bytes: '+(a.stdoutBytes??'unbekannt')+' · stderr-Bytes: '+(a.stderrBytes??'unbekannt')+'\nExit: '+a.exitCode+(a.grantId?'\nAusgabe über Chat verfügbar':'\nAusgabe: verworfen');}else{$('output').textContent='['+a.actor+'] $ '+a.command+'\n'+a.output+'\nExit: '+a.exitCode;}}
  $('grantState').textContent=state.assistantGrantActive?'Hilfe freigegeben: '+state.allowedOperations.map(op=>names[op]||op).join(', '):'Keine aktive Freigabe für die Assistenz.';
  const resetScope=previous!==session||!$('scope').childElementCount;
  $('operations').replaceChildren();if(resetScope)$('scope').replaceChildren();
@@ -239,6 +241,7 @@ $('connect').onclick=async()=>{
  await action({action:'connect',profile});profile.privateKey='';profile.password='';
 };
 $('retryClose').onclick=()=>action({action:'close'});
+$('restoreFull').onclick=()=>action({action:'grant',operations:['system'],ttl:300});
 $('close').onclick=()=>action({action:'close'});$('revoke').onclick=()=>action({action:'revoke'});
 $('shellScope').onchange=()=>{$('shellCommandLabel').hidden=!$('shellScope').checked;$('shellTimeoutLabel').hidden=!$('shellScope').checked;$('shellScopeHelp').hidden=!$('shellScope').checked;};
 $('grant').onclick=()=>{if($('shellScope').checked){const command=$('shellCommand').value;if(!command.trim()){message('Für die Shell-Freigabe zuerst genau einen Befehl eintragen.');return;}const displayControl=/[\p{Cf}\p{Cs}\p{Cn}\p{Zl}\p{Zp}]/u;const control=/\p{Cc}/u;if(Array.from(command).some(ch=>displayControl.test(ch)||(control.test(ch)&&ch!=='\n'&&ch!=='\t'))){message('Unsichtbare Steuerzeichen im Befehl sind nicht erlaubt.');return;}const timeoutSeconds=Number($('shellTimeout').value);if(!confirm('Einmalige Freigabe für genau diesen Befehl bis zu '+timeoutSeconds+' Sekunden?\n\n'+command+'\n\nDer Befehl kann produktive Dateien und Dienste verändern.'))return;$('shellCommand').value='';return action({action:'grant',operations:['shell'],ttl:Number($('grantDuration').value),command,timeoutSeconds});}const ops=Array.from($('scope').querySelectorAll('input:checked')).map(b=>b.value);if($('workspaceScope').checked)ops.push('workspace');return action({action:'grant',operations:ops,ttl:Number($($('workspaceScope').checked?'workspaceDuration':'grantDuration').value)});};
