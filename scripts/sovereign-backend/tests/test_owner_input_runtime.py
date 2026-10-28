@@ -148,22 +148,20 @@ def test_n8n_root_owned_target_is_written_as_regular_0600_file(
 
     def root_owned_fstat(descriptor):
         observed = real_fstat(descriptor)
-        return types.SimpleNamespace(
-            st_uid=0,
-            st_gid=0,
-            st_mode=observed.st_mode,
-        )
+        res = list(observed)
+        res[4] = 0
+        res[5] = 0
+        return os.stat_result(tuple(res))
 
     monkeypatch.setattr(os, "fstat", root_owned_fstat)
     real_lstat = os.lstat
 
     def root_owned_lstat(path):
         observed = real_lstat(path)
-        return types.SimpleNamespace(
-            st_uid=0,
-            st_gid=0,
-            st_mode=observed.st_mode,
-        )
+        res = list(observed)
+        res[4] = 0
+        res[5] = 0
+        return os.stat_result(tuple(res))
 
     monkeypatch.setattr(os, "lstat", root_owned_lstat)
     target = runtime._target_map()["n8n_sovereign_api_key"]
@@ -191,20 +189,18 @@ def test_n8n_root_owned_target_rejects_final_ownership_mismatch(
 
     def root_owned_fstat(descriptor):
         observed = real_fstat(descriptor)
-        return types.SimpleNamespace(
-            st_uid=0,
-            st_gid=0,
-            st_mode=observed.st_mode,
-        )
+        res = list(observed)
+        res[4] = 0
+        res[5] = 0
+        return os.stat_result(tuple(res))
 
     def non_root_final_lstat(path):
         observed = real_lstat(path)
         if Path(path) == target_path:
-            return types.SimpleNamespace(
-                st_uid=1000,
-                st_gid=0,
-                st_mode=observed.st_mode,
-            )
+            res = list(observed)
+            res[4] = 1000
+            res[5] = 0
+            return os.stat_result(tuple(res))
         return observed
 
     monkeypatch.setattr(os, "fstat", root_owned_fstat)
