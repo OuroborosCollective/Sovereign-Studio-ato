@@ -84,3 +84,29 @@ def test_raw_credential_and_unknown_settings_are_not_projected(tmp_path):
     assert "AURION_ADMIN_MCP_UNKNOWN" not in values
     assert "AURION_ADMIN_MCP_SCOPES_EXTRA" not in values
     assert "fixture-not-a-credential" not in raw
+
+
+def test_verified_source_revision_reaches_ssh_broker(tmp_path, monkeypatch):
+    from owner_ssh_console import _runtime_source_revision
+
+    configured_revision = "a" * 40
+    managed_revision = "b" * 40
+    values, raw = project_broker_environment(
+        tmp_path,
+        f"SOVEREIGN_SOURCE_REVISION={configured_revision}\n",
+        f"SOVEREIGN_SOURCE_REVISION={managed_revision}\n",
+    )
+    assert values.get("SOVEREIGN_SOURCE_REVISION") == managed_revision
+    assert raw.index(configured_revision) < raw.index(managed_revision)
+    monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", values["SOVEREIGN_SOURCE_REVISION"])
+    assert _runtime_source_revision() == managed_revision
+
+
+def test_missing_source_revision_is_not_invented_for_ssh_broker(tmp_path, monkeypatch):
+    from owner_ssh_console import _runtime_source_revision
+
+    values, _ = project_broker_environment(tmp_path)
+    assert "SOVEREIGN_SOURCE_REVISION" not in values
+    monkeypatch.delenv("SOVEREIGN_SOURCE_REVISION", raising=False)
+    with pytest.raises(ValueError, match="Exact MCP source revision is unavailable"):
+        _runtime_source_revision()

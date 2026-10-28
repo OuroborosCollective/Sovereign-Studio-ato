@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+import asyncio
 import hashlib
 import json
 import subprocess
@@ -325,6 +327,40 @@ def test_inventory_and_router_use_live_registry_without_executing_tools(register
     assert "repository_revision_probe" in selected
     assert result.mutationPerformed is False
     assert result.runtimeVerified is True
+
+
+def test_registry_lists_all_tools_beyond_previous_thousand_tool_limit(registered, monkeypatch) -> None:
+    mcp, _, _ = registered
+    entries = [
+        SimpleNamespace(name=f"fixture_tool_{index:04d}", description="fixture",
+                        annotations=None, parameters={}, output_schema={})
+        for index in range(1100)
+    ]
+    manager = SimpleNamespace(list_tools=lambda: entries)
+    monkeypatch.setattr(tools, "_MCP", SimpleNamespace(_tool_manager=manager))
+
+    full = tools.mcp_tool_contract_registry()
+    assert full.toolCount == 1100 and full.truncated is False
+
+    limited = tools.mcp_tool_contract_registry(max_tools=5)
+    assert limited.toolCount == 5 and limited.truncated is True
+
+    extended = tools.mcp_tool_contract_registry(max_tools=1100)
+    assert extended.toolCount == 1100 and extended.truncated is False
+
+    names = [item.name for item in entries]
+    verified = tools.mcp_registry_snapshot_verify(expected_tool_names=names)
+    assert verified.ok is True and verified.status == "MCP_REGISTRY_SNAPSHOT_MATCH"
+
+    # Exercise FastMCP argument validation as well as the Python function.
+    via_mcp = asyncio.run(mcp._tool_manager.call_tool(
+        "mcp_tool_contract_registry", {"max_tools": 1100}, convert_result=False
+    ))
+    assert via_mcp.toolCount == 1100 and via_mcp.truncated is False
+    verified_via_mcp = asyncio.run(mcp._tool_manager.call_tool(
+        "mcp_registry_snapshot_verify", {"expected_tool_names": names}, convert_result=False
+    ))
+    assert verified_via_mcp.ok is True
 
 
 def test_registry_snapshot_hash_is_stable_and_detects_missing_expected_tool(registered) -> None:
