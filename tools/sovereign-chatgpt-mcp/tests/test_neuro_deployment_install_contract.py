@@ -33,6 +33,7 @@ EXPECTED_NEURO_TOOLS = {
 
 EXPECTED_AGENT_ZERO_TOOLS = {"agent_zero_backend_diagnostics", "agent_zero_a2a_canary"}
 EXPECTED_SSH_TOOLS = {"vps_ssh_session_status", "vps_ssh_inspect", "vps_ssh_workspace", "vps_ssh_shell"}
+EXPECTED_WORKSPACE_TOOLS = {"workspace_inventory", "workspace_cleanup"}
 
 EXPECTED_AURION_TOOLS = {
     "aurion_native_auth_plan",
@@ -175,8 +176,8 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
         'docker compose up -d --no-build --force-recreate --remove-orphans'
     )
 
-    assert 'EXPECTED_MCP_TOOL_COUNT="259"' in script
-    assert 'EXPECTED_MCP_TOOL_COUNT="265"' in script.split('INSTALL_STAGE="configure_private_owner_mode"', 1)[1]
+    assert 'EXPECTED_MCP_TOOL_COUNT="261"' in script
+    assert 'EXPECTED_MCP_TOOL_COUNT="267"' in script.split('INSTALL_STAGE="configure_private_owner_mode"', 1)[1]
     assert 'deployment_registry_probe.py surface "${EXPECTED_MCP_TOOL_COUNT}"' in script
     assert 'deployment_registry_probe.py snapshot "${EXPECTED_MCP_TOOL_COUNT}"' in script
     assert 'SOVEREIGN_EXPECTED_MCP_TOOL_COUNT="$EXPECTED_MCP_TOOL_COUNT"' in script
@@ -460,14 +461,20 @@ print(json.dumps({
     )
     assert registry_process.returncode == 0, registry_process.stderr
     current_registry = json.loads(registry_process.stdout.strip().splitlines()[-1])
-    assert current_registry["toolCount"] == 265
+    assert current_registry["toolCount"] == 267
     assert EXPECTED_SSH_TOOLS <= {item["name"] for item in current_registry["tools"]}
+    indexed = {item["name"]: item for item in current_registry["tools"]}
+    assert EXPECTED_WORKSPACE_TOOLS <= set(indexed)
+    assert indexed["workspace_inventory"]["annotations"]["readOnlyHint"] is True
+    assert indexed["workspace_inventory"]["annotations"]["destructiveHint"] is False
+    assert indexed["workspace_cleanup"]["annotations"]["readOnlyHint"] is False
+    assert indexed["workspace_cleanup"]["annotations"]["destructiveHint"] is True
 
     predecessor_registry = json.loads(json.dumps(current_registry))
     predecessor_registry["tools"] = [
         item
         for item in predecessor_registry["tools"]
-        if item["name"] not in EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS | EXPECTED_AGENT_ZERO_TOOLS | EXPECTED_SSH_TOOLS | {"n8n_workflow_plan", "n8n_workflow_apply", "wolfram_cag_runtime_evidence_bind", "wolfram_source_intelligence"}
+        if item["name"] not in EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS | EXPECTED_AGENT_ZERO_TOOLS | EXPECTED_SSH_TOOLS | EXPECTED_WORKSPACE_TOOLS | {"n8n_workflow_plan", "n8n_workflow_apply", "wolfram_cag_runtime_evidence_bind", "wolfram_source_intelligence"}
     ]
     predecessor_registry["toolCount"] = len(predecessor_registry["tools"])
     predecessor_registry["registrySnapshotSha256"] = "0" * 64
@@ -537,7 +544,7 @@ print(json.dumps({
             str(predecessor_path),
             str(current_path),
             "1",
-            "265",
+            "267",
         ],
         capture_output=True,
         text=True,
@@ -546,7 +553,7 @@ print(json.dumps({
     )
     assert compatibility.returncode == 0, compatibility.stderr
     compatibility_receipt = json.loads(compatibility.stdout.strip().splitlines()[-1])
-    assert set(compatibility_receipt["additions"]) == EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS | EXPECTED_AGENT_ZERO_TOOLS | EXPECTED_SSH_TOOLS | {"wolfram_cag_runtime_evidence_bind", "wolfram_source_intelligence"}
+    assert set(compatibility_receipt["additions"]) == EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS | EXPECTED_AGENT_ZERO_TOOLS | EXPECTED_SSH_TOOLS | EXPECTED_WORKSPACE_TOOLS | {"wolfram_cag_runtime_evidence_bind", "wolfram_source_intelligence"}
     assert set(compatibility_receipt["changedCompatibleContracts"]) == (
         EXPECTED_COMPATIBLE_PREDECESSOR_DRIFT
     )
@@ -573,7 +580,7 @@ print(json.dumps({
             str(predecessor_path),
             str(incompatible_path),
             "1",
-            "265",
+            "267",
         ],
         capture_output=True,
         text=True,
@@ -613,7 +620,7 @@ print(json.dumps({
             str(property_predecessor_path),
             str(property_replacement_path),
             "1",
-            "265",
+            "267",
         ],
         capture_output=True,
         text=True,
@@ -649,7 +656,7 @@ print(json.dumps({
             str(one_of_predecessor_path),
             str(one_of_replacement_path),
             "1",
-            "265",
+            "267",
         ],
         capture_output=True,
         text=True,
@@ -693,7 +700,7 @@ print(json.dumps({
             str(output_predecessor_path),
             str(output_replacement_path),
             "1",
-            "265",
+            "267",
         ],
         capture_output=True,
         text=True,
@@ -737,7 +744,7 @@ print(json.dumps({
                 str(old_path),
                 str(new_path),
                 "1",
-                "265",
+                "267",
             ],
             capture_output=True,
             text=True,
@@ -866,7 +873,7 @@ print(json.dumps({
             str(predecessor_path),
             str(description_path),
             "1",
-            "265",
+            "267",
         ],
         capture_output=True,
         text=True,
@@ -1069,11 +1076,11 @@ def test_installer_runs_a_clean_real_registry_neuro_canary_without_selected_tool
 @pytest.mark.parametrize(
     ("admin_scopes", "wolfram_enabled", "expected_tool_count"),
     (
-        ("", "0", 265),
-        ("aurion.admin.read", "0", 295),
-        ("aurion.admin.read", "1", 300),
-        ("aurion.admin.read aurion.admin.assets.write aurion.admin.authoring.write", "0", 313),
-        ("aurion.admin.read aurion.admin.assets.write aurion.admin.authoring.write", "1", 318),
+        ("", "0", 267),
+        ("aurion.admin.read", "0", 297),
+        ("aurion.admin.read", "1", 302),
+        ("aurion.admin.read aurion.admin.assets.write aurion.admin.authoring.write", "0", 315),
+        ("aurion.admin.read aurion.admin.assets.write aurion.admin.authoring.write", "1", 320),
     ),
 )
 def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(
@@ -1237,20 +1244,20 @@ def test_installer_counts_the_declared_admin_lane_without_learning_from_live_reg
         "AURION_ADMIN_MCP_WOLFRAM_ENABLED": "0",
     }
     for scopes, wolfram, expected in (
-        ("aurion.admin.read", "0", 295),
-        ("aurion.admin.read", "1", 300),
-        ("aurion.admin.read aurion.admin.assets.write aurion.admin.authoring.write", "0", 313),
-        ("aurion.admin.read aurion.admin.assets.write aurion.admin.authoring.write", "1", 318),
+        ("aurion.admin.read", "0", 297),
+        ("aurion.admin.read", "1", 302),
+        ("aurion.admin.read aurion.admin.assets.write aurion.admin.authoring.write", "0", 315),
+        ("aurion.admin.read aurion.admin.assets.write aurion.admin.authoring.write", "1", 320),
     ):
         result = subprocess.run(
-            [sys.executable, "-", "265"], input=embedded, cwd=ROOT,
+            [sys.executable, "-", "267"], input=embedded, cwd=ROOT,
             env={**environment, "AURION_ADMIN_MCP_SCOPES": scopes, "AURION_ADMIN_MCP_WOLFRAM_ENABLED": wolfram},
             text=True, capture_output=True, timeout=30, check=False,
         )
         assert result.returncode == 0, result.stderr
         assert int(result.stdout.strip()) == expected
     denied = subprocess.run(
-        [sys.executable, "-", "265"], input=embedded, cwd=ROOT,
+        [sys.executable, "-", "267"], input=embedded, cwd=ROOT,
         env={**environment, "AURION_ADMIN_MCP_SCOPES": "invalid.scope"},
         text=True, capture_output=True, timeout=30, check=False,
     )
@@ -1277,13 +1284,13 @@ def test_private_owner_admin_registry_matches_the_installer_scope_contract(tmp_p
         "SOVEREIGN_NEURO_RUNTIME_STATE_ROOT": str(tmp_path / "neuro"),
         "SOVEREIGN_NEURO_RUNTIME_TRACKING_ENABLED": "0",
     }
-    expected = subprocess.run([sys.executable, "-", "265"], input=calculator,
+    expected = subprocess.run([sys.executable, "-", "267"], input=calculator,
         cwd=ROOT, env=environment, text=True, capture_output=True, timeout=30, check=False)
     actual = subprocess.run([sys.executable, "-c", "import launcher; print(len({tool.name for tool in launcher.mcp._tool_manager.list_tools()}))"],
         cwd=ROOT, env=environment, text=True, capture_output=True, timeout=30, check=False)
     assert expected.returncode == 0, expected.stderr
     assert actual.returncode == 0, actual.stderr
-    assert int(expected.stdout.strip()) == 295
+    assert int(expected.stdout.strip()) == 297
     assert int(actual.stdout.strip().splitlines()[-1]) == int(expected.stdout.strip())
 
 
@@ -1306,10 +1313,10 @@ def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Pa
         "skills/sovereign-neuro-teaching-runtime/SKILL.md",
     ):
         assert path in workflow
-    assert "assert len(tool_names) == 259" in workflow
+    assert "assert len(tool_names) == 261" in workflow
     assert "n8n_workflow_plan" in deployment_surface
     assert "n8n_workflow_apply" in deployment_surface
-    assert "assert len(tool_names - expected_tools) == 253" in deployment_surface
+    assert "assert len(tool_names - expected_tools) == 255" in deployment_surface
     assert "SOVEREIGN_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow
     assert workflow.count("ref: ${{ env.SOVEREIGN_SOURCE_REVISION }}") == 2
     assert '--expected-head "${SOVEREIGN_SOURCE_REVISION}"' in workflow

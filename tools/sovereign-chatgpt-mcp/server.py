@@ -320,6 +320,8 @@ NETWORK_READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempot
 SAFE_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 WORKSPACE_NETWORK_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 EXTERNAL_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=True)
+# Workspace cleanup deletes a marker-owned local checkout; not a harmless edit.
+WORKSPACE_CLEANUP = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False)
 
 
 @mcp.tool(annotations=SAFE_WRITE)
@@ -334,7 +336,7 @@ def workspace_inventory() -> dict[str, Any]:
     return runtime.workspace_inventory()
 
 
-@mcp.tool(annotations=SAFE_WRITE)
+@mcp.tool(annotations=WORKSPACE_CLEANUP)
 def workspace_cleanup(workspace_id: str, abandon_confirmed: bool = False) -> dict[str, Any]:
     """Remove only an owned workspace after verified Draft PR or explicit owner discard."""
     return runtime.cleanup_workspace(workspace_id, abandon_confirmed=abandon_confirmed)
