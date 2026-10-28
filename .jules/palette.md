@@ -69,3 +69,7 @@
 ## 2025-10-05 - [Accessible Chat Streams & Empty States]
 **Learning:** Chat interfaces with dynamically added messages lack screen reader notifications if they do not have a live region. Furthermore, an empty stream provides no context. Adding `role="log"` and `aria-live="polite"` to the container, along with a visually centered empty state, improves both discoverability and accessibility.
 **Action:** Always wrap chat or event streams in an element with `role="log"` or `aria-live="polite"`, and provide a helpful empty state when no items are present.
+
+## 2026-10-28 - [State-Dependent Title Tooltips for Disabled Textareas]
+**Learning:** For critical input elements like mission dispatch textareas, relying solely on dynamic placeholders to convey locked/disabled states is insufficient. Placeholders are not reliably announced as state indicators by screen readers, and sighted users benefit from persistent, state-dependent native hover tooltips.
+**Action:** Always provide an explicit, state-dependent `title` attribute explaining the locked state and apply `disabled:cursor-not-allowed` styles on interactive elements like `<textarea>` that can be dynamically disabled.
