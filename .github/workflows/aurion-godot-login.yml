@@ -89,6 +89,7 @@ jobs:
         import { androidReport } from './scripts/godot/android-toolchain.mjs';
         import { inspectLoginGradleSdk,verifyGodotGradleVersions } from './scripts/godot/gradle-prerequisites.mjs';
         import { stageGodotGradleBuild } from './scripts/godot/android-gradle-link.mjs';
+        import { stageAssetProject,includeAssetManifest,verifyStagedAssetImports,readApkAssets } from './scripts/godot/export-assets.mjs';
         import { createLoginPreset,validateSignerConfig,verifySignerOnDisk,validateLoginArtifact,loginPackage } from './scripts/godot/login-gradle-export.mjs';
         import { requireLoginReleaseInputs,createLoginOverride,assertPackagedBuildRevision,verifyLiveAssetlinks,LOGIN_APK_FILENAME } from './scripts/godot/login-release-gates.mjs';
 
@@ -119,9 +120,9 @@ jobs:
          const job=await mkdtemp(join(root,'signed-login-'));
          try {
           const project=join(job,'project');
-          await cp(join(repo,'godot-client'),project,{recursive:true,filter:p=>!p.split('/').includes('.godot')});
+          const prepared=await stageAssetProject(project,revision);
           const original=await readFile(join(project,'export_presets.cfg'),'utf8');
-          await writeFile(join(project,'export_presets.cfg'),createLoginPreset(original).replaceAll('package/signed=true','package/signed=false'),{mode:0o600});
+          await writeFile(join(project,'export_presets.cfg'),includeAssetManifest(createLoginPreset(original).replaceAll('package/signed=true','package/signed=false')),{mode:0o600});
           await writeFile(join(project,'override.cfg'),createLoginOverride(revision),{mode:0o600});
           await stageGodotGradleBuild({archive,project,version});
           const manifestSource=await readFile(join(project,'android/build/src/main/AndroidManifest.xml'),'utf8');
@@ -136,6 +137,7 @@ jobs:
           for(const [label,args,timeout] of [['import',['--editor','--import'],240000],['export',['--export-release','Android Login',apk],1200000]]) {
            const result=spawnSync(executable,['--headless','--path',project,...args],{env:buildEnv,encoding:'utf8',timeout,maxBuffer:8*1024*1024});
            assert.ok(!result.error&&result.status===0,'Godot '+label+' failed; no release published');
+           if(label==='import') await verifyStagedAssetImports(project,prepared,buildEnv);
           }
           const tools=join(request.sdkRoot,'build-tools',versions.buildTools);
           const badging=checked(join(tools,'aapt'),['dump','badging',apk],buildEnv);
@@ -143,11 +145,13 @@ jobs:
           const signatureCheck=spawnSync(join(tools,'apksigner'),['verify',apk],{env:buildEnv,encoding:'utf8'});
           assert.ok(!signatureCheck.error && signatureCheck.status !== 0,'unsigned build must not carry a signing identity');
           assert.match(manifest,/screenOrientation.*0x0/);
+          const entries=run('unzip',['-Z1',apk]).split('\n');
+          const packagedAssets=readApkAssets(apk,prepared,entries);
           const packed=checked('unzip',['-p',apk,'assets/override.cfg'],buildEnv);
           assertPackagedBuildRevision(packed,revision);
           const association=await verifyLiveAssetlinks({packageName:loginPackage,fingerprint:env.AURION_LOGIN_SIGNER_SHA256});
           assert.equal((await androidReport()).treeSha256,baseline.treeSha256,'Preview SDK changed');
-          const evidence={schemaVersion:1,sourceRevision:revision,apkSha256:await digest(apk),packageName:loginPackage,signingState:'unsigned',assetlinks:association,device:'unverified',toolchainLockSha256:await digest(join(repo,'config/godot-toolchain.lock.json'))};
+          const evidence={schemaVersion:1,sourceRevision:revision,packagedAssets,apkSha256:await digest(apk),packageName:loginPackage,signingState:'unsigned',assetlinks:association,device:'unverified',toolchainLockSha256:await digest(join(repo,'config/godot-toolchain.lock.json'))};
           const staging=await mkdtemp(join(request.outputDirectory,'.signed-login-'));
           try {
            await copyFile(apk,join(staging,LOGIN_APK_FILENAME));
