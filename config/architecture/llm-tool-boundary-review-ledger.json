@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "d843140a45564473f6ab14524a759e48329b411d",
+  "sourceRevision": "eb8f2eaa7fbf7cc0bc4f9c57e5da6a716de3d22c",
   "rawCandidateCount": 105,
   "canonicalCandidateCount": 82,
   "entries": [
@@ -993,7 +993,7 @@
       "symbol": "_patchmon_revision_from_payload",
       "line": 2123,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "256ecc0dac1e6298a195aabe036d7a6e7e115922278949188affe7342a50fa7b",
+      "fileSha256": "18ea55893ccd8050c716797d3ea3b1702c41ab3e908e746ad68550539d3f5473",
       "anchorSha256": "89d6ce923bec8929a1cc3e2eab5011cafb2dd1164ae34ea15f09c2615b60e43a",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:38164cc425a0071ad74d673d",
@@ -1006,7 +1006,7 @@
       "symbol": "_patchmon_revision_binding",
       "line": 2161,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "256ecc0dac1e6298a195aabe036d7a6e7e115922278949188affe7342a50fa7b",
+      "fileSha256": "18ea55893ccd8050c716797d3ea3b1702c41ab3e908e746ad68550539d3f5473",
       "anchorSha256": "a443b2f0083390465b24f733ff09571e7981e7d5b370e40802c10f76943a914a",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:8e670563878d17a26e11dee0",
@@ -1118,5 +1118,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "066b56bb208c7c269b14aa031c1456eb96e91fecebaa52a7e92f0e90fc3cb271"
+  "ledgerSha256": "c2fae2452b47c9e5a091a8a8ee55db19b6ce806f994943769a6b55109f101b0d"
 }
