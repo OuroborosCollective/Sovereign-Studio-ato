@@ -51,6 +51,19 @@ class LoginWorkflowTests(unittest.TestCase):
             with self.subTest(job=name):
                 self.assertEqual(' '.join(self.workflow['jobs'][name]['if'].split()), expected)
 
+    def test_signable_3d_build_prepares_and_verifies_real_imported_assets(self):
+        build = self.workflow['jobs']['build']
+        body = next(s['run'] for s in build['steps'] if s['name'].startswith('Build unsigned Login APK'))
+        for expression in (
+            "from './scripts/godot/export-assets.mjs'",
+            'await stageAssetProject(project,revision)',
+            'includeAssetManifest(',
+            'await verifyStagedAssetImports(project,prepared,buildEnv)',
+            'readApkAssets(apk,prepared,entries)',
+            'packagedAssets',
+        ):
+            self.assertIn(expression, body, 'Signed G21 source does not package and verify active 3D GLB assets: '+expression)
+
     def test_build_never_receives_release_secrets(self):
         self.assertNotIn('secrets.', json.dumps(self.workflow['jobs']['build']))
         self.assertEqual(self.sign['needs'], 'build')
