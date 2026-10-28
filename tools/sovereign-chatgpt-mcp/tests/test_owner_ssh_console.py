@@ -70,6 +70,70 @@ def shell_grant(instance, session_id, command, timeout_seconds=30, ttl=300):
     return instance.owner_action(owner_action(instance, "grant", sessionId=session_id,
         operations=["shell"], ttl=ttl, commandSha256=digest, timeoutSeconds=timeout_seconds))
 
+
+def full_owner_session(console):
+    instance, profile, calls = console
+    profile.update(host="46.202.154.25", username="root", expiresInSeconds=0)
+    instance._write("ssh_console_profile.json", profile)
+    result = instance.owner_action(owner_action(instance, "connect"))
+    return instance, result["sessionId"], calls
+
+
+def test_designated_owner_vps_gets_one_persistent_full_session(console):
+    instance, session_id, calls = full_owner_session(console)
+    status = instance.status(session_id)
+    assert status["fullAccess"] is True and status["assistantGrantActive"] is True
+    assert status["expiresAt"] is None
+    assert {"shell", "workspace", *OPERATIONS} <= set(status["allowedOperations"])
+    assert any("ControlPersist=yes" in argv for argv in calls)
+
+
+def test_full_session_runs_different_commands_and_returns_paginated_output(console, monkeypatch):
+    instance, session_id, calls = full_owner_session(console)
+    monkeypatch.delenv("SOVEREIGN_SOURCE_REVISION", raising=False)
+    observed = []
+    body = (b"owner-secret-example\n" * 5000) + bytes([255])
+
+    def transport(argv, *, timeout_seconds, guard, output_streams):
+        guard()
+        observed.append((argv, timeout_seconds))
+        output_streams[1].write(body)
+        output_streams[2].write(b"diagnostic\n")
+        return SimpleNamespace(returncode=0, stdout_bytes=len(body), stderr_bytes=11)
+
+    instance.shell_runner = transport
+    first = instance.assistant_shell(session_id, "printf x # " + "x" * 9000, timeout_seconds=None)
+    second = instance.assistant_shell(session_id, "id", timeout_seconds=None)
+    assert first["ok"] and second["ok"] and len(observed) == 2
+    assert all(timeout is None and "systemd-run" not in argv[-1] for argv, timeout in observed)
+    assert first["stdoutBytes"] == len(body) and first["stdout"]["eof"] is False
+    assert first["stderr"]["text"] == "diagnostic\n"
+    chunks = [base64.b64decode(first["stdout"]["base64"])]
+    offset = first["stdout"]["nextOffset"]
+    while True:
+        page = instance.assistant_shell_output(session_id, first["executionId"], "stdout", offset)
+        chunks.append(base64.b64decode(page["base64"]))
+        offset = page["nextOffset"]
+        if page["eof"]:
+            break
+    assert b"".join(chunks) == body
+    assert "owner-secret-example" not in json.dumps(instance._state())
+    assert instance.status(session_id)["assistantGrantActive"] is True
+    with pytest.raises(ValueError, match="identity"):
+        instance.assistant_shell_output("a" * 32, first["executionId"], "stdout")
+
+
+def test_full_shell_transport_captures_binary_output_without_a_deadline(tmp_path):
+    from owner_ssh_console import _shell_transport
+    out = tmp_path / "out"
+    err = tmp_path / "err"
+    code = "import sys;sys.stdout.buffer.write(bytes([255])*110000);sys.stderr.write('ok')"
+    with out.open("wb") as stdout, err.open("wb") as stderr:
+        result = _shell_transport([sys.executable, "-c", code], timeout_seconds=None,
+                                  guard=lambda: None, output_streams={1: stdout, 2: stderr})
+    assert result.returncode == 0 and result.stdout_bytes == 110000 and result.stderr_bytes == 2
+    assert out.read_bytes() == bytes([255]) * 110000 and err.read_bytes() == b"ok"
+
 def test_owner_connection_checks_host_and_keeps_material_out_of_arguments(console):
     instance, session_id, calls = connected(console)
     serialized = json.dumps(calls)
@@ -456,6 +520,50 @@ def test_canonical_backend_mirrors_and_queue_route():
     assert not is_mutating_action("ssh_console_status")
 
 import asyncio
+
+def test_broker_routes_output_read_and_keeps_shell_on_host_queue():
+    from types import SimpleNamespace
+    from broker import BrokerRuntime
+
+    runtime = BrokerRuntime.__new__(BrokerRuntime)
+    runtime.private_owner_mode = True
+    calls = []
+    runtime.owner_ssh = SimpleNamespace(
+        assistant_shell_output=lambda *args: calls.append(args) or {"ok": True, "status": "TEST_OUTPUT"},
+        assistant_shell=lambda *args: calls.append(args) or {"ok": True, "status": "TEST_SHELL"},
+    )
+    session_id, execution_id = "a" * 32, "b" * 32
+    result = runtime.dispatch("ssh_console_assistant_output", {
+        "session_id": session_id, "execution_id": execution_id,
+        "stream": "stdout", "offset": 16384, "limit": 65536,
+    })
+    assert result["status"] == "TEST_OUTPUT"
+    assert calls == [(session_id, execution_id, "stdout", 16384, 65536)]
+    args = {"session_id": session_id, "command": "true", "timeout_seconds": None}
+    assert runtime.dispatch("ssh_console_assistant_shell", args)["status"] == "BLOCKED"
+    assert runtime.dispatch("ssh_console_assistant_shell", args, execution_origin="host_worker")["status"] == "TEST_SHELL"
+    assert calls[-1] == (session_id, "true", None)
+
+
+def test_shell_mcp_accepts_long_commands_and_exposes_output_pages(monkeypatch):
+    import server
+    calls = []
+    def broker_call(action, arguments, *, timeout=None):
+        calls.append((action, arguments, timeout))
+        return {"ok": True, "status": "TEST_BOUNDARY"}
+    monkeypatch.setattr(server.broker, "call", broker_call)
+    command = "printf x # " + "x" * 9000
+    asyncio.run(server.mcp._tool_manager.call_tool(
+        "vps_ssh_shell", {"session_id": "a" * 32, "command": command}, convert_result=False
+    ))
+    asyncio.run(server.mcp._tool_manager.call_tool(
+        "vps_ssh_shell_output", {"session_id": "a" * 32, "execution_id": "b" * 32,
+                                 "stream": "stdout", "offset": 16384}, convert_result=False
+    ))
+    assert calls[0][0] == "ssh_console_assistant_shell"
+    assert calls[0][1]["command"] == command and calls[0][1]["timeout_seconds"] is None
+    assert calls[1][0] == "ssh_console_assistant_output" and calls[1][1]["offset"] == 16384
+
 
 def test_native_resource_and_tool_argument_boundaries(monkeypatch):
     import server

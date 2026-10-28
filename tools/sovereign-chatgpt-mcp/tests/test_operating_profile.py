@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -34,10 +35,12 @@ def test_profile_is_loaded_registered_and_enforced_for_every_mutable_tool() -> N
     assert status.missingGovernanceTools == []
     assert status.forbiddenToolsPresent == []
     assert status.toolsWithoutOutputSchema == []
-    assert status.unenforcedMutableTools == []
+    assert status.unenforcedMutableTools == ["vps_ssh_shell"]
+    assert status.invariants["standingOwnerSessionTools"] == ["vps_ssh_shell"]
+    assert status.invariants["protectedValuesAcceptedByMcpArguments"] is True
     assert report.ok is True
-    assert report.enforcedToolCount == report.mutableToolCount
-    assert status.enforcedToolCount == status.mutableToolCount
+    assert report.enforcedToolCount + 1 == report.mutableToolCount
+    assert status.enforcedToolCount + 1 == status.mutableToolCount
     assert profile["routeIsolation"]["freeRoute"] == "FreeLLM direct transport only"
     assert profile["routeIsolation"]["paidRoute"] == "Paid OpenRouter direct transport only"
     assert profile["routeIsolation"]["legacyLiteLLMTransportAllowed"] is False
@@ -49,9 +52,41 @@ def test_profile_is_loaded_registered_and_enforced_for_every_mutable_tool() -> N
     for tool in tools.values():
         if tool.annotations.readOnlyHint:
             continue
-        assert tool.meta["sovereign/operatingProfileEnforced"] is True
-        assert getattr(tool.fn, "__sovereign_operating_profile_wrapped__", False) is True
+        if tool.name == "vps_ssh_shell":
+            assert tool.meta["sovereign/operatingProfileEnforced"] is False
+            assert tool.meta["sovereign/standingOwnerSession"] is True
+            assert not getattr(tool.fn, "__sovereign_operating_profile_wrapped__", False)
+        else:
+            assert tool.meta["sovereign/operatingProfileEnforced"] is True
+            assert getattr(tool.fn, "__sovereign_operating_profile_wrapped__", False) is True
 
+
+
+def test_standing_shell_reaches_broker_without_profile_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    import server
+
+    def blocked_gate(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("profile gate was invoked")
+
+    calls = []
+    def broker_call(action: str, arguments: dict, *, timeout: int | None = None) -> dict:
+        calls.append((action, arguments, timeout))
+        return {"ok": True, "status": "TEST_BOUNDARY", "mutationPerformed": True}
+
+    monkeypatch.setattr(operating_profile, "_gate_or_raise", blocked_gate)
+    monkeypatch.setattr(server.broker, "call", broker_call)
+    synthetic_value = "sk-" + "abcdefghijklmnopqrstuvwx"
+    command = "printf %s " + synthetic_value
+    asyncio.run(launcher.mcp._tool_manager.call_tool(
+        "vps_ssh_shell", {"session_id": "a" * 32, "command": command}, convert_result=False
+    ))
+    assert calls == [("ssh_console_assistant_shell", {
+        "session_id": "a" * 32, "command": command, "timeout_seconds": None
+    }, 30)]
+    with pytest.raises(Exception, match="profile gate was invoked"):
+        asyncio.run(launcher.mcp._tool_manager.call_tool(
+            "repository_run_check", {"workspace_id": "test", "check": "test"}, convert_result=False
+        ))
 
 
 def test_read_only_mission_preflight_compiles_and_validates_live_contracts() -> None:

@@ -1453,13 +1453,28 @@ def vps_ssh_inspect(
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def vps_ssh_shell(
     session_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")],
-    command: Annotated[str, Field(min_length=1, max_length=8192)],
-    timeout_seconds: Annotated[int, Field(strict=True, ge=1, le=300)] = 30,
+    command: Annotated[str, Field(min_length=1)],
+    timeout_seconds: Annotated[int | None, Field(strict=True, ge=1)] = None,
 ) -> dict[str, Any]:
-    """Run a free-form owner-delegated VPS command on an existing SSH connection; execution is not target-state readback."""
+    """Run a VPS command under the existing owner session; long executions continue as queued jobs."""
     return broker.call("ssh_console_assistant_shell", {
         "session_id": session_id, "command": command, "timeout_seconds": timeout_seconds,
-    }, timeout=timeout_seconds + 30)
+    }, timeout=30)
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def vps_ssh_shell_output(
+    session_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")],
+    execution_id: Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")],
+    stream: Literal["stdout", "stderr"],
+    offset: Annotated[int, Field(strict=True, ge=0)] = 0,
+    limit: Annotated[int, Field(strict=True, ge=1, le=65536)] = 65536,
+) -> dict[str, Any]:
+    """Read the next output page from a command in the existing full-access VPS session."""
+    return broker.call("ssh_console_assistant_output", {
+        "session_id": session_id, "execution_id": execution_id,
+        "stream": stream, "offset": offset, "limit": limit,
+    }, timeout=30)
 
 
 @mcp.tool(annotations=READ_ONLY)

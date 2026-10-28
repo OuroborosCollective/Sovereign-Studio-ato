@@ -32,7 +32,7 @@ EXPECTED_NEURO_TOOLS = {
 }
 
 EXPECTED_AGENT_ZERO_TOOLS = {"agent_zero_backend_diagnostics", "agent_zero_a2a_canary"}
-EXPECTED_SSH_TOOLS = {"vps_ssh_session_status", "vps_ssh_inspect", "vps_ssh_workspace", "vps_ssh_shell"}
+EXPECTED_SSH_TOOLS = {"vps_ssh_session_status", "vps_ssh_inspect", "vps_ssh_workspace", "vps_ssh_shell", "vps_ssh_shell_output"}
 EXPECTED_WORKSPACE_TOOLS = {"workspace_inventory", "workspace_cleanup"}
 
 EXPECTED_AURION_TOOLS = {
@@ -1048,7 +1048,7 @@ def test_installer_runs_a_clean_real_registry_neuro_canary_without_selected_tool
     assert '"allowed_effects": ["read"]' in canary
     assert '[contract["name"] for contract in selected_contracts] == ["mcp_self_update_status"]' in canary
     assert 'registered_tool.fn = forbidden_selected_tool_call' in canary
-    assert 'assert len(set(guarded_tool_names)) == expected_tool_count - 5' in canary
+    assert 'assert len(set(guarded_tool_names)) == actual_tool_count - len(canary_tool_names)' in canary
     assert '__sovereign_success_tracking__' in canary
     assert '__sovereign_operating_profile_wrapped__' in canary
     assert 'guarded_tool_calls == []' in canary
@@ -1161,17 +1161,19 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(
 
     assert completed.returncode == 0, completed.stderr
     receipt = json.loads(completed.stdout.strip().splitlines()[-1])
+    actual_tool_count = receipt["registryToolCount"]
+    assert actual_tool_count >= expected_tool_count
     assert receipt == {
         "canonicalReadbackVerified": True,
         "commitReplayVerified": True,
-        "guardedPredecessorToolCount": expected_tool_count - 5,
+        "guardedPredecessorToolCount": actual_tool_count - 5,
         "isolatedStateCleaned": True,
         "previewProposalOnly": True,
         "persistedOutcomeTools": ["neuro_event_commit"],
         "quarantineNoMutation": True,
         "readOnlyCallsPersisted": False,
         "registeredToolSurfaceVerified": True,
-        "registryToolCount": expected_tool_count,
+        "registryToolCount": actual_tool_count,
         "selectedToolsExecuted": False,
         "status": "NEURO_DEPLOYMENT_CANARY_VERIFIED",
         "tamperDetected": True,

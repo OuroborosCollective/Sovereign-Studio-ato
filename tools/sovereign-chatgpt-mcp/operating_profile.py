@@ -29,6 +29,8 @@ _MCP: Any = None
 _REGISTERED = False
 _ENFORCEMENT_INSTALLED = False
 _ENFORCED_TOOL_NAMES: tuple[str, ...] = ()
+# The broker enforces the authenticated owner session and target for this tool.
+STANDING_OWNER_SESSION_TOOLS = frozenset({"vps_ssh_shell"})
 
 _EXACT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _EXACT_REVISION_FIELDS = (
@@ -188,7 +190,7 @@ def _effect(tool: Any) -> str:
 
 def _status_payload() -> OperatingProfileStatus:
     profile, profile_sha256 = _load_profile()
-    registry = operational_governance_tools.mcp_tool_contract_registry(include_schemas=True, max_tools=1000)
+    registry = operational_governance_tools.mcp_tool_contract_registry(include_schemas=True)
     tools = _tools()
     names = sorted(str(getattr(tool, "name", "")) for tool in tools)
     mutable = sorted(str(getattr(tool, "name", "")) for tool in tools if _is_mutable(tool))
@@ -202,6 +204,8 @@ def _status_payload() -> OperatingProfileStatus:
         or not getattr(tool, "output_schema", None)
     )
     unenforced = sorted(set(mutable) - set(_ENFORCED_TOOL_NAMES)) if _ENFORCEMENT_INSTALLED else mutable
+    standing_owner_session = sorted(set(unenforced) & STANDING_OWNER_SESSION_TOOLS)
+    unexpectedly_unenforced = sorted(set(unenforced) - set(standing_owner_session))
     findings: list[dict[str, Any]] = []
     if registry.truncated:
         findings.append({"severity": "P0", "family": "MCP_TOOL_REGISTRY_TRUNCATED"})
@@ -231,12 +235,12 @@ def _status_payload() -> OperatingProfileStatus:
         )
     if not _ENFORCEMENT_INSTALLED:
         findings.append({"severity": "P0", "family": "OPERATING_PROFILE_MUTATION_GATE_NOT_INSTALLED"})
-    elif unenforced:
+    elif unexpectedly_unenforced:
         findings.append(
             {
                 "severity": "P0",
                 "family": "OPERATING_PROFILE_MUTABLE_TOOL_UNENFORCED",
-                "tools": unenforced,
+                "tools": unexpectedly_unenforced,
             }
         )
     ok = not findings
@@ -259,8 +263,10 @@ def _status_payload() -> OperatingProfileStatus:
         toolsWithoutOutputSchema=missing_output_schema,
         unenforcedMutableTools=unenforced,
         invariants={
-            "failClosed": True,
+            "failClosed": not bool(standing_owner_session),
+            "failClosedForGuardedTools": True,
             "automaticMutationGate": True,
+            "standingOwnerSessionTools": standing_owner_session,
             "naturalLanguageUnderstanding": "online_llm_only",
             "automaticFreeToPaidFallback": False,
             "automaticPaidToFreeFallback": False,
@@ -268,7 +274,7 @@ def _status_payload() -> OperatingProfileStatus:
             "learningRequiresProvenRuntimeOutcome": True,
             "continuityReadRequiredBeforeMutation": False,
             "continuityLedgerRequiredBeforeRepositoryFinalization": False,
-            "protectedValuesAcceptedByMcpArguments": False,
+            "protectedValuesAcceptedByMcpArguments": bool(standing_owner_session),
         },
         findings=findings,
         paths={
@@ -577,10 +583,14 @@ def install_enforcement(mcp: Any) -> EnforcementInstallationResult:
     for tool in mcp._tool_manager.list_tools():
         if not _is_mutable(tool):
             continue
-        if getattr(tool.fn, "__sovereign_operating_profile_wrapped__", False):
-            enforced.append(str(tool.name))
-            continue
         tool_name = str(tool.name)
+        if tool_name in STANDING_OWNER_SESSION_TOOLS:
+            tool.meta = {**(tool.meta or {}), "sovereign/operatingProfileEnforced": False,
+                         "sovereign/standingOwnerSession": True}
+            continue
+        if getattr(tool.fn, "__sovereign_operating_profile_wrapped__", False):
+            enforced.append(tool_name)
+            continue
         effect = _effect(tool)
         parameters = dict(getattr(tool, "parameters", {}) or {})
         tool.fn = (
