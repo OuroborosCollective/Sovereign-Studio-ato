@@ -152,6 +152,7 @@ def test_n8n_root_owned_target_is_written_as_regular_0600_file(
             st_uid=0,
             st_gid=0,
             st_mode=observed.st_mode,
+            st_size=observed.st_size,
         )
 
     monkeypatch.setattr(os, "fstat", root_owned_fstat)
@@ -163,6 +164,7 @@ def test_n8n_root_owned_target_is_written_as_regular_0600_file(
             st_uid=0,
             st_gid=0,
             st_mode=observed.st_mode,
+            st_size=observed.st_size,
         )
 
     monkeypatch.setattr(os, "lstat", root_owned_lstat)
@@ -195,6 +197,7 @@ def test_n8n_root_owned_target_rejects_final_ownership_mismatch(
             st_uid=0,
             st_gid=0,
             st_mode=observed.st_mode,
+            st_size=observed.st_size,
         )
 
     def non_root_final_lstat(path):
@@ -204,6 +207,7 @@ def test_n8n_root_owned_target_rejects_final_ownership_mismatch(
                 st_uid=1000,
                 st_gid=0,
                 st_mode=observed.st_mode,
+                st_size=observed.st_size,
             )
         return observed
 
