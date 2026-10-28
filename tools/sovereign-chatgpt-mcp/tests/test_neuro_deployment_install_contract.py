@@ -1216,6 +1216,36 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(
     assert "Traceback" not in (failed.stdout + failed.stderr)
 
 
+def test_private_installer_registry_canary_uses_actual_count(tmp_path: Path) -> None:
+    script = REMOTE_INSTALL.read_text("utf-8")
+    marker = "-i sovereign-chatgpt-mcp python - <<'PY'\n"
+    section = script.split("SOVEREIGN_EXPECTED_WORKFLOW_REVISION=", 1)[1]
+    embedded = section.split(marker, 1)[1].split("\nPY", 1)[0]
+    revision = "a" * 40
+    policy = ROOT / "config" / "sovereign-continuity-policy.json"
+    environment = {
+        **os.environ,
+        "PYTHONPATH": str(ROOT),
+        "SOVEREIGN_SOURCE_REVISION": revision,
+        "SOVEREIGN_EXPECTED_WORKFLOW_REVISION": revision,
+        "SOVEREIGN_NEURO_POLICY_SHA256": hashlib.sha256(policy.read_bytes()).hexdigest(),
+        "SOVEREIGN_NEURO_RUNTIME_TRACKING_ENABLED": "0",
+        "SOVEREIGN_MCP_PRIVATE_OWNER_MODE": "1",
+        "SOVEREIGN_MCP_WORKSPACE_ROOT": str(tmp_path / "workspaces"),
+        "SOVEREIGN_TOOL_RANKING_STATE_ROOT": str(tmp_path / "tool-ranking"),
+        "SOVEREIGN_NEURO_RUNTIME_STATE_ROOT": str(tmp_path / "neuro-runtime"),
+        "SOVEREIGN_MCP_GITHUB_APP_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID": "",
+        "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE": "",
+    }
+    completed = subprocess.run(
+        [sys.executable, "-c", embedded], cwd=ROOT, env=environment,
+        capture_output=True, text=True, check=False, timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr[-4000:]
+    assert "'toolCount':" in completed.stdout
+
+
 def test_exact_ci_launcher_import_runs_with_the_default_registry(tmp_path: Path) -> None:
     workflow = yaml.safe_load(WORKFLOW.read_text("utf-8"))
     steps = workflow["jobs"]["validate"]["steps"]

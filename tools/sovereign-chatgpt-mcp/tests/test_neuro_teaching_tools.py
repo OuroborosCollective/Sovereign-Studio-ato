@@ -101,6 +101,30 @@ def isolated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     yield state
 
 
+def test_registry_consumers_include_more_than_one_thousand_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+    import operational_governance_tools
+    import toolchain_composition
+
+    template = {key: value for key, value in _registry()["tools"][0].items() if key != "contractSha256"}
+    contracts = [{**template, "name": f"tool_{index:04d}"} for index in range(1101)]
+    full_hash = _sha(contracts)
+    def registry(*, include_schemas: bool, max_tools: int | None = None):
+        assert include_schemas is True
+        selected = contracts if max_tools is None else contracts[:max_tools]
+        return SimpleNamespace(
+            ok=True, truncated=len(selected) != len(contracts),
+            registrySnapshotSha256=full_hash, toolCount=len(selected),
+            tools=[{**item, "contractSha256": _sha(item)} for item in selected],
+        )
+    monkeypatch.setattr(tools, "_REGISTRY_PROVIDER", None)
+    monkeypatch.setattr(operational_governance_tools, "mcp_tool_contract_registry", registry)
+    assert tools._registry_snapshot()["toolCount"] == 1101
+    catalog, snapshot_hash = toolchain_composition._registry()
+    assert len(catalog) == 1101
+    assert "tool_1100" in catalog and snapshot_hash == full_hash
+
+
 def _change_event(
     *,
     event_id: str = "event.neuro-preview-000",
