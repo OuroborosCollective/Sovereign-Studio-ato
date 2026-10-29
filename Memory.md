@@ -1359,3 +1359,7 @@ Evidence: Python 3.11 Login-Workflow-Unittests 14/14 bestanden; Review-Ledger va
 
 ### 2026-10-29 — Aurion signed asset receipt and ledger provenance
 Änderung: Der isolierte Signierer übernimmt den unsigned Asset-Beleg und prüft Manifest, Importzuordnung und SHA-256 der Ressourcen im signierten APK und beim Artefakt-Readback; der Review-Ledger bindet seine Reconciliation-Basis im Digest und unterscheidet diese vom geprüften Git-HEAD. Erkenntnis: Vorher ging der Asset-Beleg bei der Signierung verloren; ein Ledger kann seine eigene finale Commit-SHA nicht enthalten. Evidence: gezielte Test-Fixtures reproduzierten fehlenden Beleg und fünf Manipulationsfälle vor dem Fix; 17 Workflow-Tests und fünf Ledgerprüfungen lokal bestanden. Signierter Build, CI und Gerät bleiben offen.
+
+
+### 2026-10-29 — Ledger baseline commit existence
+Änderung: Ledger-Validierung verlangt ein tatsächlich vorhandenes Git-Commit für die Reconciliation-Basis; betroffene CI-Checkouts erhalten vollständige Historie. Erkenntnis: Ein neu berechneter Digest allein konnte zuvor eine erfundene 40-stellige Basis als gültig erscheinen lassen. Evidence: echte Negativprobe reproduzierte den Fehler; nach Fix vier gezielte Ledger- und 17 Login-Workflowtests bestanden. Exact-Head-CI und reale APK bleiben offen.

@@ -206,6 +206,14 @@ def validate_ledger(repo: Path, payload: dict[str, Any]) -> dict[str, Any]:
     baseline = payload.get("sourceRevision")
     if not isinstance(baseline, str) or not re.fullmatch(r"[0-9a-f]{40}", baseline):
         findings.append("LEDGER_SOURCE_REVISION_INVALID")
+    else:
+        try:
+            result = subprocess.run(["git", "-C", str(repo), "cat-file", "-t", baseline],
+                                    capture_output=True, text=True, timeout=10, check=False)
+            if result.returncode != 0 or result.stdout.strip() != "commit":
+                findings.append("LEDGER_SOURCE_COMMIT_UNAVAILABLE")
+        except (OSError, subprocess.TimeoutExpired):
+            findings.append("LEDGER_SOURCE_COMMIT_UNAVAILABLE")
     entries = payload.get("entries")
     if not isinstance(entries, list):
         entries = []
