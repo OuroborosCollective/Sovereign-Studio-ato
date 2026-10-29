@@ -1,5 +1,6 @@
 """Workflow regressions. SDK/HTTPS adapters are fixtures, never live APK evidence."""
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -84,7 +85,7 @@ class LoginWorkflowTests(unittest.TestCase):
                 for marker, code in re.findall(r"<<'(PY|PYCODE)'\n(.*?)\n\1", body, re.S):
                     compile(code, marker, 'exec')
 
-    def run_validator(self, *, certificate=None, content_type='application/json', revision=None, badging_suffix='', domain_ok=True, unsigned=False, wrong_package=False):
+    def run_validator(self, *, certificate=None, content_type='application/json', revision=None, badging_suffix='', domain_ok=True, unsigned=False, wrong_package=False, asset_fault=None):
         expected = self.fingerprint.replace(':', '').lower()
         signature = 'Verified using v2 scheme: true\nSigner #1 certificate SHA-256 digest: '+(certificate or expected)
         badging = "package: name='org.ouroboroscollective.aurion.godot.login' versionCode='1' versionName='0.1.0-login'\napplication-label:'Aurion Login'\nuses-permission: name='android.permission.INTERNET'\nnative-code: 'arm64-v8a'\nsdkVersion:'24'\ntargetSdkVersion:'36'\n"+badging_suffix
@@ -123,10 +124,30 @@ class LoginWorkflowTests(unittest.TestCase):
             return badging if 'badging' in args else manifest
         with tempfile.TemporaryDirectory() as directory:
             apk=Path(directory)/'test.apk'
+            source_hash = hashlib.sha256(b'source fixture').hexdigest()
+            asset_id = 'glb_' + source_hash[:48]
+            imported_entry = 'assets/.godot/imported/' + asset_id + '.glb-test.scn'
+            scene = b'RSRC' + b'fixture-imported-scene'
+            asset_manifest = {'schemaVersion':'aurion.godot-prepared-assets.v1', 'sourceRevision':self.revision,
+                        'sources':[{'assetId':asset_id,'sourceSha256':source_hash,'outputSha256':source_hash}]}
+            manifest_bytes = json.dumps(asset_manifest, separators=(',',':')).encode()
+            receipt = {'schemaVersion':'aurion.godot-packaged-assets.v1','sourceRevision':self.revision,
+                       'manifestSha256':hashlib.sha256(manifest_bytes).hexdigest(),
+                       'resources':[{'assetId':asset_id,'sourceSha256':source_hash,'outputSha256':source_hash,
+                                     'importedEntry':imported_entry,'importedBytes':len(scene),
+                                     'importedSha256':hashlib.sha256(scene).hexdigest()}],
+                       'layer':'android-imported-resource-package-readback','device':'unverified'}
+            if asset_fault == 'receipt_revision': receipt['sourceRevision']='0'*40
+            if asset_fault == 'empty_resources': receipt['resources']=[]
+            evidence_dir=Path(directory)/'aurion-sign-input';evidence_dir.mkdir()
+            (evidence_dir/'build-evidence.json').write_text(json.dumps({'sourceRevision':self.revision,'signingState':'unsigned','packagedAssets':receipt}))
             with zipfile.ZipFile(apk,'w') as z:
                 z.writestr('assets/override.cfg','[aurion]\nclient_build="'+(revision or self.revision)+'"\nnative_auth_start_enabled=true\n')
                 z.writestr('lib/arm64-v8a/libgodot_android.so',b'non-executable test fixture')
-            env={**self.sign['env'],'ANDROID_HOME':directory}
+                z.writestr('assets/assets/generated/manifest.json', manifest_bytes if asset_fault != 'manifest' else b'{}')
+                z.writestr('assets/assets/generated/'+asset_id+'.glb.import','path="res://.godot/imported/'+asset_id+'.glb-test.scn"\n')
+                if asset_fault != 'missing_scene': z.writestr(imported_entry, scene if asset_fault != 'scene' else b'RSRC'+b'tampered-scene')
+            env={**self.sign['env'],'ANDROID_HOME':directory,'RUNNER_TEMP':directory}
             with patch.dict(os.environ,env),patch.object(sys,'argv',['verify',str(apk)]+(['--unsigned'] if unsigned else [])),patch('urllib.request.build_opener',return_value=Opener()),patch('subprocess.check_output',side_effect=sdk),patch('subprocess.run',return_value=subprocess.CompletedProcess([],1)),contextlib.redirect_stdout(io.StringIO()) as output:
                 exec(compile(self.validator,'actual-workflow-validator','exec'),{'__name__':'__main__'})
                 return json.loads(output.getvalue())
@@ -141,6 +162,35 @@ class LoginWorkflowTests(unittest.TestCase):
 
     def test_actual_validator_accepts_consistent_adapter_evidence(self):
         self.assertEqual(self.run_validator()['sourceRevision'],self.revision)
+
+    def test_signed_asset_receipt_is_preserved_and_checked(self):
+        result=self.run_validator()
+        self.assertEqual(result['packagedAssets']['sourceRevision'], self.revision)
+        self.assertEqual(len(result['packagedAssets']['resources']), 1)
+
+    def test_signed_asset_evidence_tampering_fails_closed(self):
+        for fault in ['receipt_revision','empty_resources','manifest','scene','missing_scene']:
+            with self.subTest(fault=fault),self.assertRaises((AssertionError,KeyError)):
+                self.run_validator(asset_fault=fault)
+
+    def test_final_artifact_readback_compares_unsigned_and_signed_receipts(self):
+        step=next(s for s in self.sign['steps'] if s['name'].startswith('Independently read back'))
+        snippets=re.findall(r"<<'PY'\n(.*?)\nPY", step['run'], re.S)
+        self.assertEqual(len(snippets),2)
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); readback=root/'readback'; readback.mkdir()
+            inputs=root/'aurion-sign-input'; inputs.mkdir()
+            receipt={'sourceRevision':self.revision,'resources':[{'assetId':'example'}]}
+            evidence={'packagedAssets':receipt,'apkSha256':'1'*64}
+            (inputs/'build-evidence.json').write_text(json.dumps({'packagedAssets':receipt}))
+            (readback/'verified.json').write_text(json.dumps(evidence))
+            with zipfile.ZipFile(readback/'artifact.zip','w') as z:z.writestr('build-evidence.json',json.dumps(evidence))
+            with patch.dict(os.environ,{'RUNNER_TEMP':directory,'AURION_ARTIFACT_READBACK':str(readback)}):
+                exec(compile(snippets[-1],'final-asset-readback','exec'),{'__name__':'__main__'})
+                evidence['packagedAssets']['resources'][0]['assetId']='tampered'
+                with zipfile.ZipFile(readback/'artifact.zip','w') as z:z.writestr('build-evidence.json',json.dumps(evidence))
+                with self.assertRaises(AssertionError):
+                    exec(compile(snippets[-1],'final-asset-readback','exec'),{'__name__':'__main__'})
 
     def test_actual_validator_rejects_wrong_certificate(self):
         with self.assertRaises(AssertionError):self.run_validator(certificate='0'*64)

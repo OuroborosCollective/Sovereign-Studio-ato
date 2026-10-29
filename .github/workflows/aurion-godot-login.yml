@@ -280,14 +280,50 @@ jobs:
          for pattern in [r'android:autoVerify[^\n]*0xffffffff',r'android:scheme[^\n]*"https"',r'android:host[^\n]*"arelogic.space"',r'android:path[^\n]*"/app/auth/callback"']:
           assert re.search(pattern,view)
          assert re.search(r'screenOrientation.*0x0',manifest)
+         unsigned_evidence=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'aurion-sign-input/build-evidence.json').read_text())
+         assert unsigned_evidence['sourceRevision']==os.environ['AURION_EXPECTED_REVISION']
+         assert unsigned_evidence['signingState']=='unsigned'
+         assets=unsigned_evidence['packagedAssets']
+         assert assets['schemaVersion']=='aurion.godot-packaged-assets.v1'
+         assert assets['sourceRevision']==os.environ['AURION_EXPECTED_REVISION']
+         assert assets['layer']=='android-imported-resource-package-readback' and assets['device']=='unverified'
+         resources=assets['resources']
+         assert isinstance(resources,list) and resources
          with zipfile.ZipFile(apk) as z:
           assert len(z.namelist())==len(set(z.namelist()))
+          manifest_bytes=z.read('assets/assets/generated/manifest.json')
+          assert hashlib.sha256(manifest_bytes).hexdigest()==assets['manifestSha256']
+          asset_manifest=json.loads(manifest_bytes)
+          assert asset_manifest['schemaVersion']=='aurion.godot-prepared-assets.v1'
+          assert asset_manifest['sourceRevision']==os.environ['AURION_EXPECTED_REVISION']
+          sources=asset_manifest['sources']
+          assert isinstance(sources,list) and len(sources)==len(resources)
+          by_id={source['assetId']:source for source in sources}
+          assert len(by_id)==len(sources)
+          seen=set()
+          for resource in resources:
+           asset_id=resource['assetId']
+           assert re.fullmatch(r'glb_[0-9a-f]{48}',asset_id) and asset_id not in seen and asset_id in by_id
+           seen.add(asset_id)
+           source=by_id[asset_id]
+           assert re.fullmatch(r'[0-9a-f]{64}',source['sourceSha256'])
+           assert source['sourceSha256']==source['outputSha256']==resource['sourceSha256']==resource['outputSha256']
+           assert asset_id=='glb_'+source['outputSha256'][:48]
+           entry=resource['importedEntry']
+           assert re.fullmatch(r'assets/\.godot/imported/'+re.escape(asset_id)+r'\.glb-[A-Za-z0-9_.-]+\.scn',entry)
+           remap=z.read('assets/assets/generated/'+asset_id+'.glb.import').decode('utf-8')
+           paths=re.findall(r'^path="(res://\.godot/imported/[A-Za-z0-9_.-]+\.scn)"\s*$',remap,re.M)
+           assert paths==['res://'+entry.removeprefix('assets/')]
+           scene=z.read(entry)
+           assert len(scene)==resource['importedBytes'] and len(scene)>16 and scene[:4] in (b'RSRC',b'RSCC')
+           assert hashlib.sha256(scene).hexdigest()==resource['importedSha256']
+          assert seen==set(by_id)
           assert 'lib/arm64-v8a/libgodot_android.so' in z.namelist()
           assert not any(n.startswith('lib/') and not n.startswith('lib/arm64-v8a/') for n in z.namelist())
           assert not any(n.startswith('assets/tests/') for n in z.namelist())
           assert z.read('assets/override.cfg').decode()=='[aurion]\nclient_build="'+os.environ['AURION_EXPECTED_REVISION']+'"\nnative_auth_start_enabled=true\n'
          with apk.open('rb') as f: digest=hashlib.file_digest(f,'sha256').hexdigest()
-         print(json.dumps({'sourceRevision':os.environ['AURION_EXPECTED_REVISION'],'apkSha256':digest,'packageName':'org.ouroboroscollective.aurion.godot.login','signerSha256':None if unsigned else os.environ['AURION_LOGIN_SIGNER_SHA256'],'signingState':'unsigned' if unsigned else 'verified','assetlinks':{'status':'verified','source':url,'sha256':hashlib.sha256(body).hexdigest()},'device':'unverified'}))
+         print(json.dumps({'sourceRevision':os.environ['AURION_EXPECTED_REVISION'],'apkSha256':digest,'packageName':'org.ouroboroscollective.aurion.godot.login','signerSha256':None if unsigned else os.environ['AURION_LOGIN_SIGNER_SHA256'],'signingState':'unsigned' if unsigned else 'verified','packagedAssets':assets,'assetlinks':{'status':'verified','source':url,'sha256':hashlib.sha256(body).hexdigest()},'device':'unverified'}))
         PYCODE
         python3 "$RUNNER_TEMP/verify-login.py"
     - name: Sign with Sovereign identity using SDK only
@@ -387,6 +423,16 @@ jobs:
         print('ARCHIVE_READBACK_VERIFIED',os.environ['ARTIFACT_ID'],revision,apk_digest)
         PY
         python3 "$RUNNER_TEMP/verify-login.py" "$readback_dir/downloaded.apk" > "$readback_dir/verified.json"
+        python3 <<'PY'
+        import json,os,pathlib
+        root=pathlib.Path(os.environ['AURION_ARTIFACT_READBACK'])
+        expected=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'aurion-sign-input/build-evidence.json').read_text())['packagedAssets']
+        verified=json.loads((root/'verified.json').read_text())
+        with __import__('zipfile').ZipFile(root/'artifact.zip') as archive:
+         evidence=json.loads(archive.read('build-evidence.json'))
+        assert evidence['packagedAssets']==expected==verified['packagedAssets']
+        assert evidence['apkSha256']==verified['apkSha256']
+        PY
         echo "SIGNED_APK_READBACK_VERIFIED"
 'on':
   workflow_dispatch: null
