@@ -4,7 +4,7 @@ import copy
 import json
 from pathlib import Path
 
-from llm_boundary_ledger import discover_review_candidates, load_ledger, validate_ledger
+from llm_boundary_ledger import discover_review_candidates, ledger_sha256, load_ledger, validate_ledger
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -48,6 +48,22 @@ def test_current_review_ledger_is_complete_and_fresh() -> None:
     assert result["rawCandidateCount"] == payload["rawCandidateCount"]
     assert result["canonicalCandidateCount"] == payload["canonicalCandidateCount"]
     assert result["findings"] == []
+
+
+def test_ledger_baseline_is_bound_and_distinct_from_validated_revision() -> None:
+    payload = load_ledger(LEDGER)
+    result = validate_ledger(ROOT, payload)
+    assert result["ledgerSourceRevision"] == payload["sourceRevision"]
+    assert result["ledgerSourceRevisionRole"] == "reconciliation_head_baseline"
+    assert result["revision"] == discover_review_candidates(ROOT)["sourceRevision"]
+    altered = copy.deepcopy(payload)
+    altered["sourceRevision"] = "0" * 40
+    assert "LEDGER_HASH_MISMATCH" in validate_ledger(ROOT, altered)["findings"]
+    altered["sourceRevision"] = "invalid"
+    assert "LEDGER_SOURCE_REVISION_INVALID" in validate_ledger(ROOT, altered)["findings"]
+    altered["sourceRevision"] = "0" * 40
+    altered["ledgerSha256"] = ledger_sha256(altered)
+    assert "LEDGER_SOURCE_COMMIT_UNAVAILABLE" in validate_ledger(ROOT, altered)["findings"]
 
 
 def test_mirror_pairs_are_classified_once() -> None:

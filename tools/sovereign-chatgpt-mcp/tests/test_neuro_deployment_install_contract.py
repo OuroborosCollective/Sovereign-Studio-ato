@@ -463,6 +463,12 @@ print(json.dumps({
     current_registry = json.loads(registry_process.stdout.strip().splitlines()[-1])
     assert current_registry["toolCount"] >= 267
     assert EXPECTED_SSH_TOOLS <= {item["name"] for item in current_registry["tools"]}
+    indexed = {item["name"]: item for item in current_registry["tools"]}
+    assert EXPECTED_WORKSPACE_TOOLS <= set(indexed)
+    assert indexed["workspace_inventory"]["annotations"]["readOnlyHint"] is True
+    assert indexed["workspace_inventory"]["annotations"]["destructiveHint"] is False
+    assert indexed["workspace_cleanup"]["annotations"]["readOnlyHint"] is False
+    assert indexed["workspace_cleanup"]["annotations"]["destructiveHint"] is True
 
     predecessor_registry = json.loads(json.dumps(current_registry))
     predecessor_registry["tools"] = [

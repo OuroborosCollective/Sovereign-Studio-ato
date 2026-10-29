@@ -25,6 +25,16 @@ class FakeResponse:
             yield self._body[offset : offset + chunk_size]
 
 
+def verified_pr_readback(*, branch: str, head_sha: str) -> dict[str, Any]:
+    """Model a real GET /pulls/{number} response; never weaken runtime identity checks."""
+    return {
+        "state": "open",
+        "draft": True,
+        "head": {"ref": branch, "sha": head_sha},
+        "base": {"ref": "main"},
+    }
+
+
 def command_result(argv: list[str], *, ok: bool = True, exit_code: int = 0) -> dict[str, Any]:
     return {
         "argv": argv,
@@ -129,10 +139,11 @@ def test_frontend_draft_pr_is_created_without_local_node_execution(repo_runtime,
         return original_run(argv, cwd=cwd, timeout=timeout, env=env)
 
     monkeypatch.setattr(runtime, "_run", guarded_run)
+    branch = runtime._read_metadata(workspace_id)["branch"]
+
     def fake_get(url, **kwargs):
         if url.endswith("/pulls/999"):
-            return FakeResponse(200, payload={"state": "open", "draft": True,
-                "head": {"ref": branch, "sha": "a" * 40}, "base": {"ref": "main"}})
+            return FakeResponse(200, payload=verified_pr_readback(branch=branch, head_sha="a" * 40))
         return FakeResponse(200, payload=[])
 
     monkeypatch.setattr(runtime_module.requests, "get", fake_get)
@@ -184,8 +195,7 @@ def test_existing_workspace_pr_is_updated_instead_of_duplicated(repo_runtime, mo
 
     def fake_get(url, **kwargs):
         if url.endswith("/pulls/901"):
-            return FakeResponse(200, payload={"state": "open", "draft": True,
-                "head": {"ref": branch, "sha": "c" * 40}, "base": {"ref": "main"}})
+            return FakeResponse(200, payload=verified_pr_readback(branch=branch, head_sha="c" * 40))
         return FakeResponse(
             200,
             payload=[{
@@ -243,10 +253,11 @@ def test_other_open_draft_is_preserved_and_does_not_block_independent_work(repo_
         return original_run(argv, cwd=cwd, timeout=timeout, env=env)
 
     monkeypatch.setattr(runtime, "_run", guarded_run)
+    branch = runtime._read_metadata(workspace_id)["branch"]
+
     def fake_get(url, **kwargs):
         if url.endswith("/pulls/901"):
-            return FakeResponse(200, payload={"state": "open", "draft": True,
-                "head": {"ref": branch, "sha": "d" * 40}, "base": {"ref": "main"}})
+            return FakeResponse(200, payload=verified_pr_readback(branch=branch, head_sha="d" * 40))
         return FakeResponse(
             200,
             payload=[{
