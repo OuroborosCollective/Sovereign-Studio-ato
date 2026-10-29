@@ -3,6 +3,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import socket
 import subprocess
 import sys
@@ -12,7 +13,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from deployment_registry_probe import DOMAIN, WIDGET_URI, readback
+from deployment_registry_probe import DOMAIN, WIDGET_URI, _pages, readback
 
 NAMES = {"probe_ping", "mcp_control_plane_status", "mcp_tool_contract_registry"}
 SERVER = '''
@@ -96,6 +97,22 @@ def test_live_surface_and_complete_contract_snapshot(endpoint):
 def test_live_readback_rejects_unverified_or_partial_evidence(endpoint, mode, error):
     with pytest.raises(ValueError, match=error):
         verify(mode, endpoint)
+
+
+def test_more_tools_than_the_declared_minimum_are_accepted(endpoint):
+    assert verify("surface", endpoint, count=2)["toolCount"] == 3
+    assert verify("snapshot", endpoint, count=2)["toolCount"] == 3
+
+
+def test_registry_readback_follows_more_than_twenty_pages_and_one_thousand_items():
+    async def page(*, cursor):
+        index = int(cursor or 0)
+        start = index * 50
+        return SimpleNamespace(tools=list(range(start, start + 50)),
+                               nextCursor=str(index + 1) if index < 21 else None)
+
+    observed = asyncio.run(_pages(None, page, "tools"))
+    assert observed == list(range(1100))
 
 
 def test_declared_count_and_required_names_are_never_learned_from_live_registry(endpoint):

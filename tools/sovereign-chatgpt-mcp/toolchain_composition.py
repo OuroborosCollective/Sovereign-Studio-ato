@@ -369,10 +369,7 @@ def _predicates_for(tool: dict[str, Any]) -> tuple[list[SemanticPredicate], list
 
 
 def _registry() -> tuple[dict[str, dict[str, Any]], str]:
-    registry = operational_governance_tools.mcp_tool_contract_registry(
-        include_schemas=True,
-        max_tools=1000,
-    )
+    registry = operational_governance_tools.mcp_tool_contract_registry(include_schemas=True)
     return {item["name"]: item for item in registry.tools}, registry.registrySnapshotSha256
 
 

@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 import runtime as runtime_module
+from workspace_lifecycle import mark_workspace_owned
 
 
 class FakeResponse:
@@ -123,6 +124,8 @@ def test_node_checks_are_delegated_without_local_execution(repo_runtime, monkeyp
 
 def test_frontend_draft_pr_is_created_without_local_node_execution(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
+    mark_workspace_owned(repo.parent)
+    branch = runtime._read_metadata(workspace_id)["branch"]
     monkeypatch.setattr(runtime, "validate_continuity_completion", lambda _workspace_id: continuity_completion_receipt())
     (repo / "src/menu.tsx").write_text("export const label = 'New';\n", "utf-8")
     original_run = runtime._run
@@ -175,6 +178,7 @@ def test_frontend_draft_pr_is_created_without_local_node_execution(repo_runtime,
 
 def test_existing_workspace_pr_is_updated_instead_of_duplicated(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
+    mark_workspace_owned(repo.parent)
     monkeypatch.setattr(runtime, "validate_continuity_completion", lambda _workspace_id: continuity_completion_receipt())
     metadata = runtime._read_metadata(workspace_id)
     branch = metadata["branch"]
@@ -234,6 +238,8 @@ def test_existing_workspace_pr_is_updated_instead_of_duplicated(repo_runtime, mo
 
 def test_other_open_draft_is_preserved_and_does_not_block_independent_work(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
+    mark_workspace_owned(repo.parent)
+    branch = runtime._read_metadata(workspace_id)["branch"]
     monkeypatch.setattr(runtime, "validate_continuity_completion", lambda _workspace_id: continuity_completion_receipt())
     (repo / "README.md").write_text("parallel useful work\n", "utf-8")
     original_run = runtime._run

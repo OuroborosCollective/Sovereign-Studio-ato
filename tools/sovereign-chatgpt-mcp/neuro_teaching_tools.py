@@ -520,10 +520,7 @@ def _registry_snapshot() -> dict[str, Any]:
     else:
         import operational_governance_tools
 
-        raw = operational_governance_tools.mcp_tool_contract_registry(
-            include_schemas=True,
-            max_tools=1000,
-        )
+        raw = operational_governance_tools.mcp_tool_contract_registry(include_schemas=True)
     value = _plain(raw)
     if not isinstance(value, Mapping):
         raise RuntimeError("live registry returned no object")

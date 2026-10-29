@@ -716,14 +716,14 @@ def _capabilities_for(name: str, description: str) -> list[str]:
     return sorted(capabilities)
 
 
-def _tool_catalog(max_tools: int = 500, include_schemas: bool = True) -> tuple[list[dict[str, Any]], bool]:
+def _tool_catalog(max_tools: int | None = None, include_schemas: bool = True) -> tuple[list[dict[str, Any]], bool]:
     if _MCP is None:
         raise RuntimeError("Operational governance tools are not registered")
     raw_tools = list(_MCP._tool_manager.list_tools())
     raw_tools.sort(key=lambda item: str(getattr(item, "name", "")))
-    truncated = len(raw_tools) > max_tools
+    truncated = max_tools is not None and len(raw_tools) > max_tools
     catalog: list[dict[str, Any]] = []
-    for tool in raw_tools[:max_tools]:
+    for tool in raw_tools if max_tools is None else raw_tools[:max_tools]:
         name = _bounded(getattr(tool, "name", ""), 160)
         description = _bounded(getattr(tool, "description", ""), 800)
         annotations = _annotation_payload(getattr(tool, "annotations", None))
@@ -832,7 +832,7 @@ def operational_skill_inventory() -> InventoryResult:
 
 def mcp_tool_contract_registry(
     include_schemas: bool = False,
-    max_tools: Annotated[int, Field(ge=1, le=1000)] = 500,
+    max_tools: Annotated[int | None, Field(ge=1)] = None,
 ) -> RegistryResult:
     """Use this when the active FastMCP tool names, descriptions, annotations, capabilities and contract hashes must be inventoried."""
     catalog, truncated = _tool_catalog(max_tools=max_tools, include_schemas=include_schemas)
@@ -871,7 +871,7 @@ def tool_recommend_for_mission(
     max_tools: Annotated[int, Field(ge=1, le=20)] = 8,
 ) -> GenericResult:
     """Use this when functional mission stages need a complete, effect-bounded recommendation from the live tool registry."""
-    catalog, truncated = _tool_catalog(max_tools=1000, include_schemas=True)
+    catalog, truncated = _tool_catalog(include_schemas=True)
     required = set(required_capabilities)
     allowed = set(allowed_effects)
     prediction = predict_tool_route(
@@ -964,8 +964,8 @@ def tool_success_ranking(
 
 def mcp_registry_snapshot_verify(
     expected_snapshot_sha256: Sha256Value = "",
-    expected_tool_names: Annotated[list[str], Field(max_length=1000)] = [],
-    max_tools: Annotated[int, Field(ge=1, le=1000)] = 500,
+    expected_tool_names: list[str] = [],
+    max_tools: Annotated[int | None, Field(ge=1)] = None,
 ) -> GenericResult:
     """Use this when the live MCP registry must be compared with one approved snapshot hash or expected tool-name set."""
     registry = mcp_tool_contract_registry(include_schemas=True, max_tools=max_tools)
