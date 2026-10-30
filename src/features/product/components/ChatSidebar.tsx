@@ -155,9 +155,10 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                 type="button"
                 onClick={() => setShowModelPicker(!showModelPicker)}
                 title={currentModel?.label || 'Select Model'}
+                aria-label={currentModel?.label ? `Select model, currently ${currentModel.label}` : 'Select Model'}
                 aria-expanded={showModelPicker}
                 aria-haspopup="true"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-cyan-500/20 hover:border-cyan-500/40 transition-colors text-xs"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-cyan-500/20 hover:border-cyan-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 transition-colors text-xs"
               >
                 <Globe size={12} className="text-cyan-400" />
                 <span className="text-slate-300 max-w-[100px] truncate">
@@ -339,7 +340,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
               <button
                 type="button"
                 onClick={() => { setInputValue(''); inputRef.current?.focus(); }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors p-1"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 rounded transition-colors p-1"
                 aria-label="Clear input"
                 title="Clear input"
               >
@@ -350,7 +351,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
           <button
             type="submit"
             disabled={!canSubmit}
-            className="px-4 py-3 bg-cyan-500/20 border border-cyan-500/30 rounded-2xl text-cyan-400 hover:bg-cyan-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
+            className="px-4 py-3 bg-cyan-500/20 border border-cyan-500/30 rounded-2xl text-cyan-400 hover:bg-cyan-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
             aria-label="Send"
             title="Send"
           >
@@ -361,8 +362,9 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
         <button
           type="button"
           onClick={onClearChat}
-          className="w-full mt-2 py-2 text-[11px] text-slate-500 hover:text-slate-400 flex items-center justify-center gap-2 transition-colors"
+          className="w-full mt-2 py-2 text-[11px] text-slate-500 hover:text-slate-400 flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500/50 transition-colors rounded-lg"
           title="Clear conversation"
+          aria-label="Clear conversation"
         >
           <Trash2 size={12} />
           Clear conversation
