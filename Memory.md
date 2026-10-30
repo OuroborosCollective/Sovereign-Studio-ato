@@ -1363,3 +1363,10 @@ Evidence: Python 3.11 Login-Workflow-Unittests 14/14 bestanden; Review-Ledger va
 
 ### 2026-10-29 — Ledger baseline commit existence
 Änderung: Ledger-Validierung verlangt ein tatsächlich vorhandenes Git-Commit für die Reconciliation-Basis; betroffene CI-Checkouts erhalten vollständige Historie. Erkenntnis: Ein neu berechneter Digest allein konnte zuvor eine erfundene 40-stellige Basis als gültig erscheinen lassen. Evidence: echte Negativprobe reproduzierte den Fehler; nach Fix vier gezielte Ledger- und 17 Login-Workflowtests bestanden. Exact-Head-CI und reale APK bleiben offen.
+
+### 2026-10-30 — Aurion Login auf Weltstudio-Revision binden
+Status: PARTIAL
+Änderung: Build, Checkout, isolierter Signierer und Pin-Regressionstest sind im Entwurf auf Aurion `8f1ee674e3bedd903abf7f24f5024165036134f1` ausgerichtet. Owner-, APK-, Signatur-, Domain- und Artefaktgrenzen bleiben erhalten.
+Erkenntnis: Der bisherige Pin `9496956832db83d94d817d0f403b18d954d3486f` ist kein Vorfahr der neuen Revision; der ältere Stand enthält MCS-Adapter und private Exportgrenze, die auf dem neuen Stand fehlen. Ein Befund zu tatsächlich in einer APK enthaltenen privaten Assets ist damit nicht getroffen.
+Evidence: 17 lokale Python-Vertragstests bestanden; der angepasste Pin-Test zeigte vor der Workflowänderung RED auf dem alten Pin und danach GREEN. Alle fünf gelisteten GitHub-PR-Workflows für den Code-Head `d45cd1ca33726f6863091662ae9e885cf6ffb220` bestanden. Dies sind keine signierte APK, Geräte- oder Produktionsnachweise.
+Offen/Nächster Schritt: Aurion-Exportgrenze und Quell-Divergenz samt aktuellem main klären, den finalen Pin aktualisieren und die CI auf dem finalen PR-Head erneut ausführen. Aurion-Release `41007648872` und Schema-Child `41009489578`, Runtime-/Digest-Readback, unabhängige Review, eigener Owner-Signierlauf und Tablet-Abnahme stehen aus.
