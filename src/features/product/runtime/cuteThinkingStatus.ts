@@ -179,7 +179,12 @@ function deterministicCutePick(index: number, total: number, salt = 0): number {
 
 function statusSalt(status?: string): number {
   if (!status) return 1;
-  return [...status].reduce((sum, char) => sum + char.charCodeAt(0), 7);
+  // ⚡ Bolt: Use direct for...of loop to prevent array allocation overhead ([...status]) in high-frequency status hashing
+  let sum = 7;
+  for (const char of status) {
+    sum += char.charCodeAt(0);
+  }
+  return sum;
 }
 
 function isDoneStatus(status?: string): boolean {
