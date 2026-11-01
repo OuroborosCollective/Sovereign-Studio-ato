@@ -100,7 +100,7 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
 }) => {
   const { acted, act } = useActionLatch();
   // GitHub write readiness is publication/readback information only.
-  // It must never gate repository execution, which is Agent-Zero-only.
+  // It must never gate repository execution, which is runtime-only.
   const einbauenEnabled = !acted && gateSnapshot.repoReady && canConfirm;
 
   const handleEinbauen = () => {

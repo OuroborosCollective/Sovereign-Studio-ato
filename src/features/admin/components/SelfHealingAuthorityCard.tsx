@@ -111,7 +111,7 @@ export function SelfHealingAuthorityCard() {
             </h2>
             <p style={{ margin: '6px 0 0', color: '#93a4b8', lineHeight: 1.5 }}>
               Wolfram CAG darf nur den formalen Fehler-Maskenvertrag prüfen. Repository-Code darf
-              ausschließlich Agent Zero bearbeiten. Merge, Production-Deploy, Secret-Zugriff und
+              ausschließlich die Runtime bearbeiten. Merge, Production-Deploy, Secret-Zugriff und
               direkte Credit-Manipulation bleiben außerhalb dieses Grants.
             </p>
           </div>

@@ -64,7 +64,7 @@ describe('live runtime observation projection', () => {
     expect(runtimeObservation('/api/user/agent/swarm/run', 'POST', 503, { blocker: 'NO_VERIFIED_EXECUTION_ROUTE_READY' })).toMatchObject({ httpStatus: 503, failureFamily: 'NO_VERIFIED_EXECUTION_ROUTE_READY' });
   });
   it('projects the final repository job event stage instead of raw blocker text', () => {
-    const blocker = 'Agent Zero completed without workspace changes.';
+    const blocker = 'Runtime completed without workspace changes.';
     const result = runtimeObservation('/api/user/agent/jobs/agent-1234', 'GET', 200, {
       job: {
         id: 'agent-1234',

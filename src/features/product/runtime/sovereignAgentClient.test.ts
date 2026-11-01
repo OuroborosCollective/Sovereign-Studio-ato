@@ -265,7 +265,7 @@ describe('SovereignAgentClient', () => {
           status: 'BLOCKED',
           jobId: 'job-evidence-blocked',
           workspaceId: 'ws-evidence-blocked',
-          blocker: 'The single-Agent-Zero repository execution is blocked by evidence.',
+          blocker: 'The single-agent repository execution is blocked by evidence.',
         }), { status: 409 });
       }
       return new Response(JSON.stringify({

@@ -33,7 +33,7 @@ export function WorkbenchEmptyState({
         Was möchtest du tun?
       </h2>
       <p style={{ margin: '8px auto 18px', maxWidth: 560, color: C.textSub, fontSize: 13, lineHeight: 1.55 }}>
-        Chatte ganz normal mit Sovereign. Modell und Werkzeuge kannst du unten wählen; Agent Zero und die Runtime arbeiten im Hintergrund.
+        Chatte ganz normal mit Sovereign. Modell und Werkzeuge kannst du unten wählen; die Runtime arbeitet im Hintergrund.
       </p>
       <ActionSuggestionStrip
         actions={SOVEREIGN_PRESET_ACTIONS}

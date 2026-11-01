@@ -2381,7 +2381,7 @@ export function BuilderContainer({
       : [],
     [agentProjections, scopedAgentJob?.jobId, scopedAgentJob?.workspaceId],
   );
-  // Chat is the permanent primary product surface. Agent Zero, repository
+  // Chat is the permanent primary product surface. Repository
   // execution and evidence collection stay behind the conversation and only
   // surface technical projections when the owner explicitly opens Inspector.
   const chatPrimary = activeTab === 'chat';
