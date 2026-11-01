@@ -38,13 +38,17 @@ export function WorkbenchStatusChips({
     >
       {slots.map((slot) => {
         const color = WORKBENCH_STATUS_TONE_COLOR[slot.tone];
+        const detailSuffix = slot.items.length === 0 ? ` (${slot.emptyLabel})` : ` (${slot.items.length} Details)`;
+        const tooltipTitle = `${slot.label}: ${slot.value}${detailSuffix} – Slot-Details öffnen`;
+
         return (
           <button
             key={slot.id}
             type="button"
             onClick={() => onSlotClick(slot.id)}
             aria-label={`${slot.label}: ${slot.value}`}
-            title={`${slot.label}: ${slot.value}`}
+            title={tooltipTitle}
+            className="focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none transition-all hover:opacity-90"
             style={{
               display: "flex",
               alignItems: "center",
@@ -63,6 +67,7 @@ export function WorkbenchStatusChips({
             }}
           >
             <span
+              aria-hidden="true"
               style={{
                 width: 6,
                 height: 6,
