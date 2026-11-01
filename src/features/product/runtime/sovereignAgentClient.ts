@@ -874,7 +874,7 @@ export class SovereignAgentClient {
     const jobId = stringValue(body.jobId);
 
     // Repository execution may persist a job and then fail closed during
-    // Agent-Zero submission or reconciliation. A linked job id is authoritative
+    // Runtime submission or reconciliation. A linked job id is authoritative
     // evidence that the neutral job exists; read it back instead of turning a
     // persisted repository state into a generic transport failure.
     if (!response.ok && !jobId) {

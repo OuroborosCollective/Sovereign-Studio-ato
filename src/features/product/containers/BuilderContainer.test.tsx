@@ -2252,7 +2252,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(oauthValidationCalls()).toHaveLength(2);
   });
 
-  it("routes the exact degraded /direct-patch command to Agent Zero without GitHub execution consent", async () => {
+  it("routes the exact degraded /direct-patch command to the runtime without GitHub execution consent", async () => {
     const onStartAgent = vi.fn();
     const fetchMock = mockFetchSequence(
       jsonResponse({ tree: [{ path: 'docs/README.md', type: 'blob', size: 42 }], truncated: false }),

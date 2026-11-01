@@ -14,7 +14,7 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it('sends Abort to the bound backend job and preserves a truthful cancellation rejection', async () => {
-    const reason = 'Cancellation is not supported by the connected Agent Zero task contract. The job remains active; no stop was confirmed.';
+    const reason = 'Cancellation is not supported by the connected runtime task contract. The job remains active; no stop was confirmed.';
     const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
       ok: false, blocker: 'AGENT_ZERO_A2A_CANCEL_NOT_PROVEN', error: reason,
     }), { status: 409 }));
@@ -159,7 +159,7 @@ describe('vNext repository-bound Draft-PR mission contract', () => {
       jobs: [
         {
           jobId: 'agent-zombie',
-          mission: 'Old mission that never reached Agent Zero.',
+          mission: 'Old mission that never reached the runtime.',
           status: 'running',
           repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
           branch: 'main',
