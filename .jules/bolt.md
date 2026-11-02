@@ -91,3 +91,7 @@
 ## 2026-10-10 - [Consolidating Chained Array Methods in Chat History Parsing]
 **Learning:** Bounding array evaluations (e.g. `messages.filter(...).slice(-N).map(...)`) when retrieving recent chat messages allocates multiple large intermediate arrays, causing unnecessary garbage collection pressure and degrading performance in active chat sessions.
 **Action:** Replace `.filter().slice().map()` method chains with a single bounded negative `for` loop (iterating backwards from the end of the array and using `unshift` or index placement) to avoid intermediate allocations and strictly limit evaluation scope to `N` items.
+
+## 2026-11-02 - [Consolidating Multi-Pass Array Traversals in Render Cycles]
+**Learning:** In React components processing state arrays, calculating derived stats (like `cost`) or grouping metrics (like tier counts) using chained `.reduce()` or multiple `.filter()` calls initiates numerous $O(N)$ full-array iterations and allocates intermediate closures or temporary arrays. This causes significant, unnecessary garbage collection pressure and delays in the render path.
+**Action:** Replace multiple `.filter().length` passes and inline `.reduce()` aggregations with a single-pass `for` loop that tallies all required metrics simultaneously, eliminating redundant passes and intermediate allocations.
