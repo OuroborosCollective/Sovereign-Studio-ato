@@ -22,7 +22,7 @@ export function ActionSuggestionStrip({
 }: ActionSuggestionStripProps): React.ReactElement {
   return (
     <section
-      aria-label="Sovereign Vorschläge"
+      aria-labelledby="action-suggestion-strip-title"
       data-testid="sovereign-action-suggestion-strip"
       style={{
         padding: '8px 10px 6px',
@@ -39,7 +39,7 @@ export function ActionSuggestionStrip({
           marginBottom: 6,
         }}
       >
-        <span style={{ fontFamily: 'monospace', fontSize: 9, color: C.textMuted }}>
+        <span id="action-suggestion-strip-title" style={{ fontFamily: 'monospace', fontSize: 9, color: C.textMuted }}>
           Geführte Repo-Aktionen
         </span>
         <span style={{ fontFamily: 'monospace', fontSize: 8, color: C.textMuted }}>
@@ -48,6 +48,7 @@ export function ActionSuggestionStrip({
       </div>
       <div
         role="list"
+        aria-label="Geführte Repo-Aktionen"
         style={{
           display: 'flex',
           gap: 8,
@@ -69,8 +70,8 @@ export function ActionSuggestionStrip({
                 type="button"
                 disabled={disabled}
                 onClick={() => onSelect(action.id)}
-                aria-label={`${action.label}: ${action.description}`}
-                title={`${action.description}\n${gate.canStart ? gate.nextAction : `${gate.reason} ${gate.nextAction}`}`}
+                className="focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none transition-opacity hover:opacity-90"
+                title={`${action.shortLabel} – ${action.label}: ${action.description}\n${gate.canStart ? gate.nextAction : `${gate.reason} ${gate.nextAction}`}`}
                 style={{
                   minWidth: 138,
                   maxWidth: 178,
