@@ -91,3 +91,6 @@
 ## 2026-10-10 - [Consolidating Chained Array Methods in Chat History Parsing]
 **Learning:** Bounding array evaluations (e.g. `messages.filter(...).slice(-N).map(...)`) when retrieving recent chat messages allocates multiple large intermediate arrays, causing unnecessary garbage collection pressure and degrading performance in active chat sessions.
 **Action:** Replace `.filter().slice().map()` method chains with a single bounded negative `for` loop (iterating backwards from the end of the array and using `unshift` or index placement) to avoid intermediate allocations and strictly limit evaluation scope to `N` items.
+## 2026-10-30 - [Optimize High-Frequency Arrays]
+**Learning:** In high-frequency execution paths (e.g., loops processing thousands of signals or neural worker compute ticks), replacing `.reduce()` array iterations with standard `for` loops avoids continuous inline function allocation overhead and reduces garbage collection pressure.
+**Action:** Always prefer standard `for` loops for basic aggregations on arrays in performance-critical sections.
