@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { maskSecrets } from '../../../shared/utils/crypto';
 import { C } from './builderConstants';
+import { ChatMarkdown } from './ChatMarkdown';
 import type { SovereignLlmRouteOption } from '../runtime/devChatWorkerBridge';
 
 export type MonitorCommunicationKind = 'user' | 'communicate' | 'runtime';
@@ -274,7 +275,7 @@ export function MonitorCommunicationDock({
                     : entryLabel(entry.kind)}
                 </strong>
                 <span style={{ display: 'block', marginTop: 4, color: C.textSub, fontSize: 11, lineHeight: 1.45, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-                  {text}
+                  {entry.kind === 'runtime' && chatMode ? <ChatMarkdown content={text} /> : text}
                 </span>
               </li>
             );

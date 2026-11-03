@@ -5015,7 +5015,11 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       let textToAppend = fullText;
       
       if (streamFallbackMetadata?.fallbackUsed) {
-        appendRuntimeNotice(`Hinweis: ${streamFallbackMetadata.preferredModel} war nicht erreichbar, Antwort kam von ${streamFallbackMetadata.actualModel}.`);
+        appendChatLine({
+          role: 'system',
+          text: `**Modell-Fallback:** \`${streamFallbackMetadata.preferredModel}\` war nicht erreichbar, Antwort kam von \`${streamFallbackMetadata.actualModel}\`.`,
+          monitorProjection: { schemaVersion: 'sovereign.monitor-communication-projection.v1', sourceKind: 'RUNTIME_NOTICE', authority: 'CONVERSATION_ONLY', authoritative: false }
+        });
       }
 
       appendGuardedWorkerText(textToAppend);
@@ -5036,7 +5040,11 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       let textToAppend = fallback.content;
 
       if (fallback.fallbackUsed) {
-        appendRuntimeNotice(`Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}.`);
+        appendChatLine({
+          role: 'system',
+          text: `**Modell-Fallback:** \`${fallback.preferredModel}\` war nicht erreichbar, Antwort kam von \`${fallback.actualModel}\`.`,
+          monitorProjection: { schemaVersion: 'sovereign.monitor-communication-projection.v1', sourceKind: 'RUNTIME_NOTICE', authority: 'CONVERSATION_ONLY', authoritative: false }
+        });
       }
 
       appendGuardedWorkerText(textToAppend);
