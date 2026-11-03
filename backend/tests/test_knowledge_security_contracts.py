@@ -477,5 +477,5 @@ def test_frontend_surfaces_and_runtime_consumption_exist() -> None:
     assert "Der Auftrag wurde vor Credit-Abzug und Online-Call gestoppt" in builder
     assert "fetchWithStepUp" in billing
     assert "fetchWithStepUp" in guard
-    assert "Mit Passkey anmelden" in login
-    assert "Mit Account Key anmelden" in login
+    assert "passkeys and account-key login remain backend" in login
+    assert "are intentionally not exposed" in login
