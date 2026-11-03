@@ -156,7 +156,7 @@ export class ErrorComputer {
 
   /**
    * Apply temporal smoothing to reduce oscillation.
-   * Uses exponential moving average.
+   * Uses exponential moving average with zero array allocation and O(1) weight decay.
    */
   private applyTemporalSmoothing(node: string, newError: number): number {
     const history = this.errorHistory.get(node);
@@ -164,19 +164,23 @@ export class ErrorComputer {
       return newError;
     }
 
-    // Get recent errors
-    const recentErrors = history.slice(-this.smoothingWindow);
     const alpha = 0.3; // Smoothing factor
+    const len = history.length;
+    const window = Math.min(len, this.smoothingWindow);
+    const startIdx = len - 1;
 
-    // Calculate weighted average
-    const smoothedError = recentErrors.reduce((sum, e, i) => {
-      const weight = Math.pow(alpha, recentErrors.length - 1 - i);
-      return sum + e.error * weight;
-    }, 0);
+    let smoothedError = 0;
+    let weightSum = 0;
+    let currentWeight = 1.0;
 
-    const weightSum = recentErrors.reduce((sum, _, i) => {
-      return sum + Math.pow(alpha, recentErrors.length - 1 - i);
-    }, 0);
+    // Calculate weighted sum in a single backwards pass over recent errors
+    // avoiding array allocation (.slice) and repeated Math.pow calls.
+    for (let k = 0; k < window; k++) {
+      const err = history[startIdx - k].error;
+      smoothedError += err * currentWeight;
+      weightSum += currentWeight;
+      currentWeight *= alpha;
+    }
 
     const ema = smoothedError / weightSum;
 
@@ -199,15 +203,17 @@ export class ErrorComputer {
    * Store error in history.
    */
   private addToHistory(node: string, error: PredictionError): void {
-    const history = this.errorHistory.get(node) ?? [];
+    let history = this.errorHistory.get(node);
+    if (!history) {
+      history = [];
+      this.errorHistory.set(node, history);
+    }
     history.push(error);
 
     // Keep last 100 errors per node
     if (history.length > 100) {
       history.shift();
     }
-
-    this.errorHistory.set(node, history);
   }
 
   /**
@@ -302,22 +308,40 @@ export class ErrorComputer {
    * Filter errors that should propagate.
    */
   getPropagatedErrors(errors: PredictionError[]): PredictionError[] {
-    return errors.filter((e) => e.propagated);
+    const result: PredictionError[] = [];
+    const len = errors.length;
+    for (let i = 0; i < len; i++) {
+      if (errors[i].propagated) {
+        result.push(errors[i]);
+      }
+    }
+    return result;
   }
 
   /**
    * Get errors above a specific threshold.
    */
   getErrorsAboveThreshold(errors: PredictionError[], threshold: number): PredictionError[] {
-    return errors.filter((e) => e.absoluteError + Number.EPSILON >= threshold);
+    const result: PredictionError[] = [];
+    const len = errors.length;
+    for (let i = 0; i < len; i++) {
+      if (errors[i].absoluteError + Number.EPSILON >= threshold) {
+        result.push(errors[i]);
+      }
+    }
+    return result;
   }
 
   /**
    * Get recent errors with highest magnitude.
    */
   getTopErrors(nodeId: string, k: number = 10): PredictionError[] {
-    const history = this.errorHistory.get(nodeId) ?? [];
-    return [...history]
+    const history = this.errorHistory.get(nodeId);
+    if (!history || history.length === 0) {
+      return [];
+    }
+    return history
+      .slice()
       .sort((a, b) => b.absoluteError - a.absoluteError)
       .slice(0, k);
   }
@@ -342,18 +366,29 @@ export function createErrorComputer(
  * Returns percentage of predictions within threshold.
  */
 export function calculateAccuracy(errors: PredictionError[], threshold: number): number {
-  if (errors.length === 0) return 0;
-  const accurate = errors.filter((e) => e.absoluteError <= threshold).length;
-  return accurate / errors.length;
+  const len = errors.length;
+  if (len === 0) return 0;
+  let accurate = 0;
+  for (let i = 0; i < len; i++) {
+    if (errors[i].absoluteError <= threshold) {
+      accurate++;
+    }
+  }
+  return accurate / len;
 }
 
 /**
  * Calculate mean squared error (MSE).
  */
 export function calculateMSE(errors: PredictionError[]): number {
-  if (errors.length === 0) return 0;
-  const sumSquared = errors.reduce((sum, e) => sum + e.error * e.error, 0);
-  return sumSquared / errors.length;
+  const len = errors.length;
+  if (len === 0) return 0;
+  let sumSquared = 0;
+  for (let i = 0; i < len; i++) {
+    const err = errors[i].error;
+    sumSquared += err * err;
+  }
+  return sumSquared / len;
 }
 
 /**
