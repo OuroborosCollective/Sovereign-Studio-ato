@@ -14,6 +14,9 @@ const XAI_KEY_REGEX = /xai-[a-zA-Z0-9_-]{20,}/g;
 const HUGGINGFACE_KEY_REGEX = /hf_[a-zA-Z0-9]{8,100}/g;
 const TOGETHER_KEY_REGEX = /together_[a-zA-Z0-9]{8,100}/g;
 const POLLINATIONS_KEY_REGEX = /pollinations_[a-zA-Z0-9]{8,100}/g;
+const FIREWORKS_KEY_REGEX = /(fw_|fw-)[a-zA-Z0-9_-]{20,}/g;
+const CEREBRAS_KEY_REGEX = /csk-[a-zA-Z0-9_-]{20,}/g;
+const VOYAGE_KEY_REGEX = /pa-[a-zA-Z0-9_-]{20,}/g;
 const BEARER_TOKEN_REGEX = /Bearer\s+[a-zA-Z0-9._~+/-]+=*/gi;
 const LABEL_CREDENTIAL_REGEX = /(?<![a-zA-Z0-9])(["']?)(linear[_-]?key|linear[_-]?secret|linear[_-]?token|datadog[_-]?key|datadog[_-]?secret|datadog[_-]?token|algolia[_-]?key|algolia[_-]?secret|algolia[_-]?token|supabase[_-]?key|supabase[_-]?secret|supabase[_-]?token|elevenlabs[_-]?key|elevenlabs[_-]?secret|elevenlabs[_-]?token|eleven[_-]?labs[_-]?key|stability[_-]?key|stability[_-]?secret|fal[_-]?key|fal[_-]?secret|cohere[_-]?key|cohere[_-]?secret|cohere[_-]?token|pinecone[_-]?key|pinecone[_-]?secret|qdrant[_-]?key|qdrant[_-]?secret|sentry[_-]?key|stripe[_-]?key|stripe[_-]?secret|stripe[_-]?token|deepseek[_-]?key|deepseek[_-]?secret|deepseek[_-]?token|perplexity[_-]?key|perplexity[_-]?secret|replicate[_-]?key|replicate[_-]?secret|cloudflare[_-]?token|cloudflare[_-]?key|cloudflare[_-]?secret|sendgrid[_-]?key|resend[_-]?key|mailgun[_-]?key|postmark[_-]?key|twilio[_-]?key|twilio[_-]?secret|private[_-]?key[_-]?passphrase|key[_-]?passphrase|tenant[_-]?secret|tenant[_-]?key|license[_-]?secret|license[_-]?key|org[_-]?secret|org[_-]?key|oauth[_-]?token|oauth[_-]?secret|auth[_-]?secret|bearer[_-]?token|registration[_-]?token|access[_-]?key[_-]?id|aws[_-]?secret[_-]?access[_-]?key|encryption[_-]?secret|cipher[_-]?key|deploy[_-]?key|encryption[_-]?key|bot[_-]?token|passphrase|admin[_-]?key|admin[_-]?secret|admin[_-]?token|auth[_-]?key|access[_-]?secret|account[_-]?key|account[_-]?secret|client[_-]?secret|client[_-]?id|session[_-]?token|session[_-]?id|refresh[_-]?token|auth[_-]?token|id[_-]?token|api[_-]?secret|database[_-]?password|db[_-]?password|db[_-]?pass|master[_-]?password|master[_-]?key|secret[_-]?key|webhook[_-]?secret|webhook[_-]?token|webhook[_-]?key|ssh[_-]?private[_-]?key|ssh[_-]?key|signing[_-]?key|signing[_-]?secret|password|passwd|token|secret|api[_-]?key|access[_-]?token|private[_-]?key)\1([ \t]*[:=][ \t]*)["']?[a-zA-Z0-9_@#$%^&*.\-~+/=]+["']?/gi;
 
@@ -55,10 +58,13 @@ export function maskSecrets(text: string): string {
   masked = masked.replace(GROQ_KEY_REGEX, 'gsk_****');
   masked = masked.replace(XAI_KEY_REGEX, 'xai-****');
 
-  // HuggingFace, Together AI and Pollinations AI
+  // HuggingFace, Together AI, Pollinations AI, Fireworks AI, Cerebras AI and Voyage AI
   masked = masked.replace(HUGGINGFACE_KEY_REGEX, 'hf_****');
   masked = masked.replace(TOGETHER_KEY_REGEX, 'together_****');
   masked = masked.replace(POLLINATIONS_KEY_REGEX, 'pollinations_****');
+  masked = masked.replace(FIREWORKS_KEY_REGEX, 'fw_****');
+  masked = masked.replace(CEREBRAS_KEY_REGEX, 'csk-****');
+  masked = masked.replace(VOYAGE_KEY_REGEX, 'pa-****');
 
   // Generic Bearer tokens in common error messages or strings
   masked = masked.replace(BEARER_TOKEN_REGEX, 'Bearer ****');
