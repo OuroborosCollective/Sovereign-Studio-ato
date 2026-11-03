@@ -69,3 +69,6 @@
 ## 2025-10-05 - [Accessible Chat Streams & Empty States]
 **Learning:** Chat interfaces with dynamically added messages lack screen reader notifications if they do not have a live region. Furthermore, an empty stream provides no context. Adding `role="log"` and `aria-live="polite"` to the container, along with a visually centered empty state, improves both discoverability and accessibility.
 **Action:** Always wrap chat or event streams in an element with `role="log"` or `aria-live="polite"`, and provide a helpful empty state when no items are present.
+## 2024-10-24 - VpsChat Focus Styles
+**Learning:** Inline CSS styles for `outline: 'none'` conflict with the Tailwind `focus-visible` utility classes and reduce keyboard accessibility if focus rings are missing.
+**Action:** Favor semantic `className` implementations of `focus-visible` ring utilities on interactive `<input>` and `<button>` elements over inline outline removals.
