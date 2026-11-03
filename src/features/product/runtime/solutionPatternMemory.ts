@@ -352,8 +352,29 @@ export function buildSolutionPattern(input: SolutionPatternLearningInput): Solut
   const outputNodes = Array.from(new Set(input.outputNodes));
   const extension = fileExtension(input.problem.filePath);
   const problemSignature = stableHash([input.problem.category, extension, normalizeToken(problemSummary), contextSignals.join(',')].join('|'));
-  const contextFingerprint = stableHash([...contextPaths, ...contextSignals].sort().join('|'));
+  const contextFingerprint = stableHash(contextPaths.concat(contextSignals).sort().join('|'));
   const fixFingerprint = stableHash([normalizeToken(solutionSummary), changedFiles.join(','), steps.join('|')].join('|'));
+
+  // Bolt ⚡ Optimization: Bounded single-pass Set population for conditions.
+  // Eliminates multi-pass array spreading, intermediate array allocations, .filter(), and .slice().
+  const conditionsSet = new Set<string>();
+  for (let i = 0; i < contextPaths.length; i++) {
+    if (contextPaths[i]) {
+      conditionsSet.add(contextPaths[i]);
+      if (conditionsSet.size >= MAX_LIST) break;
+    }
+  }
+  if (conditionsSet.size < MAX_LIST) {
+    for (let i = 0; i < contextSignals.length; i++) {
+      if (contextSignals[i]) {
+        conditionsSet.add(contextSignals[i]);
+        if (conditionsSet.size >= MAX_LIST) break;
+      }
+    }
+  }
+  if (conditionsSet.size < MAX_LIST && extension) {
+    conditionsSet.add(extension);
+  }
 
   return {
     id: `solve-${stableHash(`${problemSignature}|${contextFingerprint}|${fixFingerprint}`)}`,
@@ -368,7 +389,7 @@ export function buildSolutionPattern(input: SolutionPatternLearningInput): Solut
     beforeFingerprint: textFingerprint(input.problem.beforeSnippet),
     solutionSummary,
     afterFingerprint: textFingerprint(input.fix.afterSnippet),
-    conditions: Array.from(new Set([...contextPaths, ...contextSignals, extension].filter(Boolean))).slice(0, MAX_LIST),
+    conditions: Array.from(conditionsSet),
     recommendedSteps: steps,
     evidence: sanitizeText(input.fix.proof || input.fix.afterSnippet || input.fix.summary),
     intakeNode: input.intakeNode,
@@ -542,16 +563,15 @@ export function learnSolutionPattern(store: SolutionPatternStore, input: Solutio
   };
 }
 
-// Bolt ⚡ Optimization: Pre-allocated Set lookup cache
+// Bolt ⚡ Optimization: Pre-allocated Set lookup cache with fast-path string lookup.
 // Accepts pre-allocated Set of normalized tokens to perform highly efficient O(1) lookups.
-// This completely avoids allocating a new Set on every pattern iteration.
+// First attempts direct O(1) string check before falling back to normalizeToken regex execution.
 function overlapScore(a: string[], rightSet: Set<string>): number {
   if (!a.length || !rightSet.size) return 0;
   let score = 0;
   for (let i = 0; i < a.length; i++) {
-    // Normalizing a[i] ensures 100% correctness even if elements in pattern.conditions
-    // are not pre-normalized. Since rightSet is pre-normalized, direct lookup is perfectly correct.
-    if (rightSet.has(normalizeToken(a[i]))) {
+    const item = a[i];
+    if (rightSet.has(item) || rightSet.has(normalizeToken(item))) {
       score++;
     }
   }
@@ -578,7 +598,10 @@ export function matchSolutionPatterns(store: SolutionPatternStore, query: Soluti
   const querySignalsSet = new Set(querySignals);
   const queryDescriptionTokensSet = new Set(queryDescriptionTokens);
 
-  for (const pattern of store.patterns.filter((item) => item.status === 'active')) {
+  // Bolt ⚡ Optimization: Direct loop over store.patterns eliminating intermediate .filter() array allocation.
+  for (let i = 0; i < store.patterns.length; i++) {
+    const pattern = store.patterns[i];
+    if (pattern.status !== 'active') continue;
     if (query.category && pattern.category !== query.category) continue;
     if (query.outputNode && !pattern.outputNodes.includes(query.outputNode)) continue;
     if (query.minSuccesses !== undefined && pattern.successfulUses < query.minSuccesses) continue;
