@@ -122,16 +122,33 @@ describe('AgentEventStream', () => {
     expect(visibleTextWithoutStyle(container)).not.toContain('%');
   });
 
-  it('renders changed files only from supplied Sovereign Agent job snapshot', () => {
-    render(
+  it('renders changed files only from supplied Sovereign Agent job snapshot with interactive button attributes', () => {
+    const onOpenFile = vi.fn();
+    const { rerender } = render(
+      <AgentEventStream
+        snapshot={runningSnapshot()}
+        job={runningJob({ changedFiles: ['src/features/product/components/AgentEventStream.tsx'] })}
+        onOpenFile={onOpenFile}
+      />,
+    );
+
+    expect(screen.getByText('Dateien: 1')).toBeTruthy();
+    const fileBadge = screen.getByRole('button', { name: 'Repo Datei öffnen: src/features/product/components/AgentEventStream.tsx' });
+    expect(fileBadge).not.toBeDisabled();
+    expect(fileBadge).toHaveClass('focus-visible:ring-2');
+
+    fireEvent.click(fileBadge);
+    expect(onOpenFile).toHaveBeenCalledWith('src/features/product/components/AgentEventStream.tsx');
+
+    // Non-interactive file badge
+    rerender(
       <AgentEventStream
         snapshot={runningSnapshot()}
         job={runningJob({ changedFiles: ['src/features/product/components/AgentEventStream.tsx'] })}
       />,
     );
-
-    expect(screen.getByText('Dateien: 1')).toBeTruthy();
-    expect(screen.getByText('AgentEventStream.tsx')).toBeTruthy();
+    const nonInteractiveBadge = screen.getByRole('button', { name: 'Repo Datei: src/features/product/components/AgentEventStream.tsx' });
+    expect(nonInteractiveBadge).toBeDisabled();
   });
 
   it('does not display unknown/repo as real repository truth', () => {

@@ -188,9 +188,11 @@ function FileBadge({ path, onClick }: { path: string; onClick?: () => void }) {
   return (
     <button
       type="button"
+      disabled={!onClick}
       aria-label={onClick ? `Repo Datei öffnen: ${path}` : `Repo Datei: ${path}`}
       title={onClick ? `Repo Datei öffnen: ${path}` : path}
       onClick={onClick}
+      className={onClick ? "focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none transition-opacity hover:opacity-90" : ""}
       style={{
         padding: '3px 8px',
         borderRadius: 5,
@@ -326,7 +328,13 @@ export function AgentEventStream({ snapshot, job, projections = [], evidenceAnch
         {(onCancel || draftPrUrl) && (
           <div style={{ padding: '8px 12px', borderTop: `1px solid ${C.border}`, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             {isActive && onCancel && (
-              <button type="button" onClick={onCancel} style={{ padding: '6px 14px', borderRadius: 7, background: 'transparent', color: C.rose, fontSize: 12, fontWeight: 500, border: `1px solid ${C.rose}`, cursor: 'pointer' }}>
+              <button
+                type="button"
+                onClick={onCancel}
+                title="Sovereign Agent Ausführung abbrechen"
+                className="focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none transition-opacity hover:opacity-90"
+                style={{ padding: '6px 14px', borderRadius: 7, background: 'transparent', color: C.rose, fontSize: 12, fontWeight: 500, border: `1px solid ${C.rose}`, cursor: 'pointer' }}
+              >
                 Abbrechen
               </button>
             )}
@@ -340,6 +348,8 @@ export function AgentEventStream({ snapshot, job, projections = [], evidenceAnch
                     window.open(safeUrl, '_blank', 'noopener,noreferrer');
                   }
                 })}
+                title="Draft PR auf GitHub öffnen"
+                className="focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none transition-opacity hover:opacity-90"
                 style={{ padding: '6px 14px', borderRadius: 7, background: C.green, color: '#000', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer' }}
               >
                 Draft PR öffnen ↗
