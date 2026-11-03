@@ -60,6 +60,13 @@ describe('maskSecrets', () => {
     expect(maskSecrets(`Failed with ${secret}`)).toBe('Failed with xai-****');
   });
 
+  it('masks Perplexity and Replicate style keys', () => {
+    const pplxSecret = 'pplx-1234567890abcdefghijklmnopqrstuvwxyz0123456789';
+    const replicateSecret = 'r8_1234567890abcdefghijklmnopqrstuvwxyz0123456789';
+    expect(maskSecrets(`Failed with ${pplxSecret}`)).toBe('Failed with pplx-****');
+    expect(maskSecrets(`Failed with ${replicateSecret}`)).toBe('Failed with r8_****');
+  });
+
   it('masks OpenAI Project keys', () => {
     const secret = 'sk-proj-abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz01';
     expect(maskSecrets(`Using ${secret}`)).toBe('Using sk-proj-****');
