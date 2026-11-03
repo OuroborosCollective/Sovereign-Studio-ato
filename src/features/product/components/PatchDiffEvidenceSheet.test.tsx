@@ -45,4 +45,32 @@ describe('PatchDiffEvidenceSheet', () => {
     fireEvent.click(button);
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  it('closes on Escape key press, links dialog landmark, and renders diff list with focusable pre block', () => {
+    const onClose = vi.fn();
+    render(
+      <PatchDiffEvidenceSheet
+        report={report}
+        confirmed={false}
+        onConfirm={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('aria-labelledby', 'patch-diff-title');
+
+    const title = screen.getByText('Patch Diff');
+    expect(title).toHaveAttribute('id', 'patch-diff-title');
+
+    const list = screen.getByRole('list', { name: 'Patch-Dateien Diff-Liste' });
+    expect(list).toBeInTheDocument();
+
+    const preBlock = screen.getByLabelText('Diff-Vorschau für README.md');
+    expect(preBlock).toHaveAttribute('tabIndex', '0');
+    expect(preBlock).toHaveClass('focus-visible:ring-2');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
