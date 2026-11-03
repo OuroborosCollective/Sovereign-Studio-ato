@@ -189,9 +189,13 @@ describe('maskSecrets', () => {
     expect(maskSecrets('stability_secret=stability_sec_val_303')).toBe('stability_secret=****');
     expect(maskSecrets('fal_key: fal_key_val_404')).toBe('fal_key: ****');
     expect(maskSecrets('fal_secret=fal_sec_val_505')).toBe('fal_secret=****');
+    expect(maskSecrets('groq_key: groq_key_val_111')).toBe('groq_key: ****');
+    expect(maskSecrets('gemini_secret=gemini_sec_val_222')).toBe('gemini_secret=****');
+    expect(maskSecrets('openrouter_token: openrouter_tok_val_333')).toBe('openrouter_token: ****');
+    expect(maskSecrets('anthropic_key=anthropic_key_val_444')).toBe('anthropic_key=****');
     expect(maskSecrets('"deepseek_key": "quoted_value_123"')).toBe('"deepseek_key": ****');
 
-    const plain = 'cohere_key pinecone_secret qdrant_key deepseek_key perplexity_secret replicate_key cloudflare_token elevenlabs_key stability_key fal_secret without assignments';
+    const plain = 'cohere_key pinecone_secret qdrant_key deepseek_key perplexity_secret replicate_key cloudflare_token elevenlabs_key stability_key fal_secret groq_key gemini_secret openrouter_token anthropic_key without assignments';
     expect(maskSecrets(plain)).toBe(plain);
   });
 
