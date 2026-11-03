@@ -62,6 +62,7 @@ export function OperatorCoachPanel({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span
+              role="status"
               className={`h-3 w-3 rounded-full shadow-lg ${lampClass[lamp]}`}
               aria-label={lampLabels[lamp]}
               title={lampLabels[lamp]}
@@ -70,7 +71,7 @@ export function OperatorCoachPanel({
               Sovereign Bot · {headline}
             </h2>
             {isThinking ? (
-              <span className="thinking-dots text-cyan-200" aria-label="arbeitet">
+              <span role="status" aria-live="polite" className="thinking-dots text-cyan-200" title="Bot arbeitet…">
                 ...
               </span>
             ) : null}
@@ -80,12 +81,11 @@ export function OperatorCoachPanel({
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+      <div role="group" aria-label="Schnell-Navigation" className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
         <button
           type="button"
           onClick={onRepo}
           className={actionButtonClass}
-          aria-label="Zum Repository-Bereich wechseln"
           title="Zum Repository-Bereich wechseln"
         >
           Repo
@@ -94,7 +94,6 @@ export function OperatorCoachPanel({
           type="button"
           onClick={onBuilder}
           className={actionButtonClass}
-          aria-label="Zum Mission-Builder wechseln"
           title="Zum Mission-Builder wechseln"
         >
           Builder
@@ -103,7 +102,6 @@ export function OperatorCoachPanel({
           type="button"
           onClick={onFiles}
           className={actionButtonClass}
-          aria-label="Zu Dateien und Diff-Vorschau wechseln"
           title="Zu Dateien und Diff-Vorschau wechseln"
         >
           Files / Diff
@@ -112,7 +110,6 @@ export function OperatorCoachPanel({
           type="button"
           onClick={onLogs}
           className={actionButtonClass}
-          aria-label="Zum Runtime-Monitor wechseln"
           title="Zum Runtime-Monitor wechseln"
         >
           Monitor

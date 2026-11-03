@@ -1095,7 +1095,7 @@ describe('Palette Accessibility Enhancements', () => {
       const onFiles = vi.fn();
       const onLogs = vi.fn();
 
-      render(
+      const { rerender } = render(
         <OperatorCoachPanel
           lamp="green"
           headline="Bereit fuer Auftrag"
@@ -1113,20 +1113,23 @@ describe('Palette Accessibility Enhancements', () => {
       expect(section).toBeInTheDocument();
       expect(section).toHaveAttribute('aria-labelledby', 'operator-coach-heading');
 
-      const lamp = screen.getByLabelText('Status: Grün (Betriebsbereit)');
+      const lamp = screen.getByRole('status', { name: 'Status: Grün (Betriebsbereit)' });
       expect(lamp).toHaveAttribute('title', 'Status: Grün (Betriebsbereit)');
 
-      const repoBtn = screen.getByRole('button', { name: 'Zum Repository-Bereich wechseln' });
+      const quickNavGroup = screen.getByRole('group', { name: 'Schnell-Navigation' });
+      expect(quickNavGroup).toBeInTheDocument();
+
+      const repoBtn = screen.getByRole('button', { name: 'Repo' });
       expect(repoBtn).toHaveAttribute('title', 'Zum Repository-Bereich wechseln');
       expect(repoBtn).toHaveClass('focus-visible:ring-2');
 
-      const builderBtn = screen.getByRole('button', { name: 'Zum Mission-Builder wechseln' });
+      const builderBtn = screen.getByRole('button', { name: 'Builder' });
       expect(builderBtn).toHaveAttribute('title', 'Zum Mission-Builder wechseln');
 
-      const filesBtn = screen.getByRole('button', { name: 'Zu Dateien und Diff-Vorschau wechseln' });
+      const filesBtn = screen.getByRole('button', { name: 'Files / Diff' });
       expect(filesBtn).toHaveAttribute('title', 'Zu Dateien und Diff-Vorschau wechseln');
 
-      const logsBtn = screen.getByRole('button', { name: 'Zum Runtime-Monitor wechseln' });
+      const logsBtn = screen.getByRole('button', { name: 'Monitor' });
       expect(logsBtn).toHaveAttribute('title', 'Zum Runtime-Monitor wechseln');
 
       fireEvent.click(repoBtn);
@@ -1140,6 +1143,24 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(logsBtn);
       expect(onLogs).toHaveBeenCalledTimes(1);
+
+      rerender(
+        <OperatorCoachPanel
+          lamp="green"
+          headline="Bereit fuer Auftrag"
+          message="Das Repository ist verbunden."
+          nextAction="Einen neuen Auftrag eingeben."
+          isThinking={true}
+          onRepo={onRepo}
+          onBuilder={onBuilder}
+          onFiles={onFiles}
+          onLogs={onLogs}
+        />
+      );
+
+      const thinkingStatus = screen.getByTitle('Bot arbeitet…');
+      expect(thinkingStatus).toHaveAttribute('role', 'status');
+      expect(thinkingStatus).toHaveAttribute('aria-live', 'polite');
     });
   });
 
