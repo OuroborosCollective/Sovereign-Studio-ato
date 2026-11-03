@@ -103,6 +103,13 @@ const SECRET_PATTERNS = [
   /token\s*[:=]\s*[^\s]+/gi,
 ];
 
+// Hoisted regular expressions to avoid recompilation overhead in hot scan loops
+const TEST_FILE_REGEX = /(?:\.test\.|\.spec\.|__tests__\/|\/test\/|\/tests\/)/;
+const ENV_SECRET_PATH_REGEX = /^\.env(?:\.|$)|(^|\/)(secrets?|credentials?|private-key|id_rsa)(\.|\/|$)/;
+const BUILD_ARTIFACT_PATH_REGEX = /(^|\/)(node_modules|dist|build|coverage)(\/|$)/;
+const TEST_DOUBLES_PATH_REGEX = /(mock|stub|fake|fixture|sample)/;
+const UNFINISHED_WORK_PATH_REGEX = /(todo|fixme|wip)/;
+
 function stableHash(input: string): string {
   let hash = 0x811c9dc5;
   for (let i = 0; i < input.length; i += 1) {
@@ -258,18 +265,29 @@ export function collectWorkflowWatchFindings(
 
 export function collectRepoPathFindings(files: RepoFile[], now = Date.now()): ScanFinding[] {
   const findings: ScanFinding[] = [];
-  const paths = files.map((file) => file.path);
-  const lowerPaths = paths.map((path) => path.toLowerCase());
-  const hasWorkflow = lowerPaths.some((path) => path.startsWith('.github/workflows/') && (path.endsWith('.yml') || path.endsWith('.yaml')));
-  const hasTests = lowerPaths.some((path) => /(?:\.test\.|\.spec\.|__tests__\/|\/test\/|\/tests\/)/.test(path));
-  const hasReadme = lowerPaths.includes('readme.md');
+  let hasWorkflow = false;
+  let hasTests = false;
+  let hasReadme = false;
 
-  for (const file of files) {
+  // Single-pass traversal over files to evaluate repository flags and path findings simultaneously,
+  // avoiding multi-pass array allocations (files.map/paths.map/lowerPaths.some).
+  for (let i = 0; i < files.length; i += 1) {
+    const file = files[i];
     const path = file.path;
     const lower = path.toLowerCase();
     const size = file.size ?? 0;
 
-    if (/^\.env(?:\.|$)|(^|\/)(secrets?|credentials?|private-key|id_rsa)(\.|\/|$)/.test(lower)) {
+    if (!hasWorkflow && lower.startsWith('.github/workflows/') && (lower.endsWith('.yml') || lower.endsWith('.yaml'))) {
+      hasWorkflow = true;
+    }
+    if (!hasTests && TEST_FILE_REGEX.test(lower)) {
+      hasTests = true;
+    }
+    if (!hasReadme && lower === 'readme.md') {
+      hasReadme = true;
+    }
+
+    if (ENV_SECRET_PATH_REGEX.test(lower)) {
       findings.push(createFinding({
         category: 'security-leak',
         severity: lower === '.env' ? 'critical' : 'high',
@@ -284,7 +302,7 @@ export function collectRepoPathFindings(files: RepoFile[], now = Date.now()): Sc
       }));
     }
 
-    if (/(^|\/)(node_modules|dist|build|coverage)(\/|$)/.test(lower)) {
+    if (BUILD_ARTIFACT_PATH_REGEX.test(lower)) {
       findings.push(createFinding({
         category: 'build-artifact',
         severity: 'high',
@@ -299,7 +317,7 @@ export function collectRepoPathFindings(files: RepoFile[], now = Date.now()): Sc
       }));
     }
 
-    if (/(mock|stub|fake|fixture|sample)/.test(lower)) {
+    if (TEST_DOUBLES_PATH_REGEX.test(lower)) {
       findings.push(createFinding({
         category: 'test-doubles',
         severity: 'medium',
@@ -314,7 +332,7 @@ export function collectRepoPathFindings(files: RepoFile[], now = Date.now()): Sc
       }));
     }
 
-    if (/(todo|fixme|wip)/.test(lower)) {
+    if (UNFINISHED_WORK_PATH_REGEX.test(lower)) {
       findings.push(createFinding({
         category: 'warning',
         severity: 'low',
@@ -473,30 +491,46 @@ export function applyScanFindings(
   completedAt = Date.now(),
 ): ScanFindingRegistry {
   assertScanFindingRegistryValid(registry);
-  for (const finding of findings) {
+
+  // Single-pass validation and Map lookup creation for O(1) matching instead of O(N*M) linear array scans
+  const incomingMap = new Map<string, ScanFinding>();
+  for (let i = 0; i < findings.length; i += 1) {
+    const finding = findings[i];
     const report = validateScanFinding(finding);
     if (!report.valid) throw new Error(`Invalid scan finding ${finding.id}: ${report.errors.join(' | ')}`);
+    incomingMap.set(finding.id, finding);
   }
 
-  const mergedExisting = registry.findings.map((existing) => {
-    const incoming = findings.find((finding) => finding.id === existing.id);
+  // Populate merged existing findings and collect existing IDs in a single pass
+  const existingIds = new Set<string>();
+  const mergedExisting: ScanFinding[] = new Array(registry.findings.length);
+  for (let i = 0; i < registry.findings.length; i += 1) {
+    const existing = registry.findings[i];
+    existingIds.add(existing.id);
+    const incoming = incomingMap.get(existing.id);
     if (incoming) {
-      return {
+      mergedExisting[i] = {
         ...incoming,
         firstSeenAt: existing.firstSeenAt,
         hits: existing.hits + 1,
         lastSeenAt: completedAt,
         status: 'active' as const,
       };
+    } else if (existing.source === source && existing.status === 'active') {
+      mergedExisting[i] = { ...existing, status: 'resolved' as const, lastSeenAt: completedAt };
+    } else {
+      mergedExisting[i] = existing;
     }
-    if (existing.source === source && existing.status === 'active') {
-      return { ...existing, status: 'resolved' as const, lastSeenAt: completedAt };
-    }
-    return existing;
-  });
+  }
 
-  const existingIds = new Set(registry.findings.map((finding) => finding.id));
-  const newFindings = findings.filter((finding) => !existingIds.has(finding.id));
+  const newFindings: ScanFinding[] = [];
+  for (let i = 0; i < findings.length; i += 1) {
+    const finding = findings[i];
+    if (!existingIds.has(finding.id)) {
+      newFindings.push(finding);
+    }
+  }
+
   const nextFindings = [...newFindings, ...mergedExisting].slice(0, MAX_FINDINGS);
   const run = createScanFindingRun(source, findings, startedAt, completedAt);
   const nextRegistry = {
@@ -510,8 +544,28 @@ export function applyScanFindings(
 }
 
 export function groupScanFindingsByCategory(findings: ScanFinding[]): Record<ScanFindingCategory, ScanFinding[]> {
-  const grouped = Object.fromEntries(SCAN_FINDING_CATEGORIES.map((category) => [category, []])) as Record<ScanFindingCategory, ScanFinding[]>;
-  for (const finding of findings) grouped[finding.category].push(finding);
+  // Pre-instantiated category map to avoid Object.fromEntries array allocations
+  const grouped: Record<ScanFindingCategory, ScanFinding[]> = {
+    architecture: [],
+    'type-error': [],
+    'build-logic': [],
+    warning: [],
+    'security-leak': [],
+    'test-doubles': [],
+    'build-artifact': [],
+    'runtime-guard': [],
+    auth: [],
+    workflow: [],
+    'ci-failure': [],
+    'learning-memory': [],
+    'diff-preview': [],
+    'generated-file': [],
+    docs: [],
+  };
+  for (let i = 0; i < findings.length; i += 1) {
+    const finding = findings[i];
+    grouped[finding.category].push(finding);
+  }
   return grouped;
 }
 
