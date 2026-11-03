@@ -69,3 +69,6 @@
 ## 2025-10-05 - [Accessible Chat Streams & Empty States]
 **Learning:** Chat interfaces with dynamically added messages lack screen reader notifications if they do not have a live region. Furthermore, an empty stream provides no context. Adding `role="log"` and `aria-live="polite"` to the container, along with a visually centered empty state, improves both discoverability and accessibility.
 **Action:** Always wrap chat or event streams in an element with `role="log"` or `aria-live="polite"`, and provide a helpful empty state when no items are present.
+## 2026-10-23 - Focus Rings and Hover States for Text Buttons
+**Learning:** Text buttons embedded in dense, secondary interfaces (like readback status or log streams) without standard primary button styles are often missed by keyboard users if they lack focus outlines. Furthermore, relying only on border definitions without hover contrast makes them feel inactive.
+**Action:** Always append `focus-visible:outline-none focus-visible:ring-2` classes to all secondary text buttons alongside standard `hover:bg-white/5 transition-colors` utility classes to ensure robust keyboard navigation and clear interactive affordances.
