@@ -134,12 +134,11 @@ export async function getToolPredictions(
   }
 
   const nodeNamespace = `tool.${toolType}.${toolName}`;
-  const patterns = layer
+  const matches = layer
     .getLatentSpace()
-    .findTopK(1, nodeNamespace, 5)
-    .map((match) => match.pattern);
+    .findTopK(1, nodeNamespace, 5);
 
-  if (patterns.length === 0) {
+  if (matches.length === 0) {
     return {
       predictedSuccessRate: 0,
       avgDurationMs: 0,
@@ -148,12 +147,16 @@ export async function getToolPredictions(
     };
   }
 
-  // Calculate success rate from patterns
-  const successCount = patterns.filter(p => p.signalValue > 0.5).length;
-  const predictedSuccessRate = successCount / patterns.length;
+  // ⚡ Bolt: Consolidate multi-pass mapping, filtering, and reduction into a single loop to avoid intermediate array allocations
+  let successCount = 0;
+  let sumConfidence = 0;
+  for (const match of matches) {
+    if (match.pattern.signalValue > 0.5) successCount++;
+    sumConfidence += match.pattern.avgConfidence;
+  }
   
-  // Calculate average confidence
-  const avgConfidence = patterns.reduce((sum, p) => sum + p.avgConfidence, 0) / patterns.length;
+  const predictedSuccessRate = successCount / matches.length;
+  const avgConfidence = sumConfidence / matches.length;
   
   // Generate recommendations
   const recommendations: string[] = [];
