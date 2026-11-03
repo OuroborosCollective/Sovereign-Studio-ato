@@ -227,6 +227,7 @@ const CopyButton = React.memo(function CopyButton({ code }: { code: string }) {
       onClick={handleCopy}
       aria-label={label}
       title={label}
+      className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
       style={{
         padding: '4px 8px',
         borderRadius: 4,
@@ -263,6 +264,7 @@ const CodeBlockView = React.memo(function CodeBlockView({ language, code }: { la
         tabIndex={0}
         role="region"
         aria-label={ariaLabel}
+        className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
         style={{ margin: 0, padding: '12px', background: C.codeBg, overflowX: 'auto', fontSize: 12, fontFamily: 'monospace', color: C.text, lineHeight: 1.5, maxHeight: 300 }}
       >
         <code>{code}</code>
