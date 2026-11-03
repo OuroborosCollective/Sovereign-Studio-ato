@@ -189,9 +189,15 @@ describe('maskSecrets', () => {
     expect(maskSecrets('stability_secret=stability_sec_val_303')).toBe('stability_secret=****');
     expect(maskSecrets('fal_key: fal_key_val_404')).toBe('fal_key: ****');
     expect(maskSecrets('fal_secret=fal_sec_val_505')).toBe('fal_secret=****');
+    expect(maskSecrets('deepinfra_key: deepinfra_key_val_101')).toBe('deepinfra_key: ****');
+    expect(maskSecrets('deepinfra_secret=deepinfra_sec_val_202')).toBe('deepinfra_secret=****');
+    expect(maskSecrets('deepinfra_token: deepinfra_tok_val_303')).toBe('deepinfra_token: ****');
+    expect(maskSecrets('mistral_key: mistral_key_val_404')).toBe('mistral_key: ****');
+    expect(maskSecrets('mistral_secret=mistral_sec_val_505')).toBe('mistral_secret=****');
+    expect(maskSecrets('mistral_token: mistral_tok_val_606')).toBe('mistral_token: ****');
     expect(maskSecrets('"deepseek_key": "quoted_value_123"')).toBe('"deepseek_key": ****');
 
-    const plain = 'cohere_key pinecone_secret qdrant_key deepseek_key perplexity_secret replicate_key cloudflare_token elevenlabs_key stability_key fal_secret without assignments';
+    const plain = 'cohere_key pinecone_secret qdrant_key deepseek_key perplexity_secret replicate_key cloudflare_token elevenlabs_key stability_key fal_secret deepinfra_key mistral_secret without assignments';
     expect(maskSecrets(plain)).toBe(plain);
   });
 
