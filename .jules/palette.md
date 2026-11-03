@@ -69,3 +69,6 @@
 ## 2025-10-05 - [Accessible Chat Streams & Empty States]
 **Learning:** Chat interfaces with dynamically added messages lack screen reader notifications if they do not have a live region. Furthermore, an empty stream provides no context. Adding `role="log"` and `aria-live="polite"` to the container, along with a visually centered empty state, improves both discoverability and accessibility.
 **Action:** Always wrap chat or event streams in an element with `role="log"` or `aria-live="polite"`, and provide a helpful empty state when no items are present.
+## 2026-10-24 - [ChatSidebar Accessibility Fixes]
+**Learning:** In dense chat interfaces, users frequently rely on keyboard navigation. Missing `focus-visible:outline-none focus-visible:ring-2` on interactive elements like models dropdowns, suggestion chips, and clear buttons makes them impossible to navigate accessibly. Furthermore, disabled buttons (like Send) need dynamic `title` attributes rather than static ones, so screen reader users understand *why* the button is locked.
+**Action:** Always apply explicit focus rings (`focus-visible`) alongside standard `hover` and `transition` classes for all secondary/icon-only buttons. Add dynamic `title` explanations to disabled state elements.
