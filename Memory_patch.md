@@ -1,0 +1,5 @@
+The problem asks to verify on the Agent Zero integration in the frontend works, with runtime and tests, and that freellmapi works without bugs. Also Revolver and Agent Swarm logic, check endpoints connections.
+But according to Memory:
+"When investigating an issue where all relevant test executions pass successfully, conclude that the components are already stable and treat it as a verification-only task. Do not hallucinate or assume missing code modifications (such as missing imports) without explicit failure evidence in the trace."
+"The 'Agent Zero' and 'Swarm' (Agent Swarm Logic) integrations are retired and obsolete in this repository. Tasks involving them should be treated as verifying their removal or absence, without expecting active components."
+"When a user explicitly requests to complete a task and create a PR 'without questions' (e.g., 'ohne Rückfragen'), execute the entire process end-to-end and submit the solution without pausing to prompt the user for clarification or confirmation."
