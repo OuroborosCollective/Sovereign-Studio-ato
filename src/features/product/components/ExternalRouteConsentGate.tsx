@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useId } from 'react';
 
 // Design tokens from BuilderContainer
 const C = {
@@ -29,8 +29,15 @@ export interface ExternalRouteConsentGateProps {
  * Allows users to explicitly opt-in to free external routes for this request only.
  */
 export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: ExternalRouteConsentGateProps) {
+  const titleId = useId();
+  const descId = useId();
+
   return (
-    <div
+    <section
+      role="region"
+      aria-labelledby={titleId}
+      aria-describedby={descId}
+      data-testid="external-route-consent-gate"
       style={{
         background: C.surface,
         border: `1px solid ${C.orange}`,
@@ -49,6 +56,7 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
         }}
       >
         <div
+          aria-hidden="true"
           style={{
             width: 36,
             height: 36,
@@ -64,8 +72,10 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
           ⚠️
         </div>
         <div style={{ flex: 1 }}>
-          <div
+          <h3
+            id={titleId}
             style={{
+              margin: 0,
               fontSize: 14,
               fontWeight: 600,
               color: C.orange,
@@ -73,8 +83,9 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
             }}
           >
             Limits erreicht – Notfall Free-Routen aktivieren?
-          </div>
+          </h3>
           <div
+            id={descId}
             style={{
               fontSize: 12,
               color: C.textSub,
@@ -107,6 +118,8 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
           deinen Auftrag und Repo-Kontext außerhalb der lokalen Runtime verarbeiten.
         </div>
         <ul
+          role="list"
+          aria-label="Hinweise zu externen Notfall-Routen"
           style={{
             margin: '8px 0 0 0',
             padding: '0 0 0 20px',
@@ -132,6 +145,8 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
         <button
           type="button"
           onClick={onDeny}
+          title="Externe Notfall-Routen ablehnen und rein lokal weiterarbeiten"
+          className="focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:outline-none transition-colors hover:bg-slate-800"
           style={{
             padding: '8px 16px',
             borderRadius: 8,
@@ -147,6 +162,8 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
         <button
           type="button"
           onClick={onApprove}
+          title="Kostenlose externe Notfall-Routen einmalig für diese Anfrage aktivieren"
+          className="focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:outline-none transition-opacity hover:opacity-90"
           style={{
             padding: '8px 16px',
             borderRadius: 8,
@@ -161,7 +178,7 @@ export function ExternalRouteConsentGate({ onApprove, onDeny, attempts = 0 }: Ex
           JA, einmalig aktivieren
         </button>
       </div>
-    </div>
+    </section>
   );
 }
 
