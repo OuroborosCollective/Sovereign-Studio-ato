@@ -106,6 +106,51 @@ export function validateTickWindowConfig(config: TickWindowConfig): void {
 // ============================================================================
 
 /**
+ * Groups signals by tick and extracts sorted unique ticks in a single O(N) pass plus O(U log U) sort.
+ */
+function groupSignalsByTick(signals: OrderedSignal[]): {
+  signalsByTick: Map<number, OrderedSignal[]>;
+  sortedTicks: number[];
+} {
+  const signalsByTick = new Map<number, OrderedSignal[]>();
+  for (let i = 0; i < signals.length; i++) {
+    const s = signals[i];
+    const tick = s.metadata.tick;
+    let list = signalsByTick.get(tick);
+    if (!list) {
+      list = [];
+      signalsByTick.set(tick, list);
+    }
+    list.push(s);
+  }
+  const sortedTicks = Array.from(signalsByTick.keys()).sort((a, b) => a - b);
+  return { signalsByTick, sortedTicks };
+}
+
+/**
+ * Computes tick ranges for fixed windows given sorted unique ticks and config.
+ */
+function computeTickRanges(
+  sortedTicks: number[],
+  windowSize: number,
+  overlap: number,
+): Array<[number, number]> {
+  if (sortedTicks.length === 0) return [];
+
+  const ranges: Array<[number, number]> = [];
+
+  let i = 0;
+  while (i < sortedTicks.length) {
+    const startTick = sortedTicks[i];
+    const endTick = Math.min(startTick + windowSize - 1, sortedTicks[sortedTicks.length - 1]);
+    ranges.push([startTick, endTick]);
+    i += windowSize - overlap;
+  }
+
+  return ranges;
+}
+
+/**
  * Generates fixed-size tick windows from ordered signals.
  * Each window contains all signals whose tick falls within [startTick, endTick].
  */
@@ -122,9 +167,11 @@ export function* generateTickWindows(
   if (signals.length === 0) return;
 
   const fingerprint = createConfigFingerprint(config.windowSize, config.overlap, config.maxItems);
-  const tickRanges = computeTickRanges(signals, config.windowSize, config.overlap);
+  const { signalsByTick, sortedTicks } = groupSignalsByTick(signals);
+  const tickRanges = computeTickRanges(sortedTicks, config.windowSize, config.overlap);
 
   let windowIndex = 0;
+  let tickIdx = 0;
   for (const [startTick, endTick] of tickRanges) {
     // Check abort signal
     if (options.abortSignal?.aborted) return;
@@ -133,12 +180,23 @@ export function* generateTickWindows(
     const uniqueTicks = new Set<number>();
     const uniqueNodes = new Set<string>();
 
-    for (const s of signals) {
-      if (s.metadata.tick >= startTick && s.metadata.tick <= endTick) {
-        windowSignals.push(s);
-        uniqueTicks.add(s.metadata.tick);
-        uniqueNodes.add(s.metadata.node);
+    while (tickIdx < sortedTicks.length && sortedTicks[tickIdx] < startTick) {
+      tickIdx++;
+    }
+
+    let k = tickIdx;
+    while (k < sortedTicks.length && sortedTicks[k] <= endTick) {
+      const t = sortedTicks[k];
+      const sigs = signalsByTick.get(t);
+      if (sigs) {
+        uniqueTicks.add(t);
+        for (let j = 0; j < sigs.length; j++) {
+          const s = sigs[j];
+          windowSignals.push(s);
+          uniqueNodes.add(s.metadata.node);
+        }
       }
+      k++;
     }
 
     const expectedTicks = endTick - startTick + 1;
@@ -161,30 +219,6 @@ export function* generateTickWindows(
 }
 
 /**
- * Computes the tick ranges for windows given signals and config.
- */
-function computeTickRanges(
-  signals: OrderedSignal[],
-  windowSize: number,
-  overlap: number,
-): Array<[number, number]> {
-  if (signals.length === 0) return [];
-
-  const ticks = [...new Set(signals.map((s) => s.metadata.tick))].sort();
-  const ranges: Array<[number, number]> = [];
-
-  let i = 0;
-  while (i < ticks.length) {
-    const startTick = ticks[i];
-    const endTick = Math.min(startTick + windowSize - 1, ticks[ticks.length - 1]);
-    ranges.push([startTick, endTick]);
-    i += windowSize - overlap;
-  }
-
-  return ranges;
-}
-
-/**
  * Generates overlapping tick windows from ordered signals.
  */
 export function* generateOverlappingTickWindows(
@@ -199,25 +233,30 @@ export function* generateOverlappingTickWindows(
   if (signals.length === 0) return;
 
   const fingerprint = createConfigFingerprint(config.windowSize, config.overlap, config.maxItems);
-  const ticks = [...new Set(signals.map((s) => s.metadata.tick))].sort();
+  const { signalsByTick, sortedTicks } = groupSignalsByTick(signals);
 
   let windowIndex = 0;
   let startIdx = 0;
 
-  while (startIdx < ticks.length) {
+  while (startIdx < sortedTicks.length) {
     if (options.abortSignal?.aborted) return;
 
-    const startTick = ticks[startIdx];
-    const endTickIdx = Math.min(startIdx + config.windowSize - 1, ticks.length - 1);
-    const endTick = ticks[endTickIdx];
+    const startTick = sortedTicks[startIdx];
+    const endTickIdx = Math.min(startIdx + config.windowSize - 1, sortedTicks.length - 1);
+    const endTick = sortedTicks[endTickIdx];
 
     const windowSignals: OrderedSignal[] = [];
     const uniqueNodes = new Set<string>();
 
-    for (const s of signals) {
-      if (s.metadata.tick >= startTick && s.metadata.tick <= endTick) {
-        windowSignals.push(s);
-        uniqueNodes.add(s.metadata.node);
+    for (let k = startIdx; k <= endTickIdx; k++) {
+      const t = sortedTicks[k];
+      const sigs = signalsByTick.get(t);
+      if (sigs) {
+        for (let j = 0; j < sigs.length; j++) {
+          const s = sigs[j];
+          windowSignals.push(s);
+          uniqueNodes.add(s.metadata.node);
+        }
       }
     }
 
