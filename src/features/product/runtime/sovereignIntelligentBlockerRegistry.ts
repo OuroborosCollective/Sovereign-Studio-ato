@@ -134,32 +134,41 @@ export function trackBlocker(
 ): BlockerRegistryState {
   if (!observation.blocker) return state;
 
-  const category = categorizeBlocker(observation.blocker);
+  const targetText = observation.blocker;
   const now = Date.now();
+  const blockers = state.blockers;
+  const len = blockers.length;
+  const updatedBlockers: TrackedBlocker[] = new Array(len);
+  let activeBlockers = 0;
+  let found = false;
 
-  // Check if blocker already exists
-  const existingIndex = state.blockers.findIndex(
-    (b) => b.blockerText === observation.blocker,
-  );
-
-  let updatedBlockers: TrackedBlocker[];
-
-  if (existingIndex >= 0) {
-    // Update existing blocker
-    updatedBlockers = state.blockers.map((b, i) => {
-      if (i !== existingIndex) return b;
-      return {
+  // ⚡ Bolt: Single-pass loop updates/adds blocker and counts active blockers concurrently,
+  // eliminating multiple O(N) traversals (findIndex, map, filter) and intermediate allocations.
+  for (let i = 0; i < len; i++) {
+    const b = blockers[i];
+    if (b.blockerText === targetText) {
+      found = true;
+      const updated: TrackedBlocker = {
         ...b,
         lastSeen: now,
         occurrenceCount: b.occurrenceCount + 1,
-        // Reset resolved count if blocker recurs
-        resolvedCount: observation.phase === 'completed' ? b.resolvedCount : b.resolvedCount,
       };
-    });
-  } else {
-    // Add new blocker
+      updatedBlockers[i] = updated;
+      if (updated.occurrenceCount > updated.resolvedCount) {
+        activeBlockers++;
+      }
+    } else {
+      updatedBlockers[i] = b;
+      if (b.occurrenceCount > b.resolvedCount) {
+        activeBlockers++;
+      }
+    }
+  }
+
+  if (!found) {
+    const category = categorizeBlocker(targetText);
     const newBlocker: TrackedBlocker = {
-      blockerText: observation.blocker,
+      blockerText: targetText,
       kind: category.kind,
       severity: category.severity,
       category: category.category,
@@ -169,12 +178,9 @@ export function trackBlocker(
       resolutionHint: category.resolutionHint,
       resolvedCount: 0,
     };
-    updatedBlockers = [...state.blockers, newBlocker];
+    updatedBlockers.push(newBlocker);
+    activeBlockers++;
   }
-
-  const activeBlockers = updatedBlockers.filter(
-    (b) => b.occurrenceCount > b.resolvedCount,
-  ).length;
 
   return {
     blockers: updatedBlockers,
@@ -191,23 +197,41 @@ export function resolveBlocker(
   state: BlockerRegistryState,
   blockerText: string,
 ): BlockerRegistryState {
-  const blockerIndex = state.blockers.findIndex(
-    (b) => b.blockerText === blockerText,
-  );
+  const blockers = state.blockers;
+  const len = blockers.length;
 
-  if (blockerIndex < 0) return state;
+  let targetIndex = -1;
+  for (let i = 0; i < len; i++) {
+    if (blockers[i].blockerText === blockerText) {
+      targetIndex = i;
+      break;
+    }
+  }
 
-  const updatedBlockers = state.blockers.map((b, i) => {
-    if (i !== blockerIndex) return b;
-    return {
-      ...b,
-      resolvedCount: b.resolvedCount + 1,
-    };
-  });
+  if (targetIndex < 0) return state;
 
-  const activeBlockers = updatedBlockers.filter(
-    (b) => b.occurrenceCount > b.resolvedCount,
-  ).length;
+  const updatedBlockers: TrackedBlocker[] = new Array(len);
+  let activeBlockers = 0;
+
+  // ⚡ Bolt: Single-pass loop updates resolved count and counts remaining active blockers concurrent with array construction
+  for (let i = 0; i < len; i++) {
+    const b = blockers[i];
+    if (i === targetIndex) {
+      const updated: TrackedBlocker = {
+        ...b,
+        resolvedCount: b.resolvedCount + 1,
+      };
+      updatedBlockers[i] = updated;
+      if (updated.occurrenceCount > updated.resolvedCount) {
+        activeBlockers++;
+      }
+    } else {
+      updatedBlockers[i] = b;
+      if (b.occurrenceCount > b.resolvedCount) {
+        activeBlockers++;
+      }
+    }
+  }
 
   return {
     blockers: updatedBlockers,
@@ -250,7 +274,24 @@ export function getStuckBlockers(
   state: BlockerRegistryState,
   threshold = 3,
 ): TrackedBlocker[] {
-  return getActiveBlockers(state).filter((b) => isBlockerStuck(b, threshold));
+  const blockers = state.blockers;
+  const len = blockers.length;
+  const stuck: TrackedBlocker[] = [];
+
+  // ⚡ Bolt: Single-pass loop filters stuck blockers directly without sorting active blockers first
+  for (let i = 0; i < len; i++) {
+    const b = blockers[i];
+    if (b.occurrenceCount - b.resolvedCount >= threshold) {
+      stuck.push(b);
+    }
+  }
+
+  return stuck.sort((a, b) => {
+    if (a.severity !== b.severity) {
+      return a.severity === 'error' ? -1 : 1;
+    }
+    return b.occurrenceCount - a.occurrenceCount;
+  });
 }
 
 /**
