@@ -6,6 +6,7 @@ export function ThinkingDots() {
     <div
       role="status"
       aria-label="Sovereign denkt nach"
+      title="Sovereign denkt nach"
       style={{
         display: "flex",
         alignItems: "center",
@@ -14,6 +15,7 @@ export function ThinkingDots() {
       }}
     >
       <div
+        aria-hidden="true"
         style={{
           width: 30,
           height: 30,
@@ -29,7 +31,7 @@ export function ThinkingDots() {
       >
         ⬡
       </div>
-      <div style={{ display: "flex", gap: 5, paddingLeft: 2 }}>
+      <div aria-hidden="true" style={{ display: "flex", gap: 5, paddingLeft: 2 }}>
         {[0, 1, 2].map((i) => (
           <span
             key={i}
