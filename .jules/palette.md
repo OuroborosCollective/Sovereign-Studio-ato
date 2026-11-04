@@ -69,3 +69,7 @@
 ## 2025-10-05 - [Accessible Chat Streams & Empty States]
 **Learning:** Chat interfaces with dynamically added messages lack screen reader notifications if they do not have a live region. Furthermore, an empty stream provides no context. Adding `role="log"` and `aria-live="polite"` to the container, along with a visually centered empty state, improves both discoverability and accessibility.
 **Action:** Always wrap chat or event streams in an element with `role="log"` or `aria-live="polite"`, and provide a helpful empty state when no items are present.
+
+## 2026-11-04 - [State-Dependent Tooltips on Actions]
+**Learning:** Users often lack context on why an interactive element is disabled or what an icon represents. Adding dynamic `title` attributes based on state improves keyboard accessibility and clear affordances.
+**Action:** Ensure dynamic action components like submit and connect buttons have dynamic native `title` tooltips that reflect current loading or disabled states.
