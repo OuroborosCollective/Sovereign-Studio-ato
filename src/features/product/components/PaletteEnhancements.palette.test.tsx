@@ -6,6 +6,7 @@ import { BuilderContainer } from '../containers/BuilderContainer';
 import { SovereignToolLauncher } from './SovereignToolLauncher';
 import { Sidebar } from './Sidebar';
 import { AgentQuestionCard } from './AgentQuestionCard';
+import { DraftPrCard } from './DraftPrCard';
 import { UserKeyManager, LLM_PROVIDERS } from './UserKeyManager';
 import { PatchDiffEvidenceSheet } from './PatchDiffEvidenceSheet';
 import { RuntimeEvidenceLogSheet } from './RuntimeEvidenceLogSheet';
@@ -1581,6 +1582,60 @@ describe('Palette Accessibility Enhancements', () => {
     it('returns null when hints array is empty', () => {
       const { container } = render(<OutcomeHints hints={[]} />);
       expect(container.firstChild).toBeNull();
+    });
+  });
+
+  describe('DraftPrCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders card region, hidden decorative icon, status build badge, and focusable action buttons with contextual tooltips', () => {
+      const onOpenBrowser = vi.fn();
+      const onDiscussInChat = vi.fn();
+      const { container } = render(
+        <DraftPrCard
+          url="https://github.com/owner/repo/pull/77"
+          changedFiles={['src/App.tsx', 'src/main.tsx']}
+          onOpenBrowser={onOpenBrowser}
+          onDiscussInChat={onDiscussInChat}
+          buildStatus={{
+            state: 'running',
+            label: 'Build läuft',
+            detail: 'GitHub Workflow aktiv.',
+            runUrl: 'https://github.com/owner/repo/actions/runs/1234',
+          }}
+        />
+      );
+
+      const region = screen.getByRole('region', { name: 'Draft PR Karte' });
+      expect(region).toBeInTheDocument();
+
+      const decorativeIcon = container.querySelector('[aria-hidden="true"]');
+      expect(decorativeIcon).toBeInTheDocument();
+      expect(decorativeIcon).toHaveTextContent('📝');
+
+      const buildBadge = screen.getByRole('status', { name: 'Buildstatus: Build läuft' });
+      expect(buildBadge).toBeInTheDocument();
+
+      const runLink = screen.getByRole('link', { name: 'Run öffnen' });
+      expect(runLink).toHaveAttribute('href', 'https://github.com/owner/repo/actions/runs/1234');
+      expect(runLink).toHaveAttribute('title', 'GitHub Workflow Run in neuem Tab öffnen');
+      expect(runLink).toHaveClass('focus-visible:ring-2');
+
+      const openBtn = screen.getByRole('button', { name: 'Im Browser öffnen' });
+      expect(openBtn).toHaveAttribute('title', 'Draft PR auf GitHub im Browser öffnen');
+      expect(openBtn).not.toHaveAttribute('aria-label');
+      expect(openBtn).toHaveClass('focus-visible:ring-2');
+      expect(openBtn).toHaveClass('transition-opacity');
+
+      const discussBtn = screen.getByRole('button', { name: 'Im Chat besprechen' });
+      expect(discussBtn).toHaveAttribute('title', 'Diesen Draft PR im Chat besprechen');
+      expect(discussBtn).not.toHaveAttribute('aria-label');
+      expect(discussBtn).toHaveClass('focus-visible:ring-2');
+      expect(discussBtn).toHaveClass('transition-opacity');
+
+      fireEvent.click(openBtn);
+      expect(onOpenBrowser).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(discussBtn);
+      expect(onDiscussInChat).toHaveBeenCalledTimes(1);
     });
   });
 });
