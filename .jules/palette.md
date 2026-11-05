@@ -69,3 +69,6 @@
 ## 2025-10-05 - [Accessible Chat Streams & Empty States]
 **Learning:** Chat interfaces with dynamically added messages lack screen reader notifications if they do not have a live region. Furthermore, an empty stream provides no context. Adding `role="log"` and `aria-live="polite"` to the container, along with a visually centered empty state, improves both discoverability and accessibility.
 **Action:** Always wrap chat or event streams in an element with `role="log"` or `aria-live="polite"`, and provide a helpful empty state when no items are present.
+## 2026-11-05 - Added ARIA labels and states to VpsWorkspace
+**Learning:** Found several buttons in `VpsWorkspace.tsx` and `VpsChat.tsx` lacking `aria-label` attributes and proper ARIA state (like `aria-pressed` for toggle buttons).
+**Action:** Always verify custom tab controls and icon-only buttons include explicit `aria-label` and relevant state attributes (`aria-pressed`, `aria-expanded`) for screen reader access.

@@ -61,6 +61,7 @@ export function VpsWorkspace({ host, username, getTree, execCommand, onDisconnec
         <button
           type="button"
           title="SSH-Verbindung trennen"
+          aria-label="SSH-Verbindung trennen"
           onClick={onDisconnect}
           style={{
             display: 'flex', alignItems: 'center', gap: 5,
@@ -87,6 +88,8 @@ export function VpsWorkspace({ host, username, getTree, execCommand, onDisconnec
             key={id}
             type="button"
             onClick={() => setMobileTab(id)}
+            aria-label={`Ansicht zu ${label} wechseln`}
+            aria-pressed={mobileTab === id}
             style={{
               flex: 1, padding: '8px 0', border: 'none', cursor: 'pointer',
               background: mobileTab === id ? `${C.violet}18` : 'transparent',
