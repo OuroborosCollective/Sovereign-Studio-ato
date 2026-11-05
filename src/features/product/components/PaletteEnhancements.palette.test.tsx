@@ -29,6 +29,8 @@ import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
 import { OutcomeHints } from './OutcomeHints';
+import { ActionSuggestionStrip } from './ActionSuggestionStrip';
+import { SOVEREIGN_PRESET_ACTIONS } from '../runtime/sovereignPresetActionRuntime';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1581,6 +1583,33 @@ describe('Palette Accessibility Enhancements', () => {
     it('returns null when hints array is empty', () => {
       const { container } = render(<OutcomeHints hints={[]} />);
       expect(container.firstChild).toBeNull();
+    });
+  });
+
+  describe('ActionSuggestionStrip Accessibility and Micro-UX Enhancements', () => {
+    it('renders scrollable strip as keyboard-navigable region and buttons with focus-visible and hover transition classes', () => {
+      const onSelect = vi.fn();
+      render(
+        <ActionSuggestionStrip
+          actions={SOVEREIGN_PRESET_ACTIONS}
+          repoReady={true}
+          githubWriteReady={true}
+          agentReady={true}
+          onSelect={onSelect}
+        />
+      );
+
+      const scrollRegion = screen.getByRole('region', { name: 'Geführte Aktionen Liste' });
+      expect(scrollRegion).toBeInTheDocument();
+      expect(scrollRegion).toHaveAttribute('tabIndex', '0');
+      expect(scrollRegion).toHaveClass('focus-visible:ring-1');
+
+      const actionButtons = screen.getAllByRole('button');
+      expect(actionButtons.length).toBeGreaterThan(0);
+      for (const btn of actionButtons) {
+        expect(btn).toHaveClass('focus-visible:ring-2');
+        expect(btn).toHaveClass('hover:border-[#00d9b1]/70');
+      }
     });
   });
 });
