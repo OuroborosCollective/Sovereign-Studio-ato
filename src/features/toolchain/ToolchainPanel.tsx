@@ -194,12 +194,19 @@ export function ToolchainPanel(_props: LauncherToolProps) {
   const { tools, loading, error, serverOnline, invoke, lastResult, invoking, reload } = useToolchain();
   const [filter, setFilter] = useState('');
 
-  const filtered = tools.filter(t =>
-    !filter || t.name.includes(filter.toLowerCase()) || t.description.toLowerCase().includes(filter.toLowerCase())
-  );
-
-  const readTools  = filtered.filter(t => !t.write_action);
-  const writeTools = filtered.filter(t => t.write_action);
+  // ⚡ Bolt: Single-pass filtering loop replaces multi-pass .filter() chain to prevent redundant iterations and temporary array allocations
+  const readTools: typeof tools = [];
+  const writeTools: typeof tools = [];
+  const lowerFilter = filter.toLowerCase();
+  for (const t of tools) {
+    if (!filter || t.name.toLowerCase().includes(lowerFilter) || t.description.toLowerCase().includes(lowerFilter)) {
+      if (!t.write_action) {
+        readTools.push(t);
+      } else {
+        writeTools.push(t);
+      }
+    }
+  }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: C.bg, overflow: 'hidden' }}>
