@@ -379,13 +379,27 @@ GENERIERE kompletten, produktionsreifen Code. Antworte mit Dateipfaden und Code.
   private extractTechList(analysis: string): string[] {
     const match = analysis.match(/TECHNOLOGIEN?[:\s]*([^\n]+(?:\n[^\n]+)*)/i);
     if (!match) return [];
-    return match[1].split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+    // ⚡ Bolt: Prevent chained multi-pass .map().filter() array allocation overhead
+    const parts = match[1].split(/[,\n]/);
+    const result: string[] = [];
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (trimmed) result.push(trimmed);
+    }
+    return result;
   }
 
   private extractGoals(analysis: string): string[] {
     const match = analysis.match(/REFACTOR_TASKS?[:\s]*([\s\S]*?)(?=#|$)/i);
     if (!match) return [];
-    return match[1].split(/[-•*]/).filter(s => s.trim()).map(s => s.trim()).filter(Boolean);
+    // ⚡ Bolt: Prevent chained multi-pass .filter().map().filter() array allocation overhead
+    const parts = match[1].split(/[-•*]/);
+    const result: string[] = [];
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (trimmed) result.push(trimmed);
+    }
+    return result;
   }
 
   private extractTasks(analysis: string): RefactorTask[] {
