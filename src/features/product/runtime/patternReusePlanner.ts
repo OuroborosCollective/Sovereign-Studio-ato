@@ -38,38 +38,90 @@ const MAX_MATCHES = 10;
 const MIN_SCORE = 1;
 const FREQUENTLY_USED_THRESHOLD = 3;
 
+// Optimization: Hoist regular expressions to module scope to avoid re-compilation in hot paths
+const TOKENIZE_CLEAN_RE = /[^a-z0-9\s_-]/g;
+const TOKENIZE_SPLIT_RE = /\s+/;
+const NORMALIZE_TAG_CLEAN_RE = /[^a-z0-9:_-]+/g;
+const NORMALIZE_TAG_TRIM_RE = /^-|-$/g;
+
 function tokenize(text: string): string[] {
-  return text
+  const words = text
     .toLowerCase()
-    .replace(/[^a-z0-9\s_-]/g, ' ')
-    .split(/\s+/)
-    .filter((t) => t.length >= 3);
+    .replace(TOKENIZE_CLEAN_RE, ' ')
+    .split(TOKENIZE_SPLIT_RE);
+  const result: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (w.length >= 3) {
+      result.push(w);
+    }
+  }
+  return result;
 }
 
 function normalizeTag(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9:_-]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+  return value.trim().toLowerCase().replace(NORMALIZE_TAG_CLEAN_RE, '-').replace(NORMALIZE_TAG_TRIM_RE, '').slice(0, 40);
+}
+
+// Optimization: Cache parsed token and tag Sets per immutable LearnedPatternEntry reference.
+// Using WeakMap avoids memory leaks (entries are automatically GC'd) and avoids re-tokenizing
+// titles and summaries on repeated planning calls.
+interface CachedPatternMeta {
+  readonly titleTokens: Set<string>;
+  readonly summaryTokens: Set<string>;
+  readonly tagsSet: Set<string>;
+}
+
+const patternTokenCache = new WeakMap<LearnedPatternEntry, CachedPatternMeta>();
+
+function getCachedPatternMeta(entry: LearnedPatternEntry): CachedPatternMeta {
+  let cached = patternTokenCache.get(entry);
+  if (!cached) {
+    cached = {
+      titleTokens: new Set(tokenize(entry.title)),
+      summaryTokens: new Set(tokenize(entry.summary)),
+      tagsSet: new Set(entry.tags),
+    };
+    patternTokenCache.set(entry, cached);
+  }
+  return cached;
 }
 
 function scoreMatch(entry: LearnedPatternEntry, queryTokens: string[], queryTags: string[]): { score: number; reasons: string[] } {
   const reasons: string[] = [];
   let score = 0;
 
-  const titleTokens = tokenize(entry.title);
-  const summaryTokens = tokenize(entry.summary);
+  const { titleTokens, summaryTokens, tagsSet } = getCachedPatternMeta(entry);
 
-  const titleOverlap = queryTokens.filter((t) => titleTokens.includes(t)).length;
+  // Optimization: O(1) Set lookups replace O(M) Array.includes searches
+  let titleOverlap = 0;
+  for (let i = 0; i < queryTokens.length; i++) {
+    if (titleTokens.has(queryTokens[i])) {
+      titleOverlap++;
+    }
+  }
   if (titleOverlap > 0) {
     score += titleOverlap * 3;
     reasons.push(`${titleOverlap} Titel-Token übereinstimmend`);
   }
 
-  const summaryOverlap = queryTokens.filter((t) => summaryTokens.includes(t)).length;
+  let summaryOverlap = 0;
+  for (let i = 0; i < queryTokens.length; i++) {
+    if (summaryTokens.has(queryTokens[i])) {
+      summaryOverlap++;
+    }
+  }
   if (summaryOverlap > 0) {
     score += summaryOverlap;
     reasons.push(`${summaryOverlap} Beschreibungs-Token übereinstimmend`);
   }
 
-  const tagOverlap = queryTags.filter((t) => entry.tags.includes(t)).length;
+  let tagOverlap = 0;
+  for (let i = 0; i < queryTags.length; i++) {
+    if (tagsSet.has(queryTags[i])) {
+      tagOverlap++;
+    }
+  }
   if (tagOverlap > 0) {
     score += tagOverlap * 2;
     reasons.push(`${tagOverlap} Tag(s) übereinstimmend`);
@@ -99,16 +151,33 @@ function scoreMatch(entry: LearnedPatternEntry, queryTokens: string[], queryTags
 export function planPatternReuse(entries: LearnedPatternEntry[], query: PatternReuseQuery): PatternReusePlanResult {
   const limit = Math.max(1, Math.min(query.limit ?? 5, MAX_MATCHES));
   const queryTokens = tokenize(query.intentText);
-  const queryTags = (query.tags ?? []).map(normalizeTag).filter(Boolean);
 
-  const filtered = entries
-    .filter((e) => !query.requireVerified || e.verified)
-    .filter((e) => !query.requireLocalExecutable || e.localExecutable);
+  // Single-pass normalized tag extraction avoiding intermediate arrays
+  const rawTags = query.tags;
+  const queryTags: string[] = [];
+  if (rawTags && rawTags.length > 0) {
+    for (let i = 0; i < rawTags.length; i++) {
+      const tag = normalizeTag(rawTags[i]);
+      if (tag) {
+        queryTags.push(tag);
+      }
+    }
+  }
 
-  const scored: PatternReuseMatch[] = filtered
-    .map((e) => {
-      const { score, reasons } = scoreMatch(e, queryTokens, queryTags);
-      return {
+  const reqVerified = query.requireVerified === true;
+  const reqLocal = query.requireLocalExecutable === true;
+
+  // Optimization: Consolidate filtering, scoring, and score threshold checking
+  // into a single-pass loop over entries, eliminating multiple intermediate array allocations.
+  const scored: PatternReuseMatch[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    if (reqVerified && !e.verified) continue;
+    if (reqLocal && !e.localExecutable) continue;
+
+    const { score, reasons } = scoreMatch(e, queryTokens, queryTags);
+    if (score >= MIN_SCORE) {
+      scored.push({
         patternId: e.id,
         title: e.title,
         summary: e.summary,
@@ -117,22 +186,28 @@ export function planPatternReuse(entries: LearnedPatternEntry[], query: PatternR
         reuseCount: e.reuseCount,
         score,
         matchReasons: reasons,
-      };
-    })
-    .filter((m) => m.score >= MIN_SCORE)
-    .sort((a, b) => b.score - a.score || b.reuseCount - a.reuseCount)
-    .slice(0, limit);
+      });
+    }
+  }
 
-  const localExecutableCount = scored.filter((m) => m.localExecutable).length;
+  scored.sort((a, b) => b.score - a.score || b.reuseCount - a.reuseCount);
+  const topMatches = scored.slice(0, limit);
+
+  let localExecutableCount = 0;
+  for (let i = 0; i < topMatches.length; i++) {
+    if (topMatches[i].localExecutable) {
+      localExecutableCount++;
+    }
+  }
   const localPrepareAvailable = localExecutableCount > 0;
 
-  const chatHint = buildChatHint(scored, localPrepareAvailable);
+  const chatHint = buildChatHint(topMatches, localPrepareAvailable);
 
   return {
-    hasMatches: scored.length > 0,
-    matchCount: scored.length,
+    hasMatches: topMatches.length > 0,
+    matchCount: topMatches.length,
     localExecutableCount,
-    topMatches: scored,
+    topMatches,
     chatHint,
     localPrepareAvailable,
   };
