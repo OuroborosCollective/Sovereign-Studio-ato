@@ -91,3 +91,6 @@
 ## 2026-10-10 - [Consolidating Chained Array Methods in Chat History Parsing]
 **Learning:** Bounding array evaluations (e.g. `messages.filter(...).slice(-N).map(...)`) when retrieving recent chat messages allocates multiple large intermediate arrays, causing unnecessary garbage collection pressure and degrading performance in active chat sessions.
 **Action:** Replace `.filter().slice().map()` method chains with a single bounded negative `for` loop (iterating backwards from the end of the array and using `unshift` or index placement) to avoid intermediate allocations and strictly limit evaluation scope to `N` items.
+## 2026-11-08 - [Avoiding Math.max with Spreads in High-Frequency Computations]
+**Learning:** Using `Math.max(1, ...buckets.map(...))` on dynamic arrays creates significant heap allocation pressure and potential call-stack overflow risks, similar to `Math.min`. This is especially costly when rendering dense timeline heatmaps (like the Evidence Density view).
+**Action:** Replace `Math.max(...arr)` on dynamically mapped arrays with a single-pass imperative loop to determine the maximum value, eliminating temporary array allocations and call-stack limits.
