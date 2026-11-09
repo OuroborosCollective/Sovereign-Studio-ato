@@ -44,7 +44,7 @@ class LoginWorkflowTests(unittest.TestCase):
 
     def test_exact_source_cannot_sign_until_aurion_main_equals_pinned_revision(self):
         build = self.workflow['jobs']['build']
-        guard = next(step['run'] for step in build['steps'] if step['name'].startswith('Require exact source'))
+        guard = next(step['run'] for step in build['steps'] if step.get('name', '').startswith('Require exact source'))
         self.assertIn('git fetch --depth=1 origin main', guard)
         self.assertIn('git rev-parse FETCH_HEAD', guard)
         self.assertIn('AURION_EXPECTED_REVISION', guard)
