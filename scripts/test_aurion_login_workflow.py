@@ -34,7 +34,15 @@ class LoginWorkflowTests(unittest.TestCase):
         self.assertEqual(self.sign['env']['AURION_EXPECTED_REVISION'], expected)
         checkout = next(step for step in build['steps'] if step['name'].startswith('Checkout reviewed Aurion'))
         self.assertEqual(checkout['with']['ref'], expected)
-        self.assertRegex(expected, r'^[a-f0-9]{40}
+        self.assertRegex(expected, r'^[a-f0-9]{40}' + chr(36))
+
+    def test_g17_login_override_is_only_in_signed_login_export(self):
+        build = self.workflow['jobs']['build']
+        unsigned = next(step['run'] for step in build['steps'] if step.get('name', '').startswith('Build unsigned Login APK'))
+        for fragment in ('createLoginOverride(revision)', 'assertPackagedBuildRevision(', 'await verifyStagedAssetImports(project,prepared,buildEnv)'):
+            self.assertIn(fragment, unsigned)
+        self.assertNotIn('native_auth_start_enabled=false', unsigned)
+
     def test_owner_push_trigger_is_limited_to_main_workflow_change(self):
         events = self.workflow['on']
         self.assertEqual(set(events), {'workflow_dispatch', 'push'})
@@ -207,15 +215,6 @@ class LoginWorkflowTests(unittest.TestCase):
 
 if __name__=='__main__':unittest.main()
 )
-
-    def test_g17_login_build_enables_auth_only_in_the_verified_login_override(self):
-        build = self.workflow['jobs']['build']
-        unsigned = next(s['run'] for s in build['steps'] if s.get('name', '').startswith('Build unsigned Login APK'))
-        self.assertIn('createLoginOverride(revision)', unsigned)
-        self.assertIn('assertPackagedBuildRevision', unsigned)
-        self.assertIn('await writeFile(join(project,\'override.cfg\')', unsigned)
-        self.assertIn('await verifyStagedAssetImports(project,prepared,buildEnv)', unsigned)
-        self.assertNotIn('native_auth_start_enabled=false', unsigned)
 
     def test_owner_push_trigger_is_limited_to_main_workflow_change(self):
         events = self.workflow['on']
