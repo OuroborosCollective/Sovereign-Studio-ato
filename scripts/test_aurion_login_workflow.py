@@ -28,12 +28,27 @@ class LoginWorkflowTests(unittest.TestCase):
         self.fingerprint = self.sign['env']['AURION_LOGIN_SIGNER_SHA256']
 
     def test_exact_reviewed_aurion_revision_is_pinned_in_build_and_sign(self):
-        expected = '881102de4ee2e1dbda4ce4f80ca66bda33b692f7'
+        expected = '7ae856906107f5247e11b418c5918a0423da428d'
         build = self.workflow['jobs']['build']
         self.assertEqual(build['env']['AURION_EXPECTED_REVISION'], expected)
         self.assertEqual(self.sign['env']['AURION_EXPECTED_REVISION'], expected)
         checkout = next(step for step in build['steps'] if step['name'].startswith('Checkout reviewed Aurion'))
         self.assertEqual(checkout['with']['ref'], expected)
+
+    def test_g17_login_override_is_only_in_signed_login_export(self):
+        build = self.workflow['jobs']['build']
+        unsigned = next(step['run'] for step in build['steps'] if step.get('name', '').startswith('Build unsigned Login APK'))
+        for fragment in ('createLoginOverride(revision)', 'assertPackagedBuildRevision(', 'await verifyStagedAssetImports(project,prepared,buildEnv)'):
+            self.assertIn(fragment, unsigned)
+        self.assertNotIn('native_auth_start_enabled=false', unsigned)
+
+    def test_exact_source_cannot_sign_until_aurion_main_equals_pinned_revision(self):
+        build = self.workflow['jobs']['build']
+        guard = next(step['run'] for step in build['steps'] if step.get('name', '').startswith('Require exact source'))
+        self.assertIn('git fetch --depth=1 origin main', guard)
+        self.assertIn('git rev-parse FETCH_HEAD', guard)
+        self.assertIn('AURION_EXPECTED_REVISION', guard)
+        self.assertLess(guard.index('git fetch --depth=1 origin main'), guard.index('verifyLiveAssetlinks'))
 
     def test_owner_push_trigger_is_limited_to_main_workflow_change(self):
         events = self.workflow['on']
