@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { DevChatRepoSnapshot } from '../runtime/devChatWorkerBridge';
 import { buildRepoTree, summarizeRepoTreeSnapshot, type RepoTreeNode } from '../runtime/repoTreeExplorerRuntime';
 
@@ -27,20 +27,21 @@ const TreeNodeRow = React.memo(function TreeNodeRow({
     : `Datei öffnen: ${node.name}`;
 
   return (
-    <li>
+    <li role="treeitem" aria-expanded={folder ? open : undefined}>
       <button
         type="button"
         onClick={() => folder ? setOpen((value) => !value) : onFileClick(node.path)}
         aria-expanded={folder ? open : undefined}
         aria-label={ariaLabel}
         title={ariaLabel}
+        className="focus-visible:ring-2 focus-visible:ring-[#00d9b1] focus-visible:outline-none transition-opacity hover:opacity-85"
         style={{ marginLeft: level * 12 }}
       >
         <span aria-hidden="true">{folder ? (open ? '▾' : '▸') : '•'}</span>{' '}
         <span>{node.name}</span>
       </button>
       {folder && open && node.children.length > 0 ? (
-        <ul>
+        <ul role="group">
           {node.children.map((child) => <TreeNodeRow key={child.path} node={child} level={level + 1} onFileClick={onFileClick} />)}
         </ul>
       ) : null}
@@ -58,6 +59,17 @@ export const RepoTreeExplorer = React.memo(function RepoTreeExplorer({
   const isDialog = variant === 'dialog';
   const label = isDialog ? 'Repo Inspector' : 'Repo Baum Split Inspector';
 
+  useEffect(() => {
+    if (!isDialog || !onClose) return undefined;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isDialog, onClose]);
+
   return (
     <section
       role={isDialog ? 'dialog' : 'navigation'}
@@ -74,6 +86,7 @@ export const RepoTreeExplorer = React.memo(function RepoTreeExplorer({
             onClick={onClose}
             aria-label="Schließen"
             title="Schließen"
+            className="focus-visible:ring-2 focus-visible:ring-[#00d9b1] focus-visible:outline-none transition-opacity hover:opacity-85"
           >
             Schließen
           </button>
@@ -82,7 +95,7 @@ export const RepoTreeExplorer = React.memo(function RepoTreeExplorer({
       {!snapshot ? <p>Kein Repo-Snapshot geladen.</p> : null}
       {snapshot?.truncated ? <p>Snapshot truncated.</p> : null}
       {snapshot && tree.length === 0 ? <p>Keine Dateien im Snapshot.</p> : null}
-      <ul>
+      <ul role="tree" aria-label="Dateibaum">
         {tree.map((node) => <TreeNodeRow key={node.path} node={node} level={0} onFileClick={onFileClick} />)}
       </ul>
     </section>
