@@ -68,15 +68,17 @@ function SuggestionCard({
       disabled={gateBlocked}
       aria-disabled={gateBlocked}
       data-gate-state={gate?.state ?? 'unknown'}
-      className={`w-full rounded-xl border p-3 text-left transition-all focus:outline-none focus:ring-2 ${
+      title={gateBlocked ? `Blockiert: ${gate?.reason ?? 'Gate nicht erfüllt'}` : `Vorschlag anwenden: ${suggestion.title}`}
+      className={`w-full rounded-xl border p-3 text-left transition-all focus:outline-none focus-visible:outline-none focus:ring-2 focus-visible:ring-2 ${
         gateBlocked
-          ? 'cursor-not-allowed border-amber-500/40 bg-amber-500/10 opacity-80 focus:border-amber-500/70 focus:ring-amber-500/30'
-          : 'border-slate-700/50 bg-slate-800/50 hover:border-cyan-500/50 hover:bg-slate-800/80 focus:border-cyan-500/70 focus:ring-cyan-500/30'
+          ? 'cursor-not-allowed border-amber-500/40 bg-amber-500/10 opacity-80 focus:border-amber-500/70 focus:ring-amber-500/30 focus-visible:ring-amber-500'
+          : 'border-slate-700/50 bg-slate-800/50 hover:border-cyan-500/50 hover:bg-slate-800/80 focus:border-cyan-500/70 focus:ring-cyan-500/30 focus-visible:ring-cyan-400'
       }`}
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-bold text-white">{suggestion.title}</span>
         <span
+          title={`Risiko: ${suggestion.risk}`}
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${riskClass[suggestion.risk]}`}
         >
           {suggestion.risk}
@@ -140,20 +142,21 @@ function InsightGroup({
           {suggestions.length}
         </span>
       </h3>
-      <div className="space-y-2">
+      <ul role="list" aria-label={label} className="space-y-2 m-0 p-0 list-none">
         {suggestions.slice(0, 5).map((suggestion) => (
-          <SuggestionCard
-            key={suggestion.id}
-            suggestion={suggestion}
-            onClick={() => onSuggestionClick(suggestion)}
-          />
+          <li key={suggestion.id}>
+            <SuggestionCard
+              suggestion={suggestion}
+              onClick={() => onSuggestionClick(suggestion)}
+            />
+          </li>
         ))}
         {suggestions.length > 5 && (
-          <p className="text-center text-xs text-slate-500">
+          <li className="text-center text-xs text-slate-500 list-none">
             +{suggestions.length - 5} weitere Vorschläge
-          </p>
+          </li>
         )}
-      </div>
+      </ul>
     </div>
   );
 }
@@ -195,7 +198,8 @@ function RecommendedMission({
       <button
         type="button"
         onClick={onClick}
-        className="w-full rounded-xl border border-violet-500/30 bg-gradient-to-r from-violet-500/10 to-purple-500/10 p-4 text-left transition-all hover:border-violet-500/60 hover:from-violet-500/20 hover:to-purple-500/20 focus:border-violet-500/70 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+        title="Empfohlene Aufgabe in den Mission-Builder übernehmen"
+        className="w-full rounded-xl border border-violet-500/30 bg-gradient-to-r from-violet-500/10 to-purple-500/10 p-4 text-left transition-all hover:border-violet-500/60 hover:from-violet-500/20 hover:to-purple-500/20 focus:border-violet-500/70 focus:outline-none focus-visible:outline-none focus:ring-2 focus-visible:ring-2 focus-visible:ring-violet-400 focus:ring-violet-500/30"
       >
         <p className="sovereign-recommended-mission-text text-sm font-medium leading-relaxed text-white">{compactMissionPreview(mission)}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -216,24 +220,26 @@ function FindingsSummary({ output }: { output: RepoInsightEngineOutput }) {
   const missingItems = output.findings.filter((f) => f.type === 'missing');
 
   return (
-    <div className="mb-3 flex flex-wrap gap-2 rounded-lg bg-slate-900/50 p-2">
+    <ul role="list" aria-label="Befunde der Repository-Analyse" className="mb-3 flex flex-wrap gap-2 rounded-lg bg-slate-900/50 p-2 m-0 list-none">
       {detectedItems.map((item, i) => (
-        <span
+        <li
           key={i}
+          title={`Vorhanden: ${item.description}`}
           className="rounded bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-400"
         >
-          ✓ {item.description}
-        </span>
+          <span aria-hidden="true">✓ </span>{item.description}
+        </li>
       ))}
       {missingItems.map((item, i) => (
-        <span
+        <li
           key={i}
+          title={`Fehlt: ${item.description}`}
           className="rounded bg-amber-500/20 px-2 py-0.5 text-xs text-amber-400"
         >
-          ✗ {item.description}
-        </span>
+          <span aria-hidden="true">✗ </span>{item.description}
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
@@ -274,7 +280,11 @@ export function RepoInsightPanel({
     output.featureSuggestions.length > 0;
 
   return (
-    <section className={`sovereign-repo-insight-panel mt-4 space-y-4 rounded-3xl border p-4 ${frameClass[coachLamp]}`}>
+    <section
+      role="region"
+      aria-labelledby="repo-insight-title"
+      className={`sovereign-repo-insight-panel mt-4 space-y-4 rounded-3xl border p-4 ${frameClass[coachLamp]}`}
+    >
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
         <div
@@ -286,10 +296,12 @@ export function RepoInsightPanel({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span
+              role="status"
               className={`h-3 w-3 rounded-full shadow-lg ${lampClass[coachLamp]}`}
-              aria-label={`Status ${coachLamp}`}
+              aria-label={`Status: ${coachLamp}`}
+              title={`Status: ${coachLamp}`}
             />
-            <h2 className="font-black tracking-tight text-white">
+            <h2 id="repo-insight-title" className="font-black tracking-tight text-white">
               Vorschläge aus Repo-Analyse
             </h2>
           </div>
@@ -297,7 +309,7 @@ export function RepoInsightPanel({
             {output.coachMessage}
           </p>
         </div>
-        <span className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-400">
+        <span className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-400" title={`${output.analyzedFiles} Dateien analysiert`}>
           {output.analyzedFiles} Dateien analysiert
         </span>
       </div>
