@@ -29,6 +29,8 @@ import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
 import { OutcomeHints } from './OutcomeHints';
+import { GitHubAccessCard } from './GitHubAccessCard';
+import { createGitHubAccessSnapshot } from '../runtime/githubAccessRuntime';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1581,6 +1583,31 @@ describe('Palette Accessibility Enhancements', () => {
     it('returns null when hints array is empty', () => {
       const { container } = render(<OutcomeHints hints={[]} />);
       expect(container.firstChild).toBeNull();
+    });
+  });
+
+  describe('GitHubAccessCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders ready state with aria-hidden icon, clear clipboard tooltip, and focus rings', async () => {
+      const readySnapshot = {
+        ...createGitHubAccessSnapshot(),
+        state: 'ready' as const,
+        maskedToken: 'ghp_****1234',
+      };
+
+      const { container } = render(
+        <GitHubAccessCard
+          snapshot={readySnapshot}
+          onProvideToken={vi.fn()}
+        />
+      );
+
+      const checkIcon = container.querySelector('[aria-hidden="true"]');
+      expect(checkIcon).toBeInTheDocument();
+      expect(checkIcon).toHaveTextContent('✓');
+
+      const clearBtn = screen.getByRole('button', { name: 'Zwischenablage leeren' });
+      expect(clearBtn).toHaveAttribute('title', 'Zwischenablage leeren, um sensible Daten zu entfernen');
+      expect(clearBtn).toHaveClass('focus-visible:ring-2');
     });
   });
 });
