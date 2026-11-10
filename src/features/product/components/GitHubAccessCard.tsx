@@ -124,6 +124,7 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
         >
           {/* Status Icon */}
           <div
+            aria-hidden="true"
             style={{
               width: 32,
               height: 32,
@@ -189,6 +190,8 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
             <button
               type="button"
               onClick={handleOpenModal}
+              title="GitHub Personal Access Token eingeben"
+              className="focus-visible:ring-2 focus-visible:ring-[#00d9b1] focus-visible:outline-none transition-opacity hover:opacity-90"
               style={{
                 padding: '6px 12px',
                 borderRadius: 8,
@@ -212,6 +215,7 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
               onClick={onDismiss}
               aria-label="GitHub-Zugang schließen"
               title="GitHub-Zugang schließen"
+              className="focus-visible:ring-2 focus-visible:ring-[#00d9b1] focus-visible:outline-none transition-colors hover:text-[#cdd9e5]"
               style={{
                 padding: '6px 8px',
                 borderRadius: 8,
@@ -250,7 +254,7 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
               marginBottom: 8,
             }}
           >
-            <span>✓</span>
+            <span aria-hidden="true">✓</span>
             <span>GitHub {snapshot.maskedToken} nutzbar</span>
           </div>
           {/* Rotation guidance */}
@@ -269,6 +273,8 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
               <button
                 type="button"
                 onClick={handleClearClipboard}
+                title="Zwischenablage leeren, um sensible Daten zu entfernen"
+                className="focus-visible:ring-2 focus-visible:ring-[#00d9b1] focus-visible:outline-none transition-colors hover:text-[#cdd9e5]"
                 style={{
                   padding: '6px 12px',
                   borderRadius: 6,
@@ -374,6 +380,8 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
               <input
                 id="github-pat-input"
                 type="password"
+                aria-invalid={Boolean(inputError)}
+                aria-describedby={inputError ? 'github-pat-error github-pat-help' : 'github-pat-help'}
                 value={inputValue}
                 onChange={(e) => {
                   setInputValue(e.target.value);
@@ -381,6 +389,7 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
                 }}
                 placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
                 autoComplete="off"
+                className="focus-visible:ring-2 focus-visible:ring-[#00d9b1] focus-visible:outline-none"
                 style={{
                   width: '100%',
                   padding: '10px 12px',
@@ -395,6 +404,8 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
               />
               {inputError && (
                 <p
+                  id="github-pat-error"
+                  role="alert"
                   style={{
                     margin: '6px 0 0 0',
                     fontSize: 11,
@@ -412,6 +423,8 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
                 type="button"
                 autoFocus
                 onClick={handleCloseModal}
+                title="Eingabe abbrechen und Dialog schließen"
+                className="focus-visible:ring-2 focus-visible:ring-[#00d9b1] focus-visible:outline-none transition-colors hover:text-[#cdd9e5]"
                 style={{
                   padding: '8px 16px',
                   borderRadius: 8,
@@ -428,6 +441,8 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
                 type="button"
                 onClick={handleSubmit}
                 disabled={!inputValue.trim()}
+                title={inputValue.trim() ? 'GitHub-Token bestätigen und Zugang einrichten' : 'Bitte geben Sie zuerst ein gültiges GitHub-Token ein'}
+                className="focus-visible:ring-2 focus-visible:ring-[#00d9b1] focus-visible:outline-none transition-opacity hover:opacity-90"
                 style={{
                   padding: '8px 16px',
                   borderRadius: 8,
@@ -445,6 +460,7 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
 
             {/* Help text */}
             <p
+              id="github-pat-help"
               style={{
                 margin: '16px 0 0 0',
                 fontSize: 10,
