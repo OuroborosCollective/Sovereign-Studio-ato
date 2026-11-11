@@ -69,3 +69,7 @@
 ## 2025-10-05 - [Accessible Chat Streams & Empty States]
 **Learning:** Chat interfaces with dynamically added messages lack screen reader notifications if they do not have a live region. Furthermore, an empty stream provides no context. Adding `role="log"` and `aria-live="polite"` to the container, along with a visually centered empty state, improves both discoverability and accessibility.
 **Action:** Always wrap chat or event streams in an element with `role="log"` or `aria-live="polite"`, and provide a helpful empty state when no items are present.
+
+## 2024-11-11 - [Consistent Localization for ChatMarkdown Copy Actions]
+**Learning:** The copy button in ChatMarkdown code blocks used hardcoded English aria-labels, titles, and visible text, which violated the localization consistency requirement for accessible attributes when the surrounding context is German.
+**Action:** Always ensure that interactive elements like copy buttons use localized strings (e.g. "Code-Block kopieren" and "Kopieren") for their `aria-label`, `title`, and visible text to match the surrounding application context.
