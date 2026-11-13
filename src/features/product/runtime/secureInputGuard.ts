@@ -12,6 +12,8 @@ export type SecretKind =
   | 'github_pat_fine'
   | 'openai_key'
   | 'anthropic_key'
+  | 'gemini_key'
+  | 'groq_key'
   | 'generic_bearer'
   | 'generic_secret';
 
@@ -32,6 +34,9 @@ const SECRET_PATTERNS: Array<{ readonly kind: SecretKind; readonly pattern: RegE
   { kind: 'github_pat_fine', pattern: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/ },
   { kind: 'anthropic_key', pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}\b/ },
   { kind: 'openai_key', pattern: /\bsk-(?!ant-)[A-Za-z0-9_-]{20,}\b/ },
+  // Protect primary model provider API keys from entering chat history, prompts, or generated PRs
+  { kind: 'gemini_key', pattern: /\bAIza[A-Za-z0-9_-]{20,}\b/ },
+  { kind: 'groq_key', pattern: /\bgsk_[A-Za-z0-9_-]{20,}\b/ },
   { kind: 'generic_bearer', pattern: /\bBearer\s+[A-Za-z0-9\-._~+/]{20,}\b/i },
   {
     kind: 'generic_secret',
@@ -44,6 +49,8 @@ const HINT_FOR_KIND: Record<SecretKind, string> = {
   github_pat_fine: 'GitHub Fine-Grained PAT (github_pat_…)',
   openai_key: 'OpenAI API Key (sk-…)',
   anthropic_key: 'Anthropic API Key (sk-ant-…)',
+  gemini_key: 'Google Gemini API Key (AIza…)',
+  groq_key: 'Groq API Key (gsk_…)',
   generic_bearer: 'Bearer Token',
   generic_secret: 'Secret / Token / API Key',
 };
