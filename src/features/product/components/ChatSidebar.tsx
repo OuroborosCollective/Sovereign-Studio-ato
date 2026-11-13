@@ -352,9 +352,9 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
             disabled={!canSubmit}
             className="px-4 py-3 bg-cyan-500/20 border border-cyan-500/30 rounded-2xl text-cyan-400 hover:bg-cyan-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
             aria-label="Send"
-            title="Send"
+            title={canSubmit ? "Send message" : "Type a message to send"}
           >
-            <Send size={18} />
+            <Send size={18} aria-hidden="true" />
           </button>
         </form>
         
