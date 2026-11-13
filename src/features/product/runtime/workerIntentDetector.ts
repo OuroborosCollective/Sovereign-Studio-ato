@@ -5,6 +5,10 @@
  * Used by BuilderContainer and can be unit tested directly.
  */
 
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // Free language belongs to the online LLM. These legacy context tokens are used
 // only after an explicit machine control such as /confirm; they must never decide
 // the route of a fresh natural-language message.
@@ -18,6 +22,12 @@ const EXACT_AGENT_COMMANDS = ['/agent', '/draft-pr'] as const;
 const EXACT_RETRY_COMMANDS = ['retry', '/retry'] as const;
 const EXACT_DIAGNOSTIC_COMMANDS = ['diagnose', '/diagnose'] as const;
 const EXACT_STATUS_COMMANDS = ['/status'] as const;
+
+const EXACT_CODE_COMMANDS_SET = new Set<string>(EXACT_CODE_COMMANDS);
+const EXACT_AGENT_COMMANDS_SET = new Set<string>(EXACT_AGENT_COMMANDS);
+const EXACT_RETRY_COMMANDS_SET = new Set<string>(EXACT_RETRY_COMMANDS);
+const EXACT_DIAGNOSTIC_COMMANDS_SET = new Set<string>(EXACT_DIAGNOSTIC_COMMANDS);
+const EXACT_STATUS_COMMANDS_SET = new Set<string>(EXACT_STATUS_COMMANDS);
 
 // Delegation tokens: explicit handover to executor. Includes the confirmation
 // vocabulary emitted by the Integration-Draft UX: user confirms by saying
@@ -73,6 +83,40 @@ const CODE_CONTEXT_TOKENS = [
   'sovereign agent', 'sovereign-agent', 'draft pr', 'einbauen', 'umsetzen', 'umsetzung',
 ];
 
+const EXECUTOR_EXTRA_TOKENS = [
+  'integrationsauftrag',
+  'integration',
+  'einbauen',
+  'umsetzung',
+] as const;
+
+// Hoisted module-level compiled RegExps for O(1) single-pass regex tests
+// avoiding repetitive string lowering and multi-pass array iterations.
+const DELEGATION_REGEX = new RegExp(DELEGATION_TOKENS.map(escapeRegex).join('|'), 'i');
+const ALTERNATIVE_WRITE_ROUTE_REGEX = new RegExp(ALTERNATIVE_WRITE_ROUTE_TOKENS.map(escapeRegex).join('|'), 'i');
+const CODE_CONTEXT_REGEX = new RegExp(CODE_CONTEXT_TOKENS.map(escapeRegex).join('|'), 'i');
+const EXECUTOR_CONTEXT_REGEX = new RegExp(
+  [...SOVEREIGN_AGENT_EXECUTION_TOKENS, ...EXECUTOR_EXTRA_TOKENS].map(escapeRegex).join('|'),
+  'i'
+);
+
+/**
+ * Fast character scan helper to extract the first word in lowercase without
+ * regex compilation or array splitting allocations.
+ */
+function extractFirstWordLower(text: string): string {
+  let start = 0;
+  const len = text.length;
+  while (start < len && text.charCodeAt(start) <= 32) {
+    start++;
+  }
+  let end = start;
+  while (end < len && text.charCodeAt(end) > 32) {
+    end++;
+  }
+  return text.slice(start, end).toLowerCase();
+}
+
 /**
  * Free language is never presumed to be an implementation request.
  * The online LLM must return structured intent evidence; offline runtime stays
@@ -87,8 +131,8 @@ export function isLikelyIntegrationImplementationIntent(_text: string): boolean 
  * Generic implementation text stays code-route until a confirmed executor handoff.
  */
 export function isSovereignAgentExecutionIntent(text: string): boolean {
-  const command = text.trim().toLowerCase().split(/\s+/, 1)[0];
-  return EXACT_AGENT_COMMANDS.some((candidate) => candidate === command);
+  const command = extractFirstWordLower(text);
+  return EXACT_AGENT_COMMANDS_SET.has(command);
 }
 
 /**
@@ -96,8 +140,8 @@ export function isSovereignAgentExecutionIntent(text: string): boolean {
  * before any external executor is considered.
  */
 export function isCodeGenerationIntent(text: string): boolean {
-  const command = text.trim().toLowerCase().split(/\s+/, 1)[0];
-  return EXACT_CODE_COMMANDS.some((candidate) => candidate === command);
+  const command = extractFirstWordLower(text);
+  return EXACT_CODE_COMMANDS_SET.has(command);
 }
 
 /**
@@ -106,7 +150,7 @@ export function isCodeGenerationIntent(text: string): boolean {
  */
 export function isWorkerRetryIntent(text: string): boolean {
   const clean = text.trim().toLowerCase();
-  return EXACT_RETRY_COMMANDS.some((candidate) => candidate === clean);
+  return EXACT_RETRY_COMMANDS_SET.has(clean);
 }
 
 /**
@@ -115,7 +159,7 @@ export function isWorkerRetryIntent(text: string): boolean {
  */
 export function isWorkerDiagnosticQuestion(text: string): boolean {
   const clean = text.trim().toLowerCase();
-  return EXACT_DIAGNOSTIC_COMMANDS.some((candidate) => candidate === clean);
+  return EXACT_DIAGNOSTIC_COMMANDS_SET.has(clean);
 }
 
 /**
@@ -123,8 +167,7 @@ export function isWorkerDiagnosticQuestion(text: string): boolean {
  * Only qualifies as execution intent if there's prior code/repo context.
  */
 export function isDelegationIntent(text: string): boolean {
-  const lower = text.toLowerCase();
-  return DELEGATION_TOKENS.some((token) => lower.includes(token));
+  return DELEGATION_REGEX.test(text);
 }
 
 /**
@@ -132,13 +175,17 @@ export function isDelegationIntent(text: string): boolean {
  * Used to determine if a delegation intent should trigger executor.
  */
 export function hasCodeContextInHistory(recentMessages: readonly { role: string; text: string }[]): boolean {
-  const relevant = recentMessages
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .slice(-6); // last 6 messages
-
-  const allText = relevant.map((m) => m.text.toLowerCase()).join(' ');
-
-  return CODE_CONTEXT_TOKENS.some((token) => allText.includes(token));
+  let count = 0;
+  for (let i = recentMessages.length - 1; i >= 0 && count < 6; i--) {
+    const m = recentMessages[i];
+    if (m.role === 'user' || m.role === 'assistant') {
+      count++;
+      if (CODE_CONTEXT_REGEX.test(m.text)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -146,15 +193,17 @@ export function hasCodeContextInHistory(recentMessages: readonly { role: string;
  * Use this in BuilderContainer routing instead of just isDelegationIntent.
  */
 export function hasExecutorContextInHistory(recentMessages: readonly { role: string; text: string }[]): boolean {
-  const relevant = recentMessages
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .slice(-6);
-  const allText = relevant.map((m) => m.text.toLowerCase()).join(' ');
-  return SOVEREIGN_AGENT_EXECUTION_TOKENS.some((token) => allText.includes(token)) ||
-    allText.includes('integrationsauftrag') ||
-    allText.includes('integration') ||
-    allText.includes('einbauen') ||
-    allText.includes('umsetzung');
+  let count = 0;
+  for (let i = recentMessages.length - 1; i >= 0 && count < 6; i--) {
+    const m = recentMessages[i];
+    if (m.role === 'user' || m.role === 'assistant') {
+      count++;
+      if (EXECUTOR_CONTEXT_REGEX.test(m.text)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 export function isDelegatedSovereignAgentExecutionIntent(
@@ -176,8 +225,7 @@ export function isDelegatedSovereignAgentExecutionIntent(
  * - "Alternative Route für diesen einfachen Patch?"
  */
 export function isAlternativeWriteRouteIntent(text: string): boolean {
-  const lower = text.toLowerCase();
-  return ALTERNATIVE_WRITE_ROUTE_TOKENS.some((token) => lower.includes(token));
+  return ALTERNATIVE_WRITE_ROUTE_REGEX.test(text);
 }
 
 /**
@@ -186,7 +234,7 @@ export function isAlternativeWriteRouteIntent(text: string): boolean {
  */
 export function isExecutorStatusQuestion(text: string): boolean {
   const clean = text.trim().toLowerCase();
-  return EXACT_STATUS_COMMANDS.some((candidate) => candidate === clean);
+  return EXACT_STATUS_COMMANDS_SET.has(clean);
 }
 
 export type ExecutorStatusArgs = {
