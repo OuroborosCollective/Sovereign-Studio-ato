@@ -203,21 +203,46 @@ function newestEvidenceRevision(anchors: readonly SovereignWorkspaceEvidenceAnch
 function runtimeReadback(snapshot: SovereignAgentJobSnapshot | undefined): Pick<SovereignJob,
   'runtimeEvidence' | 'serverObservedAt' | 'readbackReceivedMonotonicMs' | 'externalRef' | 'lastEventAt' | 'lastHeartbeatAt' | 'persistedEventCount'> {
   const runtimeEvents = snapshot?.runtimeEvidence?.events ?? [];
-  const heartbeatTimes = runtimeEvents.filter((event) => event.stage === 'sovereign_executor_heartbeat' && event.heartbeatCurrent === true)
-    .map((event) => Date.parse(event.at));
-  const progress = runtimeEvents.filter((event) => event.stage !== 'sovereign_executor_heartbeat');
-  const times = [
-    ...(snapshot?.events ?? []).map((event) => event.at),
-    ...progress.map((event) => Date.parse(event.at)),
-  ].filter(Number.isFinite);
+  let lastHeartbeatAtMs = 0;
+  let lastEventAtMs = 0;
+  let progressCount = 0;
+
+  // Single pass through runtimeEvents
+  for (const event of runtimeEvents) {
+    if (event.stage === 'sovereign_executor_heartbeat') {
+      if (event.heartbeatCurrent === true) {
+        const t = Date.parse(event.at);
+        if (Number.isFinite(t) && t > lastHeartbeatAtMs) {
+          lastHeartbeatAtMs = t;
+        }
+      }
+    } else {
+      progressCount++;
+      const t = Date.parse(event.at);
+      if (Number.isFinite(t) && t > lastEventAtMs) {
+        lastEventAtMs = t;
+      }
+    }
+  }
+
+  // Check persisted snapshot events
+  if (snapshot?.events) {
+    for (const event of snapshot.events) {
+      const t = typeof event.at === 'number' ? event.at : Date.parse(event.at as any);
+      if (Number.isFinite(t) && t > lastEventAtMs) {
+        lastEventAtMs = t;
+      }
+    }
+  }
+
   return {
     runtimeEvidence: snapshot?.runtimeEvidence,
     serverObservedAt: snapshot?.serverObservedAt,
     readbackReceivedMonotonicMs: snapshot?.readbackReceivedMonotonicMs,
     externalRef: snapshot?.externalRef,
-    lastEventAt: times.length ? new Date(Math.max(...times)).toISOString() : undefined,
-    lastHeartbeatAt: heartbeatTimes.length ? new Date(Math.max(...heartbeatTimes)).toISOString() : undefined,
-    persistedEventCount: (snapshot?.events.length ?? 0) + progress.length,
+    lastEventAt: lastEventAtMs > 0 ? new Date(lastEventAtMs).toISOString() : undefined,
+    lastHeartbeatAt: lastHeartbeatAtMs > 0 ? new Date(lastHeartbeatAtMs).toISOString() : undefined,
+    persistedEventCount: (snapshot?.events?.length ?? 0) + progressCount,
   };
 }
 
