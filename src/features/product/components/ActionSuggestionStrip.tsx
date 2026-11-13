@@ -47,7 +47,10 @@ export function ActionSuggestionStrip({
         </span>
       </div>
       <div
-        role="list"
+        role="region"
+        aria-label="Geführte Aktionen Liste"
+        tabIndex={0}
+        className="focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500/50 rounded-md"
         style={{
           display: 'flex',
           gap: 8,
@@ -71,6 +74,7 @@ export function ActionSuggestionStrip({
                 onClick={() => onSelect(action.id)}
                 aria-label={`${action.label}: ${action.description}`}
                 title={`${action.description}\n${gate.canStart ? gate.nextAction : `${gate.reason} ${gate.nextAction}`}`}
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00d9b1] transition-all hover:border-[#00d9b1]/70"
                 style={{
                   minWidth: 138,
                   maxWidth: 178,
