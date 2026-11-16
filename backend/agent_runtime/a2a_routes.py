@@ -608,8 +608,11 @@ def register_a2a_routes(
         version_error = _protocol_error()
         if version_error:
             return version_error
+        raw_body = request.get_json(force=True, silent=True)
+        if not isinstance(raw_body, dict):
+            return _a2a_error("INVALID_REQUEST", "Request body must be a JSON object.", 400)
         try:
-            request_message = parse_send_message(request.get_json(force=True) or {})
+            request_message = parse_send_message(raw_body)
             mission, evidence, model = mission_from_a2a_request(request_message)
         except (TypeError, ValueError) as exc:
             return _a2a_error("INVALID_REQUEST", str(exc), 400)
@@ -747,8 +750,11 @@ def register_a2a_routes(
         version_error = _protocol_error()
         if version_error:
             return version_error
+        raw_body = request.get_json(force=True, silent=True)
+        if not isinstance(raw_body, dict):
+            return _a2a_error("INVALID_REQUEST", "Request body must be a JSON object.", 400)
         try:
-            request_message = parse_send_message(request.get_json(force=True) or {})
+            request_message = parse_send_message(raw_body)
             mission, evidence, model = mission_from_a2a_request(request_message)
         except (TypeError, ValueError) as exc:
             return _a2a_error("INVALID_REQUEST", str(exc), 400)
