@@ -37,4 +37,28 @@ describe('ActionSuggestionStrip', () => {
     fireEvent.click(screen.getByRole('button', { name: /Feature-Vorschläge aus Architektur/i }));
     expect(onSelect).toHaveBeenCalledWith('architecture_feature_suggestions');
   });
+
+  it('links section landmark to title and provides focus visible styling and native tooltips', () => {
+    render(
+      <ActionSuggestionStrip
+        actions={SOVEREIGN_PRESET_ACTIONS}
+        repoReady={true}
+        githubWriteReady={true}
+        agentReady={true}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const section = screen.getByRole('region', { name: 'Geführte Repo-Aktionen' });
+    expect(section).toBeInTheDocument();
+    expect(section).toHaveAttribute('aria-labelledby', 'action-suggestion-strip-title');
+
+    const list = screen.getByRole('list', { name: 'Geführte Repo-Aktionen' });
+    expect(list).toBeInTheDocument();
+
+    const button = screen.getByRole('button', { name: /Feature-Vorschläge aus Architektur/i });
+    expect(button).toHaveClass('focus-visible:ring-2');
+    expect(button).toHaveAttribute('title');
+    expect(button.getAttribute('title')).toContain('Feature-Vorschläge aus Architektur');
+  });
 });
