@@ -27,6 +27,7 @@ from android_hardening import AndroidHardeningRuntime
 from broker_client import HostBrokerClient
 import ci_repair_tools
 from database import DatabaseRuntime
+from kitesurf_evidence import capture_public_page, probe_local_engine
 from document_pipeline import DocumentPipelineRuntime
 from github_issue_contracts import (
     RepositoryIssueCloseOutput,
@@ -329,6 +330,18 @@ WORKSPACE_NETWORK_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=Fa
 EXTERNAL_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=True)
 # Workspace cleanup deletes a marker-owned local checkout; not a harmless edit.
 WORKSPACE_CLEANUP = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False)
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def kitesurf_engine_status() -> dict[str, Any]:
+    """Check optional localhost Kitesurf health; never assert engine revision or deployment parity."""
+    return probe_local_engine()
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def kitesurf_capture_public_page(path: str = "/", include_png: bool = False) -> dict[str, Any]:
+    """Capture one explicitly scoped public arelogic.space page through optional localhost CDP."""
+    return capture_public_page(path, include_png)
 
 
 @mcp.tool(annotations=SAFE_WRITE)
