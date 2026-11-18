@@ -1383,3 +1383,13 @@ Open: Aurion #1352 independent approval and merge, new main SHA re-pin and exact
 Next safe step: Review Sovereign Draft PR and its CI; after Aurion #1352 merge replace this staging SHA with the observed Aurion merge/main SHA in the workflow and regression, rerun exact-head CI. Only then owner-authenticated signer workflow and readback; never install Preview as Login.
 
 Follow-up in same entry (2026-11-09, pre-merge): Aurion G17 PR #1352 merged with confirmed main SHA 7ae856906107f5247e11b418c5918a0423da428d; Sovereign workflow and test pins updated to that SHA at commits 5e2918f75b0f4fa17bd188174f48b42210766d26 and 5946c14ff204a9c1781b8772ef1e82359678c3e7. The pre-merge wording above describes the earlier staging phase; final exact-head CI and signer artifact remain unverified at this checkpoint. No sign job triggered.
+
+### 2026-11-19 — Optional public Kitesurf CDP evidence adapter
+Status: PARTIAL (repository tests; no browser runtime or deployment claim)
+Task: Extend existing Sovott-v2 MCP with an opt-in public-only browser evidence tool for arelogic.space.
+Decisions: No new server, Unity/game authority or engine build; disabled by default; localhost-only CDP, separate browser context, bounded PNG/DOM, reject redirects outside the fixed public origin.
+Touched surfaces: tools/sovereign-chatgpt-mcp/{kitesurf_evidence.py,server.py,requirements.txt,Dockerfile,deploy/install-on-vps.sh,tests/test_kitesurf_evidence.py}; docs/architecture/KITESURF_CDP_EVIDENCE_ADAPTER.v1.md.
+Evidence: Cloudflare Kitesurf upstream CDP source at f236927d94822279b4bd6d171d38b6de9aea4e37 (Apache-2.0); local RED ModuleNotFoundError/exit 2 before implementation; GREEN targeted 18 passed and existing Runtime Boundary 3 passed; install-contract RED 1 failed / 20 passed, after installer patch GREEN 21 passed; diff-check/compile exit 0 (isolated job-1f4275fc06e5). CI, live engine and container image parity remain unverified.
+Learned: The VPS installer must copy every runtime-imported module; MCP-container loopback is not VPS-host loopback. Local Kitesurf workerd is not hardened for untrusted sites, and an unpersisted PNG hash is not durable evidence.
+Open: Exact-head GitHub CI/PR review, secure isolated Kitesurf endpoint, genuine CDP screenshot and SHA readback, immutable MCP deployment and registry parity.
+Next safe step: Publish Draft PR, read exact-head CI, then review separately the isolated runtime rollout before enabling SOVEREIGN_KITESURF_ENABLED.
