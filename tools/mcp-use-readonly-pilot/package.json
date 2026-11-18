@@ -1,0 +1,17 @@
+{
+  "name": "@ouroboros/mcp-use-readonly-pilot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bounded metadata-only experiment; never a production MCP authority",
+  "engines": {
+    "node": ">=22.22.2"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "probe": "node src/probe.mjs"
+  },
+  "dependencies": {
+    "@mcp-use/client": "2.4.6"
+  }
+}

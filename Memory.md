@@ -1383,3 +1383,13 @@ Open: Aurion #1352 independent approval and merge, new main SHA re-pin and exact
 Next safe step: Review Sovereign Draft PR and its CI; after Aurion #1352 merge replace this staging SHA with the observed Aurion merge/main SHA in the workflow and regression, rerun exact-head CI. Only then owner-authenticated signer workflow and readback; never install Preview as Login.
 
 Follow-up in same entry (2026-11-09, pre-merge): Aurion G17 PR #1352 merged with confirmed main SHA 7ae856906107f5247e11b418c5918a0423da428d; Sovereign workflow and test pins updated to that SHA at commits 5e2918f75b0f4fa17bd188174f48b42210766d26 and 5946c14ff204a9c1781b8772ef1e82359678c3e7. The pre-merge wording above describes the earlier staging phase; final exact-head CI and signer artifact remain unverified at this checkpoint. No sign job triggered.
+
+### 2026-11-18 — mcp-use metadata-only inspector pilot
+Status: PARTIAL — isolated workspace code, CI and runtime unverified.
+Task: Stage a bounded MIT-licensed mcp-use client probe beside the existing Sovott-v2 MCP broker, without another broker or any Unity mutation.
+Decisions: Pin the direct client dependency to @mcp-use/client 2.4.6; use Node >=22.22.2; allow only explicitly supplied loopback MCP endpoints and tools/list; fingerprint sorted schemas without using annotations as authority; no tools/call, external network discovery, deployment, or running-container package install. GitHub Actions review of the proposed dependency lock candidate precedes any deployment.
+Touched surfaces: tools/mcp-use-readonly-pilot/{src,tests,README.md,package.json}; .github/workflows/mcp-use-readonly-pilot.yml; this Memory.md.
+Evidence: Base main 8fe2589f73c12bc3128147d7664e8c19e26f66d8; workspace job-9616ce6a97cf; Sovott control-plane BROKER_READY with 298 registered tools on 2026-11-18. Source and test files authored on isolated branch; neither tests nor GitHub CI nor independent live MCP test have passed at the time of this entry.
+Learned: The existing broker already supplies the authoritative runtime. A separate metadata observer must fail closed; the running Unity Accelerator is not an MCP endpoint. Unity 6000.6.8f1 is the active Ashen Crypt Editor, and cache changes belong in its separate project pipeline.
+Open: exact PR-head CI/test outcomes, dependency supply-chain audit, authenticated loopback broker endpoint, runtime identity/digest parity, and separate Unity 6 Accelerator cache-warming pilot.
+Next safe step: Publish Draft PR, inspect exact-head CI, review pinned lock candidate, and obtain authorized local-only probe path before claiming any protocol or product-runtime success.
