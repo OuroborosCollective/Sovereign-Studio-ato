@@ -1,9 +1,7 @@
 name: MCP-use read-only metadata pilot
 on:
-  pull_request:
-    paths:
-      - "tools/mcp-use-readonly-pilot/**"
-      - ".github/workflows/mcp-use-readonly-pilot.yml"
+  # Direct PR runners are reserved for the seven canonical required workflows.
+  # The isolated dependency probe is intentionally dispatch-only.
   workflow_dispatch:
 permissions:
   contents: read
