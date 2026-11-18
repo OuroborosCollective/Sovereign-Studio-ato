@@ -104,5 +104,8 @@ describe('VpsWorkspace & VpsChat Palette Accessibility Enhancements', () => {
 
     const sendBtn = screen.getByRole('button', { name: 'Anfrage senden' });
     expect(sendBtn).toHaveAttribute('title', 'Bitte beschreiben Sie zuerst eine Aktion');
+
+    expect(input).toHaveClass('focus-visible:ring-2');
+    expect(sendBtn).toHaveClass('focus-visible:ring-2');
   });
 });

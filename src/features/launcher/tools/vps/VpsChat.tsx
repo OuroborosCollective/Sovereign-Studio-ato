@@ -196,10 +196,11 @@ Anfrage: ${text}`;
         borderTop: `1px solid ${C.border}`, flexShrink: 0,
       }}>
         <input
+          className="focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
           style={{
             flex: 1, padding: '8px 12px', background: C.bg,
             border: `1px solid ${C.border}`, borderRadius: 8,
-            color: C.text, fontSize: 12, outline: 'none',
+            color: C.text, fontSize: 12,
           }}
           placeholder="Beschreibe was du tun möchtest…"
           aria-label="Aktionsbeschreibung"
@@ -220,10 +221,11 @@ Anfrage: ${text}`;
           }
           onClick={() => void handleSubmit()}
           disabled={!input.trim() || thinking}
+          className="focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none transition-opacity hover:opacity-90 disabled:cursor-not-allowed"
           style={{
             width: 36, height: 36, borderRadius: 8, border: 'none',
             background: input.trim() && !thinking ? C.violet : C.surface,
-            color: '#fff', cursor: input.trim() && !thinking ? 'pointer' : 'not-allowed',
+            color: '#fff',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             transition: 'background 0.15s',
           }}
