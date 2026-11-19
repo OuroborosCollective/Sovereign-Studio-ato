@@ -225,8 +225,8 @@ const CopyButton = React.memo(function CopyButton({ code }: { code: string }) {
     <button
       type="button"
       onClick={handleCopy}
-      aria-label={label}
-      title={label}
+      aria-label={copied ? "Code-Block kopiert" : "Code-Block kopieren"}
+      title={copied ? "Code-Block kopiert" : "Code-Block kopieren"}
       style={{
         padding: '4px 8px',
         borderRadius: 4,
@@ -238,7 +238,7 @@ const CopyButton = React.memo(function CopyButton({ code }: { code: string }) {
         transition: 'all 0.15s ease',
       }}
     >
-      {copied ? '✓ Copied' : 'Copy'}
+      {copied ? '✓ Kopiert' : 'Kopieren'}
     </button>
   );
 });
