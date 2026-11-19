@@ -1,0 +1,44 @@
+name: MCP-use read-only metadata pilot
+on:
+  # Direct PR runners are reserved for the seven canonical required workflows.
+  # The isolated dependency probe is intentionally dispatch-only.
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  readonly-protocol-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: tools/mcp-use-readonly-pilot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.4"
+      - name: Unit and negative contract tests
+        run: node --test tests/*.test.mjs
+      - name: Generate dependency lock candidate without package scripts
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Verify pinned mcp-use client on isolated GitHub runner
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ls @mcp-use/client --depth=0
+      - name: Check dependency advisory findings
+        run: npm audit --audit-level=high
+      - name: Deny probe without an explicit loopback endpoint
+        run: |
+          set +e
+          output="$(node src/probe.mjs 2>&1)"
+          exit_code="$?"
+          set -e
+          test "$exit_code" -eq 2
+          test "$output" = "MCP_USE_READONLY_PROBE_FAILED"
+      - name: Retain generated lock candidate for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-use-readonly-lock-candidate
+          path: tools/mcp-use-readonly-pilot/package-lock.json
+          if-no-files-found: error
+          retention-days: 7
