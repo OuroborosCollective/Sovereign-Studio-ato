@@ -1073,6 +1073,64 @@ def repository_delete_pr_branch(
 
 
 @mcp.tool(annotations=READ_ONLY)
+def ashen_director_project_status(
+    expected_source_sha: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    expected_unity_sha: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+) -> dict[str, Any]:
+    """Read the existing unityarpg Director and reject wrong pinned revisions; no Unity effects."""
+    return broker.call("ashen_director_project_status", {
+        "expected_source_sha": expected_source_sha,
+        "expected_unity_sha": expected_unity_sha,
+    }, timeout=45)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def ashen_neural_advice(
+    department: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{2,48}$")],
+    expected_source_sha: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    expected_unity_sha: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    issues: Annotated[list[dict[str, Any]], Field(min_length=1, max_length=64)],
+) -> dict[str, Any]:
+    """Ask one pinned Ashen adviser with caller-supplied issue data; never execute game effects."""
+    return broker.call("ashen_neural_advice", {
+        "department": department,
+        "expected_source_sha": expected_source_sha,
+        "expected_unity_sha": expected_unity_sha,
+        "issues": issues,
+    }, timeout=115)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def ashen_neural_sources(
+    expected_source_sha: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    expected_unity_sha: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+) -> dict[str, Any]:
+    """Inspect pinned Ashen external-source catalog and actual Unity git status without execution."""
+    return broker.call("ashen_neural_sources", {
+        "expected_source_sha": expected_source_sha,
+        "expected_unity_sha": expected_unity_sha,
+    }, timeout=60)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def ashen_neural_consult(
+    departments: Annotated[list[str], Field(min_length=1, max_length=28)],
+    expected_source_sha: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    expected_unity_sha: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    issues: Annotated[list[dict[str, Any]], Field(min_length=1, max_length=64)],
+    full_council: bool = False,
+) -> dict[str, Any]:
+    """Read-only targeted adviser council; more than three departments require explicit full_council."""
+    return broker.call("ashen_neural_consult", {
+        "departments": departments,
+        "expected_source_sha": expected_source_sha,
+        "expected_unity_sha": expected_unity_sha,
+        "issues": issues,
+        "full_council": full_council,
+    }, timeout=180)
+
+
+@mcp.tool(annotations=READ_ONLY)
 def android_project_inventory(workspace_id: str) -> dict[str, Any]:
     """Inventory Capacitor/Android surfaces, SDK levels, Gradle/AGP, dependencies, required files and available toolchain."""
     return android.inventory(workspace_id)
