@@ -34,6 +34,12 @@ EXPECTED_NEURO_TOOLS = {
 EXPECTED_AGENT_ZERO_TOOLS = {"agent_zero_backend_diagnostics", "agent_zero_a2a_canary"}
 EXPECTED_SSH_TOOLS = {"vps_ssh_session_status", "vps_ssh_inspect", "vps_ssh_workspace", "vps_ssh_shell", "vps_ssh_shell_output"}
 EXPECTED_WORKSPACE_TOOLS = {"workspace_inventory", "workspace_cleanup"}
+EXPECTED_ASHEN_TOOLS = {
+    "ashen_director_project_status",
+    "ashen_neural_advice",
+    "ashen_neural_consult",
+    "ashen_neural_sources",
+}
 
 EXPECTED_AURION_TOOLS = {
     "aurion_native_auth_plan",
@@ -469,12 +475,16 @@ print(json.dumps({
     assert indexed["workspace_inventory"]["annotations"]["destructiveHint"] is False
     assert indexed["workspace_cleanup"]["annotations"]["readOnlyHint"] is False
     assert indexed["workspace_cleanup"]["annotations"]["destructiveHint"] is True
+    assert EXPECTED_ASHEN_TOOLS <= set(indexed)
+    for ashen_tool in sorted(EXPECTED_ASHEN_TOOLS):
+        assert indexed[ashen_tool]["annotations"]["readOnlyHint"] is True, ashen_tool
+        assert indexed[ashen_tool]["annotations"]["destructiveHint"] is False, ashen_tool
 
     predecessor_registry = json.loads(json.dumps(current_registry))
     predecessor_registry["tools"] = [
         item
         for item in predecessor_registry["tools"]
-        if item["name"] not in EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS | EXPECTED_AGENT_ZERO_TOOLS | EXPECTED_SSH_TOOLS | EXPECTED_WORKSPACE_TOOLS | {"n8n_workflow_plan", "n8n_workflow_apply", "wolfram_cag_runtime_evidence_bind", "wolfram_source_intelligence"}
+        if item["name"] not in EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS | EXPECTED_AGENT_ZERO_TOOLS | EXPECTED_SSH_TOOLS | EXPECTED_WORKSPACE_TOOLS | EXPECTED_ASHEN_TOOLS | {"n8n_workflow_plan", "n8n_workflow_apply", "wolfram_cag_runtime_evidence_bind", "wolfram_source_intelligence"}
     ]
     predecessor_registry["toolCount"] = len(predecessor_registry["tools"])
     predecessor_registry["registrySnapshotSha256"] = "0" * 64
@@ -560,7 +570,7 @@ print(json.dumps({
     )
     assert compatibility.returncode == 0, compatibility.stderr
     compatibility_receipt = json.loads(compatibility.stdout.strip().splitlines()[-1])
-    assert set(compatibility_receipt["additions"]) == EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS | EXPECTED_AGENT_ZERO_TOOLS | EXPECTED_SSH_TOOLS | EXPECTED_WORKSPACE_TOOLS | {"wolfram_cag_runtime_evidence_bind", "wolfram_source_intelligence"}
+    assert set(compatibility_receipt["additions"]) == EXPECTED_NEURO_TOOLS | EXPECTED_AURION_TOOLS | EXPECTED_AGENT_ZERO_TOOLS | EXPECTED_SSH_TOOLS | EXPECTED_WORKSPACE_TOOLS | EXPECTED_ASHEN_TOOLS | {"wolfram_cag_runtime_evidence_bind", "wolfram_source_intelligence"}
     assert set(compatibility_receipt["changedCompatibleContracts"]) == (
         EXPECTED_COMPATIBLE_PREDECESSOR_DRIFT | {"mcp_tool_contract_registry", "mcp_registry_snapshot_verify"}
     )
