@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from admin_mode import PrivateAdminRuntime
+from ashen_broker_adapter import AshenBrokerAdapter
 from agent_zero_diagnostics import AgentZeroDiagnosticsRuntime
 from aurion_admin_mcp_lane import AurionAdminMcpRuntime
 from aurion_operator import AurionOperatorRuntime
@@ -62,6 +63,7 @@ class BrokerRuntime:
         ).strip()
         self.operations = OperationsRuntime()
         self.owner_ssh = OwnerSSHConsole()
+        self.ashen = AshenBrokerAdapter(self.private_owner_mode)
         self.agent_zero_diagnostics = AgentZeroDiagnosticsRuntime()
         self.browserless = BrowserlessReplayReader()
         self.document_pipeline = DocumentPipelineRuntime()
@@ -590,6 +592,10 @@ class BrokerRuntime:
                 expected_sha256=values.get("expected_sha256", ""), argv=values.get("argv"),
                 timeout_seconds=values.get("timeout_seconds", 30)),
             "broker_health": self.health,
+            "ashen_director_project_status": lambda values: self.ashen.status(values),
+            "ashen_neural_advice": lambda values: self.ashen.advice(values),
+            "ashen_neural_consult": lambda values: self.ashen.consult(values),
+            "ashen_neural_sources": lambda values: self.ashen.sources(values),
             "host_worker_canary": lambda _values: {
                 "ok": True,
                 "status": "HOST_WORKER_READY",
