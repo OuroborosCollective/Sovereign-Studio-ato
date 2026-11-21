@@ -131,10 +131,19 @@ function categoryScore(findings: BrownfieldFinding[]): BrownfieldScore {
 }
 
 function directoryKey(path: string): string {
-  const parts = path.split('/');
-  if (parts.length <= 1) return '.';
-  if (parts[0] === 'src' && parts.length >= 3) return parts.slice(0, 3).join('/');
-  return parts.slice(0, 2).join('/');
+  // ⚡ Bolt: Fast native string indexing replaces array split('/'), slice, and join('/') allocations
+  const firstSlash = path.indexOf('/');
+  if (firstSlash === -1) return '.';
+
+  const secondSlash = path.indexOf('/', firstSlash + 1);
+  if (secondSlash === -1) return path;
+
+  if (firstSlash === 3 && path.startsWith('src/')) {
+    const thirdSlash = path.indexOf('/', secondSlash + 1);
+    return thirdSlash === -1 ? path : path.substring(0, thirdSlash);
+  }
+
+  return path.substring(0, secondSlash);
 }
 
 function addLegacyNameFindings(legacyFiles: string[], findings: BrownfieldFinding[]): void {
@@ -213,7 +222,9 @@ function addStatePatternFindings(statePatternSeen: Uint8Array, findings: Brownfi
 }
 
 function addDirectorySizeFindings(counts: Map<string, number>, findings: BrownfieldFinding[]): void {
-  for (const [dir, count] of Array.from(counts.entries()).sort((a, b) => b[1] - a[1])) {
+  // ⚡ Bolt: Direct map traversal avoids allocating an intermediate entries array and sorting.
+  // Findings are sorted downstream by severity and ID.
+  for (const [dir, count] of counts) {
     if (dir === '.') continue;
     if (count > 80) {
       findings.push({
