@@ -144,10 +144,14 @@ export class PredictionGenerator {
   }
 
   private addToHistory(nodeId: string, prediction: Prediction): void {
-    const history = this.predictionHistory.get(nodeId) ?? [];
+    // ⚡ Bolt: Reuse existing history array reference in Map to avoid redundant Map.set operations
+    let history = this.predictionHistory.get(nodeId);
+    if (!history) {
+      history = [];
+      this.predictionHistory.set(nodeId, history);
+    }
     history.push(prediction);
     if (history.length > 100) history.shift();
-    this.predictionHistory.set(nodeId, history);
   }
 
   learn(signal: Signal, prediction: Prediction, actualValue: number): void {
@@ -166,16 +170,24 @@ export class PredictionGenerator {
 
   private createEmbedding(signal: Signal): number[] {
     const dim = this.config.latentSpace.dimension;
-    const embedding: number[] = [];
+    // ⚡ Bolt: Pre-allocate array size to eliminate array resizing allocations during vector creation
+    const embedding: number[] = new Array(dim);
     for (let i = 0; i < dim; i += 1) {
       const seed = signal.value * (i + 1) + signal.timestamp + i * 7919;
-      embedding.push((Math.sin(seed) + 1) / 2);
+      embedding[i] = (Math.sin(seed) + 1) / 2;
     }
     return embedding;
   }
 
   private computeNorm(vector: number[]): number {
-    return Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+    // ⚡ Bolt: Direct indexed loop avoids function callback overhead per vector dimension
+    let sum = 0;
+    const len = vector.length;
+    for (let i = 0; i < len; i += 1) {
+      const val = vector[i];
+      sum += val * val;
+    }
+    return Math.sqrt(sum);
   }
 
   getStats(): {
@@ -188,9 +200,13 @@ export class PredictionGenerator {
     let totalConfidence = 0;
     let totalPredictions = 0;
 
+    // ⚡ Bolt: Direct loop over prediction history arrays avoids iterator allocations
     for (const history of this.predictionHistory.values()) {
-      totalPredictions += history.length;
-      for (const prediction of history) totalConfidence += prediction.confidence;
+      const len = history.length;
+      totalPredictions += len;
+      for (let i = 0; i < len; i += 1) {
+        totalConfidence += history[i].confidence;
+      }
     }
 
     return {
