@@ -3432,7 +3432,11 @@ export function BuilderContainer({
   const palStats = useMemo(() => {
     const t = palDecisions.length;
     if (!t) return null;
-    const cost = palDecisions.reduce((s, d) => s + d.costFactor, 0);
+    // ⚡ Bolt: Use a direct single-pass loop instead of allocating intermediate function contexts in .reduce()
+    let cost = 0;
+    for (const d of palDecisions) {
+      cost += d.costFactor;
+    }
     return {
       total: t,
       savings: Math.round(((t * 30 - cost) / (t * 30)) * 100),
@@ -5939,12 +5943,21 @@ Das echte Repo-Setup wurde geöffnet.`);
             inspectorSignals={deriveRuntimeInspectorSignals(
               activeMod.id.toUpperCase() as "PAT" | "ORC" | "INT" | "BUD",
               buildPatInspectorStateFromStore(patternMemoryStore),
-              {
-                palDecisions: palDecisions.length,
-                fastTierCount: palDecisions.filter((d) => d.tier === "fast").length,
-                smartTierCount: palDecisions.filter((d) => d.tier === "smart").length,
-                powerTierCount: palDecisions.filter((d) => d.tier === "power").length,
-              },
+              // ⚡ Bolt: Consolidate multiple O(N) array filter passes over palDecisions into a single-pass loop
+              (() => {
+                let fast = 0, smart = 0, power = 0;
+                for (const d of palDecisions) {
+                  if (d.tier === "fast") fast++;
+                  else if (d.tier === "smart") smart++;
+                  else if (d.tier === "power") power++;
+                }
+                return {
+                  palDecisions: palDecisions.length,
+                  fastTierCount: fast,
+                  smartTierCount: smart,
+                  powerTierCount: power,
+                };
+              })(),
               { chatRepoSnapshot },
               deriveBudFromLedger(budgetLedger),
             )}
