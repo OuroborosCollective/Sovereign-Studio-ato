@@ -29,6 +29,7 @@ import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
 import { OutcomeHints } from './OutcomeHints';
+import { ExternalRouteConsentGate } from './ExternalRouteConsentGate';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1581,6 +1582,51 @@ describe('Palette Accessibility Enhancements', () => {
     it('returns null when hints array is empty', () => {
       const { container } = render(<OutcomeHints hints={[]} />);
       expect(container.firstChild).toBeNull();
+    });
+  });
+
+  describe('ExternalRouteConsentGate Accessibility and Micro-UX Enhancements', () => {
+    it('renders region landmark linked to heading and description, decorative icon aria-hidden, semantic list, and focus-visible buttons with titles', () => {
+      const onApprove = vi.fn();
+      const onDeny = vi.fn();
+
+      const { container } = render(
+        <ExternalRouteConsentGate
+          onApprove={onApprove}
+          onDeny={onDeny}
+          attempts={2}
+        />
+      );
+
+      const section = screen.getByTestId('external-route-consent-gate');
+      expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('role', 'region');
+
+      const heading = screen.getByRole('heading', { name: 'Limits erreicht – Notfall Free-Routen aktivieren?', level: 3 });
+      expect(heading).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', heading.id);
+
+      const warningIcon = container.querySelector('[aria-hidden="true"]');
+      expect(warningIcon).toBeInTheDocument();
+      expect(warningIcon).toHaveTextContent('⚠️');
+
+      const list = screen.getByRole('list', { name: 'Hinweise zu externen Notfall-Routen' });
+      expect(list).toBeInTheDocument();
+      expect(screen.getAllByRole('listitem')).toHaveLength(3);
+
+      const denyBtn = screen.getByRole('button', { name: 'NEIN, lokal weiter' });
+      expect(denyBtn).toHaveAttribute('title', 'Externe Notfall-Routen ablehnen und rein lokal weiterarbeiten');
+      expect(denyBtn).toHaveClass('focus-visible:ring-2');
+
+      const approveBtn = screen.getByRole('button', { name: 'JA, einmalig aktivieren' });
+      expect(approveBtn).toHaveAttribute('title', 'Kostenlose externe Notfall-Routen einmalig für diese Anfrage aktivieren');
+      expect(approveBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(denyBtn);
+      expect(onDeny).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(approveBtn);
+      expect(onApprove).toHaveBeenCalledTimes(1);
     });
   });
 });
