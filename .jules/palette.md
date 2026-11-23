@@ -69,3 +69,7 @@
 ## 2025-10-05 - [Accessible Chat Streams & Empty States]
 **Learning:** Chat interfaces with dynamically added messages lack screen reader notifications if they do not have a live region. Furthermore, an empty stream provides no context. Adding `role="log"` and `aria-live="polite"` to the container, along with a visually centered empty state, improves both discoverability and accessibility.
 **Action:** Always wrap chat or event streams in an element with `role="log"` or `aria-live="polite"`, and provide a helpful empty state when no items are present.
+
+## 2026-10-16 - [Stateful disclosure button accessibility in Details/Summary]
+**Learning:** The native `<details>` and `<summary>` elements often fail to properly communicate their expanded state and toggle consequences across all screen reader combinations. Providing explicit `aria-expanded` mirroring the `<details>` `open` attribute, paired with a stateful hover `title`, robustly clarifies the interactive state for both assistive tech and sighted users.
+**Action:** When using `<details>` and `<summary>` for disclosures, always manually track the `open` state and assign corresponding `aria-expanded` and state-dependent `title` tooltips to the `<summary>` element.
