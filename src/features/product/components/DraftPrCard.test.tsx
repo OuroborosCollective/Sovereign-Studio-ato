@@ -42,7 +42,11 @@ describe('DraftPrCard', () => {
       />,
     );
 
-    fireEvent.click(screen.getByText('Im Browser öffnen'));
+    const openBtn = screen.getByRole('button', { name: 'Im Browser öffnen' });
+    expect(openBtn).toHaveAttribute('title', 'Draft PR auf GitHub im Browser öffnen');
+    expect(openBtn).not.toHaveAttribute('aria-label');
+    expect(openBtn).toHaveClass('focus-visible:ring-2');
+    fireEvent.click(openBtn);
     expect(onOpenBrowser).toHaveBeenCalledTimes(1);
   });
 
@@ -57,7 +61,11 @@ describe('DraftPrCard', () => {
       />,
     );
 
-    fireEvent.click(screen.getByText('Im Chat besprechen'));
+    const discussBtn = screen.getByRole('button', { name: 'Im Chat besprechen' });
+    expect(discussBtn).toHaveAttribute('title', 'Diesen Draft PR im Chat besprechen');
+    expect(discussBtn).not.toHaveAttribute('aria-label');
+    expect(discussBtn).toHaveClass('focus-visible:ring-2');
+    fireEvent.click(discussBtn);
     expect(onDiscussInChat).toHaveBeenCalledTimes(1);
   });
 
@@ -88,7 +96,7 @@ describe('DraftPrCard', () => {
   });
 
   it('defaults build badge to unknown when no run data exists', () => {
-    render(
+    const { container } = render(
       <DraftPrCard
         url="https://github.com/owner/repo/pull/123"
         changedFiles={[]}
@@ -97,7 +105,10 @@ describe('DraftPrCard', () => {
       />,
     );
 
-    expect(screen.getByTestId('draft-pr-build-badge')).toBeTruthy();
+    const badge = screen.getByRole('status', { name: /Buildstatus: Build unbekannt/i });
+    expect(badge).toBeTruthy();
+    expect(badge).toHaveAttribute('data-testid', 'draft-pr-build-badge');
+    expect(container.querySelector('[aria-hidden="true"]')).toHaveTextContent('📝');
     expect(screen.getByText('Build unbekannt')).toBeTruthy();
     expect(screen.getByText(/kein grüner Status wird erfunden/i)).toBeTruthy();
   });
@@ -107,13 +118,22 @@ describe('DraftPrCard', () => {
       <DraftPrCard
         url="https://github.com/owner/repo/pull/123"
         changedFiles={[]}
-        buildStatus={{ state: 'success', label: 'Build erfolgreich', detail: 'GitHub Run meldet success.' }}
+        buildStatus={{
+          state: 'success',
+          label: 'Build erfolgreich',
+          detail: 'GitHub Run meldet success.',
+          runUrl: 'https://github.com/owner/repo/actions/runs/999',
+        }}
         onOpenBrowser={() => {}}
         onDiscussInChat={() => {}}
       />,
     );
 
     expect(screen.getByText('Build erfolgreich')).toBeTruthy();
+    const runLink = screen.getByRole('link', { name: 'Run öffnen' });
+    expect(runLink).toHaveAttribute('href', 'https://github.com/owner/repo/actions/runs/999');
+    expect(runLink).toHaveAttribute('title', 'GitHub Workflow Run in neuem Tab öffnen');
+    expect(runLink).toHaveClass('focus-visible:ring-2');
   });
 
   it('shows failure, running and pending build states without percentages', () => {
