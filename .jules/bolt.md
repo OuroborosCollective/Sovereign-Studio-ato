@@ -72,12 +72,6 @@
 **Learning:** Computing summary statistics and extracting unique tags using chained `.filter()`, `.reduce()`, and `[...new Set(filtered.map(...))]` methods incurs severe CPU and garbage collection pressure due to multiple $O(N)$ passes and continuous intermediate array allocations on every invocation. Replacing these method chains with a single-pass `for...of` loop completely avoids multiple traversals and eliminates intermediate arrays, keeping computations flat and extremely fast.
 **Action:** Always refactor sequential array method chains (like `.filter().reduce()` or `.filter().map()`) into a single-pass loop when dealing with frequent or large-scale data summary computations to avoid intermediate allocations and reduce iteration overhead.
 
-## $(date +%Y-%m-%d) - Optimize GitHub Repository Tree Processing
-**Learning:** When dealing with large arrays like GitHub repository file trees, using declarative array methods like `.filter()`, `.slice()`, and `.map()` sequentially can evaluate the entire array before the slice operation. Consolidating this into a single pass `for...of` loop with an early `break` dramatically improves efficiency and ensures bounded execution. Additionally, using `indexOf` and `substring` to get top-level directories avoids the string splitting array allocations of `.split('/')`, which saves significant garbage collection overhead.
-**Action:** When bounding processed array results (e.g., using `.slice(0, LIMIT)` after a `.filter()`), consolidate this into a single `for...of` loop with an explicit early `break` to ensure bounded execution and skip string splitting inside loops.
-
-## 2026-08-27 - [Consolidating Chained Slice and Map in Diff Preview]
-**Learning:** Bounding array evaluations (e.g. `slice(0, 80).map(...)`) after a string `split()` allocates large, unnecessary intermediate arrays which causes garbage collection pressure, particularly when parsing file contents or unified diffs.
 **Action:** When bounding processed array results, convert chained `.slice()` and `.map()` calls into a single bounded `for` loop (or `for...of` with `break`) to avoid creating intermediate arrays and skip processing elements outside the bounds.
 
 ## 2026-08-28 - [Replacing Array Spreads and Multi-Pass Mapping in Signal Receipts]
@@ -91,3 +85,8 @@
 ## 2026-10-10 - [Consolidating Chained Array Methods in Chat History Parsing]
 **Learning:** Bounding array evaluations (e.g. `messages.filter(...).slice(-N).map(...)`) when retrieving recent chat messages allocates multiple large intermediate arrays, causing unnecessary garbage collection pressure and degrading performance in active chat sessions.
 **Action:** Replace `.filter().slice().map()` method chains with a single bounded negative `for` loop (iterating backwards from the end of the array and using `unshift` or index placement) to avoid intermediate allocations and strictly limit evaluation scope to `N` items.
+
+
+## 2026-11-03 - [Consolidating Chained Filter and Reduce for Success Metrics]
+**Learning:** Computing aggregated metrics (like count and average confidence) using chained `.filter(p => p.value > 0.5).length` followed by `.reduce()` passes forces multiple iterations over potentially large prediction array sets. This not only consumes more CPU time but also creates unnecessary intermediary results or forces two separate loops on identical data structure.
+**Action:** Consolidate multi-pass filtering, reducing, and length calculations on array values into a single `for...of` loop which keeps track of running totals (success counts, sums) to maximize iteration efficiency and completely drop overhead from chained array methods.
