@@ -124,4 +124,20 @@ describe('predictive risk evidence bundle', () => {
       bundle,
     ).verdict).toBe('EFFECT_CONTRADICTED');
   });
+
+  it('correctly assesses receipts across various severity and score combinations in single pass', () => {
+    const receipt1 = makeReceipt({ score: 0.8, knownLimitations: [] });
+    const receipt2 = makeReceipt({ score: 0.4, knownLimitations: ['a', 'b', 'c'] }); // warning (limitations > 2)
+    const bundle = makeBundle([receipt1, receipt2]);
+
+    expect(bundle.aggregateScore).toBeCloseTo(0.6);
+    expect(bundle.worstSeverity).toBe('warning');
+    expect(bundle.channelPassRate).toBe(0.5); // receipt1 passed (0.8 >= 0.5), receipt2 failed (0.4 < 0.5)
+
+    const abortReceipt = makeReceipt({ score: 0.1, abortReason: 'Operation timed out' });
+    const criticalBundle = makeBundle([receipt1, abortReceipt]);
+
+    expect(criticalBundle.worstSeverity).toBe('critical');
+    expect(criticalBundle.channelPassRate).toBe(0.5);
+  });
 });
