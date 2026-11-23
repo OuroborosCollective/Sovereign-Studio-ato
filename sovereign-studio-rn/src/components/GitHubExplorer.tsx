@@ -54,23 +54,24 @@ export const GitHubExplorer: React.FC<GitHubExplorerProps> = ({
   };
 
   const getFileName = (path: string) => {
-    const parts = path.split('/');
-    return parts[parts.length - 1];
+    const lastSlash = path.lastIndexOf('/');
+    return lastSlash === -1 ? path : path.substring(lastSlash + 1);
   };
 
   const getFilePath = (path: string) => {
-    const parts = path.split('/');
-    parts.pop();
-    return parts.join('/');
+    const lastSlash = path.lastIndexOf('/');
+    return lastSlash === -1 ? '' : path.substring(0, lastSlash);
   };
 
-  // Group files by directory
-  const groupedFiles = repoFiles.reduce((acc, file) => {
-    const dir = file.type === 'tree' ? file.path : getFilePath(file.path);
-    if (!acc[dir]) acc[dir] = [];
-    acc[dir].push(file);
-    return acc;
-  }, {} as Record<string, RepoFile[]>);
+  // ⚡ Bolt: Memoize file grouping to prevent expensive O(N) reduction and string allocations on every render (e.g., typing in URL input)
+  const groupedFiles = React.useMemo(() => {
+    return repoFiles.reduce((acc, file) => {
+      const dir = file.type === 'tree' ? file.path : getFilePath(file.path);
+      if (!acc[dir]) acc[dir] = [];
+      acc[dir].push(file);
+      return acc;
+    }, {} as Record<string, RepoFile[]>);
+  }, [repoFiles]);
 
   return (
     <View style={styles.container}>

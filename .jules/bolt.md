@@ -91,3 +91,6 @@
 ## 2026-10-10 - [Consolidating Chained Array Methods in Chat History Parsing]
 **Learning:** Bounding array evaluations (e.g. `messages.filter(...).slice(-N).map(...)`) when retrieving recent chat messages allocates multiple large intermediate arrays, causing unnecessary garbage collection pressure and degrading performance in active chat sessions.
 **Action:** Replace `.filter().slice().map()` method chains with a single bounded negative `for` loop (iterating backwards from the end of the array and using `unshift` or index placement) to avoid intermediate allocations and strictly limit evaluation scope to `N` items.
+## 2026-11-07 - [Optimize string operations and prevent unnecessary O(N) array reduction]
+**Learning:** Using `.split('/')` and `.join('/')` on strings inside large array map/reduce callbacks generates excessive GC pressure and array allocations. Unmemoized array reductions triggered on frequent state updates (like typing in URL input) cause blocking render delays.
+**Action:** When parsing paths, prefer `lastIndexOf` and `substring`. Use `React.useMemo` to prevent expensive computations (e.g. `reduce` grouping arrays) on every render unless the source array itself changes.
