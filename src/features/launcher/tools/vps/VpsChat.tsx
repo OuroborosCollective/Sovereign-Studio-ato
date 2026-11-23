@@ -319,6 +319,7 @@ function MessageBubble({ msg, onExecute, onCancel }: {
           <div style={{ display: 'flex', gap: 6 }}>
             <button
               type="button"
+              aria-label={msg.isDestructive ? 'Destruktiven Befehl trotzdem ausführen' : 'Befehl ausführen'}
               title={msg.isDestructive ? 'Destruktiven Befehl trotzdem ausführen' : 'Befehl jetzt auf dem Server ausführen'}
               onClick={() => onExecute(msg.id, msg.command!)}
               style={{
@@ -332,6 +333,7 @@ function MessageBubble({ msg, onExecute, onCancel }: {
             </button>
             <button
               type="button"
+              aria-label="Befehl verwerfen"
               title="Vorgeschlagenen Befehl verwerfen"
               onClick={() => onCancel(msg.id)}
               style={{
