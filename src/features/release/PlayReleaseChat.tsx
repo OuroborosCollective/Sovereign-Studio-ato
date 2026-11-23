@@ -665,7 +665,7 @@ export function PlayReleaseChat() {
             <button
               type="button"
               onClick={() => { void logout(); }}
-              title={user.email}
+              title={`${user.email} abmelden`}
               aria-label="Abmelden"
               style={{ minWidth: 44, minHeight: 44, borderRadius: 9, border: `1px solid ${C.border}`, background: C.bg, color: C.sub, cursor: 'pointer' }}
             >
@@ -689,14 +689,15 @@ export function PlayReleaseChat() {
           style={{ minHeight: 52, display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', overflowX: 'auto' }}
         >
           {([
-            ['chat', '💬', 'Chat'],
-            ['github', '⌘', 'GitHub'],
-            ['models', '◫', 'Modelle'],
-            ['account', '◉', 'Konto'],
-          ] as const).map(([key, icon, label]) => (
+            ['chat', '💬', 'Chat', 'Chat-Ansicht öffnen'],
+            ['github', '⌘', 'GitHub', 'GitHub-Vorschau und Aktionen anzeigen'],
+            ['models', '◫', 'Modelle', 'Modell- und Routen-Einstellungen öffnen'],
+            ['account', '◉', 'Konto', 'Konto- und Sitzungsdetails anzeigen'],
+          ] as const).map(([key, icon, label, navTitle]) => (
             <button
               key={key}
               type="button"
+              title={activeMenu === key ? `${label} (Aktiv)` : navTitle}
               aria-pressed={activeMenu === key}
               onClick={() => activateMenu(key)}
               style={{
@@ -793,6 +794,7 @@ export function PlayReleaseChat() {
                   <span style={{ color: C.sub, fontSize: 11, lineHeight: 1.45 }}>Bevorzugt wird die serverseitige OAuth-Verbindung. Falls sie nicht verfügbar ist, kann ein PAT ausschließlich im geschützten Eingabefeld für diese Browser-Sitzung hinterlegt werden; er gelangt nie in Chat, Verlauf oder Telemetrie.</span>
                   <button
                     type="button"
+                    title={githubConnectionState === 'connecting' ? 'Verbindung wird hergestellt…' : 'GitHub Account sicher verbinden'}
                     onClick={() => { void connectGitHub(); }}
                     disabled={githubConnectionState === 'connecting'}
                     style={{ minHeight: 40, padding: '0 12px', borderRadius: 8, border: '1px solid #58a6ff66', background: '#58a6ff16', color: C.accent, fontWeight: 700, cursor: githubConnectionState === 'connecting' ? 'wait' : 'pointer' }}
@@ -824,6 +826,7 @@ export function PlayReleaseChat() {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button
                     type="button"
+                    title={busy ? 'Aktion wird verarbeitet…' : pendingRepositoryAction.kind === 'draft-pr' ? 'Draft PR jetzt erstellen' : 'Repository-Ausführung jetzt starten'}
                     onClick={() => { void confirmPendingRepositoryAction(); }}
                     disabled={busy}
                     style={{ minHeight: 40, padding: '0 12px', borderRadius: 8, border: 'none', background: C.accent, color: C.bg, fontWeight: 800, cursor: busy ? 'wait' : 'pointer' }}
@@ -832,6 +835,7 @@ export function PlayReleaseChat() {
                   </button>
                   <button
                     type="button"
+                    title={busy ? 'Aktion wird verarbeitet…' : 'Entwurf verwerfen'}
                     onClick={() => setPendingRepositoryAction(null)}
                     disabled={busy}
                     style={{ minHeight: 40, padding: '0 12px', borderRadius: 8, border: '1px solid #263244', background: 'transparent', color: C.sub, cursor: busy ? 'not-allowed' : 'pointer' }}
@@ -867,7 +871,7 @@ export function PlayReleaseChat() {
         <div className="release-chat-shell" style={{ padding: '10px 12px 0' }}>
           {activeRoute && <div style={{ color: C.muted, fontSize: 9.5, marginBottom: 5 }}>Route fixiert: {routeLabel(activeRoute)} · kein stiller Routenwechsel</div>}
           {lastFailedText && !busy && (
-            <button type="button" onClick={() => { void recheckRuntimeAndRoutes(); }} style={{ marginBottom: 7, minHeight: 36, padding: '0 11px', borderRadius: 8, border: `1px solid ${C.amber}55`, background: C.amber + '10', color: C.amber, cursor: 'pointer' }}>
+            <button type="button" title="Runtime-Verbindung und Routen-Katalog erneut prüfen" onClick={() => { void recheckRuntimeAndRoutes(); }} style={{ marginBottom: 7, minHeight: 36, padding: '0 11px', borderRadius: 8, border: `1px solid ${C.amber}55`, background: C.amber + '10', color: C.amber, cursor: 'pointer' }}>
               Runtime und Routen neu prüfen
             </button>
           )}
@@ -875,6 +879,7 @@ export function PlayReleaseChat() {
             <textarea
               ref={composerRef}
               aria-label="Nachricht an Sovereign"
+              title={busy ? 'Nachricht wird verarbeitet…' : 'Nachricht eingeben'}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -904,6 +909,7 @@ export function PlayReleaseChat() {
             <button
               type="button"
               aria-label="Senden"
+              title={busy ? 'Nachricht wird verarbeitet…' : !draft.trim() ? 'Bitte eine Nachricht eingeben' : 'Nachricht senden'}
               disabled={busy || !draft.trim()}
               onClick={() => { void submit(); }}
               style={{ width: 46, height: 46, flexShrink: 0, borderRadius: 12, border: 'none', background: busy || !draft.trim() ? C.border : C.accent, color: '#07111c', fontSize: 18, fontWeight: 800, cursor: busy || !draft.trim() ? 'not-allowed' : 'pointer' }}
