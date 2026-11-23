@@ -16,6 +16,7 @@ import { AgentEventStream } from './AgentEventStream';
 import { ChangelogPreviewCard } from './ChangelogPreviewCard';
 import { WorkflowRepairPanel } from './WorkflowRepairPanel';
 import { WorkbenchSidePanel } from './WorkbenchSidePanel';
+import { WorkbenchSlotDrawer } from './WorkbenchSlotDrawer';
 import { WorkflowWatchPanel } from './WorkflowWatchPanel';
 import { CompactRepoSetupSheet } from './CompactRepoSetupSheet';
 import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
@@ -354,6 +355,76 @@ describe('Palette Accessibility Enhancements', () => {
 
       inspectorBtn = screen.getByRole('button', { name: 'Inspector schließen' });
       expect(inspectorBtn).toHaveAttribute('title', 'Inspector schließen');
+    });
+  });
+
+  describe('WorkbenchSlotDrawer Accessibility and Micro-UX Enhancements', () => {
+    it('renders dialog landmark linked to slot title, closes via Escape key, has accessible close button and items list', () => {
+      const slot = {
+        id: 'draftPr',
+        tone: 'positive' as const,
+        label: 'Draft PR',
+        value: 'Ready',
+        emptyLabel: 'Kein PR vorhanden',
+        items: ['https://github.com/owner/repo/pull/123'],
+      };
+      const onClose = vi.fn();
+      const onOpenDraftPr = vi.fn();
+
+      render(
+        <WorkbenchSlotDrawer
+          slot={slot}
+          onClose={onClose}
+          onOpenDraftPr={onOpenDraftPr}
+        />
+      );
+
+      const dialog = screen.getByRole('dialog', { name: 'Draft PR' });
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
+      expect(dialog).toHaveAttribute('aria-labelledby', 'workbench-slot-drawer-title');
+
+      const closeButton = screen.getByRole('button', { name: 'Schließen' });
+      expect(closeButton).toBeInTheDocument();
+      expect(closeButton).toHaveAttribute('title', 'Schließen');
+      expect(closeButton).toHaveClass('focus-visible:ring-2');
+
+      const list = screen.getByRole('list', { name: 'Slot-Einträge' });
+      expect(list).toBeInTheDocument();
+      expect(screen.getByText('https://github.com/owner/repo/pull/123')).toBeInTheDocument();
+
+      const openBtn = screen.getByRole('button', { name: 'Draft PR öffnen' });
+      expect(openBtn).toHaveAttribute('title', 'Draft PR öffnen: https://github.com/owner/repo/pull/123');
+      expect(openBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(openBtn);
+      expect(onOpenDraftPr).toHaveBeenCalledWith('https://github.com/owner/repo/pull/123');
+
+      // Test Escape key press
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders empty label when items array is empty', () => {
+      const slot = {
+        id: 'buildLogs',
+        tone: 'neutral' as const,
+        label: 'Build Logs',
+        value: 'Empty',
+        emptyLabel: 'Keine Logs vorhanden',
+        items: [],
+      };
+      const onClose = vi.fn();
+
+      render(
+        <WorkbenchSlotDrawer
+          slot={slot}
+          onClose={onClose}
+        />
+      );
+
+      expect(screen.getByText('Keine Logs vorhanden')).toBeInTheDocument();
+      expect(screen.queryByRole('list', { name: 'Slot-Einträge' })).not.toBeInTheDocument();
     });
   });
 
