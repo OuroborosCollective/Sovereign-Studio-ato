@@ -69,3 +69,6 @@
 ## 2025-10-05 - [Accessible Chat Streams & Empty States]
 **Learning:** Chat interfaces with dynamically added messages lack screen reader notifications if they do not have a live region. Furthermore, an empty stream provides no context. Adding `role="log"` and `aria-live="polite"` to the container, along with a visually centered empty state, improves both discoverability and accessibility.
 **Action:** Always wrap chat or event streams in an element with `role="log"` or `aria-live="polite"`, and provide a helpful empty state when no items are present.
+## 2026-11-09 - Adding aria-live to ChatSidebar
+**Learning:** Dynamic message streams, such as the one in ChatSidebar, require `role="log"` and `aria-live="polite"` to ensure screen readers announce new messages to the user without interrupting their current task. The ChatSurface component implemented this correctly, but ChatSidebar missed it.
+**Action:** Always verify that dynamic content containers that receive updates (like message lists or notifications) have the appropriate ARIA live region attributes to ensure accessibility for screen reader users.
