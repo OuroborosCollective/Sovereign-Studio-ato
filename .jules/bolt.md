@@ -72,7 +72,7 @@
 **Learning:** Computing summary statistics and extracting unique tags using chained `.filter()`, `.reduce()`, and `[...new Set(filtered.map(...))]` methods incurs severe CPU and garbage collection pressure due to multiple $O(N)$ passes and continuous intermediate array allocations on every invocation. Replacing these method chains with a single-pass `for...of` loop completely avoids multiple traversals and eliminates intermediate arrays, keeping computations flat and extremely fast.
 **Action:** Always refactor sequential array method chains (like `.filter().reduce()` or `.filter().map()`) into a single-pass loop when dealing with frequent or large-scale data summary computations to avoid intermediate allocations and reduce iteration overhead.
 
-## $(date +%Y-%m-%d) - Optimize GitHub Repository Tree Processing
+## 2026-11-06 - Optimize GitHub Repository Tree Processing
 **Learning:** When dealing with large arrays like GitHub repository file trees, using declarative array methods like `.filter()`, `.slice()`, and `.map()` sequentially can evaluate the entire array before the slice operation. Consolidating this into a single pass `for...of` loop with an early `break` dramatically improves efficiency and ensures bounded execution. Additionally, using `indexOf` and `substring` to get top-level directories avoids the string splitting array allocations of `.split('/')`, which saves significant garbage collection overhead.
 **Action:** When bounding processed array results (e.g., using `.slice(0, LIMIT)` after a `.filter()`), consolidate this into a single `for...of` loop with an explicit early `break` to ensure bounded execution and skip string splitting inside loops.
 
@@ -91,3 +91,7 @@
 ## 2026-10-10 - [Consolidating Chained Array Methods in Chat History Parsing]
 **Learning:** Bounding array evaluations (e.g. `messages.filter(...).slice(-N).map(...)`) when retrieving recent chat messages allocates multiple large intermediate arrays, causing unnecessary garbage collection pressure and degrading performance in active chat sessions.
 **Action:** Replace `.filter().slice().map()` method chains with a single bounded negative `for` loop (iterating backwards from the end of the array and using `unshift` or index placement) to avoid intermediate allocations and strictly limit evaluation scope to `N` items.
+
+## $(date +%Y-%m-%d) - [Replacing Chained filter().map().filter() in AI String Parsing and UI Rendering]
+**Learning:** Using chained array iteration methods like \`.split().filter().map().filter()\` on strings or large interface datasets continuously allocates intermediate ephemeral arrays and iterates over the elements multiple times, significantly increasing O(N) operations and garbage collection pressure in hot code paths. Consolidating this chained functionality into a single imperative \`for...of\` loop drops loop overhead to a single pass and prevents any intermediate allocations.
+**Action:** Replace all multi-pass array operations (like \`.filter().map().join()\` or \`.split().filter().map()\` chains) that build arrays, toolchains, or AI parsing responses into single-pass \`for...of\` loops accumulating the result iteratively.
