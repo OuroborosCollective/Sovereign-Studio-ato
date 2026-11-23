@@ -845,7 +845,7 @@ export function PlayReleaseChat() {
         </section>
       )}
 
-      <div ref={listRef} className="release-chat-shell" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 14px 20px', scrollBehavior: 'smooth' }}>
+      <div ref={listRef} className="release-chat-shell" role="log" aria-live="polite" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 14px 20px', scrollBehavior: 'smooth' }}>
         {messages.length === 0 ? (
           <div style={{ minHeight: '55vh', display: 'grid', placeItems: 'center', textAlign: 'center', padding: 20 }}>
             <div style={{ maxWidth: 520 }}>
