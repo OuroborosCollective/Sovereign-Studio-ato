@@ -310,7 +310,7 @@ describe('Palette Accessibility Enhancements', () => {
       expect(repairBtn).toHaveAttribute('title', 'Repair mission blocked');
     });
 
-    it('WorkbenchSidePanel buttons have matching attributes', () => {
+    it('WorkbenchSidePanel buttons have matching attributes, focus rings, role="list", and WCAG 2.5.3 compliant names', () => {
       const slots = [
         {
           id: 'draftPr',
@@ -335,11 +335,18 @@ describe('Palette Accessibility Enhancements', () => {
         />
       );
 
-      const openPrBtn = screen.getByRole('button', { name: 'Draft PR öffnen: https://github.com/test/pull/1' });
+      const itemsList = screen.getByRole('list', { name: 'Draft PR Einträge' });
+      expect(itemsList).toBeInTheDocument();
+
+      const openPrBtn = screen.getByRole('button', { name: 'Draft PR öffnen' });
       expect(openPrBtn).toHaveAttribute('title', 'Draft PR öffnen: https://github.com/test/pull/1');
+      expect(openPrBtn).not.toHaveAttribute('aria-label');
+      expect(openPrBtn).toHaveClass('focus-visible:ring-2');
 
       let inspectorBtn = screen.getByRole('button', { name: 'Inspector öffnen (intern)' });
       expect(inspectorBtn).toHaveAttribute('title', 'Inspector öffnen (intern)');
+      expect(inspectorBtn).not.toHaveAttribute('aria-label');
+      expect(inspectorBtn).toHaveClass('focus-visible:ring-2');
 
       rerender(
         <WorkbenchSidePanel
@@ -354,6 +361,8 @@ describe('Palette Accessibility Enhancements', () => {
 
       inspectorBtn = screen.getByRole('button', { name: 'Inspector schließen' });
       expect(inspectorBtn).toHaveAttribute('title', 'Inspector schließen');
+      expect(inspectorBtn).not.toHaveAttribute('aria-label');
+      expect(inspectorBtn).toHaveClass('focus-visible:ring-2');
     });
   });
 

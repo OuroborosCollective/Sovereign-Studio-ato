@@ -62,6 +62,7 @@ export function WorkbenchSidePanel({
           >
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
               <span
+                aria-hidden="true"
                 style={{
                   width: 6,
                   height: 6,
@@ -83,7 +84,11 @@ export function WorkbenchSidePanel({
                 {slot.emptyLabel}
               </div>
             ) : (
-              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+              <ul
+                role="list"
+                aria-label={`${slot.label} Einträge`}
+                style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}
+              >
                 {slot.items.slice(0, 6).map((item, index) => (
                   <li
                     key={`${slot.id}-side-${index}`}
@@ -107,8 +112,8 @@ export function WorkbenchSidePanel({
               <button
                 type="button"
                 onClick={() => onOpenDraftPr(slot.items[0])}
-                aria-label={`Draft PR öffnen: ${slot.items[0]}`}
                 title={`Draft PR öffnen: ${slot.items[0]}`}
+                className="focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none transition-opacity hover:opacity-90"
                 style={{
                   marginTop: 8,
                   width: "100%",
@@ -132,8 +137,8 @@ export function WorkbenchSidePanel({
         type="button"
         onClick={onToggleInspector}
         aria-pressed={showInspector}
-        aria-label={showInspector ? "Inspector schließen" : "Inspector öffnen (intern)"}
         title={showInspector ? "Inspector schließen" : "Inspector öffnen (intern)"}
+        className="focus-visible:ring-2 focus-visible:ring-[#00d9b1] focus-visible:outline-none transition-opacity hover:opacity-90"
         style={{
           marginTop: 4,
           padding: "8px 10px",
