@@ -37,4 +37,25 @@ describe('ActionSuggestionStrip', () => {
     fireEvent.click(screen.getByRole('button', { name: /Feature-Vorschläge aus Architektur/i }));
     expect(onSelect).toHaveBeenCalledWith('architecture_feature_suggestions');
   });
+
+  it('renders keyboard-navigable scroll region and accessible focus-visible action buttons', () => {
+    render(
+      <ActionSuggestionStrip
+        actions={SOVEREIGN_PRESET_ACTIONS}
+        repoReady
+        githubWriteReady
+        agentReady
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const scrollRegion = screen.getByRole('region', { name: 'Geführte Aktionen Liste' });
+    expect(scrollRegion).toBeInTheDocument();
+    expect(scrollRegion).toHaveAttribute('tabIndex', '0');
+    expect(scrollRegion).toHaveClass('focus-visible:ring-1');
+
+    const actionButton = screen.getByRole('button', { name: /Feature-Vorschläge aus Architektur/i });
+    expect(actionButton).toHaveClass('focus-visible:ring-2');
+    expect(actionButton).toHaveClass('hover:border-[#00d9b1]/70');
+  });
 });
