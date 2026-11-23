@@ -29,6 +29,7 @@ import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
 import { OutcomeHints } from './OutcomeHints';
+import { IntegrationIntentDraftCard } from './IntegrationIntentDraftCard';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1581,6 +1582,92 @@ describe('Palette Accessibility Enhancements', () => {
     it('returns null when hints array is empty', () => {
       const { container } = render(<OutcomeHints hints={[]} />);
       expect(container.firstChild).toBeNull();
+    });
+  });
+
+  describe('IntegrationIntentDraftCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders region landmark, aria-hidden icon, status gate indicators, semantic lists, and accessible action buttons with tooltips', () => {
+      const draft = {
+        id: 'draft-micro-ux',
+        originalText: 'Add search filtering to the component',
+        executionMission: 'Add search filtering to the component',
+        title: 'Add search filtering',
+        goal: 'Improve component usability',
+        scope: ['UI', 'Search'],
+        affectedFiles: ['src/components/SearchInput.tsx', 'src/components/List.tsx'],
+        createdAt: Date.now(),
+        rephrasedText: 'Implement search filtering',
+      };
+
+      const gateSnapshot = {
+        repoReady: true,
+        githubWriteReady: true,
+        directPatchReady: false,
+        agentReady: true,
+      };
+
+      const onConfirm = vi.fn();
+      const onRephrase = vi.fn();
+      const onReject = vi.fn();
+
+      const { container, rerender } = render(
+        <IntegrationIntentDraftCard
+          draft={draft}
+          gateSnapshot={gateSnapshot}
+          onConfirm={onConfirm}
+          onRephrase={onRephrase}
+          onReject={onReject}
+          canConfirm={true}
+        />
+      );
+
+      const region = screen.getByRole('region', { name: 'Integrationsauftrag Entwurf' });
+      expect(region).toBeInTheDocument();
+
+      const headerIcon = container.querySelector('[aria-hidden="true"]');
+      expect(headerIcon).toBeInTheDocument();
+
+      const scopeList = screen.getByRole('list', { name: 'Scope-Bereiche' });
+      expect(scopeList).toBeInTheDocument();
+      expect(screen.getAllByRole('listitem').filter(li => li.textContent === 'UI' || li.textContent === 'Search')).toHaveLength(2);
+
+      const filesList = screen.getByRole('list', { name: 'Betroffene Dateien' });
+      expect(filesList).toBeInTheDocument();
+
+      const gateStatuses = screen.getAllByRole('status');
+      expect(gateStatuses.length).toBeGreaterThanOrEqual(4);
+      expect(screen.getByTitle('Repo ready: bereit')).toBeInTheDocument();
+      expect(screen.getByTitle('Direct Patch: nicht bereit')).toBeInTheDocument();
+
+      const confirmBtn = screen.getByRole('button', { name: 'Repository-Auftrag starten' });
+      expect(confirmBtn).toHaveAttribute('title', 'Repository-Auftrag mit diesen Parametern starten');
+      expect(confirmBtn).toHaveClass('focus-visible:ring-2');
+
+      const rephraseBtn = screen.getByRole('button', { name: 'Integrationsauftrag neu formulieren' });
+      expect(rephraseBtn).toHaveAttribute('title', 'Integrationsauftrag im Eingabefeld anpassen');
+      expect(rephraseBtn).toHaveClass('focus-visible:ring-2');
+
+      const rejectBtn = screen.getByRole('button', { name: 'Integrationsauftrag ablehnen' });
+      expect(rejectBtn).toHaveAttribute('title', 'Integrationsauftrag verwerfen');
+      expect(rejectBtn).toHaveClass('focus-visible:ring-2');
+
+      // Test blocked state tooltip
+      rerender(
+        <IntegrationIntentDraftCard
+          draft={draft}
+          gateSnapshot={{ ...gateSnapshot, repoReady: false }}
+          onConfirm={onConfirm}
+          onRephrase={onRephrase}
+          onReject={onReject}
+          canConfirm={false}
+          confirmBlocker="Repository nicht geladen"
+        />
+      );
+
+      expect(screen.getByRole('button', { name: 'Repository-Auftrag starten' })).toHaveAttribute(
+        'title',
+        'Repository nicht geladen'
+      );
     });
   });
 });

@@ -60,8 +60,14 @@ function GateIndicator({
   ready: boolean;
 }) {
   return (
-    <div className="flex items-center gap-1.5">
+    <div
+      role="status"
+      className="flex items-center gap-1.5"
+      title={`${label}: ${ready ? 'bereit' : 'nicht bereit'}`}
+      aria-label={`${label}: ${ready ? 'bereit' : 'nicht bereit'}`}
+    >
       <span
+        aria-hidden="true"
         className={`w-2 h-2 rounded-full ${
           ready ? 'bg-emerald-400' : 'bg-slate-600'
         }`}
@@ -120,6 +126,8 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
 
   return (
     <div
+      role="region"
+      aria-label="Integrationsauftrag Entwurf"
       className="mx-3 my-2 rounded-xl border border-cyan-500/30 bg-slate-900/80 backdrop-blur-sm overflow-hidden"
       data-testid="integration-intent-draft-card"
       data-draft-id={draft.id}
@@ -129,7 +137,7 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
       <div className="px-4 py-3 border-b border-cyan-500/20 bg-gradient-to-r from-cyan-500/10 to-transparent">
         <div className="flex items-center gap-2">
           <div className="w-5 h-5 rounded-lg bg-cyan-500/20 flex items-center justify-center">
-            <span className="text-cyan-400 text-xs">⬡</span>
+            <span className="text-cyan-400 text-xs" aria-hidden="true">⬡</span>
           </div>
           <p className="text-xs text-cyan-300 font-medium">
             Freigabe für exakt diesen Repository-Auftrag:
@@ -194,16 +202,21 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
             <span className="text-[10px] text-cyan-500 uppercase tracking-wider font-bold">
               Scope
             </span>
-            <div className="flex flex-wrap gap-1.5 mt-1" data-testid="draft-scope">
+            <ul
+              role="list"
+              aria-label="Scope-Bereiche"
+              className="flex flex-wrap gap-1.5 mt-1 list-none p-0"
+              data-testid="draft-scope"
+            >
               {draft.scope.map((s) => (
-                <span
+                <li
                   key={s}
                   className="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 border border-slate-700 text-slate-400"
                 >
                   {s}
-                </span>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         )}
 
@@ -213,22 +226,27 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
             <span className="text-[10px] text-cyan-500 uppercase tracking-wider font-bold">
               Mögliche Dateien
             </span>
-            <div className="mt-1 space-y-0.5" data-testid="draft-affected-files">
+            <ul
+              role="list"
+              aria-label="Betroffene Dateien"
+              className="mt-1 space-y-0.5 list-none p-0"
+              data-testid="draft-affected-files"
+            >
               {draft.affectedFiles.slice(0, 3).map((f) => (
-                <div
+                <li
                   key={f}
                   className="text-[10px] text-slate-500 font-mono truncate"
                   title={f}
                 >
                   {f}
-                </div>
+                </li>
               ))}
               {draft.affectedFiles.length > 3 && (
-                <div className="text-[10px] text-slate-600">
+                <li className="text-[10px] text-slate-600">
                   +{draft.affectedFiles.length - 3} weitere
-                </div>
+                </li>
               )}
-            </div>
+            </ul>
           </div>
         )}
 
@@ -259,12 +277,21 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
             type="button"
             onClick={handleEinbauen}
             disabled={!einbauenEnabled}
-            className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+            className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none ${
               einbauenEnabled
                 ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30 active:scale-[0.98]'
                 : 'bg-slate-800 border border-slate-700 text-slate-500 cursor-not-allowed'
             }`}
             data-testid="btn-confirm"
+            title={
+              acted
+                ? 'Auftrag bereits übermittelt'
+                : !gateSnapshot.repoReady
+                  ? 'Repository nicht geladen'
+                  : !canConfirm
+                    ? confirmBlocker || 'Starten derzeit blockiert'
+                    : 'Repository-Auftrag mit diesen Parametern starten'
+            }
             aria-label="Repository-Auftrag starten"
           >
             Auftrag starten
@@ -275,8 +302,9 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
             type="button"
             onClick={handleRephrase}
             disabled={acted}
-            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 active:scale-[0.98] transition-all focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
             data-testid="btn-rephrase"
+            title={acted ? 'Aktion bereits gewählt' : 'Integrationsauftrag im Eingabefeld anpassen'}
             aria-label="Integrationsauftrag neu formulieren"
           >
             Neu formulieren
@@ -287,8 +315,9 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
             type="button"
             onClick={handleReject}
             disabled={acted}
-            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800/50 border border-slate-700/50 text-slate-500 hover:bg-slate-700/50 hover:text-slate-400 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800/50 border border-slate-700/50 text-slate-500 hover:bg-slate-700/50 hover:text-slate-400 active:scale-[0.98] transition-all focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
             data-testid="btn-reject"
+            title={acted ? 'Aktion bereits gewählt' : 'Integrationsauftrag verwerfen'}
             aria-label="Integrationsauftrag ablehnen"
           >
             Ablehnen
