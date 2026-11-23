@@ -56,6 +56,26 @@ describe('secureInputGuard', () => {
       }
     });
 
+    it('detects Google Gemini key (AIza...)', () => {
+      const input = 'AIzaSyA-1234567890_abcdefghijklmnopqrst';
+      const result = scanForSecret(input);
+      expect(result.detected).toBe(true);
+      if (result.detected) {
+        expect(result.kind).toBe('gemini_key');
+        expect(result.hint).toContain('Gemini');
+      }
+    });
+
+    it('detects Groq key (gsk_...)', () => {
+      const input = 'gsk_abcdefghijklmnopqrstuvwxyz1234567890';
+      const result = scanForSecret(input);
+      expect(result.detected).toBe(true);
+      if (result.detected) {
+        expect(result.kind).toBe('groq_key');
+        expect(result.hint).toContain('Groq');
+      }
+    });
+
     it('detects Bearer token in Authorization header context', () => {
       const input = 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9abc123';
       const result = scanForSecret(input);
@@ -106,10 +126,12 @@ describe('secureInputGuard', () => {
     });
 
     it('replaces multiple secrets in one string', () => {
-      const input = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01 and sk-ABCDEFGHIJKLMNOPQRSTUVWXYZabc';
+      const input = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01 and sk-ABCDEFGHIJKLMNOPQRSTUVWXYZabc and AIzaSyA-1234567890_abcdefghijklmnopqrst and gsk_abcdefghijklmnopqrstuvwxyz1234567890';
       const redacted = redactSecret(input);
       expect(redacted).not.toContain('ghp_');
       expect(redacted).not.toContain('sk-');
+      expect(redacted).not.toContain('AIza');
+      expect(redacted).not.toContain('gsk_');
     });
 
     it('replaces every occurrence of the same secret kind', () => {
@@ -165,10 +187,22 @@ describe('secureInputGuard', () => {
       }
     });
 
-    it('returns generic "Token erkannt" for OpenAI/Anthropic keys', () => {
-      const policy = evaluateInputPolicy('sk-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef');
-      expect(policy.shouldBlock).toBe(true);
-      expect(policy.securityCardTitle).toBe('Sicherer Token erkannt');
+    it('returns generic "Token erkannt" for OpenAI/Anthropic/Gemini/Groq keys', () => {
+      const policyOpenAi = evaluateInputPolicy('sk-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef');
+      expect(policyOpenAi.shouldBlock).toBe(true);
+      expect(policyOpenAi.securityCardTitle).toBe('Sicherer Token erkannt');
+
+      const policyGemini = evaluateInputPolicy('AIzaSyA-1234567890_abcdefghijklmnopqrst');
+      expect(policyGemini.shouldBlock).toBe(true);
+      expect(policyGemini.kind).toBe('gemini_key');
+      expect(policyGemini.securityCardTitle).toBe('Sicherer Token erkannt');
+      expect(policyGemini.securityCardText).toContain('Gemini');
+
+      const policyGroq = evaluateInputPolicy('gsk_abcdefghijklmnopqrstuvwxyz1234567890');
+      expect(policyGroq.shouldBlock).toBe(true);
+      expect(policyGroq.kind).toBe('groq_key');
+      expect(policyGroq.securityCardTitle).toBe('Sicherer Token erkannt');
+      expect(policyGroq.securityCardText).toContain('Groq');
     });
 
     it('no duplicate chat bubbles for repeated token input - returns correct actionLabel', () => {
