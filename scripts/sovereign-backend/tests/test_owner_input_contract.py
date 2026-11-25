@@ -64,7 +64,8 @@ def test_backend_registers_owner_routes_and_supports_separate_owner_managed_keys
     assert 'run_config_class = getattr(run_config_module, "RunConfig")' in transport
     assert "api_base = route_api_base(route)" in transport
     assert "base_url=api_base" in transport
-    assert "use_responses=False" in transport
+    assert "use_responses=use_responses" in transport
+    assert "use_responses = transport == OPENROUTER_TRANSPORT and model in _OPENROUTER_RESPONSES_MODELS" in transport
     assert "tracing_disabled=True" in transport
     assert "trace_include_sensitive_data=False" in transport
     assert "set_default_openai_api" not in swarm_agents
