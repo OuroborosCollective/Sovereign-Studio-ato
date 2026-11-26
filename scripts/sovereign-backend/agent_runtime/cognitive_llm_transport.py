@@ -29,6 +29,10 @@ _FREELLM_KEY_FILENAME: Final[str] = "freellmapi_unified_key.txt"
 _FREELLMPOOL_KEY_FILENAME: Final[str] = "freellmpool_proxy_key.txt"
 _FREELLMAPI_BASE: Final[str] = "http://freellmapi:3001/v1"
 _FREELLMPOOL_BASE: Final[str] = "http://freellmpool:8080/v1"
+_OPENROUTER_RESPONSES_MODELS: Final[frozenset[str]] = frozenset({
+    "openai/gpt-6.2-sol",
+    "openai/gpt-6.2-astra",
+})
 
 
 class RouteRuntimeError(RuntimeError):
@@ -198,6 +202,7 @@ def build_route_run_config(
             f"{transport.upper()}_MODEL_INVALID",
             f"VERIFY_{transport.upper()}_PROVIDER_MODEL",
         )
+    use_responses = transport == OPENROUTER_TRANSPORT and model in _OPENROUTER_RESPONSES_MODELS
     api_base = route_api_base(route)
     try:
         route_binding = build_route_binding(
@@ -217,6 +222,8 @@ def build_route_run_config(
         run_config_class = getattr(run_config_module, "RunConfig")
         model_settings_module = importlib.import_module("agents.model_settings")
         model_settings_class = getattr(model_settings_module, "ModelSettings")
+        if use_responses:
+            from openai.types.shared import Reasoning
     except (AttributeError, ImportError) as exc:
         raise RouteRuntimeError(
             "AGENTS_SDK_PROVIDER_API_UNAVAILABLE",
@@ -227,12 +234,19 @@ def build_route_run_config(
         provider = provider_class(
             api_key=api_key,
             base_url=api_base,
-            use_responses=False,
+            use_responses=use_responses,
         )
         settings_kwargs: dict[str, Any] = {
             "max_tokens": int(output_token_limit),
-            "include_usage": True,
         }
+        if use_responses:
+            settings_kwargs.update(
+                reasoning=Reasoning(effort="medium"),
+                store=False,
+                response_include=["reasoning.encrypted_content"],
+            )
+        else:
+            settings_kwargs["include_usage"] = True
         if extra_body is not None:
             settings_kwargs["extra_body"] = extra_body
         model_settings = model_settings_class(**settings_kwargs)

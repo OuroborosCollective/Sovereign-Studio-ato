@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
+import json
 import sys
 import types
 from pathlib import Path
@@ -321,6 +323,71 @@ def test_pinned_agents_sdk_route_config_keeps_transports_and_policy_disjoint(
         "max_tokens": 256,
         "include_usage": True,
     }
+
+
+@pytest.mark.parametrize("model", ["openai/gpt-6.2-sol", "openai/gpt-6.2-astra"])
+def test_gpt_62_openrouter_sends_responses_request_with_provider_policy(
+    monkeypatch: pytest.MonkeyPatch, model: str
+) -> None:
+    import httpx
+    from agents import function_tool
+    from agents.models import openai_provider
+    from agents.models.interface import ModelTracing
+    from openai import APIStatusError
+
+    paid = _route(
+        transport="openrouter",
+        profile="paid_swarm_6",
+        category="standard",
+        base_url=OPENROUTER_BASE_URL,
+    )
+    paid["config"]["providerModel"] = model
+
+    @function_tool
+    def read_status() -> str:
+        """Read local status."""
+        raise AssertionError("This regression ends before tool execution")
+
+    def capture_request(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == f"{OPENROUTER_BASE_URL}/responses"
+        body = json.loads(request.content)
+        assert body["model"] == model
+        assert body["provider"] == paid["config"]["providerPolicy"]
+        assert body["reasoning"]["effort"] == "medium"
+        assert body["store"] is False
+        assert "reasoning.encrypted_content" in body["include"]
+        assert body["max_output_tokens"] == 512
+        assert [(tool["type"], tool["name"]) for tool in body["tools"]] == [
+            ("function", "read_status"),
+        ]
+        assert "temperature" not in body
+        assert "top_p" not in body
+        # Stop at the local wire boundary with a non-retryable HTTP error.
+        return httpx.Response(418)
+
+    monkeypatch.setattr(runtime, "_read_protected_key", lambda *_: "local-test-token")
+    monkeypatch.setattr(openai_provider._openai_shared, "get_default_openai_client", lambda: None)
+
+    async def capture() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(capture_request)) as client:
+            monkeypatch.setattr(openai_provider, "shared_http_client", lambda: client)
+            config = runtime.build_route_run_config(
+                paid, output_token_limit=512, source_revision="a" * 40
+            )
+            sdk_model = config.run_config.model_provider.get_model(config.model)
+            await sdk_model.get_response(
+                system_instructions=None,
+                input="Local transport regression",
+                model_settings=config.run_config.model_settings,
+                tools=[read_status],
+                output_schema=None,
+                handoffs=[],
+                tracing=ModelTracing.DISABLED,
+            )
+
+    with pytest.raises(APIStatusError) as stopped:
+        asyncio.run(capture())
+    assert stopped.value.status_code == 418
 
 
 def test_route_config_rejects_unverified_runtime_revision_before_key_read(
