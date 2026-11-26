@@ -246,6 +246,13 @@ jobs:
           node scripts/sovereign-live-path-scan.mjs
           echo "::endgroup::"
 
+      - name: Setup Java 21 for Android handoff
+        if: hashFiles('android/gradlew', 'gradlew') != ''
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - name: Android handoff smoke check
         shell: bash
         run: |
