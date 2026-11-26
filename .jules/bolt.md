@@ -91,3 +91,6 @@
 ## 2026-10-10 - [Consolidating Chained Array Methods in Chat History Parsing]
 **Learning:** Bounding array evaluations (e.g. `messages.filter(...).slice(-N).map(...)`) when retrieving recent chat messages allocates multiple large intermediate arrays, causing unnecessary garbage collection pressure and degrading performance in active chat sessions.
 **Action:** Replace `.filter().slice().map()` method chains with a single bounded negative `for` loop (iterating backwards from the end of the array and using `unshift` or index placement) to avoid intermediate allocations and strictly limit evaluation scope to `N` items.
+## 2026-11-12 - [Fast Native Lexicographical Path Sorting in React Array Loops]
+**Learning:** Using `localeCompare` inside array `.sort()` callbacks on large directory file lists in React components causes severe performance degradation due to heavy localization collation overhead, particularly in synchronous loops affecting UI responsiveness.
+**Action:** Always replace `localeCompare` with native lexicographical string comparison operators (`<` and `>`) when sorting file paths or alphanumeric identifiers.
