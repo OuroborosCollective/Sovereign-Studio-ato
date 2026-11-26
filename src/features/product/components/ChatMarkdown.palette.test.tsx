@@ -22,7 +22,7 @@ describe('ChatMarkdown Palette Enhancements', () => {
     const content = '```text\nsome code\n```';
     render(<ChatMarkdown content={content} />);
 
-    const copyButton = screen.getByRole('button', { name: /Copy code/i });
-    expect(copyButton).toHaveAttribute('title', 'Copy code');
+    const copyButton = screen.getByRole('button', { name: /Code-Block kopieren/i });
+    expect(copyButton).toHaveAttribute('title', 'Code-Block kopieren');
   });
 });
