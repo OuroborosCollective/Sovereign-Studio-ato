@@ -16,6 +16,7 @@ import { AgentEventStream } from './AgentEventStream';
 import { ChangelogPreviewCard } from './ChangelogPreviewCard';
 import { WorkflowRepairPanel } from './WorkflowRepairPanel';
 import { WorkbenchSidePanel } from './WorkbenchSidePanel';
+import { WorkbenchStatusChips } from './WorkbenchStatusChips';
 import { WorkflowWatchPanel } from './WorkflowWatchPanel';
 import { CompactRepoSetupSheet } from './CompactRepoSetupSheet';
 import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
@@ -213,6 +214,52 @@ describe('Palette Accessibility Enhancements', () => {
       const warningIcon = container.querySelector('[aria-hidden="true"]');
       expect(warningIcon).toBeInTheDocument();
       expect(warningIcon).toHaveTextContent('⚠️');
+    });
+  });
+
+  describe('WorkbenchStatusChips Accessibility and Micro-UX Enhancements', () => {
+    it('renders chips with informative title tooltips, aria-hidden status dot, and focus-visible styling', () => {
+      const mockSlots = [
+        {
+          id: 'draftPr' as const,
+          label: 'Draft PR',
+          value: 'Bereit',
+          tone: 'positive' as const,
+          emptyLabel: 'Kein PR',
+          items: ['https://github.com/test/repo/pull/1'],
+        },
+        {
+          id: 'errors' as const,
+          label: 'Fehler',
+          value: '0',
+          tone: 'neutral' as const,
+          emptyLabel: 'Keine Fehler',
+          items: [],
+        },
+      ];
+
+      const onSlotClick = vi.fn();
+
+      const { container } = render(
+        <WorkbenchStatusChips slots={mockSlots} onSlotClick={onSlotClick} />
+      );
+
+      const tablist = screen.getByRole('tablist', { name: 'Werkbank Status' });
+      expect(tablist).toBeInTheDocument();
+
+      const chipWithItems = screen.getByRole('button', { name: 'Draft PR: Bereit' });
+      expect(chipWithItems).toHaveAttribute('title', 'Draft PR: Bereit (1 Details) – Slot-Details öffnen');
+      expect(chipWithItems).toHaveClass('focus-visible:ring-2');
+
+      const emptyChip = screen.getByRole('button', { name: 'Fehler: 0' });
+      expect(emptyChip).toHaveAttribute('title', 'Fehler: 0 (Keine Fehler) – Slot-Details öffnen');
+      expect(emptyChip).toHaveClass('focus-visible:ring-2');
+
+      const decorativeDots = container.querySelectorAll('[aria-hidden="true"]');
+      expect(decorativeDots.length).toBe(2);
+
+      fireEvent.click(chipWithItems);
+      expect(onSlotClick).toHaveBeenCalledWith('draftPr');
     });
   });
 
