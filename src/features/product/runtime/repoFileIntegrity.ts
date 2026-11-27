@@ -39,7 +39,13 @@ const CODE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.kt', '.java', '.py', '.
 const TEST_PATTERNS = [/\.test\./i, /\.spec\./i, /(^|\/)tests?\//i, /(^|\/)__tests__\//i];
 
 function fileNameOf(path: string): string {
-  return path.split('/').filter(Boolean).at(-1) ?? path;
+  // ⚡ Bolt: Fast string manipulation replacing slow array allocations from .split().filter().at()
+  let end = path.length;
+  while (end > 0 && path[end - 1] === '/') end--;
+  if (end === 0) return path;
+
+  const lastSlash = path.lastIndexOf('/', end - 1);
+  return lastSlash >= 0 ? path.substring(lastSlash + 1, end) : path.substring(0, end);
 }
 
 function isCodePath(path: string): boolean {
