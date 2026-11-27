@@ -29,6 +29,7 @@ import { WorkerBlockerCard } from './WorkerBlockerCard';
 import { MissionValidatorCard } from './MissionValidatorCard';
 import { PatternKnowledgeCard } from './PatternKnowledgeCard';
 import { OutcomeHints } from './OutcomeHints';
+import { RepoInsightPanel } from './RepoInsightPanel';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
@@ -1581,6 +1582,104 @@ describe('Palette Accessibility Enhancements', () => {
     it('returns null when hints array is empty', () => {
       const { container } = render(<OutcomeHints hints={[]} />);
       expect(container.firstChild).toBeNull();
+    });
+  });
+
+  describe('RepoInsightPanel Accessibility and Micro-UX Enhancements', () => {
+    it('renders region landmark linked to heading, status role on lamp, semantic lists, tooltips and focus rings', () => {
+      const mockOutput = {
+        fixSuggestions: [
+          {
+            id: 'fix-1',
+            category: 'fix' as const,
+            title: 'Fix broken type import',
+            whyUseful: 'Prevents compile failure during build.',
+            affectedFiles: ['src/App.tsx'],
+            risk: 'niedrig' as const,
+            expectedBenefit: 'Reliable builds.',
+            actionLabel: 'Reparieren',
+            priority: 1,
+          },
+        ],
+        hardeningSuggestions: [],
+        featureSuggestions: [
+          {
+            id: 'feat-1',
+            category: 'feature' as const,
+            title: 'Add search indexing',
+            whyUseful: 'Improves query speed.',
+            affectedFiles: ['src/search.ts'],
+            risk: 'mittel' as const,
+            expectedBenefit: '10x faster search.',
+            actionLabel: 'Gate prüfen',
+            priority: 2,
+            gate: {
+              state: 'blocked' as const,
+              reason: 'CI must be green before feature changes.',
+            },
+          },
+        ],
+        recommendedMission: 'Refactor search indexer and fix type imports.',
+        recommendedMissionConfidence: 0.88,
+        confidence: 0.9,
+        blockers: [],
+        coachStatus: 'green' as const,
+        coachMessage: 'Alles bereit für nächste Schritte.',
+        analyzedFiles: 14,
+        findings: [
+          { type: 'detected' as const, description: 'TypeScript config found' },
+          { type: 'missing' as const, description: 'E2E tests missing' },
+        ],
+      };
+
+      const onSuggestionClick = vi.fn();
+      const onRecommendedMissionClick = vi.fn();
+
+      render(
+        <RepoInsightPanel
+          output={mockOutput}
+          isLoading={false}
+          onSuggestionClick={onSuggestionClick}
+          onRecommendedMissionClick={onRecommendedMissionClick}
+        />
+      );
+
+      const panel = screen.getByRole('region', { name: 'Vorschläge aus Repo-Analyse' });
+      expect(panel).toBeInTheDocument();
+      expect(panel).toHaveAttribute('aria-labelledby', 'repo-insight-title');
+
+      const lamp = screen.getByRole('status', { name: 'Status: green' });
+      expect(lamp).toHaveAttribute('title', 'Status: green');
+
+      const findingsList = screen.getByRole('list', { name: 'Befunde der Repository-Analyse' });
+      expect(findingsList).toBeInTheDocument();
+      expect(screen.getByTitle('Vorhanden: TypeScript config found')).toBeInTheDocument();
+      expect(screen.getByTitle('Fehlt: E2E tests missing')).toBeInTheDocument();
+
+      const fixList = screen.getByRole('list', { name: '🔧 Fehler & Fixes' });
+      expect(fixList).toBeInTheDocument();
+
+      const fixBtn = screen.getByRole('button', { name: /Fix broken type import/i });
+      expect(fixBtn).toHaveAttribute('title', 'Vorschlag anwenden: Fix broken type import');
+      expect(fixBtn).toHaveClass('focus-visible:ring-2');
+
+      const riskBadge = screen.getByTitle('Risiko: niedrig');
+      expect(riskBadge).toBeInTheDocument();
+
+      const blockedFeatBtn = screen.getByRole('button', { name: /Add search indexing/i });
+      expect(blockedFeatBtn).toHaveAttribute('title', 'Blockiert: CI must be green before feature changes.');
+      expect(blockedFeatBtn).toBeDisabled();
+      expect(blockedFeatBtn).toHaveClass('focus-visible:ring-2');
+
+      const recommendedMissionBtn = screen.getByRole('button', { name: /In Builder übernehmen/i });
+      expect(recommendedMissionBtn).toHaveAttribute('title', 'Empfohlene Aufgabe in den Mission-Builder übernehmen');
+      expect(recommendedMissionBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(fixBtn);
+      expect(onSuggestionClick).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(recommendedMissionBtn);
+      expect(onRecommendedMissionClick).toHaveBeenCalledTimes(1);
     });
   });
 });
