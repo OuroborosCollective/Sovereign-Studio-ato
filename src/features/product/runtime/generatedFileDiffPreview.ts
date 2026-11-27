@@ -51,11 +51,33 @@ function preview(content: string, maxChars = 1800): string {
   return content.length > maxChars ? `${content.slice(0, maxChars)}\n…` : content;
 }
 
+// ⚡ Bolt: Fast bounded line extraction to avoid O(N) array allocation over full string contents
+function getLinesBounded(content: string, maxLines: number): string[] {
+  if (content.length === 0) return [''];
+  const lines: string[] = [];
+  let start = 0;
+  while (start < content.length && lines.length < maxLines) {
+    const end = content.indexOf('\n', start);
+    if (end === -1) {
+      let line = content.substring(start);
+      if (line.endsWith('\r')) line = line.slice(0, -1);
+      lines.push(line);
+      break;
+    }
+    let line = content.substring(start, end);
+    if (line.endsWith('\r')) line = line.slice(0, -1);
+    lines.push(line);
+    start = end + 1;
+  }
+  return lines;
+}
+
 export function buildUnifiedLikePreview(path: string, oldContent: string | null, newContent: string): string {
   if (oldContent === null) {
-    const lines = newContent.split(/\r?\n/);
+    // ⚡ Bolt: Use bounded line extraction to extract at most 80 lines without splitting huge strings
+    const lines = getLinesBounded(newContent, 80);
     const out = [`+++ ${path}`];
-    for (let i = 0; i < lines.length && i < 80; i++) {
+    for (let i = 0; i < lines.length; i++) {
       out.push(`+${lines[i]}`);
     }
     return out.join('\n');
@@ -181,17 +203,20 @@ export function buildGeneratedFileDiffReportFromUnifiedDiff(diffText: string): G
     const header = section.match(/^a\/(.+?) b\/(.+)$/m);
     const plusPath = section.match(/^\+\+\+ (?:b\/)?(.+)$/m);
     const path = (plusPath?.[1] && plusPath[1] !== '/dev/null' ? plusPath[1] : header?.[2] || header?.[1] || 'unknown').trim();
-    const lines = section.split(/\r?\n/);
+
+    // ⚡ Bolt: Direct line index scanning without intermediate array allocations from .split(/\r?\n/)
     let addedLines = 0;
     let removedLines = 0;
-
-    for (let j = 0; j < lines.length; j++) {
-      const line = lines[j];
-      if (line.startsWith('+')) {
-        if (!line.startsWith('+++')) addedLines++;
-      } else if (line.startsWith('-')) {
-        if (!line.startsWith('---')) removedLines++;
+    let start = 0;
+    while (start < section.length) {
+      let end = section.indexOf('\n', start);
+      if (end === -1) end = section.length;
+      if (section[start] === '+') {
+        if (!section.startsWith('+++', start)) addedLines++;
+      } else if (section[start] === '-') {
+        if (!section.startsWith('---', start)) removedLines++;
       }
+      start = end + 1;
     }
 
     const kind: GeneratedFileDiffKind = section.includes('new file mode') ? 'created' : 'modified';
