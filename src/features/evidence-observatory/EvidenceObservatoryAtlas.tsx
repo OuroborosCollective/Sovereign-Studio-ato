@@ -79,7 +79,14 @@ function EvidenceMap({ cases }: { cases: EvidenceCase[] }) {
 
 function DensityPanel({ cases }: { cases: EvidenceCase[] }) {
   const buckets = evidenceDensity(cases).slice(-32);
-  const max = Math.max(1, ...buckets.map((row) => row.sourceCount + row.contradictionCount));
+  let max = 1;
+  // ⚡ Bolt: Single-pass loop to avoid .map() array allocation and Math.max spread overhead
+  for (const row of buckets) {
+    const total = row.sourceCount + row.contradictionCount;
+    if (total > max) {
+      max = total;
+    }
+  }
   return (
     <section className="eo-panel">
       <div className="eo-panel-heading">
