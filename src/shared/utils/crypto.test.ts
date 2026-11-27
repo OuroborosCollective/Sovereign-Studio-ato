@@ -153,11 +153,20 @@ describe('maskSecrets', () => {
 
   it('masks common communication-provider env labels without masking plain provider text', () => {
     expect(maskSecrets('SENDGRID_API_KEY=sg_env_value_101')).toBe('SENDGRID_API_KEY=****');
+    expect(maskSecrets('SENDGRID_SECRET=sg_secret_val_102')).toBe('SENDGRID_SECRET=****');
+    expect(maskSecrets('sendgrid_token: sg_tok_val_103')).toBe('sendgrid_token: ****');
     expect(maskSecrets('RESEND_API_KEY=resend_env_value_202')).toBe('RESEND_API_KEY=****');
+    expect(maskSecrets('resend_secret: resend_sec_val_203')).toBe('resend_secret: ****');
+    expect(maskSecrets('RESEND_TOKEN=resend_tok_val_204')).toBe('RESEND_TOKEN=****');
     expect(maskSecrets('MAILGUN_API_KEY=mailgun_env_value_303')).toBe('MAILGUN_API_KEY=****');
+    expect(maskSecrets('mailgun_secret: mailgun_sec_val_304')).toBe('mailgun_secret: ****');
+    expect(maskSecrets('MAILGUN_TOKEN=mailgun_tok_val_305')).toBe('MAILGUN_TOKEN=****');
     expect(maskSecrets('POSTMARK_SERVER_TOKEN=postmark_env_value_404')).toBe('POSTMARK_SERVER_TOKEN=****');
+    expect(maskSecrets('postmark_secret: postmark_sec_val_405')).toBe('postmark_secret: ****');
+    expect(maskSecrets('postmark_token=postmark_tok_val_406')).toBe('postmark_token=****');
     expect(maskSecrets('TWILIO_AUTH_TOKEN=twilio_env_value_505')).toBe('TWILIO_AUTH_TOKEN=****');
     expect(maskSecrets('TWILIO_API_SECRET=twilio_env_value_606')).toBe('TWILIO_API_SECRET=****');
+    expect(maskSecrets('twilio_token: twilio_tok_val_707')).toBe('twilio_token: ****');
 
     const plain = 'sendgrid_key rotation docs mention resend_key and twilio_secret without assignments';
     expect(maskSecrets(plain)).toBe(plain);
@@ -187,8 +196,12 @@ describe('maskSecrets', () => {
     expect(maskSecrets('eleven_labs_key=eleven_labs_key_val_101')).toBe('eleven_labs_key=****');
     expect(maskSecrets('stability_key: stability_key_val_202')).toBe('stability_key: ****');
     expect(maskSecrets('stability_secret=stability_sec_val_303')).toBe('stability_secret=****');
+    expect(maskSecrets('stability_token: stability_tok_val_304')).toBe('stability_token: ****');
     expect(maskSecrets('fal_key: fal_key_val_404')).toBe('fal_key: ****');
     expect(maskSecrets('fal_secret=fal_sec_val_505')).toBe('fal_secret=****');
+    expect(maskSecrets('fal_token: fal_tok_val_506')).toBe('fal_token: ****');
+    expect(maskSecrets('pinecone_token: pinecone_tok_val_507')).toBe('pinecone_token: ****');
+    expect(maskSecrets('qdrant_token=qdrant_tok_val_508')).toBe('qdrant_token=****');
     expect(maskSecrets('"deepseek_key": "quoted_value_123"')).toBe('"deepseek_key": ****');
 
     const plain = 'cohere_key pinecone_secret qdrant_key deepseek_key perplexity_secret replicate_key cloudflare_token elevenlabs_key stability_key fal_secret without assignments';
@@ -198,6 +211,8 @@ describe('maskSecrets', () => {
   it('masks Stripe and Sentry credential labels without masking unassigned label mentions', () => {
     expect(maskSecrets('sentry_dsn: https://abc123456789@o123456.ingest.sentry.io/123456')).toBe('sentry_dsn: ****');
     expect(maskSecrets('sentry_key=sentry_key_val_101')).toBe('sentry_key=****');
+    expect(maskSecrets('sentry_secret: sentry_sec_val_102')).toBe('sentry_secret: ****');
+    expect(maskSecrets('sentry_token=sentry_tok_val_103')).toBe('sentry_token=****');
     expect(maskSecrets('stripe_key: pk_test_1234567890abcdef')).toBe('stripe_key: ****');
     expect(maskSecrets('stripe_secret=sk_test_1234567890abcdef')).toBe('stripe_secret=****');
     expect(maskSecrets('stripe_token: tok_1234567890abcdef')).toBe('stripe_token: ****');
