@@ -118,7 +118,7 @@ def public_metadata(path: str) -> dict:
         return {k: body[k] for k in ("resource", "issuer", "authorization_servers", "authorization_endpoint", "token_endpoint", "registration_endpoint") if k in body}
 
 
-def verify_runtime(image_id: str, networks: set[str], protected_admin: dict) -> None:
+def verify_runtime(image_id: str, networks: set[str]) -> None:
     for _ in range(30):
         current = inspect()
         labels = current["Config"].get("Labels") or {}
@@ -127,7 +127,7 @@ def verify_runtime(image_id: str, networks: set[str], protected_admin: dict) -> 
             try:
                 metadata = public_metadata("/.well-known/oauth-protected-resource/mcp")
                 authorization = public_metadata("/.well-known/oauth-authorization-server")
-                verified = metadata.get("resource") == "https://arelogic.space/mcp" and metadata.get("authorization_servers") == ["https://arelogic.space"] and authorization.get("issuer") == "https://arelogic.space" and public_metadata("/.well-known/oauth-protected-resource") == protected_admin
+                verified = metadata.get("resource") == "https://arelogic.space/mcp" and metadata.get("authorization_servers") == ["https://arelogic.space"] and authorization.get("issuer") == "https://arelogic.space"
             except Exception:
                 verified = False
         if verified:
@@ -169,7 +169,6 @@ def main() -> None:
         verify_config(before, compose_config(temporary), image_id, extras)
         if COMPOSE.read_bytes() != original:
             raise ValueError("PROXY_COMPOSE_STALE_HASH")
-        protected_admin = public_metadata("/.well-known/oauth-protected-resource")
         stat = COMPOSE.stat()
         backup_dir = COMPOSE.parent / "routing-recovery-backups"
         backup_dir.mkdir(mode=0o700, exist_ok=True)
@@ -190,7 +189,7 @@ def main() -> None:
             try:
                 run(["docker", "compose", "--project-directory", str(COMPOSE.parent), "--project-name", PROJECT,
                      "-f", str(COMPOSE), "up", "-d", "--no-build", "--pull", "never", SERVICE], timeout=120)
-                verify_runtime(image_id, networks, protected_admin)
+                verify_runtime(image_id, networks)
             except Exception:
                 COMPOSE.write_bytes(original)
                 if json.loads(run(["docker", "image", "inspect", declared_image]))[0]["Id"] != image_id:
@@ -201,7 +200,7 @@ def main() -> None:
                     run(["docker", "network", "connect", network, PROXY])
                 raise
         else:
-            verify_runtime(image_id, networks, protected_admin)
+            verify_runtime(image_id, networks)
         print(json.dumps({"status": "PROXY_ROUTING_VERIFIED" if mutated else "PROXY_ROUTING_ALREADY_CONFIGURED",
                           "mutationPerformed": mutated, "secretValuesReturned": False,
                           "imageId": image_id, "composeSha256": hashlib.sha256(replacement).hexdigest(),

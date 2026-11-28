@@ -154,5 +154,55 @@ class AuthProxyRecoveryTests(unittest.TestCase):
             self.assertEqual(len(list((path.parent / "routing-recovery-backups").glob("*.yml"))), 1)
 
 
+    def test_live_proxy_checks_only_its_explicit_fusionauth_mcp_metadata_routes(self):
+        """Root discovery belongs to a different service and is deliberately absent."""
+        from urllib.error import HTTPError
+        paths = []
+        def metadata(path):
+            paths.append(path)
+            if path == "/.well-known/oauth-protected-resource":
+                raise HTTPError("https://arelogic.space" + path, 404, "Not Found", {}, None)
+            if path == "/.well-known/oauth-protected-resource/mcp":
+                return {"resource": "https://arelogic.space/mcp",
+                        "authorization_servers": ["https://arelogic.space"]}
+            if path == "/.well-known/oauth-authorization-server":
+                return {"issuer": "https://arelogic.space"}
+            raise AssertionError("UNEXPECTED_OAUTH_PATH:" + path)
+        present = {"Image": IMAGE, "State": {"Running": True},
+                   "Config": {"Labels": {MODULE.ROUTER + "rule": MODULE.RULE,
+                                          MODULE.ROUTER + "priority": "2000"}},
+                   "NetworkSettings": {"Networks": {"sovereign-mcp-auth-internal": {}}}}
+        with patch.object(MODULE, "inspect", return_value=present), \
+             patch.object(MODULE, "public_metadata", side_effect=metadata), \
+             patch.object(MODULE, "run", return_value='{"ok": true}'), \
+             patch.object(MODULE.time, "sleep", side_effect=AssertionError("UNEXPECTED_RETRY")):
+            MODULE.verify_runtime(IMAGE, {"sovereign-mcp-auth-internal"})
+        self.assertEqual(paths, ["/.well-known/oauth-protected-resource/mcp",
+                                 "/.well-known/oauth-authorization-server"])
+
+
+    def test_misbound_authorization_server_issuer_fails_closed(self):
+        paths = []
+        def metadata(path):
+            paths.append(path)
+            if path == "/.well-known/oauth-protected-resource/mcp":
+                return {"resource": "https://arelogic.space/mcp",
+                        "authorization_servers": ["https://arelogic.space"]}
+            if path == "/.well-known/oauth-authorization-server":
+                return {"issuer": "https://wrong-issuer.invalid"}
+            raise AssertionError("UNEXPECTED_OAUTH_PATH:" + path)
+        present = {"Image": IMAGE, "State": {"Running": True},
+                   "Config": {"Labels": {MODULE.ROUTER + "rule": MODULE.RULE,
+                                          MODULE.ROUTER + "priority": "2000"}},
+                   "NetworkSettings": {"Networks": {"sovereign-mcp-auth-internal": {}}}}
+        with patch.object(MODULE, "inspect", return_value=present), \
+             patch.object(MODULE, "public_metadata", side_effect=metadata), \
+             patch.object(MODULE, "run", return_value='{"ok": true}'), \
+             patch.object(MODULE.time, "sleep", side_effect=RuntimeError("EXPECTED_REJECT")):
+            with self.assertRaisesRegex(RuntimeError, "EXPECTED_REJECT"):
+                MODULE.verify_runtime(IMAGE, {"sovereign-mcp-auth-internal"})
+        self.assertNotIn("/.well-known/oauth-protected-resource", paths)
+
+
 if __name__ == "__main__":
     unittest.main()
