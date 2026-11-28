@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "a702e96230393ba25bc9aec4b7279a74310601a2",
+  "sourceRevision": "c30832586ddb61e2c47d3a077237b3af86276030",
   "rawCandidateCount": 105,
   "canonicalCandidateCount": 82,
   "entries": [
@@ -1118,5 +1118,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "e63a73b2106d2e71949702e260b350c5463c9e944eb601a2b732b2e729958c0c"
+  "ledgerSha256": "1579e9617f9ac30fa3836381e4ef69e2c0cc34c25ec022af50627164e1c0250e"
 }
